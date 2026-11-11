@@ -7,7 +7,8 @@ import type { FromPng, ToPng } from './png-worker.ts';
 function inWorker(m: ToPng, transfer: Transferable[] = []): Promise<Blob> {
   const worker = new Worker(new URL('./png-worker.ts', import.meta.url), { type: 'module' });
   return new Promise<Blob>((resolve, reject) => {
-    worker.onmessage = (e: MessageEvent<FromPng>) => ('png' in e.data ? resolve(e.data.png) : reject(new DOMException(e.data.error, 'DataError')));
+    worker.onmessage = (e: MessageEvent<FromPng>) =>
+      'png' in e.data ? resolve(e.data.png) : reject(new DOMException(e.data.error, 'DataError'));
     worker.onerror = (e) => reject(new DOMException(e.message || 'the PNG worker failed', 'DataError'));
     worker.postMessage(m, transfer);
   }).finally(() => worker.terminate());
@@ -17,4 +18,5 @@ function inWorker(m: ToPng, transfer: Transferable[] = []): Promise<Blob> {
 export const toPng = (image: Blob) => inWorker({ image });
 
 /** RGBA pixels, top row first, as a PNG (the pixels are handed to the worker). */
-export const rgbaPng = (width: number, height: number, pixels: Uint8Array<ArrayBuffer>) => inWorker({ width, height, pixels }, [pixels.buffer]);
+export const rgbaPng = (width: number, height: number, pixels: Uint8Array<ArrayBuffer>) =>
+  inWorker({ width, height, pixels }, [pixels.buffer]);

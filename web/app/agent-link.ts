@@ -13,7 +13,19 @@
 // inside a frame's writes) or that went out of step (`broken`) is begun afresh: the page's HELLO carries a nonce, the
 // agent answers with SYNC carrying it before its HELLO, and the reader drops everything before that (`FrameReader.sync`).
 
-import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, NONCE, typePayloads, VERSION, type Frame, type Hello } from '../agent-frame.ts';
+import {
+  CAP,
+  decodeHello,
+  encodeFrame,
+  encodeHello,
+  FRAME,
+  FrameReader,
+  NONCE,
+  typePayloads,
+  VERSION,
+  type Frame,
+  type Hello,
+} from '../agent-frame.ts';
 import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
 
 /** The most bytes in flight to the guest (sent to the device, not yet in the guest's buffers). */

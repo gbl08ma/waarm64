@@ -12,7 +12,14 @@ import type { Credential } from './machine.ts';
  * wants it and orders itself after it (the generator can't read an [Install] section). `service`: its [Service] lines
  * before the script's, in place of `Type=oneshot` (a long-running service: web/app/guest-agent.ts).
  */
-export function guestUnit(o: { name: string; description: string; script: string; unit: string; wantedBy: string; service?: string }): Credential[] {
+export function guestUnit(o: {
+  name: string;
+  description: string;
+  script: string;
+  unit: string;
+  wantedBy: string;
+  service?: string;
+}): Credential[] {
   const what = o.name.replace(/\.service$/, '');
   const sh = `${what.replace(/-/g, '.')}.sh`;
   return [
@@ -36,11 +43,19 @@ ExecStart=/bin/sh %d/${sh}
 export const oneLine = (s: string) => s.replace(/\s*\n\s*/g, ' ').trim();
 
 /** The units' descriptions, in the page's words (web/app/guest-words.ts renders them; the worker gets them with the start). */
-export type GuestWords = { keyboard: string; network: string; shares: string; agent: string; /** The keyboard layout's name, for the comment atop its script. */ layout?: string };
+export type GuestWords = {
+  keyboard: string;
+  network: string;
+  shares: string;
+  agent: string;
+  /** The keyboard layout's name, for the comment atop its script. */ layout?: string;
+};
 
 /** The fw_cfg file the core moves into SMBIOS type 11 (core/src/smbios.rs `OEM_STRINGS`, ABI 49): NUL-separated strings. */
 export const OEM_STRINGS_FILE = 'opt/webpc/oem-strings';
 
 /** Credentials as SMBIOS type 11 strings, systemd's binary form (base64: the contents have newlines). */
 export const oemStrings = (credentials: Credential[]) =>
-  credentials.map((c) => `io.systemd.credential.binary:${c.name}=${btoa(String.fromCharCode(...new TextEncoder().encode(c.data)))}`);
+  credentials.map(
+    (c) => `io.systemd.credential.binary:${c.name}=${btoa(String.fromCharCode(...new TextEncoder().encode(c.data)))}`,
+  );

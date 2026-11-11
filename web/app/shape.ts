@@ -56,7 +56,14 @@ export type DiskRecord = {
  * the disk itself (a stored disk only: §4.4), or, for a ramdisk, into memory. `swap`: a ramdisk the guest uses as swap
  * (§4.3, web/app/guest-swap.ts).
  */
-export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?: boolean; overlay?: string; swap?: true };
+export type Attachment = {
+  id: string;
+  disk: string;
+  readOnly: boolean;
+  inPlace?: boolean;
+  overlay?: string;
+  swap?: true;
+};
 
 /** The machine's display: a virtio-gpu, 2D or with virgl (3D, rendered with WebGL2): the guest sees different devices. */
 export type Display = '2d' | '3d';
@@ -162,7 +169,16 @@ export function adaptersOf(m: Pick<MachineRecord, 'adapters' | 'network'>): Adap
 export function newMac(taken: Iterable<string> = [], random: () => number = Math.random): string {
   const used = new Set([...taken, DEFAULT_MAC].map((x) => x.toLowerCase()));
   for (;;) {
-    const mac = ['52', '54', '00', ...Array.from({ length: 3 }, () => Math.floor(random() * 256).toString(16).padStart(2, '0'))].join(':');
+    const mac = [
+      '52',
+      '54',
+      '00',
+      ...Array.from({ length: 3 }, () =>
+        Math.floor(random() * 256)
+          .toString(16)
+          .padStart(2, '0'),
+      ),
+    ].join(':');
     if (!used.has(mac)) return mac;
   }
 }
@@ -195,13 +211,51 @@ export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
-export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
+export type DeviceKind =
+  'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
 /** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm`, `bf16`). */
-export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt' | 'rcpc' | 'sb' | 'flagm' | 'dit' | 'frintts' | 'dotprod' | 'i8mm' | 'rdm' | 'rcpc2' | 'fcma' | 'fp16' | 'fhm' | 'bf16';
-export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'i8mm', 'rdm', 'rcpc2', 'fcma', 'fp16', 'fhm', 'bf16'];
+export type CpuFeature =
+  | 'rng'
+  | 'e0pd'
+  | 'sha3'
+  | 'jscvt'
+  | 'rcpc'
+  | 'sb'
+  | 'flagm'
+  | 'dit'
+  | 'frintts'
+  | 'dotprod'
+  | 'i8mm'
+  | 'rdm'
+  | 'rcpc2'
+  | 'fcma'
+  | 'fp16'
+  | 'fhm'
+  | 'bf16';
+export const CPU_FEATURES: CpuFeature[] = [
+  'rng',
+  'e0pd',
+  'sha3',
+  'jscvt',
+  'rcpc',
+  'sb',
+  'flagm',
+  'dit',
+  'frintts',
+  'dotprod',
+  'i8mm',
+  'rdm',
+  'rcpc2',
+  'fcma',
+  'fp16',
+  'fhm',
+  'bf16',
+];
 /** The ones a machine has unless turned off (`?<feature>=0`); the rest only when asked for (`?i8mm=1`, `?fcma=1`,
  * `?fp16=1`, `?fhm=1`, `?bf16=1`: implemented but measured slower than what guests do without them, docs/cpu.md). */
-export const CPU_DEFAULT: CpuFeature[] = CPU_FEATURES.filter((f) => !['i8mm', 'fcma', 'fp16', 'fhm', 'bf16'].includes(f));
+export const CPU_DEFAULT: CpuFeature[] = CPU_FEATURES.filter(
+  (f) => !['i8mm', 'fcma', 'fp16', 'fhm', 'bf16'].includes(f),
+);
 /**
  * The features the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and suspended
  * machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's `cpu`),
@@ -216,9 +270,20 @@ const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.include
  * that have it. The network adapters are where the one card was (network-adapters.md §4). `attachment` is the disk's
  * index in the machine's list, `adapter` the adapter's.
  */
-export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boolean; touch?: boolean; clock?: boolean; shares?: boolean; clipboard?: boolean; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
+export function slots(m: {
+  nets: number;
+  display?: Display | 'none';
+  mouse?: boolean;
+  touch?: boolean;
+  clock?: boolean;
+  shares?: boolean;
+  clipboard?: boolean;
+  attachments: unknown[];
+}): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
-    { kind: 'rng' }, { kind: 'keyboard' }, { kind: 'tablet' },
+    { kind: 'rng' },
+    { kind: 'keyboard' },
+    { kind: 'tablet' },
     ...Array.from({ length: m.nets }, (_, i) => ({ kind: 'net' as const, adapter: i })),
     ...(m.display === 'none' ? [] : [{ kind: 'gpu' as const }]),
     { kind: 'snd' },
@@ -235,7 +300,14 @@ export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boo
 export const serialOf = (attachment: string) => `webpc-${attachment}`.slice(0, 20);
 
 /** One disk of a shape: what the guest sees of it. `swap`: a ramdisk the guest uses as swap (only when on). */
-export type ShapeDisk = { slot: number; size: number; readOnly: boolean; serial: string; identity: DiskIdentity; swap?: true };
+export type ShapeDisk = {
+  slot: number;
+  size: number;
+  readOnly: boolean;
+  serial: string;
+  identity: DiskIdentity;
+  swap?: true;
+};
 
 /** What the guest sees of a machine (machines.md §5.1): a snapshot made on one shape restores only on the same shape. */
 export type Shape = {
@@ -270,12 +342,25 @@ const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined, cpu: hashedCpu(s
  * differs from its record's (a 3D machine on a browser without WebGL2 runs 2D; `none`: the page's
  * `?display=simple`).
  */
-export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { cpu?: CpuFeature[]; display?: Display | 'none'; vulkan?: boolean } = {}): Shape {
+export function shapeOf(
+  m: MachineRecord,
+  disks: (id: string) => DiskRecord | undefined,
+  opts: { cpu?: CpuFeature[]; display?: Display | 'none'; vulkan?: boolean } = {},
+): Shape {
   const display = opts.display ?? m.display;
   // Vulkan needs 3D (`vulkan`: what the machine runs with when the page asks for it beside its record's).
   const vulkan = display === '3d' && (opts.vulkan ?? !!m.vulkan);
   const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
-  const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, clock: m.clock, shares: m.shares, clipboard: m.clipboard, attachments: m.attachments });
+  const list = slots({
+    nets: macs.length,
+    display,
+    mouse: m.mouse,
+    touch: m.touch,
+    clock: m.clock,
+    shares: m.shares,
+    clipboard: m.clipboard,
+    attachments: m.attachments,
+  });
   return {
     version: SHAPE_VERSION,
     ncpus: m.ncpus,
@@ -289,7 +374,16 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
       const a = m.attachments[s.attachment];
       const d = disks(a.disk);
       if (!d) throw new Error(`machine ${m.name} has a disk that isn't in this browser (${a.disk})`);
-      return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity, ...(a.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}) }];
+      return [
+        {
+          slot,
+          size: d.size,
+          readOnly: a.readOnly,
+          serial: serialOf(a.id),
+          identity: d.identity,
+          ...(a.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}),
+        },
+      ];
     }),
     ...(m.usb ? { usb: true as const } : {}),
     ...(vulkan ? { vulkan: true as const } : {}),
@@ -305,7 +399,9 @@ export const macsOf = (s: Shape) => s.macs ?? (s.devices.includes('net') ? [DEFA
 export function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? 'null' : canonical(x))).join(',')}]`;
   if (v && typeof v === 'object') {
-    const keys = Object.keys(v).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort();
+    const keys = Object.keys(v)
+      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+      .sort();
     return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
   }
   return JSON.stringify(v);
@@ -333,29 +429,53 @@ export function shapeDiff(was: Shape, now: Shape): Msg[] {
   if (was.ncpus !== now.ncpus) out.push(msg('machines:shape.diff.ncpus', { was: was.ncpus, now: now.ncpus }));
   if (was.ramMiB !== now.ramMiB) out.push(msg('machines:shape.diff.ram', { was: was.ramMiB, now: now.ramMiB }));
   else if (canonical(was.split ?? []) !== canonical(now.split ?? [])) {
-    const split = (s?: number[]) => (s ? msg('machines:shape.diff.split.sizes', { sizes: s.join(' + ') }) : msg('machines:shape.diff.split.automatic'));
+    const split = (s?: number[]) =>
+      s ? msg('machines:shape.diff.split.sizes', { sizes: s.join(' + ') }) : msg('machines:shape.diff.split.automatic');
     out.push(msg('machines:shape.diff.split', { was: split(was.split), now: split(now.split) }));
   }
   if (was.display !== now.display) out.push(msg('machines:shape.diff.display', { was: was.display, now: now.display }));
-  if (!!was.vulkan !== !!now.vulkan) out.push(was.vulkan ? msg('machines:shape.diff.vulkan.had') : msg('machines:shape.diff.vulkan.hadNo'));
+  if (!!was.vulkan !== !!now.vulkan)
+    out.push(was.vulkan ? msg('machines:shape.diff.vulkan.had') : msg('machines:shape.diff.vulkan.hadNo'));
   const features = (cpu: CpuFeature[]) => (cpu.length ? cpu.join(', ') : msg('machines:shape.diff.cpu.none'));
-  if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu))) out.push(msg('machines:shape.diff.cpu', { was: features(was.cpu), now: features(now.cpu) }));
+  if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu)))
+    out.push(msg('machines:shape.diff.cpu', { was: features(was.cpu), now: features(now.cpu) }));
   const [macsWas, macsNow] = [macsOf(was), macsOf(now)];
-  if (macsWas.length !== macsNow.length) out.push(msg('machines:shape.diff.adapters', { was: macsWas.length, now: macsNow.length }));
-  else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(msg('machines:shape.diff.mac', { n: i + 1, was: macsWas[i], now: macsNow[i] }));
-  if (!!was.usb !== !!now.usb) out.push(was.usb ? msg('machines:shape.diff.usb.had') : msg('machines:shape.diff.usb.hadNo'));
+  if (macsWas.length !== macsNow.length)
+    out.push(msg('machines:shape.diff.adapters', { was: macsWas.length, now: macsNow.length }));
+  else
+    for (let i = 0; i < macsWas.length; i++)
+      if (macsWas[i] !== macsNow[i])
+        out.push(msg('machines:shape.diff.mac', { n: i + 1, was: macsWas[i], now: macsNow[i] }));
+  if (!!was.usb !== !!now.usb)
+    out.push(was.usb ? msg('machines:shape.diff.usb.had') : msg('machines:shape.diff.usb.hadNo'));
   for (const k of ['mouse', 'touch', 'clock', '9p', 'agent'] as const) {
     if (was.devices.includes(k) !== now.devices.includes(k)) out.push(HAD[k][was.devices.includes(k) ? 0 : 1]);
   }
-  if (was.disks.length !== now.disks.length) out.push(msg('machines:shape.diff.disks', { was: was.disks.length, now: now.disks.length }));
+  if (was.disks.length !== now.disks.length)
+    out.push(msg('machines:shape.diff.disks', { was: was.disks.length, now: now.disks.length }));
   for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {
     const [a, b] = [was.disks[i], now.disks[i]];
     const n = i + 1;
-    if (canonical(a.identity) !== canonical(b.identity)) out.push(msg('machines:shape.diff.disk.other', { n, was: describeIdentity(a.identity), now: describeIdentity(b.identity) }));
+    if (canonical(a.identity) !== canonical(b.identity))
+      out.push(
+        msg('machines:shape.diff.disk.other', {
+          n,
+          was: describeIdentity(a.identity),
+          now: describeIdentity(b.identity),
+        }),
+      );
     else if (a.size !== b.size) out.push(msg('machines:shape.diff.disk.size', { n, was: a.size, now: b.size }));
-    if (a.readOnly !== b.readOnly) out.push(a.readOnly ? msg('machines:shape.diff.disk.readOnlyThen', { n }) : msg('machines:shape.diff.disk.writableThen', { n }));
+    if (a.readOnly !== b.readOnly)
+      out.push(
+        a.readOnly
+          ? msg('machines:shape.diff.disk.readOnlyThen', { n })
+          : msg('machines:shape.diff.disk.writableThen', { n }),
+      );
     if (a.serial !== b.serial) out.push(msg('machines:shape.diff.disk.serial', { n }));
-    if (!!a.swap !== !!b.swap) out.push(a.swap ? msg('machines:shape.diff.disk.swapThen', { n }) : msg('machines:shape.diff.disk.notSwapThen', { n }));
+    if (!!a.swap !== !!b.swap)
+      out.push(
+        a.swap ? msg('machines:shape.diff.disk.swapThen', { n }) : msg('machines:shape.diff.disk.notSwapThen', { n }),
+      );
   }
   if (!out.length && canonical(hashed(was)) !== canonical(hashed(now))) out.push(msg('machines:shape.diff.order'));
   return out;
@@ -364,11 +484,16 @@ export function shapeDiff(was: Shape, now: Shape): Msg[] {
 /** A disk identity in words: a URL's file name as it is, else a message. */
 export function describeIdentity(d: DiskIdentity): string | Msg {
   switch (d.kind) {
-    case 'url': return d.path.split('/').pop() || d.path;
-    case 'file': return msg('machines:shape.identity.file', { name: d.name });
-    case 'stored': return msg('machines:shape.identity.stored');
-    case 'blank': return msg('machines:shape.identity.blank');
-    case 'ramdisk': return msg('machines:shape.identity.ramdisk');
+    case 'url':
+      return d.path.split('/').pop() || d.path;
+    case 'file':
+      return msg('machines:shape.identity.file', { name: d.name });
+    case 'stored':
+      return msg('machines:shape.identity.stored');
+    case 'blank':
+      return msg('machines:shape.identity.blank');
+    case 'ramdisk':
+      return msg('machines:shape.identity.ramdisk');
   }
 }
 
@@ -381,8 +506,62 @@ export function newId(): string {
 export const isId = (s: string) => /^[0-9a-f]{12}$/.test(s);
 
 // A generated machine name's words: names, kept as they are, not the page's copy.
-const ADJECTIVES = ['Amber', 'Brisk', 'Calm', 'Clever', 'Cobalt', 'Dusky', 'Eager', 'Fern', 'Gentle', 'Hazel', 'Ivory', 'Jade', 'Keen', 'Lucid', 'Mellow', 'Nimble', 'Olive', 'Plucky', 'Quiet', 'Rusty', 'Sable', 'Tidy', 'Umber', 'Vivid', 'Wry', 'Zesty'];
-const NOUNS = ['Heron', 'Otter', 'Lynx', 'Wren', 'Badger', 'Falcon', 'Marten', 'Puffin', 'Stoat', 'Ibis', 'Koala', 'Gecko', 'Raven', 'Bison', 'Crane', 'Dingo', 'Egret', 'Ferret', 'Lemur', 'Newt', 'Osprey', 'Panda', 'Quail', 'Tapir', 'Vole', 'Yak'];
+const ADJECTIVES = [
+  'Amber',
+  'Brisk',
+  'Calm',
+  'Clever',
+  'Cobalt',
+  'Dusky',
+  'Eager',
+  'Fern',
+  'Gentle',
+  'Hazel',
+  'Ivory',
+  'Jade',
+  'Keen',
+  'Lucid',
+  'Mellow',
+  'Nimble',
+  'Olive',
+  'Plucky',
+  'Quiet',
+  'Rusty',
+  'Sable',
+  'Tidy',
+  'Umber',
+  'Vivid',
+  'Wry',
+  'Zesty',
+];
+const NOUNS = [
+  'Heron',
+  'Otter',
+  'Lynx',
+  'Wren',
+  'Badger',
+  'Falcon',
+  'Marten',
+  'Puffin',
+  'Stoat',
+  'Ibis',
+  'Koala',
+  'Gecko',
+  'Raven',
+  'Bison',
+  'Crane',
+  'Dingo',
+  'Egret',
+  'Ferret',
+  'Lemur',
+  'Newt',
+  'Osprey',
+  'Panda',
+  'Quail',
+  'Tapir',
+  'Vole',
+  'Yak',
+];
 
 /** A machine's generated name (machines.md §1: named by default), not one of `taken`. */
 export function generateName(taken: Iterable<string>, random: () => number = Math.random): string {

@@ -47,7 +47,10 @@ export function runExport(request: ExportRequest, progress: (phase: string, frac
         else resolve({ blob: request.handle ? undefined : new Blob(parts), bytes: m.bytes, blocks: m.blocks });
       }
     };
-    worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message)); };
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(e.message));
+    };
     worker.postMessage(request);
   });
 }

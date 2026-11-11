@@ -6,7 +6,16 @@
 // tests/folders.test.ts runs it over a memory store.
 import type { FolderSpec, FoldersFromDevice, FoldersToDevice } from '../9p-folders.ts';
 import { MsgError } from '../msg.ts';
-import { attachFolder, detachFolder, folderLock, folderSpecs, moveFolder, readsOnly, setAttachmentReadOnly, type Folder } from './folders.ts';
+import {
+  attachFolder,
+  detachFolder,
+  folderLock,
+  folderSpecs,
+  moveFolder,
+  readsOnly,
+  setAttachmentReadOnly,
+  type Folder,
+} from './folders.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { FolderAttachment, MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
@@ -38,15 +47,22 @@ export type FolderAccess = {
   request(f: Folder, write: boolean): Promise<boolean>;
 };
 
-type Writable = FileSystemDirectoryHandle & { queryPermission(o: object): Promise<string>; requestPermission(o: object): Promise<string> };
+type Writable = FileSystemDirectoryHandle & {
+  queryPermission(o: object): Promise<string>;
+  requestPermission(o: object): Promise<string>;
+};
 /** The page's: OPFS's `folders/<id>/`, and File System Access's permissions. */
 export const browserAccess: FolderAccess = {
   async directory(f) {
     const top = await (await navigator.storage.getDirectory()).getDirectoryHandle('folders', { create: true });
     return top.getDirectoryHandle(f.id, { create: true });
   },
-  async query(f, write) { return (await (f.handle as Writable).queryPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted'; },
-  async request(f, write) { return (await (f.handle as Writable).requestPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted'; },
+  async query(f, write) {
+    return (await (f.handle as Writable).queryPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted';
+  },
+  async request(f, write) {
+    return (await (f.handle as Writable).requestPermission({ mode: write ? 'readwrite' : 'read' })) === 'granted';
+  },
 };
 
 /** How long a device gets to say it let go of a folder (a dead one never will), ms. */
@@ -83,7 +99,9 @@ export class PageFolders {
   private async read() {
     this.folders = (await this.store.all('folders')).sort((a, b) => a.created - b.created);
     const held = await heldLocks();
-    this.held = new Set(this.folders.filter((f) => held.has(folderLock(f.id)) && !this.locks.mine(folderLock(f.id))).map((f) => f.id));
+    this.held = new Set(
+      this.folders.filter((f) => held.has(folderLock(f.id)) && !this.locks.mine(folderLock(f.id))).map((f) => f.id),
+    );
   }
 
   /**
@@ -117,7 +135,9 @@ export class PageFolders {
   }
 
   /** Whether the page's machine runs with this device. */
-  get running() { return !!this.port; }
+  get running() {
+    return !!this.port;
+  }
 
   /** A start: what the device serves, of `m`'s attachments (the rest wait on the page). */
   async begin(m: MachineRecord, port: MessagePort): Promise<FolderSpec[]> {
@@ -157,9 +177,11 @@ export class PageFolders {
     const f = this.folders.find((x) => x.id === a.id);
     if (!f) return void this.problems.set(a.id, { problem: 'missing' });
     const write = !readsOnly(a, f);
-    if (f.kind === 'host' && !(await this.access.query(f, write))) return void this.problems.set(a.id, { problem: 'permission' });
+    if (f.kind === 'host' && !(await this.access.query(f, write)))
+      return void this.problems.set(a.id, { problem: 'permission' });
     const lock = folderLock(a.id);
-    if (!(await this.locks.take(lock, { shared: !write }))) return void this.problems.set(a.id, { problem: 'held', holder: await this.locks.holder(lock) });
+    if (!(await this.locks.take(lock, { shared: !write })))
+      return void this.problems.set(a.id, { problem: 'held', holder: await this.locks.holder(lock) });
     try {
       this.served.set(a.id, f.kind === 'host' ? f.handle! : await this.access.directory(f));
       this.problems.delete(a.id);
@@ -169,7 +191,9 @@ export class PageFolders {
     }
   }
 
-  private tell(m: FoldersToDevice) { this.port?.postMessage(m); }
+  private tell(m: FoldersToDevice) {
+    this.port?.postMessage(m);
+  }
 
   /** Hands the device folder `id`, if it got ready. */
   private serve(id: string) {
@@ -199,7 +223,10 @@ export class PageFolders {
       this.tell({ type: 'detach', id });
       await new Promise<void>((resolve) => {
         const t = setTimeout(resolve, LET_GO_MS);
-        this.letting.set(id, () => { clearTimeout(t); resolve(); });
+        this.letting.set(id, () => {
+          clearTimeout(t);
+          resolve();
+        });
       });
       this.letting.delete(id);
     }
@@ -268,12 +295,22 @@ export class PageFolders {
   views(): FolderView[] {
     return this.attached.map((a) => {
       const folder = this.folders.find((f) => f.id === a.id);
-      return { id: a.id, name: this.names.get(a.id) ?? folder?.name ?? a.id, folder, readOnly: folder ? readsOnly(a, folder) : a.readOnly, ...this.problems.get(a.id) };
+      return {
+        id: a.id,
+        name: this.names.get(a.id) ?? folder?.name ?? a.id,
+        folder,
+        readOnly: folder ? readsOnly(a, folder) : a.readOnly,
+        ...this.problems.get(a.id),
+      };
     });
   }
 
   /** Whether `id` is what the page's machine has. */
-  mine(id: string) { return this.served.has(id); }
+  mine(id: string) {
+    return this.served.has(id);
+  }
 
-  close() { this.locks.close(); }
+  close() {
+    this.locks.close();
+  }
 }

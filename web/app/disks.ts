@@ -17,14 +17,18 @@ export const identityOf = (d: DiskRecord) => canonical(d.identity);
 /** A disk's bytes for a job or a machine (a file disk's handle must have its permission: §3.2). */
 export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
   switch (d.kind) {
-    case 'url': return { url: new URL(d.url!, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
+    case 'url':
+      return { url: new URL(d.url!, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
     case 'file': {
       if (!d.handle) throw new MsgError('disks:disks.pickAgain', { name: d.name });
       return { file: await d.handle.getFile() };
     }
-    case 'blank': return { blank: d.size };
-    case 'ramdisk': return { ramdisk: d.size };
-    case 'stored': return { stored: diskDir(d.id), size: d.size };
+    case 'blank':
+      return { blank: d.size };
+    case 'ramdisk':
+      return { ramdisk: d.size };
+    case 'stored':
+      return { stored: diskDir(d.id), size: d.size };
   }
 }
 
@@ -40,9 +44,24 @@ export async function inUse(path: string) {
 }
 
 /** A new, empty overlay of disk `d` (its files are made when a machine first opens it). */
-export async function createOverlay(store: Store, d: DiskRecord, name: string, fork?: OverlayRecord['fork']): Promise<OverlayRecord> {
+export async function createOverlay(
+  store: Store,
+  d: DiskRecord,
+  name: string,
+  fork?: OverlayRecord['fork'],
+): Promise<OverlayRecord> {
   const now = Date.now();
-  const o: OverlayRecord = { id: newId(), name, disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: now, modified: now, fork };
+  const o: OverlayRecord = {
+    id: newId(),
+    name,
+    disk: d.id,
+    identity: d.identity,
+    generation: 0,
+    bytes: 0,
+    created: now,
+    modified: now,
+    fork,
+  };
   await store.put('overlays', o);
   return o;
 }
@@ -84,7 +103,12 @@ export async function refreshOverlay(store: Store, id: string) {
   if (!o) return undefined;
   const [meta, bytes] = await Promise.all([overlayMeta(overlayDir(id)), overlayBytes(overlayDir(id))]);
   if (meta.generation === o.generation && bytes === o.bytes) return o;
-  const next = { ...o, generation: meta.generation, bytes, modified: meta.generation !== o.generation ? Date.now() : o.modified };
+  const next = {
+    ...o,
+    generation: meta.generation,
+    bytes,
+    modified: meta.generation !== o.generation ? Date.now() : o.modified,
+  };
   await store.put('overlays', next);
   return next;
 }
@@ -98,18 +122,40 @@ export async function refreshStored(store: Store, id: string) {
 }
 
 /** Loads a changes file (Export's "changes only") into a new overlay of `d`, named after the file. */
-export async function loadChangesInto(store: Store, d: DiskRecord, file: File, progress: (phase: string, fraction: number) => void, source?: DiskRef['source']) {
+export async function loadChangesInto(
+  store: Store,
+  d: DiskRecord,
+  file: File,
+  progress: (phase: string, fraction: number) => void,
+  source?: DiskRef['source'],
+) {
   const id = newId();
   return store.writing(async () => {
     try {
-      await runImport({ changes: file, disk: { ...(await diskRef(d)), ...(source ? { source } : {}), overlay: overlayDir(id) }, label: d.name }, progress);
+      await runImport(
+        {
+          changes: file,
+          disk: { ...(await diskRef(d)), ...(source ? { source } : {}), overlay: overlayDir(id) },
+          label: d.name,
+        },
+        progress,
+      );
     } catch (e) {
       await removeOverlay(overlayDir(id)).catch(() => {});
       throw e;
     }
     const meta = await overlayMeta(overlayDir(id));
     const now = Date.now();
-    const o: OverlayRecord = { id, name: file.name.replace(/\.qcow2$/i, ''), disk: d.id, identity: d.identity, generation: meta.generation, bytes: await overlayBytes(overlayDir(id)), created: now, modified: now };
+    const o: OverlayRecord = {
+      id,
+      name: file.name.replace(/\.qcow2$/i, ''),
+      disk: d.id,
+      identity: d.identity,
+      generation: meta.generation,
+      bytes: await overlayBytes(overlayDir(id)),
+      created: now,
+      modified: now,
+    };
     await store.put('overlays', o);
     return o;
   });
@@ -126,7 +172,10 @@ function job(j: DiskJob, progress?: (fraction: number) => void) {
       if (m.type === 'error') reject(fromWire(m.error));
       else resolve(m);
     };
-    w.onerror = (e) => { w.terminate(); reject(new Error(e.message)); };
+    w.onerror = (e) => {
+      w.terminate();
+      reject(new Error(e.message));
+    };
     w.postMessage(j);
   });
 }
@@ -138,7 +187,11 @@ export async function estimateStored(file: File) {
 }
 
 /** Imports a file as a stored disk (converted into the block store); its record once its bytes are there. */
-export async function importStored(store: Store, file: File, progress?: (fraction: number) => void): Promise<DiskRecord> {
+export async function importStored(
+  store: Store,
+  file: File,
+  progress?: (fraction: number) => void,
+): Promise<DiskRecord> {
   const id = newId();
   const identity = { kind: 'stored' as const, id, bytes: 0 };
   return store.writing(async () => {
@@ -150,7 +203,16 @@ export async function importStored(store: Store, file: File, progress?: (fractio
       throw e;
     }
     // A stored disk is known by its id: its identity's `bytes` stays 0 (its store's `base` file has it as made).
-    const d: DiskRecord = { id, kind: 'stored', name: file.name, size: r.size!, format: r.format === 'qcow2' ? 'qcow2' : 'raw', identity, generation: (await overlayMeta(diskDir(id))).generation, created: Date.now() };
+    const d: DiskRecord = {
+      id,
+      kind: 'stored',
+      name: file.name,
+      size: r.size!,
+      format: r.format === 'qcow2' ? 'qcow2' : 'raw',
+      identity,
+      generation: (await overlayMeta(diskDir(id))).generation,
+      created: Date.now(),
+    };
     await store.put('disks', d);
     return d;
   });
@@ -168,7 +230,8 @@ export async function mergeIntoDisk(store: Store, overlay: string) {
   const d = await store.get('disks', o.disk);
   if (d?.kind !== 'stored') throw new MsgError('disks:disks.onlyStored');
   const others = (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
-  for (const x of [o, ...others]) if (await inUse(overlayDir(x.id))) throw new MsgError('disks:disks.overlayNamedRunning', { name: x.name });
+  for (const x of [o, ...others])
+    if (await inUse(overlayDir(x.id))) throw new MsgError('disks:disks.overlayNamedRunning', { name: x.name });
   if (await inUse(diskDir(d.id))) throw new MsgError('disks:disks.diskRunning');
   for (const x of others) await deleteOverlay(store, x.id);
   for (const m of await store.all('machines')) {
@@ -177,7 +240,13 @@ export async function mergeIntoDisk(store: Store, overlay: string) {
     await store.put('machines', { ...m, modified: Date.now() });
   }
   await store.forget('overlays', o.id); // the record only: the worker deletes the files once their blocks are in the disk
-  const r = await job({ type: 'merge', disk: diskDir(d.id), overlay: overlayDir(o.id), identity: identityOf(d), size: d.size });
+  const r = await job({
+    type: 'merge',
+    disk: diskDir(d.id),
+    overlay: overlayDir(o.id),
+    identity: identityOf(d),
+    size: d.size,
+  });
   await refreshStored(store, d.id);
   return r.blocks ?? 0;
 }

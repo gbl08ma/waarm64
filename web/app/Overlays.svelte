@@ -30,7 +30,8 @@
 
   const mine = $derived(overlays.filter((o) => o.disk === disk.id).sort((a, b) => a.created - b.created));
   /** The machines whose attachment of this disk writes to overlay `id`. */
-  const usersOf = (id: string) => machines.filter((m) => m.attachments.some((a) => a.disk === disk.id && a.overlay === id)).map((m) => m.name);
+  const usersOf = (id: string) =>
+    machines.filter((m) => m.attachments.some((a) => a.disk === disk.id && a.overlay === id)).map((m) => m.name);
 
   /** Runs an action through the page's `act`, its error shown here (the page's message bar is behind the dialog). */
   async function run(what: string, f: () => Promise<unknown>) {
@@ -45,25 +46,63 @@
   }
 
   async function rename(o: OverlayRecord) {
-    const name = await ask.prompt(t('disks:Overlays.rename.text'), o.name, { title: t('disks:Overlays.rename.title', { name: o.name }), ok: t('disks:Overlays.rename.ok') });
-    if (name) await run(t('disks:Overlays.busy.rename'), () => renameOverlay(store, o.id, name).catch((e) => { throw new MsgError('disks:Overlays.failed.rename', {}, { cause: e }); }));
+    const name = await ask.prompt(t('disks:Overlays.rename.text'), o.name, {
+      title: t('disks:Overlays.rename.title', { name: o.name }),
+      ok: t('disks:Overlays.rename.ok'),
+    });
+    if (name)
+      await run(t('disks:Overlays.busy.rename'), () =>
+        renameOverlay(store, o.id, name).catch((e) => {
+          throw new MsgError('disks:Overlays.failed.rename', {}, { cause: e });
+        }),
+      );
   }
   async function remove(o: OverlayRecord) {
-    if (!(await ask.confirm(t('disks:Overlays.delete.confirm', { name: o.name, size: bytesText(o.bytes) }), { ok: t('disks:Overlays.delete.ok'), danger: true }))) return;
-    await run(t('disks:Overlays.busy.delete'), () => deleteOverlay(store, o.id).catch((e) => { throw new MsgError('disks:Overlays.failed.delete', {}, { cause: e }); }));
+    if (
+      !(await ask.confirm(t('disks:Overlays.delete.confirm', { name: o.name, size: bytesText(o.bytes) }), {
+        ok: t('disks:Overlays.delete.ok'),
+        danger: true,
+      }))
+    )
+      return;
+    await run(t('disks:Overlays.busy.delete'), () =>
+      deleteOverlay(store, o.id).catch((e) => {
+        throw new MsgError('disks:Overlays.failed.delete', {}, { cause: e });
+      }),
+    );
   }
   async function merge(o: OverlayRecord) {
     const others = await mergeCosts(store, o.id);
     const pinned = new Set([`disks/${disk.id}`, `overlays/${o.id}`, ...others.map((x) => `overlays/${x.id}`)]);
     const snaps = (await store.all('snapshots')).filter((s) => s.pins.some((p) => p.overlay && pinned.has(p.overlay)));
-    const deleted = others.length ? msg('disks:Overlays.merge.others', { list: others.map((x) => msg('disks:Overlays.merge.other', { name: x.name, size: bytesText(x.bytes) })) }) : undefined;
+    const deleted = others.length
+      ? msg('disks:Overlays.merge.others', {
+          list: others.map((x) => msg('disks:Overlays.merge.other', { name: x.name, size: bytesText(x.bytes) })),
+        })
+      : undefined;
     const orphaned = snaps.length ? msg('disks:Overlays.merge.snapshots', { count: snaps.length }) : undefined;
-    if (!(await ask.confirm(t('disks:Overlays.merge.confirm', { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned }), { ok: t('disks:Overlays.merge.ok'), danger: others.length > 0 }))) return;
-    await run(t('disks:Overlays.busy.merge'), () => mergeIntoDisk(store, o.id).catch((e) => { throw new MsgError('disks:Overlays.failed.merge', {}, { cause: e }); }));
+    if (
+      !(await ask.confirm(
+        t('disks:Overlays.merge.confirm', { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned }),
+        { ok: t('disks:Overlays.merge.ok'), danger: others.length > 0 },
+      ))
+    )
+      return;
+    await run(t('disks:Overlays.busy.merge'), () =>
+      mergeIntoDisk(store, o.id).catch((e) => {
+        throw new MsgError('disks:Overlays.failed.merge', {}, { cause: e });
+      }),
+    );
   }
 </script>
 
-<Modal id="overlays" bind:this={dialog} title={t('disks:Overlays.title', { disk: disk.name })} onclose={close} data-disk={disk.id}>
+<Modal
+  id="overlays"
+  bind:this={dialog}
+  title={t('disks:Overlays.title', { disk: disk.name })}
+  onclose={close}
+  data-disk={disk.id}
+>
   <p class="note">{t('disks:Overlays.note')}</p>
   <ul class="rows">
     {#each mine as o (o.id)}
@@ -71,12 +110,26 @@
       <li data-overlay={o.id}>
         <div class="what">
           <strong>{o.name}</strong>
-          <span class="meta">{o.fork ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) }) : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length ? t('disks:Overlays.usedBy', { machines: users }) : t('disks:Overlays.usedByNone')}</span>
+          <span class="meta"
+            >{o.fork
+              ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) })
+              : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length
+              ? t('disks:Overlays.usedBy', { machines: users })
+              : t('disks:Overlays.usedByNone')}</span
+          >
         </div>
         <div class="actions">
-          <button onclick={() => rename(o)} title={t('disks:Overlays.renameButton.title')} data-action="rename-overlay"><Icon name="pencil" size={16} />{t('disks:Overlays.renameButton')}</button>
-          <button onclick={() => remove(o)} title={t('disks:Overlays.deleteButton.title')} data-action="delete-overlay"><Icon name="trash" size={16} />{t('disks:Overlays.deleteButton')}</button>
-          {#if disk.kind === 'stored'}<button onclick={() => merge(o)} title={t('disks:Overlays.mergeButton.title')} data-action="merge-overlay"><Icon name="git-merge" size={16} />{t('disks:Overlays.mergeButton')}</button>{/if}
+          <button onclick={() => rename(o)} title={t('disks:Overlays.renameButton.title')} data-action="rename-overlay"
+            ><Icon name="pencil" size={16} />{t('disks:Overlays.renameButton')}</button
+          >
+          <button onclick={() => remove(o)} title={t('disks:Overlays.deleteButton.title')} data-action="delete-overlay"
+            ><Icon name="trash" size={16} />{t('disks:Overlays.deleteButton')}</button
+          >
+          {#if disk.kind === 'stored'}<button
+              onclick={() => merge(o)}
+              title={t('disks:Overlays.mergeButton.title')}
+              data-action="merge-overlay"><Icon name="git-merge" size={16} />{t('disks:Overlays.mergeButton')}</button
+            >{/if}
           <ExportMenu id={o.id} {disk} overlay={o.id} changes={disk.kind !== 'blank'} />
         </div>
       </li>
@@ -85,11 +138,20 @@
     {/each}
   </ul>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()} data-action="close-overlays">{t('disks:Overlays.close')}</button>{/snippet}
+  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()} data-action="close-overlays"
+      >{t('disks:Overlays.close')}</button
+    >{/snippet}
 </Modal>
 
 <style>
   /* An overlay's line (size, date, machines) is long: it takes the row, its actions go under it. */
-  :global(.body) .rows > li > .what { flex-basis: 100%; }
-  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  :global(.body) .rows > li > .what {
+    flex-basis: 100%;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
 </style>

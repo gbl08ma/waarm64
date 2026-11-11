@@ -17,7 +17,17 @@ async function convert(m: ToPng): Promise<Blob> {
     bitmap.close();
   } else {
     canvas = new OffscreenCanvas(m.width, m.height);
-    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(m.pixels.buffer, m.pixels.byteOffset, m.width * m.height * 4), m.width, m.height), 0, 0);
+    canvas
+      .getContext('2d')!
+      .putImageData(
+        new ImageData(
+          new Uint8ClampedArray(m.pixels.buffer, m.pixels.byteOffset, m.width * m.height * 4),
+          m.width,
+          m.height,
+        ),
+        0,
+        0,
+      );
   }
   return canvas.convertToBlob({ type: 'image/png' });
 }

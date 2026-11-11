@@ -20,13 +20,20 @@ self.onmessage = async (e: MessageEvent<ImportRequest>) => {
     base,
     label,
     overlay: d.overlay,
-    identity: d.identity ?? diskIdentity({ ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) }, openSize(base)),
+    identity:
+      d.identity ??
+      diskIdentity(
+        { ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) },
+        openSize(base),
+      ),
     progress: (phase, done, total) => post({ type: 'progress', phase, done, total }),
     makeRoom,
-  }).finally(() => base.close?.()).then(
-    (r) => post({ type: 'done', blocks: r.blocks }),
-    (err) => post({ type: 'error', error: toWire(err) }),
-  );
+  })
+    .finally(() => base.close?.())
+    .then(
+      (r) => post({ type: 'done', blocks: r.blocks }),
+      (err) => post({ type: 'error', error: toWire(err) }),
+    );
 };
 
 /** The virtual size the overlay's identity records (a qcow2's header, else the file's size). */

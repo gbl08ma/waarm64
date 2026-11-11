@@ -13,7 +13,13 @@ import { guestUnit } from './guest-unit.ts';
 import type { Credential } from './machine.ts';
 
 /** Where networkd reads .network files (systemd.network(5)), /lib for older layouts. */
-const DIRS = ['/etc/systemd/network', '/run/systemd/network', '/usr/local/lib/systemd/network', '/usr/lib/systemd/network', '/lib/systemd/network'];
+const DIRS = [
+  '/etc/systemd/network',
+  '/run/systemd/network',
+  '/usr/local/lib/systemd/network',
+  '/usr/lib/systemd/network',
+  '/lib/systemd/network',
+];
 
 /** What every .network file gets: the lease's MTU and search domains, v4 and v6. */
 export const DROPIN = '[DHCPv4]\nUseMTU=yes\nUseDomains=yes\n\n[DHCPv6]\nUseDomains=yes\n';

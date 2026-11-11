@@ -9,5 +9,8 @@
 
 <style>
   /* The package's component draws the <svg>, with its class. */
-  :global(svg.tabler-icon) { flex: none; display: block; }
+  :global(svg.tabler-icon) {
+    flex: none;
+    display: block;
+  }
 </style>

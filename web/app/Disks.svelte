@@ -38,7 +38,10 @@
   const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string, disk: DiskRecord) {
-    const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), { title: t('disks:Disks.newOverlay.title'), ok: t('disks:Disks.newOverlay.ok') });
+    const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), {
+      title: t('disks:Disks.newOverlay.title'),
+      ok: t('disks:Disks.newOverlay.ok'),
+    });
     if (!name) return;
     await act(t('disks:Disks.busy.newOverlay'), async () => {
       if (!(await offFirst(machine))) return;
@@ -53,7 +56,9 @@
   async function switchTo(attachment: string, overlay: string) {
     await act(t('disks:Disks.busy.switch'), async () => {
       if (!(await offFirst(machine))) return;
-      await switchOverlay(store, plain(machine), attachment, overlay).catch((e) => { throw new MsgError('disks:Disks.failed.switch', {}, { cause: e }); });
+      await switchOverlay(store, plain(machine), attachment, overlay).catch((e) => {
+        throw new MsgError('disks:Disks.failed.switch', {}, { cause: e });
+      });
     });
   }
   /**
@@ -61,14 +66,33 @@
    * `currentTarget` once dispatched, so read after an await (the power-off question) it was null and nothing was saved.
    */
   function setFlag(id: string, flag: { readOnly?: boolean; inPlace?: boolean; swap?: boolean }) {
-    void act(t('disks:Disks.busy.change'), async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, flag); });
+    void act(t('disks:Disks.busy.change'), async () => {
+      if (await offFirst(machine)) await editAttachment(store, plain(machine), id, flag);
+    });
   }
   async function detach(id: string, d: DiskRecord | undefined) {
     const mine = d ? overlaysOf(d.id) : [];
     const bytes = mine.reduce((n, o) => n + o.bytes, 0);
-    const kept = d?.kind === 'ramdisk' ? msg('disks:Disks.detach.keptRamdisk') : mine.length ? msg('disks:Disks.detach.keptOverlays', { count: mine.length, size: bytesText(bytes) }) : msg('disks:Disks.detach.kept');
-    if (!(await ask.confirm(t('disks:Disks.detach.confirm', { disk: d?.name ?? msg('disks:Disks.detach.theDisk'), machine: machine.name, kept }), { title: t('disks:Disks.detach.title'), ok: t('disks:Disks.detach.ok') }))) return;
-    await act(t('disks:Disks.busy.detach'), async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, { detach: true }); });
+    const kept =
+      d?.kind === 'ramdisk'
+        ? msg('disks:Disks.detach.keptRamdisk')
+        : mine.length
+          ? msg('disks:Disks.detach.keptOverlays', { count: mine.length, size: bytesText(bytes) })
+          : msg('disks:Disks.detach.kept');
+    if (
+      !(await ask.confirm(
+        t('disks:Disks.detach.confirm', {
+          disk: d?.name ?? msg('disks:Disks.detach.theDisk'),
+          machine: machine.name,
+          kept,
+        }),
+        { title: t('disks:Disks.detach.title'), ok: t('disks:Disks.detach.ok') },
+      ))
+    )
+      return;
+    await act(t('disks:Disks.busy.detach'), async () => {
+      if (await offFirst(machine)) await editAttachment(store, plain(machine), id, { detach: true });
+    });
   }
 
   // Import.
@@ -91,40 +115,106 @@
     {@const d = disks.get(a.disk)}
     <li data-attachment={a.id}>
       <div class="row">
-        <span class="kind" title={d ? diskKind(d.kind).text : ''}><Icon name={d ? diskKind(d.kind).icon : 'x'} size={18} /></span>
+        <span class="kind" title={d ? diskKind(d.kind).text : ''}
+          ><Icon name={d ? diskKind(d.kind).icon : 'x'} size={18} /></span
+        >
         <strong>{d?.name ?? t('disks:Disks.missing')}</strong>
-        <span class="meta">{d ? t('disks:Disks.meta', { kind: diskKind(d.kind).text, size: bytesText(d.size), letter: String.fromCharCode(97 + i) }) : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</span>
+        <span class="meta"
+          >{d
+            ? t('disks:Disks.meta', {
+                kind: diskKind(d.kind).text,
+                size: bytesText(d.size),
+                letter: String.fromCharCode(97 + i),
+              })
+            : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</span
+        >
         <span class="grow"></span>
-        <Check compact checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(on) => setFlag(a.id, { readOnly: on })}>{t('disks:Disks.readOnly')}</Check>
+        <Check
+          compact
+          checked={a.readOnly}
+          disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'}
+          onchange={(on) => setFlag(a.id, { readOnly: on })}>{t('disks:Disks.readOnly')}</Check
+        >
         {#if d?.kind === 'ramdisk'}
-          <Check compact checked={!!a.swap} onchange={(on) => setFlag(a.id, { swap: on })} title={t('disks:Disks.swap.title')}>{t('disks:Disks.swap')}</Check>
+          <Check
+            compact
+            checked={!!a.swap}
+            onchange={(on) => setFlag(a.id, { swap: on })}
+            title={t('disks:Disks.swap.title')}>{t('disks:Disks.swap')}</Check
+          >
         {/if}
         {#if d?.kind === 'stored' && !a.readOnly}
-          <Check compact checked={!!a.inPlace} onchange={(on) => setFlag(a.id, { inPlace: on })} title={t('disks:Disks.inPlace.title')}>{t('disks:Disks.inPlace')}</Check>
+          <Check
+            compact
+            checked={!!a.inPlace}
+            onchange={(on) => setFlag(a.id, { inPlace: on })}
+            title={t('disks:Disks.inPlace.title')}>{t('disks:Disks.inPlace')}</Check
+          >
         {/if}
-        <MoveButtons index={i} count={machine.attachments.length} onmove={(by) => act(t('disks:Disks.busy.move'), () => editAttachment(store, plain(machine), a.id, { move: by }))} upTitle={t('disks:Disks.moveUp.title')} downTitle={t('disks:Disks.moveDown.title')} />
-        <button onclick={() => detach(a.id, d)} title={t('disks:Disks.detach.button.title')}>{t('disks:Disks.detach.button')}</button>
+        <MoveButtons
+          index={i}
+          count={machine.attachments.length}
+          onmove={(by) =>
+            act(t('disks:Disks.busy.move'), () => editAttachment(store, plain(machine), a.id, { move: by }))}
+          upTitle={t('disks:Disks.moveUp.title')}
+          downTitle={t('disks:Disks.moveDown.title')}
+        />
+        <button onclick={() => detach(a.id, d)} title={t('disks:Disks.detach.button.title')}
+          >{t('disks:Disks.detach.button')}</button
+        >
       </div>
       {#if d?.kind === 'url'}<p class="note">{text(URL_SLOW)}</p>{/if}
       {#if d && !a.readOnly && d.kind !== 'ramdisk' && !a.inPlace}
         <div class="overlays">
-          <label>{t('disks:Disks.overlays.label')}
-            <select value={a.overlay ?? ''} onchange={(e) => switchTo(a.id, e.currentTarget.value)} data-field="overlay">
+          <label
+            >{t('disks:Disks.overlays.label')}
+            <select
+              value={a.overlay ?? ''}
+              onchange={(e) => switchTo(a.id, e.currentTarget.value)}
+              data-field="overlay"
+            >
               {#if !a.overlay}<option value="">{t('disks:Disks.overlays.none')}</option>{/if}
-              {#each overlaysOf(d.id) as o (o.id)}<option value={o.id}>{o.fork ? t('disks:Disks.overlays.forked', { name: o.name, size: bytesText(o.bytes) }) : t('disks:Disks.overlays.option', { name: o.name, size: bytesText(o.bytes) })}</option>{/each}
+              {#each overlaysOf(d.id) as o (o.id)}<option value={o.id}
+                  >{o.fork
+                    ? t('disks:Disks.overlays.forked', { name: o.name, size: bytesText(o.bytes) })
+                    : t('disks:Disks.overlays.option', { name: o.name, size: bytesText(o.bytes) })}</option
+                >{/each}
             </select>
           </label>
-          <button onclick={() => newOverlay(a.id, d)} title={t('disks:Disks.newEmpty.title')}><Icon name="plus" size={16} />{t('disks:Disks.newEmpty')}</button>
-          {#if overlaysOf(d.id).length}<button onclick={() => (overlaysOpen = d.id)} title={t('disks:Disks.overlaysButton.title')} data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</button>{/if}
-          {#if a.overlay && overlays.some((x) => x.id === a.overlay)}<ExportMenu id={a.id} disk={d} overlay={a.overlay} changes={d.kind !== 'blank'} />{/if}
+          <button onclick={() => newOverlay(a.id, d)} title={t('disks:Disks.newEmpty.title')}
+            ><Icon name="plus" size={16} />{t('disks:Disks.newEmpty')}</button
+          >
+          {#if overlaysOf(d.id).length}<button
+              onclick={() => (overlaysOpen = d.id)}
+              title={t('disks:Disks.overlaysButton.title')}
+              data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</button
+            >{/if}
+          {#if a.overlay && overlays.some((x) => x.id === a.overlay)}<ExportMenu
+              id={a.id}
+              disk={d}
+              overlay={a.overlay}
+              changes={d.kind !== 'blank'}
+            />{/if}
           {#if d.kind !== 'blank'}
-            <button onclick={() => importInputs[a.id]?.click()} title={t('disks:Disks.importChanges.title')}><Icon name="upload" size={16} />{t('disks:Disks.importChanges')}</button>
-            <input type="file" hidden bind:this={importInputs[a.id]} onchange={imported(a.id)} data-field="import-changes">
+            <button onclick={() => importInputs[a.id]?.click()} title={t('disks:Disks.importChanges.title')}
+              ><Icon name="upload" size={16} />{t('disks:Disks.importChanges')}</button
+            >
+            <input
+              type="file"
+              hidden
+              bind:this={importInputs[a.id]}
+              onchange={imported(a.id)}
+              data-field="import-changes"
+            />
           {/if}
         </div>
       {:else if d?.kind === 'stored'}
         <div class="overlays">
-          {#if overlaysOf(d.id).length}<button onclick={() => (overlaysOpen = d.id)} title={t('disks:Disks.overlaysButton.title')} data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</button>{/if}
+          {#if overlaysOf(d.id).length}<button
+              onclick={() => (overlaysOpen = d.id)}
+              title={t('disks:Disks.overlaysButton.title')}
+              data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</button
+            >{/if}
           <ExportMenu id={a.id} disk={d} overlay={undefined} changes={false} />
         </div>
       {/if}
@@ -134,24 +224,82 @@
   {/each}
 </ol>
 {#if machine.attachments.length < MAX_DISKS}
-  <button class="add" onclick={() => (adding = true)} data-action="add-disk-open"><Icon name="plus" size={16} />{t('disks:Disks.add')}</button>
+  <button class="add" onclick={() => (adding = true)} data-action="add-disk-open"
+    ><Icon name="plus" size={16} />{t('disks:Disks.add')}</button
+  >
 {:else}
   <p class="note">{t('disks:Disks.full', { max: MAX_DISKS })}</p>
 {/if}
 {#if adding}<AddDisk {store} {machine} {act} {offFirst} close={() => (adding = false)} />{/if}
-{#if overlaysShown}<Overlays {store} disk={overlaysShown} {overlays} {machines} {act} close={() => (overlaysOpen = undefined)} />{/if}
+{#if overlaysShown}<Overlays
+    {store}
+    disk={overlaysShown}
+    {overlays}
+    {machines}
+    {act}
+    close={() => (overlaysOpen = undefined)}
+  />{/if}
 
 <style>
-  .disks { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .disks > li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-  .disks > li.none { color: var(--dim); }
-  .row, .overlays { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .overlays { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
-  .grow { flex: 1; }
-  .kind { color: var(--dim); }
-  .meta, .note { color: var(--dim); font-size: 12px; }
-  .note { margin: 4px 0 0; }
-  .overlays > label { display: inline-flex; align-items: center; gap: 6px; }
-  .row > button, .overlays > button, .add { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .add { padding: 5px 12px; }
+  .disks {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .disks > li {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+  }
+  .disks > li.none {
+    color: var(--dim);
+  }
+  .row,
+  .overlays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .overlays {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+  .grow {
+    flex: 1;
+  }
+  .kind {
+    color: var(--dim);
+  }
+  .meta,
+  .note {
+    color: var(--dim);
+    font-size: 12px;
+  }
+  .note {
+    margin: 4px 0 0;
+  }
+  .overlays > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .row > button,
+  .overlays > button,
+  .add {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 10px;
+  }
+  .add {
+    padding: 5px 12px;
+  }
 </style>

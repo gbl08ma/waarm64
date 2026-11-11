@@ -21,10 +21,13 @@ export function sharesPathError(path: string): Msg | undefined {
   if (path === '/') return msg('folders:shares-mount.root');
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(path)) return msg('folders:shares-mount.control');
-  if (new TextEncoder().encode(path).length > 255 || mountUnit(path).length + '.automount'.length > 255) return msg('folders:shares-mount.tooLong');
+  if (new TextEncoder().encode(path).length > 255 || mountUnit(path).length + '.automount'.length > 255)
+    return msg('folders:shares-mount.tooLong');
   if (/[%]|\s$|\\$/.test(path)) return msg('folders:shares-mount.characters');
-  if (path.endsWith('/') || path.includes('//') || path.split('/').some((p) => p === '.' || p === '..')) return msg('folders:shares-mount.plainly');
-  if (OWN.includes(path) || UNDER.some((d) => path === d || path.startsWith(`${d}/`))) return msg('folders:shares-mount.guestOwn', { path });
+  if (path.endsWith('/') || path.includes('//') || path.split('/').some((p) => p === '.' || p === '..'))
+    return msg('folders:shares-mount.plainly');
+  if (OWN.includes(path) || UNDER.some((d) => path === d || path.startsWith(`${d}/`)))
+    return msg('folders:shares-mount.guestOwn', { path });
   return undefined;
 }
 
@@ -48,8 +51,14 @@ export const SHARES_BY_HAND = `mount -t 9p -o trans=virtio,version=9p2000.L,cach
 export function sharesCredentials(path: string, description: string): Credential[] {
   const unit = mountUnit(path);
   return [
-    { name: `systemd.extra-unit.${unit}.mount`, data: `[Unit]\nDescription=${oneLine(description)}\n\n[Mount]\nWhat=${SHARES_TAG}\nWhere=${path}\nType=9p\nOptions=${SHARES_OPTIONS}\n` },
-    { name: `systemd.extra-unit.${unit}.automount`, data: `[Unit]\nDescription=${oneLine(description)}\n\n[Automount]\nWhere=${path}\n` },
+    {
+      name: `systemd.extra-unit.${unit}.mount`,
+      data: `[Unit]\nDescription=${oneLine(description)}\n\n[Mount]\nWhat=${SHARES_TAG}\nWhere=${path}\nType=9p\nOptions=${SHARES_OPTIONS}\n`,
+    },
+    {
+      name: `systemd.extra-unit.${unit}.automount`,
+      data: `[Unit]\nDescription=${oneLine(description)}\n\n[Automount]\nWhere=${path}\n`,
+    },
     { name: 'systemd.unit-dropin.remote-fs.target~webpc-shares', data: `[Unit]\nWants=${unit}.automount\n` },
   ];
 }

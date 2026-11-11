@@ -8,7 +8,14 @@ import { diskIdentity } from '../devices.ts';
 import { msg, MsgError, toWire, type Msg } from '../msg.ts';
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
-import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type DataCluster, type Sink } from '../qcow2-write.ts';
+import {
+  changedClusters,
+  nonZeroClusters,
+  rawChunks,
+  writeQcow2,
+  type DataCluster,
+  type Sink,
+} from '../qcow2-write.ts';
 import { inflatePool } from '../inflate-pool.ts';
 import { deflatePool } from './deflate-pool.ts';
 import type { ExportRequest, ExportResult } from './export.ts';
@@ -29,7 +36,20 @@ async function exportDisk(r: ExportRequest) {
   const inflater = inflatePool(); // a qcow2 base's compressed clusters
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
   // Waits for the machine's worker to let go of the overlay. A disk without one is exported as it is (a stored disk).
-  const files = d.overlay ? await openOverlay(d.overlay, d.identity ?? diskIdentity({ ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) }, base.size)).catch((e) => { src.close?.(); inflater.close(); throw e; }) : undefined;
+  const files = d.overlay
+    ? await openOverlay(
+        d.overlay,
+        d.identity ??
+          diskIdentity(
+            { ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) },
+            base.size,
+          ),
+      ).catch((e) => {
+        src.close?.();
+        inflater.close();
+        throw e;
+      })
+    : undefined;
   let out: FileSystemWritableFileStream | undefined;
   try {
     const disk = files ? overlay(base, files.data, files.map) : undefined;
@@ -38,7 +58,10 @@ async function exportDisk(r: ExportRequest) {
     const sink: Sink = async (chunk, at) => {
       if (out) {
         if (at === undefined) await out.write(chunk as Uint8Array<ArrayBuffer>);
-        else { await out.write({ type: 'write', position: at, data: chunk as Uint8Array<ArrayBuffer> }); await out.seek(written); }
+        else {
+          await out.write({ type: 'write', position: at, data: chunk as Uint8Array<ArrayBuffer> });
+          await out.seek(written);
+        }
       } else {
         const copy = chunk.slice(); // the writer may reuse nothing, but a transferred buffer must be ours alone
         post({ type: 'chunk', data: copy, at }, [copy.buffer]);
@@ -60,9 +83,13 @@ async function exportDisk(r: ExportRequest) {
       if (r.mode === 'changes') {
         const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
         backing = { name: r.baseName, format: base.format, hash };
-        clusters = progressOf(changedClusters(disk!), disk!.written().length, (done, total) => progress(msg('disks:export-worker.writingChanges'), done, total));
+        clusters = progressOf(changedClusters(disk!), disk!.written().length, (done, total) =>
+          progress(msg('disks:export-worker.writingChanges'), done, total),
+        );
       } else {
-        clusters = nonZeroClusters(whole, 1 << 20, (done) => progress(msg('disks:export-worker.writingDisk'), done, whole.size));
+        clusters = nonZeroClusters(whole, 1 << 20, (done) =>
+          progress(msg('disks:export-worker.writingDisk'), done, whole.size),
+        );
       }
       const pool = r.compress ? deflatePool() : undefined;
       try {
@@ -84,7 +111,11 @@ async function exportDisk(r: ExportRequest) {
 }
 
 /** `clusters`, with `progress` told every 256 of them. */
-async function* progressOf(clusters: AsyncIterable<DataCluster>, total: number, progress: (done: number, total: number) => void) {
+async function* progressOf(
+  clusters: AsyncIterable<DataCluster>,
+  total: number,
+  progress: (done: number, total: number) => void,
+) {
   let done = 0;
   for await (const c of clusters) {
     yield c;

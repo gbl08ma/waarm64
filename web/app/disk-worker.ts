@@ -28,7 +28,13 @@ self.onmessage = async (e: MessageEvent<DiskJob>) => {
       const files = await openStoredForWriting(j.path, j.identity, 0);
       const pool = inflatePool();
       try {
-        const r = await importImage(blobSource(j.file), files, (done, total) => post({ type: 'progress', done, total }), pool, makeRoom);
+        const r = await importImage(
+          blobSource(j.file),
+          files,
+          (done, total) => post({ type: 'progress', done, total }),
+          pool,
+          makeRoom,
+        );
         post({ type: 'done', size: r.size, format: r.format, blocks: r.blocks });
       } finally {
         files.close();

@@ -10,7 +10,16 @@ import { fromWire, MsgError, type Params } from '../msg.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { Store } from './store.ts';
-import { deviceName, identityAt, identityKey, matchDevices, problemText, usbLock, type ProblemWords, type SeenDevice } from './usb-ports.ts';
+import {
+  deviceName,
+  identityAt,
+  identityKey,
+  matchDevices,
+  problemText,
+  usbLock,
+  type ProblemWords,
+  type SeenDevice,
+} from './usb-ports.ts';
 
 /** A `USBDevice` or a `HIDDevice`, as far as the page uses one (lib.dom has neither). */
 export type HostDevice = SeenDevice & { forget?(): Promise<void>; collections?: unknown[] };
@@ -22,7 +31,8 @@ type BrowserApi = {
 export type Api = 'usb' | 'hid';
 
 /** `navigator.usb` or `navigator.hid`, if this browser has it (Chromium: both; a page needs a secure context). */
-export const browserApi = (api: Api) => (globalThis.navigator as unknown as Record<Api, BrowserApi | undefined> | undefined)?.[api];
+export const browserApi = (api: Api) =>
+  (globalThis.navigator as unknown as Record<Api, BrowserApi | undefined> | undefined)?.[api];
 export const hasApi = (api: Api) => !!browserApi(api);
 
 /** The devices of `api` this origin may use and that are plugged in, in the browser's order. */
@@ -51,8 +61,11 @@ export async function requestDevices(api: Api, filters: object[] = []): Promise<
 }
 
 /** The filter that finds an entry's device in the chooser: its IDs (and serial number: WebUSB's filters take one, WebHID's don't). */
-export const filterFor = (e: Pick<UsbEntry, 'api' | 'vendorId' | 'productId' | 'serialNumber'>) =>
-  ({ vendorId: e.vendorId, productId: e.productId, ...(e.api === 'usb' && e.serialNumber ? { serialNumber: e.serialNumber } : {}) });
+export const filterFor = (e: Pick<UsbEntry, 'api' | 'vendorId' | 'productId' | 'serialNumber'>) => ({
+  vendorId: e.vendorId,
+  productId: e.productId,
+  ...(e.api === 'usb' && e.serialNumber ? { serialNumber: e.serialNumber } : {}),
+});
 
 /** The identity of `device` among `api`'s granted devices now (its index among serial-less twins). */
 export async function identityOfDevice(api: Api, device: HostDevice): Promise<UsbIdentity> {
@@ -63,8 +76,20 @@ export async function identityOfDevice(api: Api, device: HostDevice): Promise<Us
 
 // The grants this browser has given (identity keys): WebUSB and WebHID say only which granted devices are plugged in.
 const GRANTED = 'webpc.usbGranted';
-const grants = (): string[] => { try { return JSON.parse(localStorage.getItem(GRANTED) ?? '[]') as string[]; } catch { return []; } };
-const keepGrants = (keys: string[]) => { try { localStorage.setItem(GRANTED, JSON.stringify([...new Set(keys)])); } catch { /* not kept */ } };
+const grants = (): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(GRANTED) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+};
+const keepGrants = (keys: string[]) => {
+  try {
+    localStorage.setItem(GRANTED, JSON.stringify([...new Set(keys)]));
+  } catch {
+    /* not kept */
+  }
+};
 export const isGranted = (key: string) => grants().includes(key);
 export const granted = (...keys: string[]) => keepGrants([...grants(), ...keys]);
 export const ungranted = (key: string) => keepGrants(grants().filter((k) => k !== key));
@@ -89,13 +114,15 @@ export async function findDevices(entries: UsbEntry[]): Promise<Map<string, Host
 export async function entryStates(entries: UsbEntry[], attached: Set<string>, locks: UsbLocks): Promise<EntryView[]> {
   const found = await findDevices(entries);
   const held = await heldLocks();
-  return Promise.all(entries.map(async (entry): Promise<EntryView> => {
-    if (attached.has(entry.id)) return { entry, state: 'attached' };
-    const lock = usbLock(entry);
-    if (held.has(lock) && !locks.mine(lock)) return { entry, state: 'held', holder: await locks.holder(lock) };
-    if (found.has(entry.id)) return { entry, state: 'plugged' };
-    return { entry, state: isGranted(identityKey(entry)) ? 'unplugged' : 'ungranted' };
-  }));
+  return Promise.all(
+    entries.map(async (entry): Promise<EntryView> => {
+      if (attached.has(entry.id)) return { entry, state: 'attached' };
+      const lock = usbLock(entry);
+      if (held.has(lock) && !locks.mine(lock)) return { entry, state: 'held', holder: await locks.holder(lock) };
+      if (found.has(entry.id)) return { entry, state: 'plugged' };
+      return { entry, state: isGranted(identityKey(entry)) ? 'unplugged' : 'ungranted' };
+    }),
+  );
 }
 
 /** The device locks of this page (docs/usb.md "The page": one machine at a time per device), held while a device is attached here. */
@@ -107,7 +134,14 @@ export class UsbLocks extends Locks {
 }
 
 /** A connector of the running machine. */
-export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; problems?: UsbProblem[] };
+export type Connector = {
+  device: UsbIdentity | UsbVirtual;
+  name: string;
+  entry?: string;
+  state: 'attaching' | 'attached' | 'detaching';
+  speed?: UsbSpeed;
+  problems?: UsbProblem[];
+};
 
 /**
  * Why an attach failed: its message (the headline), and, where the device worker said which problems, their `words` for
@@ -140,7 +174,10 @@ export class UsbPorts {
   readonly connectors: (Connector | undefined)[] = Array.from({ length: USB_CONNECTORS }, () => undefined);
   private port: MessagePort;
   private locks: UsbLocks;
-  private pending = new Map<number, { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>();
+  private pending = new Map<
+    number,
+    { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }
+  >();
   onChange = () => {};
   /** The guest set the LEDs of the keyboard on connector `c` (the built-in one's: bit 0 Num, 1 Caps, 2 Scroll Lock). */
   onLeds: (c: number, leds: number) => void = () => {};
@@ -160,7 +197,10 @@ export class UsbPorts {
     if (m.type !== 'usb-state') return;
     const c = this.connectors[m.connector];
     const p = this.pending.get(m.connector);
-    if (p) { clearTimeout(p.timer); this.pending.delete(m.connector); }
+    if (p) {
+      clearTimeout(p.timer);
+      this.pending.delete(m.connector);
+    }
     if (m.state === 'attached') {
       if (c) Object.assign(c, { state: 'attached', speed: m.speed, problems: m.problems });
       p?.resolve();
@@ -200,11 +240,17 @@ export class UsbPorts {
   }
 
   /** The connector entry `id` is attached on (or being attached), if any. */
-  connectorOf(entry: string) { return this.connectors.findIndex((c) => c?.entry === entry); }
+  connectorOf(entry: string) {
+    return this.connectors.findIndex((c) => c?.entry === entry);
+  }
   /** The entries attached now. */
-  attachedEntries() { return new Set(this.connectors.flatMap((c) => (c?.entry && c.state === 'attached' ? [c.entry] : []))); }
+  attachedEntries() {
+    return new Set(this.connectors.flatMap((c) => (c?.entry && c.state === 'attached' ? [c.entry] : [])));
+  }
   /** What is on the ports now, named (for Snapshot's question). */
-  attached() { return this.connectors.flatMap((c, i) => (c ? [{ connector: i, ...c }] : [])); }
+  attached() {
+    return this.connectors.flatMap((c, i) => (c ? [{ connector: i, ...c }] : []));
+  }
 
   /**
    * Attaches `device` on `connector` (taking its lock first: a `UsbHeldError` when another machine has it). Rejects with
@@ -214,7 +260,10 @@ export class UsbPorts {
     const busy = this.connectors[connector];
     if (busy) throw new UsbError('usb:usb-live.connectorTaken', { connector: connector + 1, name: busy.name });
     if (device.api !== 'virtual' && !(await this.locks.take(usbLock(device)))) throw new UsbHeldError();
-    if (this.connectors[connector]) { if (device.api !== 'virtual') this.locks.drop(usbLock(device)); throw new UsbError('usb:usb-live.connectorInUse', { connector: connector + 1 }); }
+    if (this.connectors[connector]) {
+      if (device.api !== 'virtual') this.locks.drop(usbLock(device));
+      throw new UsbError('usb:usb-live.connectorInUse', { connector: connector + 1 });
+    }
     this.connectors[connector] = { device, name: deviceName(device), entry, state: 'attaching' };
     this.onChange();
     await this.request(connector, { type: 'usb-attach', connector, device }, ms);
@@ -246,14 +295,19 @@ export class UsbPorts {
 
   /** Detaches everything (Snapshot, Suspend: docs/usb.md "The page"); returns what was attached, to attach it again. */
   async detachAll(): Promise<{ connector: number; device: UsbIdentity | UsbVirtual; entry?: string }[]> {
-    const was = this.attached().filter((c) => c.state === 'attached').map((c) => ({ connector: c.connector, device: c.device, entry: c.entry }));
+    const was = this.attached()
+      .filter((c) => c.state === 'attached')
+      .map((c) => ({ connector: c.connector, device: c.device, entry: c.entry }));
     await Promise.all(this.connectors.map((c, i) => (c ? this.detach(i).catch(() => {}) : undefined)));
     return was;
   }
 
   /** The machine stopped: nothing is attached any more; the locks go. */
   close() {
-    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new UsbError('usb:usb-live.stopped')); }
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new UsbError('usb:usb-live.stopped'));
+    }
     this.pending.clear();
     for (let i = 0; i < USB_CONNECTORS; i++) this.free(i);
     this.port.onmessage = null;

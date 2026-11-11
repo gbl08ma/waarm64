@@ -19,20 +19,25 @@ export class Locks {
     [this.store, this.topic, this.me, this.release] = [store, topic, me, release];
     this.off = store.onNote((n: Note) => {
       const lock = String(n.lock ?? '');
-      if (n.topic === `${topic}-who` && this.held.has(lock)) store.tell({ topic: `${topic}-held`, lock, name: this.me() });
+      if (n.topic === `${topic}-who` && this.held.has(lock))
+        store.tell({ topic: `${topic}-held`, lock, name: this.me() });
       else if (n.topic === `${topic}-held`) this.answers.get(lock)?.(String(n.name));
       else if (n.topic === `${topic}-release` && this.held.has(lock)) this.release(lock);
     });
   }
 
-  mine(lock: string) { return this.held.has(lock); }
+  mine(lock: string) {
+    return this.held.has(lock);
+  }
 
   /** Takes `lock` if no one holds it (`shared`: or others only read): false if another machine does. */
   async take(lock: string, o: { shared?: boolean } = {}): Promise<boolean> {
     if (this.held.has(lock)) return true;
     if (!globalThis.navigator?.locks) return true;
     let release!: () => void;
-    const kept = new Promise<void>((resolve) => { release = resolve; });
+    const kept = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const got = await new Promise<boolean>((resolve) => {
       void navigator.locks.request(lock, { ifAvailable: true, mode: o.shared ? 'shared' : 'exclusive' }, (l) => {
         resolve(!!l);
@@ -47,13 +52,22 @@ export class Locks {
     this.held.get(lock)?.();
     this.held.delete(lock);
   }
-  dropAll() { for (const l of [...this.held.keys()]) this.drop(l); }
+  dropAll() {
+    for (const l of [...this.held.keys()]) this.drop(l);
+  }
 
   /** The name of the machine that holds `lock` in another tab (undefined if none answers in time). */
   holder(lock: string, ms = 400): Promise<string | undefined> {
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.answers.delete(lock); resolve(undefined); }, ms);
-      this.answers.set(lock, (name) => { clearTimeout(t); this.answers.delete(lock); resolve(name); });
+      const t = setTimeout(() => {
+        this.answers.delete(lock);
+        resolve(undefined);
+      }, ms);
+      this.answers.set(lock, (name) => {
+        clearTimeout(t);
+        this.answers.delete(lock);
+        resolve(name);
+      });
       this.store.tell({ topic: `${this.topic}-who`, lock });
     });
   }

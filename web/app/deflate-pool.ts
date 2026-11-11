@@ -8,9 +8,14 @@ import type { DeflateRequest, DeflateResult } from './deflate-worker.ts';
  * thread: 49 MiB/s of data on the dev VM; four: ~125, where reading the disk is what's left), and
  * the machine has stopped, so its cores are free. Workers of the disk-out worker (web/app/export-worker.ts), each with a batch or two.
  */
-export function deflatePool(n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 2) - 1))): Packer & { close(): void } {
+export function deflatePool(
+  n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 2) - 1)),
+): Packer & { close(): void } {
   const waiting = new Map<number, { resolve(r: (Uint8Array | undefined)[]): void; reject(e: Error): void }>();
-  const fail = (e: Error) => { for (const w of waiting.values()) w.reject(e); waiting.clear(); };
+  const fail = (e: Error) => {
+    for (const w of waiting.values()) w.reject(e);
+    waiting.clear();
+  };
   const workers = Array.from({ length: n }, () => {
     const w = new Worker(new URL('./deflate-worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent<DeflateResult>) => {
@@ -19,7 +24,7 @@ export function deflatePool(n = Math.max(1, Math.min(4, (navigator.hardwareConcu
       waiting.delete(m.id);
       if ('error' in m) return void asked?.reject(fromWire(m.error));
       let at = 0;
-      asked?.resolve(Array.from(m.lengths, (len) => (len ? m.packed.subarray(at, at += len) : undefined)));
+      asked?.resolve(Array.from(m.lengths, (len) => (len ? m.packed.subarray(at, (at += len)) : undefined)));
     };
     w.onerror = (e) => fail(new Error(`a compressor failed: ${e.message}`));
     return w;
@@ -35,6 +40,8 @@ export function deflatePool(n = Math.max(1, Math.min(4, (navigator.hardwareConcu
         workers[id % n].postMessage({ id, clusters: copy } satisfies DeflateRequest, [copy.buffer]);
       });
     },
-    close() { for (const w of workers) w.terminate(); },
+    close() {
+      for (const w of workers) w.terminate();
+    },
   };
 }

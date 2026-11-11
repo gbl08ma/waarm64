@@ -89,7 +89,17 @@ export const ui = $state({
    */
   /** Bumped to open the Network menu (a connection was just attached here: it shows how it goes). */
   netMenu: 0,
-  netWizard: undefined as undefined | { mode: 'attach' | 'new' | 'edit'; machine?: string; adapter?: number; connection?: string; here?: boolean; tick?: number; /** The local helper's pairing link (`#net=`): the wizard opens on it. */ localURL?: string },
+  netWizard: undefined as
+    | undefined
+    | {
+        mode: 'attach' | 'new' | 'edit';
+        machine?: string;
+        adapter?: number;
+        connection?: string;
+        here?: boolean;
+        tick?: number;
+        /** The local helper's pairing link (`#net=`): the wizard opens on it. */ localURL?: string;
+      },
   /**
    * The page's machine's shared folders (docs/shares.md §4): `on` while it runs with them (the toolbar's Folders menu);
    * `path` is where the guest finds them; `wanted` opens the menu (it clears it); `tick` when any of it changes.
@@ -102,7 +112,15 @@ export const ui = $state({
    * failed (Send got no text or image, Type no text, Copy the screen no picture or no write), and `typed`: what became
    * of the last Type (the agent's TYPED status: web/agent-frame.ts `TYPED`).
    */
-  clipboard: { on: false, state: 'waiting' as ShareState, permission: 'none' as ReadPermission, stopped: false, canType: false, failed: undefined as undefined | 'send' | 'type' | 'screen', typed: undefined as number | undefined },
+  clipboard: {
+    on: false,
+    state: 'waiting' as ShareState,
+    permission: 'none' as ReadPermission,
+    stopped: false,
+    canType: false,
+    failed: undefined as undefined | 'send' | 'type' | 'screen',
+    typed: undefined as number | undefined,
+  },
   /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
   folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
@@ -110,7 +128,12 @@ export const ui = $state({
    * The status bar (web/app/StatusBar.svelte): the last status as JSON (`data`, for tools), the last second's numbers,
    * the names of the running machine's disks, in its order, and the screen's last second (with when it came, ms).
    */
-  status: { data: '', metrics: undefined as Metrics | undefined, disks: [] as string[], gpu: undefined as { g: Graphics; at: number } | undefined },
+  status: {
+    data: '',
+    metrics: undefined as Metrics | undefined,
+    disks: [] as string[],
+    gpu: undefined as { g: Graphics; at: number } | undefined,
+  },
   /** The status bar's elements (Preferences, web/app/statusbar.ts; remembered as the settings' `statusBar`). */
   statusItems: normalize(settings().statusBar),
   /** Full screen takes the status bar along (Preferences; off: the machine alone, edge to edge). */
@@ -122,7 +145,16 @@ export const ui = $state({
   /** The microphone's state (web/audio.ts `micState`), for the status bar. */
   mic: 'off',
   /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
-  size: { ncpus: 1, ramMiB: 1024, split: undefined as number[] | undefined, gpu: '3d' as '3d' | '2d', vulkan: false, cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
+  size: {
+    ncpus: 1,
+    ramMiB: 1024,
+    split: undefined as number[] | undefined,
+    gpu: '3d' as '3d' | '2d',
+    vulkan: false,
+    cpuChoices: [] as number[],
+    ramChoices: [] as number[],
+    gpuLock: '',
+  },
   /** Bumped when the store's records change (the toolbar's snapshot list rereads). */
   records: 0,
   /**
@@ -136,7 +168,15 @@ export const ui = $state({
     running: false,
     entries: [] as EntryView[],
     /** `problems`: what of an attached device the guest doesn't get, in words (web/app/usb-ports.ts `problemText`). */
-    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; builtin?: boolean; pad?: number; problems?: ProblemWords[] } | null)[],
+    connectors: [] as ({
+      name: string;
+      state: string;
+      entry?: string;
+      virtual?: boolean;
+      builtin?: boolean;
+      pad?: number;
+      problems?: ProblemWords[];
+    } | null)[],
     /** The host's game pads the Gamepad API lists (`index`: `Gamepad.index`), for the game pad of ours (docs/usb.md "The game pad"); `hasPads`: the page has the API. */
     pads: [] as { index: number; name: string }[],
     hasPads: false,
@@ -203,7 +243,11 @@ export type Page = {
   usbAdd(machine: string | undefined, api: 'usb' | 'hid'): Promise<string[]>;
   usbAttach(entry: string): Promise<void>;
   usbDetach(entry: string): Promise<void>;
-  usbEdit(machine: string | undefined, entry: string, change: Partial<Pick<UsbEntry, 'connector' | 'atStart'>>): Promise<void>;
+  usbEdit(
+    machine: string | undefined,
+    entry: string,
+    change: Partial<Pick<UsbEntry, 'connector' | 'atStart'>>,
+  ): Promise<void>;
   usbForget(machine: string | undefined, entry: string): Promise<void>;
   /** Gives the browser's grant for an entry that has none here (a definition's, made on another browser). */
   usbAllow(machine: string | undefined, entry: string): Promise<void>;

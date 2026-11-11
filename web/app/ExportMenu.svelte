@@ -12,7 +12,8 @@
   import { page } from './ui.svelte.ts';
 
   /** `id` names the menu (`export-<id>`); `changes` offers Changes only (not for a blank disk, nor without an overlay). */
-  let { id, disk, overlay, changes }: { id: string; disk: DiskRecord; overlay: string | undefined; changes: boolean } = $props();
+  let { id, disk, overlay, changes }: { id: string; disk: DiskRecord; overlay: string | undefined; changes: boolean } =
+    $props();
 
   let compress = $state(settings().compress ?? true);
   let open = $state(false);
@@ -22,14 +23,34 @@
   }
 </script>
 
-<Menu id={`export-${id}`} icon="download" title={t('disks:ExportMenu.title')} label={t('disks:ExportMenu.label')} bind:open align="left">
-  {#if changes}<button data-save="changes" title={t('disks:ExportMenu.changes.title')} onclick={() => save('changes')}>{t('disks:ExportMenu.changes')}</button>{/if}
-  <button data-save="qcow2" title={t('disks:ExportMenu.qcow2.title')} onclick={() => save('qcow2')}>{t('disks:ExportMenu.qcow2')}</button>
-  <button data-save="raw" title={t('disks:ExportMenu.raw.title')} onclick={() => save('raw')}>{t('disks:ExportMenu.raw')}</button>
-  <Check bind:checked={compress} onchange={() => remember({ compress })} title={t('disks:ExportMenu.compress.title')}>{t('disks:ExportMenu.compress')}</Check>
+<Menu
+  id={`export-${id}`}
+  icon="download"
+  title={t('disks:ExportMenu.title')}
+  label={t('disks:ExportMenu.label')}
+  bind:open
+  align="left"
+>
+  {#if changes}<button data-save="changes" title={t('disks:ExportMenu.changes.title')} onclick={() => save('changes')}
+      >{t('disks:ExportMenu.changes')}</button
+    >{/if}
+  <button data-save="qcow2" title={t('disks:ExportMenu.qcow2.title')} onclick={() => save('qcow2')}
+    >{t('disks:ExportMenu.qcow2')}</button
+  >
+  <button data-save="raw" title={t('disks:ExportMenu.raw.title')} onclick={() => save('raw')}
+    >{t('disks:ExportMenu.raw')}</button
+  >
+  <Check bind:checked={compress} onchange={() => remember({ compress })} title={t('disks:ExportMenu.compress.title')}
+    >{t('disks:ExportMenu.compress')}</Check
+  >
   <p class="hint">{t('disks:ExportMenu.hint')}</p>
 </Menu>
 
 <style>
-  .hint { color: var(--dim); font-size: 12px; margin: 4px 8px; max-width: 260px; }
+  .hint {
+    color: var(--dim);
+    font-size: 12px;
+    margin: 4px 8px;
+    max-width: 260px;
+  }
 </style>

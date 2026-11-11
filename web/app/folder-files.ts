@@ -23,7 +23,9 @@ async function sizeOf(h: FileSystemHandle): Promise<number> {
 
 /** The directory's top level, directories first, with their sizes. */
 export async function topLevel(d: FileSystemDirectoryHandle): Promise<Entry[]> {
-  const list = await Promise.all((await listOf(d)).map(async ([name, h]) => ({ name, kind: h.kind, size: await sizeOf(h) })));
+  const list = await Promise.all(
+    (await listOf(d)).map(async ([name, h]) => ({ name, kind: h.kind, size: await sizeOf(h) })),
+  );
   return list.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
 }
 
@@ -50,7 +52,8 @@ export async function copyTree(from: FileSystemDirectoryHandle, to: FileSystemDi
   c.total ||= await countFiles(from);
   for (const [name, h] of await listOf(from)) {
     if (c.stop) return;
-    if (h.kind === 'directory') await copyTree(h as FileSystemDirectoryHandle, await to.getDirectoryHandle(name, { create: true }), c);
+    if (h.kind === 'directory')
+      await copyTree(h as FileSystemDirectoryHandle, await to.getDirectoryHandle(name, { create: true }), c);
     else {
       const file = await (h as FileSystemFileHandle).getFile();
       await putFile(await to.getFileHandle(name, { create: true }), file);

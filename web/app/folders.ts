@@ -46,7 +46,9 @@ export function rootNames(attached: FolderAttachment[], folders: Folder[]): Map<
 
 /** What the wizard preselects: the most recently used folder that isn't attached already. */
 export function preselect(all: Folder[], attached: FolderAttachment[]): string | undefined {
-  return all.filter((f) => f.lastUsed > 0 && !attached.some((a) => a.id === f.id)).sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
+  return all
+    .filter((f) => f.lastUsed > 0 && !attached.some((a) => a.id === f.id))
+    .sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
 }
 
 /**
@@ -57,7 +59,15 @@ export async function createFolder(store: Store, n: NewFolder): Promise<Folder> 
   const all = await store.all('folders');
   for (const f of all) if (f.handle && n.handle && (await f.handle.isSameEntry(n.handle))) return f;
   const taken = all.map((f) => f.name);
-  const f: Folder = { id: newId(), name: uniqueName(n.name.trim() || t('folders:folders.defaultName'), taken), kind: n.kind, readOnly: !!n.readOnly, ...(n.handle ? { handle: n.handle } : {}), lastUsed: 0, created: Date.now() };
+  const f: Folder = {
+    id: newId(),
+    name: uniqueName(n.name.trim() || t('folders:folders.defaultName'), taken),
+    kind: n.kind,
+    readOnly: !!n.readOnly,
+    ...(n.handle ? { handle: n.handle } : {}),
+    lastUsed: 0,
+    created: Date.now(),
+  };
   await store.put('folders', f);
   return f;
 }
@@ -66,7 +76,13 @@ export async function createFolder(store: Store, n: NewFolder): Promise<Folder> 
 export async function editFolder(store: Store, id: string, change: Partial<Pick<Folder, 'name' | 'readOnly'>>) {
   const f = await store.get('folders', id);
   if (!f) throw new MsgError('folders:folders.folderGone');
-  const name = change.name === undefined ? f.name : uniqueName(change.name.trim() || f.name, (await store.all('folders')).filter((x) => x.id !== id).map((x) => x.name));
+  const name =
+    change.name === undefined
+      ? f.name
+      : uniqueName(
+          change.name.trim() || f.name,
+          (await store.all('folders')).filter((x) => x.id !== id).map((x) => x.name),
+        );
   const next = { ...f, ...change, name };
   await store.put('folders', next);
   return next;
@@ -77,7 +93,11 @@ export async function machinesWith(store: Store, id: string) {
   return (await store.all('machines')).filter((m) => m.folders?.some((a) => a.id === id));
 }
 
-const editAttachments = async (store: Store, machine: string, edit: (m: MachineRecord, list: FolderAttachment[]) => FolderAttachment[]) => {
+const editAttachments = async (
+  store: Store,
+  machine: string,
+  edit: (m: MachineRecord, list: FolderAttachment[]) => FolderAttachment[],
+) => {
   const m = await store.get('machines', machine);
   if (!m) throw new MsgError('folders:folders.machineGone');
   const list = edit(m, m.folders ?? []);
@@ -122,7 +142,11 @@ export async function deleteFolder(store: Store, id: string) {
 }
 
 /** A machine's folders as a device gets them, for those in `present` (ids): each under its root name, read-only as its lock was taken. */
-export function folderSpecs(attached: FolderAttachment[], folders: Folder[], present: Map<string, FileSystemDirectoryHandle>): FolderSpec[] {
+export function folderSpecs(
+  attached: FolderAttachment[],
+  folders: Folder[],
+  present: Map<string, FileSystemDirectoryHandle>,
+): FolderSpec[] {
   const names = rootNames(attached, folders);
   return attached.flatMap((a) => {
     const f = folders.find((x) => x.id === a.id);

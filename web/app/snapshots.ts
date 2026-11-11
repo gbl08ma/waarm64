@@ -10,7 +10,22 @@ import { makeRoom } from '../diskcache.ts';
 import { openSnapshot } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
-import { adaptersOf, canonical, CPU_DEFAULT, macsOf, newId, shapeHash, shapeOf, slots, uniqueName, type CpuFeature, type DiskRecord, type Display, type MachineRecord, type Shape } from './shape.ts';
+import {
+  adaptersOf,
+  canonical,
+  CPU_DEFAULT,
+  macsOf,
+  newId,
+  shapeHash,
+  shapeOf,
+  slots,
+  uniqueName,
+  type CpuFeature,
+  type DiskRecord,
+  type Display,
+  type MachineRecord,
+  type Shape,
+} from './shape.ts';
 import { overlayDir, snapshotPath, type Store } from './store.ts';
 import { msg, MsgError, t, type Msg } from '../i18n.ts';
 
@@ -21,7 +36,11 @@ export function effectiveDisplay(m: MachineRecord, page: { webgl2: boolean; simp
 }
 
 /** The machine's shape and its hash as it would run now (its disks by id). */
-export async function currentShape(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { display?: Display | 'none'; cpu?: CpuFeature[]; vulkan?: boolean } = {}): Promise<{ shape: Shape; hash: string }> {
+export async function currentShape(
+  m: MachineRecord,
+  disks: (id: string) => DiskRecord | undefined,
+  opts: { display?: Display | 'none'; cpu?: CpuFeature[]; vulkan?: boolean } = {},
+): Promise<{ shape: Shape; hash: string }> {
   const shape = shapeOf(m, disks, { display: opts.display, cpu: opts.cpu ?? CPU_DEFAULT, vulkan: opts.vulkan });
   return { shape, hash: await shapeHash(shape) };
 }
@@ -43,9 +62,31 @@ export type RestorePlan = {
  * file's creation time) onto machine `m`, whose shape the caller checked to be the snapshot's; `display` is the one it
  * runs with (`effectiveDisplay`).
  */
-export async function planRestore(store: Store, m: MachineRecord, disks: Map<string, DiskRecord>, snap: { name: string; key: string; pins: SnapshotDisk[] }, display: Display | 'none' = m.display): Promise<RestorePlan> {
-  const bySlot = slots({ nets: adaptersOf(m).length, display, mouse: m.mouse, touch: m.touch, clock: m.clock, shares: m.shares, clipboard: m.clipboard, attachments: m.attachments }); // as the machine runs on the page (its shape's display): the slots the pins name
-  type Step = { slot: number; attachment: string; disk: DiskRecord; action: 'keep' | 'reuse' | 'fork' | 'fork-whole'; reuse?: string; replaceable?: { overlay: string; name: string; bytes: number } };
+export async function planRestore(
+  store: Store,
+  m: MachineRecord,
+  disks: Map<string, DiskRecord>,
+  snap: { name: string; key: string; pins: SnapshotDisk[] },
+  display: Display | 'none' = m.display,
+): Promise<RestorePlan> {
+  const bySlot = slots({
+    nets: adaptersOf(m).length,
+    display,
+    mouse: m.mouse,
+    touch: m.touch,
+    clock: m.clock,
+    shares: m.shares,
+    clipboard: m.clipboard,
+    attachments: m.attachments,
+  }); // as the machine runs on the page (its shape's display): the slots the pins name
+  type Step = {
+    slot: number;
+    attachment: string;
+    disk: DiskRecord;
+    action: 'keep' | 'reuse' | 'fork' | 'fork-whole';
+    reuse?: string;
+    replaceable?: { overlay: string; name: string; bytes: number };
+  };
   const steps: Step[] = [];
   const kept: string[] = [];
   let refused: Msg | undefined;
@@ -57,16 +98,32 @@ export async function planRestore(store: Store, m: MachineRecord, disks: Map<str
     if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${m.name} doesn't have`);
     if (p.overlay.startsWith('disks/')) {
       // Written in place: no earlier state to fork from.
-      if (a.inPlace && (await overlayMeta(p.overlay)).generation === p.generation) { kept.push(d.name); continue; }
-      if (p.blocks > 0) { steps.push({ slot: p.slot, attachment: a.id, disk: d, action: 'fork-whole' }); continue; }
+      if (a.inPlace && (await overlayMeta(p.overlay)).generation === p.generation) {
+        kept.push(d.name);
+        continue;
+      }
+      if (p.blocks > 0) {
+        steps.push({ slot: p.slot, attachment: a.id, disk: d, action: 'fork-whole' });
+        continue;
+      }
       refused = msg('snapshots:snapshots.writtenInPlace', { disk: d.name });
       continue;
     }
-    if (a.overlay && overlayDir(a.overlay) === p.overlay && (await overlayMeta(p.overlay)).generation === p.generation) { kept.push(d.name); continue; }
+    if (
+      a.overlay &&
+      overlayDir(a.overlay) === p.overlay &&
+      (await overlayMeta(p.overlay)).generation === p.generation
+    ) {
+      kept.push(d.name);
+      continue;
+    }
     // An earlier fork of this snapshot that hasn't moved since: attached again rather than forking once more.
     let reuse: string | undefined;
     for (const o of await store.overlaysOf(d.id)) {
-      if (o.fork?.snapshot === snap.key && (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation) { reuse = o.id; break; }
+      if (o.fork?.snapshot === snap.key && (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation) {
+        reuse = o.id;
+        break;
+      }
     }
     const current = a.overlay ? await store.get('overlays', a.overlay) : undefined;
     const replaceable = current ? { overlay: current.id, name: current.name, bytes: current.bytes } : undefined;
@@ -79,10 +136,18 @@ export async function planRestore(store: Store, m: MachineRecord, disks: Map<str
     async commit(replace) {
       if (refused) throw new MsgError(refused.key, refused.params);
       const plan: DiskPlan[] = [];
-      for (const p of snap.pins) if (!p.ram && p.overlay && !steps.some((s) => s.slot === p.slot)) plan.push({ slot: p.slot, action: 'keep' });
+      for (const p of snap.pins)
+        if (!p.ram && p.overlay && !steps.some((s) => s.slot === p.slot)) plan.push({ slot: p.slot, action: 'keep' });
       for (const s of steps) {
         const a = m.attachments.find((x) => x.id === s.attachment)!;
-        const write = (overlay: string, whole = false): DiskPlan => ({ slot: s.slot, action: 'write', overlay: overlayDir(overlay), identity: identityOf(s.disk), size: s.disk.size, whole });
+        const write = (overlay: string, whole = false): DiskPlan => ({
+          slot: s.slot,
+          action: 'write',
+          overlay: overlayDir(overlay),
+          identity: identityOf(s.disk),
+          size: s.disk.size,
+          whole,
+        });
         if (s.action === 'reuse') {
           a.overlay = s.reuse;
           plan.push({ slot: s.slot, action: 'keep' });
@@ -110,7 +175,10 @@ export async function planRestore(store: Store, m: MachineRecord, disks: Map<str
  * has can't be made. The attachments take the snapshot's serials, so the shape is the snapshot's. The snapshot moves
  * to the new machine. Returns it.
  */
-export async function machineLike(store: Store, snap: { id: string; machine: string; name: string; shape: Shape; urls?: Record<number, string> }): Promise<MachineRecord> {
+export async function machineLike(
+  store: Store,
+  snap: { id: string; machine: string; name: string; shape: Shape; urls?: Record<number, string> },
+): Promise<MachineRecord> {
   const disks = await store.all('disks');
   const now = Date.now();
   const attachments: MachineRecord['attachments'] = [];
@@ -119,16 +187,40 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     let d = disks.find((x) => canonical(x.identity) === want);
     if (!d) {
       const i = sd.identity;
-      if (i.kind === 'stored') throw new MsgError('snapshots:snapshots.storedDiskGone', undefined, { cause: new MsgError('snapshots:snapshots.storedDiskGone.cause') });
-      d = i.kind === 'url'
-        ? { id: newId(), kind: 'url', name: i.path.split('/').pop() || t('snapshots:snapshots.urlDisk'), size: sd.size, url: snap.urls?.[sd.slot] ?? i.path, identity: i, created: now }
-        : i.kind === 'file'
-          ? { id: newId(), kind: 'file', name: i.name, size: sd.size, identity: i, created: now }
-          : { id: i.id, kind: i.kind, name: i.kind === 'blank' ? t('snapshots:snapshots.blankDisk') : t('snapshots:snapshots.ramdisk'), size: sd.size, identity: i, created: now };
+      if (i.kind === 'stored')
+        throw new MsgError('snapshots:snapshots.storedDiskGone', undefined, {
+          cause: new MsgError('snapshots:snapshots.storedDiskGone.cause'),
+        });
+      d =
+        i.kind === 'url'
+          ? {
+              id: newId(),
+              kind: 'url',
+              name: i.path.split('/').pop() || t('snapshots:snapshots.urlDisk'),
+              size: sd.size,
+              url: snap.urls?.[sd.slot] ?? i.path,
+              identity: i,
+              created: now,
+            }
+          : i.kind === 'file'
+            ? { id: newId(), kind: 'file', name: i.name, size: sd.size, identity: i, created: now }
+            : {
+                id: i.id,
+                kind: i.kind,
+                name: i.kind === 'blank' ? t('snapshots:snapshots.blankDisk') : t('snapshots:snapshots.ramdisk'),
+                size: sd.size,
+                identity: i,
+                created: now,
+              };
       await store.put('disks', d);
       disks.push(d);
     }
-    attachments.push({ id: sd.serial.replace(/^webpc-/, ''), disk: d.id, readOnly: sd.readOnly, ...(sd.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}) });
+    attachments.push({
+      id: sd.serial.replace(/^webpc-/, ''),
+      disk: d.id,
+      readOnly: sd.readOnly,
+      ...(sd.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}),
+    });
   }
   const taken = (await store.all('machines')).map((m) => m.name);
   const m: MachineRecord = {
@@ -176,22 +268,48 @@ export async function moveSnapshot(store: Store, id: string, to: string) {
 /** Imports a snapshot file into machine `machine`'s kept snapshots (its header read first; one of another shape is kept, orphaned). */
 export async function importSnapshot(store: Store, machine: string, file: File) {
   const { header } = await openSnapshot(file);
-  if (typeof header.shapeHash !== 'string' || !header.shape) throw new MsgError('snapshots:snapshots.notKept', { file: file.name }, { cause: new MsgError('snapshots:snapshots.notKept.cause') });
+  if (typeof header.shapeHash !== 'string' || !header.shape)
+    throw new MsgError(
+      'snapshots:snapshots.notKept',
+      { file: file.name },
+      { cause: new MsgError('snapshots:snapshots.notKept.cause') },
+    );
   const id = newId();
   return store.writing(async () => {
     const dir = await opfsDir(`machines/${machine}/snapshots`, true);
-    const copy = async () => file.stream().pipeTo(await (await dir.getFileHandle(id, { create: true })).createWritable());
+    const copy = async () =>
+      file.stream().pipeTo(await (await dir.getFileHandle(id, { create: true })).createWritable());
     const full = (e: unknown) => (e as DOMException)?.name === 'QuotaExceededError';
     try {
       // The storage full: the remote disks' kept blocks go (`makeRoom`), and it's copied once more.
-      await copy().catch(async (e) => { if (full(e) && (await makeRoom())) return copy(); throw e; });
+      await copy().catch(async (e) => {
+        if (full(e) && (await makeRoom())) return copy();
+        throw e;
+      });
     } catch (e) {
       await dir.removeEntry(id).catch(() => {});
-      if (full(e)) throw new MsgError('snapshots:snapshots.notKept', { file: file.name }, { cause: await storageFullError() });
+      if (full(e))
+        throw new MsgError('snapshots:snapshots.notKept', { file: file.name }, { cause: await storageFullError() });
       throw e;
     }
-    const pins = ((header.disks ?? []) as SnapshotDisk[]).map((p) => ({ slot: p.slot, overlay: p.overlay, generation: p.generation, blocks: p.blocks, ram: p.ram }));
-    const rec = { id, machine, name: file.name.replace(/\.webpcsnap$/, ''), created: Date.parse(String(header.created)) || Date.now(), bytes: file.size, shape: header.shape as Shape, shapeHash: header.shapeHash as string, pins, urls: header.urls as Record<number, string> | undefined };
+    const pins = ((header.disks ?? []) as SnapshotDisk[]).map((p) => ({
+      slot: p.slot,
+      overlay: p.overlay,
+      generation: p.generation,
+      blocks: p.blocks,
+      ram: p.ram,
+    }));
+    const rec = {
+      id,
+      machine,
+      name: file.name.replace(/\.webpcsnap$/, ''),
+      created: Date.parse(String(header.created)) || Date.now(),
+      bytes: file.size,
+      shape: header.shape as Shape,
+      shapeHash: header.shapeHash as string,
+      pins,
+      urls: header.urls as Record<number, string> | undefined,
+    };
     await store.put('snapshots', rec);
     return rec;
   });

@@ -28,8 +28,13 @@ export async function agentBinary(url = AGENT_BINARY): Promise<Uint8Array | unde
   try {
     const r = await fetch(url);
     const b = r.ok ? new Uint8Array(await r.arrayBuffer()) : undefined;
-    if (b && ELF.every((x, i) => b[i] === x)) return new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
-    console.warn(`clipboard sharing: no agent at ${url} (${r.status}${b ? ', not an ELF file' : ''}): images/build.sh agent builds it`); // i18n-ignore: a developer's (the console)
+    if (b && ELF.every((x, i) => b[i] === x))
+      return new Uint8Array(
+        await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(),
+      );
+    console.warn(
+      `clipboard sharing: no agent at ${url} (${r.status}${b ? ', not an ELF file' : ''}): images/build.sh agent builds it`, // i18n-ignore: a developer's (the console)
+    );
   } catch (e) {
     console.warn(`clipboard sharing: the agent's fetch failed (${e})`); // i18n-ignore: a developer's (the console)
   }

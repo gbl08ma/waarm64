@@ -6,9 +6,25 @@
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { errorText, msg, MsgError, text, type Msg } from '../i18n.ts';
 import { isMsg } from '../msg.ts';
-import { connectionLock, Connections, roomKeyLock, sameRoomKey, type Connection, type ConnectionState } from './connections.ts';
+import {
+  connectionLock,
+  Connections,
+  roomKeyLock,
+  sameRoomKey,
+  type Connection,
+  type ConnectionState,
+} from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
-import { createNetwork, logOutNode, primaryOf, ranksOf, viewOf, type Connect, type Network, type NetworkView } from './network.ts';
+import {
+  createNetwork,
+  logOutNode,
+  primaryOf,
+  ranksOf,
+  viewOf,
+  type Connect,
+  type Network,
+  type NetworkView,
+} from './network.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 
@@ -17,17 +33,42 @@ export function connectOf(c: Connection, authKey?: string): Connect {
   if (c.kind === 'local') return { controlURL: '', hostname: '', local: c.local!.url };
   if (c.kind === 'room') {
     const r = c.room!;
-    return { controlURL: '', hostname: '', room: { link: r.link, incoming: r.incoming, relayOnly: r.relayOnly, identityKey: r.identityKey, identity: r.identity } };
+    return {
+      controlURL: '',
+      hostname: '',
+      room: {
+        link: r.link,
+        incoming: r.incoming,
+        relayOnly: r.relayOnly,
+        identityKey: r.identityKey,
+        identity: r.identity,
+      },
+    };
   }
   if (c.kind === 'tailcat') {
     const t = c.tailcat!;
     // Its identity always: a kept connection is the same node going online through a server too (a server can `--allow` it).
-    const serve = t.serve ? { tailcatServe: { relay: t.exit ? '' : t.relay, ...(t.allow?.length ? { allow: t.allow } : {}) } } : {};
-    return { controlURL: '', hostname: '', tailcat: t.exit || undefined, ...serve, tailcatIdentity: { identityKey: t.identityKey, identity: t.identity } };
+    const serve = t.serve
+      ? { tailcatServe: { relay: t.exit ? '' : t.relay, ...(t.allow?.length ? { allow: t.allow } : {}) } }
+      : {};
+    return {
+      controlURL: '',
+      hostname: '',
+      tailcat: t.exit || undefined,
+      ...serve,
+      tailcatIdentity: { identityKey: t.identityKey, identity: t.identity },
+    };
   }
   const t = c.tailnet!;
   // A stored connection's node is kept under its profile (so it comes back without a login, an auth key's too); an ephemeral one's isn't.
-  return { controlURL: t.controlURL, hostname: t.hostname, authKey: authKey || undefined, exitNode: t.exitNode || undefined, ...(t.acceptRoutes === false ? { acceptRoutes: false } : {}), persist: c.ephemeral ? undefined : t.stateKey };
+  return {
+    controlURL: t.controlURL,
+    hostname: t.hostname,
+    authKey: authKey || undefined,
+    exitNode: t.exitNode || undefined,
+    ...(t.acceptRoutes === false ? { acceptRoutes: false } : {}),
+    persist: c.ephemeral ? undefined : t.stateKey,
+  };
 }
 
 /** A connection another machine has (in another tab): `holder` is its name, when that tab answered. */
@@ -119,7 +160,10 @@ export class PageNetwork {
     const n = this.nets[i];
     const id = this.running[i];
     this.running[i] = undefined;
-    if (n?.active()) void n.disconnect().then(() => { if (id && !this.running.includes(id)) this.let(id); });
+    if (n?.active())
+      void n.disconnect().then(() => {
+        if (id && !this.running.includes(id)) this.let(id);
+      });
     else if (id && !this.running.includes(id)) this.let(id);
   }
 
@@ -148,7 +192,9 @@ export class PageNetwork {
 
   /** Takes `adapters` as the machine's: by the adapter's id, so a client moves with its adapter when they are reordered (`same`: the same machine; otherwise every client stops). */
   private adopt(adapters: Adapter[], same: boolean) {
-    const was = adapters.map((a) => (same ? this.adapters.findIndex((o) => o.id === a.id && o.connection === a.connection) : -1));
+    const was = adapters.map((a) =>
+      same ? this.adapters.findIndex((o) => o.id === a.id && o.connection === a.connection) : -1,
+    );
     for (const i of this.nets.keys()) if (!was.includes(i)) this.retire(i);
     const nets = adapters.map((_, i) => (was[i] >= 0 ? this.nets[was[i]] : this.fresh()));
     this.running = was.map((k) => (k >= 0 ? this.running[k] : undefined));
@@ -239,7 +285,8 @@ export class PageNetwork {
 
   /** Asks the tab whose machine has `c` to let it go, then attaches it to adapter `i`. */
   async takeFrom(i: number, c: Connection, authKey?: string) {
-    if (!(await this.locks.takeFrom(connectionLock(c.id)))) throw new HeldError(c, await this.locks.holder(connectionLock(c.id)));
+    if (!(await this.locks.takeFrom(connectionLock(c.id))))
+      throw new HeldError(c, await this.locks.holder(connectionLock(c.id)));
     await this.attach(i, c, authKey);
   }
 
@@ -252,7 +299,8 @@ export class PageNetwork {
     if (!this.on) throw refused(new MsgError('network:net-live.off'));
     if (this.leaving.has(c.id)) throw refused(new MsgError('network:net-live.loggingOut', { name: c.name }));
     const other = this.running.findIndex((id, k) => id === c.id && k !== i);
-    if (other >= 0) throw refused(new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 }));
+    if (other >= 0)
+      throw refused(new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 }));
     const lock = connectionLock(c.id);
     if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
     // It stopped, or its adapters changed, while the lock was asked for.
@@ -262,14 +310,21 @@ export class PageNetwork {
     }
     if (c.room) {
       // One key runs in one connection at a time (`roomKeyLock`): this page's other adapters first, then other tabs.
-      const others = await Promise.all(this.running.map((id, k) => (id && id !== c.id && k !== i ? this.conns.get(id) : undefined)));
+      const others = await Promise.all(
+        this.running.map((id, k) => (id && id !== c.id && k !== i ? this.conns.get(id) : undefined)),
+      );
       const here = others.find((o) => o?.room && sameRoomKey(o.room, c.room!));
       const key = await roomKeyLock(c.room);
       if (here || !(await this.locks.take(key))) {
         if (!this.running.includes(c.id)) this.locks.drop(lock);
         const holder = here ? undefined : await this.locks.holder(key);
-        throw refused(here ? new MsgError('network:net-live.keyInUse', { other: here.name })
-          : holder ? new MsgError('network:net-live.keyHeld', { holder }) : new MsgError('network:net-live.keyHeldElsewhere'));
+        throw refused(
+          here
+            ? new MsgError('network:net-live.keyInUse', { other: here.name })
+            : holder
+              ? new MsgError('network:net-live.keyHeld', { holder })
+              : new MsgError('network:net-live.keyHeldElsewhere'),
+        );
       }
       this.keyLocks.set(c.id, key);
     }
@@ -316,10 +371,14 @@ export class PageNetwork {
   }
 
   /** Whether connection `c` has a node kept here, which can be logged out. */
-  hasNode(c: Connection) { return !!c.tailnet && !c.ephemeral && this.keptNodes.has(c.tailnet.stateKey); }
+  hasNode(c: Connection) {
+    return !!c.tailnet && !c.ephemeral && this.keptNodes.has(c.tailnet.stateKey);
+  }
 
   /** Whether the node is still kept, read now (a logout that worked forgot it). */
-  private async stillKept(c: Connection) { return !!(await this.o.kept?.())?.includes(c.tailnet!.stateKey); }
+  private async stillKept(c: Connection) {
+    return !!(await this.o.kept?.())?.includes(c.tailnet!.stateKey);
+  }
 
   /**
    * Runs `then` with `c`'s client stopped and its lock held, once its kept node, if any, is logged out: `then` hears
@@ -332,8 +391,8 @@ export class PageNetwork {
     try {
       for (const [i, id] of this.running.entries()) if (id === c.id) await this.disconnect(i, false);
       if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
-      const kept = !!c.tailnet && !c.ephemeral && await this.stillKept(c);
-      return await then(!kept || (await logOutNode(connectOf(c), this.o.start) && !(await this.stillKept(c))));
+      const kept = !!c.tailnet && !c.ephemeral && (await this.stillKept(c));
+      return await then(!kept || ((await logOutNode(connectOf(c), this.o.start)) && !(await this.stillKept(c))));
     } finally {
       this.locks.drop(lock);
       this.leaving.delete(c.id);
@@ -346,7 +405,12 @@ export class PageNetwork {
    */
   async logoutKept(c: Connection) {
     await this.nodeOut(c, async (gone) => {
-      if (!gone) throw new MsgError('network:net-live.notLoggedOut', { name: c.name }, { cause: new MsgError('network:net-live.notLoggedOut.cause', { host: new URL(c.tailnet!.controlURL).host }) });
+      if (!gone)
+        throw new MsgError(
+          'network:net-live.notLoggedOut',
+          { name: c.name },
+          { cause: new MsgError('network:net-live.notLoggedOut.cause', { host: new URL(c.tailnet!.controlURL).host }) },
+        );
       await this.conns.put({ ...c, connectAtStart: false });
     });
     await this.refresh();
@@ -411,9 +475,13 @@ export class PageNetwork {
   /** Rereads the connections and which are held elsewhere (the store changed, in this tab or another). */
   async refresh() {
     this.connections = await this.conns.list();
-    this.keptNodes = new Set(await this.o.kept?.().catch(() => []) ?? []);
+    this.keptNodes = new Set((await this.o.kept?.().catch(() => [])) ?? []);
     const held = await heldLocks();
-    this.held = new Set(this.connections.filter((c) => held.has(connectionLock(c.id)) && !this.locks.mine(connectionLock(c.id))).map((c) => c.id));
+    this.held = new Set(
+      this.connections
+        .filter((c) => held.has(connectionLock(c.id)) && !this.locks.mine(connectionLock(c.id)))
+        .map((c) => c.id),
+    );
     this.changed();
   }
 
@@ -437,15 +505,23 @@ export class PageNetwork {
       connection: this.connections.find((c) => c.id === a.connection),
       view: views[i],
       active: !!this.nets[i]?.active(),
-      note: noteText(this.notes[i]) ?? (locals.length > 1 && locals.includes(i) && i !== this.primary ? text(msg('network:net-live.twoHelpers', { adapter: this.primary + 1 })) : undefined),
+      note:
+        noteText(this.notes[i]) ??
+        (locals.length > 1 && locals.includes(i) && i !== this.primary
+          ? text(msg('network:net-live.twoHelpers', { adapter: this.primary + 1 }))
+          : undefined),
       primary: i === this.primary,
       on: this.on,
     }));
   }
 
   /** The adapter whose client runs connection `id` here, or -1. */
-  runs(id: string) { return this.running.indexOf(id); }
+  runs(id: string) {
+    return this.running.indexOf(id);
+  }
 
   /** The machine whose adapters these are (its key, as `ports` was given). */
-  machineKey() { return this.machine; }
+  machineKey() {
+    return this.machine;
+  }
 }

@@ -8,7 +8,17 @@
   import type { Snippet } from 'svelte';
 
   // No fallback for `checked`: Svelte refuses `bind:checked={undefined}` on a prop with one (a record without the field).
-  let { checked = $bindable(), disabled = false, title, id, field, compact = false, onchange, note, children }: {
+  let {
+    checked = $bindable(),
+    disabled = false,
+    title,
+    id,
+    field,
+    compact = false,
+    onchange,
+    note,
+    children,
+  }: {
     checked?: boolean;
     disabled?: boolean;
     title?: string;
@@ -23,23 +33,52 @@
 </script>
 
 {#snippet box()}
-  <label class="check" class:compact {title}><input type="checkbox" {id} bind:checked {disabled} data-field={field} onchange={(e) => onchange?.(e.currentTarget.checked)}> {@render children()}</label>
+  <label class="check" class:compact {title}
+    ><input
+      type="checkbox"
+      {id}
+      bind:checked
+      {disabled}
+      data-field={field}
+      onchange={(e) => onchange?.(e.currentTarget.checked)}
+    />
+    {@render children()}</label
+  >
 {/snippet}
 
 {#if note}
   <div class="check-field">
     {@render box()}
-    <p class="note">{#if typeof note === 'string'}{note}{:else}{@render note()}{/if}</p>
+    <p class="note">
+      {#if typeof note === 'string'}{note}{:else}{@render note()}{/if}
+    </p>
   </div>
 {:else}
   {@render box()}
 {/if}
 
 <style>
-  .check { display: flex; align-items: center; gap: 6px; }
-  .check.compact { font-size: 13px; white-space: nowrap; }
-  .check-field { display: flex; flex-direction: column; gap: 10px; }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .check.compact {
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .check-field {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
   /* A long note takes the width it's given rather than widening a grid's column; it starts under the words, past the
      box (its 4 px margin, 13 px, 3 px margin) and the 6 px gap. */
-  .note { contain: inline-size; margin: 0; padding-left: 26px; color: var(--dim); font-size: 12px; }
+  .note {
+    contain: inline-size;
+    margin: 0;
+    padding-left: 26px;
+    color: var(--dim);
+    font-size: 12px;
+  }
 </style>

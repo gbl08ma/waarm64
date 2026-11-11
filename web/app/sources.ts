@@ -7,7 +7,10 @@ import type { DiskSource } from './protocol.ts';
 
 /** Opens `s` for reading; `close` lets go of a stored disk's files. A ramdisk has nothing to read outside its machine. */
 export async function openSource(s: DiskSource): Promise<Source & { close?(): void }> {
-  if ('url' in s) return isManifestUrl(s.url) ? chunkedSource(new URL(s.url, self.location.href).href) : httpSource(new URL(s.url, self.location.href).href);
+  if ('url' in s)
+    return isManifestUrl(s.url)
+      ? chunkedSource(new URL(s.url, self.location.href).href)
+      : httpSource(new URL(s.url, self.location.href).href);
   if ('file' in s) return blobSource(s.file);
   if ('blank' in s) return zeroSource(s.blank);
   if ('stored' in s) return openStored(s.stored, s.size);

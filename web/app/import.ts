@@ -23,7 +23,10 @@ export function runImport(request: ImportRequest, progress: (phase: string, frac
       if (m.type === 'error') reject(fromWire(m.error));
       else resolve({ blocks: m.blocks });
     };
-    worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message)); };
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(e.message));
+    };
     worker.postMessage(request);
   });
 }

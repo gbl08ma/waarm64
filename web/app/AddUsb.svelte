@@ -45,19 +45,39 @@
 </script>
 
 <Modal id="add-usb" bind:this={dialog} title={t('usb:AddUsb.title', { name })} onclose={close}>
-  <ol class="steps"><li>{t('usb:AddUsb.step.kind')}</li><li>{t('usb:AddUsb.step.pick')}</li></ol>
+  <ol class="steps">
+    <li>{t('usb:AddUsb.step.kind')}</li>
+    <li>{t('usb:AddUsb.step.pick')}</li>
+  </ol>
   <div class="choices">
     {#each KINDS as k (k.api)}
-      <button type="button" class="choice" data-usb-kind={k.api} disabled={busy || !hasApi(k.api)} title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')} onclick={() => choose(k.api)}>
+      <button
+        type="button"
+        class="choice"
+        data-usb-kind={k.api}
+        disabled={busy || !hasApi(k.api)}
+        title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')}
+        onclick={() => choose(k.api)}
+      >
         <b><Icon name={k.icon} size={18} />{k.name}</b><span>{k.text}</span>
       </button>
     {/each}
   </div>
   <p class="note">{t('usb:AddUsb.note')}</p>
-  {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
-  {#snippet buttons()}<span class="grow"></span><button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</button>{/snippet}
+  {#if error}<div class="error" role="alert">
+      {error.text}{#if error.words}<UsbProblems words={error.words} />{/if}
+    </div>{/if}
+  {#snippet buttons()}<span class="grow"></span><button type="button" onclick={() => dialog.close()}
+      >{t('usb:AddUsb.cancel')}</button
+    >{/snippet}
 </Modal>
 
 <style>
-  .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+  .steps {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 </style>

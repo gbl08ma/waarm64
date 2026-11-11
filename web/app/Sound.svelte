@@ -20,18 +20,38 @@
   let micRaw = $state(settings().micRaw ?? false);
   // The audio's own state (waiting for a gesture, the microphone's), redrawn when it says it changed.
   let tick = $state(0);
-  $effect(() => { audio.onChange = () => tick++; });
+  $effect(() => {
+    audio.onChange = () => tick++;
+  });
   // The guest's own changes: shown, not kept (the next machine starts at what the user chose).
-  $effect(() => { audio.onMixer = (level, muted) => { [volume, on] = [Math.round(100 * level), !muted]; }; });
+  $effect(() => {
+    audio.onMixer = (level, muted) => {
+      [volume, on] = [Math.round(100 * level), !muted];
+    };
+  });
   const waiting = $derived((void tick, audio.waiting()));
   const micState = $derived((void tick, audio.micState));
-  $effect(() => { ui.mic = micState; }); // the status bar's Microphone
-  const summary = $derived(waiting ? t('sound:Sound.summary.waiting')
-    : micState === 'on' ? (on ? t('sound:Sound.summary.onMic') : t('sound:Sound.summary.mutedMic'))
-    : on ? t('sound:Sound.summary.on') : t('sound:Sound.summary.muted'));
+  $effect(() => {
+    ui.mic = micState;
+  }); // the status bar's Microphone
+  const summary = $derived(
+    waiting
+      ? t('sound:Sound.summary.waiting')
+      : micState === 'on'
+        ? on
+          ? t('sound:Sound.summary.onMic')
+          : t('sound:Sound.summary.mutedMic')
+        : on
+          ? t('sound:Sound.summary.on')
+          : t('sound:Sound.summary.muted'),
+  );
 
-  $effect(() => { audio.setVolume(volume / 100, !on); });
-  $effect(() => { audio.setMic(mic, micRaw); });
+  $effect(() => {
+    audio.setVolume(volume / 100, !on);
+  });
+  $effect(() => {
+    audio.setMic(mic, micRaw);
+  });
   const keepSound = () => {
     remember({ muted: !on, volume: volume / 100 });
     audio.setVolume(volume / 100, !on, true);
@@ -39,12 +59,36 @@
   const keepMic = () => remember({ mic, micRaw });
 </script>
 
-<Menu id="sound-menu" icon={on && !waiting ? 'volume' : 'volume-off'} title={summary} panel data-waiting={waiting || undefined}>
-  {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag">{t('sound:Sound.micTag')}</span>{/if}{/snippet}
+<Menu
+  id="sound-menu"
+  icon={on && !waiting ? 'volume' : 'volume-off'}
+  title={summary}
+  panel
+  data-waiting={waiting || undefined}
+>
+  {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag"
+        >{t('sound:Sound.micTag')}</span
+      >{/if}{/snippet}
   <Check id="sound-on" bind:checked={on} onchange={keepSound}>{t('sound:Sound.on')}</Check>
-  <label>{t('sound:Sound.volume')}<input id="sound-volume" type="range" min="0" max="100" step="1" bind:value={volume} oninput={keepSound}></label>
-  <Check id="mic-on" bind:checked={mic} onchange={keepMic} title={t('sound:Sound.mic.title')}>{t('sound:Sound.mic')}</Check>
-  <Check id="mic-raw" bind:checked={micRaw} onchange={keepMic} title={t('sound:Sound.micRaw.title')}>{t('sound:Sound.micRaw')}</Check>
+  <label
+    >{t('sound:Sound.volume')}<input
+      id="sound-volume"
+      type="range"
+      min="0"
+      max="100"
+      step="1"
+      bind:value={volume}
+      oninput={keepSound}
+    /></label
+  >
+  <Check id="mic-on" bind:checked={mic} onchange={keepMic} title={t('sound:Sound.mic.title')}
+    >{t('sound:Sound.mic')}</Check
+  >
+  <Check id="mic-raw" bind:checked={micRaw} onchange={keepMic} title={t('sound:Sound.micRaw.title')}
+    >{t('sound:Sound.micRaw')}</Check
+  >
   <p class="hint" id="sound-hint">{t('sound:Sound.hint')}</p>
-  <p class="hint" id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>{micState === 'denied' ? t('sound:Sound.mic.denied') : t('sound:Sound.mic.asking')}</p>
+  <p class="hint" id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>
+    {micState === 'denied' ? t('sound:Sound.mic.denied') : t('sound:Sound.mic.asking')}
+  </p>
 </Menu>

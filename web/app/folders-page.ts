@@ -9,20 +9,31 @@ export const folderDirectory = (f: Folder) => browserAccess.directory(f);
 
 /** The names of the machines each folder is attached to. */
 export async function usersOf(store: Store, all: Folder[]) {
-  return Object.fromEntries(await Promise.all(all.map(async (f) => [f.id, (await machinesWith(store, f.id)).map((m) => m.name)] as const)));
+  return Object.fromEntries(
+    await Promise.all(all.map(async (f) => [f.id, (await machinesWith(store, f.id)).map((m) => m.name)] as const)),
+  );
 }
 
-export async function editFolderOf(live: PageFolders, store: Store, f: Folder, change: Partial<Pick<Folder, 'name' | 'readOnly'>>) {
+export async function editFolderOf(
+  live: PageFolders,
+  store: Store,
+  f: Folder,
+  change: Partial<Pick<Folder, 'name' | 'readOnly'>>,
+) {
   await editFolder(store, f.id, change);
   await live.refresh();
 }
 
 /** Runs `f` on the folder's files under its lock (`write`: exclusively): refused while a machine has it. */
 export async function withFolder<T>(id: string, write: boolean, f: () => Promise<T>) {
-  return navigator.locks.request(folderLock(id), { ifAvailable: true, mode: write ? 'exclusive' : 'shared' }, async (l) => {
-    if (!l) throw new MsgError('folders:folders-page.inUse');
-    return f();
-  }) as Promise<T>;
+  return navigator.locks.request(
+    folderLock(id),
+    { ifAvailable: true, mode: write ? 'exclusive' : 'shared' },
+    async (l) => {
+      if (!l) throw new MsgError('folders:folders-page.inUse');
+      return f();
+    },
+  ) as Promise<T>;
 }
 
 /** Deletes `f` (the caller asked), refused while a machine in another tab has it; the page's machine lets it go first. */

@@ -10,13 +10,39 @@
 // connected again without a restart.
 import { describe, msg, t, type Msg } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
-import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
+import {
+  startTailscale,
+  tailscaleBuilt,
+  type FromTailscale,
+  type NetMap,
+  type Tailscale,
+  type TailscaleConfig,
+} from '../tailscale.ts';
 import type { Reach6Options } from '../reach6.ts';
 import { startLocal } from '../local-net.ts';
 import { startRoomNet, type RoomNetConfig } from '../room.ts';
-import { forgetTailcatIdentity, hasTailcatIdentity, parseAllow, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig, type TailcatIdentity, type TailcatServe } from '../tailcat.ts';
+import {
+  forgetTailcatIdentity,
+  hasTailcatIdentity,
+  parseAllow,
+  parseRelay,
+  parseTailcatAddr,
+  startTailcat,
+  tailcatBuilt,
+  type TailcatConfig,
+  type TailcatIdentity,
+  type TailcatServe,
+} from '../tailcat.ts';
 
-export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr, parseRelay, parseAllow, forgetTailcatIdentity, hasTailcatIdentity };
+export {
+  tailscaleBuilt,
+  tailcatBuilt,
+  parseTailcatAddr,
+  parseRelay,
+  parseAllow,
+  forgetTailcatIdentity,
+  hasTailcatIdentity,
+};
 
 export const DEFAULT_CONTROL = 'https://controlplane.tailscale.com';
 
@@ -40,7 +66,17 @@ export type NetworkSettings = {
   tailcatRelay: string;
 };
 
-export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false, exitNode: '', kind: 'tailscale', tailcatExit: true, tailcatServe: false, tailcatRelay: '' };
+export const DEFAULT_SETTINGS: NetworkSettings = {
+  controlURL: '',
+  hostname: '',
+  autoconnect: false,
+  keyed: false,
+  exitNode: '',
+  kind: 'tailscale',
+  tailcatExit: true,
+  tailcatServe: false,
+  tailcatRelay: '',
+};
 
 /** A control server's URL as the client takes it: https (http only for this computer), or an error to show. */
 export function parseControlURL(input: string): { url: string } | { error: Msg } {
@@ -125,7 +161,15 @@ export function ranksOf(views: Pick<NetworkView, 'phase'>[]): number[] {
 }
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
-export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: unknown; tailcat?: boolean; local?: boolean; room?: boolean };
+export type ClientReport = {
+  state: string;
+  netmap?: NetMap;
+  loginURL?: string;
+  error?: unknown;
+  tailcat?: boolean;
+  local?: boolean;
+  room?: boolean;
+};
 
 const web = (s: string | undefined) => {
   try {
@@ -141,59 +185,126 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   if (!c) return { phase: 'off', text: t('network:network.notConnected'), exitNodes: [] };
   if (c.error) {
     const d = describe(c.error);
-    return { phase: 'error', text: t('network:network.couldntConnect'), details: [d.headline, ...d.details].filter((l) => l), exitNodes: [] };
+    return {
+      phase: 'error',
+      text: t('network:network.couldntConnect'),
+      details: [d.headline, ...d.details].filter((l) => l),
+      exitNodes: [],
+    };
   }
   const loginURL = web(c.loginURL);
   if (c.local) {
-    if (c.state !== 'Running') return { phase: 'connecting', text: t('network:network.connectingHelper'), exitNodes: [] };
+    if (c.state !== 'Running')
+      return { phase: 'connecting', text: t('network:network.connectingHelper'), exitNodes: [] };
     const address = c.netmap?.addresses[0]?.replace(/\/\d+$/, '');
-    return { phase: 'connected', address, exitNodes: [], internet: true, local: true, text: address ? t('network:network.connectedLocal.address', { address }) : t('network:network.connectedLocal') };
+    return {
+      phase: 'connected',
+      address,
+      exitNodes: [],
+      internet: true,
+      local: true,
+      text: address ? t('network:network.connectedLocal.address', { address }) : t('network:network.connectedLocal'),
+    };
   }
   if (c.netmap?.via === 'room' || c.room) {
     const r = c.netmap?.room;
     if (c.state === 'Running' && c.netmap && r) {
       const address = c.netmap.addresses[0]?.replace(/\/\d+$/, '');
       // A room reaches only its members: never the internet, so never the default way out over another adapter's.
-      return { phase: 'connected', address, exitNodes: [], internet: false, room: { name: r.name, link: r.link, incoming: r.incoming }, text: t('network:network.room'), details: [t('network:network.room.connections', { count: c.netmap.peers.length })] };
+      return {
+        phase: 'connected',
+        address,
+        exitNodes: [],
+        internet: false,
+        room: { name: r.name, link: r.link, incoming: r.incoming },
+        text: t('network:network.room'),
+        details: [t('network:network.room.connections', { count: c.netmap.peers.length })],
+      };
     }
-    const doing: Record<string, string> = { FetchingMap: t('network:network.fetchingMap'), Connecting: t('network:network.connectingRelay'), Running: t('network:network.connectingRelay') };
+    const doing: Record<string, string> = {
+      FetchingMap: t('network:network.fetchingMap'),
+      Connecting: t('network:network.connectingRelay'),
+      Running: t('network:network.connectingRelay'),
+    };
     return { phase: 'connecting', text: doing[c.state] ?? t('network:network.loadingClient'), exitNodes: [] };
   }
   if (c.netmap?.via === 'tailcat' || c.tailcat) {
     if (c.state === 'Running' && c.netmap) {
       const served = c.netmap.serving ? { served: c.netmap.serving } : {};
-      if (c.netmap.tailcatExit === false) return { phase: 'connected', exitNodes: [], text: t('network:network.servingOnly'), internet: false, ...served };
+      if (c.netmap.tailcatExit === false)
+        return {
+          phase: 'connected',
+          exitNodes: [],
+          text: t('network:network.servingOnly'),
+          internet: false,
+          ...served,
+        };
       const address = c.netmap.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
       const text = address
-        ? (c.netmap.serving ? t('network:network.tailcat.address.serving', { address }) : t('network:network.tailcat.address', { address }))
-        : (c.netmap.serving ? t('network:network.tailcat.serving') : t('network:network.tailcat'));
+        ? c.netmap.serving
+          ? t('network:network.tailcat.address.serving', { address })
+          : t('network:network.tailcat.address', { address })
+        : c.netmap.serving
+          ? t('network:network.tailcat.serving')
+          : t('network:network.tailcat');
       const key = c.netmap.tailcatKey ? { tailcatKey: c.netmap.tailcatKey } : {};
       return { phase: 'connected', address, exitNodes: [], internet: true, text, ...served, ...key };
     }
-    const doing: Record<string, string> = { FetchingMap: t('network:network.fetchingMap'), Meowing: t('network:network.meowing'), Handshaking: t('network:network.handshaking') };
-    return { phase: 'connecting', text: doing[c.state] ?? (c.state === '' ? t('network:network.loadingClient') : t('network:network.connectingRelay')), exitNodes: [] };
+    const doing: Record<string, string> = {
+      FetchingMap: t('network:network.fetchingMap'),
+      Meowing: t('network:network.meowing'),
+      Handshaking: t('network:network.handshaking'),
+    };
+    return {
+      phase: 'connecting',
+      text:
+        doing[c.state] ?? (c.state === '' ? t('network:network.loadingClient') : t('network:network.connectingRelay')),
+      exitNodes: [],
+    };
   }
   switch (c.state) {
     case 'Running': {
       const address = c.netmap?.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
       const peers = c.netmap?.peers.length ?? 0;
-      const exitNodes = (c.netmap?.peers ?? []).filter((p) => p.exitNodeOption || p.id === c.netmap?.exitNode).map((p) => ({ id: p.id, name: p.name.replace(/\.$/, ''), online: p.online !== false, use: p.id === c.netmap?.exitNode }));
+      const exitNodes = (c.netmap?.peers ?? [])
+        .filter((p) => p.exitNodeOption || p.id === c.netmap?.exitNode)
+        .map((p) => ({
+          id: p.id,
+          name: p.name.replace(/\.$/, ''),
+          online: p.online !== false,
+          use: p.id === c.netmap?.exitNode,
+        }));
       const via = exitNodes.find((e) => e.use);
       const routes = [...new Set((c.netmap?.peers ?? []).flatMap((p) => p.routes ?? []))];
       const subnets = routes.length ? { subnets: { routes, on: c.netmap?.acceptRoutes !== false } } : {};
       const name = c.netmap?.name ? c.netmap.name.replace(/\.$/, '') : '';
-      const connected = name && address ? msg('network:network.connected.as.address', { name, address }) : name ? msg('network:network.connected.as', { name }) : address ? msg('network:network.connected.address', { address }) : msg('network:network.connected');
-      const text = via ? t('network:network.connectedPeers.via', { connected, count: peers, via: via.name }) : t('network:network.connectedPeers', { connected, count: peers });
+      const connected =
+        name && address
+          ? msg('network:network.connected.as.address', { name, address })
+          : name
+            ? msg('network:network.connected.as', { name })
+            : address
+              ? msg('network:network.connected.address', { address })
+              : msg('network:network.connected');
+      const text = via
+        ? t('network:network.connectedPeers.via', { connected, count: peers, via: via.name })
+        : t('network:network.connectedPeers', { connected, count: peers });
       return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text };
     }
     case 'NeedsLogin':
-      return loginURL ? { phase: 'login', text: t('network:network.logIn'), loginURL, exitNodes: [] } : { phase: 'connecting', text: t('network:network.contacting'), exitNodes: [] };
+      return loginURL
+        ? { phase: 'login', text: t('network:network.logIn'), loginURL, exitNodes: [] }
+        : { phase: 'connecting', text: t('network:network.contacting'), exitNodes: [] };
     case 'NeedsMachineAuth':
       return { phase: 'login', text: t('network:network.approval'), loginURL, exitNodes: [] };
     case 'Stopped':
       return { phase: 'off', text: t('network:network.stopped'), exitNodes: [] };
     default:
-      return { phase: 'connecting', text: c.state === '' ? t('network:network.loadingClient') : t('network:network.connecting'), exitNodes: [] };
+      return {
+        phase: 'connecting',
+        text: c.state === '' ? t('network:network.loadingClient') : t('network:network.connecting'),
+        exitNodes: [],
+      };
   }
 }
 
@@ -204,7 +315,20 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
  * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it. `room`: a peer-to-peer
  * room (web/room.ts), its link, switches and kept identity.
  */
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; tailcatIdentity?: { identityKey?: string; identity?: TailcatIdentity }; probe6?: Reach6Options; local?: string; room?: Omit<RoomNetConfig, 'ip'> };
+export type Connect = {
+  controlURL: string;
+  hostname: string;
+  authKey?: string;
+  exitNode?: string;
+  acceptRoutes?: boolean;
+  persist?: string;
+  tailcat?: string;
+  tailcatServe?: TailcatServe;
+  tailcatIdentity?: { identityKey?: string; identity?: TailcatIdentity };
+  probe6?: Reach6Options;
+  local?: string;
+  room?: Omit<RoomNetConfig, 'ip'>;
+};
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -234,7 +358,11 @@ const LOGOUT_MS = 15_000;
  * with the node's keys, expires them there and forgets them (docs/network-adapters.md §2.1). False when the control
  * server didn't answer in `ms`, with the node left as it was: a client logging out unconnected would only forget it here.
  */
-export function logOutNode(c: Connect, start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale, ms = LOGOUT_MS): Promise<boolean> {
+export function logOutNode(
+  c: Connect,
+  start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
+  ms = LOGOUT_MS,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const { port1, port2 } = new MessageChannel();
     const done = (ok: boolean) => {
@@ -253,11 +381,16 @@ export function logOutNode(c: Connect, start: (config: TailscaleConfig, onEvent:
       // NeedsLogin is also where it starts: the control server has answered once it gives a login link.
       if (s === 'Running' || s === 'NeedsMachineAuth' || (s === 'NeedsLogin' && client.loginURL())) {
         leaving = true;
-        void client.logout().then(() => done(true), () => done(false));
+        void client.logout().then(
+          () => done(true),
+          () => done(false),
+        );
       }
     };
     client = start({ controlURL: c.controlURL, hostname: c.hostname, ip: port1, persist: c.persist }, onEvent);
-    client.running.catch(() => { if (!leaving) done(false); });
+    client.running.catch(() => {
+      if (!leaving) done(false);
+    });
   });
 }
 
@@ -265,7 +398,10 @@ export function createNetwork(
   onChange: () => void,
   start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
   startCat: (config: TailcatConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailcat,
-  startHelper: (config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void) => Tailscale = startLocal,
+  startHelper: (
+    config: { url: string; ip: MessagePort },
+    onEvent: (m: FromTailscale) => void,
+  ) => Tailscale = startLocal,
   startRoom: (config: RoomNetConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startRoomNet,
 ): Network {
   /** The page's end of the machine's port, while no client has it. */
@@ -282,7 +418,10 @@ export function createNetwork(
   let primary = true;
   let rank = 0;
 
-  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat, local, room } : undefined);
+  const report = (): ClientReport | undefined =>
+    client
+      ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat, local, room }
+      : undefined;
 
   async function disconnect() {
     const t = client;
@@ -329,13 +468,31 @@ export function createNetwork(
       const t = local
         ? startHelper({ url: c.local!, ip }, onEvent)
         : room
-        ? startRoom({ ...c.room!, ip }, onEvent)
-        : tailcat
-        ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip }, onEvent)
-        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, acceptRoutes: c.acceptRoutes, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
+          ? startRoom({ ...c.room!, ip }, onEvent)
+          : tailcat
+            ? startCat(
+                { addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip },
+                onEvent,
+              )
+            : start(
+                {
+                  controlURL: c.controlURL,
+                  authKey: c.authKey || undefined,
+                  hostname: c.hostname,
+                  exitNode: c.exitNode || undefined,
+                  acceptRoutes: c.acceptRoutes,
+                  ip,
+                  persist: c.persist,
+                  probe6: c.probe6,
+                },
+                onEvent,
+              );
       client = t;
       if (!primary || rank) t.setPrimary(primary, rank);
-      t.running.catch((e) => { error = e ?? new Error('failed'); onChange(); });
+      t.running.catch((e) => {
+        error = e ?? new Error('failed');
+        onChange();
+      });
       onChange();
     },
     disconnect,

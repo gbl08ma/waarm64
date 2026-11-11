@@ -29,12 +29,48 @@
 
   type Source = 'known' | 'url' | 'file' | 'stored' | 'blank' | 'ramdisk';
   const SOURCES: { kind: Source; icon: IconName; name: string; text: string; title: string }[] = [
-    { kind: 'known', icon: 'database', name: t('disks:AddDisk.source.known'), text: t('disks:AddDisk.source.known.text'), title: t('disks:AddDisk.title.known') },
-    { kind: 'file', icon: 'file', name: t('disks:AddDisk.source.file'), text: t('disks:AddDisk.source.file.text'), title: t('disks:AddDisk.title.file') },
-    { kind: 'stored', icon: 'database-import', name: t('disks:AddDisk.source.stored'), text: t('disks:AddDisk.source.stored.text'), title: t('disks:AddDisk.title.stored') },
-    { kind: 'url', icon: 'world-www', name: t('disks:AddDisk.source.url'), text: t('disks:AddDisk.source.url.text'), title: t('disks:AddDisk.title.url') },
-    { kind: 'blank', icon: 'square-dashed', name: t('disks:AddDisk.source.blank'), text: t('disks:AddDisk.source.blank.text'), title: t('disks:AddDisk.title.blank') },
-    { kind: 'ramdisk', icon: 'bolt', name: t('disks:AddDisk.source.ramdisk'), text: t('disks:AddDisk.source.ramdisk.text'), title: t('disks:AddDisk.title.ramdisk') },
+    {
+      kind: 'known',
+      icon: 'database',
+      name: t('disks:AddDisk.source.known'),
+      text: t('disks:AddDisk.source.known.text'),
+      title: t('disks:AddDisk.title.known'),
+    },
+    {
+      kind: 'file',
+      icon: 'file',
+      name: t('disks:AddDisk.source.file'),
+      text: t('disks:AddDisk.source.file.text'),
+      title: t('disks:AddDisk.title.file'),
+    },
+    {
+      kind: 'stored',
+      icon: 'database-import',
+      name: t('disks:AddDisk.source.stored'),
+      text: t('disks:AddDisk.source.stored.text'),
+      title: t('disks:AddDisk.title.stored'),
+    },
+    {
+      kind: 'url',
+      icon: 'world-www',
+      name: t('disks:AddDisk.source.url'),
+      text: t('disks:AddDisk.source.url.text'),
+      title: t('disks:AddDisk.title.url'),
+    },
+    {
+      kind: 'blank',
+      icon: 'square-dashed',
+      name: t('disks:AddDisk.source.blank'),
+      text: t('disks:AddDisk.source.blank.text'),
+      title: t('disks:AddDisk.title.blank'),
+    },
+    {
+      kind: 'ramdisk',
+      icon: 'bolt',
+      name: t('disks:AddDisk.source.ramdisk'),
+      text: t('disks:AddDisk.source.ramdisk.text'),
+      title: t('disks:AddDisk.title.ramdisk'),
+    },
   ];
 
   let dialog: Modal;
@@ -53,10 +89,20 @@
   type Known = { disk: DiskRecord; overlays: OverlayRecord[]; users: MachineRecord[] };
   let known = $state<Known[]>([]);
   async function readKnown() {
-    const [disks, overlays, machines] = await Promise.all([store.all('disks'), store.all('overlays'), store.all('machines')]);
+    const [disks, overlays, machines] = await Promise.all([
+      store.all('disks'),
+      store.all('overlays'),
+      store.all('machines'),
+    ]);
     const mine = new Set(machine.attachments.map((a) => a.disk));
-    known = disks.filter((d) => !mine.has(d.id)).sort((a, b) => a.name.localeCompare(b.name))
-      .map((disk) => ({ disk, overlays: overlays.filter((o) => o.disk === disk.id), users: machines.filter((m) => m.attachments.some((a) => a.disk === disk.id)) }));
+    known = disks
+      .filter((d) => !mine.has(d.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((disk) => ({
+        disk,
+        overlays: overlays.filter((o) => o.disk === disk.id),
+        users: machines.filter((m) => m.attachments.some((a) => a.disk === disk.id)),
+      }));
   }
   const sources = $derived(SOURCES.filter((s) => s.kind !== 'known' || known.length));
 
@@ -83,7 +129,8 @@
     readOnly = false;
   }
   async function pick() {
-    const picker = (window as unknown as { showOpenFilePicker?: () => Promise<FileSystemFileHandle[]> }).showOpenFilePicker;
+    const picker = (window as unknown as { showOpenFilePicker?: () => Promise<FileSystemFileHandle[]> })
+      .showOpenFilePicker;
     if (!picker) return fileInput?.click();
     try {
       const [handle] = await picker.call(window);
@@ -93,14 +140,26 @@
       if ((e as DOMException).name !== 'AbortError') error = errorText(e);
     }
   }
-  const picked1 = () => { const f = fileInput?.files?.[0]; if (f) picked = { file: f }; if (f && /\.iso$/i.test(f.name)) readOnly = true; fileInput!.value = ''; };
+  const picked1 = () => {
+    const f = fileInput?.files?.[0];
+    if (f) picked = { file: f };
+    if (f && /\.iso$/i.test(f.name)) readOnly = true;
+    fileInput!.value = '';
+  };
   async function check() {
     checking = true;
-    try { urlCheck = await checkUrl(url); } finally { checking = false; }
+    try {
+      urlCheck = await checkUrl(url);
+    } finally {
+      checking = false;
+    }
   }
 
   /** A disk image's virtual size from its first bytes (a qcow2's header), else its length. */
-  const virtualSize = (head: Uint8Array | undefined, bytes: number) => (head && head.length >= 32 && new DataView(head.buffer, head.byteOffset).getUint32(0) === 0x514649fb ? Number(new DataView(head.buffer, head.byteOffset).getBigUint64(24)) : bytes);
+  const virtualSize = (head: Uint8Array | undefined, bytes: number) =>
+    head && head.length >= 32 && new DataView(head.buffer, head.byteOffset).getUint32(0) === 0x514649fb
+      ? Number(new DataView(head.buffer, head.byteOffset).getBigUint64(24))
+      : bytes;
 
   async function add(e: SubmitEvent) {
     e.preventDefault();
@@ -114,26 +173,53 @@
         // A file or URL the browser knows is the same disk again, with its overlays (its handle renewed, if picked with one).
         const reuse = async (n: NewDisk) => {
           const k = await knownDisk(store, n);
-          if (k && machine.attachments.some((a) => a.disk === k.id)) throw new MsgError('disks:AddDisk.attachedAlready', { name: k.name });
+          if (k && machine.attachments.some((a) => a.disk === k.id))
+            throw new MsgError('disks:AddDisk.attachedAlready', { name: k.name });
           if (k && n.kind === 'file' && n.handle) await store.put('disks', { ...k, handle: n.handle });
           return k ?? createDisk(store, n);
         };
         if (source === 'url') {
           urlCheck = await checkUrl(url);
-          if (!urlCheck.ok) throw new MsgError('disks:AddDisk.urlProblems', undefined, { cause: causes(urlCheck.problems) });
-          d = await reuse({ kind: 'url', url, name: urlCheck.name, size: virtualSize(urlCheck.head, urlCheck.bytes!), bytes: urlCheck.bytes!, etag: urlCheck.etag, lastModified: urlCheck.lastModified });
+          if (!urlCheck.ok)
+            throw new MsgError('disks:AddDisk.urlProblems', undefined, { cause: causes(urlCheck.problems) });
+          d = await reuse({
+            kind: 'url',
+            url,
+            name: urlCheck.name,
+            size: virtualSize(urlCheck.head, urlCheck.bytes!),
+            bytes: urlCheck.bytes!,
+            etag: urlCheck.etag,
+            lastModified: urlCheck.lastModified,
+          });
         } else if (source === 'file' || source === 'stored') {
           if (!picked) throw new MsgError('disks:AddDisk.pickFirst');
           if (source === 'file') {
             const head = new Uint8Array(await picked.file.slice(0, 32).arrayBuffer());
-            d = await reuse({ kind: 'file', file: picked.file, handle: picked.handle, size: virtualSize(head, picked.file.size) });
+            d = await reuse({
+              kind: 'file',
+              file: picked.file,
+              handle: picked.handle,
+              size: virtualSize(head, picked.file.size),
+            });
           } else {
             const est = await estimateStored(picked.file);
             const free = await navigator.storage.estimate();
-            if (!(await ask.confirm(t('disks:AddDisk.store.confirm', { name: picked.file.name, size: bytesText(est.estimate), free: bytesText((free.quota ?? 0) - (free.usage ?? 0)) }), { title: t('disks:AddDisk.store.title'), ok: t('disks:AddDisk.store.ok') }))) return;
+            if (
+              !(await ask.confirm(
+                t('disks:AddDisk.store.confirm', {
+                  name: picked.file.name,
+                  size: bytesText(est.estimate),
+                  free: bytesText((free.quota ?? 0) - (free.usage ?? 0)),
+                }),
+                { title: t('disks:AddDisk.store.title'), ok: t('disks:AddDisk.store.ok') },
+              ))
+            )
+              return;
             await askPersist();
             const name = picked.file.name;
-            d = await importStored(store, picked.file, (f) => { error = t('disks:AddDisk.storing', { name, percent: Math.floor(100 * f) }); });
+            d = await importStored(store, picked.file, (f) => {
+              error = t('disks:AddDisk.storing', { name, percent: Math.floor(100 * f) });
+            });
             error = '';
           }
         } else {
@@ -150,7 +236,13 @@
   }
 </script>
 
-<Modal id="add-disk" bind:this={dialog} title={chosen ? chosen.title : t('disks:AddDisk.title', { machine: machine.name })} onclose={close} onsubmit={add}>
+<Modal
+  id="add-disk"
+  bind:this={dialog}
+  title={chosen ? chosen.title : t('disks:AddDisk.title', { machine: machine.name })}
+  onclose={close}
+  onsubmit={add}
+>
   {#if !source}
     <p class="note">{t('disks:AddDisk.where')}</p>
     <div class="choices">
@@ -167,22 +259,55 @@
         {#each known as k (k.disk.id)}
           <li data-disk={k.disk.id}>
             <DiskInfo disk={k.disk} overlays={k.overlays} users={k.users.map((u) => u.name)} />
-            <button type="button" class="primary" onclick={() => attachKnown(k)} data-action="attach-known">{t('disks:AddDisk.known.attach')}</button>
+            <button type="button" class="primary" onclick={() => attachKnown(k)} data-action="attach-known"
+              >{t('disks:AddDisk.known.attach')}</button
+            >
           </li>
         {/each}
       </ul>
     {:else if source === 'url'}
-      <label>{t('disks:AddDisk.url')}<span class="line"><input type="url" placeholder="https://…/disk.qcow2" bind:value={url} data-field="url" required><!-- i18n-ignore: an example URL -->
-        <button type="button" onclick={check} disabled={!url || checking}>{checking ? t('disks:AddDisk.url.checking') : t('disks:AddDisk.url.check')}</button></span></label>
+      <label
+        >{t('disks:AddDisk.url')}<span class="line"
+          ><input
+            type="url"
+            // i18n-ignore-next: an example URL
+            placeholder="https://…/disk.qcow2"
+            bind:value={url}
+            data-field="url"
+            required
+          />
+          <button type="button" onclick={check} disabled={!url || checking}
+            >{checking ? t('disks:AddDisk.url.checking') : t('disks:AddDisk.url.check')}</button
+          ></span
+        ></label
+      >
       {#if urlCheck}
-        {#if urlCheck.ok}<p class="ok">{urlCheck.bytes ? t('disks:AddDisk.url.ok', { size: bytesText(urlCheck.bytes) }) : t('disks:AddDisk.url.okUnknown')} {text(URL_SLOW)}</p>
-        {:else}<ul class="problems">{#each urlCheck.problems as p}<li>{text(p)}</li>{/each}</ul>{/if}
+        {#if urlCheck.ok}<p class="ok">
+            {urlCheck.bytes
+              ? t('disks:AddDisk.url.ok', { size: bytesText(urlCheck.bytes) })
+              : t('disks:AddDisk.url.okUnknown')}
+            {text(URL_SLOW)}
+          </p>
+        {:else}<ul class="problems">
+            {#each urlCheck.problems as p}<li>{text(p)}</li>{/each}
+          </ul>{/if}
       {/if}
     {:else if source === 'file' || source === 'stored'}
-      <div class="line"><button type="button" onclick={pick}><Icon name="file" size={16} />{t('disks:AddDisk.pick')}</button><span data-field="picked">{picked ? t('disks:AddDisk.picked', { name: picked.file.name, size: bytesText(picked.file.size) }) : t('disks:AddDisk.picked.none')}</span></div>
-      <input type="file" hidden bind:this={fileInput} onchange={picked1} data-field="file">
+      <div class="line">
+        <button type="button" onclick={pick}><Icon name="file" size={16} />{t('disks:AddDisk.pick')}</button><span
+          data-field="picked"
+          >{picked
+            ? t('disks:AddDisk.picked', { name: picked.file.name, size: bytesText(picked.file.size) })
+            : t('disks:AddDisk.picked.none')}</span
+        >
+      </div>
+      <input type="file" hidden bind:this={fileInput} onchange={picked1} data-field="file" />
     {:else}
-      <label>{t('disks:AddDisk.size')}<span class="line"><input type="number" min="1" bind:value={sizeMiB} data-field="size"> {t('disks:AddDisk.size.unit')}</span></label>
+      <label
+        >{t('disks:AddDisk.size')}<span class="line"
+          ><input type="number" min="1" bind:value={sizeMiB} data-field="size" /> {t('disks:AddDisk.size.unit')}</span
+        ></label
+      >
     {/if}
     {#if source !== 'blank' && source !== 'ramdisk' && source !== 'known'}
       <Check bind:checked={readOnly} title={t('disks:AddDisk.readOnly.title')}>{t('disks:AddDisk.readOnly')}</Check>
@@ -190,18 +315,50 @@
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#snippet buttons()}
-    {#if source}<button type="button" onclick={() => { source = undefined; error = ''; }}>{t('disks:AddDisk.back')}</button>{/if}
+    {#if source}<button
+        type="button"
+        onclick={() => {
+          source = undefined;
+          error = '';
+        }}>{t('disks:AddDisk.back')}</button
+      >{/if}
     <span class="grow"></span>
     <button type="button" onclick={() => dialog.close()}>{t('disks:AddDisk.cancel')}</button>
-    {#if source && source !== 'known'}<button type="submit" class="primary" data-action="add-disk">{t('disks:AddDisk.add')}</button>{/if}
+    {#if source && source !== 'known'}<button type="submit" class="primary" data-action="add-disk"
+        >{t('disks:AddDisk.add')}</button
+      >{/if}
   {/snippet}
 </Modal>
 
 <style>
-  .line { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
-  .line input { flex: 1; }
-  .line input[type=number] { flex: 0 1 140px; }
-  .line button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--bg); }
-  .ok { color: #8fd18f; margin: 0; }
-  .problems { color: #ffb36b; margin: 0; }
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .line input {
+    flex: 1;
+  }
+  .line input[type='number'] {
+    flex: 0 1 140px;
+  }
+  .line button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 12px;
+    background: var(--bg);
+  }
+  .ok {
+    color: #8fd18f;
+    margin: 0;
+  }
+  .problems {
+    color: #ffb36b;
+    margin: 0;
+  }
 </style>

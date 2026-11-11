@@ -27,132 +27,151 @@ export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'suspended'
  * couldn't be reserved), `panic` (the guest kernel's panic line), `snapshot` (a snapshot was refused:
  * its error says why and what to do), `emulator` (anything else).
  */
-export type Problem = 'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-mismatch' | 'memory' | 'panic' | 'snapshot' | 'emulator';
+export type Problem =
+  'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-mismatch' | 'memory' | 'panic' | 'snapshot' | 'emulator';
 
 /** Page → worker. One machine per worker: a restart is a new worker (the page's `stop`, then `terminate`). */
 export type ToWorker =
   | {
-    type: 'start';
-    /** The page's query (`location.search`), for the worker's own knobs (`?snd=`, `?gpu=`, `?jit=`, `?fma=`, `?growcore`, `?vyield=`). */
-    query: string;
-    machine: MachineName;
-    ncpus: number;
-    /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */
-    ramMiB: number;
-    /** Its split as the user set it (`MachineRecord.ramSplit`, `?split=`), MiB, memory 0 first; absent: the automatic one. */
-    ramSplit?: number[];
-    /** The JIT's code cache budget, MiB (`MachineRecord.jitMiB`, `?jitmb=`; `BootOptions.jitBytes`); absent: the core's default. */
-    jitMiB?: number;
-    /** The guest's keyboard layout (`MachineRecord.keyboard`, `?keyboard=`; web/app/keyboard.ts), for a `firmware` machine; absent: none set. */
-    keyLayout?: string;
-    /** The guest takes the network's settings (`MachineRecord.netConfig`, `?netconfig=0` turns it off; web/app/guest-net.ts): the page's .network credential and the unit. */
-    netConfig: boolean;
-    /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
-    sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
-    /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */
-    keyboard: MessagePort;
-    tablet: MessagePort;
-    /** A relative mouse's and a touchscreen's ports, for a machine that has them (a stored machine's `mouse` and `touch`, a transient one's `?mouse=1`, `?touch=1`). */
-    mouse?: MessagePort;
-    touch?: MessagePort;
-    /** The clock device (virtio-rtc): a stored machine's `clock`, a transient one's unless `?clock=0`. */
-    clock?: boolean;
-    /**
-     * The agent's port (web/agent-device.ts; web/app/agent-link.ts has the page's end), for a machine with clipboard
-     * sharing (a stored machine's `clipboard`, a transient one's `?clipboard=1`): the machine gets the agent's device.
-     */
-    agent?: MessagePort;
-    /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
-    serial: MessagePort;
-    /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */
-    screen?: OffscreenCanvas;
-    /**
-     * A 3D machine (the page's default where WebGL2 is; `?gpu=2d` turns it off): the GPU worker's port (web/gpu-worker.ts, which has the
-     * screen) and the caps it gives the guest (web/virgl-caps.ts). The virtio-gpu gets virgl and renders there.
-     */
-    renderer?: MessagePort;
-    caps?: Uint8Array;
-    /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"). */
-    vulkan?: boolean;
-    /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
-    display: MessagePort;
-    /** The display's size at the start (the page's screen box, `wantedSize` in main.ts): the console and the firmware get it with no event. Default: the machine's. */
-    size?: { width: number; height: number };
-    /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
-    simple?: boolean;
-    /** The display reports its draw latencies (`draw-stats` on the display port, kept in `window.__drawStats`; the page's `?displaystats`, for bench/gpu). */
-    displayStats?: boolean;
-    /** The disks keep stage timers and a trace of their base reads, answered on the `webpc-iostats` BroadcastChannel (the page's `?iostats`, for bench/remote-disk). */
-    ioStats?: boolean;
-    /** A remote disk's blocks aren't kept in OPFS (the page's `?diskcache=0`: bench/remote-disk's A/B). */
-    noDiskCache?: boolean;
-    /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
-    avProbe?: boolean;
-    /**
-     * The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm`, `bf16`), all on but `i8mm`, `fcma`, `fp16`, `fhm` and `bf16` by default; the page's `?rng=0`,
-     * `?e0pd=0`, `?sha3=0`, `?jscvt=0` and the rest turn one off, `?i8mm=1`, `?fcma=1`, `?fp16=1`, `?fhm=1` and `?bf16=1` turn those on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
-     * A snapshot's are its own.
-     */
-    cpu?: { rng?: boolean; e0pd?: boolean; sha3?: boolean; jscvt?: boolean; rcpc?: boolean; sb?: boolean; flagm?: boolean; dit?: boolean; frintts?: boolean; dotprod?: boolean; i8mm?: boolean; rdm?: boolean; rcpc2?: boolean; fcma?: boolean; fp16?: boolean; fhm?: boolean; bf16?: boolean };
-    /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
-    params?: string;
-    /**
-     * Systemd credentials to give a `firmware` machine over fw_cfg beyond its own (the page's
-     * `?credential=name:value`, for development and tests: `login.noauth:yes` and the `firstboot.*`
-     * ones boot Debian unattended). The release page passes none.
-     */
-    credentials?: Credential[];
-    /** The words of the units the page has the guest run (web/app/guest-words.ts): the page renders them, the worker places them. */
-    guest: GuestWords;
-    /** The machine's disks in slot order (docs/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
-    disks: StartDisk[];
-    /**
-     * The OPFS directory of the machine's own files: the firmware's variable store (`flash`) and a suspended machine
-     * (`suspend`). A stored machine's `machines/<id>`; a transient one's is its first writable disk's overlay. None:
-     * neither is kept.
-     */
-    home?: string;
-    /**
-     * The machine's network adapters in order (docs/network-adapters.md): each a virtio-net with its MAC on its
-     * own gateway, whose end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other
-     * end and gives it to a client (web/app/network.ts). The machine gets its `network` credentials when it has any.
-     * Only for a machine with `network`.
-     */
-    nets?: { mac: string; ip: MessagePort }[];
-    /**
-     * The machine has a USB controller (an xHCI, docs/usb.md "The page"): this port carries the page's `usb-attach` and
-     * `usb-detach` to the device worker and its `usb-state` back (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The
-     * page attaches its devices once the machine runs (at a start, a resume and a restore alike: a snapshot's ports are
-     * empty). None: no controller (a stored machine's `usb`, a transient one's `?usb=1`).
-     */
-    usb?: MessagePort;
-    /**
-     * The machine has shared folders (docs/shares.md): the one virtio-9p device, on what can be served now (`list`); `port`
-     * carries the page's attachments and grants to the device worker (web/9p-folders.ts `FoldersToDevice`). None: no device.
-     */
-    folders?: { list: FolderSpec[]; port: MessagePort };
-    /** The mount point the page sets in the guest (`MachineRecord.sharesPath`, web/app/shares-mount.ts), for a `firmware` machine; none: not mounted. */
-    sharesPath?: string;
-    /**
-     * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
-     * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's
-     * overlay is replaced by the file's blocks. `ncpus` and `ramMiB` are then ignored.
-     */
-    snapshot?: File;
-    /**
-     * False: boot even if a suspended machine is kept beside the disk (it is dropped). Otherwise a
-     * start resumes one if there is one and its pins match (docs/frontend.md "Suspend").
-     */
-    resume?: boolean;
-    /**
-     * The machine as its snapshots describe it (docs/machines.md §5.1): its name, shape and the shape's hash, and
-     * the URLs of its URL disks by slot (a file restored elsewhere can make its machine). A snapshot whose shape hash
-     * isn't this one is refused. Transient machines (the tests') have none: their snapshots are checked by devices.
-     */
-    about?: { name: string; shape: Shape; shapeHash: string; urls: Record<number, string> };
-    /** What a restore does with each writable disk the snapshot pins (web/snapshot.ts `DiskPlan`); none: replace each. */
-    plan?: DiskPlan[];
-  }
+      type: 'start';
+      /** The page's query (`location.search`), for the worker's own knobs (`?snd=`, `?gpu=`, `?jit=`, `?fma=`, `?growcore`, `?vyield=`). */
+      query: string;
+      machine: MachineName;
+      ncpus: number;
+      /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */
+      ramMiB: number;
+      /** Its split as the user set it (`MachineRecord.ramSplit`, `?split=`), MiB, memory 0 first; absent: the automatic one. */
+      ramSplit?: number[];
+      /** The JIT's code cache budget, MiB (`MachineRecord.jitMiB`, `?jitmb=`; `BootOptions.jitBytes`); absent: the core's default. */
+      jitMiB?: number;
+      /** The guest's keyboard layout (`MachineRecord.keyboard`, `?keyboard=`; web/app/keyboard.ts), for a `firmware` machine; absent: none set. */
+      keyLayout?: string;
+      /** The guest takes the network's settings (`MachineRecord.netConfig`, `?netconfig=0` turns it off; web/app/guest-net.ts): the page's .network credential and the unit. */
+      netConfig: boolean;
+      /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
+      sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
+      /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */
+      keyboard: MessagePort;
+      tablet: MessagePort;
+      /** A relative mouse's and a touchscreen's ports, for a machine that has them (a stored machine's `mouse` and `touch`, a transient one's `?mouse=1`, `?touch=1`). */
+      mouse?: MessagePort;
+      touch?: MessagePort;
+      /** The clock device (virtio-rtc): a stored machine's `clock`, a transient one's unless `?clock=0`. */
+      clock?: boolean;
+      /**
+       * The agent's port (web/agent-device.ts; web/app/agent-link.ts has the page's end), for a machine with clipboard
+       * sharing (a stored machine's `clipboard`, a transient one's `?clipboard=1`): the machine gets the agent's device.
+       */
+      agent?: MessagePort;
+      /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
+      serial: MessagePort;
+      /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */
+      screen?: OffscreenCanvas;
+      /**
+       * A 3D machine (the page's default where WebGL2 is; `?gpu=2d` turns it off): the GPU worker's port (web/gpu-worker.ts, which has the
+       * screen) and the caps it gives the guest (web/virgl-caps.ts). The virtio-gpu gets virgl and renders there.
+       */
+      renderer?: MessagePort;
+      caps?: Uint8Array;
+      /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"). */
+      vulkan?: boolean;
+      /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
+      display: MessagePort;
+      /** The display's size at the start (the page's screen box, `wantedSize` in main.ts): the console and the firmware get it with no event. Default: the machine's. */
+      size?: { width: number; height: number };
+      /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
+      simple?: boolean;
+      /** The display reports its draw latencies (`draw-stats` on the display port, kept in `window.__drawStats`; the page's `?displaystats`, for bench/gpu). */
+      displayStats?: boolean;
+      /** The disks keep stage timers and a trace of their base reads, answered on the `webpc-iostats` BroadcastChannel (the page's `?iostats`, for bench/remote-disk). */
+      ioStats?: boolean;
+      /** A remote disk's blocks aren't kept in OPFS (the page's `?diskcache=0`: bench/remote-disk's A/B). */
+      noDiskCache?: boolean;
+      /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
+      avProbe?: boolean;
+      /**
+       * The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm`, `bf16`), all on but `i8mm`, `fcma`, `fp16`, `fhm` and `bf16` by default; the page's `?rng=0`,
+       * `?e0pd=0`, `?sha3=0`, `?jscvt=0` and the rest turn one off, `?i8mm=1`, `?fcma=1`, `?fp16=1`, `?fhm=1` and `?bf16=1` turn those on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
+       * A snapshot's are its own.
+       */
+      cpu?: {
+        rng?: boolean;
+        e0pd?: boolean;
+        sha3?: boolean;
+        jscvt?: boolean;
+        rcpc?: boolean;
+        sb?: boolean;
+        flagm?: boolean;
+        dit?: boolean;
+        frintts?: boolean;
+        dotprod?: boolean;
+        i8mm?: boolean;
+        rdm?: boolean;
+        rcpc2?: boolean;
+        fcma?: boolean;
+        fp16?: boolean;
+        fhm?: boolean;
+        bf16?: boolean;
+      };
+      /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
+      params?: string;
+      /**
+       * Systemd credentials to give a `firmware` machine over fw_cfg beyond its own (the page's
+       * `?credential=name:value`, for development and tests: `login.noauth:yes` and the `firstboot.*`
+       * ones boot Debian unattended). The release page passes none.
+       */
+      credentials?: Credential[];
+      /** The words of the units the page has the guest run (web/app/guest-words.ts): the page renders them, the worker places them. */
+      guest: GuestWords;
+      /** The machine's disks in slot order (docs/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
+      disks: StartDisk[];
+      /**
+       * The OPFS directory of the machine's own files: the firmware's variable store (`flash`) and a suspended machine
+       * (`suspend`). A stored machine's `machines/<id>`; a transient one's is its first writable disk's overlay. None:
+       * neither is kept.
+       */
+      home?: string;
+      /**
+       * The machine's network adapters in order (docs/network-adapters.md): each a virtio-net with its MAC on its
+       * own gateway, whose end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other
+       * end and gives it to a client (web/app/network.ts). The machine gets its `network` credentials when it has any.
+       * Only for a machine with `network`.
+       */
+      nets?: { mac: string; ip: MessagePort }[];
+      /**
+       * The machine has a USB controller (an xHCI, docs/usb.md "The page"): this port carries the page's `usb-attach` and
+       * `usb-detach` to the device worker and its `usb-state` back (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The
+       * page attaches its devices once the machine runs (at a start, a resume and a restore alike: a snapshot's ports are
+       * empty). None: no controller (a stored machine's `usb`, a transient one's `?usb=1`).
+       */
+      usb?: MessagePort;
+      /**
+       * The machine has shared folders (docs/shares.md): the one virtio-9p device, on what can be served now (`list`); `port`
+       * carries the page's attachments and grants to the device worker (web/9p-folders.ts `FoldersToDevice`). None: no device.
+       */
+      folders?: { list: FolderSpec[]; port: MessagePort };
+      /** The mount point the page sets in the guest (`MachineRecord.sharesPath`, web/app/shares-mount.ts), for a `firmware` machine; none: not mounted. */
+      sharesPath?: string;
+      /**
+       * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
+       * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's
+       * overlay is replaced by the file's blocks. `ncpus` and `ramMiB` are then ignored.
+       */
+      snapshot?: File;
+      /**
+       * False: boot even if a suspended machine is kept beside the disk (it is dropped). Otherwise a
+       * start resumes one if there is one and its pins match (docs/frontend.md "Suspend").
+       */
+      resume?: boolean;
+      /**
+       * The machine as its snapshots describe it (docs/machines.md §5.1): its name, shape and the shape's hash, and
+       * the URLs of its URL disks by slot (a file restored elsewhere can make its machine). A snapshot whose shape hash
+       * isn't this one is refused. Transient machines (the tests') have none: their snapshots are checked by devices.
+       */
+      about?: { name: string; shape: Shape; shapeHash: string; urls: Record<number, string> };
+      /** What a restore does with each writable disk the snapshot pins (web/snapshot.ts `DiskPlan`); none: replace each. */
+      plan?: DiskPlan[];
+    }
   /**
    * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
    * in the overlay) is written beside the overlay, and it stops: state `suspended`. On a failure it
@@ -187,7 +206,12 @@ export type ToWorker =
  * `disks/<id>`, and size: web/stored.ts). A stored disk written in place is a blank source with the store as its
  * overlay.
  */
-export type DiskSource = { url: string } | { file: File } | { blank: number } | { ramdisk: number; swap?: string } | { stored: string; size: number };
+export type DiskSource =
+  | { url: string }
+  | { file: File }
+  | { blank: number }
+  | { ramdisk: number; swap?: string }
+  | { stored: string; size: number };
 
 /**
  * A disk of the machine being started (docs/machines.md §4.2): where its bytes come from (a URL read by
@@ -244,14 +268,34 @@ export type FromWorker =
   | { type: 'snapshot-chunk'; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
-  | { type: 'snapshot-done'; bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }
+  | {
+      type: 'snapshot-done';
+      bytes: number;
+      pausedMs: number;
+      stateMs: number;
+      blobBytes: number;
+      pins: SnapshotDisk[];
+      slept?: boolean;
+    }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
   | { type: 'snapshot-error'; error: WireError }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
   | { type: 'profile'; samples: [string, number][] }
   /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
   /** `heap`'s answer (web/vm.ts `heapUse`). */
-  | { type: 'heap'; heap: { belowBytes: number; reserveBytes: number; touchedBytes: number; highBytes: number; buckets: number[]; arenaBytes: number; arenaTouchedBytes: number; arenaHighBytes: number } }
+  | {
+      type: 'heap';
+      heap: {
+        belowBytes: number;
+        reserveBytes: number;
+        touchedBytes: number;
+        highBytes: number;
+        buckets: number[];
+        arenaBytes: number;
+        arenaTouchedBytes: number;
+        arenaHighBytes: number;
+      };
+    }
   | { type: 'timeline'; timeline: Timeline }
   | { type: 'stopped' };
 

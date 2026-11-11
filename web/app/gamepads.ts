@@ -9,12 +9,19 @@ import type { PadState } from '../usb-gamepad.ts';
 
 /** What the feed reads of a `Gamepad`. */
 export type PadLike = {
-  index: number; id: string; connected: boolean; buttons: readonly { pressed: boolean; value: number }[]; axes: readonly number[];
+  index: number;
+  id: string;
+  connected: boolean;
+  buttons: readonly { pressed: boolean; value: number }[];
+  axes: readonly number[];
   vibrationActuator?: Rumbler | null;
 };
 /** What the feed uses of a `GamepadHapticActuator`. */
 type Rumbler = {
-  playEffect(type: 'dual-rumble', params: { startDelay?: number; duration?: number; strongMagnitude?: number; weakMagnitude?: number }): Promise<unknown>;
+  playEffect(
+    type: 'dual-rumble',
+    params: { startDelay?: number; duration?: number; strongMagnitude?: number; weakMagnitude?: number },
+  ): Promise<unknown>;
   reset(): Promise<unknown>;
 };
 
@@ -56,7 +63,11 @@ export function readPads(): readonly (PadLike | null)[] {
 }
 
 const same = (a: PadState, b: PadState) =>
-  a.pressed === b.pressed && a.values.length === b.values.length && a.axes.length === b.axes.length && a.values.every((v, i) => v === b.values[i]) && a.axes.every((v, i) => v === b.axes[i]);
+  a.pressed === b.pressed &&
+  a.values.length === b.values.length &&
+  a.axes.length === b.axes.length &&
+  a.values.every((v, i) => v === b.values[i]) &&
+  a.axes.every((v, i) => v === b.axes[i]);
 
 /** How often the attached pads are read: the device's endpoint interval (4 ms) would be the pad's own; 8 ms is ~120 Hz. */
 export const POLL_MS = 8;
@@ -83,7 +94,10 @@ export class PadFeed {
   private readonly again: number;
 
   /** `again`: how often a rumble that goes on is played again (`RUMBLE_AGAIN_MS`; shorter in tests). */
-  constructor(send: (connector: number, pad: PadState) => void, o: { read?: () => readonly (PadLike | null)[]; hidden?: () => boolean; again?: number } = {}) {
+  constructor(
+    send: (connector: number, pad: PadState) => void,
+    o: { read?: () => readonly (PadLike | null)[]; hidden?: () => boolean; again?: number } = {},
+  ) {
     this.send = send;
     this.again = o.again ?? RUMBLE_AGAIN_MS;
     this.read = o.read ?? readPads;
@@ -96,7 +110,10 @@ export class PadFeed {
     for (const c of this.last.keys()) if (!this.pads.has(c)) this.last.delete(c);
     for (const c of this.rumbles.keys()) if (!this.pads.has(c)) this.rumble(c, 0, 0);
     if (this.pads.size && !this.timer) this.timer = setInterval(() => this.tick(), POLL_MS);
-    else if (!this.pads.size && this.timer) { clearInterval(this.timer); this.timer = undefined; }
+    else if (!this.pads.size && this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
     if (this.pads.size) this.tick();
   }
 
@@ -120,16 +137,26 @@ export class PadFeed {
     this.rumbles.delete(connector);
     const actuator = (index: number) => {
       const g = this.hidden() ? undefined : this.read()[index];
-      return g?.connected && g.index === index ? g.vibrationActuator ?? undefined : undefined;
+      return g?.connected && g.index === index ? (g.vibrationActuator ?? undefined) : undefined;
     };
     if (!(strong > 0 || weak > 0)) {
-      if (was) actuator(was.index)?.reset().catch(() => {});
+      if (was)
+        actuator(was.index)
+          ?.reset()
+          .catch(() => {});
       return;
     }
     const index = this.pads.get(connector);
     if (index === undefined) return;
     const play = () => {
-      actuator(index)?.playEffect('dual-rumble', { startDelay: 0, duration: RUMBLE_MS, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) }).catch(() => {});
+      actuator(index)
+        ?.playEffect('dual-rumble', {
+          startDelay: 0,
+          duration: RUMBLE_MS,
+          strongMagnitude: Math.min(1, strong),
+          weakMagnitude: Math.min(1, weak),
+        })
+        .catch(() => {});
       this.rumbles.set(connector, { index, timer: setTimeout(play, this.again) });
     };
     play();

@@ -132,7 +132,11 @@ export function preselect(all: Connection[], held: (id: string) => boolean): str
   return all.filter((c) => c.lastUsed > 0 && !held(c.id)).sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
 }
 
-const NO_STATE: ConnectionState = { forgetTailnet: async () => {}, forgetTailcat: async () => {}, forgetRoom: async () => {} };
+const NO_STATE: ConnectionState = {
+  forgetTailnet: async () => {},
+  forgetTailcat: async () => {},
+  forgetRoom: async () => {},
+};
 
 /** The page's connections: the store's, and its own ephemeral ones. */
 export class Connections {
@@ -146,7 +150,9 @@ export class Connections {
 
   /** Every connection this page can attach, stored and ephemeral, oldest first. */
   async list(): Promise<Connection[]> {
-    return [...(await this.store.all('connections')), ...[...this.memory.values()].map((c) => structuredClone(c))].sort((a, b) => a.created - b.created || (a.id < b.id ? -1 : 1));
+    return [...(await this.store.all('connections')), ...[...this.memory.values()].map((c) => structuredClone(c))].sort(
+      (a, b) => a.created - b.created || (a.id < b.id ? -1 : 1),
+    );
   }
 
   async get(id: string): Promise<Connection | undefined> {
@@ -177,9 +183,21 @@ export class Connections {
       name: uniqueName(o.name?.trim() || defaultName(o), taken),
       kind: o.kind,
       ephemeral,
-      ...(o.kind === 'tailnet' ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'webpc', exitNode: '', ...o.tailnet, stateKey: id } } : {}),
+      ...(o.kind === 'tailnet'
+        ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'webpc', exitNode: '', ...o.tailnet, stateKey: id } }
+        : {}),
       ...(o.kind === 'local' ? { local: { url: o.local?.url ?? '' } } : {}),
-      ...(o.kind === 'tailcat' ? { tailcat: { serve: false, relay: '', ...o.tailcat, identityKey: id, ...(ephemeral ? { identity: newTailcatIdentity() } : {}) } } : {}),
+      ...(o.kind === 'tailcat'
+        ? {
+            tailcat: {
+              serve: false,
+              relay: '',
+              ...o.tailcat,
+              identityKey: id,
+              ...(ephemeral ? { identity: newTailcatIdentity() } : {}),
+            },
+          }
+        : {}),
       ...(o.kind === 'room' ? { room: room({ incoming: true, relayOnly: false, link: '', ...o.room }) } : {}),
       connectAtStart: o.connectAtStart ?? true,
       lastUsed: 0,
@@ -211,7 +229,8 @@ export class Connections {
     if (eph) {
       this.memory.delete(id);
       // An ephemeral room connection may use a stored one's kept key: the last to go forgets it.
-      if (eph.room && !eph.room.identity && !(await this.sharesKey(eph))) await this.state.forgetRoom(eph.room.identityKey);
+      if (eph.room && !eph.room.identity && !(await this.sharesKey(eph)))
+        await this.state.forgetRoom(eph.room.identityKey);
       return;
     }
     const c = await this.store.get('connections', id);
@@ -224,7 +243,9 @@ export class Connections {
 
   /** Whether another room connection (stored, or this page's ephemeral one) uses room connection `c`'s kept key. */
   async sharesKey(c: Connection): Promise<boolean> {
-    return (await this.list()).some((x) => x.id !== c.id && x.room?.identityKey === c.room?.identityKey && !x.room?.identity);
+    return (await this.list()).some(
+      (x) => x.id !== c.id && x.room?.identityKey === c.room?.identityKey && !x.room?.identity,
+    );
   }
 }
 
@@ -255,7 +276,15 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
     let c = have.find((x) => x.tailnet?.stateKey === profile);
     if (!c) {
       const mine = profile === currentURL;
-      c = await conns.create({ kind: 'tailnet', connectAtStart: !!(mine && s?.kind !== 'tailcat' && s?.autoconnect), tailnet: { controlURL: profile, hostname: (mine && s?.hostname) || 'webpc', exitNode: (mine && s?.exitNode) || '' } });
+      c = await conns.create({
+        kind: 'tailnet',
+        connectAtStart: !!(mine && s?.kind !== 'tailcat' && s?.autoconnect),
+        tailnet: {
+          controlURL: profile,
+          hostname: (mine && s?.hostname) || 'webpc',
+          exitNode: (mine && s?.exitNode) || '',
+        },
+      });
       c.tailnet!.stateKey = profile;
       await conns.put(c);
     }
@@ -265,7 +294,11 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
     let c = have.find((x) => x.tailcat?.identityKey === 'served');
     if (!c) {
       // The server's address, a secret, was never kept: the connection serves only until it is edited.
-      c = await conns.create({ kind: 'tailcat', connectAtStart: !!(s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit), tailcat: { serve: true, relay: s?.tailcatRelay ?? '' } });
+      c = await conns.create({
+        kind: 'tailcat',
+        connectAtStart: !!(s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit),
+        tailcat: { serve: true, relay: s?.tailcatRelay ?? '' },
+      });
       c.tailcat!.identityKey = 'served';
       await conns.put(c);
     }

@@ -12,13 +12,17 @@ import { KEYMAPS, type Keymap } from './keymaps.ts';
 export type Key = { code: string; x: number; y: number; w: number; h: number };
 
 /** The layout's size in key widths. */
-export const WIDTH = 23, HEIGHT = 6.5;
+export const WIDTH = 23,
+  HEIGHT = 6.5;
 
 /** Row `y` from `x`: a code is a key 1u wide, `[code, w]` a wider one, a number a gap. */
 function row(y: number, x: number, items: (string | [string, number] | number)[], h = 1): Key[] {
   const out: Key[] = [];
   for (const it of items) {
-    if (typeof it === 'number') { x += it; continue; }
+    if (typeof it === 'number') {
+      x += it;
+      continue;
+    }
     const [code, w] = typeof it === 'string' ? [it, 1] : it;
     out.push({ code, x, y, w, h });
     x += w;
@@ -40,7 +44,19 @@ export const IME_KEYS = ['NonConvert', 'Convert', 'KanaMode'];
 /** Whether keymap `map` is a JIS keyboard's (its yen key): it has the input-method keys. */
 const isJis = (map: Keymap) => !!map.IntlYen;
 /** JIS's bottom row: Space narrowed for Muhenkan left of it, Henkan and Katakana/Hiragana right (15u, as US's). */
-const JIS_BOTTOM: [string, number][] = [['ControlLeft', 1.25], ['MetaLeft', 1], ['AltLeft', 1.25], ['NonConvert', 1.25], ['Space', 3.25], ['Convert', 1.25], ['KanaMode', 1.25], ['AltRight', 1.25], ['MetaRight', 1], ['ContextMenu', 1], ['ControlRight', 1.25]];
+const JIS_BOTTOM: [string, number][] = [
+  ['ControlLeft', 1.25],
+  ['MetaLeft', 1],
+  ['AltLeft', 1.25],
+  ['NonConvert', 1.25],
+  ['Space', 3.25],
+  ['Convert', 1.25],
+  ['KanaMode', 1.25],
+  ['AltRight', 1.25],
+  ['MetaRight', 1],
+  ['ContextMenu', 1],
+  ['ControlRight', 1.25],
+];
 
 /**
  * The full keyboard for keymap `map`: the main block (15u), the navigation block, the numeric keypad; ISO's key beside
@@ -48,16 +64,103 @@ const JIS_BOTTOM: [string, number][] = [['ControlLeft', 1.25], ['MetaLeft', 1], 
  * and its input-method keys beside Space (`IME_KEYS`) where `map` has them, the keys beside them narrower.
  */
 export function fullKeys(map: Keymap = US): Key[] {
-  const iso = !!map.IntlBackslash, ro = !!map.IntlRo, yen = !!map.IntlYen, jis = isJis(map);
+  const iso = !!map.IntlBackslash,
+    ro = !!map.IntlRo,
+    yen = !!map.IntlYen,
+    jis = isJis(map);
   return [
-    ...row(0, 0, ['Escape', 1, ...F(1, 4), 0.5, ...F(5, 8), 0.5, ...F(9, 12), 0.5, 'PrintScreen', 'ScrollLock', 'Pause']),
-    ...row(1.5, 0, ['Backquote', ...'1234567890'.split('').map((d) => `Digit${d}`), 'Minus', 'Equal', ...(yen ? ['IntlYen', ['Backspace', 1] as [string, number]] : [['Backspace', 2] as [string, number]]), 0.5, 'Insert', 'Home', 'PageUp', 0.5, 'NumLock', 'NumpadDivide', 'NumpadMultiply', 'NumpadSubtract']),
-    ...row(2.5, 0, [['Tab', 1.5], ...letters('QWERTYUIOP'), 'BracketLeft', 'BracketRight', ['Backslash', 1.5], 0.5, 'Delete', 'End', 'PageDown', 0.5, 'Numpad7', 'Numpad8', 'Numpad9']),
+    ...row(0, 0, [
+      'Escape',
+      1,
+      ...F(1, 4),
+      0.5,
+      ...F(5, 8),
+      0.5,
+      ...F(9, 12),
+      0.5,
+      'PrintScreen',
+      'ScrollLock',
+      'Pause',
+    ]),
+    ...row(1.5, 0, [
+      'Backquote',
+      ...'1234567890'.split('').map((d) => `Digit${d}`),
+      'Minus',
+      'Equal',
+      ...(yen ? ['IntlYen', ['Backspace', 1] as [string, number]] : [['Backspace', 2] as [string, number]]),
+      0.5,
+      'Insert',
+      'Home',
+      'PageUp',
+      0.5,
+      'NumLock',
+      'NumpadDivide',
+      'NumpadMultiply',
+      'NumpadSubtract',
+    ]),
+    ...row(2.5, 0, [
+      ['Tab', 1.5],
+      ...letters('QWERTYUIOP'),
+      'BracketLeft',
+      'BracketRight',
+      ['Backslash', 1.5],
+      0.5,
+      'Delete',
+      'End',
+      'PageDown',
+      0.5,
+      'Numpad7',
+      'Numpad8',
+      'Numpad9',
+    ]),
     ...row(2.5, 22, ['NumpadAdd'], 2),
-    ...row(3.5, 0, [['CapsLock', 1.75], ...letters('ASDFGHJKL'), 'Semicolon', 'Quote', ['Enter', 2.25], 4, 'Numpad4', 'Numpad5', 'Numpad6']),
-    ...row(4.5, 0, [...(iso ? [['ShiftLeft', 1.25] as [string, number], 'IntlBackslash'] : [['ShiftLeft', 2.25] as [string, number]]), ...letters('ZXCVBNM'), 'Comma', 'Period', 'Slash', ...(ro ? ['IntlRo', ['ShiftRight', 1.75] as [string, number]] : [['ShiftRight', 2.75] as [string, number]]), 1.5, 'ArrowUp', 1.5, 'Numpad1', 'Numpad2', 'Numpad3']),
+    ...row(3.5, 0, [
+      ['CapsLock', 1.75],
+      ...letters('ASDFGHJKL'),
+      'Semicolon',
+      'Quote',
+      ['Enter', 2.25],
+      4,
+      'Numpad4',
+      'Numpad5',
+      'Numpad6',
+    ]),
+    ...row(4.5, 0, [
+      ...(iso ? [['ShiftLeft', 1.25] as [string, number], 'IntlBackslash'] : [['ShiftLeft', 2.25] as [string, number]]),
+      ...letters('ZXCVBNM'),
+      'Comma',
+      'Period',
+      'Slash',
+      ...(ro ? ['IntlRo', ['ShiftRight', 1.75] as [string, number]] : [['ShiftRight', 2.75] as [string, number]]),
+      1.5,
+      'ArrowUp',
+      1.5,
+      'Numpad1',
+      'Numpad2',
+      'Numpad3',
+    ]),
     ...row(4.5, 22, ['NumpadEnter'], 2),
-    ...row(5.5, 0, [...(jis ? JIS_BOTTOM : [['ControlLeft', 1.25], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 6.25], ['AltRight', 1.25], ['MetaRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.25]] as [string, number][]), 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight', 0.5, ['Numpad0', 2], 'NumpadDecimal']),
+    ...row(5.5, 0, [
+      ...(jis
+        ? JIS_BOTTOM
+        : ([
+            ['ControlLeft', 1.25],
+            ['MetaLeft', 1.25],
+            ['AltLeft', 1.25],
+            ['Space', 6.25],
+            ['AltRight', 1.25],
+            ['MetaRight', 1.25],
+            ['ContextMenu', 1.25],
+            ['ControlRight', 1.25],
+          ] as [string, number][])),
+      0.5,
+      'ArrowLeft',
+      'ArrowDown',
+      'ArrowRight',
+      0.5,
+      ['Numpad0', 2],
+      'NumpadDecimal',
+    ]),
   ];
 }
 /** The US keyboard's 104 keys. */
@@ -67,7 +170,8 @@ export const KEYS: Key[] = fullKeys();
 export type Layout = 'full' | 'compact';
 
 /** The compact layout's size in key widths: ten keys across, as a phone's keyboard. */
-export const COMPACT_WIDTH = 10, COMPACT_HEIGHT = 5;
+export const COMPACT_WIDTH = 10,
+  COMPACT_HEIGHT = 5;
 
 /** A page of the compact layout: its id (its tab's words are the catalog's `osk:Osk.page.<id>`) and its keys. */
 export type Page = { id: string; keys: Key[] };
@@ -107,44 +211,112 @@ export function pages(map: Keymap = US): Page[] {
   const [digits, top, home, low] = letterRows(map);
   const onMain = new Set([digits, top, home, low].flat());
   // The symbols' page: the punctuation keys the letters' page hasn't, the layout's extra keys and JIS's input-method keys, in two rows.
-  const punct = ['Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Quote', 'Comma', 'Period', 'Slash', ...['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c]), ...(isJis(map) ? IME_KEYS : [])].filter((c) => !onMain.has(c));
+  const punct = [
+    'Backquote',
+    'Minus',
+    'Equal',
+    'BracketLeft',
+    'BracketRight',
+    'Backslash',
+    'Quote',
+    'Comma',
+    'Period',
+    'Slash',
+    ...['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c]),
+    ...(isJis(map) ? IME_KEYS : []),
+  ].filter((c) => !onMain.has(c));
   const half = Math.ceil(punct.length / 2);
-  const spread = (y: number, codes: string[]) => row(y, 0, codes.map((c) => [c, COMPACT_WIDTH / Math.max(codes.length, 1)] as [string, number]));
+  const spread = (y: number, codes: string[]) =>
+    row(
+      y,
+      0,
+      codes.map((c) => [c, COMPACT_WIDTH / Math.max(codes.length, 1)] as [string, number]),
+    );
   /** A row of keys 1u wide, narrower when more than ten. */
   const fit = (y: number, codes: string[]) => (codes.length > COMPACT_WIDTH ? spread(y, codes) : row(y, 0, codes));
   // Shift and Backspace beside the bottom letters: 1.5u each beside seven, 1.25u beside more (the letters narrower).
-  const side = Math.max(1.25, (COMPACT_WIDTH - low.length) / 2), lw = Math.min(1, (COMPACT_WIDTH - 2 * side) / low.length);
+  const side = Math.max(1.25, (COMPACT_WIDTH - low.length) / 2),
+    lw = Math.min(1, (COMPACT_WIDTH - 2 * side) / low.length);
   return [
-    { id: 'main', keys: [
-      ...fit(0, digits),
-      ...fit(1, top),
-      ...fit(2, home),
-      ...row(3, 0, [['ShiftLeft', side], ...low.map((c) => [c, lw] as [string, number]), ['Backspace', side]]),
-      ...bottom(),
-    ] },
-    { id: 'symbols', keys: [
-      ...spread(0, punct.slice(0, half)),
-      ...spread(1, punct.slice(half)),
-      ...row(2, 0, [['CapsLock', 1.5], ['ShiftRight', 1.75], ['AltRight', 1.75], ['MetaRight', 1.75], ['ContextMenu', 1.5], ['ControlRight', 1.75]]),
-      ...row(3, 0, [['ShiftLeft', 1.5], ['ArrowLeft', 1.75], ['ArrowDown', 1.75], ['ArrowUp', 1.75], ['ArrowRight', 1.75], ['Backspace', 1.5]]),
-      ...bottom(),
-    ] },
-    { id: 'fn', keys: [
-      ...row(0, 0, F(1, 10)),
-      ...row(1, 0, [...F(11, 12), 1, 'PrintScreen', 'ScrollLock', 'Pause', 1, 'Insert', 'Home', 'PageUp']),
-      ...row(2, 0, [['Escape', 1.5], ['Tab', 1.5], ['Backspace', 1.75], ['Enter', 1.75], 0.5, 'Delete', 'End', 'PageDown']),
-      ...row(3, 0, [['ShiftLeft', 2.5], ['ControlLeft', 2], ['AltLeft', 2], 1.5, 'ArrowUp']),
-      ...row(4, 0, [['MetaLeft', 2], ['Space', 4.5], 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight']),
-    ] },
-    { id: 'keypad', keys: [
-      ...row(0, 0, [['NumLock', NUM], ['NumpadDivide', NUM], ['NumpadMultiply', NUM], ['NumpadSubtract', NUM], 0.5, ['Backspace', 3]]),
-      ...row(1, 0, [['Numpad7', NUM], ['Numpad8', NUM], ['Numpad9', NUM], NUM + 0.5, ['Escape', 1.5], ['Tab', 1.5]]),
-      ...row(1, 3 * NUM, [['NumpadAdd', NUM]], 2),
-      ...row(2, 0, [['Numpad4', NUM], ['Numpad5', NUM], ['Numpad6', NUM], NUM + 0.5, ['ShiftLeft', 1.5], ['ControlLeft', 1.5]]),
-      ...row(3, 0, [['Numpad1', NUM], ['Numpad2', NUM], ['Numpad3', NUM], NUM + 1.5, 'ArrowUp']),
-      ...row(3, 3 * NUM, [['NumpadEnter', NUM]], 2),
-      ...row(4, 0, [['Numpad0', 2 * NUM], ['NumpadDecimal', NUM], NUM + 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight']),
-    ] },
+    {
+      id: 'main',
+      keys: [
+        ...fit(0, digits),
+        ...fit(1, top),
+        ...fit(2, home),
+        ...row(3, 0, [['ShiftLeft', side], ...low.map((c) => [c, lw] as [string, number]), ['Backspace', side]]),
+        ...bottom(),
+      ],
+    },
+    {
+      id: 'symbols',
+      keys: [
+        ...spread(0, punct.slice(0, half)),
+        ...spread(1, punct.slice(half)),
+        ...row(2, 0, [
+          ['CapsLock', 1.5],
+          ['ShiftRight', 1.75],
+          ['AltRight', 1.75],
+          ['MetaRight', 1.75],
+          ['ContextMenu', 1.5],
+          ['ControlRight', 1.75],
+        ]),
+        ...row(3, 0, [
+          ['ShiftLeft', 1.5],
+          ['ArrowLeft', 1.75],
+          ['ArrowDown', 1.75],
+          ['ArrowUp', 1.75],
+          ['ArrowRight', 1.75],
+          ['Backspace', 1.5],
+        ]),
+        ...bottom(),
+      ],
+    },
+    {
+      id: 'fn',
+      keys: [
+        ...row(0, 0, F(1, 10)),
+        ...row(1, 0, [...F(11, 12), 1, 'PrintScreen', 'ScrollLock', 'Pause', 1, 'Insert', 'Home', 'PageUp']),
+        ...row(2, 0, [
+          ['Escape', 1.5],
+          ['Tab', 1.5],
+          ['Backspace', 1.75],
+          ['Enter', 1.75],
+          0.5,
+          'Delete',
+          'End',
+          'PageDown',
+        ]),
+        ...row(3, 0, [['ShiftLeft', 2.5], ['ControlLeft', 2], ['AltLeft', 2], 1.5, 'ArrowUp']),
+        ...row(4, 0, [['MetaLeft', 2], ['Space', 4.5], 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight']),
+      ],
+    },
+    {
+      id: 'keypad',
+      keys: [
+        ...row(0, 0, [
+          ['NumLock', NUM],
+          ['NumpadDivide', NUM],
+          ['NumpadMultiply', NUM],
+          ['NumpadSubtract', NUM],
+          0.5,
+          ['Backspace', 3],
+        ]),
+        ...row(1, 0, [['Numpad7', NUM], ['Numpad8', NUM], ['Numpad9', NUM], NUM + 0.5, ['Escape', 1.5], ['Tab', 1.5]]),
+        ...row(1, 3 * NUM, [['NumpadAdd', NUM]], 2),
+        ...row(2, 0, [
+          ['Numpad4', NUM],
+          ['Numpad5', NUM],
+          ['Numpad6', NUM],
+          NUM + 0.5,
+          ['ShiftLeft', 1.5],
+          ['ControlLeft', 1.5],
+        ]),
+        ...row(3, 0, [['Numpad1', NUM], ['Numpad2', NUM], ['Numpad3', NUM], NUM + 1.5, 'ArrowUp']),
+        ...row(3, 3 * NUM, [['NumpadEnter', NUM]], 2),
+        ...row(4, 0, [['Numpad0', 2 * NUM], ['NumpadDecimal', NUM], NUM + 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight']),
+      ],
+    },
   ];
 }
 /** The US layout's pages. */
@@ -163,12 +335,26 @@ export const autoLayout = (width: number): Layout => (width < COMPACT_BELOW ? 'c
 export const layoutOf = (width: number, forced: Layout | undefined): Layout => forced ?? autoLayout(width);
 
 /** The keys that modify others: tapped alone, they stay down for the next key. */
-export const MODIFIERS = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight']);
+export const MODIFIERS = new Set([
+  'ShiftLeft',
+  'ShiftRight',
+  'ControlLeft',
+  'ControlRight',
+  'AltLeft',
+  'AltRight',
+  'MetaLeft',
+  'MetaRight',
+]);
 
 /** The keypad's and Space's characters (the same on every layout but the keypad's decimal key, the keymap's). */
 const FIXED: Record<string, string> = {
   ...Object.fromEntries('0123456789'.split('').map((d) => [`Numpad${d}`, d])),
-  NumpadDivide: '/', NumpadMultiply: '*', NumpadSubtract: '-', NumpadAdd: '+', NumpadDecimal: '.', Space: ' ',
+  NumpadDivide: '/',
+  NumpadMultiply: '*',
+  NumpadSubtract: '-',
+  NumpadAdd: '+',
+  NumpadDecimal: '.',
+  Space: ' ',
 };
 
 /** A letter key's: unshifted, a lowercase letter whose capital is the shifted one (shown alone, as a keyboard does). */
@@ -195,7 +381,8 @@ export function legends(code: string, map: Keymap = US): { top?: string; main: s
  */
 export function keyOf(code: string, shift: boolean, map: Keymap = US, third = false): string {
   const l = map[code];
-  if (code.startsWith('Numpad') || code === 'Space') return code === 'NumpadEnter' ? 'Enter' : l?.[0] ?? FIXED[code] ?? code;
+  if (code.startsWith('Numpad') || code === 'Space')
+    return code === 'NumpadEnter' ? 'Enter' : (l?.[0] ?? FIXED[code] ?? code);
   if (l) {
     if (third && l[2]) return (shift && l[3]) || l[2];
     return (shift && l[1]) || l[0];
@@ -207,9 +394,18 @@ export function keyOf(code: string, shift: boolean, map: Keymap = US, third = fa
 export type Mods = { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean; altGr: boolean };
 
 /** Key `code` with modifiers `m` as a key event says it, on keymap `map`: the right Alt is AltGr where the key has a third level. */
-export function eventOf(code: string, m: Mods, map: Keymap = US): { key: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean } {
+export function eventOf(
+  code: string,
+  m: Mods,
+  map: Keymap = US,
+): { key: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean } {
   const third = m.altGr && !!map[code]?.[2];
-  return { key: keyOf(code, m.shift, map, third), ctrlKey: m.ctrl, altKey: m.alt || (m.altGr && !third), metaKey: m.meta };
+  return {
+    key: keyOf(code, m.shift, map, third),
+    ctrlKey: m.ctrl,
+    altKey: m.alt || (m.altGr && !third),
+    metaKey: m.meta,
+  };
 }
 
 /** How a tapped modifier is let go: after the next key (`next`), or when it's tapped again (`toggle`). */
@@ -219,11 +415,15 @@ export type ModifierMode = 'next' | 'toggle';
 export const HOLD_MS = 500;
 
 /** A key held this long (ms) repeats, every `REPEAT_MS` after (a PC's typematic defaults: 500 ms, ~30 a second). */
-export const REPEAT_DELAY_MS = 500, REPEAT_MS = 33;
+export const REPEAT_DELAY_MS = 500,
+  REPEAT_MS = 33;
 
 /** Timers (`setTimeout`'s; a test's clock). */
 export type Timers = { set(f: () => void, ms: number): unknown; clear(id: unknown): void };
-const TIMERS: Timers = { set: (f, ms) => setTimeout(f, ms), clear: (id) => clearTimeout(id as ReturnType<typeof setTimeout>) };
+const TIMERS: Timers = {
+  set: (f, ms) => setTimeout(f, ms),
+  clear: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+};
 
 /**
  * Pointers on the keys to the keys' downs and ups (`send`). A key goes down when the first pointer presses it and up
@@ -250,7 +450,12 @@ export class OskKeys {
   /** Called after any change (to redraw). */
   onChange: () => void = () => {};
 
-  constructor(send: (code: string, down: boolean, repeat?: boolean) => void, mode: ModifierMode = 'next', now: () => number = () => performance.now(), timers: Timers = TIMERS) {
+  constructor(
+    send: (code: string, down: boolean, repeat?: boolean) => void,
+    mode: ModifierMode = 'next',
+    now: () => number = () => performance.now(),
+    timers: Timers = TIMERS,
+  ) {
     this.send = send;
     this.mode = mode;
     this.now = now;
@@ -260,11 +465,12 @@ export class OskKeys {
   /** Key `code` repeats while held: its first repeat after `REPEAT_DELAY_MS`. */
   private repeat(code: string) {
     this.stopRepeat();
-    const tick = (ms: number) => this.timers.set(() => {
-      if (this.repeating?.code !== code || !this.held.has(code)) return;
-      this.send(code, true, true);
-      this.repeating.timer = tick(REPEAT_MS);
-    }, ms);
+    const tick = (ms: number) =>
+      this.timers.set(() => {
+        if (this.repeating?.code !== code || !this.held.has(code)) return;
+        this.send(code, true, true);
+        this.repeating.timer = tick(REPEAT_MS);
+      }, ms);
     this.repeating = { code, timer: undefined };
     this.repeating.timer = tick(REPEAT_DELAY_MS);
   }
@@ -282,7 +488,13 @@ export class OskKeys {
   /** The modifiers down, held or latched (for a terminal's characters). */
   mods(): Mods {
     const on = (side: string) => !!(this.state(`${side}Left`) || this.state(`${side}Right`));
-    return { shift: on('Shift'), ctrl: on('Control'), alt: !!this.state('AltLeft'), meta: on('Meta'), altGr: !!this.state('AltRight') };
+    return {
+      shift: on('Shift'),
+      ctrl: on('Control'),
+      alt: !!this.state('AltLeft'),
+      meta: on('Meta'),
+      altGr: !!this.state('AltRight'),
+    };
   }
 
   /** Pointer `id` presses key `code`. */
@@ -314,7 +526,10 @@ export class OskKeys {
     this.pointers.delete(id);
     if (p.undo) return;
     const n = (this.held.get(p.code) ?? 1) - 1;
-    if (n > 0) { this.held.set(p.code, n); return; }
+    if (n > 0) {
+      this.held.set(p.code, n);
+      return;
+    }
     this.held.delete(p.code);
     this.stopRepeat(p.code);
     if (MODIFIERS.has(p.code)) {

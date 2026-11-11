@@ -9,7 +9,20 @@ import { msg, MsgError, type Msg } from '../msg.ts';
 import { SWAP_MIN_PAGES } from '../ramdisk.ts';
 import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
-import { adaptersOf, canonical, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
+import {
+  adaptersOf,
+  canonical,
+  generateName,
+  MAX_ADAPTERS,
+  MAX_DISKS,
+  newId,
+  newMac,
+  uniqueName,
+  type Attachment,
+  type DiskIdentity,
+  type DiskRecord,
+  type MachineRecord,
+} from './shape.ts';
 import { machineDir, type Store } from './store.ts';
 
 /** The lock a page holds while it runs machine `id`. */
@@ -38,10 +51,21 @@ export async function needsOff(id: string, what: keyof typeof NEEDS_OFF) {
 }
 
 /** The error of an edit to a machine that another tab deleted meanwhile. */
-const gone = () => new MsgError('machines:machines.machineGone', undefined, { cause: new MsgError('machines:machines.machineGone.cause') });
+const gone = () =>
+  new MsgError('machines:machines.machineGone', undefined, {
+    cause: new MsgError('machines:machines.machineGone.cause'),
+  });
 
 /** A new machine (no disks yet), named by default. */
-export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb' | 'mouse' | 'touch' | 'clock' | 'shares' | 'keyboard'>> = {}) {
+export async function createMachine(
+  store: Store,
+  o: Partial<
+    Pick<
+      MachineRecord,
+      'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb' | 'mouse' | 'touch' | 'clock' | 'shares' | 'keyboard'
+    >
+  > = {},
+) {
   const taken = (await store.all('machines')).map((m) => m.name);
   const now = Date.now();
   const m: MachineRecord = {
@@ -71,7 +95,17 @@ export async function duplicateMachine(store: Store, id: string) {
   if (!m) throw gone();
   const taken = (await store.all('machines')).map((x) => x.name);
   const now = Date.now();
-  const copy: MachineRecord = { ...m, id: newId(), name: uniqueName(t('machines:machines.copyName', { name: m.name }), taken), attachments: m.attachments.map((a) => ({ ...a, id: newId() })), adapters: adaptersOf(m).map((a) => ({ id: newId(), mac: a.mac })), network: undefined, ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}), created: now, modified: now };
+  const copy: MachineRecord = {
+    ...m,
+    id: newId(),
+    name: uniqueName(t('machines:machines.copyName', { name: m.name }), taken),
+    attachments: m.attachments.map((a) => ({ ...a, id: newId() })),
+    adapters: adaptersOf(m).map((a) => ({ id: newId(), mac: a.mac })),
+    network: undefined,
+    ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}),
+    created: now,
+    modified: now,
+  };
   await store.put('machines', copy);
   return copy;
 }
@@ -117,7 +151,10 @@ export async function setAdapterConnection(store: Store, id: string, index: numb
 export async function detachEverywhere(store: Store, connection: string) {
   for (const m of await store.all('machines')) {
     if (!m.adapters?.some((a) => a.connection === connection)) continue;
-    await store.put('machines', { ...m, adapters: m.adapters.map(({ connection: c, ...a }) => (c && c !== connection ? { ...a, connection: c } : a)) });
+    await store.put('machines', {
+      ...m,
+      adapters: m.adapters.map(({ connection: c, ...a }) => (c && c !== connection ? { ...a, connection: c } : a)),
+    });
   }
 }
 
@@ -132,7 +169,22 @@ export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw gone();
   // What takes a restart: the shape, and the JIT's budget (set when the machine starts; not the guest's).
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, !!x.vulkan, adaptersOf(x).map((a) => a.mac), !!x.usb, !!x.mouse, !!x.touch, !!x.clock, !!x.shares, !!x.clipboard, x.jitMiB ?? 0]);
+  const shape = (x: MachineRecord) =>
+    JSON.stringify([
+      x.ncpus,
+      x.ramMiB,
+      x.ramSplit ?? null,
+      x.display,
+      !!x.vulkan,
+      adaptersOf(x).map((a) => a.mac),
+      !!x.usb,
+      !!x.mouse,
+      !!x.touch,
+      !!x.clock,
+      !!x.shares,
+      !!x.clipboard,
+      x.jitMiB ?? 0,
+    ]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'shape');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;
@@ -142,10 +194,16 @@ export async function updateMachine(store: Store, m: MachineRecord) {
   // So are the adapters' connections (the Network tab attaches them while the machine runs, web/app/net-live.ts).
   const attached = new Map(adaptersOf(was).map((a) => [a.id, a.connection]));
   if (m.adapters || was.adapters) {
-    m.adapters = adaptersOf(m).map(({ connection: _, ...a }) => (attached.get(a.id) ? { ...a, connection: attached.get(a.id) } : a));
+    m.adapters = adaptersOf(m).map(({ connection: _, ...a }) =>
+      attached.get(a.id) ? { ...a, connection: attached.get(a.id) } : a,
+    );
     m.network = undefined;
   }
-  if (m.name !== was.name) m.name = uniqueName(m.name.trim() || was.name, (await store.all('machines')).filter((x) => x.id !== m.id).map((x) => x.name));
+  if (m.name !== was.name)
+    m.name = uniqueName(
+      m.name.trim() || was.name,
+      (await store.all('machines')).filter((x) => x.id !== m.id).map((x) => x.name),
+    );
   m.modified = Date.now();
   await store.put('machines', m);
   return m;
@@ -161,7 +219,12 @@ export type NewDisk =
 function identityFor(d: NewDisk & { kind: 'url' | 'file' }): DiskIdentity {
   if (d.kind === 'file') return { kind: 'file', name: d.file.name, bytes: d.file.size, modified: d.file.lastModified };
   const u = new URL(d.url, globalThis.location?.href);
-  return { kind: 'url', path: u.pathname, bytes: d.bytes, ...(d.etag ? { etag: d.etag } : d.lastModified ? { lastModified: d.lastModified } : {}) };
+  return {
+    kind: 'url',
+    path: u.pathname,
+    bytes: d.bytes,
+    ...(d.etag ? { etag: d.etag } : d.lastModified ? { lastModified: d.lastModified } : {}),
+  };
 }
 
 /**
@@ -182,12 +245,28 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
   let r: DiskRecord;
   if (d.kind === 'url') {
     const u = new URL(d.url, globalThis.location?.href);
-    r = { id, kind: 'url', name: d.name ?? (u.pathname.split('/').pop() || u.hostname), size: d.size, format: u.pathname.endsWith('.iso') ? 'iso' : undefined, url: u.href, identity: identityFor(d), created: now };
+    r = {
+      id,
+      kind: 'url',
+      name: d.name ?? (u.pathname.split('/').pop() || u.hostname),
+      size: d.size,
+      format: u.pathname.endsWith('.iso') ? 'iso' : undefined,
+      url: u.href,
+      identity: identityFor(d),
+      created: now,
+    };
   } else if (d.kind === 'file') {
     r = { id, kind: 'file', name: d.file.name, size: d.size, handle: d.handle, identity: identityFor(d), created: now };
   } else {
     if (!Number.isSafeInteger(d.size) || d.size <= 0 || d.size % 4096) throw new Error('a size in whole 4 KiB blocks');
-    r = { id, kind: d.kind, name: d.name ?? (d.kind === 'blank' ? t('machines:machines.blankDiskName') : t('machines:machines.ramdiskName')), size: d.size, identity: { kind: d.kind, id, bytes: d.size }, created: now };
+    r = {
+      id,
+      kind: d.kind,
+      name: d.name ?? (d.kind === 'blank' ? t('machines:machines.blankDiskName') : t('machines:machines.ramdiskName')),
+      size: d.size,
+      identity: { kind: d.kind, id, bytes: d.size },
+      created: now,
+    };
   }
   await store.put('disks', r);
   return r;
@@ -196,8 +275,11 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
 /** Attaches disk `disk` to machine `m`, last (16 at most). A blank disk is always writable; an ISO read-only unless asked. */
 export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o: { readOnly?: boolean } = {}) {
   await needsOff(m.id, 'attach');
-  if (m.attachments.length >= MAX_DISKS) throw new MsgError('machines:machines.maxDisks', undefined, { cause: new MsgError('machines:machines.maxDisks.cause', { max: MAX_DISKS }) });
-  const readOnly = disk.kind === 'blank' || disk.kind === 'ramdisk' ? false : o.readOnly ?? disk.format === 'iso';
+  if (m.attachments.length >= MAX_DISKS)
+    throw new MsgError('machines:machines.maxDisks', undefined, {
+      cause: new MsgError('machines:machines.maxDisks.cause', { max: MAX_DISKS }),
+    });
+  const readOnly = disk.kind === 'blank' || disk.kind === 'ramdisk' ? false : (o.readOnly ?? disk.format === 'iso');
   const a: Attachment = { id: newId(), disk: disk.id, readOnly };
   m.attachments.push(a);
   m.modified = Date.now();
@@ -206,10 +288,18 @@ export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o
 }
 
 /** Changes attachment `id` of machine `m` (read-only, in place, swap, its place in the order) or detaches it (`detach`). */
-export async function editAttachment(store: Store, m: MachineRecord, id: string, change: { readOnly?: boolean; inPlace?: boolean; swap?: boolean; move?: -1 | 1; detach?: boolean }) {
+export async function editAttachment(
+  store: Store,
+  m: MachineRecord,
+  id: string,
+  change: { readOnly?: boolean; inPlace?: boolean; swap?: boolean; move?: -1 | 1; detach?: boolean },
+) {
   await needsOff(m.id, 'disks');
   const i = m.attachments.findIndex((a) => a.id === id);
-  if (i < 0) throw new MsgError('machines:machines.notAttached', undefined, { cause: new MsgError('machines:machines.notAttached.cause') });
+  if (i < 0)
+    throw new MsgError('machines:machines.notAttached', undefined, {
+      cause: new MsgError('machines:machines.notAttached.cause'),
+    });
   const a = m.attachments[i];
   const disk = await store.get('disks', a.disk);
   if (change.detach) m.attachments.splice(i, 1);
@@ -221,8 +311,11 @@ export async function editAttachment(store: Store, m: MachineRecord, id: string,
     a.inPlace = change.inPlace || undefined;
   }
   if (change.swap !== undefined) {
-    if (disk?.kind !== 'ramdisk') throw new Error('only a ramdisk can be the guest\'s swap');
-    if (change.swap && disk.size < SWAP_MIN_PAGES * 4096) throw new MsgError('machines:machines.swapMin', undefined, { cause: new MsgError('machines:machines.swapMin.cause', { kib: SWAP_MIN_PAGES * 4 }) });
+    if (disk?.kind !== 'ramdisk') throw new Error("only a ramdisk can be the guest's swap");
+    if (change.swap && disk.size < SWAP_MIN_PAGES * 4096)
+      throw new MsgError('machines:machines.swapMin', undefined, {
+        cause: new MsgError('machines:machines.swapMin.cause', { kib: SWAP_MIN_PAGES * 4 }),
+      });
     a.swap = change.swap || undefined;
   }
   if (change.move) {
@@ -238,14 +331,26 @@ export async function storageReport(store: Store) {
   const est = await navigator.storage.estimate();
   const persisted = await navigator.storage.persisted();
   const items: { what: Msg; bytes: number }[] = [];
-  for (const d of await store.all('disks')) if (d.kind === 'stored') items.push({ what: msg('machines:machines.storage.stored', { name: d.name }), bytes: await store.files.size(`disks/${d.id}`) });
+  for (const d of await store.all('disks'))
+    if (d.kind === 'stored')
+      items.push({
+        what: msg('machines:machines.storage.stored', { name: d.name }),
+        bytes: await store.files.size(`disks/${d.id}`),
+      });
   const disks = new Map((await store.all('disks')).map((d) => [d.id, d.name]));
   for (const o of await store.all('overlays')) {
     const disk = disks.get(o.disk);
-    const what = disk === undefined ? msg('machines:machines.storage.overlayOfNone', { overlay: o.name }) : msg('machines:machines.storage.overlay', { disk, overlay: o.name });
+    const what =
+      disk === undefined
+        ? msg('machines:machines.storage.overlayOfNone', { overlay: o.name })
+        : msg('machines:machines.storage.overlay', { disk, overlay: o.name });
     items.push({ what, bytes: await store.files.size(`overlays/${o.id}`) });
   }
-  for (const m of await store.all('machines')) items.push({ what: msg('machines:machines.storage.machine', { name: m.name }), bytes: await store.files.size(machineDir(m.id)) });
+  for (const m of await store.all('machines'))
+    items.push({
+      what: msg('machines:machines.storage.machine', { name: m.name }),
+      bytes: await store.files.size(machineDir(m.id)),
+    });
   const remote = await cacheBytes();
   items.push({ what: msg('machines:machines.storage.remote'), bytes: remote });
   // Vulkan's translated shaders (web/venus-cache.ts), the origin's for every machine.

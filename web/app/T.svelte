@@ -7,8 +7,14 @@
   import type { Snippet } from 'svelte';
   import { marked, type Params } from '../i18n.ts';
 
-  let { k, params, ...markers }: { k: string; params?: Params; [marker: string]: Snippet<[string]> | Params | string | undefined } = $props();
+  let {
+    k,
+    params,
+    ...markers
+  }: { k: string; params?: Params; [marker: string]: Snippet<[string]> | Params | string | undefined } = $props();
   const pieces = $derived(marked(k, params));
 </script>
 
-{#each pieces as p, i (i)}{#if p.tag && typeof markers[p.tag] === 'function'}{@render (markers[p.tag] as Snippet<[string]>)(p.text)}{:else}{p.text}{/if}{/each}
+{#each pieces as p, i (i)}{#if p.tag && typeof markers[p.tag] === 'function'}{@render (
+      markers[p.tag] as Snippet<[string]>
+    )(p.text)}{:else}{p.text}{/if}{/each}

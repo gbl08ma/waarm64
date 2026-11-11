@@ -55,7 +55,10 @@ export class Signal {
     if (this.#epochs >= 0 && m.jitEpochs !== this.#epochs) this.#dead = { ...this.#live, at: now };
     this.#epochs = m.jitEpochs;
     this.#live = { bytes: m.jitLiveBytes, modules: m.jitModules };
-    const dead = now - this.#dead.at < DEAD_MS ? this.#dead.bytes * (JIT_CODE_PER_BYTE + JIT_META_PER_BYTE) + this.#dead.modules * JIT_PER_MODULE : 0;
+    const dead =
+      now - this.#dead.at < DEAD_MS
+        ? this.#dead.bytes * (JIT_CODE_PER_BYTE + JIT_META_PER_BYTE) + this.#dead.modules * JIT_PER_MODULE
+        : 0;
     const bytes = estimate(m, ncpus).bytes + dead;
     this.peak = Math.max(this.peak, bytes);
     return bytes;
@@ -63,7 +66,15 @@ export class Signal {
 }
 
 /** A running machine's mark: who it was and what it cost when last seen. */
-export type Alive = { name: string; ramMiB: number; ncpus: number; jitMiB: number; gib: number; peakGiB: number; t: number };
+export type Alive = {
+  name: string;
+  ramMiB: number;
+  ncpus: number;
+  jitMiB: number;
+  gib: number;
+  peakGiB: number;
+  t: number;
+};
 
 const KEY = 'webpc.alive.';
 /** How often a running machine renews its mark, and how old one is when no tab is renewing it. */
@@ -74,14 +85,18 @@ export const ALIVE_STALE_MS = 3 * ALIVE_EVERY_MS;
 export function markAlive(key: string, a: Alive) {
   try {
     localStorage.setItem(KEY + key, JSON.stringify(a));
-  } catch { /* no mark */ }
+  } catch {
+    /* no mark */
+  }
 }
 
 /** The machine stopped cleanly (powered off, restarted, shut down, its tab closed): no mark. */
 export function clearAlive(key: string) {
   try {
     localStorage.removeItem(KEY + key);
-  } catch { /* nothing to clear */ }
+  } catch {
+    /* nothing to clear */
+  }
 }
 
 /**

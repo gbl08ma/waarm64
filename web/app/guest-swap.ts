@@ -13,4 +13,6 @@ export const SWAP_OPTIONS = 'sw,nofail,discard';
 
 /** The credential that turns on the swap areas labelled `labels` (none: no credential). */
 export const swapCredentials = (labels: string[]): Credential[] =>
-  labels.length ? [{ name: 'fstab.extra', data: labels.map((l) => `LABEL=${l} none swap ${SWAP_OPTIONS} 0 0\n`).join('') }] : [];
+  labels.length
+    ? [{ name: 'fstab.extra', data: labels.map((l) => `LABEL=${l} none swap ${SWAP_OPTIONS} 0 0\n`).join('') }]
+    : [];

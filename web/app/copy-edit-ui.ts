@@ -73,19 +73,30 @@ function redraw(id: number) {
     if (n.nodeType === Node.TEXT_NODE) {
       if (inText.get(n as Text)?.includes(id)) (n as Text).data = (n as Text).data.replace(was, now);
     } else {
-      for (const [a, list] of inAttrs.get(n as Element) ?? []) if (list.includes(id)) (n as Element).setAttribute(a, ((n as Element).getAttribute(a) ?? '').replace(was, now));
+      for (const [a, list] of inAttrs.get(n as Element) ?? [])
+        if (list.includes(id)) (n as Element).setAttribute(a, ((n as Element).getAttribute(a) ?? '').replace(was, now));
     }
   }
 }
 
 /** The parameters and markers words use (`{{name}}`, `{{name, format}}`, `<tag>`). */
-const usesOf = (s: string) => new Set([...s.matchAll(/\{\{\s*([\w.]+)/g)].map((m) => `{{${m[1]}}}`).concat([...s.matchAll(/<\/?([a-z][a-z0-9-]*)>/g)].map((m) => `<${m[1]}>`)));
+const usesOf = (s: string) =>
+  new Set(
+    [...s.matchAll(/\{\{\s*([\w.]+)/g)]
+      .map((m) => `{{${m[1]}}}`)
+      .concat([...s.matchAll(/<\/?([a-z][a-z0-9-]*)>/g)].map((m) => `<${m[1]}>`)),
+  );
 
 /** What new words `now` lose or add of the parameters and markers `was` used. */
 function slips(was: string, now: string): string {
-  const a = usesOf(was), b = usesOf(now);
-  const lost = [...a].filter((x) => !b.has(x)), added = [...b].filter((x) => !a.has(x));
-  return [lost.length ? `missing ${lost.join(' ')}` : '', added.length ? `unknown ${added.join(' ')}` : ''].filter(Boolean).join('; '); // i18n-ignore
+  const a = usesOf(was),
+    b = usesOf(now);
+  const lost = [...a].filter((x) => !b.has(x)),
+    added = [...b].filter((x) => !a.has(x));
+  // i18n-ignore-next: the copy editor's own (a translator's tool, in English)
+  return [lost.length ? `missing ${lost.join(' ')}` : '', added.length ? `unknown ${added.join(' ')}` : '']
+    .filter(Boolean)
+    .join('; ');
 }
 
 const STYLE = `
@@ -128,10 +139,15 @@ function open(ids: number[]) {
   const count = el('b');
   const close = el('button', '', '×');
   close.title = 'Close (Esc)'; // i18n-ignore
-  close.onclick = () => { panel?.remove(); panel = undefined; };
+  close.onclick = () => {
+    panel?.remove();
+    panel = undefined;
+  };
   head.append(count, close);
   panel.append(head);
-  const counted = () => { count.textContent = `Copy editor · ${Object.keys(changed()).length} changed`; }; // i18n-ignore
+  const counted = () => {
+    count.textContent = `Copy editor · ${Object.keys(changed()).length} changed`; // i18n-ignore
+  };
   counted();
   if (!ids.length) panel.append(el('div', 'note', 'No message here.')); // i18n-ignore
   const keys = [...new Set(ids.map((id) => copyEditor.shown(id)?.key).filter((k): k is string => !!k))];
@@ -151,29 +167,43 @@ function open(ids: number[]) {
         area.classList.toggle('edited', edited);
         slip.textContent = slips(entry.message, area.value);
       };
-      area.oninput = () => { slip.textContent = slips(entry.message, area.value); fit(area); };
+      area.oninput = () => {
+        slip.textContent = slips(entry.message, area.value);
+        fit(area);
+      };
       const save = el('button', '', 'Save');
       save.setAttribute('data-save', '');
       save.onclick = () => {
         copyEditor.change(entry.key, area.value);
         for (const id of copyEditor.shownOf(key)) redraw(id);
-        show(); counted();
+        show();
+        counted();
       };
       const revert = el('button', '', 'Revert');
       revert.onclick = () => {
         copyEditor.change(entry.key, undefined);
         area.value = entry.message;
         for (const id of copyEditor.shownOf(key)) redraw(id);
-        show(); counted();
+        show();
+        counted();
       };
-      area.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save.click(); };
+      area.onkeydown = (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save.click();
+      };
       const row = el('div', 'row');
       row.append(slip, revert, save);
       box.append(el('div', 'key', entry.key), el('div', 'note', entry.note), area, was, row);
       const rich = shown.some((s) => s.rich);
       const sample = shown.at(-1)?.words;
       // As shown, where it isn't the words as they are (parameters filled in, markers drawn).
-      if (sample && (sample !== entry.message || rich)) box.append(el('div', 'shown', `shown as: ${sample}${rich ? ' (with markers: changes show when it is drawn again)' : ''}`)); // i18n-ignore
+      if (sample && (sample !== entry.message || rich))
+        box.append(
+          el(
+            'div',
+            'shown',
+            `shown as: ${sample}${rich ? ' (with markers: changes show when it is drawn again)' : ''}`, // i18n-ignore
+          ),
+        );
       show();
       panel.append(box);
     }
@@ -197,27 +227,48 @@ export function startEditor() {
   host.id = 'copy-edit';
   host.attachShadow({ mode: 'open' }).append(Object.assign(document.createElement('style'), { textContent: STYLE }));
   // The page's keys (the screen's, its shortcuts) don't see what's typed in the panel.
-  for (const type of ['keydown', 'keyup', 'keypress']) host.addEventListener(type, (e) => {
-    if (type === 'keydown' && (e as KeyboardEvent).key === 'Escape') { panel?.remove(); panel = undefined; }
-    e.stopPropagation();
-  });
+  for (const type of ['keydown', 'keyup', 'keypress'])
+    host.addEventListener(type, (e) => {
+      if (type === 'keydown' && (e as KeyboardEvent).key === 'Escape') {
+        panel?.remove();
+        panel = undefined;
+      }
+      e.stopPropagation();
+    });
   document.body.append(host);
-  document.head.append(Object.assign(document.createElement('style'), { textContent: '[data-copy-edit] { outline: 1px dashed #ff00aa88; outline-offset: 1px; }' }));
+  document.head.append(
+    Object.assign(document.createElement('style'), {
+      textContent: '[data-copy-edit] { outline: 1px dashed #ff00aa88; outline-offset: 1px; }',
+    }),
+  );
   scan();
   let queued = false;
   new MutationObserver(() => {
     if (queued) return;
     queued = true;
-    queueMicrotask(() => { queued = false; scan(); });
-  }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+    queueMicrotask(() => {
+      queued = false;
+      scan();
+    });
+  }).observe(document.body, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ATTRS,
+  });
   // On pointerdown too: a click's target may be gone (a menu that closes) by the time the click lands.
   for (const type of ['pointerdown', 'mousedown', 'click']) {
-    document.addEventListener(type, (e) => {
-      const ev = e as MouseEvent;
-      if (!ev.altKey || ev.composedPath().includes(host)) return;
-      ev.preventDefault();
-      ev.stopImmediatePropagation();
-      if (type === 'click') open(messagesAt(ev.target as Element));
-    }, { capture: true });
+    document.addEventListener(
+      type,
+      (e) => {
+        const ev = e as MouseEvent;
+        if (!ev.altKey || ev.composedPath().includes(host)) return;
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        if (type === 'click') open(messagesAt(ev.target as Element));
+      },
+      { capture: true },
+    );
   }
 }

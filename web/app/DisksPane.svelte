@@ -37,10 +37,35 @@
   async function remove(d: DiskRecord) {
     const mine = overlaysOf(d.id);
     const bytes = mine.reduce((n, o) => n + o.bytes, 0);
-    const what = d.kind === 'stored' ? msg('disks:DisksPane.delete.stored', { size: bytesText(d.size) }) : d.kind === 'file' || d.kind === 'url' ? msg('disks:DisksPane.delete.remote') : msg('disks:DisksPane.delete.disk');
-    const remains = d.kind === 'file' ? msg('disks:DisksPane.delete.remains.file') : d.kind === 'url' ? msg('disks:DisksPane.delete.remains.url') : undefined;
-    const question = bytes ? t('disks:DisksPane.delete.confirmSized', { name: d.name, what, count: mine.length, size: bytesText(bytes), remains }) : t('disks:DisksPane.delete.confirm', { name: d.name, what, count: mine.length, remains });
-    if (!(await ask.confirm(question, { title: t('disks:DisksPane.delete.title'), ok: t('disks:DisksPane.delete.ok'), danger: true }))) return;
+    const what =
+      d.kind === 'stored'
+        ? msg('disks:DisksPane.delete.stored', { size: bytesText(d.size) })
+        : d.kind === 'file' || d.kind === 'url'
+          ? msg('disks:DisksPane.delete.remote')
+          : msg('disks:DisksPane.delete.disk');
+    const remains =
+      d.kind === 'file'
+        ? msg('disks:DisksPane.delete.remains.file')
+        : d.kind === 'url'
+          ? msg('disks:DisksPane.delete.remains.url')
+          : undefined;
+    const question = bytes
+      ? t('disks:DisksPane.delete.confirmSized', {
+          name: d.name,
+          what,
+          count: mine.length,
+          size: bytesText(bytes),
+          remains,
+        })
+      : t('disks:DisksPane.delete.confirm', { name: d.name, what, count: mine.length, remains });
+    if (
+      !(await ask.confirm(question, {
+        title: t('disks:DisksPane.delete.title'),
+        ok: t('disks:DisksPane.delete.ok'),
+        danger: true,
+      }))
+    )
+      return;
     await act(t('disks:DisksPane.busy.deleting'), () => store.deleteDisk(d.id));
   }
 </script>
@@ -51,9 +76,25 @@
     {@const users = usersOf(d.id)}
     <li data-disk={d.id} data-kind={d.kind}>
       <DiskInfo disk={d} overlays={mine} {users} />
-      {#if mine.length}<button onclick={() => (showing = { disk: d.id, what: 'overlays' })} data-action="disk-overlays" title={t('disks:DisksPane.overlaysButton.title')}>{t('disks:DisksPane.overlaysButton')}</button>{/if}
-      <button onclick={() => (showing = { disk: d.id, what: 'attach' })} data-action="attach-disk" title={t('disks:DisksPane.attach.title')}>{t('disks:DisksPane.attach')}</button>
-      <button onclick={() => remove(d)} disabled={users.length > 0} data-action="delete-disk" title={users.length ? t('disks:DisksPane.deleteAttached.title', { machines: users }) : t('disks:DisksPane.deleteButton.title')}><Icon name="trash" size={16} />{t('disks:DisksPane.deleteButton')}</button>
+      {#if mine.length}<button
+          onclick={() => (showing = { disk: d.id, what: 'overlays' })}
+          data-action="disk-overlays"
+          title={t('disks:DisksPane.overlaysButton.title')}>{t('disks:DisksPane.overlaysButton')}</button
+        >{/if}
+      <button
+        onclick={() => (showing = { disk: d.id, what: 'attach' })}
+        data-action="attach-disk"
+        title={t('disks:DisksPane.attach.title')}>{t('disks:DisksPane.attach')}</button
+      >
+      <button
+        onclick={() => remove(d)}
+        disabled={users.length > 0}
+        data-action="delete-disk"
+        title={users.length
+          ? t('disks:DisksPane.deleteAttached.title', { machines: users })
+          : t('disks:DisksPane.deleteButton.title')}
+        ><Icon name="trash" size={16} />{t('disks:DisksPane.deleteButton')}</button
+      >
     </li>
   {:else}
     <li class="none">{t('disks:DisksPane.none')}</li>
@@ -66,8 +107,34 @@
 {/if}
 
 <style>
-  .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .cards > li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-  .cards > li.none { color: var(--dim); }
-  button { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
+  .cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .cards > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+  }
+  .cards > li.none {
+    color: var(--dim);
+  }
+  button {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 10px;
+  }
 </style>

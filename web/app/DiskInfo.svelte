@@ -20,11 +20,31 @@
 <span class="kind" title={kind.text}><Icon name={kind.icon} size={18} /></span>
 <div class="what">
   <strong>{disk.name}</strong>
-  <span class="meta">{t('disks:DiskInfo.meta', { kind: kind.text, size: bytesText(disk.size) })}{#if disk.kind !== 'ramdisk'}{' · '}{bytes ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) }) : t('disks:DiskInfo.overlays', { count: overlays.length })}{/if}{' · '}{users.length ? t('disks:DiskInfo.on', { machines: users }) : t('disks:DiskInfo.onNone')}</span>
+  <span class="meta"
+    >{t('disks:DiskInfo.meta', {
+      kind: kind.text,
+      size: bytesText(disk.size),
+    })}{#if disk.kind !== 'ramdisk'}{' · '}{bytes
+        ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
+        : t('disks:DiskInfo.overlays', { count: overlays.length })}{/if}{' · '}{users.length
+      ? t('disks:DiskInfo.on', { machines: users })
+      : t('disks:DiskInfo.onNone')}</span
+  >
 </div>
 
 <style>
-  .kind { display: inline-flex; color: var(--dim); }
-  .what { flex: 1; min-width: 200px; display: flex; flex-direction: column; }
-  .meta { color: var(--dim); font-size: 12px; }
+  .kind {
+    display: inline-flex;
+    color: var(--dim);
+  }
+  .what {
+    flex: 1;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+  }
+  .meta {
+    color: var(--dim);
+    font-size: 12px;
+  }
 </style>

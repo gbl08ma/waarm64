@@ -55,7 +55,14 @@ export type SnapshotRecord = {
   urls?: Record<number, string>;
 };
 
-export type Kinds = { machines: MachineRecord; disks: DiskRecord; overlays: OverlayRecord; snapshots: SnapshotRecord; connections: Connection; folders: Folder };
+export type Kinds = {
+  machines: MachineRecord;
+  disks: DiskRecord;
+  overlays: OverlayRecord;
+  snapshots: SnapshotRecord;
+  connections: Connection;
+  folders: Folder;
+};
 export type Kind = keyof Kinds;
 const KINDS: Kind[] = ['machines', 'disks', 'overlays', 'snapshots', 'connections', 'folders'];
 
@@ -120,20 +127,25 @@ export class Store {
    * `hasOpfs`), one in memory for the process's life.
    */
   static async open(): Promise<Store> {
-    if (typeof indexedDB === 'undefined' || !(await hasOpfs())) return new Store(sharedMemory.records, sharedMemory.files);
+    if (typeof indexedDB === 'undefined' || !(await hasOpfs()))
+      return new Store(sharedMemory.records, sharedMemory.files);
     return new Store(await idbRecords(), opfsFiles(await navigator.storage.getDirectory()));
   }
 
   /** Calls `f` with every change another tab (or another Store on the same channel) makes; returns the unsubscribe. */
   onChange(f: (c: Change) => void) {
     this.listeners.add(f);
-    return () => { this.listeners.delete(f); };
+    return () => {
+      this.listeners.delete(f);
+    };
   }
 
   /** Calls `f` with every note another tab sends (`tell`); returns the unsubscribe. */
   onNote(f: (n: Note) => void) {
     this.notes.add(f);
-    return () => { this.notes.delete(f); };
+    return () => {
+      this.notes.delete(f);
+    };
   }
   /** Sends a note to the other tabs (not to this Store's own listeners). */
   tell(n: Note) {
@@ -150,8 +162,12 @@ export class Store {
     this.channel?.postMessage(c);
   }
 
-  get<K extends Kind>(kind: K, id: string) { return this.records.get(kind, id); }
-  all<K extends Kind>(kind: K) { return this.records.all(kind); }
+  get<K extends Kind>(kind: K, id: string) {
+    return this.records.get(kind, id);
+  }
+  all<K extends Kind>(kind: K) {
+    return this.records.all(kind);
+  }
 
   /** Writes a record (its bytes, if any, are written already: inside `writing`). */
   async put<K extends Kind>(kind: K, value: Kinds[K]) {
@@ -168,10 +184,16 @@ export class Store {
     return navigator.locks.request(WRITE_LOCK, { mode: 'shared' }, f) as Promise<T>;
   }
 
-  overlaysOf(disk: string) { return this.all('overlays').then((all) => all.filter((o) => o.disk === disk)); }
-  snapshotsOf(machine: string) { return this.all('snapshots').then((all) => all.filter((s) => s.machine === machine)); }
+  overlaysOf(disk: string) {
+    return this.all('overlays').then((all) => all.filter((o) => o.disk === disk));
+  }
+  snapshotsOf(machine: string) {
+    return this.all('snapshots').then((all) => all.filter((s) => s.machine === machine));
+  }
   /** The machines that attach disk `id`. */
-  machinesWith(disk: string) { return this.all('machines').then((all) => all.filter((m) => m.attachments.some((a) => a.disk === disk))); }
+  machinesWith(disk: string) {
+    return this.all('machines').then((all) => all.filter((m) => m.attachments.some((a) => a.disk === disk)));
+  }
 
   /** Deletes a record only: its bytes are deleted after, by whoever owns them (a merge's worker, after its copy). */
   async forget(kind: Kind, id: string) {
@@ -209,7 +231,10 @@ export class Store {
   /** Deletes a base disk and its overlays (records, then files). Refused while a machine attaches it. */
   async deleteDisk(id: string) {
     const users = await this.machinesWith(id);
-    if (users.length) throw new MsgError('machines:store.diskAttached', undefined, { cause: new MsgError('machines:store.diskAttached.cause', { machines: users.map((m) => m.name) }) });
+    if (users.length)
+      throw new MsgError('machines:store.diskAttached', undefined, {
+        cause: new MsgError('machines:store.diskAttached.cause', { machines: users.map((m) => m.name) }),
+      });
     for (const o of await this.overlaysOf(id)) await this.deleteOverlay(o.id);
     await this.records.delete('disks', id);
     this.said({ kind: 'disks', id, deleted: true });
@@ -226,16 +251,29 @@ export class Store {
   async sweep(): Promise<string[]> {
     const run = async () => {
       const removed: string[] = [];
-      const gone = async (path: string) => { await this.files.remove(path); removed.push(path); };
+      const gone = async (path: string) => {
+        await this.files.remove(path);
+        removed.push(path);
+      };
       const ids = async (kind: Kind) => new Set((await this.all(kind)).map((r) => r.id));
-      const [overlays, disks, machines, snapshots, folders] = await Promise.all([ids('overlays'), ids('disks'), ids('machines'), ids('snapshots'), ids('folders')]);
+      const [overlays, disks, machines, snapshots, folders] = await Promise.all([
+        ids('overlays'),
+        ids('disks'),
+        ids('machines'),
+        ids('snapshots'),
+        ids('folders'),
+      ]);
       for (const n of await this.files.list('folders')) if (isId(n) && !folders.has(n)) await gone(folderDir(n));
       for (const n of await this.files.list('overlays')) if (isId(n) && !overlays.has(n)) await gone(overlayDir(n));
       for (const n of await this.files.list('disks')) if (isId(n) && !disks.has(n)) await gone(diskDir(n));
       for (const n of await this.files.list('machines')) {
         if (!isId(n)) continue;
-        if (!machines.has(n)) { await gone(machineDir(n)); continue; }
-        for (const s of await this.files.list(`${machineDir(n)}/snapshots`)) if (isId(s) && !snapshots.has(s)) await gone(snapshotPath(n, s));
+        if (!machines.has(n)) {
+          await gone(machineDir(n));
+          continue;
+        }
+        for (const s of await this.files.list(`${machineDir(n)}/snapshots`))
+          if (isId(s) && !snapshots.has(s)) await gone(snapshotPath(n, s));
       }
       return removed;
     };
@@ -246,12 +284,19 @@ export class Store {
 
 /** Records in memory (Node, tests): structured clones in and out, as IndexedDB. */
 export function memoryRecords(): Records {
-  const maps = Object.fromEntries(KINDS.map((k) => [k, new Map<string, unknown>()])) as Record<Kind, Map<string, unknown>>;
+  const maps = Object.fromEntries(KINDS.map((k) => [k, new Map<string, unknown>()])) as Record<
+    Kind,
+    Map<string, unknown>
+  >;
   return {
     get: async (kind, id) => structuredClone(maps[kind].get(id)) as never,
     all: async (kind) => [...maps[kind].values()].map((v) => structuredClone(v)) as never,
-    put: async (kind, value) => { maps[kind].set(value.id, structuredClone(value)); },
-    delete: async (kind, id) => { maps[kind].delete(id); },
+    put: async (kind, value) => {
+      maps[kind].set(value.id, structuredClone(value));
+    },
+    delete: async (kind, id) => {
+      maps[kind].delete(id);
+    },
   };
 }
 
@@ -260,10 +305,15 @@ export function memoryFiles(): Files & { write(path: string, bytes: number): voi
   const files = new Map<string, number>();
   const under = (dir: string) => [...files.keys()].filter((p) => p.startsWith(`${dir}/`));
   return {
-    write: (path, bytes) => { files.set(path, bytes); },
+    write: (path, bytes) => {
+      files.set(path, bytes);
+    },
     paths: () => [...files.keys()].sort(),
     list: async (dir) => [...new Set(under(dir).map((p) => p.slice(dir.length + 1).split('/')[0]))],
-    remove: async (path) => { files.delete(path); for (const p of under(path)) files.delete(p); },
+    remove: async (path) => {
+      files.delete(path);
+      for (const p of under(path)) files.delete(p);
+    },
     size: async (path) => (files.get(path) ?? 0) + under(path).reduce((n, p) => n + files.get(p)!, 0),
   };
 }
@@ -272,25 +322,37 @@ export function memoryFiles(): Files & { write(path: string, bytes: number): voi
 const sharedMemory = { records: memoryRecords(), files: memoryFiles() };
 
 const DB = 'webpc';
-const idb = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+const idb = <T>(req: IDBRequest<T>) =>
+  new Promise<T>((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 
 /** Records in IndexedDB `webpc`: an object store per kind, keyed by `id` (version 2 added `connections`, 3 `folders`). */
 export async function idbRecords(name = DB): Promise<Records> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const r = indexedDB.open(name, 3);
-    r.onupgradeneeded = () => { for (const k of KINDS) if (!r.result.objectStoreNames.contains(k)) r.result.createObjectStore(k, { keyPath: 'id' }); };
+    r.onupgradeneeded = () => {
+      for (const k of KINDS)
+        if (!r.result.objectStoreNames.contains(k)) r.result.createObjectStore(k, { keyPath: 'id' });
+    };
     // A tab of a newer page upgrading the database: this one lets go (its page is out of date; a reload has the new one).
-    r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); resolve(r.result); };
+    r.onsuccess = () => {
+      r.result.onversionchange = () => r.result.close();
+      resolve(r.result);
+    };
     r.onerror = () => reject(r.error);
   });
-  const store = (kind: Kind, mode: IDBTransactionMode) => db.transaction(kind, mode, { durability: 'strict' }).objectStore(kind);
+  const store = (kind: Kind, mode: IDBTransactionMode) =>
+    db.transaction(kind, mode, { durability: 'strict' }).objectStore(kind);
   // A write resolves once its transaction is committed (durably: a record follows its bytes).
-  const commit = (kind: Kind, f: (s: IDBObjectStore) => void) => new Promise<void>((resolve, reject) => {
-    const s = store(kind, 'readwrite');
-    f(s);
-    s.transaction.oncomplete = () => resolve();
-    s.transaction.onerror = s.transaction.onabort = () => reject(s.transaction.error);
-  });
+  const commit = (kind: Kind, f: (s: IDBObjectStore) => void) =>
+    new Promise<void>((resolve, reject) => {
+      const s = store(kind, 'readwrite');
+      f(s);
+      s.transaction.oncomplete = () => resolve();
+      s.transaction.onerror = s.transaction.onabort = () => reject(s.transaction.error);
+    });
   return {
     get: (kind, id) => idb(store(kind, 'readonly').get(id)) as never,
     all: (kind) => idb(store(kind, 'readonly').getAll()) as never,
@@ -308,7 +370,8 @@ export function opfsFiles(root: FileSystemDirectoryHandle): Files {
       try {
         d = await d.getDirectoryHandle(p);
       } catch (e) {
-        if ((e as DOMException).name === 'NotFoundError' || (e as DOMException).name === 'TypeMismatchError') return undefined;
+        if ((e as DOMException).name === 'NotFoundError' || (e as DOMException).name === 'TypeMismatchError')
+          return undefined;
         throw e;
       }
     }
@@ -342,7 +405,10 @@ export function opfsFiles(root: FileSystemDirectoryHandle): Files {
       const d = await dir(parts.slice(0, -1));
       if (!d) return 0;
       const name = parts.at(-1)!;
-      const h = await d.getFileHandle(name).catch(() => d.getDirectoryHandle(name)).catch(() => undefined);
+      const h = await d
+        .getFileHandle(name)
+        .catch(() => d.getDirectoryHandle(name))
+        .catch(() => undefined);
       return h ? sizeOf(h) : 0;
     },
   };

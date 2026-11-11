@@ -54,7 +54,8 @@ export type Machine = {
 export type Credential = { name: string; data: string };
 
 /** A machine's credentials as fw_cfg files, where systemd reads them (docs/platform.md "The firmware configuration's devices"). */
-export const credentialFiles = (credentials: Credential[]) => credentials.map((c) => ({ name: `opt/io.systemd.credentials/${c.name}`, data: c.data }));
+export const credentialFiles = (credentials: Credential[]) =>
+  credentials.map((c) => ({ name: `opt/io.systemd.credentials/${c.name}`, data: c.data }));
 
 /** A disk other than the machine's own, chosen on the page: a URL or a local file, with the OPFS overlay (and variable store) that belongs to it. */
 /** A disk chosen for a transient machine; `name`, a chunked image's manifest's, names the machine. */
@@ -67,7 +68,10 @@ export type DiskChoice = { url?: string; file?: File; overlay: string; name?: st
  * overlay (web/overlay.ts `openOverlay`).
  */
 export async function diskOverlay(d: { url: string } | { file: File }) {
-  const id = 'file' in d ? `file:${d.file.name}:${d.file.size}:${d.file.lastModified}` : `url:${new URL(d.url, 'http://x').pathname}`;
+  const id =
+    'file' in d
+      ? `file:${d.file.name}:${d.file.size}:${d.file.lastModified}`
+      : `url:${new URL(d.url, 'http://x').pathname}`;
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)));
   return `webpc-disk-${[...hash.subarray(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
@@ -84,7 +88,14 @@ const FIRMWARE = new URL('../../target/images/edk2/QEMU_EFI.fd', import.meta.url
  * search domain (MagicDNS's) for resolved; UseMTU: its MTU (the tunnel's 1280) on the link, for UDP too (the gateway
  * clamps TCP's MSS anyway). networkd's defaults leave both out (Arch's does).
  */
-const NETWORKD = { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n[DHCPv4]\nUseDomains=yes\nUseMTU=yes\n[DHCPv6]\nUseDomains=yes\n' }] };
+const NETWORKD = {
+  credentials: [
+    {
+      name: 'network.network.card',
+      data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n[DHCPv4]\nUseDomains=yes\nUseMTU=yes\n[DHCPv6]\nUseDomains=yes\n',
+    },
+  ],
+};
 
 export const MACHINES = {
   // The page's machine (docs/frontend.md): EDK2 and no disk of its own. It waits for the user's disk (Open disk, a drop,
@@ -184,11 +195,16 @@ export function ramSplitError(split: number[], vulkan = false): Msg | undefined 
 /** What web/ram.ts `splitError`'s code says (the Machines page's Memory split, a machine that can't start with its split). */
 export function splitMsg(p: SplitProblem): Msg {
   switch (p.code) {
-    case 'memory0-min': return msg('machines:machine.split.memory0Min');
-    case 'memory0-max': return msg('machines:machine.split.memory0Max', { max: p.max });
-    case 'nodes': return msg('machines:machine.split.nodes', { max: p.max });
-    case 'node': return msg('machines:machine.split.node', { max: p.max, mib: p.mib });
-    case 'vulkan': return msg('machines:machine.split.vulkan', { max: p.max });
+    case 'memory0-min':
+      return msg('machines:machine.split.memory0Min');
+    case 'memory0-max':
+      return msg('machines:machine.split.memory0Max', { max: p.max });
+    case 'nodes':
+      return msg('machines:machine.split.nodes', { max: p.max });
+    case 'node':
+      return msg('machines:machine.split.node', { max: p.max, mib: p.mib });
+    case 'vulkan':
+      return msg('machines:machine.split.vulkan', { max: p.max });
   }
 }
 /** The note for a machine whose RAM goes past memory 0: undefined when it all fits there. */
@@ -204,7 +220,8 @@ export function numaNote(ramMiB: number, split?: number[], vulkan = false): Msg 
  * killed: PLAN.md §4 "Guest RAM ceiling"), so the page compares this with
  * `navigator.deviceMemory` before it starts a machine.
  */
-export const hostMemoryGiB = (ramMiB: number, ncpus: number, jitMiB = JIT_DEFAULT_MIB) => ramMiB / 1024 + 1 + 0.3 * ncpus + jitHostGiB(jitMiB);
+export const hostMemoryGiB = (ramMiB: number, ncpus: number, jitMiB = JIT_DEFAULT_MIB) =>
+  ramMiB / 1024 + 1 + 0.3 * ncpus + jitHostGiB(jitMiB);
 
 /** The JIT's code cache budget when a machine sets none, MiB (the core's `jit::MAX_BYTES`, docs/jit.md "Memory"). */
 export const JIT_DEFAULT_MIB = 320;

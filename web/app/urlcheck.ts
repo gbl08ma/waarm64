@@ -35,8 +35,10 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   }
   const problems: Msg[] = [];
   const sameOrigin = u.origin === origin;
-  if (u.protocol !== 'https:' && !sameOrigin && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') problems.push(msg('machines:urlcheck.https'));
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, problems: [msg('machines:urlcheck.httpOnly')] };
+  if (u.protocol !== 'https:' && !sameOrigin && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1')
+    problems.push(msg('machines:urlcheck.https'));
+  if (u.protocol !== 'https:' && u.protocol !== 'http:')
+    return { ok: false, problems: [msg('machines:urlcheck.httpOnly')] };
   const out: UrlCheck = { ok: false, problems };
   if (isManifestUrl(u.href)) return checkChunked(u, out);
   // A range read: what the disk does all the time. A failure here is the network or CORS (the browser doesn't say which).
@@ -92,11 +94,19 @@ async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
     if (!r.ok) return fail(msg('machines:urlcheck.manifestStatus', { status: r.status, statusText: r.statusText }));
     m = checkManifest(await r.json());
   } catch (e) {
-    return fail(e instanceof TypeError ? msg('machines:urlcheck.noAnswer', { needs: CORS_HINT }) : msg('machines:urlcheck.badManifest', { why: msgOf(e) ?? String((e as Error).message ?? e) }));
+    return fail(
+      e instanceof TypeError
+        ? msg('machines:urlcheck.noAnswer', { needs: CORS_HINT })
+        : msg('machines:urlcheck.badManifest', { why: msgOf(e) ?? String((e as Error).message ?? e) }),
+    );
   }
   try {
-    const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[0]), u), { headers: { Range: 'bytes=0-511' }, cache: 'no-store' });
-    if (r.status !== 206 && r.status !== 200) return fail(msg('machines:urlcheck.pieceStatus', { status: r.status, statusText: r.statusText }));
+    const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[0]), u), {
+      headers: { Range: 'bytes=0-511' },
+      cache: 'no-store',
+    });
+    if (r.status !== 206 && r.status !== 200)
+      return fail(msg('machines:urlcheck.pieceStatus', { status: r.status, statusText: r.statusText }));
     out.head = new Uint8Array(await r.arrayBuffer()).slice(0, 512);
   } catch {
     return fail(msg('machines:urlcheck.noPiece', { needs: CORS_HINT }));

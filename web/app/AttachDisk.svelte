@@ -28,10 +28,13 @@
 
   /** Why machine `m` can't take the disk now, or undefined if it can. */
   const why = (m: MachineRecord) =>
-    m.attachments.some((a) => a.disk === disk.id) ? t('disks:AttachDisk.has')
-    : m.attachments.length >= MAX_DISKS ? t('disks:AttachDisk.full', { max: MAX_DISKS })
-    : running.has(m.id) && m.id !== ui.current ? t('disks:AttachDisk.otherTab')
-    : undefined;
+    m.attachments.some((a) => a.disk === disk.id)
+      ? t('disks:AttachDisk.has')
+      : m.attachments.length >= MAX_DISKS
+        ? t('disks:AttachDisk.full', { max: MAX_DISKS })
+        : running.has(m.id) && m.id !== ui.current
+          ? t('disks:AttachDisk.otherTab')
+          : undefined;
 
   async function attachTo(m: MachineRecord) {
     error = '';
@@ -50,7 +53,13 @@
   }
 </script>
 
-<Modal id="attach-disk" bind:this={dialog} title={t('disks:AttachDisk.title', { disk: disk.name })} onclose={close} data-disk={disk.id}>
+<Modal
+  id="attach-disk"
+  bind:this={dialog}
+  title={t('disks:AttachDisk.title', { disk: disk.name })}
+  onclose={close}
+  data-disk={disk.id}
+>
   <p class="note">{t('disks:AttachDisk.note')}</p>
   <ul class="rows">
     {#each machines as m (m.id)}
@@ -58,15 +67,23 @@
       <li data-machine={m.id}>
         <div class="what">
           <strong>{m.name}</strong>
-          <span class="meta">{t('disks:AttachDisk.meta', { n: m.attachments.length, max: MAX_DISKS })}{#if running.has(m.id)}{' · '}{t('disks:AttachDisk.running')}{/if}</span>
+          <span class="meta"
+            >{t('disks:AttachDisk.meta', { n: m.attachments.length, max: MAX_DISKS })}{#if running.has(m.id)}{' · '}{t(
+                'disks:AttachDisk.running',
+              )}{/if}</span
+          >
           {#if no}<span class="meta warn" data-why>{no}</span>{/if}
         </div>
-        <button class="primary" disabled={!!no} onclick={() => attachTo(m)} data-action="attach-to">{t('disks:AttachDisk.attach')}</button>
+        <button class="primary" disabled={!!no} onclick={() => attachTo(m)} data-action="attach-to"
+          >{t('disks:AttachDisk.attach')}</button
+        >
       </li>
     {:else}
       <li class="none">{t('disks:AttachDisk.none')}</li>
     {/each}
   </ul>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()}>{t('disks:AttachDisk.cancel')}</button>{/snippet}
+  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()}
+      >{t('disks:AttachDisk.cancel')}</button
+    >{/snippet}
 </Modal>
