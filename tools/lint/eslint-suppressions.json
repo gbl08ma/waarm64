@@ -58,20 +58,6 @@
       "count": 3
     }
   },
-  "web/app/definitions.ts": {
-    "@typescript-eslint/no-unnecessary-boolean-literal-compare": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 9
-    },
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "web/app/deflate-pool.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
