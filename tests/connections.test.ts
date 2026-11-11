@@ -8,7 +8,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { connectionLock, Connections, defaultName, migrateLegacy, preselect, type Connection } from '../web/app/connections.ts';
-import { connectOf } from '../web/app/net-live.ts';
+import { connectOf } from '../web/app/net-connect.ts';
 import { Locks } from '../web/app/locks.ts';
 import { DEFAULT_SETTINGS } from '../web/app/network.ts';
 import { Store } from '../web/app/store.ts';

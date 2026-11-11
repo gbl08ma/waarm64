@@ -6,7 +6,9 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { connectionLock, type Connection } from '../web/app/connections.ts';
-import { connectOf, HeldError, PageNetwork } from '../web/app/net-live.ts';
+import { HeldError } from '../web/app/net-claims.ts';
+import { connectOf } from '../web/app/net-connect.ts';
+import { PageNetwork } from '../web/app/net-live.ts';
 import { t } from '../web/i18n.ts';
 import { msgOf, toWire } from '../web/msg.ts';
 import type { Adapter } from '../web/app/shape.ts';
@@ -247,7 +249,7 @@ test('attached from another tab to a running machine: it connects at once; detac
   await b.net.autoconnect();
   await a.net.follow(on(c));
   assert.equal(a.net.runs(c.id), -1);
-  assert.equal(a.net.views()[0].note, t('network:net-live.held', { name: c.name, holder: 'Machine B' }));
+  assert.equal(a.net.views()[0].note, t('network:net-claims.held', { name: c.name, holder: 'Machine B' }));
   await a.net.follow(on());
   assert.equal(a.net.views()[0].note, undefined);
   await b.net.disconnect(0, false);
@@ -319,7 +321,7 @@ test("a kept node whose control server doesn't answer stays as it was", async ()
   const out = quietly(p.net.logoutKept(c));
   await new Promise((r) => setTimeout(r, 5));
   p.all[0].fail('no route');
-  assert.equal(await out, 'network:net-live.notLoggedOut › network:net-live.notLoggedOut.cause');
+  assert.equal(await out, 'network:net-nodes.notLoggedOut › network:net-nodes.notLoggedOut.cause');
   assert.ok(!p.log.includes('ts0 logout'));
   assert.deepEqual(kept, [c.tailnet!.stateKey]);
   // Deleting it all the same says the node is left behind.
@@ -344,7 +346,7 @@ test('a running client that logs out or is deleted stops first: unconnected, the
   assert.ok(!p.log.includes('ts0 logout'), `not through the unconnected client: ${p.log}`);
   assert.ok(p.log.includes('ts0 detach'));
   p.all[1].fail('no route');
-  assert.equal(await out, 'network:net-live.notLoggedOut › network:net-live.notLoggedOut.cause');
+  assert.equal(await out, 'network:net-nodes.notLoggedOut › network:net-nodes.notLoggedOut.cause');
   assert.deepEqual(kept, [c.tailnet!.stateKey], 'nothing forgotten');
 
   await p.net.connect(0, (await p.net.conns.get(c.id))!);
@@ -464,7 +466,7 @@ test("a room's key runs in one connection at a time: another adapter's, then ano
   assert.equal(p.net.runs(first.id), 0);
   assert.equal(p.net.runs(second.id), -1, 'not beside the first');
   assert.equal(p.net.runs(own.id), 2, 'a key of its own runs');
-  await assert.rejects(p.net.connect(1, second), (e: Error) => errorOf(e).includes('network:net-live.keyInUse') && errorOf(e).includes(`"other":"${first.name}"`), 'named: the other adapter');
+  await assert.rejects(p.net.connect(1, second), (e: Error) => errorOf(e).includes('network:net-claims.keyInUse') && errorOf(e).includes(`"other":"${first.name}"`), 'named: the other adapter');
   // Once the first lets its key go, the second runs.
   await p.net.disconnect(0);
   await p.net.connect(1, (await p.net.conns.get(second.id))!);
@@ -472,7 +474,7 @@ test("a room's key runs in one connection at a time: another adapter's, then ano
   // Another tab's machine: the first, on the shared key, is refused there and names this machine.
   const q = pageOn('nl-roomkey', 'N', records);
   q.net.ports('m2', adapters(first));
-  await assert.rejects(q.net.connect(0, (await q.net.conns.get(first.id))!), (e: Error) => errorOf(e).includes('network:net-live.keyHeld') && errorOf(e).includes('"holder":"M"'), 'named: this machine');
+  await assert.rejects(q.net.connect(0, (await q.net.conns.get(first.id))!), (e: Error) => errorOf(e).includes('network:net-claims.keyHeld') && errorOf(e).includes('"holder":"M"'), 'named: this machine');
   await p.net.disconnect(1);
   await q.net.connect(0, (await q.net.conns.get(first.id))!);
   assert.equal(q.net.runs(first.id), 0, 'free once this tab let it go');

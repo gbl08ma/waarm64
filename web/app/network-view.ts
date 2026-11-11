@@ -1,8 +1,12 @@
 // The page's network as the user sees it (docs/frontend.md "Network"): an adapter's phase, its words and what it
 // offers, from its client's report (web/app/network.ts); and which adapter is the guest's default way out. DOM-free,
 // for tests/network.test.ts.
-import { describe, msg, t, type Msg } from '../i18n.ts';
+import { describe, errorText, msg, t, text, type Msg } from '../i18n.ts';
+import { isMsg } from '../msg.ts';
 import type { NetMap } from '../tailscale.ts';
+import type { Connection } from './connections.ts';
+import type { Network } from './network.ts';
+import type { Adapter } from './shape.ts';
 
 export type Phase =
   /** No client. */
@@ -239,4 +243,60 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   if (c.netmap?.via === 'room' || c.room) return roomView(c);
   if (c.netmap?.via === 'tailcat' || c.tailcat) return tailcatView(c);
   return tailscaleView(c);
+}
+
+/** One adapter as the menu and the Network tab show it. */
+export type AdapterView = {
+  index: number;
+  mac: string;
+  /** Its attached connection, if it has one that this browser still has. */
+  connection?: Connection;
+  view: NetworkView;
+  /** A client runs. */
+  active: boolean;
+  /** Something the page has to say about it, in words: its connection was gone, another machine took it. */
+  note?: string;
+  /** The guest's default way out goes through it. */
+  primary: boolean;
+  /** The machine runs, so the adapter can connect. */
+  on: boolean;
+};
+
+/** A note's words: a message's, or an error's headline and details (one line each). */
+const noteText = (n: unknown) => (n === undefined ? undefined : isMsg(n) ? text(n) : errorText(n));
+
+/** What `adapterViews` reads of the page's machine's adapters (web/app/net-live.ts), each by its index. */
+export type AdaptersNow = {
+  adapters: Adapter[];
+  /** Each adapter's client. */
+  nets: Network[];
+  /** What the page has to say about each adapter: a message, or an error its connecting met. */
+  notes: unknown[];
+  /** The browser's connections, as last read. */
+  connections: Connection[];
+  /** The guest's default way out, or -1. */
+  primary: number;
+  /** The machine runs. */
+  on: boolean;
+};
+
+/** The page's machine's adapters as the menu and the Network tab show them. */
+export function adapterViews(o: AdaptersNow): AdapterView[] {
+  const views = o.adapters.map((_, i) => o.nets[i]?.view() ?? viewOf(undefined));
+  // Two adapters on local helpers both give the guest a default route (their DHCP, not the page's): said, not fixed.
+  const locals = views.flatMap((v, i) => (v.phase === 'connected' && v.local ? [i] : []));
+  return o.adapters.map((a, i) => ({
+    index: i,
+    mac: a.mac,
+    connection: o.connections.find((c) => c.id === a.connection),
+    view: views[i],
+    active: !!o.nets.at(i)?.active(),
+    note:
+      noteText(o.notes[i]) ??
+      (locals.length > 1 && locals.includes(i) && i !== o.primary
+        ? text(msg('network:network-view.twoHelpers', { adapter: o.primary + 1 }))
+        : undefined),
+    primary: i === o.primary,
+    on: o.on,
+  }));
 }

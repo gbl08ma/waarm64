@@ -559,25 +559,25 @@
     "message": "Your computer",
     "note": "The default name of a new connection through the local helper (webpc-net), as the Network wizard, the Network menu and the Machines page's Connections show it. It is stored with the connection, which the user can rename."
   },
-  "net-live.keyInUse": {
+  "net-claims.keyInUse": {
     "message": "Its key is in use by the connection {{other}} on another adapter: a key runs in one room connection at a time.",
     "note": "Why a room connection didn't connect (after net-live.notConnected): it uses the same node key as another room connection (the Advanced setting that takes another connection's key), which another adapter of this machine is running. {{other}}: that connection's name."
   },
-  "net-live.keyHeld": {
+  "net-claims.keyHeld": {
     "message": "Its key is in use by a room connection of {{holder}}: a key runs in one room connection at a time.",
     "note": "Why a room connection didn't connect (after net-live.notConnected): another tab's machine runs a room connection with the same node key. {{holder}}: that machine's name."
   },
-  "net-live.keyHeldElsewhere": {
+  "net-claims.keyHeldElsewhere": {
     "message": "Its key is in use by a room connection in another tab: a key runs in one room connection at a time.",
-    "note": "As net-live.keyHeld, when the other tab didn't say its machine's name."
+    "note": "As net-claims.keyHeld, when the other tab didn't say its machine's name."
   },
-  "net-live.held": {
+  "net-claims.held": {
     "message": "{{name}} is in use by {{holder}}.",
     "note": "An error, or the note under an adapter in the Network menu, when a connection the user attaches or connects is had by a machine running in another tab; the page may go on to ask whether to take it. {{name}} is the connection's name; {{holder}} the other machine's."
   },
-  "net-live.heldElsewhere": {
+  "net-claims.heldElsewhere": {
     "message": "{{name}} is in use by a machine in another tab.",
-    "note": "As net-live.held, when the other tab didn't say which machine has the connection. {{name}} is the connection's name."
+    "note": "As net-claims.held, when the other tab didn't say which machine has the connection. {{name}} is the connection's name."
   },
   "net-live.gone": {
     "message": "The adapter's connection was deleted, or was ephemeral and its tab closed. Attach a connection again.",
@@ -599,13 +599,13 @@
     "message": "{{name}} is already on adapter {{adapter}}. A connection can be on only one adapter at a time.",
     "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): the user connects a connection that another adapter of the same machine runs. {{name}} is the connection's name; {{adapter}} the other adapter's number (1, 2, …)."
   },
-  "net-live.notLoggedOut": {
+  "net-nodes.notLoggedOut": {
     "message": "Couldn't log {{name}} out",
-    "note": "Error headline (Machines page's Connections, Network menu) when logging a kept tailnet node out failed because its control server didn't answer; network:net-live.notLoggedOut.cause is the line under it. {{name}} is the connection's name."
+    "note": "Error headline (Machines page's Connections, Network menu) when logging a kept tailnet node out failed because its control server didn't answer; network:net-nodes.notLoggedOut.cause is the line under it. {{name}} is the connection's name."
   },
-  "net-live.notLoggedOut.cause": {
+  "net-nodes.notLoggedOut.cause": {
     "message": "Couldn't reach {{host}}. It stays logged in.",
-    "note": "Error details, under network:net-live.notLoggedOut: the control server didn't answer, so the node is still on the tailnet. {{host}} is the control server's host name."
+    "note": "Error details, under network:net-nodes.notLoggedOut: the control server didn't answer, so the node is still on the tailnet. {{host}} is the control server's host name."
   },
   "net-live.taken": {
     "message": "{{name}} was taken by another machine.",
@@ -615,7 +615,7 @@
     "message": "This adapter's connection was taken by another machine.",
     "note": "As net-live.taken, when the connection's record couldn't be read (its name isn't known)."
   },
-  "net-live.twoHelpers": {
+  "network-view.twoHelpers": {
     "message": "Adapter {{adapter}} also goes through a helper on your computer, so the guest has a default route through each.",
     "note": "A note in the toolbar's Network menu (under the adapter) and the Machines page's Network tab, under an adapter connected through the local helper when another adapter is too. {{adapter}} is the other adapter's number (1, 2, …)."
   },

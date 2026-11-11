@@ -18,7 +18,7 @@
   import { MsgError } from '../msg.ts';
   import { ask } from './ask.svelte.ts';
   import { phaseTone } from './network-view.ts';
-  import type { AdapterView } from './net-live.ts';
+  import type { AdapterView } from './network-view.ts';
   import { page } from './page.ts';
 
   type Props = { a: AdapterView; heading: boolean; onwizard: () => void };

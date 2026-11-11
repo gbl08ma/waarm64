@@ -1,103 +1,21 @@
 // The live side of the page's machine's network adapters (docs/network-adapters.md §3): a `Network` per adapter
 // (web/app/network.ts), the connection each one has attached (a record of the browser's, web/app/connections.ts) and
-// its client, and the connections' locks (one running machine has a connection at a time, in any tab:
-// web/app/locks.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The
+// its client (what it starts with: web/app/net-connect.ts), and the connections' locks (one running machine has a
+// connection at a time, in any tab: web/app/net-claims.ts) and kept nodes (web/app/net-nodes.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The
 // toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/areas/network-actions.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
-import { errorText, msg, MsgError, text } from '../i18n.ts';
-import { isMsg } from '../msg.ts';
-import {
-  connectionLock,
-  Connections,
-  roomKeyLock,
-  sameRoomKey,
-  settingsOf,
-  type Connection,
-  type ConnectionState,
-} from './connections.ts';
-import { heldLocks, Locks } from './locks.ts';
-import { createNetwork, logOutNode, type Connect, type Network } from './network.ts';
-import { primaryOf, ranksOf, viewOf, type NetworkView } from './network-view.ts';
+import { msg, MsgError } from '../i18n.ts';
+import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
+import type { TailnetConnection } from './connections.ts';
+import type { Locks } from './locks.ts';
+import { NetClaims, type ClaimHere } from './net-claims.ts';
+import { connectOf } from './net-connect.ts';
+import { KeptNodes, notLoggedOut } from './net-nodes.ts';
+import { createNetwork, type Network } from './network.ts';
+import { adapterViews, primaryOf, ranksOf, type AdapterView } from './network-view.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 import { Changes } from './changes.ts';
-
-/** What a connection's client is started with (`authKey`: a tailnet's first login, never kept). */
-export function connectOf(c: Connection, authKey?: string): Connect {
-  if (c.kind === 'local') return { controlURL: '', hostname: '', local: settingsOf(c, 'local').url };
-  if (c.kind === 'room') {
-    const r = settingsOf(c, 'room');
-    return {
-      controlURL: '',
-      hostname: '',
-      room: {
-        link: r.link,
-        incoming: r.incoming,
-        relayOnly: r.relayOnly,
-        identityKey: r.identityKey,
-        identity: r.identity,
-      },
-    };
-  }
-  if (c.kind === 'tailcat') {
-    const t = settingsOf(c, 'tailcat');
-    // Its identity always: a kept connection is the same node going online through a server too (a server can `--allow` it).
-    const serve = t.serve
-      ? { tailcatServe: { relay: t.exit ? '' : t.relay, ...(t.allow?.length ? { allow: t.allow } : {}) } }
-      : {};
-    return {
-      controlURL: '',
-      hostname: '',
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
-      tailcat: t.exit || undefined,
-      ...serve,
-      tailcatIdentity: { identityKey: t.identityKey, identity: t.identity },
-    };
-  }
-  const t = settingsOf(c, 'tailnet');
-  // A stored connection's node is kept under its profile (so it comes back without a login, an auth key's too); an ephemeral one's isn't.
-  return {
-    controlURL: t.controlURL,
-    hostname: t.hostname,
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty auth key is none
-    authKey: authKey || undefined,
-    exitNode: t.exitNode || undefined,
-    ...(t.acceptRoutes === false ? { acceptRoutes: false } : {}),
-    persist: c.ephemeral ? undefined : t.stateKey,
-  };
-}
-
-/** A connection another machine has (in another tab): `holder` is its name, when that tab answered. */
-export class HeldError extends MsgError {
-  readonly connection: Connection;
-  readonly holder?: string;
-  constructor(c: Connection, holder?: string) {
-    if (holder) super('network:net-live.held', { name: c.name, holder });
-    else super('network:net-live.heldElsewhere', { name: c.name });
-    this.name = 'HeldError';
-    [this.connection, this.holder] = [c, holder];
-  }
-}
-
-/** A note's words: a message's, or an error's headline and details (one line each). */
-const noteText = (n: unknown) => (n === undefined ? undefined : isMsg(n) ? text(n) : errorText(n));
-
-/** One adapter as the menu and the Network tab show it. */
-export type AdapterView = {
-  index: number;
-  mac: string;
-  /** Its attached connection, if it has one that this browser still has. */
-  connection?: Connection;
-  view: NetworkView;
-  /** A client runs. */
-  active: boolean;
-  /** Something the page has to say about it, in words: its connection was gone, another machine took it. */
-  note?: string;
-  /** The guest's default way out goes through it. */
-  primary: boolean;
-  /** The machine runs, so the adapter can connect. */
-  on: boolean;
-};
 
 export type PageNetworkOptions = {
   /** The clients (tests' fakes; the page's: web/tailscale.ts, web/tailcat.ts). */
@@ -120,24 +38,22 @@ export type PageNetworkOptions = {
 export class PageNetwork {
   readonly conns: Connections;
   readonly locks: Locks;
+  /** The connections' locks and their room keys'. */
+  private claims: NetClaims;
   /** What the page shows of it changed (web/app/changes.ts): its reads below track it. */
   readonly #changes = new Changes();
   #connections: Connection[] = [];
   #held = new Set<string>();
-  /** The profiles that hold a kept node, as last read. */
-  private keptNodes = new Set<string>();
+  /** The tailnet nodes kept here. */
+  private nodes: KeptNodes;
   private o: PageNetworkOptions;
   private nets: Network[] = [];
   private adapters: Adapter[] = [];
   private machine?: string;
   /** The machine has started and hasn't stopped (`ports`, `machineOff`). */
   private on = false;
-  /** The connections whose nodes are being logged out: nothing connects them meanwhile, and no other tab is let in. */
-  private leaving = new Set<string>();
   /** The connection each adapter's client runs, while one does. */
   private running: (string | undefined)[] = [];
-  /** The room key locks the running room connections hold, by connection (`roomKeyLock`). */
-  private keyLocks = new Map<string, string>();
   /** What the page has to say about each adapter: a message, or an error its connecting met. */
   private notes: unknown[] = []; // a Msg, or an error
   private primary = -1;
@@ -156,7 +72,9 @@ export class PageNetwork {
   constructor(o: PageNetworkOptions) {
     this.o = o;
     this.conns = new Connections(o.store, o.state);
-    this.locks = new Locks(o.store, 'net', o.me, (lock) => void this.release(lock));
+    this.claims = new NetClaims(o.store, o.me, (lock) => void this.release(lock));
+    this.locks = this.claims.locks;
+    this.nodes = new KeptNodes(o.kept, o.start);
   }
 
   private fresh(): Network {
@@ -170,17 +88,9 @@ export class PageNetwork {
     this.running[i] = undefined;
     if (n?.active())
       void n.disconnect().then(() => {
-        if (id && !this.running.includes(id)) this.let(id);
+        if (id && !this.running.includes(id)) this.claims.let(id);
       });
-    else if (id && !this.running.includes(id)) this.let(id);
-  }
-
-  /** Lets connection `id` go: its lock, and its room key's. */
-  private let(id: string) {
-    this.locks.drop(connectionLock(id));
-    const k = this.keyLocks.get(id);
-    this.keyLocks.delete(id);
-    if (k) this.locks.drop(k);
+    else if (id && !this.running.includes(id)) this.claims.let(id);
   }
 
   /**
@@ -287,14 +197,13 @@ export class PageNetwork {
     if (this.on) return this.connect(i, c, authKey);
     await this.conns.put({ ...c, connectAtStart: true });
     // `takeFrom`'s, if the machine stopped while it was asked.
-    if (!this.running.includes(c.id)) this.let(c.id);
+    if (!this.running.includes(c.id)) this.claims.let(c.id);
     await this.refresh();
   }
 
   /** Asks the tab whose machine has `c` to let it go, then attaches it to adapter `i`. */
   async takeFrom(i: number, c: Connection, authKey?: string) {
-    if (!(await this.locks.takeFrom(connectionLock(c.id))))
-      throw new HeldError(c, await this.locks.holder(connectionLock(c.id)));
+    await this.claims.takeFrom(c);
     await this.attach(i, c, authKey);
   }
 
@@ -304,45 +213,13 @@ export class PageNetwork {
     if (!n) throw new Error(`the machine has no adapter ${i + 1}`);
     if (this.running[i] === c.id && n.active()) return;
     const refused = (cause: unknown) => new MsgError('network:net-live.notConnected', { name: c.name }, { cause });
-    if (!this.on) throw refused(new MsgError('network:net-live.off'));
-    if (this.leaving.has(c.id)) throw refused(new MsgError('network:net-live.loggingOut', { name: c.name }));
-    const other = this.running.findIndex((id, k) => id === c.id && k !== i);
-    if (other >= 0)
-      throw refused(new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 }));
-    const lock = connectionLock(c.id);
-    if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
-    // It stopped, or its adapters changed, while the lock was asked for.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `on` and the adapters can change across the await
-    if (!this.on || this.nets[i] !== n) {
-      if (!this.running.includes(c.id)) this.locks.drop(lock);
-      throw refused(new MsgError('network:net-live.off'));
-    }
-    const room = c.room;
-    if (room) {
-      // One key runs in one connection at a time (`roomKeyLock`): this page's other adapters first, then other tabs.
-      const others = await Promise.all(
-        this.running.flatMap((id, k) => (id && id !== c.id && k !== i ? [this.conns.get(id)] : [])),
-      );
-      const here = others.find((o) => o?.room && sameRoomKey(o.room, room));
-      const key = await roomKeyLock(room);
-      if (here || !(await this.locks.take(key))) {
-        if (!this.running.includes(c.id)) this.locks.drop(lock);
-        const holder = here ? undefined : await this.locks.holder(key);
-        throw refused(
-          here
-            ? new MsgError('network:net-live.keyInUse', { other: here.name })
-            : holder
-              ? new MsgError('network:net-live.keyHeld', { holder })
-              : new MsgError('network:net-live.keyHeldElsewhere'),
-        );
-      }
-      this.keyLocks.set(c.id, key);
-    }
+    const why = this.refusal(i, c) ?? (await this.claims.claim(c, this.claimHere(i, c, n)));
+    if (why) throw refused(why);
     if (n.active()) await this.disconnect(i, false);
     try {
       n.connect(connectOf(c, authKey));
     } catch (e) {
-      this.let(c.id);
+      this.claims.let(c.id);
       throw refused(e);
     }
     this.running[i] = c.id;
@@ -351,13 +228,33 @@ export class PageNetwork {
     await this.refresh();
   }
 
+  /** Why adapter `i` can't connect `c` now: the machine is off, `c`'s node is being logged out, another adapter runs it. */
+  private refusal(i: number, c: Connection): MsgError | undefined {
+    if (!this.on) return new MsgError('network:net-live.off');
+    if (this.claims.leaving.has(c.id)) return new MsgError('network:net-live.loggingOut', { name: c.name });
+    const other = this.running.findIndex((id, k) => id === c.id && k !== i);
+    if (other >= 0) return new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 });
+    return undefined;
+  }
+
+  /** What `NetClaims.claim` asks of adapter `i`, whose network is `n`, connecting `c`. */
+  private claimHere(i: number, c: Connection, n: Network): ClaimHere {
+    return {
+      // It stopped, or its adapters changed, while the lock was asked for.
+      stopped: () => (!this.on || this.nets[i] !== n ? new MsgError('network:net-live.off') : undefined),
+      runs: () => this.running.includes(c.id),
+      others: () =>
+        Promise.all(this.running.flatMap((id, k) => (id && id !== c.id && k !== i ? [this.conns.get(id)] : []))),
+    };
+  }
+
   /** Stops adapter `i`'s client and lets its connection go; `byUser`: it stays off at the next start too. */
   async disconnect(i: number, byUser = true) {
     const id = this.running[i];
     this.running[i] = undefined;
     await this.nets[i]?.disconnect();
     if (id) {
-      this.let(id);
+      this.claims.let(id);
       const c = byUser ? await this.conns.get(id) : undefined;
       if (c) await this.conns.put({ ...c, connectAtStart: false });
     }
@@ -389,31 +286,18 @@ export class PageNetwork {
   /** Whether connection `c` has a node kept here, which can be logged out. */
   hasNode(c: Connection) {
     this.#changes.track();
-    return !!c.tailnet && !c.ephemeral && this.keptNodes.has(c.tailnet.stateKey);
-  }
-
-  /** Whether the node is still kept, read now (a logout that worked forgot it). */
-  private async stillKept(c: Connection) {
-    return !!(await this.o.kept?.())?.includes(settingsOf(c, 'tailnet').stateKey);
+    return this.nodes.has(c);
   }
 
   /**
-   * Runs `then` with `c`'s client stopped and its lock held, once its kept node, if any, is logged out: `then` hears
-   * whether that worked. Always through a client of its own: the module, not connected, would only forget the keys
-   * here, and only `logOutNode` knows the control server has answered. `HeldError` if another tab's machine has it.
+   * Runs `then` with `c`'s client stopped and its lock held, once its kept node, if any, is logged out (net-nodes.ts):
+   * `then` hears whether that worked. `HeldError` if another tab's machine has it.
    */
   private async nodeOut<T>(c: Connection, then: (gone: boolean) => Promise<T>): Promise<T> {
-    this.leaving.add(c.id);
-    const lock = connectionLock(c.id);
-    try {
+    const stop = async () => {
       for (const [i, id] of this.running.entries()) if (id === c.id) await this.disconnect(i, false);
-      if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
-      const kept = !!c.tailnet && !c.ephemeral && (await this.stillKept(c));
-      return await then(!kept || ((await logOutNode(connectOf(c), this.o.start)) && !(await this.stillKept(c))));
-    } finally {
-      this.locks.drop(lock);
-      this.leaving.delete(c.id);
-    }
+    };
+    return this.claims.whileLeaving(c, stop, async () => then(await this.nodes.logOut(c)));
   }
 
   /**
@@ -422,16 +306,7 @@ export class PageNetwork {
    */
   async logoutKept(c: Connection) {
     await this.nodeOut(c, async (gone) => {
-      if (!gone)
-        throw new MsgError(
-          'network:net-live.notLoggedOut',
-          { name: c.name },
-          {
-            cause: new MsgError('network:net-live.notLoggedOut.cause', {
-              host: new URL(settingsOf(c, 'tailnet').controlURL).host,
-            }),
-          },
-        );
+      if (!gone) throw notLoggedOut(c);
       await this.conns.put({ ...c, connectAtStart: false });
     });
     await this.refresh();
@@ -440,16 +315,19 @@ export class PageNetwork {
   /** The exit node of adapter `i`'s tailnet (kept in its connection). */
   async setExitNode(i: number, peer: string) {
     await this.nets[i].setExitNode(peer);
-    const c = await this.runningConnection(i);
-    if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, exitNode: peer } });
-    await this.refresh();
+    await this.keepTailnet(i, { exitNode: peer });
   }
 
   /** Whether adapter `i`'s tailnet installs its peers' subnet routes (kept in its connection). */
   async setAcceptRoutes(i: number, on: boolean) {
     this.nets[i].setAcceptRoutes(on);
+    await this.keepTailnet(i, { acceptRoutes: on });
+  }
+
+  /** Keeps a setting of adapter `i`'s running tailnet in its connection. */
+  private async keepTailnet(i: number, set: Partial<TailnetConnection>) {
     const c = await this.runningConnection(i);
-    if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, acceptRoutes: on } });
+    if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, ...set } });
     await this.refresh();
   }
 
@@ -481,14 +359,14 @@ export class PageNetwork {
 
   /** Another tab takes a connection one of these adapters runs: it disconnects (and connects at the next start as before). */
   private async release(lock: string) {
-    if ([...this.leaving].some((id) => connectionLock(id) === lock)) return; // not until the node is out
+    if (this.claims.isLeaving(lock)) return; // not until the node is out
     const i = this.running.findIndex((id) => id && connectionLock(id) === lock);
     const id = this.running[i];
     if (!id) return this.locks.drop(lock);
     const c = await this.conns.get(id);
     this.running[i] = undefined;
     await this.nets[i].disconnect();
-    if (!this.running.includes(id)) this.let(id);
+    if (!this.running.includes(id)) this.claims.let(id);
     this.notes[i] = c ? msg('network:net-live.taken', { name: c.name }) : msg('network:net-live.takenUnnamed');
     await this.refresh();
   }
@@ -496,13 +374,8 @@ export class PageNetwork {
   /** Rereads the connections and which are held elsewhere (the store changed, in this tab or another). */
   async refresh() {
     this.#connections = await this.conns.list();
-    this.keptNodes = new Set((await this.o.kept?.().catch(() => [])) ?? []);
-    const held = await heldLocks();
-    this.#held = new Set(
-      this.#connections
-        .filter((c) => held.has(connectionLock(c.id)) && !this.locks.mine(connectionLock(c.id)))
-        .map((c) => c.id),
-    );
+    await this.nodes.refresh();
+    this.#held = await this.claims.heldElsewhere(this.#connections);
     this.changed();
   }
 
@@ -519,23 +392,8 @@ export class PageNetwork {
   /** The page's machine's adapters now. */
   views(): AdapterView[] {
     this.#changes.track();
-    const views = this.adapters.map((_, i) => this.nets[i]?.view() ?? viewOf(undefined));
-    // Two adapters on local helpers both give the guest a default route (their DHCP, not the page's): said, not fixed.
-    const locals = views.flatMap((v, i) => (v.phase === 'connected' && v.local ? [i] : []));
-    return this.adapters.map((a, i) => ({
-      index: i,
-      mac: a.mac,
-      connection: this.connections.find((c) => c.id === a.connection),
-      view: views[i],
-      active: !!this.nets.at(i)?.active(),
-      note:
-        noteText(this.notes[i]) ??
-        (locals.length > 1 && locals.includes(i) && i !== this.primary
-          ? text(msg('network:net-live.twoHelpers', { adapter: this.primary + 1 }))
-          : undefined),
-      primary: i === this.primary,
-      on: this.on,
-    }));
+    const { adapters, nets, notes, primary, on } = this;
+    return adapterViews({ adapters, nets, notes, connections: this.connections, primary, on });
   }
 
   /** The adapter whose client runs connection `id` here, or -1. */

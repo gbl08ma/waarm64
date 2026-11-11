@@ -1,4 +1,4 @@
-// A resource another tab's machine holds (a connection: web/app/net-live.ts `HeldError`; a USB device:
+// A resource another tab's machine holds (a connection: web/app/net-claims.ts `HeldError`; a USB device:
 // web/app/usb-live.ts `UsbHeldError`): what was asked fails with the holder's error, the user is asked, and it is taken
 // from that tab (docs/frontend-code.md §5.5). A shared folder held elsewhere is a folder's state, not an error
 // (web/app/folders-live.ts `FolderProblem` `held`): its Use it here asks first (web/app/areas/folder-actions.ts).
