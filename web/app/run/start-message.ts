@@ -1,15 +1,52 @@
-// What a start hands the machine worker (web/app/protocol.ts `start`): the run's channels, one per device the machine
-// has, and the start message built from the page's machine and the address's knobs, with the ports it transfers.
+// What a start hands the machine worker (web/app/protocol.ts `start`): the machine's configuration, resolved once per
+// start (`machineConfig`: web/app/run/config.ts's rules over the page's machine), the run's channels, one per device
+// the configuration has, and the start message with the ports it transfers.
 import type { PageAudio } from '../../audio.ts';
 import type { FolderSpec } from '../../9p-folders.ts';
 import { guestWords } from '../guest-words.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
-import type { StartDisk, ToWorker } from '../protocol.ts';
+import type { MachineConfig, MachinePorts, StartDisk, ToWorker } from '../protocol.ts';
 import { credentials, cpuFeatures, params } from './knobs.ts';
 import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import { parseDevKnobs } from './dev-knobs.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
+
+/**
+ * The page's machine's configuration for a start with `nets` network adapters: its size as the page has it now (the
+ * Machine menu's, a stored machine's settings), its devices, display and guest settings by `PageMachine.resolve` and
+ * `display`, the address's CPU features and development knobs. The layout is filled in once resolved (`keyLayout`).
+ */
+export function machineConfig(m: PageMachine, nets: number): MachineConfig {
+  const stored = m.stored?.record;
+  const resolved = m.resolve().devices;
+  const { display, vulkan } = m.display();
+  return {
+    machine: m.name,
+    ncpus: m.ncpus,
+    ram: { mib: m.ramMiB, split: m.ramSplit },
+    jitMiB: m.jitMiB || undefined,
+    cpu: cpuFeatures(),
+    display,
+    vulkan,
+    devices: {
+      nets,
+      mouse: resolved.mouse,
+      touch: resolved.touch,
+      clock: resolved.clock,
+      shares: resolved.shares,
+      clipboard: resolved.clipboard,
+      usb: resolved.usb,
+    },
+    guest: {
+      netConfig: resolved.netConfig,
+      sharesPath: resolved.shares && stored ? sharesPath(stored) : undefined,
+      params: params.get('params') ?? undefined,
+      credentials,
+    },
+    dev: parseDevKnobs(params),
+  };
+}
 
 /** A run's channels: the page keeps `port1` of each, the worker gets `port2`. */
 export type Channels = {
@@ -31,8 +68,8 @@ export type Channels = {
   agent?: MessageChannel;
 };
 
-/** A run's channels for what the page's machine has. */
-export function channels(m: PageMachine, sound: Channels['sound'], nets: Channels['nets']): Channels {
+/** A run's channels for what the configuration has. */
+export function channels(c: MachineConfig, sound: Channels['sound'], nets: Channels['nets']): Channels {
   const optional = (on: boolean) => (on ? new MessageChannel() : undefined);
   return {
     display: new MessageChannel(),
@@ -41,15 +78,15 @@ export function channels(m: PageMachine, sound: Channels['sound'], nets: Channel
     serial: new MessageChannel(),
     sound,
     nets,
-    usb: optional(m.has('usb')),
-    shares: optional(m.has('shares')),
-    mouse: optional(m.has('mouse')),
-    touch: optional(m.has('touch')),
-    agent: optional(m.has('clipboard')),
+    usb: optional(c.devices.usb),
+    shares: optional(c.devices.shares),
+    mouse: optional(c.devices.mouse),
+    touch: optional(c.devices.touch),
+    agent: optional(c.devices.clipboard),
   };
 }
 
-/** What a start adds to the channels: the disks, the 3D renderer, the snapshot and the rest. */
+/** What a start adds to the configuration and the channels: the disks, the 3D renderer, the snapshot and the rest. */
 export type StartWith = {
   disks: StartDisk[];
   home?: string;
@@ -64,62 +101,45 @@ export type StartWith = {
   plan?: Start['plan'];
 };
 
-/** The devices' ends and the knobs of the start message. */
-function devices(m: PageMachine, ch: Channels, w: StartWith) {
-  const stored = m.stored?.record;
-  const shares = stored && sharesPath(stored);
+/** The devices' ends of the channels. */
+function ports(ch: Channels, w: StartWith): MachinePorts {
   return {
     keyboard: ch.keyboard.port2,
     tablet: ch.tablet.port2,
     serial: ch.serial.port2,
-    screen: w.screen,
     display: ch.display.port2,
     nets: ch.nets,
     usb: ch.usb?.port2,
     mouse: ch.mouse?.port2,
     touch: ch.touch?.port2,
     folders: ch.shares && w.folders && { list: w.folders, port: ch.shares.port2 },
-    sharesPath: ch.shares ? shares : undefined,
     agent: ch.agent?.port2,
     sound: ch.sound,
+    renderer: w.three?.renderer,
   };
 }
 
-/** The address's knobs the start message carries (development, tests and measurements). */
-const knobs = () => ({
-  dev: parseDevKnobs(params),
-  cpu: cpuFeatures(),
-  params: params.get('params') ?? undefined,
-  credentials,
-});
-
 /** The start message, and what it transfers. */
-export function startMessage(m: PageMachine, ch: Channels, w: StartWith): [Start, Transferable[]] {
-  const display = m.display();
-  const switches = m.resolve().devices;
+export function startMessage(
+  m: PageMachine,
+  config: MachineConfig,
+  ch: Channels,
+  w: StartWith,
+): [Start, Transferable[]] {
   const message: Start = {
     type: 'start',
-    machine: m.name,
-    ncpus: m.ncpus,
-    ramMiB: m.ramMiB,
-    ramSplit: m.ramSplit,
-    jitMiB: m.jitMiB || undefined,
-    keyLayout: w.layout?.id,
-    netConfig: switches.netConfig,
+    config: { ...config, guest: { ...config.guest, keyLayout: w.layout?.id } },
+    ports: ports(ch, w),
+    screen: w.screen,
+    caps: w.three?.caps,
+    size: m.hasGpu ? w.size : undefined,
+    words: guestWords(w.layout),
     disks: w.disks,
     home: w.home,
-    ...devices(m, ch, w),
-    size: m.hasGpu ? w.size : undefined,
-    ...knobs(),
-    guest: guestWords(w.layout),
-    clock: switches.clock,
     snapshot: w.snapshot,
     resume: w.resume,
     about: w.about,
     plan: w.plan,
-    ...w.three,
-    graphics: display.display,
-    vulkan: w.three && display.vulkan ? true : undefined,
   };
   const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agent].flatMap((c) => (c ? [c.port2] : []));
   const transfer: Transferable[] = [

@@ -31,77 +31,119 @@ export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'suspended'
 export type Problem =
   'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-mismatch' | 'memory' | 'panic' | 'snapshot' | 'emulator';
 
+/**
+ * What the machine is, as the page resolved it (web/app/run/config.ts, docs/frontend.md "Query parameters"): built
+ * once per start from the address, the stored machine's record, the browser's settings and what this browser can do.
+ * The worker lays its devices out from it (`slots`, as the page's shape does) and finds each one's channel in the
+ * start's `ports`. A snapshot's header decides what it says of the size, the devices and the features instead.
+ */
+export type MachineConfig = {
+  machine: MachineName;
+  ncpus: number;
+  /** The guest's RAM, MiB, and its split as the user set it (`MachineRecord.ramSplit`, `?split=`), memory 0 first; no split: the automatic one. */
+  ram: { mib: number; split?: number[] };
+  /** The JIT's code cache budget, MiB (`MachineRecord.jitMiB`, `?jitmb=`; `BootOptions.jitBytes`); none: the core's default. */
+  jitMiB?: number;
+  /**
+   * The vCPUs' features (web/cpu-features.ts, `BootOptions.cpu`): the defaults unless the page's `?<feature>=0` turns
+   * one off or `?<feature>=1` another on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
+   */
+  cpu: CpuFeature[];
+  /**
+   * The display (the page's `effectiveDisplay`): `none` for the `simple-framebuffer` (a machine without a virtio-gpu,
+   * or the page's `?display=simple`), else a virtio-gpu, with virgl when the ports have a `renderer` (`3d`).
+   */
+  display: Display | 'none';
+  /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"): only with a `renderer`. */
+  vulkan: boolean;
+  /**
+   * The devices besides the fixed ones (`slots`): the network adapters (one per `ports.nets`; none without `network`),
+   * a relative mouse and a touchscreen, the clock (virtio-rtc), shared folders (virtio-9p), clipboard sharing's agent
+   * device and the USB controller (an xHCI, docs/usb.md "The page").
+   */
+  devices: {
+    nets: number;
+    mouse: boolean;
+    touch: boolean;
+    clock: boolean;
+    shares: boolean;
+    clipboard: boolean;
+    usb: boolean;
+  };
+  /** What the page sets in the guest of a `firmware` machine (docs/frontend.md "What the page sets in the guest") and a direct-boot one's command line. */
+  guest: {
+    /** The keyboard layout (`MachineRecord.keyboard`, `?keyboard=`; web/app/keyboard.ts); none: none set. */
+    keyLayout?: string;
+    /** The guest takes the network's settings (`MachineRecord.netConfig`, `?netconfig=`; web/app/guest-net.ts): the page's .network credential and the unit. */
+    netConfig: boolean;
+    /** The shared folders' mount point (`MachineRecord.sharesPath`, web/app/shares-mount.ts); none: not mounted. */
+    sharesPath?: string;
+    /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
+    params?: string;
+    /**
+     * Systemd credentials to give a `firmware` machine over fw_cfg beyond its own (the page's
+     * `?credential=name:value`, for development and tests: `login.noauth:yes` and the `firstboot.*`
+     * ones boot Debian unattended). The release page passes none.
+     */
+    credentials: Credential[];
+  };
+  /** The address's development knobs for the machine worker (web/app/run/dev-knobs.ts), parsed by the page: the worker reads no query. */
+  dev: DevKnobs;
+};
+
+/** The start's channels, one per device that has one (the page keeps the other ends: web/app/run/start-message.ts). */
+export type MachinePorts = {
+  /** virtio-input's (web/input.ts sends to them; the keyboard's LEDs come back), and a mouse's and a touchscreen's, for a machine that has them. */
+  keyboard: MessagePort;
+  tablet: MessagePort;
+  mouse?: MessagePort;
+  touch?: MessagePort;
+  /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
+  serial: MessagePort;
+  /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
+  display: MessagePort;
+  /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
+  sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
+  /**
+   * The network adapters in order (docs/network-adapters.md): each a virtio-net with its MAC on its own gateway, whose
+   * end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other end and gives it to a
+   * client (web/app/network.ts). The machine gets its `network` credentials when it has any.
+   */
+  nets: { mac: string; ip: MessagePort }[];
+  /**
+   * The USB controller's: the page's `usb-attach` and `usb-detach` to the device worker and its `usb-state` back
+   * (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The page attaches its devices once the machine runs (at a start,
+   * a resume and a restore alike: a snapshot's ports are empty).
+   */
+  usb?: MessagePort;
+  /**
+   * Shared folders' (docs/shares.md): the one virtio-9p device, on what can be served now (`list`); `port` carries the
+   * page's attachments and grants to the device worker (web/9p-folders.ts `FoldersToDevice`).
+   */
+  folders?: { list: FolderSpec[]; port: MessagePort };
+  /** Clipboard sharing's agent (web/agent-device.ts; web/app/agent-link.ts has the page's end). */
+  agent?: MessagePort;
+  /**
+   * A 3D machine's (the page's default where WebGL2 is; `?gpu=2d` turns it off): the GPU worker's port (web/gpu-worker.ts,
+   * which has the screen). The virtio-gpu gets virgl and renders there, with the start's `caps`.
+   */
+  renderer?: MessagePort;
+};
+
 /** Page → worker. One machine per worker: a restart is a new worker (the page's `stop`, then `terminate`). */
 export type ToWorker =
   | {
       type: 'start';
-      /** The address's development knobs for the machine worker (`?snd=`, `?gpu=`, `?jit=`, `?fma=`, `?growcore`, `?vyield=` and the rest), parsed by the page: the worker reads no query. */
-      dev: DevKnobs;
-      machine: MachineName;
-      ncpus: number;
-      /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */
-      ramMiB: number;
-      /** Its split as the user set it (`MachineRecord.ramSplit`, `?split=`), MiB, memory 0 first; absent: the automatic one. */
-      ramSplit?: number[];
-      /** The JIT's code cache budget, MiB (`MachineRecord.jitMiB`, `?jitmb=`; `BootOptions.jitBytes`); absent: the core's default. */
-      jitMiB?: number;
-      /** The guest's keyboard layout (`MachineRecord.keyboard`, `?keyboard=`; web/app/keyboard.ts), for a `firmware` machine; absent: none set. */
-      keyLayout?: string;
-      /** The guest takes the network's settings (`MachineRecord.netConfig`, `?netconfig=0` turns it off; web/app/guest-net.ts): the page's .network credential and the unit. */
-      netConfig: boolean;
-      /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
-      sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
-      /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */
-      keyboard: MessagePort;
-      tablet: MessagePort;
-      /** A relative mouse's and a touchscreen's ports, for a machine that has them (a stored machine's `mouse` and `touch`, a transient one's `?mouse=1`, `?touch=1`). */
-      mouse?: MessagePort;
-      touch?: MessagePort;
-      /** The clock device (virtio-rtc): a stored machine's `clock`, a transient one's unless `?clock=0`. */
-      clock?: boolean;
-      /**
-       * The agent's port (web/agent-device.ts; web/app/agent-link.ts has the page's end), for a machine with clipboard
-       * sharing (a stored machine's `clipboard`, a transient one's `?clipboard=1`): the machine gets the agent's device.
-       */
-      agent?: MessagePort;
-      /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
-      serial: MessagePort;
+      config: MachineConfig;
+      ports: MachinePorts;
       /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */
       screen?: OffscreenCanvas;
-      /**
-       * A 3D machine (the page's default where WebGL2 is; `?gpu=2d` turns it off): the GPU worker's port (web/gpu-worker.ts, which has the
-       * screen) and the caps it gives the guest (web/virgl-caps.ts). The virtio-gpu gets virgl and renders there.
-       */
-      renderer?: MessagePort;
+      /** The caps a 3D machine gives the guest (web/virgl-caps.ts), with `ports.renderer`. */
       caps?: Uint8Array;
-      /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"): only with `renderer`. */
-      vulkan?: boolean;
-      /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
-      display: MessagePort;
       /** The display's size at the start (the page's screen box, `wantedSize` in web/app/areas/screen-view.ts): the console and the firmware get it with no event. Default: the machine's. */
       size?: { width: number; height: number };
-      /**
-       * The display it runs with (the page's `effectiveDisplay`, web/app/run/config.ts): `none` for the
-       * `simple-framebuffer` (a machine without a virtio-gpu, or the page's `?display=simple`), else a virtio-gpu, with
-       * virgl when `renderer` is given (`3d`).
-       */
-      graphics: Display | 'none';
-      /**
-       * The vCPUs' features (web/cpu-features.ts, `BootOptions.cpu`): the defaults unless the page's `?<feature>=0` turns
-       * one off or `?<feature>=1` another on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
-       * A snapshot's are its own.
-       */
-      cpu: CpuFeature[];
-      /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
-      params?: string;
-      /**
-       * Systemd credentials to give a `firmware` machine over fw_cfg beyond its own (the page's
-       * `?credential=name:value`, for development and tests: `login.noauth:yes` and the `firstboot.*`
-       * ones boot Debian unattended). The release page passes none.
-       */
-      credentials?: Credential[];
       /** The words of the units the page has the guest run (web/app/guest-words.ts): the page renders them, the worker places them. */
-      guest: GuestWords;
+      words: GuestWords;
       /** The machine's disks in slot order (docs/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
       disks: StartDisk[];
       /**
@@ -111,30 +153,9 @@ export type ToWorker =
        */
       home?: string;
       /**
-       * The machine's network adapters in order (docs/network-adapters.md): each a virtio-net with its MAC on its
-       * own gateway, whose end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other
-       * end and gives it to a client (web/app/network.ts). The machine gets its `network` credentials when it has any.
-       * Only for a machine with `network`.
-       */
-      nets?: { mac: string; ip: MessagePort }[];
-      /**
-       * The machine has a USB controller (an xHCI, docs/usb.md "The page"): this port carries the page's `usb-attach` and
-       * `usb-detach` to the device worker and its `usb-state` back (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The
-       * page attaches its devices once the machine runs (at a start, a resume and a restore alike: a snapshot's ports are
-       * empty). None: no controller (a stored machine's `usb`, a transient one's `?usb=1`).
-       */
-      usb?: MessagePort;
-      /**
-       * The machine has shared folders (docs/shares.md): the one virtio-9p device, on what can be served now (`list`); `port`
-       * carries the page's attachments and grants to the device worker (web/9p-folders.ts `FoldersToDevice`). None: no device.
-       */
-      folders?: { list: FolderSpec[]; port: MessagePort };
-      /** The mount point the page sets in the guest (`MachineRecord.sharesPath`, web/app/shares-mount.ts), for a `firmware` machine; none: not mounted. */
-      sharesPath?: string;
-      /**
        * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
        * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's
-       * overlay is replaced by the file's blocks. `ncpus` and `ramMiB` are then ignored.
+       * overlay is replaced by the file's blocks. The config's size is then ignored.
        */
       snapshot?: File;
       /**

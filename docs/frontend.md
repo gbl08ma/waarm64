@@ -19,7 +19,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusOptions.svelte`, `status-drag.svelte.ts`) | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
 | `web/app/main.ts` | the composition root: opens the store and the page's machine, builds the areas' modules, assembles `page`, mounts the components, boots |
-| `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
+| `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `config.ts`, `dev-knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs and what a machine is resolved to, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
 | `web/app/areas/*-actions.ts`, `screen-view.ts`, `serial-terminal.ts`, `page-window.ts`, `disk-changes.ts`, `disk-export.ts`, `snapshot-restore.ts`, `usb-view.ts`, `usb-attach.ts`, `usb-entries.ts`, `held.ts`, `hooks.ts`, `browser.d.ts` | each area's actions next to its state: the screen and the terminal, the views and the window, disks, snapshots, network, USB, folders, clipboard, keys; the held-by-another-tab flow; the test hooks' and the missing browser APIs' types |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
@@ -454,25 +454,29 @@ The seed of phase D's embedding API; not frozen. One machine per worker: a resta
 worker and starts a new one (fresh memory, fresh ports).
 
 Page → worker:
-- `start {machine, ncpus, ramMiB, keyboard, tablet, serial, screen, params?, credentials?}`: three transferred `MessagePort`s
-  and a transferred `OffscreenCanvas`. The keyboard's and the tablet's ports go to the device
-  worker (web/input.ts's `attachInput` sends Linux input events to the other ends; LED changes
-  come back on the keyboard's). `serial` is `BootOptions.serialIn`: strings or bytes for the
-  PL011, handled on the machine worker's thread while `runAsync` awaits. `screen` is the page's
-  canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the machine worker
-  draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
-  parameters (direct-boot machines). `credentials`: systemd credentials over fw_cfg for a firmware
-  machine, beside the machine's own (the network card's). `disks`: the machine's disks in slot order
-  (web/app/protocol.ts `StartDisk`: each one's source, a URL, a file, a blank or a ramdisk, and its overlay), the
-  transient machine's chosen disk (below, "Your own disk") and `?disk2=` among them; `home`: the OPFS directory of its
-  own files. `cpu`: the vCPUs' features as one list (web/cpu-features.ts: the page's `?<feature>=0|1`, a snapshot's
-  header, a shape and `bootVm`'s mask all go by its table). `dev`: the address's development knobs for the machine
-  worker (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`, `?growcore`,
-  `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`), parsed by the page: the workers
-  read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`). The message is built in
-  web/app/run/start-message.ts.
-  `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); `ncpus` and `ramMiB`, the kernel
-  and the command line are then the file's.
+- `start {config, ports, screen?, caps?, size?, words, disks, home?, snapshot?, resume?, about?, plan?}`. `config`
+  (web/app/protocol.ts `MachineConfig`) is what the machine is, resolved once per start by the page
+  (web/app/run/start-message.ts `machineConfig`, by "Query parameters"' rule): the kind of machine, its vCPUs, RAM and
+  split, the JIT's budget, the CPU features, the display (`none`, `2d`, `3d`) and Vulkan, the devices it has besides
+  the fixed ones (`nets`, `mouse`, `touch`, `clock`, `shares`, `clipboard`, `usb`), what the page sets in the guest
+  (`guest`: the keyboard layout, the network's settings, the shared folders' mount point, `?params=`, `?credential=`)
+  and the address's development knobs (`dev`). The worker lays its devices out from it (web/app/shape.ts `slots`, as
+  the page's shape does) and takes each one's channel from `ports` (`MachinePorts`, keyed by device: the keyboard's and
+  the tablet's go to the device worker, web/input.ts's `attachInput` sending Linux input events to the other ends and
+  LED changes coming back on the keyboard's; `serial` is `BootOptions.serialIn`, strings or bytes for the PL011,
+  handled on the machine worker's thread while `runAsync` awaits; `display`, `sound`, `nets`, `usb`, `mouse`, `touch`,
+  `folders`, `agent`, and a 3D machine's `renderer`, the GPU worker's port, with the `caps` it backs). `screen` is the
+  page's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer) on a machine without 3D: the
+  machine worker draws the framebuffer on it (web/display.ts) on its own animation frames. `disks`: the machine's
+  disks in slot order (web/app/protocol.ts `StartDisk`: each one's source, a URL, a file, a blank or a ramdisk, and its
+  overlay), the transient machine's chosen disk (below, "Your own disk") and `?disk2=` among them; `home`: the OPFS
+  directory of its own files. `config.cpu` is the vCPUs' features as one list (web/cpu-features.ts: the page's
+  `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
+  worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
+  `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`), parsed by the
+  page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
+  `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
+  features, the kernel and the command line are then the file's.
 - `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,
   without one, back in `snapshot-chunk` messages; answered by `snapshot-done` or `snapshot-error`.
 - `suspend`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered

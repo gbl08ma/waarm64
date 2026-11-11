@@ -21,7 +21,7 @@ import type { PageFolders } from '../folders-live.ts';
 import type { Grab } from '../hooks.ts';
 import { resolveKeyboard } from '../keyboard.ts';
 import type { PageNetwork } from '../net-live.ts';
-import type { FromWorker, Status, ToWorker } from '../protocol.ts';
+import type { FromWorker, MachineConfig, Status, ToWorker } from '../protocol.ts';
 import type { Sample } from '../statusbar.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import type { SnapshotJob } from '../areas/snapshot-actions.ts';
@@ -33,7 +33,7 @@ import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import type { Problems } from './problems.ts';
 import type { Replies } from './replies.ts';
 import { dispatch, Run } from './run.ts';
-import { channels, startMessage, type Channels, type StartWith } from './start-message.ts';
+import { channels, machineConfig, startMessage, type Channels, type StartWith } from './start-message.ts';
 import { displayHandlers, gpuHandlers, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
@@ -64,7 +64,7 @@ export type RunnerDeps = {
 };
 
 /** A start's arguments: booted, or (with `snapshot`) the one the file holds; `resume` false drops a suspended machine. */
-type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[] };
+type StartArgs = { snapshot?: File; resume: boolean; plan?: DiskPlan[]; config: MachineConfig };
 
 /** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
 export class NeedsUser extends Error {
@@ -106,12 +106,14 @@ export class Runner {
     // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
     const canvas = screen.freshCanvas(size);
     const offscreen = canvas.transferControlToOffscreen();
-    const ch = channels(m, audio.attach(), net.ports(m.netKey(), m.adapters()));
+    const nets = net.ports(m.netKey(), m.adapters());
+    const config = machineConfig(m, nets.length);
+    const ch = channels(config, audio.attach(), nets);
     current.hasNetwork = ch.nets.length > 0;
     const r = this.#newRun(canvas, ch);
     this.#loading(snapshot);
-    const args = { snapshot, resume, plan };
-    if (m.display().display === '3d') this.#gpu(r, ch, offscreen, args, size);
+    const args = { snapshot, resume, plan, config };
+    if (config.display === '3d') this.#gpu(r, ch, offscreen, args, size);
     else void this.#begin(r, ch, { ...args, screen: offscreen, size });
     if (ch.nets.length) void net.autoconnect();
   }
@@ -236,7 +238,7 @@ export class Runner {
     const layout = await resolveKeyboard(m.resolve().keyboard);
     keys.layout = layout?.id;
     const screen = w.three ? undefined : w.screen;
-    r.worker.postMessage(...startMessage(m, ch, { ...w, ...opened, screen, layout, folders: list }));
+    r.worker.postMessage(...startMessage(m, w.config, ch, { ...w, ...opened, screen, layout, folders: list }));
   }
 
   /** The machine's lock (a stored machine's), or the run fails: it runs in another tab. */

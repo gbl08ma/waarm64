@@ -69,7 +69,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   if (m.type === 'start') {
     start(m).catch((err) => {
       if (stopping) return;
-      const [problem, error] = explain(err, MACHINES[m.machine]);
+      const [problem, error] = explain(err, MACHINES[m.config.machine]);
       state(vm ? 'crashed' : 'failed', { error, problem });
     });
   } else if (m.type === 'snapshot') {
@@ -214,13 +214,13 @@ type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 /** The machine's transports in slot order (web/app/shape.ts `slots`): the kinds a snapshot's header lists, so a restore makes the same. */
 const layout = (m: StartMessage, machine: Machine): Slot[] =>
   slots({
-    nets: machine.network ? (m.nets?.length ?? 0) : 0,
-    display: m.graphics === 'none' ? 'none' : '2d',
-    mouse: !!m.mouse,
-    touch: !!m.touch,
-    clock: !!m.clock,
-    shares: !!m.folders,
-    clipboard: !!m.agent,
+    nets: machine.network ? m.config.devices.nets : 0,
+    display: m.config.display === 'none' ? 'none' : '2d',
+    mouse: m.config.devices.mouse,
+    touch: m.config.devices.touch,
+    clock: m.config.devices.clock,
+    shares: m.config.devices.shares,
+    clipboard: m.config.devices.clipboard,
     attachments: m.disks,
   }).map((s) => ({
     kind: s.kind,
@@ -261,52 +261,54 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'clock':
       return { type: 'clock' };
     case 'agent':
-      return { type: 'agent', port: m.agent };
+      return { type: 'agent', port: m.ports.agent };
     case '9p': {
-      const asHost = m.dev.sharesAsync;
+      const asHost = m.config.dev.sharesAsync;
       return {
         type: '9p',
         tag: SHARES_TAG,
-        folders: (m.folders?.list ?? []).map((f) => (asHost.includes(f.name) ? { ...f, kind: 'host' as const } : f)),
-        port: m.folders?.port,
+        folders: (m.ports.folders?.list ?? []).map((f) =>
+          asHost.includes(f.name) ? { ...f, kind: 'host' as const } : f,
+        ),
+        port: m.ports.folders?.port,
       };
     }
     case 'blk':
-      return blkSpec(slot.disk!, m.dev.ioStats || undefined, m.dev.noDiskCache ? false : undefined);
+      return blkSpec(slot.disk!, m.config.dev.ioStats || undefined, m.config.dev.noDiskCache ? false : undefined);
     case 'keyboard':
-      return { type: 'input', kind: 'keyboard', port: m.keyboard };
+      return { type: 'input', kind: 'keyboard', port: m.ports.keyboard };
     case 'tablet':
-      return { type: 'input', kind: 'tablet', port: m.tablet };
+      return { type: 'input', kind: 'tablet', port: m.ports.tablet };
     case 'mouse':
-      return { type: 'input', kind: 'mouse', port: m.mouse };
+      return { type: 'input', kind: 'mouse', port: m.ports.mouse };
     case 'touch':
-      return { type: 'input', kind: 'touch', port: m.touch };
+      return { type: 'input', kind: 'touch', port: m.ports.touch };
     case 'gpu': {
-      const { virglNull, ...tuning } = m.dev.gpu;
+      const { virglNull, ...tuning } = m.config.dev.gpu;
       return {
         type: 'gpu',
         width: m.size?.width ?? machine.framebuffer.width,
         height: m.size?.height ?? machine.framebuffer.height,
-        canvas: m.renderer ? undefined : m.screen,
-        port: m.display,
-        stats: m.dev.displayStats || undefined,
-        probe: m.dev.avProbe || undefined,
+        canvas: m.ports.renderer ? undefined : m.screen,
+        port: m.ports.display,
+        stats: m.config.dev.displayStats || undefined,
+        probe: m.config.dev.avProbe || undefined,
         keepConsole: true,
         ...tuning,
-        virgl: virglNull || !!m.renderer,
+        virgl: virglNull || !!m.ports.renderer,
         venus: venusOn(m),
-        renderer: m.renderer,
+        renderer: m.ports.renderer,
         caps: m.caps,
       };
     }
     case 'net': {
-      const n = m.nets![slot.adapter!];
+      const n = m.ports.nets[slot.adapter!];
       // Several adapters: frequent renewals, so the default route follows the primary (network-adapters.md §4).
       return {
         type: 'net',
         mac: n.mac,
         gateway: slot.adapter,
-        ...(m.nets!.length > 1 ? SEVERAL_ADAPTERS : {}),
+        ...(m.ports.nets.length > 1 ? SEVERAL_ADAPTERS : {}),
         adapter: { ip: n.ip },
       };
     }
@@ -315,17 +317,17 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'snd':
       return {
         type: 'snd',
-        ring: m.sound?.ring,
-        mic: m.sound?.mic,
-        port: m.sound?.port,
-        mixer: m.sound && { level: m.sound.level, muted: m.sound.muted },
-        ...m.dev.snd,
+        ring: m.ports.sound?.ring,
+        mic: m.ports.sound?.mic,
+        port: m.ports.sound?.port,
+        mixer: m.ports.sound && { level: m.ports.sound.level, muted: m.ports.sound.muted },
+        ...m.config.dev.snd,
       };
   }
 }
 
 /** Vulkan through Venus on a 3D machine (the page's choice, `vulkan`; its renderer is the GPU worker's: docs/devices.md "Venus"). */
-const venusOn = (m: StartMessage) => !!m.vulkan && !!m.renderer;
+const venusOn = (m: StartMessage) => m.config.vulkan && !!m.ports.renderer;
 
 /**
  * The devices and vCPU count a snapshot's header says, made from what the page passed. Refuses (a
@@ -342,7 +344,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
       new MsgError('snapshots:worker.otherShape.cause', { machine: m.about.name }),
     );
   }
-  if (h.machine !== m.machine) {
+  if (h.machine !== m.config.machine) {
     const other = typeof h.label === 'string' ? h.label : String(h.machine);
     throw failure(
       'snapshot',
@@ -351,7 +353,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
         other,
         otherId: String(h.machine),
         machine: machine.title,
-        id: m.machine,
+        id: m.config.machine,
       }),
     );
   }
@@ -566,7 +568,7 @@ function explain(err: unknown, machine: Machine): [Problem, Error] {
 }
 
 async function start(m: StartMessage, note?: unknown): Promise<void> {
-  const machine: Machine = (current = MACHINES[m.machine]);
+  const machine: Machine = (current = MACHINES[m.config.machine]);
   home = m.home;
   restoredHeader = undefined;
   state('loading');
@@ -610,7 +612,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   );
   // Clipboard sharing's guest agent, fetched only for a machine with the setting (web/app/guest-agent.ts); without it
   // (not built) the machine runs as it would, its port unopened.
-  const agent = m.agent && machine.firmware ? agentBinary() : undefined;
+  const agent = m.config.devices.clipboard && machine.firmware ? agentBinary() : undefined;
   const [wasm, kernel = new Uint8Array(0), initrd] = await download(
     [CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])],
     machine,
@@ -619,18 +621,19 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   if (stopping) return;
   core = await compileCore(wasm);
   // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
-  const net = !!m.nets?.length && !!machine.network && m.netConfig;
-  const credentials = [...(net ? machine.network!.credentials : []), ...(m.credentials ?? [])];
+  const guest = m.config.guest;
+  const net = !!m.ports.nets.length && !!machine.network && guest.netConfig;
+  const credentials = [...(net ? machine.network!.credentials : []), ...guest.credentials];
   savedFlash = await flash;
   // The units' credentials (the keyboard layout, the network's settings, swap ramdisks' fstab lines) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
-  const keys = keyboardLayout(m.keyLayout);
+  const keys = keyboardLayout(guest.keyLayout);
   const agentBytes = await agent;
   const units = [
-    ...(keys ? keyboardCredentials(keys, m.guest.keyboard, m.guest.layout) : []),
-    ...(net ? netCredentials(m.guest.network) : []),
-    ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []),
+    ...(keys ? keyboardCredentials(keys, m.words.keyboard, m.words.layout) : []),
+    ...(net ? netCredentials(m.words.network) : []),
+    ...(guest.sharesPath ? sharesCredentials(guest.sharesPath, m.words.shares) : []),
     ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : []))),
-    ...(agentBytes ? agentCredentials(m.guest.agent) : []),
+    ...(agentBytes ? agentCredentials(m.words.agent) : []),
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const firmware = machine.firmware
@@ -644,19 +647,20 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
       }
     : undefined;
   if (stopping) return;
-  let ncpus = m.ncpus;
-  ramMiB = m.ramMiB;
+  let ncpus = m.config.ncpus;
+  ramMiB = m.config.ram.mib;
   // The transports: the machine's, or a snapshot's (`fromHeader`).
   let here = layout(m, machine);
-  let cpu = m.cpu;
+  let cpu = m.config.cpu;
   let restore: Restore | undefined;
   let specs: DeviceSpec[] | undefined;
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
   // user's split, else the automatic one; a snapshot's own.
   // A machine with Vulkan keeps its renderer and window in memory 1, before node 1 (docs/devices.md "Venus").
   const venus = here.some((s) => s.kind === 'gpu') && venusOn(m);
-  let split = m.ramSplit
-    ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) }
+  const asked = m.config.ram.split;
+  let split = asked
+    ? { ramSize: asked[0] * 2 ** 20, spill: asked.slice(1).map((n) => n * 2 ** 20) }
     : splitRam(ramMiB * 2 ** 20, venus ? VENUS_RESERVE : 0);
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
@@ -720,10 +724,10 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   const io = {
     disks: here.flatMap((s, i) => (s.kind === 'blk' ? [i] : [])),
     nets: machine.network ? here.flatMap((s, i) => (s.kind === 'net' ? [i] : [])) : undefined,
-    usb: m.usb ? devices.length : undefined,
+    usb: m.ports.usb ? devices.length : undefined,
   };
   session = {
-    name: m.machine,
+    name: m.config.machine,
     ncpus,
     disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null,
     kinds,
@@ -736,23 +740,23 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     spill,
     kernel,
     initrd,
-    cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''),
+    cmdline: machine.firmware ? '' : withParams(machine.cmdline, guest.params ?? ''),
     firmware,
     jit: 1,
-    jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined,
+    jitBytes: m.config.jitMiB ? m.config.jitMiB * 2 ** 20 : undefined,
     ncpus,
     parallel: true,
     realtime: true,
-    compileWorker: m.dev.compileWorker && !spiderMonkey,
-    fma: m.dev.fma,
-    exactCore: m.dev.exactCore,
-    vcpuYieldMs: m.dev.vcpuYieldMs,
+    compileWorker: m.config.dev.compileWorker && !spiderMonkey,
+    fma: m.config.dev.fma,
+    exactCore: m.config.dev.exactCore,
+    vcpuYieldMs: m.config.dev.vcpuYieldMs,
     cpu,
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer,
-    serialIn: m.serial,
+    serialIn: m.ports.serial,
     restore,
     devices,
-    usb: m.usb ? { port: m.usb } : undefined,
+    usb: m.ports.usb ? { port: m.ports.usb } : undefined,
     onNotice: (message) => post({ type: 'notice', message }),
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
@@ -773,7 +777,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     // The status bar's renderer and frame rate (the presenter's report on a machine with virtio-gpu: web/gpu-present.ts).
     setInterval(
       () =>
-        m.display.postMessage({
+        m.ports.display.postMessage({
           type: 'screen-stats',
           screen: 'framebuffer',
           presents: shown.presents(),
@@ -782,13 +786,13 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     );
     // "Copy the screen" (docs/plans/clipboard.md §4.4): the framebuffer's canvas as it shows (a 2D context keeps its
     // pixels). The display port is this worker's on a machine without virtio-gpu.
-    m.display.onmessage = (e: MessageEvent<DisplayFromPage>) => {
+    m.ports.display.onmessage = (e: MessageEvent<DisplayFromPage>) => {
       if (e.data?.type !== 'png') return;
       const id = e.data.id;
       void screen
         .convertToBlob({ type: 'image/png' })
         .catch(() => undefined)
-        .then((png) => m.display.postMessage({ type: 'png', id, png } satisfies ScreenPng));
+        .then((png) => m.ports.display.postMessage({ type: 'png', id, png } satisfies ScreenPng));
     };
   }
   const t0 = performance.now();
