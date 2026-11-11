@@ -6,7 +6,11 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import Button from './ui/Button.svelte';
+  import Choice from './ui/Choice.svelte';
+  import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
+  import Note from './ui/Note.svelte';
   import Check from './ui/Check.svelte';
   import { errorText, msg, t } from '../i18n.ts';
   import { preselect, type Folder } from './folders.ts';
@@ -118,94 +122,100 @@
   onsubmit={makeOpfs}
 >
   {#if step === 'pick'}
-    <section class="net-step">
-      <p class="note">{t('folders:FolderWizard.pick.note')}</p>
-      <button type="button" class="net-choice" id="folder-pick-new" onclick={() => (step = 'kind')}
-        ><b>{t('folders:FolderWizard.pick.new')}</b><span>{t('folders:FolderWizard.pick.new.text')}</span></button
+    <section class="step">
+      <Note size="md">{t('folders:FolderWizard.pick.note')}</Note>
+      <Choice id="folder-pick-new" label={t('folders:FolderWizard.pick.new')} onclick={() => (step = 'kind')}
+        >{t('folders:FolderWizard.pick.new.text')}</Choice
       >
       {#each choices as f (f.id)}
-        <button
-          type="button"
-          class="net-choice"
-          data-folder={f.id}
-          aria-pressed={picked === f.id}
-          onclick={() => (picked = f.id)}><b>{f.name}</b><span>{stateOf(f)}</span></button
+        <Choice label={f.name} data-folder={f.id} pressed={picked === f.id} onclick={() => (picked = f.id)}
+          >{stateOf(f)}</Choice
         >
       {/each}
       <Check id="folder-attach-ro" bind:checked={readOnly}>{t('folders:FolderWizard.pick.readOnly')}</Check>
     </section>
   {:else if step === 'kind'}
-    <section class="net-step">
-      <p class="note">{t('folders:FolderWizard.kind')}</p>
-      <button
-        type="button"
-        class="net-choice"
+    <section class="step">
+      <Note size="md">{t('folders:FolderWizard.kind')}</Note>
+      <Choice
         id="folder-kind-host"
+        label={t('folders:FolderWizard.kind.host')}
         disabled={!hasPicker}
-        onclick={() => (step = 'host')}
-        ><b>{t('folders:FolderWizard.kind.host')}</b><span>{t('folders:FolderWizard.kind.host.text')}</span></button
+        onclick={() => (step = 'host')}>{t('folders:FolderWizard.kind.host.text')}</Choice
       >
-      <button type="button" class="net-choice" id="folder-kind-opfs" onclick={() => (step = 'opfs')}
-        ><b>{t('folders:FolderWizard.kind.opfs')}</b><span>{t('folders:FolderWizard.kind.opfs.text')}</span></button
+      <Choice id="folder-kind-opfs" label={t('folders:FolderWizard.kind.opfs')} onclick={() => (step = 'opfs')}
+        >{t('folders:FolderWizard.kind.opfs.text')}</Choice
       >
     </section>
   {:else if step === 'host'}
-    <section class="net-step">
+    <section class="step">
       <ol class="steps">
         <li>
-          {t('folders:FolderWizard.host.readOnly')}<Check id="folder-host-ro" bind:checked={readOnly}
-            >{t('folders:FolderWizard.readOnly')}</Check
-          >
+          {t('folders:FolderWizard.host.readOnly')}
+          <div class="in-step">
+            <Check id="folder-host-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
+          </div>
         </li>
         <li>{readOnly ? t('folders:FolderWizard.host.read') : t('folders:FolderWizard.host.readWrite')}</li>
       </ol>
-      <p class="note">{t('folders:FolderWizard.host.refused')}</p>
+      <Note size="md">{t('folders:FolderWizard.host.refused')}</Note>
     </section>
   {:else}
-    <section class="net-step">
-      <label
-        >{t('folders:FolderWizard.name')}<input
+    <section class="step">
+      <Field label={t('folders:FolderWizard.name')}
+        ><input
           id="folder-name"
           bind:value={name}
           placeholder={t('folders:folders.defaultName')}
           autocomplete="off"
           spellcheck="false"
-        /></label
+        /></Field
       >
       <Check id="folder-opfs-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
     </section>
   {/if}
-  <p id="folder-error" class="error" hidden={!formError}>{formError}</p>
-  {#snippet buttons()}
-    <button
+  <Note tone="error" size="md" id="folder-error" class="error" hidden={!formError}>{formError}</Note>
+  {#snippet back()}
+    <Button
       type="button"
       id="folder-back"
       hidden={step === 'pick' || (step === 'kind' && !(machine && choices.length))}
-      onclick={() => (step = step === 'kind' ? 'pick' : 'kind')}>{t('folders:FolderWizard.back')}</button
-    ><span class="grow"></span>
-    <button type="button" id="folder-cancel" onclick={close}>{t('folders:FolderWizard.cancel')}</button>
-    {#if step === 'host'}<button type="button" id="folder-choose" disabled={working} onclick={pickHost}
-        >{t('folders:FolderWizard.choose')}</button
+      onclick={() => (step = step === 'kind' ? 'pick' : 'kind')}>{t('folders:FolderWizard.back')}</Button
+    >
+  {/snippet}
+  {#snippet buttons()}
+    <Button type="button" id="folder-cancel" onclick={close}>{t('folders:FolderWizard.cancel')}</Button>
+    {#if step === 'host'}<Button
+        type="button"
+        variant="primary"
+        id="folder-choose"
+        disabled={working}
+        onclick={pickHost}>{t('folders:FolderWizard.choose')}</Button
       >{/if}
-    {#if step === 'opfs' || step === 'pick'}<button
+    {#if step === 'opfs' || step === 'pick'}<Button
         type="submit"
-        class="primary"
+        variant="primary"
         id="folder-ok"
         disabled={working || (step === 'pick' && !picked)}
-        >{machine ? t('folders:FolderWizard.attach') : t('folders:FolderWizard.create')}</button
+        >{machine ? t('folders:FolderWizard.attach') : t('folders:FolderWizard.create')}</Button
       >{/if}
   {/snippet}
 </Modal>
 
 <style>
+  .step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
   .steps {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-3);
     margin: 0;
-    padding-left: 20px;
+    padding-left: var(--space-6);
   }
-  .steps li > :global(*) {
-    margin-top: 6px;
+  .in-step {
+    margin-top: var(--space-3);
   }
 </style>

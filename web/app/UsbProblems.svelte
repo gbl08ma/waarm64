@@ -40,50 +40,48 @@
   .problems {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-3);
     white-space: normal;
   }
   p {
     margin: 0;
   }
   details {
-    margin-top: 4px;
+    margin-top: var(--space-2);
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
   summary {
     cursor: pointer;
     color: var(--accent);
   }
   ol {
-    margin: 6px 0 0;
-    padding-left: 20px;
+    margin: var(--space-3) 0 0;
+    padding-left: var(--space-6);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-3);
   }
   code {
     display: block;
-    margin-top: 3px;
-    padding: 4px 6px;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    background: var(--bg);
-    font-family: ui-monospace, monospace;
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: all;
   }
   a {
     display: block;
-    color: var(--accent);
   }
-  .note {
-    margin-top: 6px;
+  .note,
+  .said {
+    margin-top: var(--space-3);
   }
   .said {
-    margin-top: 6px;
-    color: var(--dim);
+    color: var(--text-dim);
     overflow-wrap: anywhere;
   }
 </style>

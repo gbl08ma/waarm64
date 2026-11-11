@@ -9,7 +9,11 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import Button from './ui/Button.svelte';
+  import Choice from './ui/Choice.svelte';
+  import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
+  import Note from './ui/Note.svelte';
   import Check from './ui/Check.svelte';
   import T from './T.svelte';
   import { describe, msg, t, text, type Described, type Msg } from '../i18n.ts';
@@ -212,7 +216,7 @@
         ?.focus(),
     );
   }
-  const back = () =>
+  const goBack = () =>
     showStep(step === 'kind' ? 'pick' : step === 'roomCreate' || step === 'roomJoin' ? 'roomPick' : 'kind');
   const close = () => {
     wizard.close();
@@ -376,62 +380,52 @@
   }}
   onsubmit={submit}
 >
-  <section id="net-step-pick" class="net-step" hidden={step !== 'pick'}>
-    <p class="note">{t('network:NetWizard.pick.note')}</p>
-    <button type="button" class="net-choice" id="net-pick-new" onclick={() => showStep('kind')}
-      ><b>{t('network:NetWizard.pick.new')}</b><span>{t('network:NetWizard.pick.new.note')}</span></button
+  <section id="net-step-pick" class="step" hidden={step !== 'pick'}>
+    <Note size="md">{t('network:NetWizard.pick.note')}</Note>
+    <Choice id="net-pick-new" label={t('network:NetWizard.pick.new')} onclick={() => showStep('kind')}
+      >{t('network:NetWizard.pick.new.note')}</Choice
     >
     {#each conns as c (c.id)}
-      <button
-        type="button"
-        class="net-choice"
+      <Choice
         id={`net-pick-${c.id}`}
+        label={c.name}
         data-connection={c.id}
-        aria-pressed={picked === c.id}
+        pressed={picked === c.id}
         onclick={() => (picked = c.id)}
         ondblclick={() => {
           picked = c.id;
           document.getElementById('net-connect')?.click();
-        }}
+        }}>{kindText(c)}</Choice
       >
-        <b>{c.name}</b><span>{kindText(c)}</span>
-      </button>
     {/each}
   </section>
-  <section id="net-step-kind" class="net-step" hidden={step !== 'kind'}>
-    <p class="note">{t('network:NetWizard.kind.note')}</p>
-    <button type="button" class="net-choice" id="net-pick-tailnet" onclick={() => showStep('tailscale')}
-      ><b>{t('network:NetWizard.kind.pickTailnet')}</b><span>{t('network:NetWizard.kind.pickTailnet.note')}</span
-      ></button
+  <section id="net-step-kind" class="step" hidden={step !== 'kind'}>
+    <Note size="md">{t('network:NetWizard.kind.note')}</Note>
+    <Choice id="net-pick-tailnet" label={t('network:NetWizard.kind.pickTailnet')} onclick={() => showStep('tailscale')}
+      >{t('network:NetWizard.kind.pickTailnet.note')}</Choice
     >
-    <button type="button" class="net-choice" id="net-pick-tailcat" onclick={() => showStep('tailcat')}
-      ><b>{t('network:NetWizard.kind.pickTailcat')}</b><span>{t('network:NetWizard.kind.pickTailcat.note')}</span
-      ></button
+    <Choice id="net-pick-tailcat" label={t('network:NetWizard.kind.pickTailcat')} onclick={() => showStep('tailcat')}
+      >{t('network:NetWizard.kind.pickTailcat.note')}</Choice
     >
-    <button type="button" class="net-choice" id="net-pick-local" onclick={() => showStep('local')}
-      ><b>{t('network:NetWizard.kind.pickLocal')}</b><span>{t('network:NetWizard.kind.pickLocal.note')}</span></button
+    <Choice id="net-pick-local" label={t('network:NetWizard.kind.pickLocal')} onclick={() => showStep('local')}
+      >{t('network:NetWizard.kind.pickLocal.note')}</Choice
     >
-    <button type="button" class="net-choice" id="net-pick-room" onclick={() => showStep('roomPick')}
-      ><b>{t('network:NetWizard.kind.pickRoom')}</b><span>{t('network:NetWizard.kind.pickRoom.note')}</span></button
+    <Choice id="net-pick-room" label={t('network:NetWizard.kind.pickRoom')} onclick={() => showStep('roomPick')}
+      >{t('network:NetWizard.kind.pickRoom.note')}</Choice
     >
   </section>
-  <section id="net-step-room-pick" class="net-step" hidden={step !== 'roomPick'}>
-    <button type="button" class="net-choice" id="net-room-create" onclick={() => showStep('roomCreate')}
-      ><b>{t('network:NetWizard.room.create')}</b><span>{t('network:NetWizard.room.create.note')}</span></button
+  <section id="net-step-room-pick" class="step" hidden={step !== 'roomPick'}>
+    <Choice id="net-room-create" label={t('network:NetWizard.room.create')} onclick={() => showStep('roomCreate')}
+      >{t('network:NetWizard.room.create.note')}</Choice
     >
-    <button type="button" class="net-choice" id="net-room-join" onclick={() => showStep('roomJoin')}
-      ><b>{t('network:NetWizard.room.join')}</b><span>{t('network:NetWizard.room.join.note')}</span></button
+    <Choice id="net-room-join" label={t('network:NetWizard.room.join')} onclick={() => showStep('roomJoin')}
+      >{t('network:NetWizard.room.join.note')}</Choice
     >
   </section>
-  <section id="net-step-room" class="net-step" hidden={!roomStep(step)}>
+  <section id="net-step-room" class="step" hidden={!roomStep(step)}>
     {#if step === 'roomCreate'}
-      <label
-        >{t('network:NetWizard.room.name')}<input
-          id="net-room-id"
-          bind:value={roomId}
-          autocomplete="off"
-          spellcheck="false"
-        /></label
+      <Field label={t('network:NetWizard.room.name')}
+        ><input id="net-room-id" bind:value={roomId} autocomplete="off" spellcheck="false" /></Field
       >
       <Check
         id="net-room-private"
@@ -440,16 +434,10 @@
         >{t('network:NetWizard.room.private')}</Check
       >
     {:else if step === 'roomJoin'}
-      <label
-        >{t('network:NetWizard.room.link')}<input
-          id="net-room-link"
-          bind:value={roomJoin}
-          type="password"
-          autocomplete="off"
-          spellcheck="false"
-        /></label
+      <Field label={t('network:NetWizard.room.link')}
+        ><input id="net-room-link" bind:value={roomJoin} type="password" autocomplete="off" spellcheck="false" /></Field
       >
-      <p class="note">{t('network:NetWizard.room.link.note')}</p>
+      <Note size="md">{t('network:NetWizard.room.link.note')}</Note>
     {/if}
     {#snippet link(href: string, text: string)}<a {href} target="_blank" rel="noopener">{text}</a>{/snippet}
     {#snippet ipNote()}<span id="net-room-ip"
@@ -481,26 +469,26 @@
         <summary>{t('network:NetWizard.advanced')}</summary>
         {@render incomingSwitch()}
         {#if step === 'roomCreate'}
-          <label
-            >{t('network:NetWizard.room.nostr')}<textarea
+          <Field label={t('network:NetWizard.room.nostr')}
+            ><textarea
               id="net-room-nostr"
               bind:value={nostr}
               rows="2"
               placeholder={t('network:NetWizard.room.nostr.placeholder')}
               autocomplete="off"
-              spellcheck="false"></textarea></label
+              spellcheck="false"></textarea></Field
           >
-          <p class="note">{t('network:NetWizard.room.nostr.note')}</p>
-          <label
-            >{t('network:NetWizard.room.derp')}<textarea
+          <Note size="md">{t('network:NetWizard.room.nostr.note')}</Note>
+          <Field label={t('network:NetWizard.room.derp')}
+            ><textarea
               id="net-room-derp"
               bind:value={derp}
               rows="2"
               placeholder={t('network:NetWizard.room.derp.placeholder')}
               autocomplete="off"
-              spellcheck="false"></textarea></label
+              spellcheck="false"></textarea></Field
           >
-          <p class="note">
+          <Note size="md">
             <T k="network:NetWizard.room.derp.note"
               >{#snippet a(text)}<a
                   href="https://github.com/tailscale/tailscale/tree/main/cmd/derper"
@@ -508,34 +496,34 @@
                   rel="noopener">{text}</a
                 >{/snippet}</T
             >
-          </p>
+          </Note>
         {/if}
-        <label
-          >{t('network:NetWizard.room.key')}<select id="net-room-key" bind:value={keyOf}>
+        <Field label={t('network:NetWizard.room.key')}
+          ><select id="net-room-key" bind:value={keyOf}>
             <option value="">{t('network:NetWizard.room.key.new')}</option>
             {#each keys as k (k.id)}<option value={k.id}>{t('network:NetWizard.room.key.of', { name: k.name })}</option
               >{/each}
-          </select></label
+          </select></Field
         >
-        <p class="note">{t('network:NetWizard.room.key.note')}</p>
+        <Note size="md">{t('network:NetWizard.room.key.note')}</Note>
       </details>
     {:else}
       <details id="net-room-advanced" bind:open={roomAdvanced}>
         <summary>{t('network:NetWizard.advanced')}</summary>
         {@render incomingSwitch()}
-        <div class="net-row">
-          <button type="button" id="net-room-new-name" disabled={!roomKept} onclick={forget}
-            >{t('network:NetWizard.room.newName')}</button
+        <div class="row">
+          <Button type="button" id="net-room-new-name" disabled={!roomKept} onclick={forget}
+            >{t('network:NetWizard.room.newName')}</Button
           >
         </div>
-        <p class="note">{t('network:NetWizard.room.newName.note')}</p>
+        <Note size="md">{t('network:NetWizard.room.newName.note')}</Note>
       </details>
     {/if}
   </section>
-  <section id="net-step-local" class="net-step" hidden={step !== 'local'}>
+  <section id="net-step-local" class="step" hidden={step !== 'local'}>
     {#snippet localField(label: string)}
-      <label
-        >{label}<input
+      <Field {label}
+        ><input
           id="net-local-url"
           bind:value={localURL}
           type="password"
@@ -543,21 +531,21 @@
           placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…"
           autocomplete="off"
           spellcheck="false"
-        /></label
+        /></Field
       >
     {/snippet}
     {#if editing}
       {@render localField(t('network:NetWizard.local.link'))}
     {:else}
-      <ol class="net-steps">
+      <ol class="steps">
         <li>
           <T k="network:NetWizard.local.run"
             >{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}</T
           >
           <details id="net-local-install" open={!localURL}>
             <summary>{t('network:NetWizard.install', { version: RELEASE.version })}</summary>
-            <label
-              >{t('network:NetWizard.install.for')}<select
+            <Field label={t('network:NetWizard.install.for')}
+              ><select
                 id="net-local-target"
                 value={`${shown.os}-${shown.arch}`}
                 onchange={(e) => {
@@ -566,67 +554,67 @@
               >
                 {#each TARGETS as t (`${t.os}-${t.arch}`)}<option value={`${t.os}-${t.arch}`}>{targetName(t)}</option
                   >{/each}
-              </select></label
+              </select></Field
             >
-            <p class="note">
+            <Note size="md">
               {shown.os === 'windows'
                 ? t('network:NetWizard.install.note.windows')
                 : t('network:NetWizard.install.note')}
-            </p>
+            </Note>
             <pre id="net-local-lines">{installLines(RELEASE, shown)}</pre>
           </details>
         </li>
         <li>{@render localField(t('network:NetWizard.local.paste'))}</li>
       </ol>
     {/if}
-    <p class="note">{t('network:NetWizard.local.note')}</p>
+    <Note size="md">{t('network:NetWizard.local.note')}</Note>
   </section>
-  <section id="net-step-tailnet" class="net-step" hidden={step !== 'tailscale'}>
-    <label
-      >{t('network:NetWizard.control')}<input
+  <section id="net-step-tailnet" class="step" hidden={step !== 'tailscale'}>
+    <Field label={t('network:NetWizard.control')}
+      ><input
         id="net-control"
         bind:value={control}
         disabled={!!editing}
         placeholder={t('network:NetWizard.control.placeholder')}
         autocomplete="off"
         spellcheck="false"
-      /></label
+      /></Field
     >
-    {#if !editing}<p class="note">
+    {#if !editing}<Note size="md">
         <T k="network:NetWizard.control.note">{#snippet code(text)}<code>{text}</code>{/snippet}</T>
-      </p>{/if}
-    <label
-      >{t('network:NetWizard.hostname')}<input
+      </Note>{/if}
+    <Field label={t('network:NetWizard.hostname')}
+      ><input
         id="net-hostname"
         bind:value={hostname}
         // i18n-ignore-next: the default hostname, not words
         placeholder="webpc"
         autocomplete="off"
         spellcheck="false"
-      /></label
+      /></Field
     >
     {#if here}
-      <label
-        >{t('network:NetWizard.authKey')}<input
+      <Field label={t('network:NetWizard.authKey')}
+        ><input
           id="net-authkey"
           bind:value={authKey}
           type={reveal ? 'text' : 'password'}
           autocomplete="off"
           spellcheck="false"
-        /></label
+        /></Field
       >
       <Check id="net-reveal" bind:checked={reveal}>{t('network:NetWizard.authKey.show')}</Check>
-      <p class="note">{t('network:NetWizard.authKey.note')}</p>
+      <Note size="md">{t('network:NetWizard.authKey.note')}</Note>
     {:else if editing}
-      <p class="note">{t('network:NetWizard.control.edit')}</p>
+      <Note size="md">{t('network:NetWizard.control.edit')}</Note>
     {:else}
-      <p class="note">{t('network:NetWizard.login.note')}</p>
+      <Note size="md">{t('network:NetWizard.login.note')}</Note>
     {/if}
   </section>
-  <section id="net-step-tailcat" class="net-step" hidden={step !== 'tailcat'}>
+  <section id="net-step-tailcat" class="step" hidden={step !== 'tailcat'}>
     <Check id="net-tc-exit" bind:checked={tcExit}>{t('network:NetWizard.tailcat.exit')}</Check>
-    <div id="net-tc-exit-fields" class="net-sub" hidden={!tcExit}>
-      <ol class="net-steps">
+    <div id="net-tc-exit-fields" class="sub" hidden={!tcExit}>
+      <ol class="steps">
         <li>
           <T k="network:NetWizard.tailcat.exit.install"
             >{#snippet a(text)}<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">{text}</a
@@ -635,8 +623,8 @@
         </li>
         <li><T k="network:NetWizard.tailcat.exit.run">{#snippet code(text)}<code>{text}</code>{/snippet}</T></li>
         <li>
-          <label
-            >{t('network:NetWizard.tailcat.exit.paste')}<input
+          <Field label={t('network:NetWizard.tailcat.exit.paste')}
+            ><input
               id="net-tailcat"
               bind:value={tailcat}
               type="password"
@@ -644,34 +632,34 @@
               placeholder="tc…"
               autocomplete="off"
               spellcheck="false"
-            /></label
+            /></Field
           >
         </li>
       </ol>
-      <p class="note">{t('network:NetWizard.tailcat.exit.note')}</p>
+      <Note size="md">{t('network:NetWizard.tailcat.exit.note')}</Note>
     </div>
     <Check id="net-tc-serve" bind:checked={tcServe}>{t('network:NetWizard.tailcat.serve')}</Check>
-    <div id="net-tc-serve-fields" class="net-sub" hidden={!tcServe}>
-      <p class="note">
+    <div id="net-tc-serve-fields" class="sub" hidden={!tcServe}>
+      <Note size="md">
         <T
           k="network:NetWizard.tailcat.serve.note"
           params={{ ssh: 'tailcat ssh <address>', connect: 'tailcat <address> <port>' }}
           >{#snippet code(text)}<code>{text}</code>{/snippet}</T
         >
-      </p>
+      </Note>
       <details id="net-tc-advanced" bind:open={advanced}>
         <summary>{t('network:NetWizard.advanced')}</summary>
-        <label
-          >{t('network:NetWizard.relay')}<input
+        <Field label={t('network:NetWizard.relay')}
+          ><input
             id="net-tc-relay"
             bind:value={relay}
             disabled={tcExit}
             placeholder={t('network:NetWizard.relay.placeholder')}
             autocomplete="off"
             spellcheck="false"
-          /></label
+          /></Field
         >
-        <p class="note">
+        <Note size="md">
           <T k="network:NetWizard.relay.note"
             >{#snippet a(text)}<a
                 href="https://github.com/tailscale/tailscale/tree/main/cmd/derper"
@@ -679,28 +667,28 @@
                 rel="noopener">{text}</a
               >{/snippet}</T
           >
-        </p>
-        <label
-          >{t('network:NetWizard.allow')}<textarea
+        </Note>
+        <Field label={t('network:NetWizard.allow')}
+          ><textarea
             id="net-tc-allow"
             bind:value={allow}
             rows="3"
             placeholder={t('network:NetWizard.allow.placeholder')}
             autocomplete="off"
-            spellcheck="false"></textarea></label
+            spellcheck="false"></textarea></Field
         >
-        <p class="note">
+        <Note size="md">
           <T k="network:NetWizard.allow.note" params={{ genkey: 'tailcat genkey --client --key=client-default' }}
             >{#snippet code(text)}<code>{text}</code>{/snippet}</T
           >
-        </p>
+        </Note>
         {#if editing}
-          <div class="net-row">
-            <button type="button" id="net-tc-forget" disabled={!identityKept} onclick={forget}
-              >{t('network:NetWizard.newAddress')}</button
+          <div class="row">
+            <Button type="button" id="net-tc-forget" disabled={!identityKept} onclick={forget}
+              >{t('network:NetWizard.newAddress')}</Button
             >
           </div>
-          <p class="note">{t('network:NetWizard.newAddress.note')}</p>
+          <Note size="md">{t('network:NetWizard.newAddress.note')}</Note>
         {/if}
       </details>
     </div>
@@ -713,47 +701,88 @@
         >{/snippet}
     </Check>
   {/if}
-  <p id="net-error" class="error" hidden={!formError}>
+  <Note tone="error" size="md" id="net-error" class="error" hidden={!formError}>
     {formError?.headline}{#each formError?.details ?? [] as d, i (i)}<br />{d}{/each}
-  </p>
-  {#snippet buttons()}
-    <button
+  </Note>
+  {#snippet back()}
+    <Button
       type="button"
       id="net-back"
       hidden={!!editing || step === 'pick' || (step === 'kind' && !pickable)}
-      onclick={back}>{t('network:NetWizard.back')}</button
-    ><span class="grow"></span>
-    <button type="button" id="net-cancel" onclick={close}>{t('network:NetWizard.cancel')}</button>
-    <button
+      onclick={goBack}>{t('network:NetWizard.back')}</Button
+    >
+  {/snippet}
+  {#snippet buttons()}
+    <Button type="button" id="net-cancel" onclick={close}>{t('network:NetWizard.cancel')}</Button>
+    <Button
       id="net-connect"
-      class="primary"
+      variant="primary"
       type="submit"
       disabled={working}
-      hidden={step === 'kind' || step === 'roomPick' || (step === 'pick' && !picked)}>{submitLabel}</button
+      hidden={step === 'kind' || step === 'roomPick' || (step === 'pick' && !picked)}>{submitLabel}</Button
     >
   {/snippet}
 </Modal>
 
 <style>
-  /* A choice's numbered steps, which end at its field: the steps' words at the dialog's size, the field's label too. */
-  .net-steps {
+  .step {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-4);
+  }
+  /* What a switch opens: under it, past its box. */
+  .sub {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-left: var(--space-6);
+  }
+  .row {
+    display: flex;
+    gap: var(--space-3);
+  }
+  details summary {
+    cursor: pointer;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+  details[open] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  /* A details element's children are in its content slot: the gap between them is set there. */
+  details[open]::details-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  /* A choice's numbered steps, which end at its field: the steps' words at the dialog's size, the field's label too. */
+  .steps {
+    --field-name-size: var(--text-base);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
     margin: 0;
-    padding-left: 20px;
+    padding-left: var(--space-6);
   }
-  .net-steps li > :is(details, p) {
-    margin-top: 6px;
+  .steps li > details {
+    margin-top: var(--space-3);
   }
-  :global(#net-wizard) .net-steps label {
-    color: var(--text);
-    font-size: inherit;
-    gap: 4px;
+  /* The commands as they're typed, a line each: they scroll rather than wrap. */
+  #net-local-lines {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
   }
   #net-tc-allow {
     resize: vertical;
-    font-family: ui-monospace, monospace;
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
   }
 </style>

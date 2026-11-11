@@ -4,8 +4,10 @@
   remembered by the machine, and attached at once when it runs in this tab.
 -->
 <script lang="ts">
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import Choice from './ui/Choice.svelte';
   import Modal from './ui/Modal.svelte';
+  import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import type { IconName } from './icons.ts';
@@ -25,6 +27,9 @@
     { api: 'usb', icon: 'usb', name: t('usb:AddUsb.usb'), text: t('usb:AddUsb.usb.text') },
     { api: 'hid', icon: 'device-gamepad-2', name: t('usb:AddUsb.hid'), text: t('usb:AddUsb.hid.text') },
   ];
+
+  /** Why a kind can't be chosen: the browser lacks its API. */
+  const unavailable: Record<Api, string> = { usb: t('usb:AddUsb.noWebUsb'), hid: t('usb:AddUsb.noWebHid') };
 
   let dialog: Modal;
   let error = $state<ErrorView>();
@@ -49,35 +54,35 @@
     <li>{t('usb:AddUsb.step.kind')}</li>
     <li>{t('usb:AddUsb.step.pick')}</li>
   </ol>
-  <div class="choices">
-    {#each KINDS as k (k.api)}
-      <button
-        type="button"
-        class="choice"
-        data-usb-kind={k.api}
-        disabled={busy || !hasApi(k.api)}
-        title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')}
-        onclick={() => choose(k.api)}
-      >
-        <b><Icon name={k.icon} size={18} />{k.name}</b><span>{k.text}</span>
-      </button>
-    {/each}
-  </div>
-  <p class="note">{t('usb:AddUsb.note')}</p>
+  {#each KINDS as k (k.api)}
+    <Choice
+      label={k.name}
+      icon={k.icon}
+      data-usb-kind={k.api}
+      disabled={busy || !hasApi(k.api)}
+      title={hasApi(k.api) ? undefined : unavailable[k.api]}
+      onclick={() => choose(k.api)}>{k.text}</Choice
+    >
+  {/each}
+  <Note size="md">{t('usb:AddUsb.note')}</Note>
   {#if error}<div class="error" role="alert">
       {error.text}{#if error.words}<UsbProblems words={error.words} />{/if}
     </div>{/if}
-  {#snippet buttons()}<span class="grow"></span><button type="button" onclick={() => dialog.close()}
-      >{t('usb:AddUsb.cancel')}</button
-    >{/snippet}
+  {#snippet buttons()}<Button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</Button>{/snippet}
 </Modal>
 
 <style>
   .steps {
     margin: 0;
-    padding-left: 20px;
+    padding-left: var(--space-6);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-2);
+  }
+  .error {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    color: var(--error-fg);
   }
 </style>

@@ -1,5 +1,6 @@
 <!-- The page's questions (web/app/ask.svelte.ts): one modal dialog, the first queued question in it. -->
 <script lang="ts">
+  import Button from './ui/Button.svelte';
   import { answer, asking } from './ask.svelte.ts';
 
   let dialog: HTMLDialogElement;
@@ -42,11 +43,11 @@
       <p class="ask-text">{q.text}</p>
       {#if q.kind === 'prompt'}<input bind:this={input} bind:value={text} spellcheck="false" autocomplete="off" />{/if}
       <div class="buttons">
-        {#if q.kind !== 'alert'}<button type="button" data-answer="cancel" onclick={() => answer(false)}
-            >{q.cancel}</button
+        {#if q.kind !== 'alert'}<Button type="button" data-answer="cancel" onclick={() => answer(false)}
+            >{q.cancel}</Button
           >{/if}
-        <button type="submit" data-answer="ok" class="primary" class:danger={q.danger} bind:this={okButton}
-          >{q.ok}</button
+        <Button type="submit" data-answer="ok" variant={q.danger ? 'danger' : 'primary'} bind:ref={okButton}
+          >{q.ok}</Button
         >
       </div>
     </form>
@@ -54,63 +55,38 @@
 </dialog>
 
 <style>
+  /* The shell is Modal's (web/app/ui/Modal.svelte); a question has its own: it's always mounted, and opens and closes
+     with the queue. */
   dialog {
     width: min(480px, calc(100vw - 32px));
     padding: 0;
     color: var(--text);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 12px 40px #000a;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-dialog);
   }
   dialog::backdrop {
-    background: #0008;
+    background: var(--backdrop);
   }
   form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
+    gap: var(--space-4);
+    padding: var(--space-5);
   }
   h2 {
     margin: 0;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-bold);
   }
   .ask-text {
     margin: 0;
     white-space: pre-wrap;
-    color: var(--text);
-  }
-  input {
-    font: inherit;
-    color: var(--text);
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 5px 8px;
   }
   .buttons {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
-  }
-  button {
-    font: inherit;
-    color: var(--text);
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 5px 14px;
-    cursor: pointer;
-  }
-  .primary {
-    background: #24406b;
-    border-color: #3b6db3;
-    color: #fff;
-  }
-  .primary.danger {
-    background: #5c1d22;
-    border-color: #a33a40;
+    gap: var(--space-3);
   }
 </style>

@@ -5,7 +5,10 @@
 -->
 <script lang="ts">
   import ExportMenu from './ExportMenu.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
+  import Note from './ui/Note.svelte';
   import Modal from './ui/Modal.svelte';
   import { ask } from './ask.svelte.ts';
   import { errorText, msg, MsgError, t } from '../i18n.ts';
@@ -103,55 +106,56 @@
   onclose={close}
   data-disk={disk.id}
 >
-  <p class="note">{t('disks:Overlays.note')}</p>
-  <ul class="rows">
+  <Note size="md">{t('disks:Overlays.note')}</Note>
+  <CardList empty={mine.length ? undefined : t('disks:Overlays.none')}>
     {#each mine as o (o.id)}
       {@const users = usersOf(o.id)}
-      <li data-overlay={o.id}>
-        <div class="what">
-          <strong>{o.name}</strong>
-          <span class="meta"
-            >{o.fork
-              ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) })
-              : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length
-              ? t('disks:Overlays.usedBy', { machines: users })
-              : t('disks:Overlays.usedByNone')}</span
-          >
-        </div>
+      <!-- An overlay's line (size, date, machines) is long: it takes the row, its actions go under it. -->
+      <Card data-overlay={o.id}>
+        <strong>{o.name}</strong>
+        <Note inline
+          >{o.fork
+            ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) })
+            : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length
+            ? t('disks:Overlays.usedBy', { machines: users })
+            : t('disks:Overlays.usedByNone')}</Note
+        >
         <div class="actions">
-          <button onclick={() => rename(o)} title={t('disks:Overlays.renameButton.title')} data-action="rename-overlay"
-            ><Icon name="pencil" size={16} />{t('disks:Overlays.renameButton')}</button
+          <Button
+            icon="pencil"
+            onclick={() => rename(o)}
+            title={t('disks:Overlays.renameButton.title')}
+            data-action="rename-overlay">{t('disks:Overlays.renameButton')}</Button
           >
-          <button onclick={() => remove(o)} title={t('disks:Overlays.deleteButton.title')} data-action="delete-overlay"
-            ><Icon name="trash" size={16} />{t('disks:Overlays.deleteButton')}</button
+          <Button
+            icon="trash"
+            onclick={() => remove(o)}
+            title={t('disks:Overlays.deleteButton.title')}
+            data-action="delete-overlay">{t('disks:Overlays.deleteButton')}</Button
           >
-          {#if disk.kind === 'stored'}<button
+          {#if disk.kind === 'stored'}<Button
+              icon="git-merge"
               onclick={() => merge(o)}
               title={t('disks:Overlays.mergeButton.title')}
-              data-action="merge-overlay"><Icon name="git-merge" size={16} />{t('disks:Overlays.mergeButton')}</button
+              data-action="merge-overlay">{t('disks:Overlays.mergeButton')}</Button
             >{/if}
           <ExportMenu id={o.id} {disk} overlay={o.id} changes={disk.kind !== 'blank'} />
         </div>
-      </li>
-    {:else}
-      <li class="none">{t('disks:Overlays.none')}</li>
+      </Card>
     {/each}
-  </ul>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()} data-action="close-overlays"
-      >{t('disks:Overlays.close')}</button
+  </CardList>
+  {#if error}<Note tone="error" size="md" class="error" role="alert">{error}</Note>{/if}
+  {#snippet buttons()}<Button onclick={() => dialog.close()} data-action="close-overlays"
+      >{t('disks:Overlays.close')}</Button
     >{/snippet}
 </Modal>
 
 <style>
-  /* An overlay's line (size, date, machines) is long: it takes the row, its actions go under it. */
-  :global(.body) .rows > li > .what {
-    flex-basis: 100%;
-  }
   .actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
 </style>

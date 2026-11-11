@@ -1,7 +1,7 @@
 <!--
   A disk as the lists of disks show it (docs/machines.md §4): its kind's icon, its name, and a line with its kind, size,
   overlays (a ramdisk has none) and the machines it's attached to. In the Disks pane and Add a disk… › A disk already in
-  this browser.
+  this browser. One element: a row (the icon, then the name over its line) that takes the room its parent gives it.
 -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
@@ -17,34 +17,42 @@
   const bytes = $derived(overlays.reduce((n, o) => n + o.bytes, 0));
 </script>
 
-<span class="kind" title={kind.text}><Icon name={kind.icon} size={18} /></span>
-<div class="what">
-  <strong>{disk.name}</strong>
-  <span class="meta"
-    >{t('disks:DiskInfo.meta', {
-      kind: kind.text,
-      size: bytesText(disk.size),
-    })}{#if disk.kind !== 'ramdisk'}{' · '}{bytes
-        ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
-        : t('disks:DiskInfo.overlays', { count: overlays.length })}{/if}{' · '}{users.length
-      ? t('disks:DiskInfo.on', { machines: users })
-      : t('disks:DiskInfo.onNone')}</span
-  >
+<div class="disk">
+  <span class="kind" title={kind.text}><Icon name={kind.icon} size={18} /></span>
+  <div class="what">
+    <strong>{disk.name}</strong>
+    <span class="meta"
+      >{t('disks:DiskInfo.meta', {
+        kind: kind.text,
+        size: bytesText(disk.size),
+      })}{#if disk.kind !== 'ramdisk'}{' · '}{bytes
+          ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
+          : t('disks:DiskInfo.overlays', { count: overlays.length })}{/if}{' · '}{users.length
+        ? t('disks:DiskInfo.on', { machines: users })
+        : t('disks:DiskInfo.onNone')}</span
+    >
+  </div>
 </div>
 
 <style>
-  .kind {
-    display: inline-flex;
-    color: var(--dim);
-  }
-  .what {
+  .disk {
     flex: 1;
     min-width: 200px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .kind {
+    display: inline-flex;
+    color: var(--text-dim);
+  }
+  .what {
+    min-width: 0;
     display: flex;
     flex-direction: column;
   }
   .meta {
-    color: var(--dim);
-    font-size: 12px;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
 </style>

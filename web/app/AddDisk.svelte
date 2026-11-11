@@ -6,7 +6,12 @@
   import Check from './ui/Check.svelte';
   import { onMount } from 'svelte';
   import DiskInfo from './DiskInfo.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
+  import Choice from './ui/Choice.svelte';
+  import Field from './ui/Field.svelte';
+  import Note from './ui/Note.svelte';
   import Modal from './ui/Modal.svelte';
   import { ask } from './ask.svelte.ts';
   import { errorText, MsgError, t, text } from '../i18n.ts';
@@ -244,30 +249,28 @@
   onsubmit={add}
 >
   {#if !source}
-    <p class="note">{t('disks:AddDisk.where')}</p>
-    <div class="choices">
-      {#each sources as s (s.kind)}
-        <button type="button" class="choice" data-source={s.kind} onclick={() => choose(s.kind)}>
-          <b><Icon name={s.icon} size={18} />{s.name}</b><span>{s.text}</span>
-        </button>
-      {/each}
-    </div>
+    <Note size="md">{t('disks:AddDisk.where')}</Note>
+    {#each sources as s (s.kind)}
+      <Choice label={s.name} icon={s.icon} data-source={s.kind} onclick={() => choose(s.kind)}>{s.text}</Choice>
+    {/each}
   {:else}
-    <p class="note">{chosen?.text}</p>
+    <Note size="md">{chosen?.text}</Note>
     {#if source === 'known'}
-      <ul class="rows">
+      <CardList>
         {#each known as k (k.disk.id)}
-          <li data-disk={k.disk.id}>
+          <Card data-disk={k.disk.id}>
             <DiskInfo disk={k.disk} overlays={k.overlays} users={k.users.map((u) => u.name)} />
-            <button type="button" class="primary" onclick={() => attachKnown(k)} data-action="attach-known"
-              >{t('disks:AddDisk.known.attach')}</button
-            >
-          </li>
+            {#snippet actions()}
+              <Button type="button" variant="primary" onclick={() => attachKnown(k)} data-action="attach-known"
+                >{t('disks:AddDisk.known.attach')}</Button
+              >
+            {/snippet}
+          </Card>
         {/each}
-      </ul>
+      </CardList>
     {:else if source === 'url'}
-      <label
-        >{t('disks:AddDisk.url')}<span class="line"
+      <Field label={t('disks:AddDisk.url')}
+        ><span class="line"
           ><input
             type="url"
             // i18n-ignore-next: an example URL
@@ -276,26 +279,25 @@
             data-field="url"
             required
           />
-          <button type="button" onclick={check} disabled={!url || checking}
-            >{checking ? t('disks:AddDisk.url.checking') : t('disks:AddDisk.url.check')}</button
+          <Button type="button" onclick={check} disabled={!url || checking}
+            >{checking ? t('disks:AddDisk.url.checking') : t('disks:AddDisk.url.check')}</Button
           ></span
-        ></label
+        ></Field
       >
       {#if urlCheck}
-        {#if urlCheck.ok}<p class="ok">
+        {#if urlCheck.ok}<Note tone="ok" size="md" class="ok">
             {urlCheck.bytes
               ? t('disks:AddDisk.url.ok', { size: bytesText(urlCheck.bytes) })
               : t('disks:AddDisk.url.okUnknown')}
             {text(URL_SLOW)}
-          </p>
+          </Note>
         {:else}<ul class="problems">
-            {#each urlCheck.problems as p}<li>{text(p)}</li>{/each}
+            {#each urlCheck.problems as p, i (i)}<li>{text(p)}</li>{/each}
           </ul>{/if}
       {/if}
     {:else if source === 'file' || source === 'stored'}
       <div class="line">
-        <button type="button" onclick={pick}><Icon name="file" size={16} />{t('disks:AddDisk.pick')}</button><span
-          data-field="picked"
+        <Button type="button" icon="file" onclick={pick}>{t('disks:AddDisk.pick')}</Button><span data-field="picked"
           >{picked
             ? t('disks:AddDisk.picked', { name: picked.file.name, size: bytesText(picked.file.size) })
             : t('disks:AddDisk.picked.none')}</span
@@ -303,29 +305,30 @@
       </div>
       <input type="file" hidden bind:this={fileInput} onchange={picked1} data-field="file" />
     {:else}
-      <label
-        >{t('disks:AddDisk.size')}<span class="line"
+      <Field label={t('disks:AddDisk.size')}
+        ><span class="line"
           ><input type="number" min="1" bind:value={sizeMiB} data-field="size" /> {t('disks:AddDisk.size.unit')}</span
-        ></label
+        ></Field
       >
     {/if}
     {#if source !== 'blank' && source !== 'ramdisk' && source !== 'known'}
       <Check bind:checked={readOnly} title={t('disks:AddDisk.readOnly.title')}>{t('disks:AddDisk.readOnly')}</Check>
     {/if}
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#snippet buttons()}
-    {#if source}<button
+  {#if error}<Note tone="error" size="md" class="error" role="alert">{error}</Note>{/if}
+  {#snippet back()}
+    {#if source}<Button
         type="button"
         onclick={() => {
           source = undefined;
           error = '';
-        }}>{t('disks:AddDisk.back')}</button
+        }}>{t('disks:AddDisk.back')}</Button
       >{/if}
-    <span class="grow"></span>
-    <button type="button" onclick={() => dialog.close()}>{t('disks:AddDisk.cancel')}</button>
-    {#if source && source !== 'known'}<button type="submit" class="primary" data-action="add-disk"
-        >{t('disks:AddDisk.add')}</button
+  {/snippet}
+  {#snippet buttons()}
+    <Button type="button" onclick={() => dialog.close()}>{t('disks:AddDisk.cancel')}</Button>
+    {#if source && source !== 'known'}<Button type="submit" variant="primary" data-action="add-disk"
+        >{t('disks:AddDisk.add')}</Button
       >{/if}
   {/snippet}
 </Modal>
@@ -334,9 +337,7 @@
   .line {
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: var(--text);
-    font-size: 14px;
+    gap: var(--space-3);
   }
   .line input {
     flex: 1;
@@ -344,21 +345,8 @@
   .line input[type='number'] {
     flex: 0 1 140px;
   }
-  .line button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 4px 12px;
-    background: var(--bg);
-  }
-  .ok {
-    color: #8fd18f;
-    margin: 0;
-  }
   .problems {
-    color: #ffb36b;
     margin: 0;
+    color: var(--warn-fg);
   }
 </style>

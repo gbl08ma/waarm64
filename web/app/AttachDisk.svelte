@@ -4,7 +4,11 @@
   overlays; one that has it already, has as many disks as a machine can, or runs in another tab says so instead.
 -->
 <script lang="ts">
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Modal from './ui/Modal.svelte';
+  import Note from './ui/Note.svelte';
   import { errorText, t } from '../i18n.ts';
   import type { Store } from './store.ts';
   import { MAX_DISKS, type DiskRecord, type MachineRecord } from './shape.ts';
@@ -60,30 +64,26 @@
   onclose={close}
   data-disk={disk.id}
 >
-  <p class="note">{t('disks:AttachDisk.note')}</p>
-  <ul class="rows">
+  <Note size="md">{t('disks:AttachDisk.note')}</Note>
+  <CardList empty={machines.length ? undefined : t('disks:AttachDisk.none')}>
     {#each machines as m (m.id)}
       {@const no = why(m)}
-      <li data-machine={m.id}>
-        <div class="what">
-          <strong>{m.name}</strong>
-          <span class="meta"
-            >{t('disks:AttachDisk.meta', { n: m.attachments.length, max: MAX_DISKS })}{#if running.has(m.id)}{' · '}{t(
-                'disks:AttachDisk.running',
-              )}{/if}</span
-          >
-          {#if no}<span class="meta warn" data-why>{no}</span>{/if}
-        </div>
-        <button class="primary" disabled={!!no} onclick={() => attachTo(m)} data-action="attach-to"
-          >{t('disks:AttachDisk.attach')}</button
+      <Card data-machine={m.id}>
+        <strong>{m.name}</strong>
+        <Note inline
+          >{t('disks:AttachDisk.meta', { n: m.attachments.length, max: MAX_DISKS })}{#if running.has(m.id)}{' · '}{t(
+              'disks:AttachDisk.running',
+            )}{/if}</Note
         >
-      </li>
-    {:else}
-      <li class="none">{t('disks:AttachDisk.none')}</li>
+        {#if no}<Note inline tone="warn" data-why>{no}</Note>{/if}
+        {#snippet actions()}
+          <Button variant="primary" disabled={!!no} onclick={() => attachTo(m)} data-action="attach-to"
+            >{t('disks:AttachDisk.attach')}</Button
+          >
+        {/snippet}
+      </Card>
     {/each}
-  </ul>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#snippet buttons()}<span class="grow"></span><button onclick={() => dialog.close()}
-      >{t('disks:AttachDisk.cancel')}</button
-    >{/snippet}
+  </CardList>
+  {#if error}<Note tone="error" class="error" role="alert">{error}</Note>{/if}
+  {#snippet buttons()}<Button onclick={() => dialog.close()}>{t('disks:AttachDisk.cancel')}</Button>{/snippet}
 </Modal>
