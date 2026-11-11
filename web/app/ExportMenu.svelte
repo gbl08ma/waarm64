@@ -21,9 +21,7 @@
   let open = $state(false);
   function save(mode: ExportMode) {
     open = false;
-    inBar(() =>
-      page.saveDisk(mode, mode !== 'raw' && compress, { disk: $state.snapshot(disk) as DiskRecord, overlay }),
-    );
+    inBar(() => page.saveDisk(mode, mode !== 'raw' && compress, { disk: $state.snapshot(disk), overlay }));
   }
 </script>
 

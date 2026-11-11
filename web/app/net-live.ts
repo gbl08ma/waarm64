@@ -4,7 +4,7 @@
 // web/app/locks.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The
 // toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/areas/network-actions.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
-import { errorText, msg, MsgError, text, type Msg } from '../i18n.ts';
+import { errorText, msg, MsgError, text } from '../i18n.ts';
 import { isMsg } from '../msg.ts';
 import {
   connectionLock,
@@ -56,6 +56,7 @@ export function connectOf(c: Connection, authKey?: string): Connect {
     return {
       controlURL: '',
       hostname: '',
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
       tailcat: t.exit || undefined,
       ...serve,
       tailcatIdentity: { identityKey: t.identityKey, identity: t.identity },
@@ -66,6 +67,7 @@ export function connectOf(c: Connection, authKey?: string): Connect {
   return {
     controlURL: t.controlURL,
     hostname: t.hostname,
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty auth key is none
     authKey: authKey || undefined,
     exitNode: t.exitNode || undefined,
     ...(t.acceptRoutes === false ? { acceptRoutes: false } : {}),
@@ -86,7 +88,7 @@ export class HeldError extends MsgError {
 }
 
 /** A note's words: a message's, or an error's headline and details (one line each). */
-const noteText = (n: Msg | unknown) => (n === undefined ? undefined : isMsg(n) ? text(n) : errorText(n));
+const noteText = (n: unknown) => (n === undefined ? undefined : isMsg(n) ? text(n) : errorText(n));
 
 /** One adapter as the menu and the Network tab show it. */
 export type AdapterView = {
@@ -145,7 +147,7 @@ export class PageNetwork {
   /** The room key locks the running room connections hold, by connection (`roomKeyLock`). */
   private keyLocks = new Map<string, string>();
   /** What the page has to say about each adapter: a message, or an error its connecting met. */
-  private notes: (Msg | unknown)[] = [];
+  private notes: unknown[] = []; // a Msg, or an error
   private primary = -1;
 
   /** The browser's connections (stored and this page's ephemeral ones), as last read (`refresh`). */

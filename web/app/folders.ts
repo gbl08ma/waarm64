@@ -151,6 +151,9 @@ export function folderSpecs(
   return attached.flatMap((a) => {
     const f = folders.find((x) => x.id === a.id);
     const handle = present.get(a.id);
-    return f && handle ? [{ id: f.id, name: names.get(f.id)!, kind: f.kind, readOnly: readsOnly(a, f), handle }] : [];
+    const name = f && names.get(f.id);
+    return f && handle && name !== undefined
+      ? [{ id: f.id, name, kind: f.kind, readOnly: readsOnly(a, f), handle }]
+      : [];
   });
 }

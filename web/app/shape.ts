@@ -445,6 +445,7 @@ export function shapeDiff(was: Shape, now: Shape): Msg[] {
 export function describeIdentity(d: DiskIdentity): string | Msg {
   switch (d.kind) {
     case 'url':
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a path ending in '/' names no file
       return d.path.split('/').pop() || d.path;
     case 'file':
       return msg('machines:shape.identity.file', { name: d.name });

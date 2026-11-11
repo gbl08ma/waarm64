@@ -67,9 +67,9 @@
   const live = $derived(here && (machine ? running : isLive(power.state)));
 
   async function download(s: SnapshotRecord) {
-    const parts = snapshotPath(s.machine, s.id).split('/');
-    const name = parts.pop()!;
-    const file = await (await (await opfsDir(parts.join('/'))).getFileHandle(name)).getFile();
+    const path = snapshotPath(s.machine, s.id);
+    const slash = path.lastIndexOf('/');
+    const file = await (await (await opfsDir(path.slice(0, slash))).getFileHandle(path.slice(slash + 1))).getFile();
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(file),
       download: `${s.name.replace(/[^\w.-]+/g, '-')}.webpcsnap`,
@@ -85,9 +85,7 @@
       })
     )?.trim();
     if (name && name !== s.name)
-      await act(t('snapshots:Snapshots.renaming'), () =>
-        store.put('snapshots', { ...($state.snapshot(s) as SnapshotRecord), name }),
-      );
+      await act(t('snapshots:Snapshots.renaming'), () => store.put('snapshots', { ...$state.snapshot(s), name }));
   }
   async function remove(s: SnapshotRecord) {
     if (
@@ -125,9 +123,10 @@
     inBar(() => page.restoreKept(s.id));
   }
   let importInput = $state<HTMLInputElement>();
-  const imported = () => {
-    const f = importInput!.files?.[0];
-    importInput!.value = '';
+  const imported = (e: Event & { currentTarget: HTMLInputElement }) => {
+    const input = e.currentTarget;
+    const f = input.files?.[0];
+    input.value = '';
     if (f && machine) void act(t('snapshots:Snapshots.importing'), () => importSnapshot(store, machine.id, f));
   };
   const restoreFile = () => openPicker('snapshot');

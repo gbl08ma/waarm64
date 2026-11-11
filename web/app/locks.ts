@@ -18,7 +18,7 @@ export class Locks {
   constructor(store: Store, topic: string, me: () => string, release: (lock: string) => void) {
     [this.store, this.topic, this.me, this.release] = [store, topic, me, release];
     this.off = store.onNote((n: Note) => {
-      const lock = String(n.lock ?? '');
+      const lock = typeof n.lock === 'string' ? n.lock : '';
       if (n.topic === `${topic}-who` && this.held.has(lock))
         store.tell({ topic: `${topic}-held`, lock, name: this.me() });
       else if (n.topic === `${topic}-held`) this.answers.get(lock)?.(String(n.name));
@@ -94,5 +94,5 @@ export class Locks {
 export async function heldLocks(): Promise<Set<string>> {
   if (!globalThis.navigator?.locks) return new Set();
   const q = await navigator.locks.query();
-  return new Set((q.held ?? []).map((l) => l.name!).filter(Boolean));
+  return new Set((q.held ?? []).flatMap((l) => (l.name ? [l.name] : [])));
 }

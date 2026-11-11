@@ -20,7 +20,7 @@
   {#each words as w, i (i)}
     <div class="problem">
       <p>{w.text}</p>
-      {#if w.fix || w.said}
+      {#if w.fix ?? w.said}
         <details>
           <summary>{w.fix?.title ?? t('usb:UsbProblems.details')}</summary>
           {#if w.fix}

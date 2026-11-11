@@ -4,7 +4,7 @@
 // ABNT2's IntlRo, JIS's IntlRo and IntlYen.
 
 /** A layout's characters: code → its levels'. */
-export type Keymap = Record<string, string[]>;
+export type Keymap = Partial<Record<string, string[]>>;
 
 export const KEYMAPS: Record<string, Keymap> = {
   us: {

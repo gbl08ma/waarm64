@@ -49,11 +49,10 @@
     return running.has(m.id) ? `${meta} · ${t('disks:AttachDisk.running')}` : meta;
   }
   async function attachTo(m: MachineRecord) {
-    const plain = $state.snapshot(m) as MachineRecord;
+    const plain = $state.snapshot(m);
     let ok = false;
     await act(t('disks:AttachDisk.busy'), async () => {
-      if (await offFirst(plain))
-        ok = await runner.run('', () => attach(store, plain, $state.snapshot(disk) as DiskRecord));
+      if (await offFirst(plain)) ok = await runner.run('', () => attach(store, plain, $state.snapshot(disk)));
     });
     if (ok) dialog.close();
   }

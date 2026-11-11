@@ -78,7 +78,7 @@
         checked={on || c?.entry === v.entry.id}
         disabled={!usb.running ||
           (!on && (v.state === 'unplugged' || v.state === 'ungranted' || (!!c && c.entry !== v.entry.id)))}
-        onchange={(e) => toggle(v.entry.id, (e.currentTarget as HTMLInputElement).checked)}
+        onchange={(e) => toggle(v.entry.id, e.currentTarget.checked)}
       />
       <span class="name">{deviceName(v.entry)}</span>
       <span class="dim">{where(v, c)}</span>

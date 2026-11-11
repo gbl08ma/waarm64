@@ -248,6 +248,7 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
     r = {
       id,
       kind: 'url',
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a URL ending in '/' names no file
       name: d.name ?? (u.pathname.split('/').pop() || u.hostname),
       size: d.size,
       format: u.pathname.endsWith('.iso') ? 'iso' : undefined,

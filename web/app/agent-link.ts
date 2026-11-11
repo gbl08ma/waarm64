@@ -117,8 +117,9 @@ export class AgentLink {
   }
 
   private pump() {
-    while (this.queue.length && this.inflight < WINDOW) {
-      const b = this.queue.shift()!;
+    while (this.inflight < WINDOW) {
+      const b = this.queue.shift();
+      if (!b) break;
       this.inflight += b.length;
       this.port.postMessage({ type: 'data', port: this.id, bytes: b } satisfies AgentToDevice, [b.buffer]);
     }

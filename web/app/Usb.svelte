@@ -38,7 +38,7 @@
   // Read again when the record changes, and with the page's USB (`usb.entries` is read again at every plug, attach and grant).
   $effect(() => {
     void usb.entries;
-    const m = $state.snapshot(machine) as MachineRecord;
+    const m = $state.snapshot(machine);
     void page.usbStates(m).then((v) => {
       views = v;
     });
@@ -120,7 +120,7 @@
               disabled={here && v.state === 'attached'}
               onchange={(ev) =>
                 act(t('usb:Usb.busy.saving'), () =>
-                  page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }),
+                  page.usbEdit(machine.id, e.id, { connector: Number(ev.currentTarget.value) }),
                 )}
               data-field="connector"
             >

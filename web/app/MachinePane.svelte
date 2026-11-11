@@ -147,7 +147,7 @@
   {:else if machinesNav.tab === 'folders'}
     <FoldersTab {edit} machine={saved} {folders} {act} />
   {:else if machinesNav.tab === 'disks'}
-    <Disks {store} machine={m} {machines} {disks} {overlays} running={edit.running} {act} {offFirst} />
+    <Disks {store} machine={m} {machines} {disks} {overlays} {act} {offFirst} />
   {:else}
     <Snapshots {store} machine={m} running={edit.running} {act} />
   {/if}

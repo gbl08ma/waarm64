@@ -202,7 +202,9 @@ export class PageFolders {
     if (!(await this.locks.take(lock, { shared: !write })))
       return void this.problems.set(a.id, { problem: 'held', holder: await this.locks.holder(lock) });
     try {
-      this.served.set(a.id, f.kind === 'host' ? f.handle! : await this.access.directory(f));
+      const dir = f.kind === 'host' ? f.handle : await this.access.directory(f);
+      if (!dir) throw new Error(`folder ${a.id} has no handle`);
+      this.served.set(a.id, dir);
       this.problems.delete(a.id);
     } catch (e) {
       this.locks.drop(lock);

@@ -60,6 +60,8 @@ export default defineConfig(
       '@typescript-eslint/consistent-indexed-object-style': 'off',
       // A number or a boolean in a template literal (a key, a size, a flag in a message) is meant.
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true, allowBoolean: true }],
+      // A key dropped by destructuring its rest (`const { id: _, ...rest } = x`) is the codebase's way to omit one.
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
       // `() => f()` for a handler and `return f()` to leave a function that returns nothing (async ones too) are the
       // codebase's idiom.
       '@typescript-eslint/no-confusing-void-expression': 'off',

@@ -38,6 +38,7 @@ const F = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, k) => 
 /** The US layout's characters: the keyboard's when the machine sets none (the guest's default). */
 export const US: Keymap = KEYMAPS.us;
 /** Layout `id`'s characters (a `KEYBOARD_LAYOUTS` id), or the US layout's. */
+// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no layout ('') is US
 export const keymapOf = (id: string | undefined): Keymap => (id && KEYMAPS[id]) || US;
 
 /** JIS's input-method keys: Muhenkan, Henkan, Katakana/Hiragana (a JIS keyboard's, beside Space). */
@@ -348,7 +349,7 @@ export const MODIFIERS = new Set([
 ]);
 
 /** The keypad's and Space's characters (the same on every layout but the keypad's decimal key, the keymap's). */
-const FIXED: Record<string, string> = {
+const FIXED: Partial<Record<string, string>> = {
   ...Object.fromEntries('0123456789'.split('').map((d) => [`Numpad${d}`, d])),
   NumpadDivide: '/',
   NumpadMultiply: '*',
@@ -489,7 +490,7 @@ export class OskKeys {
 
   /** The modifiers down, held or latched (for a terminal's characters). */
   mods(): Mods {
-    const on = (side: string) => !!(this.state(`${side}Left`) || this.state(`${side}Right`));
+    const on = (side: string) => !!(this.state(`${side}Left`) ?? this.state(`${side}Right`));
     return {
       shift: on('Shift'),
       ctrl: on('Control'),

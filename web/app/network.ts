@@ -471,6 +471,7 @@ export function createNetwork(
         onChange();
       };
       room = !!c.room;
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
       tailcat = !room && !!(c.tailcat || c.tailcatServe);
       local = !!c.local;
       if (onFrames && !local) ip.postMessage({ type: 'gateway' });
@@ -487,8 +488,10 @@ export function createNetwork(
             : start(
                 {
                   controlURL: c.controlURL,
+                  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty auth key is none
                   authKey: c.authKey || undefined,
                   hostname: c.hostname,
+                  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
                   exitNode: c.exitNode || undefined,
                   acceptRoutes: c.acceptRoutes,
                   ip,

@@ -18,7 +18,8 @@ export const identityOf = (d: DiskRecord) => canonical(d.identity);
 export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
   switch (d.kind) {
     case 'url':
-      return { url: new URL(d.url!, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
+      if (!d.url) throw new Error(`URL disk ${d.id} has no URL`);
+      return { url: new URL(d.url, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
     case 'file': {
       if (!d.handle) throw new MsgError('disks:disks.pickAgain', { name: d.name });
       return { file: await d.handle.getFile() };
@@ -76,7 +77,7 @@ export async function renameOverlay(store: Store, id: string, name: string) {
 export async function switchOverlay(store: Store, m: MachineRecord, attachment: string, overlay: string) {
   const a = m.attachments.find((x) => x.id === attachment);
   const o = await store.get('overlays', overlay);
-  if (!a || !o || o.disk !== a.disk) throw new MsgError('disks:disks.notThisDisk');
+  if (!a || o?.disk !== a.disk) throw new MsgError('disks:disks.notThisDisk');
   a.overlay = overlay;
   m.modified = Date.now();
   await store.put('machines', m);
@@ -116,7 +117,7 @@ export async function refreshOverlay(store: Store, id: string) {
 /** A stored disk's generation from its files into its record (after a machine wrote it in place). */
 export async function refreshStored(store: Store, id: string) {
   const d = await store.get('disks', id);
-  if (!d || d.kind !== 'stored') return;
+  if (d?.kind !== 'stored') return;
   const meta = await overlayMeta(diskDir(id));
   if (meta.generation !== d.generation) await store.put('disks', { ...d, generation: meta.generation });
 }
@@ -162,6 +163,12 @@ export async function loadChangesInto(
 }
 
 /** Runs a disk job in its worker; resolves to its result. */
+/** Field `what` of a job's reply, which that job always sends. */
+function sent<T>(v: T | undefined, what: string): T {
+  if (v === undefined) throw new Error(`the disk worker's reply has no ${what}`);
+  return v;
+}
+
 function job(j: DiskJob, progress?: (fraction: number) => void) {
   return new Promise<Extract<DiskJobResult, { type: 'done' }>>((resolve, reject) => {
     const w = new Worker(new URL('./disk-worker.ts', import.meta.url), { type: 'module' });
@@ -183,7 +190,7 @@ function job(j: DiskJob, progress?: (fraction: number) => void) {
 /** What a file will take stored in the browser (machines.md §4.4: a qcow2's allocated clusters), with its virtual size. */
 export async function estimateStored(file: File) {
   const r = await job({ type: 'estimate', file });
-  return { size: r.size!, format: r.format as 'raw' | 'qcow2', estimate: r.estimate! };
+  return { size: sent(r.size, 'size'), format: r.format as 'raw' | 'qcow2', estimate: sent(r.estimate, 'estimate') };
 }
 
 /** Imports a file as a stored disk (converted into the block store); its record once its bytes are there. */
@@ -207,7 +214,7 @@ export async function importStored(
       id,
       kind: 'stored',
       name: file.name,
-      size: r.size!,
+      size: sent(r.size, 'size'),
       format: r.format === 'qcow2' ? 'qcow2' : 'raw',
       identity,
       generation: (await overlayMeta(diskDir(id))).generation,

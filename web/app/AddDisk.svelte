@@ -116,7 +116,7 @@
 
   /** Powers the machine off if it must (asking), then attaches what `make` gives; closes when it's attached. */
   async function attachWith(make: () => Promise<DiskRecord | undefined>, ro: boolean | undefined) {
-    const m = $state.snapshot(machine) as MachineRecord;
+    const m = $state.snapshot(machine);
     let ok = false;
     await act(t('disks:AddDisk.busy'), async () => {
       if (!(await offFirst(m))) return;

@@ -192,7 +192,7 @@ export class Store {
    */
   writing<T>(f: () => Promise<T>): Promise<T> {
     if (typeof navigator === 'undefined' || !navigator.locks) return f();
-    return navigator.locks.request(WRITE_LOCK, { mode: 'shared' }, f) as Promise<T>;
+    return navigator.locks.request(WRITE_LOCK, { mode: 'shared' }, f);
   }
 
   overlaysOf(disk: string) {
@@ -289,7 +289,7 @@ export class Store {
       return removed;
     };
     if (typeof navigator === 'undefined' || !navigator.locks) return run();
-    return navigator.locks.request(WRITE_LOCK, { mode: 'exclusive' }, run) as Promise<string[]>;
+    return navigator.locks.request(WRITE_LOCK, { mode: 'exclusive' }, run);
   }
 }
 

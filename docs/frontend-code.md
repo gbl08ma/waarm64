@@ -151,7 +151,10 @@ TypeScript 6 package `tools/lint` ([frontend.md](frontend.md) "Types"); `npm run
   (`no-restricted-syntax`). `no-empty-function` (in the sets) wants a comment in a `.catch(() => {})`. Tuned out as
   taste that fights the code's style: `consistent-type-definitions` (`type X = {…}` is how the code writes object
   types), `consistent-indexed-object-style`, `no-confusing-void-expression` (`() => f()` and `return f()` out of a
-  function that returns nothing), and `restrict-template-expressions` allows numbers and booleans.
+  function that returns nothing), `restrict-template-expressions` allows numbers and booleans, and `no-unused-vars`
+  ignores a key dropped by a rest (`const { id: _, ...rest } = x`). The typed lint sees another component only as
+  `svelte.d.ts`'s `Component`: a callback prop is a property (`close: () => void`, not `close(): void`), a markup
+  callback's parameters are typed (`onchange={(on: boolean) => …}`), and a bound dialog is a `ui/dialog.ts` `Dialog`.
 - **Stylelint** (`tools/lint/stylelint.config.ts`, `npm run lint:style`) over the `<style>` of `web/app/**/*.svelte`
   and `web/app/index.html` (`postcss-html`) and over `web/app/theme/*.css`: `stylelint-config-recommended`'s correctness rules (duplicate selectors
   and properties, unknown properties, units and pseudo-classes, invalid values…; `:global` allowed,

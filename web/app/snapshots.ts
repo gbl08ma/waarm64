@@ -193,6 +193,7 @@ export async function machineLike(
           ? {
               id: newId(),
               kind: 'url',
+              // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a path ending in '/' names no file
               name: i.path.split('/').pop() || t('snapshots:snapshots.urlDisk'),
               size: sd.size,
               url: snap.urls?.[sd.slot] ?? i.path,

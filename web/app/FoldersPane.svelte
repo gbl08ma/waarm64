@@ -232,7 +232,7 @@
               })}
               <Button
                 onclick={() => {
-                  copying!.stop = true;
+                  if (copying) copying.stop = true;
                 }}
                 data-action="cancel-copy">{t('folders:FoldersPane.copying.cancel')}</Button
               >

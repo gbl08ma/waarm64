@@ -2,38 +2,21 @@
   "web/app/AddDisk.svelte": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
     }
   },
   "web/app/AttachDisk.svelte": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 2
     }
   },
   "web/app/Disks.svelte": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
-    "svelte/no-unused-props": {
-      "count": 1
-    }
-  },
-  "web/app/ExportMenu.svelte": {
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
     }
   },
   "web/app/FoldersPane.svelte": {
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
@@ -41,19 +24,6 @@
   },
   "web/app/MachinesPage.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
-  "web/app/Osk.svelte": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "web/app/Snapshots.svelte": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 1
     }
   },
@@ -77,25 +47,9 @@
   "web/app/Usb.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 2
-    }
-  },
-  "web/app/UsbMenu.svelte": {
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    }
-  },
-  "web/app/UsbProblems.svelte": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
     }
   },
   "web/app/agent-link.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     },
@@ -106,9 +60,6 @@
   "web/app/clipboard.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 4
     },
     "complexity": {
       "count": 2
@@ -124,21 +75,12 @@
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
     },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 4
-    },
     "complexity": {
       "count": 1
     }
   },
   "web/app/copy-edit-ui.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
-    },
     "max-lines-per-function": {
-      "count": 1
-    },
-    "no-irregular-whitespace": {
       "count": 1
     }
   },
@@ -162,42 +104,17 @@
     }
   },
   "web/app/deflate-pool.ts": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     }
   },
   "web/app/disks.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 4
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 2
     }
   },
   "web/app/export-worker.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
-    },
     "complexity": {
-      "count": 1
-    }
-  },
-  "web/app/folders-live.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    }
-  },
-  "web/app/folders.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
   },
@@ -206,15 +123,7 @@
       "count": 2
     }
   },
-  "web/app/guest-agent.ts": {
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 1
-    }
-  },
   "web/app/keyboard.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "max-lines": {
       "count": 1
     }
@@ -225,12 +134,6 @@
     }
   },
   "web/app/locks.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 4
     }
@@ -238,12 +141,6 @@
   "web/app/machines.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
     },
     "complexity": {
       "count": 2
@@ -253,17 +150,11 @@
     }
   },
   "web/app/net-live.ts": {
-    "@typescript-eslint/no-redundant-type-constituents": {
-      "count": 2
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
     },
     "complexity": {
       "count": 1
@@ -273,9 +164,6 @@
     }
   },
   "web/app/network.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 3
-    },
     "complexity": {
       "count": 1
     },
@@ -290,12 +178,6 @@
     }
   },
   "web/app/osk.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 16
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    },
     "complexity": {
       "count": 2
     },
@@ -306,15 +188,7 @@
       "count": 2
     }
   },
-  "web/app/png-worker.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
-    }
-  },
   "web/app/shape.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -329,9 +203,6 @@
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
     },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    },
     "complexity": {
       "count": 2
     },
@@ -340,9 +211,6 @@
     }
   },
   "web/app/statusbar.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 20
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
     },
@@ -361,9 +229,6 @@
   },
   "web/app/store.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 2
     },
     "complexity": {
@@ -396,12 +261,6 @@
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
     },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },
@@ -414,21 +273,15 @@
   },
   "web/app/worker.ts": {
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 10
+      "count": 4
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 13
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
     },
     "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-includes": {
       "count": 1
     },
     "complexity": {

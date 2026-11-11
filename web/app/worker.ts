@@ -128,12 +128,13 @@ let savedFlash: Uint8Array | undefined;
 let saving: Promise<void> = Promise.resolve();
 const same = (a: Uint8Array, b?: Uint8Array) => !!b && a.length === b.length && a.every((x, i) => x === b[i]);
 /** Saves the flash bank if it changed since the last save (a save in flight finishes first). */
-function keepFlash(v: Vm, machine: Machine) {
+function keepFlash(v: Vm) {
   const flash = v.flash();
-  if (!flash || !home || same(flash, savedFlash)) return saving;
+  const at = home;
+  if (!flash || !at || same(flash, savedFlash)) return saving;
   savedFlash = flash;
   return (saving = saving
-    .then(() => saveFlash(home!, flash))
+    .then(() => saveFlash(at, flash))
     .catch(() => {
       savedFlash = undefined;
     })); // retried at the next change or tick
@@ -144,7 +145,7 @@ let closed: Promise<void> | undefined;
 const shutdown = (v: Vm, machine: Machine) =>
   (closed ??= (async () => {
     await v.close(); // the vCPUs stop at once; the flash isn't written after that
-    await keepFlash(v, machine);
+    await keepFlash(v);
   })());
 
 /** An error with the problem it means for the user: `m` says it, `cause` (if any) is its details. */
@@ -167,7 +168,10 @@ let session:
 /** The core, compiled once: `bootVm` and the snapshot codec both take the module. */
 let core: WebAssembly.Module | undefined;
 let codecP: ReturnType<typeof lzCodec> | undefined;
-const codec = () => (codecP ??= lzCodec(core!));
+const codec = () => {
+  if (!core) throw new Error('the snapshot codec before the core is compiled');
+  return (codecP ??= lzCodec(core));
+};
 /** The tail of the serial output posted so far: a snapshot carries it, so a restored terminal isn't empty. */
 const TAIL = 4096;
 let serialTail = '';
@@ -271,7 +275,8 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
       };
     }
     case 'blk':
-      return blkSpec(slot.disk!, m.config.dev.ioStats || undefined, m.config.dev.noDiskCache ? false : undefined);
+      if (!slot.disk) throw new Error('a disk slot without its disk'); // shape.ts `slots` gives each its attachment
+      return blkSpec(slot.disk, m.config.dev.ioStats || undefined, m.config.dev.noDiskCache ? false : undefined);
     case 'keyboard':
       return { type: 'input', kind: 'keyboard', port: m.ports.keyboard };
     case 'tablet':
@@ -299,7 +304,8 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
       };
     }
     case 'net': {
-      const n = m.ports.nets[slot.adapter!];
+      if (slot.adapter === undefined) throw new Error('a network slot without its adapter'); // as a disk's, above
+      const n = m.ports.nets[slot.adapter];
       // Several adapters: frequent renewals, so the default route follows the primary (network-adapters.md §4).
       return {
         type: 'net',
@@ -370,7 +376,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
       'snapshot',
       msg('snapshots:worker.otherDevices', { name }),
       new MsgError('snapshots:worker.otherDevices.cause', {
-        kinds: kinds as string[],
+        kinds,
         here: all.map((s) => s.kind),
         machine: machine.title,
       }),
@@ -463,7 +469,8 @@ async function download(urls: string[], machine: Machine) {
       const out = new Uint8Array(sizes[i]);
       const parts: Uint8Array[] = []; // past the announced length (none expected)
       let at = 0;
-      const reader = r.body!.getReader();
+      if (!r.body) throw new Error(`no body in the response for ${r.url}`);
+      const reader = r.body.getReader();
       for (;;) {
         const { done, value } = await reader.read();
         if (done || stopping) break;
@@ -746,8 +753,8 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   if (stopping) return; // `stop` closes it
   if (restoredHeader) wakeRestored(vm, restoredHeader);
   // The resumed machine is about to write its disk: its suspended copy is void from here.
-  if (resume) await dropSuspend(home!);
-  if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
+  if (resume && home) await dropSuspend(home);
+  if (restore) await keepFlash(vm); // the restore deleted the copy beside the overlay: the bank the machine has goes back
   if (vm.framebuffer && m.screen) {
     const screen = m.screen;
     const shown = showFramebuffer(screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
@@ -793,7 +800,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     }
     const at = seen.indexOf(PANIC);
     // The guest hangs (or resets, with panic=N: the page keeps the crash on show rather than restarting).
-    if (!panicked && at >= 0 && seen.indexOf('\n', at) >= 0) {
+    if (!panicked && at >= 0 && seen.includes('\n', at)) {
       panicked = true;
       state('crashed', {
         error: new MsgError('machine:worker.panic', undefined, {
@@ -814,7 +821,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   const signal = new Signal();
   const timer = setInterval(() => {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
-    if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
+    if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!);
     const now = performance.now();
     const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt, io, signal);
     // The memory signal (web/app/memory.ts): past what the device reports, the JIT's cache holds no more than it does now

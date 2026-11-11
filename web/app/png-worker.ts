@@ -7,27 +7,32 @@ export type ToPng = { image: Blob } | { width: number; height: number; pixels: U
 /** From the worker: the PNG, or why there is none. */
 export type FromPng = { png: Blob } | { error: string };
 
+/** Canvas `c`'s 2D context (an OffscreenCanvas always has one, unless the worker is out of memory). */
+function context2d(c: OffscreenCanvas) {
+  const x = c.getContext('2d');
+  if (!x) throw new Error('no 2D context for the picture');
+  return x;
+}
+
 async function convert(m: ToPng): Promise<Blob> {
   let canvas: OffscreenCanvas;
   if ('image' in m) {
     // As the image's pixels are: no colour space conversion, alpha as it is.
     const bitmap = await createImageBitmap(m.image, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
     canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+    context2d(canvas).drawImage(bitmap, 0, 0);
     bitmap.close();
   } else {
     canvas = new OffscreenCanvas(m.width, m.height);
-    canvas
-      .getContext('2d')!
-      .putImageData(
-        new ImageData(
-          new Uint8ClampedArray(m.pixels.buffer, m.pixels.byteOffset, m.width * m.height * 4),
-          m.width,
-          m.height,
-        ),
-        0,
-        0,
-      );
+    context2d(canvas).putImageData(
+      new ImageData(
+        new Uint8ClampedArray(m.pixels.buffer, m.pixels.byteOffset, m.width * m.height * 4),
+        m.width,
+        m.height,
+      ),
+      0,
+      0,
+    );
   }
   return canvas.convertToBlob({ type: 'image/png' });
 }

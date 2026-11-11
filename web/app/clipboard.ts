@@ -168,6 +168,7 @@ export function isPasteChord(
 
 /** Whether the browser runs on a Mac (its paste chord is Cmd+V): its client hints' platform, else `navigator.platform`. */
 export function onMac(nav: { platform?: string; userAgentData?: { platform?: string } } | undefined): boolean {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no platform said ('') is unset
   return /mac/i.test(nav?.userAgentData?.platform || nav?.platform || '');
 }
 
@@ -215,6 +216,7 @@ async function textOf(items: readonly HostItem[] | undefined, type = 'text/plain
     (await item?.getType?.(type).then(
       (b) => b.text(),
       () => undefined,
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty text is none
     )) || undefined
   );
 }
@@ -627,6 +629,7 @@ export class ClipboardShare {
   pasted(text: string, image?: Blob, html?: string) {
     const release = this.holding;
     if (!release) return;
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty HTML is none
     this.waiting = this.paste({ text, image, html: html || undefined });
     release();
   }

@@ -51,6 +51,7 @@ export function deviceName(d: {
   productName?: string | null;
 }): string {
   if (d.api === 'virtual' && d.kind === 'gamepad')
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty name is none
     return t('usb:usb-ports.gamepad', { name: d.name || t('usb:usb-ports.gamepad.unnamed') });
   if (d.api === 'virtual')
     return t(
@@ -62,6 +63,7 @@ export function deviceName(d: {
     );
   const ids = `${hex4(d.vendorId ?? 0)}:${hex4(d.productId ?? 0)}`;
   return (
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a blank name is none
     d.productName?.trim() ||
     (d.api === 'hid' ? t('usb:usb-ports.hidDevice', { ids }) : t('usb:usb-ports.usbDevice', { ids }))
   );

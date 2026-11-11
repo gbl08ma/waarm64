@@ -130,6 +130,7 @@ export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet' | 'room'>)
     return 'error' in l ? 'room' : roomName(l.room.id);
   }
   if (c.kind === 'local') return t('network:connections.thisComputer');
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no server ('') is the default one
   const url = c.tailnet?.controlURL || DEFAULT_CONTROL;
   return url === DEFAULT_CONTROL ? 'Tailscale' : new URL(url).host;
 }
@@ -188,6 +189,7 @@ export class Connections {
     };
     const c: Connection = {
       id,
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a blank name is none
       name: uniqueName(o.name?.trim() || defaultName(o), taken),
       kind: o.kind,
       ephemeral,
@@ -289,7 +291,9 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
         connectAtStart: !!(mine && s?.kind !== 'tailcat' && s?.autoconnect),
         tailnet: {
           controlURL: profile,
+          // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- not ours (false) or '' is unset
           hostname: (mine && s?.hostname) || 'webpc',
+          // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- not ours (false) or '' is unset
           exitNode: (mine && s?.exitNode) || '',
         },
       });

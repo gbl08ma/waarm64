@@ -12,6 +12,8 @@ const ATTRS = ['title', 'aria-label', 'placeholder', 'alt', 'aria-description', 
 const inText = new WeakMap<Text, number[]>();
 const inAttrs = new WeakMap<Element, Map<string, number[]>>();
 let host: HTMLElement;
+/** `host`'s shadow root, where the panel goes. */
+let shadow: ShadowRoot;
 
 /** Takes the marks out of the page under `root`, remembering where each message is. */
 export function scan(root: Node = document.body) {
@@ -42,7 +44,7 @@ export function scan(root: Node = document.body) {
   if (document.title.includes('⁣')) document.title = strip(document.title);
 }
 
-const strip = (s: string) => s.replace(/⁣[​‌]+⁤/g, '');
+const strip = (s: string) => s.replace(/\u2063[\u200b\u200c]+\u2064/g, '');
 
 /** The messages shown in `el` and under it: in its text and its attributes. */
 function messagesIn(el: Element): number[] {
@@ -132,7 +134,7 @@ let panel: HTMLElement | undefined;
 /** The panel with messages `ids`' entries. */
 function open(ids: number[]) {
   panel?.remove();
-  const root = host.shadowRoot!;
+  const root = shadow;
   panel = el('div', 'panel');
   panel.setAttribute('data-copy-panel', '');
   const head = el('div', 'head');
@@ -152,7 +154,7 @@ function open(ids: number[]) {
   if (!ids.length) panel.append(el('div', 'note', 'No message here.')); // i18n-ignore
   const keys = [...new Set(ids.map((id) => copyEditor.shown(id)?.key).filter((k): k is string => !!k))];
   for (const key of keys) {
-    const shown = copyEditor.shownOf(key).map((id) => copyEditor.shown(id)!);
+    const shown = copyEditor.shownOf(key).flatMap((id) => copyEditor.shown(id) ?? []);
     for (const entry of copyEditor.entries(key)) {
       const box = el('div', 'entry');
       box.setAttribute('data-key', entry.key);
@@ -225,7 +227,8 @@ function fit(area: HTMLTextAreaElement) {
 export function startEditor() {
   host = document.createElement('div');
   host.id = 'copy-edit';
-  host.attachShadow({ mode: 'open' }).append(Object.assign(document.createElement('style'), { textContent: STYLE }));
+  shadow = host.attachShadow({ mode: 'open' });
+  shadow.append(Object.assign(document.createElement('style'), { textContent: STYLE }));
   // The page's keys (the screen's, its shortcuts) don't see what's typed in the panel.
   for (const type of ['keydown', 'keyup', 'keypress'])
     host.addEventListener(type, (e) => {

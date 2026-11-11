@@ -36,7 +36,7 @@ export async function agentBinary(url = AGENT_BINARY): Promise<Uint8Array | unde
       `clipboard sharing: no agent at ${url} (${r.status}${b ? ', not an ELF file' : ''}): images/build.sh agent builds it`, // i18n-ignore: a developer's (the console)
     );
   } catch (e) {
-    console.warn(`clipboard sharing: the agent's fetch failed (${e})`); // i18n-ignore: a developer's (the console)
+    console.warn(`clipboard sharing: the agent's fetch failed (${String(e)})`); // i18n-ignore: a developer's (the console)
   }
   return undefined;
 }

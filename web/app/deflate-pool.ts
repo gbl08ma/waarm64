@@ -22,7 +22,10 @@ export function deflatePool(
       const m = e.data;
       const asked = waiting.get(m.id);
       waiting.delete(m.id);
-      if ('error' in m) return void asked?.reject(fromWire(m.error));
+      if ('error' in m) {
+        asked?.reject(fromWire(m.error));
+        return;
+      }
       let at = 0;
       asked?.resolve(Array.from(m.lengths, (len) => (len ? m.packed.subarray(at, (at += len)) : undefined)));
     };

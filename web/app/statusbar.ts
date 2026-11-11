@@ -276,8 +276,10 @@ export function normalize(kept: unknown): Item[] {
     if (!k || typeof k !== 'object' || typeof k.kind !== 'string' || !Object.hasOwn(KINDS, k.kind)) continue;
     const d = def(k.kind);
     const item: Item = { kind: k.kind };
-    if (d.scopes) item.scope = d.scopes.includes(k.scope!) ? k.scope : d.scopes[0];
-    if (item.scope === 'one') item.index = Number.isInteger(k.index) && k.index! >= 0 ? k.index : firstIndex(d.device!);
+    if (d.scopes) item.scope = k.scope !== undefined && d.scopes.includes(k.scope) ? k.scope : d.scopes[0];
+    if (item.scope === 'one')
+      item.index =
+        typeof k.index === 'number' && Number.isInteger(k.index) && k.index >= 0 ? k.index : firstIndex(d.device);
     if (k.look && LOOKS.includes(k.look) && k.look !== d.look && hasLooks(k.kind)) item.look = k.look;
     if (k.numbers === true && d.device === 'cpu' && item.scope === 'each') item.numbers = true;
     out.push(item);
@@ -285,7 +287,7 @@ export function normalize(kept: unknown): Item[] {
   return out;
 }
 /** The first device's number: vCPU 0, adapter or disk 1. */
-export const firstIndex = (d: Device) => (d === 'cpu' ? 0 : 1);
+export const firstIndex = (d: Device | undefined) => (d === 'cpu' ? 0 : 1);
 /** Whether the element's look can be chosen (the layout's elements have none). */
 export const hasLooks = (k: Kind) => k !== 'spacer' && k !== 'divider';
 export const lookOf = (i: Item): Look => i.look ?? def(i.kind).look;
@@ -315,7 +317,7 @@ const SCOPED = {
 export function nameOf(i: Item, generic = false) {
   const d = def(i.kind);
   const name = msg(d.name);
-  if (!d.device || !i.scope || (i.scope === 'all' && d.scopes![0] === 'all')) return t(d.name);
+  if (!d.device || !i.scope || (i.scope === 'all' && d.scopes?.[0] === 'all')) return t(d.name);
   if (i.scope === 'each') return t(SCOPED.each[d.device], { name });
   if (i.scope === 'one')
     return generic
@@ -330,7 +332,7 @@ export function palette(): { group: Group; items: Item[] }[] {
     const d = def(kind);
     const items = d.scopes
       ? d.scopes.map((scope): Item =>
-          scope === 'one' ? { kind, scope, index: firstIndex(d.device!) } : { kind, scope },
+          scope === 'one' ? { kind, scope, index: firstIndex(d.device) } : { kind, scope },
         )
       : [{ kind }];
     groups.set(d.group, [...(groups.get(d.group) ?? []), ...items]);
@@ -454,16 +456,17 @@ export function graphics(
 /** `s`, received at `at` (ms, monotonic), after `prev` (the run's previous one). */
 export function metrics(s: Status, at: number, prev?: Sample, tabBytes?: number): Metrics {
   const p = prev?.status;
+  const prevCpus = p?.cpus;
   const dt = prev ? (at - prev.at) / 1000 : 0;
   const rate = (now: number, then: number | undefined) =>
     then !== undefined && dt > 0 ? Math.max(0, now - then) / dt : undefined;
   const share = (jit: number, all: number, jit0?: number, all0?: number) =>
     jit0 !== undefined && all0 !== undefined && all > all0 ? ((jit - jit0) / (all - all0)) * 100 : undefined;
   const cpus =
-    s.cpus && p?.cpus?.length === s.cpus.length
+    s.cpus && prevCpus?.length === s.cpus.length
       ? s.cpus.map((c, i) => ({
-          mips: (rate(c.steps, p.cpus![i].steps) ?? 0) / 1e6,
-          jit: share(c.jitSteps, c.steps, p.cpus![i].jitSteps, p.cpus![i].steps),
+          mips: (rate(c.steps, prevCpus[i].steps) ?? 0) / 1e6,
+          jit: share(c.jitSteps, c.steps, prevCpus[i].jitSteps, prevCpus[i].steps),
         }))
       : undefined;
   const mips = rate(s.steps, p?.steps);
@@ -536,6 +539,18 @@ export type Part = { icon: IconName; text: string };
 const count = (n: number) => Math.round(n).toLocaleString('en');
 const size = (n: number) => (n < 1024 ? `${Math.round(n)} B` : bytesText(n)); // i18n-ignore: a size and its unit
 const perSec = (n: number | undefined) => (n === undefined ? '…' : `${size(n)}/s`); // i18n-ignore: a rate's unit
+/** A total's size; not known yet, an ellipsis. */
+const amount = (n: number | undefined) => (n === undefined ? '…' : size(n));
+/** The sum of `f` over `list`, undefined if one of them is. */
+function sumOf<T>(list: T[], f: (x: T) => number | undefined) {
+  let sum = 0;
+  for (const x of list) {
+    const v = f(x);
+    if (v === undefined) return undefined;
+    sum += v;
+  }
+  return sum;
+}
 const hms = (ms: number) => {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -567,7 +582,8 @@ function devices<T>(i: Item, list: T[] | undefined): { at: number; v: T }[] | un
   if (i.scope === 'all') return undefined;
   const all = list.map((v, at) => ({ at, v }));
   if (i.scope === 'each') return all;
-  const at = (i.index ?? firstIndex(def(i.kind).device!)) - firstIndex(def(i.kind).device!);
+  const first = firstIndex(def(i.kind).device);
+  const at = (i.index ?? first) - first;
   return all.filter((d) => d.at === at);
 }
 
@@ -830,20 +846,17 @@ export function render(i: Item, m: Metrics | undefined, live: Live): Piece[] {
       const show = (rx: number | undefined, tx: number | undefined) =>
         t(
           'statusbar:statusbar.net.traffic',
-          total ? { rx: size(rx!), tx: size(tx!) } : { rx: perSec(rx), tx: perSec(tx) },
+          total ? { rx: amount(rx), tx: amount(tx) } : { rx: perSec(rx), tx: perSec(tx) },
         );
       const arrows = (rx: number | undefined, tx: number | undefined): Part[] => [
-        { icon: 'arrow-down', text: total ? size(rx!) : perSec(rx) },
-        { icon: 'arrow-up', text: total ? size(tx!) : perSec(tx) },
+        { icon: 'arrow-down', text: total ? amount(rx) : perSec(rx) },
+        { icon: 'arrow-up', text: total ? amount(tx) : perSec(tx) },
       ];
       const ds = devices(i, m.nets);
       if (!ds) {
-        if (!m.nets?.length) return [];
-        const sum = (f: (n: NonNullable<Metrics['nets']>[number]) => number | undefined) =>
-          m.nets!.reduce<number | undefined>(
-            (a, n) => (a === undefined || f(n) === undefined ? undefined : a + f(n)!),
-            0,
-          );
+        const nets = m.nets;
+        if (!nets?.length) return [];
+        const sum = (f: (n: NonNullable<Metrics['nets']>[number]) => number | undefined) => sumOf(nets, f);
         const [rx, tx] = total ? [sum((n) => n.rx), sum((n) => n.tx)] : [sum((n) => n.rxRate), sum((n) => n.txRate)];
         const traffic = show(rx, tx);
         return one(
@@ -875,16 +888,13 @@ export function render(i: Item, m: Metrics | undefined, live: Live): Piece[] {
       const show = (r: number | undefined, w: number | undefined) =>
         t(
           'statusbar:statusbar.disk.traffic',
-          total ? { read: size(r!), written: size(w!) } : { read: perSec(r), written: perSec(w) },
+          total ? { read: amount(r), written: amount(w) } : { read: perSec(r), written: perSec(w) },
         );
       const ds = devices(i, m.disks);
       if (!ds) {
-        if (!m.disks?.length) return [];
-        const sum = (f: (n: NonNullable<Metrics['disks']>[number]) => number | undefined) =>
-          m.disks!.reduce<number | undefined>(
-            (a, n) => (a === undefined || f(n) === undefined ? undefined : a + f(n)!),
-            0,
-          );
+        const disks = m.disks;
+        if (!disks?.length) return [];
+        const sum = (f: (n: NonNullable<Metrics['disks']>[number]) => number | undefined) => sumOf(disks, f);
         const traffic = total
           ? show(
               sum((n) => n.read),

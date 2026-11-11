@@ -81,9 +81,10 @@ async function exportDisk(r: ExportRequest) {
       let clusters;
       let backing;
       if (r.mode === 'changes') {
+        if (!disk) throw new Error('changes asked of a disk without an overlay');
         const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
         backing = { name: r.baseName, format: base.format, hash };
-        clusters = progressOf(changedClusters(disk!), disk!.written().length, (done, total) =>
+        clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) =>
           progress(msg('disks:export-worker.writingChanges'), done, total),
         );
       } else {

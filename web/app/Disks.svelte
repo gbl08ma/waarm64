@@ -34,13 +34,12 @@
     machines: MachineRecord[];
     disks: Map<string, DiskRecord>;
     overlays: OverlayRecord[];
-    running: boolean;
     act: Act;
     offFirst: (m: MachineRecord) => Promise<boolean>;
   };
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();
 
-  const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
+  const plain = (m: MachineRecord) => $state.snapshot(m);
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string, disk: DiskRecord) {
     const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), {
