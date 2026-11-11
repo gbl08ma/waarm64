@@ -8,11 +8,11 @@
   import Choice from './ui/Choice.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
-  import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import type { IconName } from './icons.ts';
   import { hasApi, type Api } from './usb-live.ts';
-  import { errorView, type ErrorView } from './usb-ports.ts';
+  import { Actions } from './actions.svelte.ts';
+  import ErrorWords from './ErrorWords.svelte';
   import { page } from './ui.svelte.ts';
 
   type Props = {
@@ -32,20 +32,14 @@
   const unavailable: Record<Api, string> = { usb: t('usb:AddUsb.noWebUsb'), hid: t('usb:AddUsb.noWebHid') };
 
   let dialog: Modal;
-  let error = $state<ErrorView>();
-  let busy = $state(false);
+  const runner = new Actions();
+  const busy = $derived(runner.busy !== undefined);
 
-  async function choose(api: Api) {
-    error = undefined;
-    busy = true;
-    try {
+  function choose(api: Api) {
+    void runner.run('', async () => {
       const names = await page.usbAdd(machine, api);
       if (names.length) dialog.close();
-    } catch (e) {
-      error = errorView(e);
-    } finally {
-      busy = false;
-    }
+    });
   }
 </script>
 
@@ -65,8 +59,8 @@
     >
   {/each}
   <Note size="md">{t('usb:AddUsb.note')}</Note>
-  {#if error}<div class="error" role="alert">
-      {error.text}{#if error.words}<UsbProblems words={error.words} />{/if}
+  {#if runner.error}<div class="error" role="alert">
+      <ErrorWords error={runner.error} />
     </div>{/if}
   {#snippet buttons()}<Button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</Button>{/snippet}
 </Modal>

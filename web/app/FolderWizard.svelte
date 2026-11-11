@@ -12,7 +12,8 @@
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
   import Check from './ui/Check.svelte';
-  import { errorText, msg, t } from '../i18n.ts';
+  import { msg, t } from '../i18n.ts';
+  import { Actions } from './actions.svelte.ts';
   import { preselect, type Folder } from './folders.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { FolderAttachment } from './shape.ts';
@@ -27,8 +28,9 @@
   let picked = $state<string>();
   let readOnly = $state(false);
   let name = $state('');
-  let formError = $state('');
-  let working = $state(false);
+  const runner = new Actions();
+  /** An action runs (its buttons wait). */
+  const working = $derived(runner.busy !== undefined);
   let holders = $state<Record<string, string>>({});
   const machine = $derived(ui.folderWizard?.machine);
   const all = $derived((void ui.folders.tick, folders.folders));
@@ -44,7 +46,7 @@
   async function begin(o: NonNullable<typeof ui.folderWizard>) {
     await folders.refresh();
     attached = o.attached ?? [];
-    formError = '';
+    runner.clear();
     name = '';
     readOnly = false;
     holders = {};
@@ -72,17 +74,9 @@
     return f.readOnly ? t('folders:FolderWizard.state.readOnly', { state }) : t(state.key, state.params);
   }
 
-  async function act(f: () => Promise<void>) {
-    if (working) return;
-    working = true;
-    formError = '';
-    try {
-      await f();
-    } catch (e) {
-      if ((e as Error).name !== 'AbortError') formError = errorText(e); // the picker's Cancel isn't an error
-    } finally {
-      working = false;
-    }
+  /** Runs `f` once at a time; its error shows under the form (the picker's Cancel isn't one). */
+  function act(f: () => Promise<void>) {
+    if (!working) return runner.run('', f);
   }
   /** Attaches `f` to the wizard's machine, if it has one. */
   async function done(f: Folder) {
@@ -174,7 +168,7 @@
       <Check id="folder-opfs-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
     </section>
   {/if}
-  <Note tone="error" size="md" id="folder-error" class="error" hidden={!formError}>{formError}</Note>
+  <Note tone="error" size="md" id="folder-error" class="error" hidden={!runner.error}>{runner.error?.text}</Note>
   {#snippet back()}
     <Button
       type="button"

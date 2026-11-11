@@ -9,7 +9,8 @@
   import Note from './ui/Note.svelte';
   import StatusDot from './ui/StatusDot.svelte';
   import T from './T.svelte';
-  import { errorText, t } from '../i18n.ts';
+  import { Actions } from './actions.svelte.ts';
+  import { t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
   import { SHARES_BY_HAND } from './shares-mount.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -17,7 +18,6 @@
   let { folders }: { folders: PageFolders } = $props();
 
   let open = $state(false);
-  let error = $state('');
   const views = $derived((void ui.folders.tick, folders.views()));
   const waiting = $derived(views.some((v) => v.problem));
   $effect(() => {
@@ -26,14 +26,8 @@
       open = true;
     }
   });
-  async function act(f: () => Promise<unknown>) {
-    try {
-      await f();
-      error = '';
-    } catch (e) {
-      error = errorText(e);
-    }
-  }
+  const runner = new Actions();
+  const act = (f: () => Promise<unknown>) => runner.run('', f);
   function stateText(v: (typeof views)[number]) {
     switch (v.problem) {
       case 'permission':
@@ -87,7 +81,7 @@
       <li><Note>{t('folders:FoldersMenu.none')}</Note></li>
     {/each}
   </ul>
-  <Note tone="error" id="folders-error" hidden={!error}>{error}</Note>
+  <Note tone="error" id="folders-error" hidden={!runner.error}>{runner.error?.text}</Note>
   <div class="buttons">
     <Button
       id="folder-attach"

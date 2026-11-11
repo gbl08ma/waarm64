@@ -11,12 +11,13 @@
   import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
-  import { deviceName, errorView, type ErrorView } from './usb-ports.ts';
+  import { deviceName } from './usb-ports.ts';
+  import { Actions } from './actions.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   let open = $state(false);
   let adding = $state(false);
-  let error = $state<ErrorView>();
+  const runner = new Actions();
   let lastOpen = 0;
   $effect(() => {
     const n = ui.usb.open;
@@ -29,14 +30,7 @@
   const attached = $derived(ui.usb.connectors.filter((c) => c && !c.builtin).length);
   const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual && !c.builtin && c.pad === undefined));
 
-  async function run(f: () => Promise<unknown>) {
-    error = undefined;
-    try {
-      await f();
-    } catch (e) {
-      error = errorView(e);
-    }
-  }
+  const run = (f: () => Promise<unknown>) => runner.run('', f);
   const toggle = (id: string, on: boolean) => run(() => (on ? page.usbAttach(id) : page.usbDetach(id)));
   type View = (typeof ui.usb.entries)[number];
   /** The device's line's tooltip: why it can't be attached now, if it can't. */
@@ -128,8 +122,10 @@
       /><span class="name">{t('usb:UsbMenu.zero')}</span><span class="dim">{t('usb:UsbMenu.zero.note')}</span></label
     >
   {/if}
-  {#if error}<div class="error" role="alert">
-      <Note tone="error">{error.text}</Note>{#if error.words}<UsbProblems words={error.words} />{/if}
+  {#if runner.error}<div class="error" role="alert">
+      <Note tone="error">{runner.error.text}</Note>{#if runner.error.words}<UsbProblems
+          words={runner.error.words}
+        />{/if}
     </div>{/if}
   <div class="row">
     <Button

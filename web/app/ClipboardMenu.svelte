@@ -39,10 +39,11 @@
   /** Type's outcome comes later, in the agent's TYPED: the menu waits for it, open. */
   let awaitingTyped = $state(false);
   /**
-   * An action that can fail (Send, Type, Copy the screen): the menu stays open while it runs and closes when it
+   * An action that can fail (Send, Type, Copy the screen; `page` keeps its failure in `ui.clipboard.failed`, not
+   * thrown: no runner): the menu stays open while it runs and closes when it
    * succeeds; a failure keeps it open, so its note is seen where the click was.
    */
-  const act = async (f: () => Promise<void>, type = false) => {
+  const thenClose = async (f: () => Promise<void>, type = false) => {
     awaitingTyped = false;
     await f();
     if (ui.clipboard.failed) return;
@@ -95,18 +96,18 @@
     id="clipboard-send"
     disabled={c.state !== 'sharing'}
     title={t('clipboard:ClipboardMenu.send.title')}
-    onclick={() => act(() => page.clipboardSend())}>{t('clipboard:ClipboardMenu.send')}</Button
+    onclick={() => thenClose(() => page.clipboardSend())}>{t('clipboard:ClipboardMenu.send')}</Button
   >
   <Button
     id="clipboard-type"
     disabled={!c.canType}
     title={t('clipboard:ClipboardMenu.type.title')}
-    onclick={() => act(() => page.clipboardType(), true)}>{t('clipboard:ClipboardMenu.type')}</Button
+    onclick={() => thenClose(() => page.clipboardType(), true)}>{t('clipboard:ClipboardMenu.type')}</Button
   >
   <Button
     id="clipboard-screen"
     title={t('clipboard:ClipboardMenu.screen.title')}
-    onclick={() => act(() => page.clipboardScreen())}>{t('clipboard:ClipboardMenu.screen')}</Button
+    onclick={() => thenClose(() => page.clipboardScreen())}>{t('clipboard:ClipboardMenu.screen')}</Button
   >
   {#if c.failed === 'send'}<Note tone="warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed.send')}</Note>
   {:else if c.failed === 'type'}<Note tone="warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed')}</Note>

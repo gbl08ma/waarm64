@@ -12,7 +12,8 @@
   import Note from './ui/Note.svelte';
   import Modal from './ui/Modal.svelte';
   import { ask } from './ask.svelte.ts';
-  import { errorText, msg, MsgError, t } from '../i18n.ts';
+  import { msg, MsgError, t } from '../i18n.ts';
+  import { Actions } from './actions.svelte.ts';
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
@@ -30,24 +31,16 @@
   let { store, disk, overlays, machines, act, close }: Props = $props();
 
   let dialog: Modal;
-  let error = $state('');
+  /** The dialog's own runner: its errors show here (the page's bar is behind the dialog); the page's `act` says what runs. */
+  const runner = new Actions();
 
   const mine = $derived(overlays.filter((o) => o.disk === disk.id).sort((a, b) => a.created - b.created));
   /** The machines whose attachment of this disk writes to overlay `id`. */
   const usersOf = (id: string) =>
     machines.filter((m) => m.attachments.some((a) => a.disk === disk.id && a.overlay === id)).map((m) => m.name);
 
-  /** Runs an action through the page's `act`, its error shown here (the page's message bar is behind the dialog). */
-  async function run(what: string, f: () => Promise<unknown>) {
-    error = '';
-    await act(what, async () => {
-      try {
-        await f();
-      } catch (e) {
-        error = errorText(e);
-      }
-    });
-  }
+  /** Runs an action through the page's `act` (what runs, the reread), its error shown here. */
+  const run = (what: string, f: () => Promise<unknown>) => act(what, () => runner.run(what, f));
 
   async function rename(o: OverlayRecord) {
     const name = await ask.prompt(t('disks:Overlays.rename.text'), o.name, {
@@ -145,7 +138,7 @@
       </Card>
     {/each}
   </CardList>
-  {#if error}<Note tone="error" size="md" class="error" role="alert">{error}</Note>{/if}
+  {#if runner.error}<Note tone="error" size="md" class="error" role="alert">{runner.error.text}</Note>{/if}
   {#snippet buttons()}<Button onclick={() => dialog.close()} data-action="close-overlays"
       >{t('disks:Overlays.close')}</Button
     >{/snippet}

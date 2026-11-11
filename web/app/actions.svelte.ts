@@ -8,7 +8,7 @@ import { errorView, type ErrorView } from './usb-ports.ts';
 export type Act = (what: string, f: () => Promise<unknown>) => Promise<boolean>;
 
 /** A picker's Cancel (the browser's `AbortError`): not an error to show. */
-const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
+const cancelled = (e: unknown) => e instanceof Error && e.name === 'AbortError';
 
 export class Actions {
   /** What runs now, in words (`''` for an action that names nothing); undefined when nothing runs. */

@@ -4,13 +4,13 @@
   overlays; one that has it already, has as many disks as a machine can, or runs in another tab says so instead.
 -->
 <script lang="ts">
-  import type { Act } from './actions.svelte.ts';
+  import { Actions, type Act } from './actions.svelte.ts';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
-  import { errorText, t } from '../i18n.ts';
+  import { t } from '../i18n.ts';
   import type { Store } from './store.ts';
   import { MAX_DISKS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { attach } from './machines.ts';
@@ -29,7 +29,8 @@
   let { store, disk, machines, running, act, offFirst, close }: Props = $props();
 
   let dialog: Modal;
-  let error = $state('');
+  /** The dialog's own runner: its errors show here (the page's bar is behind the dialog). */
+  const runner = new Actions();
 
   /** Why machine `m` can't take the disk now, or undefined if it can. */
   const why = (m: MachineRecord) =>
@@ -42,17 +43,11 @@
           : undefined;
 
   async function attachTo(m: MachineRecord) {
-    error = '';
     const plain = $state.snapshot(m) as MachineRecord;
     let ok = false;
     await act(t('disks:AttachDisk.busy'), async () => {
-      if (!(await offFirst(plain))) return;
-      try {
-        await attach(store, plain, $state.snapshot(disk) as DiskRecord);
-        ok = true;
-      } catch (e) {
-        error = errorText(e);
-      }
+      if (await offFirst(plain))
+        ok = await runner.run('', () => attach(store, plain, $state.snapshot(disk) as DiskRecord));
     });
     if (ok) dialog.close();
   }
@@ -85,6 +80,6 @@
       </Card>
     {/each}
   </CardList>
-  {#if error}<Note tone="error" class="error" role="alert">{error}</Note>{/if}
+  {#if runner.error}<Note tone="error" class="error" role="alert">{runner.error.text}</Note>{/if}
   {#snippet buttons()}<Button onclick={() => dialog.close()}>{t('disks:AttachDisk.cancel')}</Button>{/snippet}
 </Modal>
