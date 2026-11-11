@@ -81,10 +81,12 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   const rate = '[\\d.]+ (B|KiB|MiB)/s';
   assert.match(await bar(page), new RegExp(`${pattern('statusbar:statusbar.disk.all', { traffic: pattern('statusbar:statusbar.disk.traffic', { read: rate, written: rate }) })}$`));
   // The look: the vCPUs as an icon and the number.
+  const tall = () => page.evaluate(() => document.getElementById('status')!.getBoundingClientRect().height);
+  const plainHeight = await tall();
   await page.click(`${chips}[data-kind=vcpus] .pick`);
   await page.click('[data-field=status-options] input[name=status-look] >> nth=1');
   assert.equal(await page.locator('#status [data-kind=vcpus] svg').count(), 1);
-  assert.equal(await page.evaluate(() => document.getElementById('status')!.getBoundingClientRect().height), 29, 'icons don\'t make the bar taller');
+  assert.equal(await tall(), plainHeight, 'icons don\'t make the bar taller');
   assert.equal((await kept(page)).find((i: { kind: string }) => i.kind === 'vcpus').look, 'icon');
   // A vCPU element's two sets of options (its look, bars or numbers), each in its own frame.
   await page.click(`${chips}[data-kind=mips][data-at="10"] .pick`);

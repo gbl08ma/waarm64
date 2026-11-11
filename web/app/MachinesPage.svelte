@@ -1016,7 +1016,10 @@
           </Fields>
         {:else if ui.machinesTab === 'network'}
           <div class="network">
-            <CardList empty={adaptersOf(draft).length ? undefined : t('machines:MachinesPage.adapters.none')}>
+            <CardList
+              class="adapters"
+              empty={adaptersOf(draft).length ? undefined : t('machines:MachinesPage.adapters.none')}
+            >
               {#each adaptersOf(draft) as a, i (a.id)}
                 {@const rec = machines.find((x) => x.id === m.id)}
                 {@const at = rec ? adaptersOf(rec).findIndex((x) => x.id === a.id) : -1}

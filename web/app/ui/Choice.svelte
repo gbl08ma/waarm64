@@ -20,10 +20,10 @@
 </script>
 
 <button type="button" class={['choice', cls]} aria-pressed={pressed} {...rest}>
+  <!-- No space between the name and its line: the button's text is the two run together, as the tests read it. -->
   <b
     >{#if icon}<Icon name={icon} size={16} />{/if}{label}</b
-  >
-  {#if children}<span>{@render children()}</span>{/if}
+  >{#if children}<span>{@render children()}</span>{/if}
 </button>
 
 <style>
