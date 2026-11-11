@@ -113,7 +113,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 5. **Name what's repeated.** A predicate or a union used twice gets a name (`isLive(state)`, `type MessageKind`);
    a flow used twice (a resource held by another tab: confirm, take) is one function.
 6. **Errors reach the user or say why not.** Async actions return their promise; components run them through one
-   shared helper (busy state, the error as the page shows errors). `catch {}` and `.catch(() => {})` carry a comment
+   shared helper (`actions.svelte.ts` `Actions`: busy state, the error as the page shows errors, `ErrorWords.svelte`). `catch {}` and `.catch(() => {})` carry a comment
    saying why ignoring is right. The page has an `unhandledrejection` handler that shows what escapes.
 7. **`??` for defaults**, not `||`, unless `0` and `''` really mean "absent".
 
