@@ -20,7 +20,7 @@
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
 
   type Props = { store: Store; act: Act; label: string; disk: string };
   let { store, act, label, disk }: Props = $props();
@@ -36,7 +36,7 @@
   let exportOpen = $state(false);
   const save = (mode: 'changes' | 'qcow2' | 'raw') => {
     exportOpen = false;
-    page.saveDisk(mode, mode !== 'raw' && compress);
+    inBar(() => page.saveDisk(mode, mode !== 'raw' && compress));
   };
 </script>
 
@@ -112,7 +112,7 @@
             icon="trash"
             id="reset-disk"
             disabled={power.busy}
-            onclick={() => page.resetDisk()}
+            onclick={() => inBar(() => page.resetDisk())}
             title={t('machines:PagePane.resetDisk.title')}
           >
             {t('machines:PagePane.resetDisk')}

@@ -65,7 +65,7 @@
     storage = await storageReport(store).catch(() => undefined);
   }
   // An action ends once the records it wrote are read again.
-  const runner = new Actions(() => records.reread());
+  const runner = new Actions({ after: () => records.reread() });
   const act = runner.run;
   // The store is the page's one, for the page's life.
   // svelte-ignore state_referenced_locally

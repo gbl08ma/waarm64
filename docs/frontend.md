@@ -192,8 +192,10 @@ USB menu, the Network and Folder wizards) answers a `Command` (`command.ts`; `ne
 `shares.openMenu()`) while it is mounted, a call made before it is there waiting for it; the keys' events
 (`keys.released`, `keys.typed`) are listened to by the on-screen keyboard. **What the components do is `page`**
 (`page.ts`'s `Page`: restart, power off, suspend, take, load and restore snapshots, save disks, import changes, open
-machines, save settings…), complete before the components mount. What escapes an action (a click's dropped promise) is
-shown in the message bar (`unhandledrejection`). Ids the tests and tools use stay (`#state`,
+machines, save settings…), complete before the components mount; an action that does async work returns its promise.
+A control with no place of its own for an error (the toolbar, its menus, the file pickers, a pane its action closes)
+runs it through `page.ts` `inBar(f)`: such actions say how they went in the message bar, and their errors go there too.
+What still escapes (a promise dropped outside an action) is shown in the message bar (`unhandledrejection`). Ids the tests and tools use stay (`#state`,
 `#message[data-snapshot]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`: `FilePickers.svelte` owns them, and a
 button opens one with `file-pickers.ts` `openPicker('disk' | 'snapshot' | 'changes')`). **Actions** a click starts that can fail

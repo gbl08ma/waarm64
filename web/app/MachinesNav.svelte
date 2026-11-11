@@ -15,7 +15,7 @@
   import type { Store } from './store.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { current } from './areas/current.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
 
   type Props = {
     store: Store;
@@ -108,7 +108,7 @@
       <Icon name="plus" size={16} />{t('machines:MachinesNav.newMachine')}
     </button>
     {#if current.firmware}
-      <button onclick={() => page.openDisk()} title={t('machines:MachinesNav.fromImage.title')}>
+      <button onclick={() => inBar(() => page.openDisk())} title={t('machines:MachinesNav.fromImage.title')}>
         <Icon name="file" size={16} />{t('machines:MachinesNav.fromImage')}
       </button>
     {/if}

@@ -10,35 +10,36 @@ import type { MachinesTab } from './areas/machines-nav.svelte.ts';
 import type { LockMode } from '../input.ts';
 import type { Mods } from './osk.ts';
 import type { View } from './areas/screen.svelte.ts';
+import { Actions } from './actions.svelte.ts';
 
 /** What the components ask of the page. */
 export type Page = {
-  restart(): void;
-  suspend(): void;
+  restart(): Promise<void>;
+  suspend(): Promise<void>;
   /** Take snapshot: kept in the browser (a stored machine) or to a file. */
-  takeSnapshot(): void;
+  takeSnapshot(): Promise<void>;
   /** Save a snapshot of the running machine to a file (`whole`: disks written in place go in whole). */
-  saveSnapshotFile(whole: boolean): void;
-  restoreKept(id: string): void;
-  loadSnapshot(file: File): void;
+  saveSnapshotFile(whole: boolean): Promise<void>;
+  restoreKept(id: string): Promise<void>;
+  loadSnapshot(file: File): Promise<void>;
   /** A disk image, snapshot or changes file chosen or dropped on the page. */
-  openDiskFile(file: File, handle?: FileSystemFileHandle): void;
+  openDiskFile(file: File, handle?: FileSystemFileHandle): Promise<void>;
   /** Open disk…: a disk image picked (with its handle, where the browser has the picker), as if dropped on the page. */
-  openDisk(): void;
+  openDisk(): Promise<void>;
   /** Opens stored machine `id` on this page. */
-  openMachine(id: string): void;
+  openMachine(id: string): Promise<void>;
   powerOff(): Promise<void>;
   /** The toolbar's Power off: asks, then stops the machine like pulling the plug. */
-  powerOffAsked(): void;
+  powerOffAsked(): Promise<void>;
   /** Saves a disk to a file: the page's own (transient machine), or a stored disk with one of its overlays. */
-  saveDisk(mode: ExportMode, compress: boolean, target?: { disk: DiskRecord; overlay?: string }): void;
+  saveDisk(mode: ExportMode, compress: boolean, target?: { disk: DiskRecord; overlay?: string }): Promise<void>;
   /** Loads a changes file: onto the page's disk, or into a new overlay of a stored machine's attachment. */
-  importChanges(file: File, target?: { machine: MachineRecord; attachment: string }): void;
-  resetDisk(): void;
+  importChanges(file: File, target?: { machine: MachineRecord; attachment: string }): Promise<void>;
+  resetDisk(): Promise<void>;
   /** A stored machine's settings saved (a running machine restarts with them). */
   saveSettings(m: MachineRecord): Promise<void>;
   /** A transient machine's size from the Machine menu. */
-  applySize(ncpus: number, ramMiB: number, gpu: '3d' | '2d'): void;
+  applySize(ncpus: number, ramMiB: number, gpu: '3d' | '2d'): Promise<void>;
   /** A machine's shape as it would run on this page now, over the browser's `disks`. */
   shapeNow(m: MachineRecord, disks: Map<string, DiskRecord>): Promise<{ shape: Shape; hash: string }>;
   setView(v: View): void;
@@ -136,6 +137,18 @@ export type Page = {
 };
 /** The page's actions: given by web/app/main.ts (`providePage`) before the components mount. */
 export let page: Page;
-export function providePage(p: Page) {
+let bar: Actions | undefined;
+/** `show`: an error as the message bar shows it (`inBar`'s). */
+export function providePage(p: Page, show: (e: unknown) => void) {
   page = p;
+  bar = new Actions({ show });
+}
+
+/**
+ * Runs page action `f` from a control with no place of its own for an error (the toolbar, its menus, the file pickers,
+ * a pane the action closes): the action says how it went in the message bar, and so does its error.
+ */
+export function inBar(f: () => Promise<unknown>) {
+  if (!bar) throw new Error('inBar before providePage');
+  void bar.run('', f);
 }

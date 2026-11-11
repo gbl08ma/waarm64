@@ -213,25 +213,25 @@ const keysActions = new KeysActions({ machine, runner, screen, terminal });
 
 // What the components ask of the page (web/app/page.ts `Page`), complete before they mount.
 const page: Page = {
-  restart: () => void powerActions.restartAsked(),
-  suspend: () => void snapshots.suspend(),
-  takeSnapshot: () => void snapshots.save(),
-  saveSnapshotFile: (whole) => void snapshots.save({ toFile: true, whole }),
-  restoreKept: (id) => void restore.restoreKept(id),
-  loadSnapshot: (file) => void restore.load(file),
-  openDiskFile: (file, handle) => void disks.choose({ file, handle }),
-  openDisk: () => void disks.open(),
+  restart: () => powerActions.restartAsked(),
+  suspend: () => snapshots.suspend(),
+  takeSnapshot: () => snapshots.save(),
+  saveSnapshotFile: (whole) => snapshots.save({ toFile: true, whole }),
+  restoreKept: (id) => restore.restoreKept(id),
+  loadSnapshot: (file) => restore.load(file),
+  openDiskFile: (file, handle) => disks.choose({ file, handle }),
+  openDisk: () => disks.open(),
   openMachine: (id) => {
     pageWindow.closeMachines();
-    void disks.switchMachine(id);
+    return disks.switchMachine(id);
   },
   powerOff: () => powerActions.powerOff(),
-  powerOffAsked: () => void powerActions.powerOffAsked(),
-  saveDisk: (mode, compress, target) => void diskExport.save(mode, compress, target),
-  importChanges: (file, target) => void changes.load(file, target),
-  resetDisk: () => void disks.reset(),
+  powerOffAsked: () => powerActions.powerOffAsked(),
+  saveDisk: (mode, compress, target) => diskExport.save(mode, compress, target),
+  importChanges: (file, target) => changes.load(file, target),
+  resetDisk: () => disks.reset(),
   saveSettings: (m) => sizes.saveSettings(m),
-  applySize: (n, r, g) => void sizes.apply(n, r, g),
+  applySize: (n, r, g) => sizes.apply(n, r, g),
   shapeNow: (m, d) => sizes.shapeNow(m, d),
   setView: (v) => pageWindow.setView(v),
   showLog: () => {
@@ -252,7 +252,7 @@ const page: Page = {
   ...folderActions.page(),
   ...clipboardActions.page(),
 };
-providePage(page);
+providePage(page, (e) => messages.notify(describe(e), 'error'));
 
 pageWindow.takePairing();
 mount(App, { target: document.body, props: { store, audio, net, folders, view: pageWindow.view() } });
@@ -267,7 +267,7 @@ clipboardActions.listen();
 usbActions.listen();
 usbView.refresh();
 installBenchHooks(machine, terminal, replies, audio);
-// What escapes an action (its promise dropped: a click's) is shown as the page shows errors.
+// What still escapes (a promise dropped outside an action) is shown as the page shows errors.
 addEventListener('unhandledrejection', (e) => messages.notify(describe(e.reason), 'error'));
 
 pageWindow.firstView();

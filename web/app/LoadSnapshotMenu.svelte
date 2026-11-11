@@ -11,7 +11,7 @@
   import { records } from './areas/records.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
 
   const LATEST = 5;
   let open = $state(false);
@@ -65,7 +65,7 @@
         title={s.orphaned
           ? t('toolbar:LoadSnapshotMenu.load.orphaned.title')
           : t('toolbar:LoadSnapshotMenu.load.restore.title', { name: s.name })}
-        onclick={then(() => page.restoreKept(s.id))}
+        onclick={then(() => inBar(() => page.restoreKept(s.id)))}
       >
         <span>{s.name}</span><span class="dim">{new Date(s.created).toLocaleString()}</span>
       </Button>

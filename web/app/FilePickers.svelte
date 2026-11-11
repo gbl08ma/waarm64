@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import { pickerInput } from './file-pickers.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
 
   /** A change handler that takes the input's file (once: the input is emptied, so the same file can be picked again). */
   const take = (f: (file: File) => void) => (e: Event & { currentTarget: HTMLInputElement }) => {
@@ -21,19 +21,19 @@
   id="load-snapshot-input"
   hidden
   {@attach pickerInput('snapshot')}
-  onchange={take((f) => page.loadSnapshot(f))}
+  onchange={take((f) => inBar(() => page.loadSnapshot(f)))}
 />
 <input
   type="file"
   id="open-disk-input"
   hidden
   {@attach pickerInput('disk')}
-  onchange={take((f) => page.openDiskFile(f))}
+  onchange={take((f) => inBar(() => page.openDiskFile(f)))}
 />
 <input
   type="file"
   id="load-changes-input"
   hidden
   {@attach pickerInput('changes')}
-  onchange={take((f) => page.importChanges(f))}
+  onchange={take((f) => inBar(() => page.importChanges(f)))}
 />

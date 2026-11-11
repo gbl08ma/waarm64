@@ -26,7 +26,7 @@
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { isLive, power } from './areas/power.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
 
   type Props = {
     edit: Editing;
@@ -95,7 +95,7 @@
   }
   function start() {
     page.closeMachines();
-    page.restart();
+    inBar(() => page.restart());
   }
 </script>
 
@@ -110,7 +110,7 @@
 >
   {#snippet actions()}
     {#if m.id !== current.id}
-      <Button icon="player-play" onclick={() => page.openMachine(m.id)} data-action="open">
+      <Button icon="player-play" onclick={() => inBar(() => page.openMachine(m.id))} data-action="open">
         {t('machines:MachinePane.open')}
       </Button>
     {:else if busyHere}

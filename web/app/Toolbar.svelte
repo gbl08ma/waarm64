@@ -23,7 +23,7 @@
   import { current } from './areas/current.svelte.ts';
   import { isLive, power } from './areas/power.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
   import type { View } from './areas/screen.svelte.ts';
   import { t } from '../i18n.ts';
 
@@ -73,7 +73,7 @@
     hidden={power.cantRun}
     disabled={power.busy}
     title={t(START[startAs].title)}
-    onclick={() => page.restart()}
+    onclick={() => inBar(() => page.restart())}
   >
     {t(START[startAs].label)}
   </Button>
@@ -85,7 +85,7 @@
     disabled={power.busy}
     aria-label={t('toolbar:Toolbar.powerOff')}
     title={t('toolbar:Toolbar.powerOff.title')}
-    onclick={() => page.powerOffAsked()}
+    onclick={() => inBar(() => page.powerOffAsked())}
   />
   <Button
     variant="tool"
@@ -95,7 +95,7 @@
     disabled={!canSnapshot}
     aria-label={t('toolbar:Toolbar.suspend')}
     title={t('toolbar:Toolbar.suspend.title')}
-    onclick={() => page.suspend()}
+    onclick={() => inBar(() => page.suspend())}
   />
   <span class="sep"></span>
   <Button
@@ -105,7 +105,7 @@
     id="save-snapshot"
     disabled={!canSnapshot}
     title={current.id ? t('toolbar:Toolbar.snapshot.title') : t('toolbar:Toolbar.snapshot.title.file')}
-    onclick={() => page.takeSnapshot()}
+    onclick={() => inBar(() => page.takeSnapshot())}
   >
     {t('toolbar:Toolbar.snapshot')}
   </Button>

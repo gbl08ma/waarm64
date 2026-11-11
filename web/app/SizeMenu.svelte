@@ -10,7 +10,7 @@
   import { t, text } from '../i18n.ts';
   import { numaNote } from './machine.ts';
   import { current } from './areas/current.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
 
   let open = $state(false);
   // What runs, until a choice is made (and again when what runs changes).
@@ -24,7 +24,7 @@
   const ramText = (n: number) => (n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`); // i18n-ignore: a size and its unit
   function apply() {
     open = false;
-    page.applySize(ncpus, ramMiB, gpu);
+    inBar(() => page.applySize(ncpus, ramMiB, gpu));
   }
 </script>
 

@@ -24,7 +24,7 @@
   import { bytesText, editAttachment } from './machines.ts';
   import { createOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
   import { diskKind } from './disk-kind.ts';
 
   type Props = {
@@ -106,7 +106,7 @@
     const input = e.currentTarget as HTMLInputElement;
     const f = input.files?.[0];
     input.value = '';
-    if (f) page.importChanges(f, { machine: plain(machine), attachment });
+    if (f) inBar(() => page.importChanges(f, { machine: plain(machine), attachment }));
   };
 
   let adding = $state(false);

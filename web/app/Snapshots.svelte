@@ -24,7 +24,7 @@
   import { records } from './areas/records.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { isLive, power } from './areas/power.svelte.ts';
-  import { page } from './page.ts';
+  import { inBar, page } from './page.ts';
   import { openPicker } from './file-pickers.ts';
 
   type Props = {
@@ -122,7 +122,7 @@
   }
   function restore(s: SnapshotRecord) {
     page.closeMachines();
-    page.restoreKept(s.id);
+    inBar(() => page.restoreKept(s.id));
   }
   let importInput = $state<HTMLInputElement>();
   const imported = () => {
@@ -139,7 +139,7 @@
         ok: t('snapshots:Snapshots.toFile.ask.whole'),
         cancel: t('snapshots:Snapshots.toFile.ask.without'),
       }));
-    page.saveSnapshotFile(whole);
+    inBar(() => page.saveSnapshotFile(whole));
   }
 </script>
 
