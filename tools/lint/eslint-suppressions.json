@@ -137,20 +137,6 @@
       "count": 1
     }
   },
-  "web/app/snapshots.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "web/app/store.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
