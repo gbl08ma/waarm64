@@ -11,7 +11,8 @@ import { connectionLock, Connections, defaultName, migrateLegacy, preselect, typ
 import { connectOf } from '../web/app/net-live.ts';
 import { Locks } from '../web/app/locks.ts';
 import { DEFAULT_SETTINGS } from '../web/app/network.ts';
-import { memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
+import { Store } from '../web/app/store.ts';
+import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { profilesOf } from '../web/tailscale-state.ts';
 import { t } from '../web/i18n.ts';
 
@@ -203,7 +204,8 @@ test("in Chromium: the store upgrades a database made before connections, keepin
     ts.close();
     // The old page is still open: the new one's upgrade must not wait for it forever (a newer page asks it to let go).
     old.onversionchange = () => old.close();
-    const { Store, idbRecords, memoryFiles } = await import('/web/app/store.ts' as string);
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { idbRecords, memoryFiles } = await import('/web/app/store-backends.ts' as string);
     const { Connections, migrateLegacy } = await import('/web/app/connections.ts' as string);
     const { keptProfiles } = await import('/web/tailscale-state.ts' as string);
     const s = new Store(await idbRecords(), memoryFiles(), { channel: false });

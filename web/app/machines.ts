@@ -2,10 +2,8 @@
 // detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `webpc-machine:<id>`
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
-import { cacheBytes } from '../diskcache.ts';
-import { shaderStoreSize } from '../venus-cache.ts';
 import { t } from '../i18n.ts';
-import { msg, MsgError, type Msg } from '../msg.ts';
+import { MsgError } from '../msg.ts';
 import { SWAP_MIN_PAGES } from '../ramdisk.ts';
 import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
@@ -23,7 +21,7 @@ import {
   type DiskRecord,
   type MachineRecord,
 } from './shape.ts';
-import { machineDir, type Store } from './store.ts';
+import type { Store } from './store.ts';
 
 /** The lock a page holds while it runs machine `id`. */
 export const machineLock = (id: string) => `webpc-machine:${id}`;
@@ -56,6 +54,10 @@ const gone = () =>
     cause: new MsgError('machines:machines.machineGone.cause'),
   });
 
+/** This computer's cores (4 where the browser doesn't say). */
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no navigator in Node's tests
+const hostCpus = () => globalThis.navigator?.hardwareConcurrency || 4;
+
 /** A new machine (no disks yet), named by default. */
 export async function createMachine(
   store: Store,
@@ -71,8 +73,7 @@ export async function createMachine(
   const m: MachineRecord = {
     id: newId(),
     name: o.name ? uniqueName(o.name, taken) : generateName(taken),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no navigator in Node's tests
-    ncpus: o.ncpus ?? defaultCpus(globalThis.navigator?.hardwareConcurrency || 4),
+    ncpus: o.ncpus ?? defaultCpus(hostCpus()),
     ramMiB: o.ramMiB ?? 2048,
     display: o.display ?? '3d',
     adapters: (o.network ?? true) ? [{ id: newId(), mac: newMac() }] : [], // a MAC of its own: machines share LANs (a local helper's)
@@ -291,6 +292,27 @@ export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o
   return a;
 }
 
+/** Read-only or not (a blank disk or a ramdisk is always writable). */
+function setReadOnly(a: Attachment, disk: DiskRecord | undefined, readOnly: boolean) {
+  if (!readOnly || (disk?.kind !== 'blank' && disk?.kind !== 'ramdisk')) a.readOnly = readOnly;
+}
+
+/** Written in place (only a disk stored in the browser). */
+function setInPlace(a: Attachment, disk: DiskRecord | undefined, inPlace: boolean) {
+  if (disk?.kind !== 'stored') throw new Error('only a disk stored in the browser can be written in place');
+  a.inPlace = inPlace || undefined;
+}
+
+/** The guest's swap (only a ramdisk, of `SWAP_MIN_PAGES` at least). */
+function setSwap(a: Attachment, disk: DiskRecord | undefined, swap: boolean) {
+  if (disk?.kind !== 'ramdisk') throw new Error("only a ramdisk can be the guest's swap");
+  if (swap && disk.size < SWAP_MIN_PAGES * 4096)
+    throw new MsgError('machines:machines.swapMin', undefined, {
+      cause: new MsgError('machines:machines.swapMin.cause', { kib: SWAP_MIN_PAGES * 4 }),
+    });
+  a.swap = swap || undefined;
+}
+
 /** Changes attachment `id` of machine `m` (read-only, in place, swap, its place in the order) or detaches it (`detach`). */
 export async function editAttachment(
   store: Store,
@@ -307,71 +329,15 @@ export async function editAttachment(
   const a = m.attachments[i];
   const disk = await store.get('disks', a.disk);
   if (change.detach) m.attachments.splice(i, 1);
-  if (change.readOnly !== undefined) {
-    if (!change.readOnly || (disk?.kind !== 'blank' && disk?.kind !== 'ramdisk')) a.readOnly = change.readOnly;
-  }
-  if (change.inPlace !== undefined) {
-    if (disk?.kind !== 'stored') throw new Error('only a disk stored in the browser can be written in place');
-    a.inPlace = change.inPlace || undefined;
-  }
-  if (change.swap !== undefined) {
-    if (disk?.kind !== 'ramdisk') throw new Error("only a ramdisk can be the guest's swap");
-    if (change.swap && disk.size < SWAP_MIN_PAGES * 4096)
-      throw new MsgError('machines:machines.swapMin', undefined, {
-        cause: new MsgError('machines:machines.swapMin.cause', { kib: SWAP_MIN_PAGES * 4 }),
-      });
-    a.swap = change.swap || undefined;
-  }
+  if (change.readOnly !== undefined) setReadOnly(a, disk, change.readOnly);
+  if (change.inPlace !== undefined) setInPlace(a, disk, change.inPlace);
+  if (change.swap !== undefined) setSwap(a, disk, change.swap);
   if (change.move) {
     const j = i + change.move;
     if (j >= 0 && j < m.attachments.length) [m.attachments[i], m.attachments[j]] = [m.attachments[j], m.attachments[i]];
   }
   m.modified = Date.now();
   await store.put('machines', m);
-}
-
-/** What the browser's storage holds for the Machines page (§2 "Storage"): the estimate, persistence, and each big item's bytes. */
-export async function storageReport(store: Store) {
-  const est = await navigator.storage.estimate();
-  const persisted = await navigator.storage.persisted();
-  const items: { what: Msg; bytes: number }[] = [];
-  for (const d of await store.all('disks'))
-    if (d.kind === 'stored')
-      items.push({
-        what: msg('machines:machines.storage.stored', { name: d.name }),
-        bytes: await store.files.size(`disks/${d.id}`),
-      });
-  const disks = new Map((await store.all('disks')).map((d) => [d.id, d.name]));
-  for (const o of await store.all('overlays')) {
-    const disk = disks.get(o.disk);
-    const what =
-      disk === undefined
-        ? msg('machines:machines.storage.overlayOfNone', { overlay: o.name })
-        : msg('machines:machines.storage.overlay', { disk, overlay: o.name });
-    items.push({ what, bytes: await store.files.size(`overlays/${o.id}`) });
-  }
-  for (const m of await store.all('machines'))
-    items.push({
-      what: msg('machines:machines.storage.machine', { name: m.name }),
-      bytes: await store.files.size(machineDir(m.id)),
-    });
-  const remote = await cacheBytes();
-  items.push({ what: msg('machines:machines.storage.remote'), bytes: remote });
-  // Vulkan's translated shaders (web/venus-cache.ts), the origin's for every machine.
-  const shaders = (await shaderStoreSize().catch(() => ({ bytes: 0 }))).bytes;
-  items.push({ what: msg('machines:machines.storage.shaders'), bytes: shaders });
-  items.sort((a, b) => b.bytes - a.bytes);
-  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, items, remote, shaders };
-}
-
-/** Asks the browser to keep this origin's storage under pressure (§2): once, the first time something is stored. */
-export async function askPersist() {
-  try {
-    if (!(await navigator.storage.persisted())) return await navigator.storage.persist();
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Bytes in words. */

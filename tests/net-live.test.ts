@@ -10,7 +10,8 @@ import { connectOf, HeldError, PageNetwork } from '../web/app/net-live.ts';
 import { t } from '../web/i18n.ts';
 import { msgOf, toWire } from '../web/msg.ts';
 import type { Adapter } from '../web/app/shape.ts';
-import { memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
+import { Store } from '../web/app/store.ts';
+import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import type { FromTailscale, NetMap, Tailscale, TailscaleConfig } from '../web/tailscale.ts';
 import type { TailcatConfig } from '../web/tailcat.ts';
 

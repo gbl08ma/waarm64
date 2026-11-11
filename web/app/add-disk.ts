@@ -3,7 +3,8 @@
 import { ask } from './ask.svelte.ts';
 import { estimateStored, importStored } from './disks.ts';
 import { MsgError, t } from '../i18n.ts';
-import { askPersist, bytesText, createDisk, knownDisk, type NewDisk } from './machines.ts';
+import { bytesText, createDisk, knownDisk, type NewDisk } from './machines.ts';
+import { askPersist } from './storage-report.ts';
 import { causes } from '../msg.ts';
 import type { DiskRecord, MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';

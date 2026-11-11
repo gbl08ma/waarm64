@@ -4,21 +4,8 @@
       "count": 1
     }
   },
-  "web/app/copy-edit-ui.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "web/app/export-worker.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "web/app/machines.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
       "count": 1
     }
   },
@@ -38,20 +25,7 @@
       "count": 1
     }
   },
-  "web/app/store.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "web/app/urlcheck.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "web/app/usb-live.ts": {
     "complexity": {
       "count": 1
     }

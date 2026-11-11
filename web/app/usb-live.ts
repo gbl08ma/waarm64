@@ -166,6 +166,9 @@ export class UsbHeldError extends Error {
   }
 }
 
+/** A request to the device worker waiting for its connector's state. */
+type Pending = { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> };
+
 /**
  * The running machine's ports: what is attached where, and the requests to the device worker (one at a time per
  * connector). A device the worker reports gone by itself (unplugged, the guest) is `onGone`'s; any change is `onChange`'s.
@@ -174,10 +177,7 @@ export class UsbPorts {
   readonly connectors: (Connector | undefined)[] = Array.from({ length: USB_CONNECTORS }, () => undefined);
   private port: MessagePort;
   private locks: UsbLocks;
-  private pending = new Map<
-    number,
-    { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }
-  >();
+  private pending = new Map<number, Pending>();
   onChange: () => void = () => undefined;
   /** The guest set the LEDs of the keyboard on connector `c` (the built-in one's: bit 0 Num, 1 Caps, 2 Scroll Lock). */
   onLeds: (c: number, leds: number) => void = () => undefined;
@@ -215,20 +215,22 @@ export class UsbPorts {
       p?.resolve();
     } else {
       this.free(m.connector);
-      if (m.state === 'error') {
-        const d = c && 'vendorId' in c.device ? c.device : undefined;
-        const words = d ? (m.detail ?? []).map((x) => problemText(x, d)) : [];
-        const err = m.error ? fromWire(m.error) : new Error(m.message);
-        p?.reject(
-          c && words.length ? new UsbError('usb:usb-live.notAttached', { name: c.name }, m.detail, words) : err,
-        );
-        if (!p && c) this.onGone(m.connector, c, undefined, err);
-      } else {
+      if (m.state === 'error') this.failed(m, c, p);
+      else {
         p?.resolve();
         if (!p && c) this.onGone(m.connector, c, m.reason);
       }
     }
     this.onChange();
+  }
+
+  /** A connector that failed by itself: a request waiting on it rejected (with the problems' words where known), or it's gone. */
+  private failed(m: Extract<UsbFromWorker, { state: 'error' }>, c: Connector | undefined, p: Pending | undefined) {
+    const d = c && 'vendorId' in c.device ? c.device : undefined;
+    const words = d ? (m.detail ?? []).map((x) => problemText(x, d)) : [];
+    const err = m.error ? fromWire(m.error) : new Error(m.message);
+    p?.reject(c && words.length ? new UsbError('usb:usb-live.notAttached', { name: c.name }, m.detail, words) : err);
+    if (!p && c) this.onGone(m.connector, c, undefined, err);
   }
 
   private free(connector: number) {

@@ -7,7 +7,7 @@
   import type { Act } from './actions.svelte.ts';
   import { clearCaches } from '../diskcache.ts';
   import { t } from '../i18n.ts';
-  import { askPersist, type storageReport } from './machines.ts';
+  import { askPersist, type storageReport } from './storage-report.ts';
   import { clearShaderStore } from '../venus-cache.ts';
 
   type Props = { storage: Awaited<ReturnType<typeof storageReport>>; act: Act };

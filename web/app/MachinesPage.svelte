@@ -29,7 +29,8 @@
   import { ask } from './ask.svelte.ts';
   import { msg, t } from '../i18n.ts';
   import { MachineEdit } from './machine-edit.svelte.ts';
-  import { isRunning, storageReport } from './machines.ts';
+  import { isRunning } from './machines.ts';
+  import { storageReport } from './storage-report.ts';
   import { suspended as suspendedCopy } from '../overlay.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';

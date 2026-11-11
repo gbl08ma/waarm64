@@ -367,23 +367,23 @@
     "message": "A swap ramdisk must be at least {{kib}} KiB.",
     "note": "Error details: the cause under the headline machines:machines.swapMin, on the line under it in the same place; what happened, and what the user can do if anything. {{kib}}: as that entry's note says."
   },
-  "machines.storage.stored": {
+  "storage-report.storage.stored": {
     "message": "Stored disk {{name}}",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (StorageBar.storage.item). {{name}}: a disk stored in the browser."
   },
-  "machines.storage.overlayOfNone": {
+  "storage-report.storage.overlayOfNone": {
     "message": "Overlay {{overlay}} of a deleted disk",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (StorageBar.storage.item). An overlay whose disk the browser no longer has; {{overlay}}: the overlay's name."
   },
-  "machines.storage.overlay": {
+  "storage-report.storage.overlay": {
     "message": "Overlay {{overlay}} of {{disk}}",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (StorageBar.storage.item). {{disk}}: the disk's name; {{overlay}}: the name of one of its overlays (the changes a machine wrote)."
   },
-  "machines.storage.machine": {
+  "storage-report.storage.machine": {
     "message": "{{name}}'s firmware settings, snapshots, and suspended state",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (StorageBar.storage.item). {{name}}: a machine, whose firmware variables, snapshots and suspended copy these are."
   },
-  "machines.storage.remote": {
+  "storage-report.storage.remote": {
     "message": "Cached parts of URL disks",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (StorageBar.storage.item). The blocks of URL disks kept in the browser."
   },
@@ -1523,7 +1523,7 @@
     "message": "{{what}}: {{size, bytes}}",
     "note": "Machines page: the browser's storage, in the bar at the page's bottom. An item of What uses the space. {{what}}: what (a machines.storage.* message); {{size}}: its bytes."
   },
-  "machines.storage.shaders": {
+  "storage-report.storage.shaders": {
     "message": "Vulkan's translated shaders",
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (StorageBar.storage.item). The shaders machines with Vulkan translated, kept so that a program's next start translates nothing again; shared by every machine."
   },

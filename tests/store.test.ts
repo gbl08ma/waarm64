@@ -6,7 +6,8 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { canonical, DEFAULT_MAC, generateName, isMac, MAX_ADAPTERS, MAX_DISKS, newId, newMac, serialOf, shapeDiff, shapeHash, shapeOf, slots, uniqueName, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
-import { memoryFiles, memoryRecords, Store, type SnapshotRecord } from '../web/app/store.ts';
+import { Store, type SnapshotRecord } from '../web/app/store.ts';
+import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { t, text } from '../web/i18n.ts';
 import { words } from './words.ts';
 
@@ -235,7 +236,8 @@ test('the store in Chromium: IndexedDB and OPFS, two tabs', async () => {
   await page.goto(`${base}/tests/browser/core.html`);
   const flows = storeFlows.toString();
   const r = await page.evaluate(async (src) => {
-    const { Store, idbRecords, opfsFiles } = await import('/web/app/store.ts' as string);
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { idbRecords, opfsFiles } = await import('/web/app/store-backends.ts' as string);
     const root = await navigator.storage.getDirectory();
     const write = async (path: string, bytes: number) => {
       const parts = path.split('/');

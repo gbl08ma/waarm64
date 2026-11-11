@@ -5,7 +5,7 @@ import { msg, t, type Msg } from '../../i18n.ts';
 import type { SnapshotDisk } from '../../snapshot.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import { ask } from '../ask.svelte.ts';
-import { askPersist } from '../machines.ts';
+import { askPersist } from '../storage-report.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
 import { clockSync } from '../settings.ts';
 import { newId } from '../shape.ts';

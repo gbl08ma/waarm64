@@ -155,66 +155,71 @@ function open(ids: number[]) {
   const keys = [...new Set(ids.map((id) => copyEditor.shown(id)?.key).filter((k): k is string => !!k))];
   for (const key of keys) {
     const shown = copyEditor.shownOf(key).flatMap((id) => copyEditor.shown(id) ?? []);
-    for (const entry of copyEditor.entries(key)) {
-      const box = el('div', 'entry');
-      box.setAttribute('data-key', entry.key);
-      const area = el('textarea');
-      const current = () => copyEdits()[entry.key] ?? entry.message;
-      area.value = current();
-      const was = el('div', 'was');
-      const slip = el('span', 'slip');
-      const show = () => {
-        const edited = current() !== entry.message;
-        was.textContent = edited ? `catalog: ${entry.message}` : ''; // i18n-ignore
-        area.classList.toggle('edited', edited);
-        slip.textContent = slips(entry.message, area.value);
-      };
-      area.oninput = () => {
-        slip.textContent = slips(entry.message, area.value);
-        fit(area);
-      };
-      const save = el('button', '', 'Save');
-      save.setAttribute('data-save', '');
-      save.onclick = () => {
-        copyEditor.change(entry.key, area.value);
-        for (const id of copyEditor.shownOf(key)) redraw(id);
-        show();
-        counted();
-      };
-      const revert = el('button', '', 'Revert');
-      revert.onclick = () => {
-        copyEditor.change(entry.key, undefined);
-        area.value = entry.message;
-        for (const id of copyEditor.shownOf(key)) redraw(id);
-        show();
-        counted();
-      };
-      area.onkeydown = (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save.click();
-      };
-      const row = el('div', 'row');
-      row.append(slip, revert, save);
-      box.append(el('div', 'key', entry.key), el('div', 'note', entry.note), area, was, row);
-      const rich = shown.some((s) => s.rich);
-      const sample = shown.at(-1)?.words;
-      // As shown, where it isn't the words as they are (parameters filled in, markers drawn).
-      if (sample && (sample !== entry.message || rich))
-        box.append(
-          el(
-            'div',
-            'shown',
-            `shown as: ${sample}${rich ? ' (with markers: changes show when it is drawn again)' : ''}`, // i18n-ignore
-          ),
-        );
-      show();
-      panel.append(box);
-    }
+    for (const entry of copyEditor.entries(key)) panel.append(entryBox(key, entry, shown, counted));
   }
   root.append(panel);
   for (const area of panel.querySelectorAll('textarea')) fit(area);
   const first = panel.querySelector('textarea');
   first?.focus();
   first?.setSelectionRange(0, 0);
+}
+
+type Entry = ReturnType<typeof copyEditor.entries>[number];
+type Shown = NonNullable<ReturnType<typeof copyEditor.shown>>;
+/** A message's entry in the panel: its key, its note, its words to edit (Save, Revert), and how it is shown (`shown`). */
+function entryBox(key: string, entry: Entry, shown: Shown[], counted: () => void) {
+  const box = el('div', 'entry');
+  box.setAttribute('data-key', entry.key);
+  const area = el('textarea');
+  const current = () => copyEdits()[entry.key] ?? entry.message;
+  area.value = current();
+  const was = el('div', 'was');
+  const slip = el('span', 'slip');
+  const show = () => {
+    const edited = current() !== entry.message;
+    was.textContent = edited ? `catalog: ${entry.message}` : ''; // i18n-ignore
+    area.classList.toggle('edited', edited);
+    slip.textContent = slips(entry.message, area.value);
+  };
+  area.oninput = () => {
+    slip.textContent = slips(entry.message, area.value);
+    fit(area);
+  };
+  const save = el('button', '', 'Save');
+  save.setAttribute('data-save', '');
+  save.onclick = () => {
+    copyEditor.change(entry.key, area.value);
+    for (const id of copyEditor.shownOf(key)) redraw(id);
+    show();
+    counted();
+  };
+  const revert = el('button', '', 'Revert');
+  revert.onclick = () => {
+    copyEditor.change(entry.key, undefined);
+    area.value = entry.message;
+    for (const id of copyEditor.shownOf(key)) redraw(id);
+    show();
+    counted();
+  };
+  area.onkeydown = (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save.click();
+  };
+  const row = el('div', 'row');
+  row.append(slip, revert, save);
+  box.append(el('div', 'key', entry.key), el('div', 'note', entry.note), area, was, row);
+  const rich = shown.some((s) => s.rich);
+  const sample = shown.at(-1)?.words;
+  // As shown, where it isn't the words as they are (parameters filled in, markers drawn).
+  if (sample && (sample !== entry.message || rich))
+    box.append(
+      el(
+        'div',
+        'shown',
+        `shown as: ${sample}${rich ? ' (with markers: changes show when it is drawn again)' : ''}`, // i18n-ignore
+      ),
+    );
+  show();
+  return box;
 }
 
 /** Textarea `area` as tall as its words (up to a point). */
