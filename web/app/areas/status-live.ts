@@ -1,4 +1,4 @@
-// What the status bar's elements show besides the statuses (web/app/statusbar.ts `Live`), read from the areas: the
+// What the status bar's elements show besides the statuses (web/app/statusbar-piece.ts `Live`), read from the areas: the
 // power state, the mouse and keys, the microphone, the disks', the screen's and the network adapters' states. Reactive
 // when read in a `$derived` (the status bar's, the Preferences' editor's).
 import { adapterName, type Live } from '../statusbar-piece.ts';
