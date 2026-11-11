@@ -159,3 +159,25 @@ test('finding 7: a kept snapshot restored during a save says to wait, and asks n
   assert.deepEqual(r, ['busy'], 'the busy check (which says to wait) first, nothing else');
   await page.close();
 });
+
+test("finding 8: a notice's end brings back the stopped machine's error and its actions", { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.clock.install();
+  await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
+  await page.evaluate(async () => {
+    const { Messages } = await import('/web/app/run/messages.ts' as string);
+    const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
+    const messages = new Messages({ spec: {} }, () => undefined);
+    const retry = { label: 'Retry', run() {} };
+    messages.setState('failed', 'The disk is in use in another tab.', [retry]);
+    messages.notify('A network action failed.', 'error');
+    (window as unknown as { __bar: unknown }).__bar = messageBar;
+  });
+  await page.clock.runFor(31_000);
+  const bar = await page.evaluate(() => {
+    const b = (window as unknown as { __bar: { text: string; actions: { label: string }[]; kind: string } }).__bar;
+    return { text: b.text, actions: b.actions.map((a) => a.label), kind: b.kind };
+  });
+  assert.deepEqual(bar, { text: 'The disk is in use in another tab.', actions: ['Retry'], kind: 'error' });
+  await page.close();
+});

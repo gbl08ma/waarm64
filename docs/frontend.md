@@ -383,7 +383,8 @@ request after it still works. Tests answer them by clicking (`tests/page-ask.ts`
 **The message bar** (under the toolbar) says what stops a machine (below, "Errors") and what happened: it has a close
 button, and a notice or error that leaves the machine as it was (a snapshot kept or saved, or not; a disk saved or not
 from another machine; changes loaded into a machine that's off) clears itself after 30 s (`notify`). A problem that
-keeps the machine from running (it failed, it waits for a disk) stays until it's closed or solved.
+keeps the machine from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it
+gives way to it again, with its actions, when it clears.
 
 ## The Machines page
 

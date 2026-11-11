@@ -57,6 +57,8 @@ export class Messages {
   /** A standing note (another browser), shown while there's no message. */
   note: Said = '';
   #timer: ReturnType<typeof setTimeout> | undefined;
+  /** What the last state said with it (a stopped machine's error and its actions): a notice's end shows it again. */
+  #standing: { message: Said; actions: Action[]; kind: MessageKind } = { message: '', actions: [], kind: 'warn' };
   readonly #machine: PageMachine;
   readonly #stopped: () => void;
 
@@ -80,18 +82,27 @@ export class Messages {
   setState(s: PageState, message?: Said, actions: Action[] = [], kind: MessageKind = 'error') {
     power.state = s;
     power.stateText = t(STATE_WORDS[s]);
+    // A stopped machine's message stays what the bar comes back to; a running one's is a note for now.
+    this.#standing =
+      message && STOPPED.includes(s) ? { message, actions, kind } : { message: '', actions: [], kind: 'warn' };
     this.show(message ?? this.note, actions, message ? kind : 'warn');
     bootCard.shown = (s === 'loading' || s === 'booting') && !bootCard.done;
     bootCard.serial = !!this.#machine.spec.firmware && s === 'booting';
     if (STOPPED.includes(s)) this.#stopped();
   }
 
-  /** A notice that clears itself after `NOTICE_MS`, the machine staying as it is. */
+  /**
+   * A notice that clears itself after `NOTICE_MS`, the machine staying as it is: the bar then shows what the state said
+   * again (a stopped machine's error and its actions), else the standing note.
+   */
   notify(message: Said, kind: MessageKind = 'warn') {
     this.show(message, [], kind);
     const shown = messageBar.text;
     this.#timer = setTimeout(() => {
-      if (messageBar.text === shown) this.show(this.note, [], 'warn');
+      if (messageBar.text !== shown) return;
+      const s = this.#standing;
+      if (s.message) this.show(s.message, s.actions, s.kind);
+      else this.show(this.note, [], 'warn');
     }, NOTICE_MS);
   }
 
@@ -104,6 +115,7 @@ export class Messages {
   dismiss() {
     clearTimeout(this.#timer);
     this.note = '';
+    this.#standing = { message: '', actions: [], kind: 'warn' };
     this.show('', [], 'warn');
   }
 }
