@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The video track's clips (docs/plans/video.md) as an ext4 the page serves as its second disk (`?disk2=`; the guest
+# The video track's clips (docs/graphics.md "Video") as an ext4 the page serves as its second disk (`?disk2=`; the guest
 # mounts /dev/vdb): images/arch/media.sh's (the Sintel trailer as the original H.264 MP4, 854x480, and as VP9 WebM;
 # the A/V sync clip in VP8, VP9 and H.264; a stream whose size changes, in VP9 and H.264; the trailer in AV1, and with film grain) and its avsync.html. Local only (target/, not committed).
 #   bench/video/media-disk.sh   -> target/video/media.ext4

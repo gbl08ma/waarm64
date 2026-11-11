@@ -1,4 +1,4 @@
-// webpc's VA-API driver for the desktop guest (docs/plans/video.md §1): Mesa's virgl driver (virtio_gpu_drv_video.so)
+// webpc's VA-API driver for the desktop guest (docs/graphics.md "Video's design"): Mesa's virgl driver (virtio_gpu_drv_video.so)
 // with only the surface formats real decoders offer. Mesa's virgl lists every 4:2:0 format whose planes it can sample
 // and render (NV12, YV12, I420), FFmpeg's VA-API decoder then picks I420 for H.264 and VP9 (the codecs' own software
 // format), and Firefox's VA-API path takes NV12, YV12, P010 and P016 only, so it falls back to software. This driver
@@ -8,7 +8,7 @@
 // And AV1 with film grain decoded into the surface that's shown. A decoder applying grain decodes into a reference
 // surface (VA's current_frame) and shows another (current_display_picture), and Mesa's VA frontend sends the frame to
 // the host before it sets the film grain target (at vaEndPicture), so the host never learns where the grained
-// picture goes (docs/plans/video.md §10). Here such a frame's decode target is its display surface, and the reference
+// picture goes (docs/graphics.md "Video's findings"). Here such a frame's decode target is its display surface, and the reference
 // map names display surfaces too (a decoder keeps a frame's display surface while the frame is a reference): the
 // host, which keeps the references itself, writes the grained picture where it's shown.
 //

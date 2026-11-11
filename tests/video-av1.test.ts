@@ -1,4 +1,4 @@
-// AV1's stream for WebCodecs from the guest's stateless decode (web/video-av1.ts; docs/plans/video.md): the bit
+// AV1's stream for WebCodecs from the guest's stateless decode (web/video-av1.ts; docs/graphics.md "Video"): the bit
 // writer's codes read back by readers written to the spec (AV1 §4.10, §5.9.26-28), and the reference slots this side
 // keeps (Mesa's desc has no refresh_frame_flags), read back from the frame headers. The headers' exactness is the
 // Chromium test's (tests/virgl-browser.test.ts: the guest's frames decoded through them, each FFmpeg's).

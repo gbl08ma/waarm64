@@ -3,7 +3,7 @@
 # aarch64 port) with sway, foot, Firefox, Chromium (bench/gpu/chromium-flicker.ts), htop, nano, lsof, gtk4-demo (bench/gpu/gtk4-load.ts), mesa-utils, Mesa's Venus
 # driver and vulkan-tools (Vulkan on a machine with it: docs/devices.md "Venus"), Xwayland (X11 programs under sway: their
 # Vulkan windows through Mesa's prime blit, vk/README.md "Presentation"; GD G7) and PipeWire (WirePlumber, its PulseAudio and ALSA ends), sound through
-# the kernel's own virtio_snd module, VA-API through webpc's driver (our webpc-va package, docs/plans/video.md), and the
+# the kernel's own virtio_snd module, VA-API through webpc's driver (our webpc-va package, docs/graphics.md "Video"), and the
 # media of images/arch/media.sh in /home/arch/media. A 20 GiB root, mostly free (the qcow2 is compressed and keeps
 # none of it), for packages installed by hand. On demand only: not part of images/build.sh, CI or any test (~10 min,
 # mostly pacman and the container builds; the mirror's packages of the day).

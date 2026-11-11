@@ -82,7 +82,7 @@
             }
           ],
           "md": {
-            "ours": "`web/virgl-video.ts`, `web/video-h264.ts` (video, docs/plans/video.md)",
+            "ours": "`web/virgl-video.ts`, `web/video-h264.ts` (video, docs/graphics.md \"Video\")",
             "source": "Mesa 26.2.4 (MIT): the video commands' layouts (`src/virtio/virtio-gpu/virgl_protocol.h`), `struct virgl_video_caps` and the picture descs' field offsets (`virgl_video_hw.h`, measured with its compiler), `enum pipe_video_profile`'s values; nothing copied. The H.264 parameter sets are written from ITU-T H.264 §7.3.2",
             "license": "MIT"
           }
@@ -2716,7 +2716,7 @@
             "project": "[mpv](https://github.com/mpv-player/mpv) / [libplacebo](https://code.videolan.org/videolan/libplacebo) / [FFmpeg](https://ffmpeg.org)",
             "version": "mpv 0.41.0+git20260918; libplacebo 7.360.1 (zypper); FFmpeg 8",
             "license": "mpv GPL-2.0-or-later (`Copyright`, `LICENSE.GPL` at `v0.41.0`); libplacebo LGPL-2.1-or-later (`LICENSE` at `v7.360.1`); FFmpeg LGPL-2.1-or-later, GPL in openSUSE's build (`LICENSE.md` at `n8.0`)",
-            "use": "mpv's `gpu-next` (libplacebo on Vulkan) measured in A and D; mpv on VA-API is G's baseline (docs/plans/video.md)"
+            "use": "mpv's `gpu-next` (libplacebo on Vulkan) measured in A and D; mpv on VA-API is G's baseline (docs/graphics.md \"Video\")"
           }
         },
         {

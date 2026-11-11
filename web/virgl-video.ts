@@ -1,4 +1,4 @@
-// Video decoding over virgl (docs/plans/video.md): the guest's Mesa VA-API driver (`virtio_gpu_drv_video.so`) sends
+// Video decoding over virgl (docs/graphics.md "Video"): the guest's Mesa VA-API driver (`virtio_gpu_drv_video.so`) sends
 // a codec, video buffers (a picture's planes as ordinary virgl textures: NV12 is an R8 luma and an RG8 chroma
 // texture) and, per picture, BEGIN_FRAME, DECODE_BITSTREAM (the picture's parameters and its slice data, each in a
 // staging buffer) and END_FRAME. The host decodes with WebCodecs and writes the picture into the planes, as
@@ -50,7 +50,7 @@ export function profileName(profile: number) {
  * The caps entries for what this browser's `VideoDecoder` takes (an empty list without WebCodecs), and the profiles
  * it decodes in hardware (`prefer-hardware` supported): those are decoded there, the rest in software, and the
  * H.264 stream differs (web/video-h264.ts `H264Stream`: a software decoder holds pictures for the stream's reorder
- * depth, docs/plans/video.md §7). `software` decodes every codec in software (experiments on a host with hardware
+ * depth, docs/graphics.md "Video's findings"). `software` decodes every codec in software (experiments on a host with hardware
  * decoders).
  */
 export async function probeVideo(o: { software?: boolean } = {}): Promise<{ caps: VideoCap[]; hardware: number[] }> {
@@ -298,7 +298,7 @@ export class VideoContext {
 
   /**
    * Has the decoders that hold pictures for reordering (software H.264) output them: the guest waits for one the
-   * decoder holds until later pictures come, and none are coming (docs/plans/video.md §7). A flushed decoder wants a
+   * decoder holds until later pictures come, and none are coming (docs/graphics.md "Video's findings"). A flushed decoder wants a
    * key chunk next, so a new one takes the IDR period from its start again (its outputs written only where still
    * pending). Without the period (too long), the next IDR.
    */

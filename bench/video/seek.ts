@@ -1,4 +1,4 @@
-// Seeking with the host decoding the guest's video (docs/plans/video.md V3; dev-only, not in tests): the desktop guest
+// Seeking with the host decoding the guest's video (docs/graphics.md "Video's findings"; dev-only, not in tests): the desktop guest
 // (images/arch/desktop.sh, with webpc-va) on the page, the clips on bench/video/media-disk.sh's disk.
 //   1. The guest's FFmpeg jumps within one decoder: the concat demuxer's in and out points on the same file (each
 //      segment starts at the key picture before its in point, so the decoder gets a new key picture where the guest's

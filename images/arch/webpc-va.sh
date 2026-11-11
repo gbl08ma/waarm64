@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds and checks the webpc-va package (images/arch/webpc-va/PKGBUILD; docs/plans/video.md §1) in rootless Podman,
+# Builds and checks the webpc-va package (images/arch/webpc-va/PKGBUILD; docs/graphics.md "Video's design") in rootless Podman,
 # natively on arm64, as an Arch user would: a container of localhost/arch-base (images/arch/base.sh), the system
 # upgraded with base-devel, libva and mesa from the mirror, `makepkg` as an unprivileged user, `pacman -U`. The check:
 # the driver's entry point is libva's, it finds Mesa's virgl driver's, and LIBVA_DRIVER_NAME=webpc is set for sessions.

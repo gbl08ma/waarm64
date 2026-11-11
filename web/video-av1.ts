@@ -1,4 +1,4 @@
-// AV1 for WebCodecs from VA-API's stateless decode (docs/plans/video.md): the guest's FFmpeg parsed the OBUs and hands
+// AV1 for WebCodecs from VA-API's stateless decode (docs/graphics.md "Video"): the guest's FFmpeg parsed the OBUs and hands
 // over, per frame, Mesa's `virgl_av1_picture_desc` (the sequence and frame header's fields, the reference map) and
 // the frame's tiles (their offsets and sizes in the desc). `VideoDecoder` wants temporal units of OBUs, so the
 // sequence header and each frame header are written again from the fields (AV1 §5.5, §5.9), in explicit forms where

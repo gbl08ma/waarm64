@@ -19,12 +19,12 @@
 // CLIPS picks the clips (default avsync,sintel,sintel-silent; a name without an extension is a .webm); PHASE_S the
 // seconds measured (default 20), from WARM_S (default 5) after the clip starts playing. MEDIA=disk plays them from
 // bench/video/media-disk.sh's disk instead (the page's second disk: the sync clip in VP9 and H.264 too, the trailer's
-// H.264 MP4), for the video track (docs/plans/video.md V2: VIRGL_GPU=virgl decodes VP9 and H.264 on the host, and
+// H.264 MP4), for the video track (docs/graphics.md "Video's measurements": VIRGL_GPU=virgl decodes VP9 and H.264 on the host, and
 // virgl,novideo in the guest). Firefox's frames and dropped frames are counted over the phase. MPV_ARGS adds to mpv's
 // options (VK2 L6: `--vo=gpu-next --gpu-api=vulkan` with VIRGL_GPU=virgl,vulkan); SHIM=1 (with MEDIA=disk) installs the media disk's VA driver.
 // PROFILE=1 samples the guest's PCs over each clip's phase and symbolizes the kernel's (the clip's `profile`); SYSCALLS=1
 // counts the guest's syscalls by thread over it (guest-session.ts `load`: a tracepoint on every syscall, so drops only
-// from runs without it). FF_PREFS=<pref>=<value>;... adds prefs to Firefox's profile (docs/plans/video.md §8);
+// from runs without it). FF_PREFS=<pref>=<value>;... adds prefs to Firefox's profile (docs/graphics.md "Video's measurements");
 // VARIANTS=<label>:<prefs>|<label>:<prefs>... plays each Firefox clip under each set of prefs in turn (FF_PREFS's syntax,
 // added to FF_PREFS; an empty set is Firefox's defaults), ROUNDS times (default 1), alternating, from a fresh prefs.js
 // each launch; their records are <clip>@<label>-r<round>. NCPUS: the machine's vCPUs (default 4). TIMELINE=1 records

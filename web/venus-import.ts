@@ -14,7 +14,7 @@
 //                   decoded by WebCodecs) also goes to the resource's textures.
 // `?gpu=vkimport=rewrite` (A/B) leaves each image its own texture, written at every bind, as before T16.
 // Nothing makes the guest wait for a picture before it imports or samples its surface: Mesa's virgl VA driver makes no
-// fence for a decode, so mpv's `vaSyncSurface` returns at once (docs/plans/video.md), and Venus's ring passes the GPU
+// fence for a decode, so mpv's `vaSyncSurface` returns at once (docs/graphics.md "Video"), and Venus's ring passes the GPU
 // worker's call queue. A texture made while the resource's picture is still decoding reads nothing back (the virgl
 // texture doesn't have it yet) and is left to the picture, written when it lands; a draw already queued samples the
 // texture's earlier bytes (a reused surface's last picture, or zeros), and the next draw the new picture.

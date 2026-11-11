@@ -1,4 +1,4 @@
-// H.264 for WebCodecs from VA-API's pictures (docs/plans/video.md; web/video-h264.ts), in Node: Exp-Golomb and
+// H.264 for WebCodecs from VA-API's pictures (docs/graphics.md "Video"; web/video-h264.ts), in Node: Exp-Golomb and
 // emulation prevention, the parameter sets rebuilt from Mesa's picture desc read back field by field with a parser
 // written to the standard's syntax (§7.3.2.1, §7.3.2.2), and the chunks a picture makes.
 import assert from 'node:assert/strict';

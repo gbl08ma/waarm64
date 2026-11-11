@@ -1450,7 +1450,7 @@ screen canvas as drawn, read back in the GPU worker) with the guest's own frames
 
 The reverse of presentation: a guest program imports a virgl resource into Vulkan as a dma-buf. mpv on Vulkan
 (`--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi`) maps each VA-API surface it shows, whose planes (NV12: an R8 luma and
-an RG8 chroma) are virgl textures the host's WebCodecs pictures are written into (docs/plans/video.md), and libplacebo
+an RG8 chroma) are virgl textures the host's WebCodecs pictures are written into (docs/graphics.md "Video"), and libplacebo
 makes an image of each plane on memory imported from its dma-buf. Every frame: `vaExportSurfaceHandle`, two imports,
 two images, a draw, and the images and memories freed again.
 
@@ -1489,7 +1489,7 @@ two images, a draw, and the images and memories freed again.
   picture once either way (it imports a surface once a picture); T16 took the import's GPU-worker time a frame from
   0.22 to 0.18 ms on the M4 (bench/vulkan/REPORT.md "VK4 T16").
 - **The order:** nothing makes the guest wait for a picture before it imports and samples its surface. Mesa's virgl VA
-  driver makes no fence for a decode, so mpv's `vaSyncSurface` returns at once (docs/plans/video.md), and Venus's ring
+  driver makes no fence for a decode, so mpv's `vaSyncSurface` returns at once (docs/graphics.md "Video"), and Venus's ring
   is polled, past the GPU worker's call queue, which holds calls behind pending pictures. A bind while the resource's
   picture is still decoding (`videoPending.res`) reads nothing back and leaves the texture to the picture, written when
   it lands; a draw already submitted samples the texture's earlier bytes (a reused surface's last picture, or zeros for

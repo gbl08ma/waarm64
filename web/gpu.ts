@@ -644,7 +644,7 @@ export class Gpu {
           // TRANSFER3D's offset in the resource's own backing and direction (1: to the host), or COPY_TRANSFER3D's
           // source (a staging buffer), offset in it and flags (2: a read-back).
           // DECODE_BITSTREAM (59): codec, target, the picture's parameters and its data (staging buffers), the
-          // data's length (docs/plans/video.md).
+          // data's length (docs/graphics.md "Video").
           if (c === 59 && len >= 5) {
             data(words[at + 2], 0, 0x7fffffff);
             data(words[at + 3], 0, words[at + 4]);

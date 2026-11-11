@@ -135,7 +135,7 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   the base as a user would: `makepkg`, `pacman -U`; ~1 min): webpc's VA-API driver, Mesa's virgl with NV12 decode
   surfaces only, AV1 film grain decoded into the shown surface and (version 3, VK2 L6) exported surfaces' objects
   sized by what their planes span (a Vulkan importer checks; vk/README.md "Imports"), `LIBVA_DRIVER_NAME=webpc` for every session
-  ([plans/video.md](plans/video.md)). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
+  ([graphics.md](graphics.md) "Video"). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
   Result `target/arch/pkg/webpc-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
 - **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox, Chromium (since 2026-10-22, graphics.md "The call queue"),
   htop, nano, lsof, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`),
@@ -146,7 +146,7 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   makes `/home/arch/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a 1 kHz beep each second,
   VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender Foundation, CC BY 3.0,
   downloaded from download.blender.org with its sha256, as VP9/Opus 480p), `sintel_trailer-480p.mp4` (the trailer's
-  original H.264 file: Chromium's H.264 path, plans/video.md §12), and `avsync.html` (plays `?v=<clip>`);
+  original H.264 file: Chromium's H.264 path, graphics.md "Video's findings"), and `avsync.html` (plays `?v=<clip>`);
   `desktop-setup.sh` is the `--setup`. Result `target/arch/desktop.qcow2`; `bench/audio/avsync.ts` measures on it, and
   the page's session scripts (`bench/gpu/guest-session.ts`) log in as `arch` (`WEBPC_GUEST_USER=alarm` for an older
   Arch Linux ARM disk).

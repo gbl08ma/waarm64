@@ -1,11 +1,11 @@
-// H.264 for WebCodecs from VA-API's stateless decode (docs/plans/video.md): the guest's FFmpeg parsed the stream's
+// H.264 for WebCodecs from VA-API's stateless decode (docs/graphics.md "Video"): the guest's FFmpeg parsed the stream's
 // parameter sets and hands over, per picture, Mesa's `virgl_h264_picture_desc` (the SPS and PPS fields among the
 // picture's) and the picture's slice NAL units (Annex B: Mesa's VA frontend adds a start code where the slice data
 // lacks one). `VideoDecoder` wants the stream, so the parameter sets are rebuilt from the fields (ITU-T H.264
 // §7.3.2.1, §7.3.2.2) and put before the slices whenever they change. What the fields don't carry is chosen so the
 // decoding is the same: no cropping (the guest's surfaces are the coded size), the PPS's scaling lists the effective
 // ones (VA has one set), and a VUI whose bitstream restriction says `max_num_reorder_frames = 0`, so every picture is
-// output as soon as it's decoded (the guest reorders, and waits on surfaces in its own order: docs/plans/video.md §1).
+// output as soon as it's decoded (the guest reorders, and waits on surfaces in its own order: docs/graphics.md "Video's design").
 
 import { PROFILE } from './virgl-video.ts';
 
@@ -200,7 +200,7 @@ export function codecString(profile: number, level: number) {
  * An SPS (id 0) for these parameters and a coded size in macroblocks. `level` is the codec's (Mesa's VA frontend
  * leaves the SPS's level_idc 0 and creates the codec with a level for the picture size).
  *
- * `reorder` is what the SPS says of output order (docs/plans/video.md §5, §7). `'none'` (a hardware decoder:
+ * `reorder` is what the SPS says of output order (docs/graphics.md "Video's findings"). `'none'` (a hardware decoder:
  * Chromium's own H.264 decoder honors it) writes max_num_reorder_frames 0, so every picture comes out as soon as it's
  * decoded. A number writes that depth (`H264Stream` gives a software decoder the stream's: FFmpeg drops a picture
  * that comes after one it has output in display order, so it must be told at least the stream's depth). `'learn'`
@@ -355,7 +355,7 @@ export function sliceRefs(sliceNal: Uint8Array, p: H264Params): { type: number; 
  * it in display order) is learned from the POCs, and the SPS, which changes only at an IDR, says at least the
  * picture's reference count (at most the depth of a stream whose B-pictures aren't references, before any is seen),
  * raised at the next IDR if a picture needs more. (Saying less doesn't make Chrome's FFmpeg hold less: its frame
- * threads add 3 pictures to whatever the SPS says, docs/plans/video.md §7.)
+ * threads add 3 pictures to whatever the SPS says, docs/graphics.md "Video's findings".)
  *
  * VA's picture parameters lack the PPS's num_ref_idx_l0/l1_default_active_minus1 (Mesa's desc has 0), which slices
  * without num_ref_idx_active_override_flag use: those slices' active counts (the picture's, in the desc) are the
