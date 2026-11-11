@@ -21,6 +21,7 @@ import { fromWire, msg, MsgError, type Msg, type WireError } from './msg.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
+import { cpuMask, type CpuFeature } from './cpu-features.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
@@ -595,6 +596,11 @@ export type BootOptions = {
   fhm?: boolean;
   /** `VmConfig.features` bit 17 (ABI 66): FEAT_BF16; off unless true (docs/cpu.md). */
   bf16?: boolean;
+  /**
+   * The vCPUs' features as one list (web/cpu-features.ts; the page's machines pass it): each listed one on, the others
+   * off, over the booleans above (`crypto` stays its own).
+   */
+  cpu?: readonly CpuFeature[];
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
   stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
@@ -876,10 +882,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
-  const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n) | (o.jscvt === false ? 0n : 16n)
-    | (o.rcpc === false ? 0n : 32n) | (o.sb === false ? 0n : 64n) | (o.flagm === false ? 0n : 128n) | (o.dit === false ? 0n : 256n) | (o.frintts === false ? 0n : 512n) | (o.dotprod === false ? 0n : 1024n) | (o.i8mm === true ? 2048n : 0n)
-    | (o.rdm === false ? 0n : 4096n) | (o.rcpc2 === false ? 0n : 8192n) | (o.fcma === true ? 16384n : 0n)
-    | (o.fp16 === true ? 32768n : 0n) | (o.fhm === true ? 65536n : 0n) | (o.bf16 === true ? 131072n : 0n);
+  const features = cpuMask(o);
   new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)

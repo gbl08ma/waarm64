@@ -5,7 +5,7 @@ import type { FolderSpec } from '../../9p-folders.ts';
 import { guestWords } from '../guest-words.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
 import type { StartDisk, ToWorker } from '../protocol.ts';
-import { credentials, cpuFlags, params, simpleDisplay } from './knobs.ts';
+import { credentials, cpuFeatures, params, simpleDisplay } from './knobs.ts';
 import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
@@ -91,7 +91,7 @@ const knobs = () => ({
   ioStats: params.has('iostats') || undefined,
   noDiskCache: params.get('diskcache') === '0' || undefined,
   avProbe: params.has('avprobe') || undefined,
-  cpu: cpuFlags(),
+  cpu: cpuFeatures(),
   params: params.get('params') ?? undefined,
   credentials,
 });

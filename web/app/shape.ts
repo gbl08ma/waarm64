@@ -3,6 +3,7 @@
 // sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
 // tests use it alike. web/app/store.ts keeps these records.
 import { msg, type Msg } from '../msg.ts';
+import { CPU_DEFAULT, CPU_FEATURES, type CpuFeature } from '../cpu-features.ts';
 
 /** The most disks a machine has (docs/machines.md §4.1: room left of the core's 32 transports for devices to come). */
 export const MAX_DISKS = 16;
@@ -213,49 +214,8 @@ export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind =
   'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
-/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm`, `bf16`). */
-export type CpuFeature =
-  | 'rng'
-  | 'e0pd'
-  | 'sha3'
-  | 'jscvt'
-  | 'rcpc'
-  | 'sb'
-  | 'flagm'
-  | 'dit'
-  | 'frintts'
-  | 'dotprod'
-  | 'i8mm'
-  | 'rdm'
-  | 'rcpc2'
-  | 'fcma'
-  | 'fp16'
-  | 'fhm'
-  | 'bf16';
-export const CPU_FEATURES: CpuFeature[] = [
-  'rng',
-  'e0pd',
-  'sha3',
-  'jscvt',
-  'rcpc',
-  'sb',
-  'flagm',
-  'dit',
-  'frintts',
-  'dotprod',
-  'i8mm',
-  'rdm',
-  'rcpc2',
-  'fcma',
-  'fp16',
-  'fhm',
-  'bf16',
-];
-/** The ones a machine has unless turned off (`?<feature>=0`); the rest only when asked for (`?i8mm=1`, `?fcma=1`,
- * `?fp16=1`, `?fhm=1`, `?bf16=1`: implemented but measured slower than what guests do without them, docs/cpu.md). */
-export const CPU_DEFAULT: CpuFeature[] = CPU_FEATURES.filter(
-  (f) => !['i8mm', 'fcma', 'fp16', 'fhm', 'bf16'].includes(f),
-);
+/** The vCPUs' optional features: web/cpu-features.ts's table (`CPU_DEFAULT` the ones a machine has unless turned off). */
+export { CPU_DEFAULT, CPU_FEATURES, type CpuFeature };
 /**
  * The features the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and suspended
  * machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's `cpu`),

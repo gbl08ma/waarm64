@@ -8,7 +8,7 @@
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import type { QueryPoll } from '../../virgl-host.ts';
 import type { ShareMode } from '../../venus-share.ts';
-import { CPU_DEFAULT, CPU_FEATURES } from '../shape.ts';
+import { cpuFromQuery } from '../../cpu-features.ts';
 import { settings } from '../settings.ts';
 
 export const params = new URLSearchParams(location.search);
@@ -18,34 +18,8 @@ export const credentials = params
   .getAll('credential')
   .map((c) => ({ name: c.slice(0, c.indexOf(':')), data: c.slice(c.indexOf(':') + 1) }));
 
-/** The page's CPU features (`?rng=0`, `?e0pd=0`, `?sha3=0`, `?jscvt=0`, `?rcpc=0`, `?sb=0`, `?flagm=0`, `?dit=0`, `?frintts=0`, `?dotprod=0`, `?rdm=0`, `?rcpc2=0` turn one off, `?i8mm=1`, `?fcma=1`, `?fp16=1`, `?fhm=1` and `?bf16=1` turn FEAT_I8MM, FEAT_FCMA, FEAT_FP16, FEAT_FHM and FEAT_BF16 on: development). */
-export const cpuFeatures = () =>
-  CPU_FEATURES.filter((f) => (CPU_DEFAULT.includes(f) ? params.get(f) !== '0' : params.get(f) === '1'));
-
-/** The start message's CPU flags, by the same knobs. */
-export const cpuFlags = () => {
-  const off = (k: string) => params.get(k) !== '0';
-  const on = (k: string) => params.get(k) === '1';
-  return {
-    rng: off('rng'),
-    e0pd: off('e0pd'),
-    sha3: off('sha3'),
-    jscvt: off('jscvt'),
-    rcpc: off('rcpc'),
-    sb: off('sb'),
-    flagm: off('flagm'),
-    dit: off('dit'),
-    frintts: off('frintts'),
-    dotprod: off('dotprod'),
-    i8mm: on('i8mm'),
-    rdm: off('rdm'),
-    rcpc2: off('rcpc2'),
-    fcma: on('fcma'),
-    fp16: on('fp16'),
-    fhm: on('fhm'),
-    bf16: on('bf16'),
-  };
-};
+/** The page's CPU features (`?<feature>=0` turns a default one off, `?<feature>=1` another on: development; web/cpu-features.ts). */
+export const cpuFeatures = () => cpuFromQuery(params);
 
 /** The JIT's code cache budget, MiB (`BootOptions.jitBytes`; docs/jit.md "Memory"): `?jitmb=`; 0: none asked. */
 export const jitParam = () => Math.max(0, Math.round(Number(new URLSearchParams(location.search).get('jitmb')) || 0));

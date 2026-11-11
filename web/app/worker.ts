@@ -39,7 +39,8 @@ import { AGENT_FILE, agentBinary, agentCredentials } from './guest-agent.ts';
 import { credentialFiles, MACHINES, readyWatcher, splitMsg, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { CPU_DEFAULT, CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
+import { slots, type CpuFeature, type DeviceKind } from './shape.ts';
+import { isCpuFeature } from '../cpu-features.ts';
 import type { MachineName } from './machine.ts';
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
@@ -442,7 +443,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
   const ram = (ramSize + (spill as number[]).reduce((a, b) => a + b, 0)) / 2 ** 20;
   // A snapshot from before the header said (ABI 34 and older) had none of them.
   const cpu = h.cpu ?? [];
-  if (!Array.isArray(cpu) || !cpu.every((f): f is CpuFeature => CPU_FEATURES.includes(f as CpuFeature))) {
+  if (!Array.isArray(cpu) || !cpu.every(isCpuFeature)) {
     throw failure(
       'snapshot',
       msg('snapshots:worker.features', { name }),
@@ -688,7 +689,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   ramMiB = m.ramMiB;
   // The transports: the machine's, or a snapshot's (`fromHeader`).
   let here = layout(m, machine);
-  let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? CPU_DEFAULT.includes(f));
+  let cpu = m.cpu;
   let restore: Restore | undefined;
   let specs: DeviceSpec[] | undefined;
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
@@ -787,23 +788,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     fma: query.get('fma') !== 'emul',
     exactCore: !query.has('growcore'),
     vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined,
-    rng: cpu.includes('rng'),
-    e0pd: cpu.includes('e0pd'),
-    sha3: cpu.includes('sha3'),
-    jscvt: cpu.includes('jscvt'),
-    rcpc: cpu.includes('rcpc'),
-    sb: cpu.includes('sb'),
-    flagm: cpu.includes('flagm'),
-    dit: cpu.includes('dit'),
-    frintts: cpu.includes('frintts'),
-    dotprod: cpu.includes('dotprod'),
-    i8mm: cpu.includes('i8mm'),
-    rdm: cpu.includes('rdm'),
-    rcpc2: cpu.includes('rcpc2'),
-    fcma: cpu.includes('fcma'),
-    fp16: cpu.includes('fp16'),
-    fhm: cpu.includes('fhm'),
-    bf16: cpu.includes('bf16'),
+    cpu,
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer,
     serialIn: m.serial,
     restore,
