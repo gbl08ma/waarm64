@@ -95,3 +95,21 @@ test("finding 4: a machine opened from the Machines page whose last tab was kill
     .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}`)}`); });
   await ctx.close();
 });
+
+test("finding 5: a 3D machine's Copy screen settles (no picture) when its GPU worker never answers", { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
+  const r = await page.evaluate(async () => {
+    const { ClipboardActions } = await import('/web/app/areas/clipboard-actions.ts' as string);
+    const { Replies } = await import('/web/app/run/replies.ts' as string);
+    const replies = { grabs: new Replies(), screens: new Replies() };
+    const silent = { postMessage() {} }; // a GPU worker busy for good, or replaced
+    const actions = new ClipboardActions({ run: { gpu: silent } }, replies, () => document.createElement('canvas'));
+    const t0 = performance.now();
+    const png = await Promise.race([actions.screenPng(), new Promise((r) => setTimeout(() => r('hung'), 20_000))]);
+    return { png: png === undefined ? 'none' : String(png), s: Math.round((performance.now() - t0) / 1000) };
+  });
+  assert.equal(r.png, 'none', 'settled without a picture');
+  assert.ok(r.s <= 12, `within the 2D path's 10 s (${r.s} s)`);
+  await page.close();
+});

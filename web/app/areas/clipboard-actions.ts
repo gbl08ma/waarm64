@@ -119,7 +119,11 @@ export class ClipboardActions {
     if (!r) return undefined;
     const gpu = r.gpu;
     if (gpu) {
-      const g = await this.#replies.grabs.ask((id) => gpu.postMessage({ type: 'grab', id } satisfies ToGpuWorker));
+      // A GPU worker that doesn't answer (busy for good, or replaced by a restart): no picture, as the 2D path.
+      const g = await this.#replies.grabs.ask((id) => gpu.postMessage({ type: 'grab', id } satisfies ToGpuWorker), {
+        ms: 10_000,
+        fallback: { width: 0, height: 0, pixels: new Uint8Array(0) },
+      });
       return g.width && g.height ? rgbaPng(g.width, g.height, new Uint8Array(g.pixels)) : undefined;
     }
     return this.#replies.screens.ask((id) => r.display.postMessage({ type: 'png', id } satisfies DisplayFromPage), {
