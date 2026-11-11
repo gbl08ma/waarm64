@@ -37,7 +37,9 @@
   import { machineDir, type Store } from './store.ts';
   import { shares } from './areas/shares.svelte.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { store: Store; net: PageNetwork; folders: PageFolders };
   let { store, net, folders }: Props = $props();
@@ -71,7 +73,7 @@
 
   // Read with the records, and again when the machine on this page starts or stops (its "running").
   $effect(() => {
-    void ui.state;
+    void power.state;
     void readLive(machines);
   });
   // The chosen machine's record, as read now, goes to its editor (which keeps a draft being edited).
@@ -92,7 +94,7 @@
   }
   /** A machine's state in the list: the one open on this page and off is "here". */
   const listState = (id: string) =>
-    id === ui.current && !running.has(id) && !suspended.has(id)
+    id === current.id && !running.has(id) && !suspended.has(id)
       ? msg('machines:MachinesPage.state.here')
       : stateText(id);
   const counts = $derived({
@@ -104,7 +106,7 @@
   /** Powers machine `m` off, after asking, before an edit that needs it off; false if it can't be (or the user says no). */
   async function offFirst(m: MachineRecord) {
     if (!running.has(m.id)) return true;
-    if (m.id !== ui.current) {
+    if (m.id !== current.id) {
       runner.fail(t('machines:MachinesPage.otherTab'));
       return false;
     }
@@ -171,8 +173,8 @@
       </Pane>
     {:else if machinesNav.selected === CONNECTIONS}
       <ConnectionsPane {net} {machines} {act} />
-    {:else if machinesNav.selected === PAGE && ui.transient}
-      <PagePane {store} {act} label={ui.transient.label} disk={ui.transient.disk} />
+    {:else if machinesNav.selected === PAGE && current.transient}
+      <PagePane {store} {act} label={current.transient.label} disk={current.transient.disk} />
     {:else if edit.editing()}
       <MachinePane
         {edit}

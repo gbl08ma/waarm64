@@ -11,7 +11,7 @@
   import { msg, t } from '../i18n.ts';
   import type { Flow } from './net-wizard.ts';
   import { DEFAULT_CONTROL, parseControlURL, parseHostname, tailscaleBuilt } from './network.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { flow: Flow; active: boolean };
   let { flow, active }: Props = $props();

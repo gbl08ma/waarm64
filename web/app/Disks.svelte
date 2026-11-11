@@ -24,7 +24,7 @@
   import { bytesText, editAttachment } from './machines.ts';
   import { createOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
   import { diskKind } from './disk-kind.ts';
 
   type Props = {

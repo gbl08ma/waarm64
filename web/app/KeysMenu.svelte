@@ -6,7 +6,8 @@
   import Button from './ui/Button.svelte';
   import Menu from './ui/Menu.svelte';
   import { t } from '../i18n.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { keys } from './areas/keys.svelte.ts';
+  import { page } from './page.ts';
 
   let open = $state(false);
   const chord = (keys: string) => {
@@ -29,7 +30,7 @@
   const FKEYS = Array.from({ length: 12 }, (_, k) => k + 1);
   function osk() {
     open = false;
-    page.showOsk(!ui.osk);
+    page.showOsk(!keys.osk);
   }
   function holdEsc() {
     open = false;
@@ -41,11 +42,11 @@
   <Button
     variant="item"
     id="osk-toggle"
-    aria-pressed={ui.osk}
+    aria-pressed={keys.osk}
     title={t('toolbar:KeysMenu.keys.osk.title')}
     onclick={osk}
   >
-    {ui.osk ? t('toolbar:KeysMenu.keys.osk.hide') : t('toolbar:KeysMenu.keys.osk')}
+    {keys.osk ? t('toolbar:KeysMenu.keys.osk.hide') : t('toolbar:KeysMenu.keys.osk')}
   </Button>
   <hr />
   <div class="combos">

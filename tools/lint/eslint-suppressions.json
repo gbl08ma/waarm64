@@ -106,9 +106,6 @@
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
     "@typescript-eslint/unbound-method": {
       "count": 2
     }
@@ -130,11 +127,6 @@
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 1
-    }
-  },
-  "web/app/Sound.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 2
     }
   },
   "web/app/StatusEditor.svelte": {
@@ -401,7 +393,7 @@
       "count": 62
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 26
+      "count": 12
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 3
@@ -425,7 +417,7 @@
       "count": 8
     },
     "complexity": {
-      "count": 12
+      "count": 11
     },
     "max-lines": {
       "count": 1
@@ -490,9 +482,6 @@
     }
   },
   "web/app/osk.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 16
     },
@@ -507,6 +496,11 @@
     },
     "max-lines-per-function": {
       "count": 2
+    }
+  },
+  "web/app/page.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
     }
   },
   "web/app/png-worker.ts": {
@@ -598,14 +592,6 @@
     },
     "max-lines": {
       "count": 1
-    }
-  },
-  "web/app/ui.svelte.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 8
     }
   },
   "web/app/urlcheck.ts": {

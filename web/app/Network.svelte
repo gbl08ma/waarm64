@@ -12,7 +12,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { phaseTone } from './network.ts';
   import { network } from './areas/network.ts';
-  import { ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
@@ -39,7 +39,7 @@
 
   function wizard(i: number) {
     open = false;
-    network.openWizard({ mode: 'attach', machine: ui.current, adapter: i, here: views[i]?.on });
+    network.openWizard({ mode: 'attach', machine: current.id, adapter: i, here: views[i]?.on });
   }
 </script>
 

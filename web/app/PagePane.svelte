@@ -18,7 +18,9 @@
   import { remember, settings } from './settings.ts';
   import type { Store } from './store.ts';
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { store: Store; act: Act; label: string; disk: string };
   let { store, act, label, disk }: Props = $props();
@@ -50,9 +52,9 @@
     <div class="disk" data-attachment={PAGE}>
       <div class="row">
         <Icon name="database" size={18} /><strong>{disk}</strong>
-        {#if ui.hasOverlay}<Note inline class="meta">{t('machines:PagePane.transient.overlay')}</Note>{/if}
+        {#if current.hasOverlay}<Note inline class="meta">{t('machines:PagePane.transient.overlay')}</Note>{/if}
       </div>
-      {#if ui.hasOverlay}
+      {#if current.hasOverlay}
         <div class="row">
           <Menu
             id="save"
@@ -109,7 +111,7 @@
           <Button
             icon="trash"
             id="reset-disk"
-            disabled={ui.busy}
+            disabled={power.busy}
             onclick={() => page.resetDisk()}
             title={t('machines:PagePane.resetDisk.title')}
           >

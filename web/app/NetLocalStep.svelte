@@ -13,7 +13,7 @@
   import { installLines, RELEASE, SOURCE, targetName, TARGETS, thisTarget, type Target } from '../local-release.ts';
   import { parseLocalURL } from '../local-net.ts';
   import type { Flow } from './net-wizard.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { flow: Flow; active: boolean };
   let { flow, active }: Props = $props();

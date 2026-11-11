@@ -1,7 +1,8 @@
 <!--
   The page (docs/frontend.md): the toolbar, the message bar, the machine (its screen and serial terminal) or the
   Machines page in its place, the status line, and the page's questions. web/app/main.ts runs the machine: it draws on
-  the canvas and the terminal here, and writes what the rest shows into `ui` (web/app/ui.svelte.ts).
+  the canvas and the terminal here, and writes what the rest shows into the areas' state (web/app/areas/). The body's
+  `data-*` (the tests' and the page's styles' hooks) follow that state here.
 -->
 <script lang="ts">
   import Ask from './Ask.svelte';
@@ -19,14 +20,25 @@
   import type { PageNetwork } from './net-live.ts';
   import type { Store } from './store.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { bootCard } from './areas/boot-card.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
+  import { keys } from './areas/keys.svelte.ts';
+  import { messageBar } from './areas/message-bar.svelte.ts';
+  import { mouse } from './areas/mouse.svelte.ts';
+  import { screen } from './areas/screen.svelte.ts';
+  import { page } from './page.ts';
   import { t } from '../i18n.ts';
 
   let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } =
     $props();
 
   $effect(() => {
-    document.body.dataset.page = machinesNav.open ? 'machines' : 'machine';
+    const body = document.body.dataset;
+    body.page = machinesNav.open ? 'machines' : 'machine';
+    body.state = power.state;
+    body.view = screen.view;
+    if (current.graphics) body.graphics = current.graphics;
   });
 </script>
 
@@ -36,20 +48,20 @@
   <ErrorBanner
     id="message"
     role="alert"
-    tone={ui.messageKind === 'warn' ? 'warn' : 'error'}
-    hidden={!ui.message}
-    data-kind={ui.messageKind}
-    data-snapshot={ui.snapshotResult || undefined}
+    tone={messageBar.kind === 'warn' ? 'warn' : 'error'}
+    hidden={!messageBar.text}
+    data-kind={messageBar.kind}
+    data-snapshot={messageBar.snapshot || undefined}
     bodyId="message-body"
     actionsId="message-actions"
     dismissId="message-close"
     dismissLabel={t('common:App.message.close')}
     ondismiss={() => page.dismiss()}
   >
-    <pre id="message-text">{ui.message}</pre>
-    {#if ui.messageDetails.length}<pre id="message-details">{ui.messageDetails.join('\n')}</pre>{/if}
+    <pre id="message-text">{messageBar.text}</pre>
+    {#if messageBar.details.length}<pre id="message-details">{messageBar.details.join('\n')}</pre>{/if}
     {#snippet actions()}
-      {#each ui.actions as a (a)}<Button
+      {#each messageBar.actions as a (a)}<Button
           onclick={(e: MouseEvent & { currentTarget: HTMLButtonElement }) => a.run(e.currentTarget)}>{a.label}</Button
         >{/each}
     {/snippet}
@@ -59,16 +71,16 @@
   <div id="screen-view">
     <div id="screen-frame">
       <canvas id="screen" tabindex="0" aria-label={t('common:App.screen.label')}></canvas>
-      <div id="screen-hint">{ui.mouseLock ? t('common:App.screen.hintLock') : t('common:App.screen.hint')}</div>
+      <div id="screen-hint">{mouse.lock ? t('common:App.screen.hintLock') : t('common:App.screen.hint')}</div>
       <div id="screen-cursor-clip"><canvas id="screen-cursor" width="64" height="64" hidden></canvas></div>
-      <div id="boot" hidden={!ui.boot.shown}>
-        <div id="boot-title">{ui.boot.title}</div>
-        {#if ui.boot.progress === undefined}<progress id="boot-progress"></progress>{:else}<progress
+      <div id="boot" hidden={!bootCard.shown}>
+        <div id="boot-title">{bootCard.title}</div>
+        {#if bootCard.progress === undefined}<progress id="boot-progress"></progress>{:else}<progress
             id="boot-progress"
-            value={ui.boot.progress}
+            value={bootCard.progress}
           ></progress>{/if}
-        <div id="boot-line">{ui.boot.line}</div>
-        <div id="boot-serial" hidden={!ui.boot.serial}>
+        <div id="boot-line">{bootCard.line}</div>
+        <div id="boot-serial" hidden={!bootCard.serial}>
           <span>{t('common:App.boot.serial')}</span><Button id="boot-serial-show" onclick={() => page.showLog()}
             >{t('common:App.boot.serial.show')}</Button
           >
@@ -77,15 +89,13 @@
     </div>
   </div>
   <div id="terminal-view"><div id="terminal"></div></div>
-  {#if ui.osk}<Osk
+  {#if keys.osk}<Osk
       send={(code, down, mods, repeat) => page.oskKey(code, down, mods, repeat)}
-      keyLayout={ui.keyLayout}
-      mode={ui.oskModifiers}
-      released={ui.keysReleased}
-      typed={ui.keyTyped}
-      leds={ui.leds}
+      keyLayout={keys.layout}
+      mode={keys.oskModifiers}
+      leds={keys.leds}
       onclose={() => {
-        ui.osk = false;
+        keys.osk = false;
       }}
     />{/if}
 </main>
@@ -111,7 +121,7 @@
   }
 
   /* The machine: its screen, its serial terminal, or both (`body[data-view]`, which main.ts sets at once with
-     `ui.view`: it measures the screen's room right after). */
+     `screen.view`: it measures the screen's room right after). */
   main {
     flex: 1;
     min-height: 0;

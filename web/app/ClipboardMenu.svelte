@@ -15,10 +15,11 @@
   import StatusDot from './ui/StatusDot.svelte';
   import { t } from '../i18n.ts';
   import { TYPED } from '../agent-frame.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { clipboard } from './areas/clipboard.svelte.ts';
+  import { page } from './page.ts';
 
   let open = $state(false);
-  const c = $derived(ui.clipboard);
+  const c = $derived(clipboard);
   /** The guest's own menus don't get the host's copy: no permission yet, or the focus reads stopped. */
   const marked = $derived(
     c.state === 'sharing' && (c.permission === 'prompt' || c.permission === 'denied' || c.stopped),
@@ -39,14 +40,14 @@
   /** Type's outcome comes later, in the agent's TYPED: the menu waits for it, open. */
   let awaitingTyped = $state(false);
   /**
-   * An action that can fail (Send, Type, Copy the screen; `page` keeps its failure in `ui.clipboard.failed`, not
+   * An action that can fail (Send, Type, Copy the screen; `page` keeps its failure in `clipboard.failed`, not
    * thrown: no runner): the menu stays open while it runs and closes when it
    * succeeds; a failure keeps it open, so its note is seen where the click was.
    */
   const thenClose = async (f: () => Promise<void>, type = false) => {
     awaitingTyped = false;
     await f();
-    if (ui.clipboard.failed) return;
+    if (clipboard.failed) return;
     if (type) awaitingTyped = true;
     else open = false;
   };

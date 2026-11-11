@@ -14,7 +14,8 @@
   import type { MachineRecord } from './shape.ts';
   import type { Store } from './store.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = {
     store: Store;
@@ -83,10 +84,10 @@
 
 <nav>
   <ul>
-    {#if ui.transient}
+    {#if current.transient}
       <li class:chosen={machinesNav.selected === PAGE}>
         <button class="pick" onclick={() => onchoose(PAGE)} data-machine={PAGE}>
-          <span class="name">{ui.transient.label}</span>
+          <span class="name">{current.transient.label}</span>
           <span class="meta">{t('machines:MachinesNav.list.transient')}</span>
         </button>
       </li>
@@ -106,7 +107,7 @@
     <button onclick={newMachine} data-action="new-machine">
       <Icon name="plus" size={16} />{t('machines:MachinesNav.newMachine')}
     </button>
-    {#if ui.firmware}
+    {#if current.firmware}
       <button onclick={() => page.openDisk()} title={t('machines:MachinesNav.fromImage.title')}>
         <Icon name="file" size={16} />{t('machines:MachinesNav.fromImage')}
       </button>

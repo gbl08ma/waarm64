@@ -11,7 +11,7 @@
   import type { DiskRecord } from './shape.ts';
   import type { ExportMode } from './export.ts';
   import { remember, settings } from './settings.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   /** `id` names the menu (`export-<id>`); `changes` offers Changes only (not for a blank disk, nor without an overlay). */
   let { id, disk, overlay, changes }: { id: string; disk: DiskRecord; overlay: string | undefined; changes: boolean } =

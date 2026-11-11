@@ -24,7 +24,9 @@
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import type { OverlayRecord, Store } from './store.ts';
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { isLive, power } from './areas/power.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = {
     edit: Editing;
@@ -45,7 +47,7 @@
   const m = $derived(edit.draft);
   /** The record as stored, else the draft (a tab's lists show what's saved). */
   const saved = $derived(edit.record ?? m);
-  const meta = $derived(m.id === ui.current ? t('machines:MachinePane.head.stateHere', { state }) : text(state));
+  const meta = $derived(m.id === current.id ? t('machines:MachinePane.head.stateHere', { state }) : text(state));
   const tabs = $derived<{ id: MachinesTab; icon: IconName; label: string }[]>([
     { id: 'settings', icon: 'settings', label: t('machines:MachinePane.tab.settings') },
     { id: 'disks', icon: 'database', label: t('machines:MachinePane.tab.disksCount', { n: m.attachments.length }) },
@@ -67,7 +69,7 @@
     { id: 'snapshots', icon: 'history', label: t('machines:MachinePane.tab.snapshots') },
   ]);
   /** The machine runs on this page, or is starting. */
-  const busyHere = $derived(ui.state === 'running' || ui.state === 'booting' || ui.state === 'loading');
+  const busyHere = $derived(isLive(power.state) || power.state === 'loading');
 
   const duplicate = () =>
     act(t('machines:MachinePane.busy.copying'), async () => {
@@ -107,7 +109,7 @@
   ontab={(x) => (machinesNav.tab = x as MachinesTab)}
 >
   {#snippet actions()}
-    {#if m.id !== ui.current}
+    {#if m.id !== current.id}
       <Button icon="player-play" onclick={() => page.openMachine(m.id)} data-action="open">
         {t('machines:MachinePane.open')}
       </Button>

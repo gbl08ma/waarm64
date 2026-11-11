@@ -9,7 +9,7 @@
   import T from './T.svelte';
   import { t } from '../i18n.ts';
   import type { Editing } from './machine-edit.svelte.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { edit: Editing };
   let { edit }: Props = $props();

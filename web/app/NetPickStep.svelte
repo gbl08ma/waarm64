@@ -13,7 +13,8 @@
   import type { Flow } from './net-wizard.ts';
   import type { PageNetwork } from './net-live.ts';
   import { isPrivateRoom, parseRoomLink } from '../room.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { flow: Flow; net: PageNetwork; active: boolean; onsubmit: () => void };
   let { flow, net, active, onsubmit }: Props = $props();
@@ -61,7 +62,7 @@
 
   export function begin() {
     const o = flow.opened;
-    const attached = o.machine === ui.current ? net.views()[o.adapter ?? 0]?.connection?.id : undefined;
+    const attached = o.machine === current.id ? net.views()[o.adapter ?? 0]?.connection?.id : undefined;
     picked = attached ?? preselect(conns, (id) => net.held.has(id));
     holders = {};
     if (o.mode !== 'attach') return;

@@ -8,19 +8,21 @@
   import Note from './ui/Note.svelte';
   import Radio from './ui/Radio.svelte';
   import { t } from '../i18n.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { mouse } from './areas/mouse.svelte.ts';
+  import { page } from './page.ts';
 
   function titleOf() {
-    if (ui.mouseLocked) return t('toolbar:MouseMenu.mouse.title.locked');
-    return ui.mouseLock ? t('toolbar:MouseMenu.mouse.title.on') : t('toolbar:MouseMenu.mouse.title');
+    if (mouse.locked) return t('toolbar:MouseMenu.mouse.title.locked');
+    return mouse.lock ? t('toolbar:MouseMenu.mouse.title.on') : t('toolbar:MouseMenu.mouse.title');
   }
   const title = $derived(titleOf());
 </script>
 
-<Menu id="mouse-lock" icon="mouse" {title} on={ui.mouseLock} panel>
+<Menu id="mouse-lock" icon="mouse" {title} on={mouse.lock} panel>
   <Check
     id="mouse-lock-on"
-    checked={ui.mouseLock}
+    checked={mouse.lock}
     onchange={(on: boolean) => page.setMouseLock(on)}
     title={t('toolbar:MouseMenu.mouse.lock.title')}
   >
@@ -31,8 +33,8 @@
     value="pointer"
     data-mode="pointer"
     title={t('toolbar:MouseMenu.mouse.pointer.title')}
-    checked={ui.mouseLockMode === 'pointer'}
-    onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}
+    checked={mouse.mode === 'pointer'}
+    onchange={() => page.setMouseLock(mouse.lock, 'pointer')}
   >
     {t('toolbar:MouseMenu.mouse.pointer')}
   </Radio>
@@ -40,12 +42,12 @@
     name="mouse-lock-mode"
     value="raw"
     data-mode="raw"
-    title={ui.hasMouse ? t('toolbar:MouseMenu.mouse.raw.title') : t('toolbar:MouseMenu.mouse.raw.title.noMouse')}
-    checked={ui.mouseLockMode === 'raw'}
-    disabled={!ui.hasMouse}
-    onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}
+    title={current.hasMouse ? t('toolbar:MouseMenu.mouse.raw.title') : t('toolbar:MouseMenu.mouse.raw.title.noMouse')}
+    checked={mouse.mode === 'raw'}
+    disabled={!current.hasMouse}
+    onchange={() => page.setMouseLock(mouse.lock, 'raw')}
   >
     {t('toolbar:MouseMenu.mouse.raw')}
   </Radio>
-  <Note>{ui.hasMouse ? t('toolbar:MouseMenu.mouse.hint') : t('toolbar:MouseMenu.mouse.hint.noMouse')}</Note>
+  <Note>{current.hasMouse ? t('toolbar:MouseMenu.mouse.hint') : t('toolbar:MouseMenu.mouse.hint.noMouse')}</Note>
 </Menu>

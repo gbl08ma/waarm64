@@ -6,6 +6,7 @@
 // (a finger, the mouse, a pen) holds its key until it lifts, so several fingers chord; a modifier tapped alone stays
 // down (latched) for the keys that follow.
 
+import { Changes } from './changes.ts';
 import { KEYMAPS, type Keymap } from './keymaps.ts';
 
 /** A key: its code, where it is and how big, in key widths (`u`). */
@@ -447,8 +448,8 @@ export class OskKeys {
   private readonly held = new Map<string, number>();
   /** The modifiers latched down. */
   private readonly latched = new Set<string>();
-  /** Called after any change (to redraw). */
-  onChange: () => void = () => {};
+  /** The keys' states changed (web/app/changes.ts): `state` tracks it, so the keyboard redraws. */
+  readonly #changes = new Changes();
 
   constructor(
     send: (code: string, down: boolean, repeat?: boolean) => void,
@@ -482,6 +483,7 @@ export class OskKeys {
 
   /** Whether key `code` is down: `held` by a pointer, `latched`, or not. */
   state(code: string): 'held' | 'latched' | undefined {
+    this.#changes.track();
     return this.held.has(code) ? 'held' : this.latched.has(code) ? 'latched' : undefined;
   }
 
@@ -504,7 +506,7 @@ export class OskKeys {
       this.latched.delete(code);
       this.send(code, false);
       this.pointers.set(id, { code, at: this.now(), chorded: false, undo: true });
-      return this.onChange();
+      return this.#changes.notify();
     }
     const n = this.held.get(code) ?? 0;
     // A modifier pressed while another key is held is held with it: released when let go, never latched.
@@ -516,7 +518,7 @@ export class OskKeys {
       this.send(code, true);
       if (!MODIFIERS.has(code)) this.repeat(code);
     }
-    this.onChange();
+    this.#changes.notify();
   }
 
   /** Pointer `id` lets its key go (lifted, or cancelled by the browser). */
@@ -539,7 +541,7 @@ export class OskKeys {
       this.send(p.code, false);
       if (this.mode === 'next' && ![...this.held.keys()].some((c) => !MODIFIERS.has(c))) this.unlatch();
     }
-    this.onChange();
+    this.#changes.notify();
   }
 
   /** Something else was pressed (a click on the screen) while modifiers are held: they were used, as with a key. */
@@ -552,7 +554,7 @@ export class OskKeys {
     if (MODIFIERS.has(code) || this.mode !== 'next' || !this.latched.size) return;
     if ([...this.held.keys()].some((c) => !MODIFIERS.has(c))) return;
     this.unlatch();
-    this.onChange();
+    this.#changes.notify();
   }
 
   /** Releases the latched modifiers. */
@@ -568,7 +570,7 @@ export class OskKeys {
     this.held.clear();
     this.pointers.clear();
     this.unlatch();
-    this.onChange();
+    this.#changes.notify();
   }
 
   /** Forgets everything without sending (the guest's keys were released elsewhere: a blur). */
@@ -577,6 +579,6 @@ export class OskKeys {
     this.held.clear();
     this.pointers.clear();
     this.latched.clear();
-    this.onChange();
+    this.#changes.notify();
   }
 }

@@ -17,7 +17,7 @@
   import type { PageFolders } from './folders-live.ts';
   import type { FolderAttachment } from './shape.ts';
   import { shares, type FolderWizardOpened } from './areas/shares.svelte.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   let { folders }: { folders: PageFolders } = $props();
 

@@ -26,7 +26,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { EDIT_STEP, MAKING_STEPS, type Flow, type Opened, type Step, type StepApi } from './net-wizard.ts';
   import { network } from './areas/network.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();

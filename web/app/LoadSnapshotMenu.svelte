@@ -9,13 +9,15 @@
   import { openPicker } from './file-pickers.ts';
   import { t } from '../i18n.ts';
   import { records } from './areas/records.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
+  import { page } from './page.ts';
 
   const LATEST = 5;
   let open = $state(false);
   /** The page's machine's shape now: a snapshot of another can't restore. */
   let now = $state<{ hash: string }>();
-  const machine = $derived(records.machines.find((m) => m.id === ui.current));
+  const machine = $derived(records.machines.find((m) => m.id === current.id));
   // Read while the menu is open, again when the records change.
   $effect(() => {
     const [m, disks] = [machine, records.disks];
@@ -33,7 +35,7 @@
   });
   const latest = $derived(
     records.snapshots
-      .filter((s) => s.machine === ui.current)
+      .filter((s) => s.machine === current.id)
       .sort((a, b) => b.created - a.created)
       .slice(0, LATEST)
       .map((s) => ({ ...s, orphaned: !!now && s.shapeHash !== now.hash })),
@@ -45,9 +47,15 @@
   };
 </script>
 
-<Menu id="load-snapshot" icon="history" title={t('toolbar:LoadSnapshotMenu.load.title')} bind:open disabled={ui.busy}>
-  {#if ui.current}
-    {@const id = ui.current}
+<Menu
+  id="load-snapshot"
+  icon="history"
+  title={t('toolbar:LoadSnapshotMenu.load.title')}
+  bind:open
+  disabled={power.busy}
+>
+  {#if current.id}
+    {@const id = current.id}
     <div class="heading">{t('toolbar:LoadSnapshotMenu.load.latest')}</div>
     {#each latest as s (s.id)}
       <Button

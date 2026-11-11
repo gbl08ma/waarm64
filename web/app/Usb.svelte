@@ -20,7 +20,8 @@
   import { deviceName, hasTwins, idsText } from './usb-ports.ts';
   import type { EntryView } from './usb-live.ts';
   import { usb } from './areas/usb.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = {
     machine: MachineRecord;
@@ -32,7 +33,7 @@
   };
   let { machine, running, snapshots, act }: Props = $props();
 
-  const here = $derived(machine.id === ui.current && usb.running);
+  const here = $derived(machine.id === current.id && usb.running);
   let views = $state<EntryView[]>([]);
   // Read again when the record changes, and with the page's USB (`usb.entries` is read again at every plug, attach and grant).
   $effect(() => {

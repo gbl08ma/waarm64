@@ -3,7 +3,7 @@
   import Icon from './ui/Icon.svelte';
   import StatusDot from './ui/StatusDot.svelte';
   import { lookOf, type Item, type Piece } from './statusbar.ts';
-  import { ui } from './ui.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
 
   /** `state`: the power state's piece in the bar, `#state[data-state]` (the tests wait on it). */
   let { item, p, state = false }: { item: Item; p: Piece; state?: boolean } = $props();
@@ -15,7 +15,7 @@
 <span
   class="el"
   id={state ? 'state' : undefined}
-  data-state={state ? ui.state : undefined}
+  data-state={state ? power.state : undefined}
   data-kind={item.kind}
   data-tone={p.tone}
   title={p.title}

@@ -1,0 +1,22 @@
+// The message bar (web/app/App.svelte): a problem or a note, its details and what can be done about it. web/app/main.ts
+// writes it (`showMessage`).
+
+export type MessageKind = 'error' | 'warn';
+export type Action = { label: string; run: (button: HTMLButtonElement) => void };
+
+export const messageBar = $state<{
+  text: string;
+  details: string[];
+  kind: MessageKind;
+  actions: Action[];
+  snapshot: string;
+}>({
+  /** The headline (none: the bar is hidden). */
+  text: '',
+  /** The message's details, one per line, under it (an error's causes: web/i18n.ts `describe`). */
+  details: [],
+  kind: 'warn',
+  actions: [],
+  /** The last snapshot written (its bytes, pause and id), for tools: `#message[data-snapshot]`. */
+  snapshot: '',
+});

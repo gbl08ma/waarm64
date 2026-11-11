@@ -15,7 +15,8 @@
   import type { Editing } from './machine-edit.svelte.ts';
   import type { MachineRecord } from './shape.ts';
   import { DEFAULT_SHARES_PATH, sharesPathError } from './shares-mount.ts';
-  import { ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
 
   type Props = { edit: Editing; machine: MachineRecord; folders: PageFolders; act: Act };
   let { edit, machine, folders, act }: Props = $props();
@@ -53,7 +54,7 @@
       </Field>
       {#if pathError}<Note tone="warn" data-shares-path-error>{said(pathError).headline}</Note>{/if}
       <Note data-shares-path-note>
-        {d.id === ui.current && ui.state === 'running'
+        {d.id === current.id && power.state === 'running'
           ? t('machines:FoldersTab.sharesPath.noteRunning')
           : t('machines:FoldersTab.sharesPath.note')}
       </Note>

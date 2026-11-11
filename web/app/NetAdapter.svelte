@@ -19,7 +19,7 @@
   import { ask } from './ask.svelte.ts';
   import { phaseTone } from './network.ts';
   import type { AdapterView } from './net-live.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { a: AdapterView; heading: boolean; onwizard: () => void };
   let { a, heading, onwizard }: Props = $props();

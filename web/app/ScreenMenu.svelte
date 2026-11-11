@@ -9,7 +9,7 @@
   import Note from './ui/Note.svelte';
   import { t } from '../i18n.ts';
   import { remember, settings } from './settings.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   const SIZES = ['1024x768', '1280x800', '1920x1080'];
   const saved = settings().screen;

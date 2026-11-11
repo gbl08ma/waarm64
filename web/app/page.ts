@@ -1,127 +1,14 @@
-// The page's state as its components show it (docs/frontend.md "The page's code"): web/app/main.ts runs the machine and
-// writes here; App.svelte and the components under it read it, and call `page`'s actions, which main.ts provides.
+// What the components ask of the page (docs/frontend.md "The page's code"): `page`'s actions, which web/app/main.ts
+// provides. What the page shows is in its areas' state (web/app/areas/).
 import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
 import type { Folder, NewFolder } from './folders.ts';
-import type { PowerState } from './protocol.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
 import type { MachinesTab } from './areas/machines-nav.svelte.ts';
 import type { LockMode } from '../input.ts';
-import type { ReadPermission, ShareState } from './clipboard.ts';
-import type { ModifierMode, Mods } from './osk.ts';
-import { normalize, type Graphics, type Metrics } from './statusbar.ts';
-import { settings } from './settings.ts';
-import { t } from '../i18n.ts';
-
-export type View = 'screen' | 'terminal' | 'both';
-/** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
-export type PageState = PowerState | 'idle';
-export type Action = { label: string; run: (button: HTMLButtonElement) => void };
-
-export const ui = $state({
-  /** What the toolbar calls the machine. */
-  title: '',
-  state: 'loading' as PageState,
-  /** The state's words (a phase or a progress while loading or saving). */
-  stateText: t('statusbar:ui.loading'),
-  /** The message bar: a problem or a note, and what can be done about it. */
-  message: '',
-  /** The message's details, one per line, under it (an error's causes: web/i18n.ts `describe`). */
-  messageDetails: [] as string[],
-  messageKind: 'warn' as 'error' | 'warn',
-  actions: [] as Action[],
-  /** The last snapshot written (its bytes, pause and id), for tools: `#message[data-snapshot]`. */
-  snapshotResult: '',
-  view: 'screen' as View,
-  /** A stop, start or snapshot in progress: the actions that would overlap it wait. */
-  busy: false,
-  /** The stored machine on this page (its id), or undefined for a transient one (a test's `?machine=`). */
-  current: undefined as string | undefined,
-  /** A transient machine with a disk of its own: shown on the Machines page as "this page's machine". */
-  transient: undefined as { label: string; disk: string } | undefined,
-  /** The machine boots through UEFI and can take a disk file (Open disk…, a dropped file). */
-  firmware: false,
-  /** The boot disk keeps its changes in this browser: Suspend, the disk's actions. */
-  hasOverlay: false,
-  /** The machine has a virtio-gpu (the Screen menu, the Graphics choice). */
-  hasGpu: false,
-  /** The machine has a network card (the Network menu). */
-  hasNetwork: false,
-  /** The toolbar's mouse lock (remembered): a click on the screen takes the mouse (docs/frontend.md "Mouse lock"). */
-  mouseLock: false,
-  /** How the locked mouse moves the guest (web/input.ts `LockMode`; remembered): `pointer` by default. */
-  mouseLockMode: 'pointer' as LockMode,
-  /** The screen holds the mouse now. */
-  mouseLocked: false,
-  /** The on-screen keyboard is shown (docs/frontend.md "The on-screen keyboard"). */
-  osk: false,
-  /** How its tapped modifiers are let go (Preferences; remembered): after the next key, by default. */
-  oskModifiers: (settings().oskModifiers ?? 'next') as ModifierMode,
-  /** Bumped when the guest's keys are released by the page (a blur): the on-screen keyboard forgets what it holds. */
-  keysReleased: 0,
-  /** The last key typed on the physical keyboard into the screen (`n` bumped each time): it ends the on-screen keyboard's latches. */
-  keyTyped: { code: '', n: 0 },
-  /**
-   * The keyboard layout the running machine gives its guest (a `KEYBOARD_LAYOUTS` id, web/app/keyboard.ts), or none
-   * (the guest's own, taken as US): the on-screen keyboard's legends and the characters it types into the serial console.
-   */
-  keyLayout: undefined as string | undefined,
-  /** The LEDs the guest set on the keyboard it reads now (bit 0 Num, 1 Caps, 2 Scroll Lock): the on-screen keyboard lights its lock keys. */
-  leds: 0,
-  /** The machine has a relative mouse (the lock's `raw` mode). */
-  hasMouse: false,
-  /** The page can't run here (no cross-origin isolation): no Start. */
-  cantRun: false,
-  /**
-   * Clipboard sharing (docs/plans/clipboard.md §5; the toolbar's clipboard menu): `on` while the page's machine has the
-   * setting (its button shows while it runs); its `state`, the browser's read `permission`, `stopped` (focus reads stopped
-   * for the run: they came back hidden), whether the agent types (`canType`), `failed`: which of the menu's actions last
-   * failed (Send got no text or image, Type no text, Copy the screen no picture or no write), and `typed`: what became
-   * of the last Type (the agent's TYPED status: web/agent-frame.ts `TYPED`).
-   */
-  clipboard: {
-    on: false,
-    state: 'waiting' as ShareState,
-    permission: 'none' as ReadPermission,
-    stopped: false,
-    canType: false,
-    failed: undefined as undefined | 'send' | 'type' | 'screen',
-    typed: undefined as number | undefined,
-  },
-  boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
-  /**
-   * The status bar (web/app/StatusBar.svelte): the last status as JSON (`data`, for tools), the last second's numbers,
-   * the names of the running machine's disks, in its order, and the screen's last second (with when it came, ms).
-   */
-  status: {
-    data: '',
-    metrics: undefined as Metrics | undefined,
-    disks: [] as string[],
-    gpu: undefined as { g: Graphics; at: number } | undefined,
-  },
-  /** The status bar's elements (Preferences, web/app/statusbar.ts; remembered as the settings' `statusBar`). */
-  statusItems: normalize(settings().statusBar),
-  /** Full screen takes the status bar along (Preferences; off: the machine alone, edge to edge). */
-  statusFullscreen: settings().statusFullscreen === true,
-  /** Full screen with the keyboard lock held: the browser's shortcuts reach the machine. */
-  keyboardLocked: false,
-  /** The screen or the terminal has the focus, in a focused window (the screen's "Click to type" hint is off). */
-  keysFocused: false,
-  /** The microphone's state (web/audio.ts `micState`), for the status bar. */
-  mic: 'off',
-  /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
-  size: {
-    ncpus: 1,
-    ramMiB: 1024,
-    split: undefined as number[] | undefined,
-    gpu: '3d' as '3d' | '2d',
-    vulkan: false,
-    cpuChoices: [] as number[],
-    ramChoices: [] as number[],
-    gpuLock: '',
-  },
-});
+import type { Mods } from './osk.ts';
+import type { View } from './areas/screen.svelte.ts';
 
 /** What the components ask of the page (web/app/main.ts fills it in before the first start). */
 export type Page = {

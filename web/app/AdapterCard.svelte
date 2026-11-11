@@ -19,7 +19,8 @@
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, type Adapter } from './shape.ts';
   import { network } from './areas/network.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = {
     edit: Editing;
@@ -39,7 +40,7 @@
   /** Its connection, as saved. */
   const c = $derived(at >= 0 ? net.connections.find((x) => x.id === saved[at]?.connection) : undefined);
   /** Its state on this page, when the machine is this page's. */
-  const here = $derived(edit.draft.id === ui.current && at >= 0 ? net.views()[at] : undefined);
+  const here = $derived(edit.draft.id === current.id && at >= 0 ? net.views()[at] : undefined);
   /** The connection's line: its name and kind, then its state here and whether it's the default way out. */
   const line = $derived.by(() => {
     const parts = [

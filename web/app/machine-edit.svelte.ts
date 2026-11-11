@@ -8,7 +8,8 @@ import { updateMachine } from './machines.ts';
 import { adaptersOf, type MachineRecord } from './shape.ts';
 import { sharesPathError } from './shares-mount.ts';
 import type { Store } from './store.ts';
-import { page, ui } from './ui.svelte.ts';
+import { current } from './areas/current.svelte.ts';
+import { page } from './page.ts';
 
 /** The record's switches: a device the guest sees, on or off. */
 export type Switch = 'usb' | 'vulkan' | 'mouse' | 'touch' | 'clock' | 'shares' | 'clipboard';
@@ -53,7 +54,7 @@ export class MachineEdit {
   readonly restartsToSave = $derived(
     !!this.draft &&
       !!this.record &&
-      this.draft.id === ui.current &&
+      this.draft.id === current.id &&
       this.running &&
       restartChanged(this.record, this.draft),
   );
@@ -133,10 +134,10 @@ export class MachineEdit {
       )
         return;
       // The machine on this page, running: it restarts with them (the page asks).
-      if (restartChanged(was, m) && m.id === ui.current && this.running) return page.saveSettings(m);
+      if (restartChanged(was, m) && m.id === current.id && this.running) return page.saveSettings(m);
       if (restartChanged(was, m) && this.running) throw new MsgError('machines:MachinesPage.otherTab');
       await updateMachine(this.#store, m);
-      if (m.id === ui.current) await page.netFollow();
+      if (m.id === current.id) await page.netFollow();
     });
     this.dirty = false;
   };

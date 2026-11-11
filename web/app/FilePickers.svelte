@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import { pickerInput } from './file-pickers.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   /** A change handler that takes the input's file (once: the input is emptied, so the same file can be picked again). */
   const take = (f: (file: File) => void) => (e: Event & { currentTarget: HTMLInputElement }) => {

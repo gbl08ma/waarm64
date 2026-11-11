@@ -14,7 +14,8 @@
   import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
   import { leaveWarning, remember, settings } from './settings.ts';
-  import { ui } from './ui.svelte.ts';
+  import { keys } from './areas/keys.svelte.ts';
+  import { status } from './areas/status.svelte.ts';
   import { CACHE_BUDGET, CACHE_BUDGET_CHOICES } from '../venus-cache.ts';
 
   type Props = { net: PageNetwork };
@@ -32,8 +33,8 @@
       : t('machines:SettingsTab.mib', { n });
 
   function oskToggle(on: boolean) {
-    ui.oskModifiers = on ? 'toggle' : 'next';
-    remember({ oskModifiers: ui.oskModifiers });
+    keys.oskModifiers = on ? 'toggle' : 'next';
+    remember({ oskModifiers: keys.oskModifiers });
   }
 </script>
 
@@ -60,7 +61,7 @@
       {t('machines:PreferencesPane.clockSync')}
     </Check>
     <Check
-      checked={ui.oskModifiers === 'toggle'}
+      checked={keys.oskModifiers === 'toggle'}
       onchange={oskToggle}
       field="osk-toggle"
       note={t('machines:PreferencesPane.oskToggle.note')}
@@ -80,8 +81,8 @@
     <div class="status-fullscreen">
       <Fields>
         <Check
-          bind:checked={ui.statusFullscreen}
-          onchange={() => remember({ statusFullscreen: ui.statusFullscreen })}
+          bind:checked={status.fullscreen}
+          onchange={() => remember({ statusFullscreen: status.fullscreen })}
           field="status-fullscreen"
           note={t('machines:PreferencesPane.statusFullscreen.note')}
         >

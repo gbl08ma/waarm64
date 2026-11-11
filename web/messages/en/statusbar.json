@@ -907,7 +907,7 @@
     "message": "{{about}}\nClick to add it at the end, or drag it into the bar.",
     "note": "Tooltip of an element's chip in the palette of the Preferences' status bar editor. {{about}} is what the element shows."
   },
-  "ui.loading": {
+  "power.loading": {
     "message": "Loading",
     "note": "The power state at the left of the status bar (the page's footer) when the page opens, before the machine's first state."
   }

@@ -1,7 +1,7 @@
 // Settings remembered per browser (the view, whether saved disks are compressed, the sound's volume, a transient
 // machine's size and the connection its network adapter has, the mouse lock, the Preferences: the status bar's elements and Vulkan's shader store's budget among them). Storage can be off or throw: then nothing is remembered.
 import type { NetworkSettings } from './network.ts';
-import type { View } from './ui.svelte.ts';
+import type { View } from './areas/screen.svelte.ts';
 import type { LockMode } from '../input.ts';
 import type { Item } from './statusbar.ts';
 import type { Layout, ModifierMode } from './osk.ts';

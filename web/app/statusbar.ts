@@ -6,7 +6,7 @@ import { msg, t, type Msg } from '../i18n.ts';
 import { bytesText } from './bytes.ts';
 import type { IconName } from './icons.ts';
 import type { Status } from './protocol.ts';
-import type { PageState } from './ui.svelte.ts';
+import type { PageState } from './areas/power.svelte.ts';
 
 /** How an element shows: words (`812 MIPS`), an icon and the bare value (the words in its tooltip), or both. */
 export type Look = 'text' | 'icon' | 'both';

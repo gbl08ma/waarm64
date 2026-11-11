@@ -100,10 +100,17 @@ async function open(viewport = WIDE, hash = '') {
   return page;
 }
 
-/** The page's `ui` (web/app/ui.svelte.ts: the dev server gives the page and this import one module), changed by `f`. */
+/**
+ * The page's state, changed by `f`: its areas (web/app/areas/: the dev server gives the page and these imports one
+ * module each) as `a`, and the page's live folders (main.ts's `window.__folders`) as `folders`.
+ */
 const setUi = (page: Page, f: string) => page.evaluate(async (f) => {
-  const { ui } = await import('/web/app/ui.svelte.ts' as string);
-  new Function('ui', f)(ui);
+  const area = (name: string) => import(`/web/app/areas/${name}.svelte.ts`);
+  const a = {
+    ...(await area('power')), ...(await area('message-bar')), ...(await area('current')), ...(await area('usb')),
+    ...(await area('clipboard')), ...(await area('machines-nav')),
+  };
+  new Function('a', 'folders', f)(a, (window as unknown as { __folders?: unknown }).__folders);
 }, f);
 
 // ---- The seed: what the browser keeps, made through the page's modules (as the tests make their machines). ----
@@ -114,7 +121,7 @@ async function seed(page: Page): Promise<Seed> {
     const { createMachine, createDisk, attach } = await import('/web/app/machines.ts' as string);
     const { createFolder } = await import('/web/app/folders.ts' as string);
     const { newId } = await import('/web/app/shape.ts' as string);
-    const { page: actions } = await import('/web/app/ui.svelte.ts' as string);
+    const { page: actions } = await import('/web/app/page.ts' as string);
     const store = await Store.open();
     // Fixed times, addresses and the connections' ids (their order), so that two sets differ only where the page does.
     const now = Date.UTC(2026, 10, 1, 12);
@@ -140,7 +147,7 @@ async function seed(page: Page): Promise<Seed> {
     await store.put('machines', m);
     const bare = await createMachine(store, { name: 'Bare', network: false, usb: false });
     // Two kept snapshots: one of the machine as it is, one orphaned (made when it had another size).
-    const { shape, hash } = await actions.shapeNow(m);
+    const { shape, hash } = await actions.shapeNow(m, new Map((await store.all('disks')).map((d: { id: string }) => [d.id, d])));
     const pins: unknown[] = [];
     await store.put('snapshots', { id: newId(), machine: m.id, name: 'Logged in', created: now - 3600_000, bytes: 412 << 20, shape, shapeHash: hash, pins });
     await store.put('snapshots', { id: newId(), machine: m.id, name: 'Old size', created: now - 86400_000, bytes: 380 << 20, shape: { ...shape, ramMiB: 1024 }, shapeHash: 'orphaned', pins });
@@ -185,17 +192,20 @@ let seeded: Seed;
   });
   await state('message-error', async () => {
     await page.evaluate(async () => {
-      const { ui } = await import('/web/app/ui.svelte.ts' as string);
+      const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
       const { t } = await import('/web/i18n.ts' as string);
-      ui.message = t('machine:main.cantOpen');
-      ui.messageDetails = ['NotFoundError: A requested file or directory could not be found.']; // i18n-ignore: a browser's error, as shown
-      ui.messageKind = 'error';
+      messageBar.text = t('machine:main.cantOpen');
+      messageBar.details = ['NotFoundError: A requested file or directory could not be found.']; // i18n-ignore: a browser's error, as shown
+      messageBar.kind = 'error';
     });
     await shot(page, 'message-error');
     await page.click('#message-close');
   });
-  await setUi(page, `ui.hasGpu = true; ui.hasNetwork = true; ui.hasMouse = true; ui.usb.on = true; ui.folders.on = true; ui.clipboard.on = true;
-    ui.size.cpuChoices = [1, 2, 4, 8]; ui.size.ramChoices = [512, 1024, 2048, 4096]; ui.state = 'running'; ui.stateText = ''; ui.message = '';`);
+  // The folders' menu shows while the machine runs with them, the clipboard's while it has sharing: both faked.
+  await setUi(page, `a.current.hasGpu = true; a.current.hasNetwork = true; a.current.hasMouse = true; a.usb.on = true;
+    Object.defineProperty(folders, 'running', { get: () => true }); folders.changed();
+    a.clipboard.share = { state: 'waiting', stopped: false, canType: false, typed: undefined };
+    a.current.size.cpuChoices = [1, 2, 4, 8]; a.current.size.ramChoices = [512, 1024, 2048, 4096]; a.power.state = 'running'; a.power.stateText = ''; a.messageBar.text = '';`);
   await state('toolbar-all', async () => { await shot(page, 'toolbar-all'); });
   const MENUS = ['load-snapshot', 'screen-menu', 'keys', 'mouse-lock', 'sound-menu', 'network', 'usb-menu', 'folders', 'clipboard-menu', 'machine-menu'];
   for (const id of MENUS) {
@@ -222,7 +232,7 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
   }
   await state(`machines-empty${suffix}`, async () => {
     // Nothing chosen: what the page shows before a choice.
-    await setUi(page, 'ui.machinesSelected = "none";');
+    await setUi(page, 'a.machinesNav.choose("none");');
     await settle(page);
     await shot(page, `machines-empty${suffix}`);
   });
@@ -438,7 +448,7 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
 // The page's own (transient) machine on the Machines page: `?machine=` with a disk, its Disks and Snapshots tabs.
 await state('machines-transient', async () => {
   const page = await open(WIDE, '#machines');
-  await setUi(page, `ui.transient = { label: 'This page’s machine', disk: 'disk.qcow2' }; ui.hasOverlay = true; ui.machinesSelected = 'page';`); // i18n-ignore: a test's label
+  await setUi(page, `a.current.transient = { label: 'This page’s machine', disk: 'disk.qcow2' }; a.current.hasOverlay = true; a.machinesNav.choose('page');`); // i18n-ignore: a test's label
   await page.locator('section.machine[data-selected="page"]').waitFor();
   await shot(page, 'machines-transient-disks');
   await page.locator('section.machine[data-selected="page"] [data-tab=snapshots]').click();

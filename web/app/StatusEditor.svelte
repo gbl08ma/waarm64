@@ -31,16 +31,16 @@
     type Item,
   } from './statusbar.ts';
   import { t } from '../i18n.ts';
-  import { ui } from './ui.svelte.ts';
+  import { status } from './areas/status.svelte.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
 
-  const items = $derived(ui.statusItems);
+  const items = $derived(status.items);
   let chosen = $state<number | undefined>(undefined);
   const groups = palette();
   /** The running machine's numbers, else the sample's. */
-  const sample = $derived(!ui.status.metrics);
+  const sample = $derived(!status.metrics);
   const live = $derived.by(() => {
     const l = liveNow(net, Date.now());
     return sample
@@ -54,10 +54,10 @@
         }
       : l;
   });
-  const metrics = $derived(ui.status.metrics ?? SAMPLE.metrics);
+  const metrics = $derived(status.metrics ?? SAMPLE.metrics);
 
   function keep(next: Item[]) {
-    ui.statusItems = next;
+    status.items = next;
     remember({ statusBar: next });
   }
   const insert = (item: Item, at = items.length) => {

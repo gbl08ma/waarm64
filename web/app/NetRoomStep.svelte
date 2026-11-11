@@ -17,7 +17,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { tailcatBuilt } from './network.ts';
   import { hasRoomIdentity, parseRoomLink, privateRoomId, roomLink, type RoomLink } from '../room.ts';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { flow: Flow; net: PageNetwork; step: StepName };
   let { flow, net, step }: Props = $props();

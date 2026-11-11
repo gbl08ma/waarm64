@@ -2,7 +2,7 @@
 // with its chosen pane and the machine tab shown. web/app/main.ts opens and closes it (`page.openMachines`); the
 // Machines page's list chooses a pane.
 import { PAGE, PANES } from '../machines-panes.ts';
-import { ui } from '../ui.svelte.ts';
+import { current } from './current.svelte.ts';
 import { records } from './records.svelte.ts';
 
 export type MachinesTab = 'settings' | 'disks' | 'network' | 'usb' | 'folders' | 'snapshots';
@@ -19,7 +19,7 @@ class MachinesNav {
    * once the machine chosen is gone.
    */
   readonly selected = $derived.by(() => {
-    const id = this.#chosen ?? ui.current ?? (ui.transient ? PAGE : undefined);
+    const id = this.#chosen ?? current.id ?? (current.transient ? PAGE : undefined);
     return id && (PANES.has(id) || records.machines.some((m) => m.id === id)) ? id : undefined;
   });
 

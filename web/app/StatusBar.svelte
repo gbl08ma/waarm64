@@ -2,16 +2,16 @@
   /** What the page knows besides the statuses, for the elements (reactive: read in a `$derived`). */
   export function liveNow(net: PageNetwork, now: number): Live {
     return {
-      state: ui.state,
-      stateText: ui.stateText,
+      state: power.state,
+      stateText: power.stateText,
       now,
-      mouseLock: ui.mouseLock,
-      mouseLocked: ui.mouseLocked,
-      keyboardLocked: ui.keyboardLocked,
-      keysFocused: ui.keysFocused,
-      mic: ui.mic,
-      disks: ui.status.disks,
-      gpu: ui.status.gpu?.g,
+      mouseLock: mouse.lock,
+      mouseLocked: mouse.locked,
+      keyboardLocked: keys.locked,
+      keysFocused: keys.focused,
+      mic: sound.mic,
+      disks: status.disks,
+      gpu: status.gpu?.g,
       nets: net.views().map((a) => ({
         name: adapterName(a.index + 1),
         phase: a.view.phase,
@@ -39,28 +39,32 @@
   import type { PageNetwork } from './net-live.ts';
   import { adapterName, render, shows, type Item, type Live, type Piece } from './statusbar.ts';
   import { t } from '../i18n.ts';
-  import { ui } from './ui.svelte.ts';
+  import { keys } from './areas/keys.svelte.ts';
+  import { mouse } from './areas/mouse.svelte.ts';
+  import { power } from './areas/power.svelte.ts';
+  import { sound } from './areas/sound.svelte.ts';
+  import { status } from './areas/status.svelte.ts';
 
   let { net }: { net: PageNetwork } = $props();
 
   // The clock moves without a machine: a tick a second while it's shown.
   let now = $state(Date.now());
   $effect(() => {
-    if (!ui.statusItems.some((i) => i.kind === 'clock')) return;
+    if (!status.items.some((i) => i.kind === 'clock')) return;
     const t = setInterval(() => (now = Date.now()), 1000);
     return () => clearInterval(t);
   });
   const live: Live = $derived(liveNow(net, now));
   type Entry = { item: Item; at: number; pieces: Piece[] };
   const entries: Entry[] = $derived(
-    ui.statusItems
-      .map((item, at) => ({ item, at, pieces: render(item, ui.status.metrics, live) }))
+    status.items
+      .map((item, at) => ({ item, at, pieces: render(item, status.metrics, live) }))
       .filter((e) => e.pieces.length),
   );
   const hasState = $derived(entries.some((e) => e.item.kind === 'state'));
 </script>
 
-<footer id="status" data-status={ui.status.data || undefined} hidden={!shows(ui.statusItems)}>
+<footer id="status" data-status={status.data || undefined} hidden={!shows(status.items)}>
   {#each entries as e, n (e.at)}
     {#if dotBetween(entries[n - 1]?.item, e.item)}<span class="sep" aria-hidden="true">·</span>{/if}
     {#if e.item.kind === 'spacer'}<span class="spacer"></span>
@@ -75,7 +79,7 @@
       >
     {/if}
   {/each}
-  {#if !hasState}<span id="state" data-state={ui.state} hidden>{ui.stateText}</span>{/if}
+  {#if !hasState}<span id="state" data-state={power.state} hidden>{power.stateText}</span>{/if}
 </footer>
 
 <style>

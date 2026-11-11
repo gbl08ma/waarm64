@@ -14,7 +14,8 @@
   import type { PageFolders } from './folders-live.ts';
   import { SHARES_BY_HAND } from './shares-mount.ts';
   import { shares } from './areas/shares.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   let { folders }: { folders: PageFolders } = $props();
 
@@ -74,7 +75,7 @@
             >{/if}
           <Button
             data-action="detach-folder"
-            onclick={() => act(() => (ui.current ? page.folderDetach(ui.current, v.id) : Promise.resolve()))}
+            onclick={() => act(() => (current.id ? page.folderDetach(current.id, v.id) : Promise.resolve()))}
             >{t('folders:FoldersMenu.detach')}</Button
           >
         </span>
@@ -90,7 +91,7 @@
       onclick={() => {
         open = false;
         shares.openWizard({
-          machine: ui.current,
+          machine: current.id,
           attached: folders.views().map((v) => ({ id: v.id, readOnly: v.readOnly })),
         });
       }}>{t('folders:FoldersMenu.attach')}</Button

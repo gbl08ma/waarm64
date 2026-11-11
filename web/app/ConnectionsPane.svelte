@@ -21,7 +21,8 @@
   import { settings } from './settings.ts';
   import type { MachineRecord } from './shape.ts';
   import { network } from './areas/network.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = { net: PageNetwork; machines: MachineRecord[]; act: Act };
   let { net, machines, act }: Props = $props();
@@ -43,7 +44,7 @@
   /** The machines whose adapters use `c` (the page's transient machine too). */
   const usedBy = (c: Connection) => [
     ...machines.filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name),
-    ...(settings().transientNet === c.id && ui.transient ? [ui.transient.label] : []),
+    ...(settings().transientNet === c.id && current.transient ? [current.transient.label] : []),
   ];
   function metaOf(c: Connection) {
     const users = usedBy(c);

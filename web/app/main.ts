@@ -1,6 +1,6 @@
 // The page's controller (docs/frontend.md): it runs the machine, whose screen is a canvas and serial console xterm.js,
-// and writes the page's state into `ui` (web/app/ui.svelte.ts), which the Svelte components (web/app/App.svelte) show;
-// they act through `page`. The VM runs in web/app/worker.ts, talking to it through
+// and writes the page's state into its areas' (web/app/areas/), which the Svelte components (web/app/App.svelte) show;
+// they act through `page` (web/app/page.ts). The VM runs in web/app/worker.ts, talking to it through
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
 // the vCPU count, `?view=screen|terminal|both` the first view (the last one
 // chosen is remembered), `?params=` extra kernel parameters (direct-boot machines), `?credential=name:value` a systemd
@@ -17,7 +17,17 @@ import { describe, errorText, msg, MsgError, said, t, text, type Described, type
 import { devText, fromWire, msgOf } from '../msg.ts';
 import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
-import { page, ui, type Action, type PageState, type View } from './ui.svelte.ts';
+import { bootCard } from './areas/boot-card.svelte.ts';
+import { clipboard } from './areas/clipboard.svelte.ts';
+import { current } from './areas/current.svelte.ts';
+import { keys } from './areas/keys.svelte.ts';
+import { mouse } from './areas/mouse.svelte.ts';
+import { status } from './areas/status.svelte.ts';
+import { page } from './page.ts';
+import { messageBar, type Action } from './areas/message-bar.svelte.ts';
+import { isLive, power, type PageState } from './areas/power.svelte.ts';
+import { screen, type View } from './areas/screen.svelte.ts';
+import { sound } from './areas/sound.svelte.ts';
 import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
 import { network } from './areas/network.ts';
 import { shares } from './areas/shares.svelte.ts';
@@ -483,10 +493,12 @@ const net = new PageNetwork({
 await migrateNetwork().catch((e) => console.warn('the network settings could not be made into connections:', e));
 void net.refresh();
 const audio = new PageAudio();
-ui.current = stored?.record.id;
-ui.firmware = !!spec.firmware;
-ui.hasNetwork = !!spec.network;
+sound.follow(audio);
+current.id = stored?.record.id;
+current.firmware = !!spec.firmware;
+current.hasNetwork = !!spec.network;
 const folders = new PageFolders({ store, me: () => machineTitle() });
+(window as unknown as { __folders?: PageFolders }).__folders = folders; // tools/screens.ts's hook
 void folders.refresh();
 
 // The local helper's pairing link (webpc-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
@@ -500,8 +512,8 @@ function takePairing() {
   const p = parseLocalURL(pairing);
   if ('url' in p)
     network.openWizard(
-      ui.current
-        ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url }
+      current.id
+        ? { mode: 'attach', machine: current.id, adapter: 0, localURL: p.url }
         : { mode: 'new', localURL: p.url },
     );
   else console.warn(`#net: ${devText(p.error)}`);
@@ -533,20 +545,20 @@ const term = new Terminal({
 });
 term.open($('terminal'));
 /** The terminal has the focus (its view, or both views with it last clicked): the on-screen keyboard types into it. */
-const terminalFocused = () => ui.view !== 'screen' && !!term.textarea && term.textarea === document.activeElement;
+const terminalFocused = () => screen.view !== 'screen' && !!term.textarea && term.textarea === document.activeElement;
 /** The on-screen keyboard's keys down into the terminal (their ups go there too). */
 const oskToTerminal = new Set<string>();
 // A key typed on the physical keyboard into the terminal ends the on-screen keyboard's latches, as one into the screen does.
 term.textarea?.addEventListener('keyup', (e) => {
-  ui.keyTyped = { code: e.code, n: ui.keyTyped.n + 1 };
+  keys.typed.emit(e.code);
 });
 
 // Views: the screen first (M8 decision 2), the terminal, or both.
 const setView = (v: View, save = true) => {
   if (save) remember({ view: v });
-  ui.view = v;
-  document.body.dataset.view = v;
+  screen.view = v;
   if (machinesNav.open) closeMachines();
+  flushSync(); // the body's data-view (App.svelte) shows the view now: it is measured and focused below
   fit();
   if (v !== 'screen') term.refresh(0, term.rows - 1);
   (v === 'terminal' ? term : canvas).focus();
@@ -635,7 +647,7 @@ function drawLockCursor() {
 }
 function placeCursor() {
   const c = guestCursor;
-  lockCursor.hidden = !ui.mouseLocked || !c?.image;
+  lockCursor.hidden = !mouse.locked || !c?.image;
   if (lockCursor.hidden || !c) return;
   const k = canvas.clientWidth / fb.width; // CSS pixels per guest pixel
   const scale = Number(canvas.dataset.scale) || 1;
@@ -646,14 +658,12 @@ function placeCursor() {
   // The guest's pointer (its hotspot) at the guest's place, the image around it at the cursor's own scale.
   lockCursor.style.transform = `translate(${((c.x | 0) + c.hotX) * k - c.hotX * hot}px, ${((c.y | 0) + c.hotY) * k - c.hotY * hot}px)`;
 }
-const setMouseLock = (on: boolean, mode: LockMode = ui.mouseLockMode) => {
-  [ui.mouseLock, ui.mouseLockMode] = [on, mode];
+const setMouseLock = (on: boolean, mode: LockMode = mouse.mode) => {
+  [mouse.lock, mouse.mode] = [on, mode];
   remember({ mouseLock: on, mouseLockMode: mode });
   run?.input.mouseLock(on, mode);
   if (on) canvas.focus();
 };
-ui.mouseLock = settings().mouseLock ?? false;
-ui.mouseLockMode = settings().mouseLockMode === 'raw' ? 'raw' : 'pointer';
 
 new ResizeObserver(() => {
   fit();
@@ -699,7 +709,7 @@ function scheduleSize(now = false) {
     now ? 0 : SIZE_DEBOUNCE_MS,
   );
 }
-ui.hasGpu = hasGpu;
+current.hasGpu = hasGpu;
 
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
 /** `asleep`: the guest has suspended itself (`Status.asleep`): a key or a click wakes it. */
@@ -724,16 +734,11 @@ function sleepFirst(r: Run) {
   return true;
 }
 
-/** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
-/** The LEDs the guest set: on the virtio keyboard and on the built-in USB one (bit 0 Num, 1 Caps, 2 Scroll Lock). */
-let leds = { virtio: 0, usb: 0 };
+/** The virtio keyboard's status events (`keys.ledBits`: the LEDs the guest set). */
 const EV_LED = 0x11;
-/** Shows the LEDs of the keyboard the guest reads now: the virtio one once its driver is up, else the built-in USB one. */
-function showLeds() {
-  ui.leds = keyboardLive ? leds.virtio : leds.usb;
-}
 /** Hold Esc's key held now: its timer, and its release. */
 let holding: { timer: ReturnType<typeof setTimeout>; up: () => void } | undefined;
+/** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
 function wakeOnInput() {
   if (!run?.asleep) return;
   run.asleep = false;
@@ -816,17 +821,7 @@ const hasWebgl2 = () => {
 const webgl2 = hasWebgl2();
 if (want3d && !webgl2) no3d = 'this browser has no WebGL2';
 let run: Run | undefined;
-/** The guest has a driver on its keyboard (else the screen's keys go to the serial console: the firmware, GRUB). Per machine; false until the worker says. */
-let keyboardLive = false;
-let state: PageState = 'loading';
 let last: Sample | undefined;
-/** A stop and start in progress (`exclusively`), or a snapshot being written (`saveSnapshot`): the other actions wait. */
-let switching = false;
-let saving = false;
-/** Which actions can be used now: none of the ones that stop the machine overlap a save or a switch. */
-function syncButtons() {
-  ui.busy = switching || saving;
-}
 
 // The serial console's output, kept for the log a user can copy or save (the terminal's scrollback is shorter).
 const LOG_MAX = 1 << 20;
@@ -835,11 +830,11 @@ let lastLine = ''; // the boot card's line
 const addLog = (text: string) => {
   log += text;
   if (log.length > 2 * LOG_MAX) log = log.slice(-LOG_MAX);
-  if (!ui.boot.shown) return;
+  if (!bootCard.shown) return;
   const lines = (lastLine + text).split(/\r?\n/);
   lastLine = lines.pop()!;
   const shown = lines.reverse().find((l) => l.trim());
-  if (shown !== undefined) ui.boot.line = shown.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
+  if (shown !== undefined) bootCard.line = shown.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
 };
 
 /** A standing note (another browser), shown while there's no message. */
@@ -850,10 +845,10 @@ let messageTimer: ReturnType<typeof setTimeout> | undefined;
 const showMessage = (message: Said | undefined, actions: Action[], kind: 'error' | 'warn') => {
   clearTimeout(messageTimer);
   const d = said(message);
-  ui.message = d.headline;
-  ui.messageDetails = d.details;
-  ui.messageKind = kind;
-  ui.actions = actions;
+  messageBar.text = d.headline;
+  messageBar.details = d.details;
+  messageBar.kind = kind;
+  messageBar.actions = actions;
 };
 
 /** The state's words (the status bar's state), by state. */
@@ -869,14 +864,12 @@ const STATE_WORDS: Record<PageState, string> = {
   failed: 'machine:main.state.failed',
 };
 function setState(s: PageState, message?: Said, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
-  state = s;
-  ui.state = s;
-  ui.stateText = t(STATE_WORDS[s]);
-  document.body.dataset.state = s;
+  power.state = s;
+  power.stateText = t(STATE_WORDS[s]);
   showMessage(message ?? note, actions, message ? kind : 'warn');
-  ui.boot.shown = (s === 'loading' || s === 'booting') && !ui.boot.done;
-  ui.boot.serial = !!spec.firmware && s === 'booting';
-  usb.running = !!run?.usb && (s === 'running' || s === 'booting');
+  bootCard.shown = (s === 'loading' || s === 'booting') && !bootCard.done;
+  bootCard.serial = !!spec.firmware && s === 'booting';
+  usb.running = !!run?.usb && isLive(s);
   // Stopped with no start to follow: a restart doesn't pass here (its clients stay, on the new machine's ports).
   if (s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle') {
     net.machineOff();
@@ -886,20 +879,19 @@ function setState(s: PageState, message?: Said, actions: Action[] = [], kind: 'e
       showCursor();
     }
   }
-  syncButtons();
 }
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
 const NOTICE_MS = 30_000;
 function notify(message: Said, kind: 'error' | 'warn' = 'warn') {
   showMessage(message, [], kind);
-  const shown = ui.message;
+  const shown = messageBar.text;
   messageTimer = setTimeout(() => {
-    if (ui.message === shown) showMessage(note, [], 'warn');
+    if (messageBar.text === shown) showMessage(note, [], 'warn');
   }, NOTICE_MS);
 }
 /** The state's words for a while (a phase, a progress), until the next state. */
 const stateText = (m: Msg) => {
-  ui.stateText = text(m);
+  power.stateText = text(m);
 };
 /** A job's phase (words already rendered, or a message) and how far it is, for the state's words. */
 const progressText = (phase: string | Msg, f: number) =>
@@ -925,7 +917,7 @@ const retry: Action = { label: t('machine:main.retry'), run: () => void restart(
 const showLog: Action = {
   label: t('machine:main.showLog'),
   run: () => {
-    setView(ui.view === 'screen' ? 'both' : ui.view, false);
+    setView(screen.view === 'screen' ? 'both' : screen.view, false);
     term.scrollToBottom();
   },
 };
@@ -1000,7 +992,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   canvas = fresh;
   if (focused) canvas.focus();
   fit();
-  const screen = canvas.transferControlToOffscreen();
+  const offscreen = canvas.transferControlToOffscreen();
   const display = new MessageChannel();
   display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
     if (run?.display !== display.port1) return;
@@ -1032,66 +1024,59 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     [fb.width, fb.height] = [e.data.width, e.data.height];
     fit();
     // The firmware's graphics output is up: its screens are the boot (the card hides, as it does for a console on a simple framebuffer).
-    ui.boot.done = true;
-    ui.boot.shown = false;
+    bootCard.done = true;
+    bootCard.shown = false;
   };
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   // A machine's network adapters are there from the start (one can't be added later without a restart): their ends of
   // the IP ports, whose other ends the page's network has (web/app/net-live.ts: the clients of their connections).
   const nets = net.ports(netKey(), pageAdapters());
-  ui.hasNetwork = nets.length > 0;
+  current.hasNetwork = nets.length > 0;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
-  const sound = audio.attach();
+  const soundPort = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
   const usbPort = usbOn() ? new MessageChannel() : undefined;
   // A machine with shared folders: the port what's attached while it runs goes over (docs/shares.md).
   const sharesPort = stored?.record.shares ? new MessageChannel() : undefined;
   // A relative mouse (the pointer while the screen holds the mouse) and a touchscreen, on machines that have them.
-  const mouse = pointerOn('mouse') ? new MessageChannel() : undefined;
+  const mousePort = pointerOn('mouse') ? new MessageChannel() : undefined;
   const touch = pointerOn('touch') ? new MessageChannel() : undefined;
   // Clipboard sharing's port to the guest's agent (docs/plans/clipboard.md), on machines that have it.
   const agent = clipboardOn() ? new MessageChannel() : undefined;
   agentLink?.close();
   agentLink = agent && new AgentLink(agent.port1);
   (window as unknown as { __agent?: AgentLink }).__agent = agentLink; // the tests' hook
-  const share = (clipboardShare = agentLink && new ClipboardShare(agentLink, clipboardHost()));
-  if (share) {
-    share.setPermission(ui.clipboard.permission);
-    share.onChange = showClipboard;
-  }
-  ui.clipboard.on = !!share;
-  ui.clipboard.failed = undefined;
-  showClipboard();
+  const share = agentLink && new ClipboardShare(agentLink, clipboardHost());
+  clipboard.follow(share);
   (window as unknown as { __clipboard?: ClipboardShare }).__clipboard = share; // the tests' hook
   const locked = (on: boolean) => {
-    ui.mouseLocked = on;
+    mouse.locked = on;
     placeCursor();
   };
   const input = attachInput(
     canvas,
     kbd.port1,
     tablet.port1,
-    { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey },
-    { mouse: mouse?.port1, touch: touch?.port1, locked },
+    { live: () => keys.live, send: (d) => term.input(d, true), usb: keyboardKey },
+    { mouse: mousePort?.port1, touch: touch?.port1, locked },
     { hold: share && ((e) => share.chord(e)) },
   );
-  input.mouseLock(ui.mouseLock, ui.mouseLockMode);
+  input.mouseLock(mouse.lock, mouse.mode);
   input.onRelease(() => {
-    ui.keysReleased++;
+    keys.released.emit();
   });
   // The guest's LEDs on the virtio keyboard: its status events (EV_LED, code 0 Num, 1 Caps, 2 Scroll Lock).
   kbd.port1.onmessage = (e: MessageEvent<number[]>) => {
     const [type, code, value] = e.data;
     if (type !== EV_LED || code > 2) return;
-    leds.virtio = value ? leds.virtio | (1 << code) : leds.virtio & ~(1 << code);
-    showLeds();
+    const bits = keys.ledBits;
+    bits.virtio = value ? bits.virtio | (1 << code) : bits.virtio & ~(1 << code);
   };
-  leds = { virtio: 0, usb: 0 };
-  showLeds();
+  keys.ledBits = { virtio: 0, usb: 0 };
   input.onTyped((code) => {
-    ui.keyTyped = { code, n: ui.keyTyped.n + 1 };
+    keys.typed.emit(code);
   });
-  ui.hasMouse = !!mouse;
+  current.hasMouse = !!mousePort;
   canvas.addEventListener('keydown', wakeOnInput);
   canvas.addEventListener('pointerdown', wakeOnInput);
   const r: Run = {
@@ -1102,13 +1087,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     usb: usbPort && usbPorts(usbPort.port1),
   };
   run = r;
-  keyboardLive = false;
+  keys.live = false;
   last = undefined;
   log = lastLine = '';
-  ui.boot.done = false;
-  ui.boot.line = '';
-  ui.boot.progress = undefined; // indeterminate until the sizes are known
-  ui.boot.title = snapshot
+  bootCard.done = false;
+  bootCard.line = '';
+  bootCard.progress = undefined; // indeterminate until the sizes are known
+  bootCard.title = snapshot
     ? t('machine:main.boot.loading', { name: snapshot.name })
     : t('machine:main.boot.starting', { machine: spec.title });
   setState('loading');
@@ -1117,7 +1102,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     const m = e.data;
     if (m.type === 'state') {
       if (m.state === 'suspended') {
-        saving = false;
+        power.saving = false;
         snapshotJob = undefined;
       }
       // A message without a problem is a note (resumed, suspended, a suspended copy that couldn't be resumed), not an error.
@@ -1128,12 +1113,12 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         m.problem || m.state === 'crashed' || m.state === 'failed' ? 'error' : 'warn',
       );
       if (m.state === 'booting') {
-        ui.boot.title = t('machine:main.boot.booting', { machine: spec.title });
-        ui.boot.progress = undefined;
-        ui.boot.line = t('machine:main.boot.kernel'); // then its lines, until its console takes the screen (~2 s on Debian)
+        bootCard.title = t('machine:main.boot.booting', { machine: spec.title });
+        bootCard.progress = undefined;
+        bootCard.line = t('machine:main.boot.kernel'); // then its lines, until its console takes the screen (~2 s on Debian)
       }
       if (m.state === 'running') {
-        ui.boot.shown = false;
+        bootCard.shown = false;
         scheduleSize(true); // a restored machine starts at the size it was saved with
       }
       if (m.state === 'rebooting') void restart();
@@ -1163,14 +1148,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       addLog(m.data);
     } else if (m.type === 'keyboard') {
       // The keys go elsewhere now (the virtio keyboard, or the built-in USB one or the serial console): what's held is released where it went down.
-      if (m.live !== keyboardLive) r.input.release();
-      keyboardLive = m.live;
-      showLeds();
+      if (m.live !== keys.live) r.input.release();
+      keys.live = m.live;
       void syncKeyboard(r);
     } else if (m.type === 'notice') {
       notify(m.message, 'error');
     } else if (m.type === 'status') {
-      if (m.status.asleep && !r.asleep && !saving) notify(msg('machine:main.asleep'));
+      if (m.status.asleep && !r.asleep && !power.saving) notify(msg('machine:main.asleep'));
       r.asleep = !!m.status.asleep;
       showStatus(m.status, alive(m.status));
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
@@ -1181,9 +1165,9 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'heap') {
       (window as unknown as { __heap?: unknown }).__heap = m.heap;
     } else if (m.type === 'phase') {
-      ui.boot.line = text(m.text);
-      ui.boot.progress = undefined;
-      if (state === 'loading') stateText(m.text);
+      bootCard.line = text(m.text);
+      bootCard.progress = undefined;
+      if (power.state === 'loading') stateText(m.text);
     } else if (m.type === 'snapshot-progress') {
       snapshotJob?.progress(m.phase, m.fraction);
     } else if (m.type === 'snapshot-chunk') {
@@ -1193,11 +1177,11 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'snapshot-error') {
       snapshotJob?.error(fromWire(m.error));
     } else if (m.type === 'progress') {
-      if (m.total) ui.boot.progress = m.loaded / m.total;
-      ui.boot.line = m.total
+      if (m.total) bootCard.progress = m.loaded / m.total;
+      bootCard.line = m.total
         ? t('machine:main.boot.downloading', { loaded: m.loaded, total: m.total })
         : t('machine:main.boot.downloaded', { loaded: m.loaded });
-      if (state === 'loading')
+      if (power.state === 'loading')
         stateText(
           m.total
             ? msg('machine:main.state.loadingPercent', { percent: Math.floor((100 * m.loaded) / m.total) })
@@ -1206,8 +1190,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'screen' && !spec.firmware) {
       // The guest's console has the screen: it shows the boot from here. (Through the firmware the
       // screen stays black until a getty: the boot's output, menus and a first boot's questions are on the serial console.)
-      ui.boot.done = true;
-      ui.boot.shown = false;
+      bootCard.done = true;
+      bootCard.shown = false;
     }
   };
   worker.onerror = (e) => {
@@ -1239,7 +1223,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       const needs = stored ? await filesNeedingUser(stored) : [];
       if (needs.length) throw new NeedsUser(needs);
       ({ disks, home } = await startDisks());
-      ui.status.disks = disks.map((d) => d.name);
+      status.disks = disks.map((d) => d.name);
       about = await aboutMachine(!!three);
     } catch (e) {
       if (run !== r) return;
@@ -1268,12 +1252,12 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     shares.path = stored ? (sharesPath(stored.record) ?? '') : '';
     if (run !== r) return folders.end();
     if (folders.views().some((v) => v.problem)) shares.openMenu(); // Allow access…, Use it here
-    const s = three ? undefined : screen;
-    if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
+    const s = three ? undefined : offscreen;
+    if (hasGpu) current.graphics = three ? '3d' : '2d'; // `data-graphics`, for tests
     const startLayout = await resolveKeyboard(
       keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine')),
     );
-    ui.keyLayout = startLayout?.id;
+    keys.layout = startLayout?.id;
     worker.postMessage(
       {
         type: 'start',
@@ -1322,13 +1306,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         guest: guestWords(startLayout),
         nets,
         usb: usbPort?.port2,
-        mouse: mouse?.port2,
+        mouse: mousePort?.port2,
         touch: touch?.port2,
         folders: sharesPort && { list: list!, port: sharesPort.port2 },
         sharesPath: sharesPort ? sharesPath(stored!.record) : undefined,
         clock: stored ? !!stored.record.clock : params.get('clock') !== '0',
         agent: agent?.port2,
-        sound,
+        sound: soundPort,
         snapshot,
         resume,
         about,
@@ -1341,13 +1325,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         tablet.port2,
         serial.port2,
         display.port2,
-        sound.port,
+        soundPort.port,
         ...(s ? [s] : []),
         ...(three ? [three.renderer] : []),
         ...nets.map((n) => n.ip),
         ...(usbPort ? [usbPort.port2] : []),
         ...(sharesPort ? [sharesPort.port2] : []),
-        ...(mouse ? [mouse.port2] : []),
+        ...(mousePort ? [mousePort.port2] : []),
         ...(touch ? [touch.port2] : []),
         ...(agent ? [agent.port2] : []),
       ],
@@ -1361,7 +1345,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     gpu.postMessage(
       {
         type: 'init',
-        canvas: screen,
+        canvas: offscreen,
         port: channel.port1,
         stats: params.has('displaystats'),
         debug: gpuKnobs.includes('debug'),
@@ -1401,7 +1385,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
           .filter(Boolean),
         queryPoll: gpuKnobs.find((k) => k.startsWith('querypoll='))?.slice(10) as QueryPoll | undefined,
       } satisfies ToGpuWorker,
-      [screen, channel.port1],
+      [offscreen, channel.port1],
     );
     gpu.onmessage = (e: MessageEvent<FromGpuWorker>) => {
       if (run !== r) return;
@@ -1506,20 +1490,18 @@ async function stop() {
  * during a disk reset, would start a machine beside the one being started, with nothing to stop it.
  */
 async function exclusively(f: () => Promise<void>) {
-  if (switching || saving) return;
-  switching = true;
-  syncButtons();
+  if (power.busy) return;
+  power.switching = true;
   try {
     await f();
   } finally {
-    switching = false;
-    syncButtons();
+    power.switching = false;
   }
 }
 /** True while a snapshot is being written (after saying so) or the machine is being switched: a disk's Export, Open disk and the like wait for it. */
 function busy() {
-  if (saving) void ask.alert(t('snapshots:main.busy'));
-  return switching || saving;
+  if (power.saving) void ask.alert(t('snapshots:main.busy'));
+  return power.busy;
 }
 
 /**
@@ -1565,7 +1547,7 @@ const restart = (resume = true) =>
 /** The toolbar's Start, Restart or Retry: a restart of a running machine is a power cut, so it asks first. */
 async function restartAsked() {
   if (
-    (state === 'running' || state === 'booting') &&
+    isLive(power.state) &&
     !(await ask.confirm(t('machine:main.restart.confirm'), {
       title: t('machine:main.restart.title'),
       ok: t('machine:main.restart.ok'),
@@ -1577,7 +1559,7 @@ async function restartAsked() {
 }
 /** The toolbar's Power off: the machine stops at once, after asking. */
 async function powerOffAsked() {
-  if (!(state === 'running' || state === 'booting')) return;
+  if (!isLive(power.state)) return;
   if (
     !(await ask.confirm(t('machine:main.powerOff.confirm'), {
       title: t('machine:main.powerOff.title'),
@@ -1594,9 +1576,9 @@ async function powerOffAsked() {
 
 /** What the page shows of the machine and its disk: its name, Suspend (only with a disk the page keeps changes to), a transient machine's entry on the Machines page. */
 function syncDiskButtons() {
-  ui.title = machineTitle();
-  ui.hasOverlay = !!overlayName();
-  ui.transient = !stored && !needsDisk() ? { label: text(spec.title), disk: baseName() } : undefined;
+  current.title = machineTitle();
+  current.hasOverlay = !!overlayName();
+  current.transient = !stored && !needsDisk() ? { label: text(spec.title), disk: baseName() } : undefined;
 }
 /** No disk yet: say how to bring one, and start nothing. */
 function waitForDisk() {
@@ -1712,7 +1694,7 @@ async function machineForFile(file: File, handle?: FileSystemFileHandle) {
 async function switchMachine(id: string) {
   if (machine !== 'uefi' || params.has('machine')) return void (location.search = `?m=${id}`);
   if (
-    (state === 'running' || state === 'booting') &&
+    isLive(power.state) &&
     stored?.record.id !== id &&
     !(await ask.confirm(t('machine:main.switch.confirm'), {
       title: t('machine:main.switch.title'),
@@ -1741,7 +1723,7 @@ async function switchMachine(id: string) {
     q.set('m', id);
     history.replaceState(null, '', `?${q}`);
     rememberMachine(id);
-    ui.current = id;
+    current.id = id;
     syncDiskButtons();
     syncMachineMenu();
     syncUsb();
@@ -1765,7 +1747,7 @@ async function chooseDisk(choice: { file: File; handle?: FileSystemFileHandle } 
     return machineForFile(choice.file, choice.handle);
   const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
   if (
-    (state === 'running' || state === 'booting') &&
+    isLive(power.state) &&
     !(await ask.confirm(t('disks:main.boot.confirm', { name: next.file?.name ?? next.url }), {
       ok: t('disks:main.boot.ok'),
       danger: true,
@@ -1796,7 +1778,7 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
   if (!info) return void ask.alert(t('disks:main.changes.notChanges', { name: file.name }));
   if (!info.hash) return void ask.alert(t('disks:main.changes.noHash', { name: file.name, backing: info.backingName }));
   const written = !m && overlay ? await overlayBytes(overlay).catch(() => 0) : 0;
-  const running = here && (state === 'running' || state === 'booting');
+  const running = here && isLive(power.state);
   const onto = chosen ? diskName() : msg('disks:main.machineDisk', { machine: spec.title });
   const into = m
     ? msg('disks:main.changes.intoOverlay', { disk: disk!.name })
@@ -1848,7 +1830,7 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
     }
     return;
   }
-  const wasOn = state === 'running' || state === 'booting';
+  const wasOn = isLive(power.state);
   await exclusively(async () => {
     await stop();
     term.reset();
@@ -1977,17 +1959,17 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
   };
   if (!uses) {
     // Not this page's machine's disk: nothing stops (the state shows the progress, then says what it was).
-    const was = ui.stateText;
+    const was = power.stateText;
     try {
       notify(await write());
     } catch (e) {
       notify(new MsgError('disks:main.save.failed', {}, { cause: e }), 'error');
     } finally {
-      ui.stateText = was;
+      power.stateText = was;
     }
     return;
   }
-  const running = state === 'running' || state === 'booting';
+  const running = isLive(power.state);
   if (
     running &&
     !(await ask.confirm(t('disks:main.save.confirm'), {
@@ -2080,7 +2062,7 @@ async function graphicsOk(r: Run) {
  */
 async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   const r = run;
-  if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
+  if (!r || power.busy || !isLive(power.state)) return;
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
@@ -2088,8 +2070,7 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   // A stored machine's is kept at once, named by the time (Snapshot is the toolbar's panic button: renamed later, on the Machines page).
   if (stored && !o.toFile) return keepSnapshot(d.toLocaleString());
   // A large 3D state is asked about first (its OK is a click: the picker after it has its user activation).
-  if (!(await graphicsOk(r)) || run !== r || saving || switching || !(state === 'running' || state === 'booting'))
-    return;
+  if (!(await graphicsOk(r)) || run !== r || power.busy || !isLive(power.state)) return;
   // The picker next, as a disk's Export does: it needs the click's user activation. The machine isn't stopped, so nothing is asked.
   let handle: FileSystemFileHandle | undefined;
   const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> })
@@ -2107,12 +2088,11 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
       handle = undefined; // the download below
     }
   }
-  if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return; // the machine moved on while the picker was open
+  if (run !== r || power.busy || !isLive(power.state)) return; // the machine moved on while the picker was open
   const unplugged = await emptyPorts(r, 'snapshot');
   if (!unplugged) return;
-  if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
-  saving = true;
-  syncButtons();
+  if (run !== r || power.busy || !isLive(power.state)) return;
+  power.saving = true;
   const parts: Blob[] = [];
   try {
     const result = await new Promise<{
@@ -2142,9 +2122,9 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
     }
     parts.length = 0;
-    ui.snapshotResult = JSON.stringify(result); // for tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes
-    if (run === r && (state === 'running' || state === 'booting')) {
-      setState(state);
+    messageBar.snapshot = JSON.stringify(result); // for tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes
+    if (run === r && isLive(power.state)) {
+      setState(power.state);
       const words = {
         name: handle?.name ?? suggestedName,
         size: result.bytes,
@@ -2161,13 +2141,12 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
     }
   } catch (e) {
     if (run === r) {
-      setState(state);
+      setState(power.state);
       notify(withNote(e, t('snapshots:main.runsOn.noFile')), 'error');
     }
   } finally {
-    saving = false;
+    power.saving = false;
     snapshotJob = undefined;
-    syncButtons();
     void plugBack(r, unplugged);
   }
 }
@@ -2176,13 +2155,11 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
 async function keepSnapshot(name: string) {
   const r = run;
   const s = stored;
-  if (!r || !s || saving || switching || !(state === 'running' || state === 'booting')) return;
-  if (!(await graphicsOk(r)) || run !== r || saving || switching || !(state === 'running' || state === 'booting'))
-    return;
+  if (!r || !s || power.busy || !isLive(power.state)) return;
+  if (!(await graphicsOk(r)) || run !== r || power.busy || !isLive(power.state)) return;
   const unplugged = await emptyPorts(r, 'snapshot');
-  if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
-  saving = true;
-  syncButtons();
+  if (!unplugged || run !== r || power.busy || !isLive(power.state)) return;
+  power.saving = true;
   const id = newId();
   try {
     const about = (await aboutMachine())!;
@@ -2227,7 +2204,7 @@ async function keepSnapshot(name: string) {
       });
       return done;
     });
-    ui.snapshotResult = JSON.stringify({
+    messageBar.snapshot = JSON.stringify({
       bytes: result.bytes,
       pausedMs: result.pausedMs,
       stateMs: result.stateMs,
@@ -2235,8 +2212,8 @@ async function keepSnapshot(name: string) {
       id,
     });
     void records.reread(); // this tab's own writes aren't announced to it (Store.onChange)
-    if (run === r && (state === 'running' || state === 'booting')) {
-      setState(state);
+    if (run === r && isLive(power.state)) {
+      setState(power.state);
       const words = { name, size: result.bytes, seconds: (result.pausedMs / 1000).toFixed(1) };
       const slept = sleptAs(result.slept);
       notify(
@@ -2249,13 +2226,12 @@ async function keepSnapshot(name: string) {
     }
   } catch (e) {
     if (run === r) {
-      setState(state);
+      setState(power.state);
       notify(withNote(e, t('snapshots:main.runsOn.nothingKept')), 'error');
     }
   } finally {
-    saving = false;
+    power.saving = false;
     snapshotJob = undefined;
-    syncButtons();
     void plugBack(r, unplugged);
   }
 }
@@ -2264,25 +2240,23 @@ async function keepSnapshot(name: string) {
 // browser; the next start (this page opened again, Start) resumes it. Nothing is asked: nothing is lost.
 async function suspend() {
   const r = run;
-  if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
+  if (!r || power.busy || !isLive(power.state)) return;
   // Its devices are unplugged first; the next start attaches the ones attached at start (docs/usb.md "The page").
   const unplugged = await emptyPorts(r, 'suspend');
-  if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
-  saving = true;
-  syncButtons();
+  if (!unplugged || run !== r || power.busy || !isLive(power.state)) return;
+  power.saving = true;
   snapshotJob = {
     progress: snapshotProgress,
     chunk: () => {},
     done: () => {},
     // It runs on; the `suspended` state ends a suspend that worked (the worker's handler above).
     error: (e) => {
-      saving = false;
+      power.saving = false;
       snapshotJob = undefined;
       if (run === r) {
-        setState(state);
+        setState(power.state);
         notify(withNote(e, t('machine:main.runsOn')), 'error');
       }
-      syncButtons();
       void plugBack(r, unplugged);
     },
   };
@@ -2329,7 +2303,7 @@ async function restoreSnapshot(file: File, header: SnapshotHeader, key: string, 
     return void ask.alert(errorText(new MsgError('snapshots:main.restore.refused', { name }, { cause: plan.refused })));
   const when = new Date(header.created);
   const taken = !Number.isNaN(when.getTime());
-  const running = state === 'running' || state === 'booting';
+  const running = isLive(power.state);
   // The question, then a line on the disks the snapshot left as they are, and one per disk that forks.
   const lines = [
     running
@@ -2446,7 +2420,7 @@ async function loadSnapshot(file: File) {
   const overlay = overlayName();
   const written = overlay ? await overlayBytes(overlay).catch(() => 0) : 0;
   const when = new Date(header.created);
-  const running = state === 'running' || state === 'booting';
+  const running = isLive(power.state);
   const dated = !Number.isNaN(when.getTime());
   const count = typeof header.ncpus === 'number' ? header.ncpus : undefined;
   const holds =
@@ -2736,29 +2710,29 @@ const keyboardLock = (navigator as Navigator & { keyboard?: KeyboardLock }).keyb
 const mainEl = document.querySelector('main')!;
 function fullscreen() {
   if (machinesNav.open) closeMachines();
-  (ui.view === 'terminal' ? term : canvas).focus();
+  (screen.view === 'terminal' ? term : canvas).focus();
   // Without the lock (refused, or another browser), the browser keeps its shortcuts.
   // With the status bar along (Preferences), the page goes full screen without its toolbar and message bar (index.html).
-  const target = ui.statusFullscreen && shows(ui.statusItems) ? document.body : mainEl;
+  const target = status.fullscreen && shows(status.items) ? document.body : mainEl;
   target
     .requestFullscreen({ navigationUI: 'hide' })
     .then(() => keyboardLock?.lock())
     .then(() => {
-      ui.keyboardLocked = !!keyboardLock && !!document.fullscreenElement;
+      keys.locked = !!keyboardLock && !!document.fullscreenElement;
     })
     .catch(() => {});
 }
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) {
     keyboardLock?.unlock();
-    ui.keyboardLocked = false;
+    keys.locked = false;
   }
 });
 // Where keys go, for the status bar's Keyboard: the screen or the terminal focused in a focused window (what the
 // screen's "Click to type" hint says otherwise).
 const syncKeys = () => {
   const a = document.activeElement;
-  ui.keysFocused = document.hasFocus() && !!a && (a.id === 'screen' || !!a.closest('#terminal'));
+  keys.focused = document.hasFocus() && !!a && (a.id === 'screen' || !!a.closest('#terminal'));
 };
 for (const ev of ['focusin', 'focusout']) document.addEventListener(ev, () => queueMicrotask(syncKeys));
 for (const ev of ['focus', 'blur']) addEventListener(ev, syncKeys);
@@ -2767,7 +2741,7 @@ for (const ev of ['focus', 'blur']) addEventListener(ev, syncKeys);
 // Machines page, turns it off). The browser words the question itself. Not under automation (the tests navigate away
 // from running machines) unless `?leavewarning=1`.
 window.addEventListener('beforeunload', (e) => {
-  if (!['running', 'booting', 'rebooting'].includes(ui.state) || !leaveWarning()) return;
+  if (!['running', 'booting', 'rebooting'].includes(power.state) || !leaveWarning()) return;
   if (navigator.webdriver && params.get('leavewarning') !== '1') return;
   e.preventDefault();
   e.returnValue = ''; // older Chromium asks only with this set
@@ -2778,13 +2752,13 @@ function showStatus(s: Status, tabBytes: number) {
   // A new run's counters start again from 0 (a restart, a resume, a snapshot load): no rates across that.
   const prev = last && s.uptime >= last.status.uptime ? last : undefined;
   last = { status: s, at: now, metrics: metrics(s, now, prev, tabBytes) };
-  ui.status.data = JSON.stringify(s); // for tools (bench/stress)
-  ui.status.metrics = last.metrics;
+  status.data = JSON.stringify(s); // for tools (bench/stress)
+  status.metrics = last.metrics;
 }
 /** The screen's report each second (a 3D machine's GPU worker, a 2D machine's presenter), for the status bar. */
 function showGraphics(mode: Graphics['mode'], m: Parameters<typeof graphics>[1]) {
   const at = performance.now();
-  ui.status.gpu = { g: graphics(mode, m, at, ui.status.gpu), at };
+  status.gpu = { g: graphics(mode, m, at, status.gpu), at };
 }
 
 syncDiskButtons();
@@ -2797,15 +2771,15 @@ setView(isView(asked) ? asked : isView(settings().view) ? settings().view! : 'sc
 // the other restarts). A stored machine's are its Settings, on the Machines page (`saveSettings`).
 /** The Machine menu shows what runs (a stored machine's own settings after a switch). */
 function syncMachineMenu() {
-  ui.size.ncpus = ncpus;
-  ui.size.ramMiB = ramMiB;
-  ui.size.split = ramSplit;
-  ui.size.gpu = want3d ? '3d' : '2d';
+  current.size.ncpus = ncpus;
+  current.size.ramMiB = ramMiB;
+  current.size.split = ramSplit;
+  current.size.gpu = want3d ? '3d' : '2d';
   // A machine with Vulkan keeps Venus's window and arena in memory 0: its split (the toolbar's note) moves.
-  ui.size.vulkan = want3d && wantsVulkan();
-  ui.size.cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
-  ui.size.ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
-  ui.size.gpuLock = !webgl2
+  current.size.vulkan = want3d && wantsVulkan();
+  current.size.cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
+  current.size.ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
+  current.size.gpuLock = !webgl2
     ? t('toolbar:main.gpuLock.noWebgl2')
     : gpuAsked
       ? t('toolbar:main.gpuLock.address', { gpu: params.get('gpu') ?? '' })
@@ -2912,7 +2886,7 @@ function memoryWarning(question: string, r: number, n: number, j = jitBudget()) 
 }
 async function applySize(n: number, r: number, g: '3d' | '2d') {
   if (n === ncpus && r === ramMiB && g === (want3d ? '3d' : '2d')) return;
-  const running = state === 'running' || state === 'booting';
+  const running = isLive(power.state);
   const size = !hasGpu
     ? msg('machine:main.size', { count: n, ram: r })
     : g === '3d'
@@ -2941,7 +2915,7 @@ async function applySize(n: number, r: number, g: '3d' | '2d') {
 async function saveSettings(m: MachineRecord) {
   const s = stored;
   if (!s || m.id !== s.record.id) return;
-  const running = state === 'running' || state === 'booting';
+  const running = isLive(power.state);
   if (
     running &&
     !(await ask.confirm(
@@ -2986,11 +2960,11 @@ function openMachines(tab?: MachinesTab, id?: string) {
 function closeMachines() {
   machinesNav.open = false;
   // What the page changed shows in the toolbar now (a running machine takes it at its next start).
-  if (!run && !switching && !saving) void reloadStored();
+  if (!run && !power.busy) void reloadStored();
   if (location.hash) history.replaceState(null, '', `${location.pathname}${location.search}`);
   queueMicrotask(() => {
     fit();
-    (ui.view === 'terminal' ? term : canvas).focus();
+    (screen.view === 'terminal' ? term : canvas).focus();
   });
 }
 if (location.hash === '#machines') openMachines();
@@ -3010,16 +2984,14 @@ const pointerOn = (kind: 'mouse' | 'touch') => (stored ? !!stored.record[kind] :
 const clipboardOn = () => (stored ? !!stored.record.clipboard : params.get('clipboard') === '1');
 /** The running machine's end of the agent's port (web/app/agent-link.ts), while it has clipboard sharing. */
 let agentLink: AgentLink | undefined;
-/** Its clipboard sharing (web/app/clipboard.ts). */
-let clipboardShare: ClipboardShare | undefined;
 // The paste chord's text, image and HTML (docs/plans/clipboard.md §4.1, way 2, §4.4): the browser's own paste event while the
 // screen holds a chord (web/input.ts), taken at the document (Firefox fires it at <body>, not at the focused canvas);
 // the image is a `File` among its items, taken during the event (the data is gone after it).
 document.addEventListener('paste', (e) => {
-  if (!clipboardShare?.held || document.activeElement !== canvas) return;
+  if (!clipboard.share?.held || document.activeElement !== canvas) return;
   const image =
     [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type === PNG)?.getAsFile() ?? undefined;
-  clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '', image, e.clipboardData?.getData('text/html'));
+  clipboard.share.pasted(e.clipboardData?.getData('text/plain') ?? '', image, e.clipboardData?.getData('text/html'));
 });
 /** The browser runs on a Mac: its paste chord is Cmd+V. */
 const MAC = onMac(navigator as Navigator & { userAgentData?: { platform?: string } });
@@ -3072,39 +3044,31 @@ async function screenPng(): Promise<Blob | undefined> {
     r.display.postMessage({ type: 'png', id } satisfies DisplayFromPage);
   });
 }
-/** The toolbar's clipboard button follows the running machine's sharing. */
-function showClipboard() {
-  const s = clipboardShare;
-  ui.clipboard.state = s?.state ?? 'waiting';
-  ui.clipboard.stopped = !!s?.stopped;
-  ui.clipboard.canType = !!s?.canType;
-  ui.clipboard.typed = s?.typed;
-}
 // Sync on focus (plan §4.1, way 1): each time the page has focus again, and where the browser says the clipboard
 // changed; the read permission, followed (its `change` updates the button at once; granted, it syncs).
-window.addEventListener('focus', () => void clipboardShare?.focused());
+window.addEventListener('focus', () => void clipboard.share?.focused());
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') void clipboardShare?.focused();
+  if (document.visibilityState === 'visible') void clipboard.share?.focused();
 });
 if (navigator.clipboard && 'onclipboardchange' in navigator.clipboard)
-  navigator.clipboard.addEventListener('clipboardchange', () => clipboardShare?.clipboardChanged());
+  navigator.clipboard.addEventListener('clipboardchange', () => clipboard.share?.clipboardChanged());
 void watchReadPermission(navigator.permissions, !!navigator.clipboard, (p) => {
-  ui.clipboard.permission = p;
-  clipboardShare?.setPermission(p);
+  clipboard.permission = p;
+  clipboard.share?.setPermission(p);
 });
 // A key or pointer down on the screen (plan §4.2): the guest's pending text is written with its activation; a paste
 // chord drops it (the host's copy goes to the guest). At the document's capture, before web/input.ts takes the key.
 document.addEventListener(
   'keydown',
   (e) => {
-    if (e.target === canvas) clipboardShare?.activated(isPasteChord(e, MAC));
+    if (e.target === canvas) clipboard.share?.activated(isPasteChord(e, MAC));
   },
   { capture: true },
 );
 document.addEventListener(
   'pointerdown',
   (e) => {
-    if (e.target === canvas) clipboardShare?.activated(false);
+    if (e.target === canvas) clipboard.share?.activated(false);
   },
   { capture: true },
 );
@@ -3134,7 +3098,7 @@ async function editUsbEntriesNow(id: string | undefined, f: (e: UsbEntry[]) => U
   syncUsb();
 }
 const isCurrent = (id: string | undefined) => (stored ? stored.record.id === id : id === undefined);
-const usbRunning = () => !!run?.usb && (state === 'running' || state === 'booting');
+const usbRunning = () => !!run?.usb && isLive(power.state);
 const usbLocks = new UsbLocks(
   store,
   () => machineTitle(),
@@ -3211,8 +3175,7 @@ function usbPorts(port: MessagePort) {
   p.onChange = syncUsb;
   p.onLeds = (c, l) => {
     if (c !== KEYBOARD_CONNECTOR) return;
-    leds.usb = l;
-    showLeds();
+    keys.ledBits.usb = l;
   };
   p.onRumble = (c, strong, weak) => padFeed.rumble(c, strong, weak);
   p.onGone = (connector, was, reason, error) => {
@@ -3315,8 +3278,8 @@ function syncKeyboard(r: Run) {
     const p = r.usb;
     if (!p || run !== r || !usbRunning()) return;
     const c = p.connectors[KEYBOARD_CONNECTOR];
-    if (keyboardLive && isKeyboard(c)) await p.detach(KEYBOARD_CONNECTOR).catch(() => {});
-    else if (!keyboardLive && !c)
+    if (keys.live && isKeyboard(c)) await p.detach(KEYBOARD_CONNECTOR).catch(() => {});
+    else if (!keys.live && !c)
       await p
         .attach(KEYBOARD_CONNECTOR, KEYBOARD)
         .catch((err) => notify(usbDetails(t('usb:main.keyboardFailed'), err), 'error'));
@@ -3535,7 +3498,7 @@ const usbPage = {
 };
 syncUsb();
 
-// What the components ask of the page (web/app/ui.svelte.ts `Page`).
+// What the components ask of the page (web/app/page.ts `Page`).
 /** Reads the page's machine's record again, if `machine` is it. */
 const rereadRecord = async (machine: string) => {
   if (stored?.record.id === machine) stored.record = (await store.get('machines', machine)) ?? stored.record;
@@ -3627,7 +3590,7 @@ Object.assign(page, {
   },
   setView: (v: View) => setView(v),
   showLog: () => {
-    setView(ui.view === 'screen' ? 'both' : ui.view, false);
+    setView(screen.view === 'screen' ? 'both' : screen.view, false);
     term.focus();
   },
   fullscreen,
@@ -3638,9 +3601,9 @@ Object.assign(page, {
     run?.input.chord(...keys);
   },
   showOsk: (on: boolean) => {
-    ui.osk = on;
+    keys.osk = on;
     // The view's input keeps (or takes) the focus: the terminal in its view, or in both views when it has it.
-    if (on && !terminalFocused()) (ui.view === 'terminal' ? term : canvas).focus();
+    if (on && !terminalFocused()) (screen.view === 'terminal' ? term : canvas).focus();
   },
   holdKey: (code: string, ms: number) => {
     canvas.focus();
@@ -3661,7 +3624,7 @@ Object.assign(page, {
     holding = { timer: setTimeout(up, ms), up };
   },
   oskKey: (code: string, down: boolean, m: Mods, repeat = false) => {
-    const e = { ...eventOf(code, m, keymapOf(ui.keyLayout)), repeat };
+    const e = { ...eventOf(code, m, keymapOf(keys.layout)), repeat };
     // A key goes where it went down: the terminal (it has the focus: the terminal's view, or both views with the
     // terminal last clicked) or the screen's keys. The terminal types it as xterm.js does its own keys.
     const toTerminal = down ? terminalFocused() : oskToTerminal.has(code);
@@ -3727,23 +3690,23 @@ Object.assign(page, {
   netHolder: (id: string) => net.locks.holder(connectionLock(id)),
   // A read while the permission is `prompt` is what makes Chromium ask; the text it gives is the sync's (granted: `setPermission`).
   clipboardAsk: () => {
-    if (ui.clipboard.permission === 'prompt') void navigator.clipboard.readText().catch(() => {});
+    if (clipboard.permission === 'prompt') void navigator.clipboard.readText().catch(() => {});
   },
-  clipboardPause: (paused: boolean) => (paused ? clipboardShare?.pause() : clipboardShare?.resume()),
+  clipboardPause: (paused: boolean) => (paused ? clipboard.share?.pause() : clipboard.share?.resume()),
   clipboardSend: async () => {
-    ui.clipboard.failed = (await clipboardShare?.send()) ? undefined : 'send';
+    clipboard.failed = (await clipboard.share?.send()) ? undefined : 'send';
   },
   clipboardType: async () => {
-    ui.clipboard.failed = (await clipboardShare?.typeIt()) ? undefined : 'type';
+    clipboard.failed = (await clipboard.share?.typeIt()) ? undefined : 'type';
   },
   clipboardScreen: async () => {
     // The promise form keeps the click's activation (and the focus) over the read-back; Chromium awaits it at the write.
-    ui.clipboard.failed = undefined;
+    clipboard.failed = undefined;
     const png = screenPng().then((b) => b ?? Promise.reject(new DOMException('no picture of the screen', 'DataError')));
     try {
       await navigator.clipboard.write([new ClipboardItem({ [PNG]: png })]);
     } catch {
-      ui.clipboard.failed = 'screen';
+      clipboard.failed = 'screen';
     }
   },
 } satisfies typeof page);
@@ -3760,7 +3723,7 @@ function boot() {
         }),
       }),
     );
-    ui.cantRun = true;
+    power.cantRun = true;
     return;
   }
   if (storedError !== undefined)

@@ -19,16 +19,21 @@
   import type { PageNetwork } from './net-live.ts';
   import { usb } from './areas/usb.svelte.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
-  import { page, ui, type View } from './ui.svelte.ts';
+  import { clipboard } from './areas/clipboard.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { isLive, power } from './areas/power.svelte.ts';
+  import { screen } from './areas/screen.svelte.ts';
+  import { page } from './page.ts';
+  import type { View } from './areas/screen.svelte.ts';
   import { t } from '../i18n.ts';
 
   let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
-  const running = $derived(ui.state === 'running' || ui.state === 'booting');
+  const running = $derived(isLive(power.state));
   /** What Start says: start an idle machine, retry a failed one, else restart. */
   function startAsOf() {
-    if (ui.state === 'off' || ui.state === 'idle' || ui.state === 'suspended') return 'start';
-    return ui.state === 'failed' ? 'retry' : 'restart';
+    if (power.state === 'off' || power.state === 'idle' || power.state === 'suspended') return 'start';
+    return power.state === 'failed' ? 'retry' : 'restart';
   }
   const startAs = $derived(startAsOf());
   const START = {
@@ -36,7 +41,7 @@
     retry: { label: 'toolbar:Toolbar.retry', title: 'toolbar:Toolbar.retry.title' },
     restart: { label: 'toolbar:Toolbar.restart', title: 'toolbar:Toolbar.restart.title' },
   } as const;
-  const canSnapshot = $derived(running && !ui.busy);
+  const canSnapshot = $derived(running && !power.busy);
 
   const VIEWS: { v: View; icon: 'device-desktop' | 'terminal-2' | 'layout-columns'; title: string }[] = [
     { v: 'screen', icon: 'device-desktop', title: t('toolbar:Toolbar.view.screen') },
@@ -58,15 +63,15 @@
   >
     {t('toolbar:Toolbar.machines')}
   </Button>
-  <span id="machine" title={ui.title}>{ui.title}</span>
+  <span id="machine" title={current.title}>{current.title}</span>
   <span class="sep"></span>
   <Button
     variant="tool"
     labelled
     icon={startAs === 'restart' ? 'refresh' : 'player-play'}
     id="restart"
-    hidden={ui.cantRun}
-    disabled={ui.busy}
+    hidden={power.cantRun}
+    disabled={power.busy}
     title={t(START[startAs].title)}
     onclick={() => page.restart()}
   >
@@ -76,8 +81,8 @@
     variant="tool"
     icon="player-stop"
     id="power-off"
-    hidden={ui.cantRun || !running}
-    disabled={ui.busy}
+    hidden={power.cantRun || !running}
+    disabled={power.busy}
     aria-label={t('toolbar:Toolbar.powerOff')}
     title={t('toolbar:Toolbar.powerOff.title')}
     onclick={() => page.powerOffAsked()}
@@ -86,7 +91,7 @@
     variant="tool"
     icon="zzz"
     id="suspend"
-    hidden={!ui.hasOverlay || ui.cantRun}
+    hidden={!current.hasOverlay || power.cantRun}
     disabled={!canSnapshot}
     aria-label={t('toolbar:Toolbar.suspend')}
     title={t('toolbar:Toolbar.suspend.title')}
@@ -99,7 +104,7 @@
     icon="history-toggle"
     id="save-snapshot"
     disabled={!canSnapshot}
-    title={ui.current ? t('toolbar:Toolbar.snapshot.title') : t('toolbar:Toolbar.snapshot.title.file')}
+    title={current.id ? t('toolbar:Toolbar.snapshot.title') : t('toolbar:Toolbar.snapshot.title.file')}
     onclick={() => page.takeSnapshot()}
   >
     {t('toolbar:Toolbar.snapshot')}
@@ -112,14 +117,14 @@
         variant="tool"
         {icon}
         data-view-button={v}
-        aria-pressed={ui.view === v}
+        aria-pressed={screen.view === v}
         aria-label={title}
         {title}
         onclick={() => page.setView(v)}
       />
     {/each}
   </span>
-  {#if ui.hasGpu}<ScreenMenu />{/if}
+  {#if current.hasGpu}<ScreenMenu />{/if}
   <KeysMenu />
   <MouseMenu />
   <Button
@@ -132,11 +137,11 @@
   />
   <span class="sep"></span>
   <Sound {audio} />
-  {#if ui.hasNetwork}<Network {net} />{/if}
+  {#if current.hasNetwork}<Network {net} />{/if}
   {#if usb.on}<UsbMenu />{/if}
   {#if folders.running}<FoldersMenu {folders} />{/if}
-  {#if ui.clipboard.on && running}<ClipboardMenu />{/if}
-  {#if !ui.current}<SizeMenu />{/if}
+  {#if clipboard.on && running}<ClipboardMenu />{/if}
+  {#if !current.id}<SizeMenu />{/if}
 </header>
 
 <style>

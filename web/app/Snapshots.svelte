@@ -22,7 +22,9 @@
   import { opfsDir } from '../overlay.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { records } from './areas/records.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { isLive, power } from './areas/power.svelte.ts';
+  import { page } from './page.ts';
   import { openPicker } from './file-pickers.ts';
 
   type Props = {
@@ -61,8 +63,8 @@
       : '';
   const inPlace = $derived(!!machine?.attachments.some((a) => a.inPlace && !a.readOnly));
   /** The machine runs on this page: snapshots restore onto it, and it can save one. */
-  const here = $derived(machine ? machine.id === ui.current : true);
-  const live = $derived(here && (machine ? running : ui.state === 'running' || ui.state === 'booting'));
+  const here = $derived(machine ? machine.id === current.id : true);
+  const live = $derived(here && (machine ? running : isLive(power.state)));
 
   async function download(s: SnapshotRecord) {
     const parts = snapshotPath(s.machine, s.id).split('/');

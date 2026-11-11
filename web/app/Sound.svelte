@@ -11,7 +11,7 @@
   import Note from './ui/Note.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
-  import { ui } from './ui.svelte.ts';
+  import { sound } from './areas/sound.svelte.ts';
   import { t } from '../i18n.ts';
 
   let { audio }: { audio: PageAudio } = $props();
@@ -20,22 +20,15 @@
   let volume = $state(Math.round(100 * Math.min(1, Math.max(0, settings().volume ?? 1))));
   let mic = $state(settings().mic ?? true);
   let micRaw = $state(settings().micRaw ?? false);
-  // The audio's own state (waiting for a gesture, the microphone's), redrawn when it says it changed.
-  let tick = $state(0);
-  $effect(() => {
-    audio.onChange = () => tick++;
-  });
   // The guest's own changes: shown, not kept (the next machine starts at what the user chose).
   $effect(() => {
     audio.onMixer = (level, muted) => {
       [volume, on] = [Math.round(100 * level), !muted];
     };
   });
-  const waiting = $derived((void tick, audio.waiting()));
-  const micState = $derived((void tick, audio.micState));
-  $effect(() => {
-    ui.mic = micState;
-  }); // the status bar's Microphone
+  // The audio's own state (waiting for a gesture, the microphone's), as web/app/areas/sound.svelte.ts follows it.
+  const waiting = $derived(sound.waiting);
+  const micState = $derived(sound.mic);
   const summary = $derived(
     waiting
       ? t('sound:Sound.summary.waiting')

@@ -14,7 +14,7 @@
   import type { Store } from './store.ts';
   import { MAX_DISKS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { attach } from './machines.ts';
-  import { ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
 
   type Props = {
     store: Store;
@@ -38,7 +38,7 @@
       ? t('disks:AttachDisk.has')
       : m.attachments.length >= MAX_DISKS
         ? t('disks:AttachDisk.full', { max: MAX_DISKS })
-        : running.has(m.id) && m.id !== ui.current
+        : running.has(m.id) && m.id !== current.id
           ? t('disks:AttachDisk.otherTab')
           : undefined;
 

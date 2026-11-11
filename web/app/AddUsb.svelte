@@ -13,7 +13,7 @@
   import { hasApi, type Api } from './usb-live.ts';
   import { Actions } from './actions.svelte.ts';
   import ErrorWords from './ErrorWords.svelte';
-  import { page } from './ui.svelte.ts';
+  import { page } from './page.ts';
 
   type Props = {
     /** A stored machine's id; undefined: the page's own (transient) machine. */

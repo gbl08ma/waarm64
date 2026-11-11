@@ -6,11 +6,12 @@
   screen keeps it.
 -->
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount } from 'svelte';
   import OskBar from './OskBar.svelte';
   import { OskFrame, PAD } from './osk-frame.svelte.ts';
   import { fullKeys, keymapOf, legends, OskKeys, pages, type Key, type ModifierMode, type Mods } from './osk.ts';
   import { t } from '../i18n.ts';
+  import { keys as pageKeys } from './areas/keys.svelte.ts';
 
   type Props = {
     /** Key `code` down or up, with the modifiers down on the keyboard (for a terminal's characters); `repeat`, a held key's. */
@@ -18,35 +19,22 @@
     /** The machine's keyboard layout (web/app/keyboard.ts), or none (US): the keys' legends, ISO's or JIS's extra keys. */
     keyLayout?: string;
     mode: ModifierMode;
-    /** Bumped when the guest's keys were released elsewhere (a blur): what the keyboard holds is forgotten. */
-    released: number;
-    /** The last key typed on the physical keyboard (`n` bumped each time): it ends the latches as a key here does. */
-    typed: { code: string; n: number };
     /** The guest's LEDs (bit 0 Num, 1 Caps, 2 Scroll Lock): lit on the lock keys. */
     leds: number;
     onclose(): void;
   };
-  let { send, keyLayout, mode, released, typed, leds, onclose }: Props = $props();
+  let { send, keyLayout, mode, leds, onclose }: Props = $props();
   /** The lock keys' LEDs: their bits in `leds`. */
   const LED_BITS: Record<string, number> = { NumLock: 1, CapsLock: 2, ScrollLock: 4 };
 
-  let tick = $state(0);
   const keys = new OskKeys((code, down, repeat) => send(code, down, keys.mods(), repeat));
-  keys.onChange = () => {
-    tick++;
-  };
   $effect(() => {
     keys.mode = mode;
   });
-  $effect(() => {
-    if (released) untrack(() => keys.forget());
-  });
-  $effect(() => {
-    if (typed.n) {
-      const code = typed.code;
-      untrack(() => keys.typed(code));
-    }
-  });
+  // The guest's keys released elsewhere (a blur): what the keyboard holds is forgotten. A key typed on the physical
+  // keyboard ends the latches as a key here does.
+  $effect(() => pageKeys.released.on(() => keys.forget()));
+  $effect(() => pageKeys.typed.on((code) => keys.typed(code)));
 
   /** The named keys' words (the others show their legends). */
   const NAMES: Record<string, string> = {
@@ -133,8 +121,6 @@
     el.setPointerCapture(e.pointerId);
     keys.press(e.pointerId, code);
   }
-  /** Key `code`'s state as of redraw `_tick`. */
-  const stateOf = (code: string, _tick: number) => keys.state(code);
 </script>
 
 <svelte:window onresize={frame.fit} />
@@ -159,7 +145,7 @@
       <div
         class="key"
         data-code={k.code}
-        data-state={stateOf(k.code, tick)}
+        data-state={keys.state(k.code)}
         data-led={ledOf(k.code)}
         class:named={!!k.name}
         style:left={px(k.x * frame.u)}

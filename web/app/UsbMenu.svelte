@@ -14,7 +14,8 @@
   import { deviceName } from './usb-ports.ts';
   import { Actions } from './actions.svelte.ts';
   import { usb } from './areas/usb.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   let open = $state(false);
   let adding = $state(false);
@@ -133,16 +134,16 @@
         adding = true;
       }}>{t('usb:UsbMenu.add')}</Button
     >
-    {#if ui.current}<Button
+    {#if current.id}<Button
         onclick={() => {
           open = false;
-          page.openMachines('usb', ui.current);
+          page.openMachines('usb', current.id);
         }}>{t('usb:UsbMenu.all')}</Button
       >{/if}
   </div>
   {#if !usb.running}<Note>{t('usb:UsbMenu.stopped')}</Note>{/if}
 </Menu>
-{#if adding}<AddUsb machine={ui.current} name={ui.title} close={() => (adding = false)} />{/if}
+{#if adding}<AddUsb machine={current.id} name={current.title} close={() => (adding = false)} />{/if}
 
 <style>
   /* An offer (a device that appeared, a permission to give): framed in the warning's colors, it asks. */

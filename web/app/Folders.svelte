@@ -16,7 +16,8 @@
   import { MAX_FOLDERS } from './folders.ts';
   import type { MachineRecord } from './shape.ts';
   import { shares } from './areas/shares.svelte.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { page } from './page.ts';
 
   let {
     folders,
@@ -30,7 +31,7 @@
   } = $props();
 
   const all = $derived(folders.folders);
-  const here = $derived(machine.id === ui.current && folders.running);
+  const here = $derived(machine.id === current.id && folders.running);
   const live = $derived(here ? folders.views() : []);
   /** Where the folder is kept, and whether it is read-only (for every machine). */
   const kindText = (f: { kind: string; readOnly: boolean }) => {
