@@ -24,7 +24,8 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | the toolbar's Snapshot and Load snapshot, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts`, `web/app/store.ts` | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines page does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `Disks.svelte`, `AddDisk.svelte`, `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte` | the Machines page (below, "The Machines page"): its tabs, the Add a disk wizard, the browser's Disks pane and its dialogs |
+| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte`, `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk wizard, the browser's Disks pane and its dialogs |
+| `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
@@ -150,7 +151,12 @@ off, suspend, take, load and restore snapshots, save disks, import changes, open
 main.ts fills in before the first start. Records the components read come from the store directly (its `onChange`;
 `ui.records` moves on every change, for the toolbar's snapshot list). Ids the tests and tools use stay (`#state`,
 `#message[data-snapshot]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
-the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`). **Sizes are in binary units**
+the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`: `FilePickers.svelte` owns them, and a
+button opens one with `file-pickers.ts` `openPicker('disk' | 'snapshot' | 'changes')`). **Actions** a click starts that can fail
+run through one runner (`actions.svelte.ts` `Actions`: `run(what, f)` says what runs in `busy` and keeps the error in
+`error`, as usb-ports.ts `errorView` words it; `ErrorWords.svelte` shows it, a USB attach's problems with their
+remedies): a dialog or a menu makes its own, the Machines page's panes and tabs share the page's (`act`, shown in its
+bar and its error banner). **Sizes are in binary units**
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
 **Styles** are the components': each `<style>` is scoped to the component that writes it and reaches only its own
@@ -219,7 +225,7 @@ elsewhere and open under their right edge (a page's Export menus under their lef
 
 **Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
 `web/app/clipboard.ts`'s `ClipboardShare`, wired in `main.ts`): shown while the running machine has
-**[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** (or `?clipboard=1`). The button's state (`data-state`): *sharing* (pressed), *paused*
+**[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (or `?clipboard=1`). The button's state (`data-state`): *sharing* (pressed), *paused*
 (the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its port closed), each with
 its tooltip; a mark (and its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is
 `prompt` or `denied`, or the focus reads stopped (below). The menu: **[Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow)** while the
@@ -275,7 +281,7 @@ the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new 
 
 ### The status bar
 
-The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesPage.preferences)** (the Machines page),
+The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesNav.preferences)** (the Machines page),
 kept per browser as `webpc.settings` `statusBar` (absent: the defaults; `[]`: no bar). `web/app/statusbar.ts` is the
 model, DOM-free (tests/statusbar.test.ts): the kinds (`KINDS`: name, group, icon, default look), the defaults (power
 state, a divider, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s), `normalize` (a kept list from another version: unknown
@@ -311,7 +317,7 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   within 8 px: moving first scrolls the page, and the drag's touchmoves are cancelled so the page stays put under
   it). The palette under it adds an element at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
 - **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
-  status bar in full screen](ui:machines:MachinesPage.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (their components' `body:fullscreen` rules).
+  status bar in full screen](ui:machines:PreferencesPane.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (their components' `body:fullscreen` rules).
 - **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit
   every host and guest, whose rates differ by far more than the bars could show (decided 2026-11-09).
 - **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk, adapter and USB bytes are one add per
@@ -333,21 +339,27 @@ keeps the machine from running (it failed, it waits for a disk) stays until it's
 
 ## The Machines page
 
-The page's side of [machines.md](machines.md). It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
+The page's side of [machines.md](machines.md). `MachinesPage.svelte` composes it: it reads the records, runs the
+panes' actions and holds the machine being edited (`machine-edit.svelte.ts` `MachineEdit`: the record, the draft the tabs
+edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab), and shows the list
+(`MachinesNav.svelte`; the other panes' ids in `machines-panes.ts`) and the chosen pane: a machine's
+(`MachinePane.svelte`: its head and a component per tab, `SettingsTab`, `Disks`, `NetworkTab`, `UsbTab`, `FoldersTab`,
+`Snapshots`), the transient machine's (`PagePane.svelte`), `DisksPane`, `FoldersPane`, `ConnectionsPane`,
+`PreferencesPane`, About; `StorageBar.svelte` at the bottom. It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
 address opens it, so a reload keeps it): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. The machines on the left
 (new, **from a disk image…** (what Open disk… and a drop do), import a definition), each said running (its Web Lock
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
-Open in this tab (for the page's own machine, **[Start](ui:machines:MachinesPage.start)** while it's off, "[Running in this tab](ui:machines:MachinesPage.runningHere)" while it runs),
+Open in this tab (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
-- **[Settings](ui:machines:MachinesPage.tab.settings):** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
+- **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
   the first holds at most 1,536 MiB: Venus's arena and window come first in memory 1) that the guest sees
   as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
-  is), **[Memory split (advanced)](ui:machines:MachinesPage.split)**, closed unless the machine has one: *[Set the split myself](ui:machines:MachinesPage.split.custom)* starts from the
+  is), **[Memory split (advanced)](ui:machines:RamSplit.split)**, closed unless the machine has one: *[Set the split myself](ui:machines:RamSplit.split.custom)* starts from the
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
-  **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **[Save and restart](ui:machines:MachinesPage.saveRestart)**
-  (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:MachinesPage.mouse)** and the **[Touchscreen](ui:machines:MachinesPage.touch)**, and
-  **[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** (off by default, its note under it; ticking it asks for the browser's read permission). A change of shape
+  **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **[Save and restart](ui:machines:SaveRow.saveRestart)**
+  (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:DeviceSwitches.mouse)** and the **[Touchscreen](ui:machines:DeviceSwitches.touch)**, and
+  **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default, its note under it; ticking it asks for the browser's read permission). A change of shape
   asks first when it orphans snapshots; a box whose change does (Vulkan, the USB controller, the mouse, touchscreen and
   clock device, clipboard sharing, shared folders) warns under it only when the machine has snapshots, while the note under Save always says it. The three are peripherals the guest sees: absent on machines made before
   them (off, so their shapes and snapshots stay as they were), on for new ones.
@@ -365,26 +377,26 @@ Duplicate, Export the definition, Delete; then tabs:
   listed with its overlays and the machines that have it, and attached again as it was. A file or URL added again (or opened, or
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
-- **[Network](ui:machines:MachinesPage.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (random,
+- **[Network](ui:machines:MachinePane.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (random,
   `newMac`, since 2026-11-03: machines share LANs, such as a local helper's, whose network knows a guest by its MAC;
   machines made before have `52:54:00:12:34:56` first, as the one card was), added, removed and moved up or down
-  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:MachinesPage.adapter.attach)** or [Change connection…](ui:network:Network.change) (the Network wizard),
-  **[Detach](ui:machines:MachinesPage.adapter.detach)**, **[Connect at start](ui:machines:MachinesPage.adapter.atStart)**, and Connect or Disconnect while it runs on this page. Attaching is saved at
-  once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **[Take the connection's settings in the guest](ui:machines:MachinesPage.netConfig)** (on; off is
-  `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **[Connections](ui:machines:MachinesPage.connections.heading)** (in the list of machines) is the
-  browser's connections; **[Preferences](ui:machines:MachinesPage.preferences)** under it is the page's, per browser (below, "Leaving the page" and "The status bar"), and **[About](ui:machines:MachinesPage.about)** after it (below, "About"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
+  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:AdapterCard.adapter.attach)** or [Change connection…](ui:network:Network.change) (the Network wizard),
+  **[Detach](ui:machines:AdapterCard.adapter.detach)**, **[Connect at start](ui:machines:AdapterCard.adapter.atStart)**, and Connect or Disconnect while it runs on this page. Attaching is saved at
+  once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **[Take the connection's settings in the guest](ui:machines:NetworkTab.netConfig)** (on; off is
+  `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **[Connections](ui:machines:ConnectionsPane.connections.heading)** (in the list of machines) is the
+  browser's connections; **[Preferences](ui:machines:MachinesNav.preferences)** under it is the page's, per browser (below, "Leaving the page" and "The status bar"), and **[About](ui:machines:MachinesPage.about)** after it (below, "About"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
-- **[USB](ui:machines:MachinesPage.tab.usb)** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
+- **[USB](ui:machines:MachinePane.tab.usb)** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
   connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. [Add a
   device…](ui:usb:UsbMenu.add) opens a wizard (`AddUsb.svelte`): two numbered steps (the kind, then the browser's chooser) over the kinds, a
   USB device (WebUSB) or a HID device (WebHID), each explained, and a note on what the machine remembers. [usb.md](usb.md) "The page".
-- **[Shared folders](ui:machines:MachinesPage.tab.folders):** the machine's switch (in the shape), **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** and its [Mount
-  point](ui:machines:MachinesPage.sharesPath), and the attached folders (`Folders.svelte`: order, Read-only, Allow…, Use it here, Detach), changed at once,
+- **[Shared folders](ui:machines:MachinePane.tab.folders):** the machine's switch (in the shape), **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)** and its [Mount
+  point](ui:machines:FoldersTab.sharesPath), and the attached folders (`Folders.svelte`: order, Read-only, Allow…, Use it here, Detach), changed at once,
   running or not. **[Attach a folder…](ui:folders:Folders.attach)** opens the Folder wizard (`FolderWizard.svelte`). **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of machines
   is the browser's (`FoldersPane.svelte`): rename, Read-only, Delete, a folder in the browser's files. The toolbar has a
   **Folders** menu while the page's machine runs with them. [shares.md](shares.md) §4.
-- **[Snapshots](ui:machines:MachinesPage.tab.snapshots):** the kept ones (below, "A stored machine's snapshots").
+- **[Snapshots](ui:machines:MachinePane.tab.snapshots):** the kept ones (below, "A stored machine's snapshots").
 
 **[Disks](ui:machines:MachinesPage.disks.heading)** in the list of machines is the browser's disks (`DisksPane.svelte`): every disk and ramdisk, attached
 or detached, with what it is, its overlays and the machines that have it. [Overlays…](ui:disks:DisksPane.overlaysButton) (a disk with overlays) opens
@@ -395,10 +407,10 @@ and can't take it. **[Delete](ui:disks:DisksPane.deleteButton)** is for a disk n
 overlays (`Store.deleteDisk`: the space comes back).
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
-disk's Export, Import changes…, **[Reset disk…](ui:machines:MachinesPage.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
+disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
 storage's estimate is at the bottom, with what takes it and, while remote disks' blocks are kept (docs/devices.md "Over
 HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its store up too, and reads from memory and the
-network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:MachinesPage.storage.clearShaders)**
+network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:StorageBar.storage.clearShaders)**
 (vk/README.md "The shader cache"; the store's size counts what IndexedDB holds, deflated).
 
 ### About
@@ -682,7 +694,7 @@ guest's own clock is behind by the time the file sat (or the machine was suspend
 (`hwclock -s`, timesyncd over a network); the RTC shows the host's time. Turning the catch-up off keeps that, for
 those who pause a machine so that it doesn't notice.
 
-**The clock catch-up** (Preferences' "[Suspend the guest before taking a snapshot](ui:machines:MachinesPage.clockSync)": the behaviour that shows, the clock being why; `settings().clockSync`, **on by
+**The clock catch-up** (Preferences' "[Suspend the guest before taking a snapshot](ui:machines:PreferencesPane.clockSync)": the behaviour that shows, the clock being why; `settings().clockSync`, **on by
 default** since 2026-10-25, the user; `?clocksync=1` or `0` decides for the page, the last one if there are several:
 `web/app/settings.ts` `clockSync`; the page tests' `PAGE_QUERY` turns it off, `tests/page-clock.test.ts` on) makes it notice as a laptop
 does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
@@ -769,7 +781,7 @@ On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's 
 wherever the browser has WebGL2 (since G3). The Machine menu's **[Graphics](ui:toolbar:Toolbar.size.gpu)** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
-A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `webpc-shaders` (the origin's, for every machine, deflated, under the Preferences' [Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
+A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `webpc-shaders` (the origin's, for every machine, deflated, under the Preferences' [Space for Vulkan's shaders](ui:machines:PreferencesPane.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
 them ([graphics.md](graphics.md) "Video"): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);
@@ -942,7 +954,7 @@ page writes the context's output latency into the ring's header, and the guest g
   screen has `touch-action: none`, so the page doesn't pan or zoom under them.
 - **Leaving the page** while the machine runs (booting, running, rebooting) stops it like pulling the plug, so the
   page asks the browser to ask first (`beforeunload`; the browser words the question itself, the page's text isn't
-  shown). **[Preferences](ui:machines:MachinesPage.preferences)** on the Machines page turns it off (`webpc.settings` `leaveWarning`, on unless set). Under
+  shown). **[Preferences](ui:machines:MachinesNav.preferences)** on the Machines page turns it off (`webpc.settings` `leaveWarning`, on unless set). Under
   automation (`navigator.webdriver`) it doesn't ask unless `?leavewarning=1`: the tests leave running machines.
 - Keys are mapped by `KeyboardEvent.code`: a key's position on a PC keyboard (the US one's keys, ISO's
   `IntlBackslash`, ABNT2's `IntlRo`, JIS's `IntlYen` and its conversion keys), whatever the host's layout prints on it.
@@ -983,7 +995,7 @@ height allow. The toolbar's menus open over it.
   Hungarian's Ü and Ó after 0 and Í before Z; ISO's Backslash (Italian's ù, Hungarian's ű) on the home row, ANSI's on
   Q's. They leave the symbols' page. A row past ten keys narrows them to share the 10u; the bottom one narrows Shift
   and Backspace to 1.25u first. A letter without a capital of its own (ß, º, µ) stays a symbol.
-- **Layouts:** the legends are the machine's [Keyboard layout](ui:machines:MachinesPage.keyboard)'s (the one a start
+- **Layouts:** the legends are the machine's [Keyboard layout](ui:machines:KeyboardField.keyboard)'s (the one a start
   gives the guest, `ui.keyLayout`; none set: US, the guests' default), from `web/app/keymaps.ts`: each layout's four
   levels by `KeyboardEvent.code` (unshifted, Shift, AltGr, AltGr with Shift), generated by `tools/osk-keymaps.ts` from
   xkeyboard-config with `xkbcomp` (`pc+<layout>(<variant>)`, as the guest's XKB compiles it) and keysymdef.h's
@@ -1013,7 +1025,7 @@ height allow. The toolbar's menus open over it.
   in the order the touches do, and fingers chord. Two pointers on one key: down with the first, up with the last.
 - **Modifiers** (Shift, Ctrl, Alt, Super): one held with another key, or alone for 500 ms, is released when let go. One
   tapped alone is **latched**: down until the next other key is released (Ctrl, Alt, F1 types Ctrl+Alt+F1), or with
-  Preferences' "[Keep on-screen keyboard modifiers held until clicked again](ui:machines:MachinesPage.oskToggle)"
+  Preferences' "[Keep on-screen keyboard modifiers held until clicked again](ui:machines:PreferencesPane.oskToggle)"
   (`settings().oskModifiers` `toggle`), until it's tapped again. A latched modifier tapped again is released at once.
   Held keys are drawn pressed, latched ones tinted (`data-state` `held`, `latched`).
   A press elsewhere (a click or a touch on the screen) while a finger holds a modifier uses it as a key would
@@ -1048,13 +1060,13 @@ and AltGr's characters; German's compact letters' page; JIS's input-method keys'
 
 ### The keyboard layout
 
-A machine's **[Keyboard layout](ui:machines:MachinesPage.keyboard)** setting (`MachineRecord.keyboard`, in its definition, not its shape; `?keyboard=<id>`
+A machine's **[Keyboard layout](ui:machines:KeyboardField.keyboard)** setting (`MachineRecord.keyboard`, in its definition, not its shape; `?keyboard=<id>`
 on the page) has the guest set a layout at every boot. Its values: an id in `web/app/keyboard.ts`'s `KEYBOARD_LAYOUTS`;
-`browser` (**[This browser's, at every boot](ui:machines:MachinesPage.keyboard.follow)**: `FOLLOW_BROWSER`, a new machine's default, so the guest types what the
+`browser` (**[This browser's, at every boot](ui:machines:KeyboardField.keyboard.follow)**: `FOLLOW_BROWSER`, a new machine's default, so the guest types what the
 user's keys say), the layout `navigator.keyboard.getLayoutMap()` reports, looked up at every start (Chromium only: a
 few keys' characters against each layout's, `detectLayout`; where the browser doesn't say, nothing is set and the
 guest keeps its last); or none (**Don't set it**: the guest's own, and what a machine made before the default or a
-definition without the field has). **[Match this browser](ui:machines:MachinesPage.keyboard.match)** picks a fixed layout from the same lookup, for the user to
+definition without the field has). **[Match this browser](ui:machines:KeyboardField.keyboard.match)** picks a fixed layout from the same lookup, for the user to
 save. It takes effect at the next boot, without a restart. A transient machine the user opened (`?disk=`, a
 file opened on the page) follows the browser as a new machine does (`keyboardSetting`); the tests' `?machine=` guests
 set none; `?keyboard=` overrides both (`?keyboard=none`: none). The on-screen keyboard shows the layout a start gives the guest ("The on-screen keyboard", "Layouts"); a
@@ -1091,13 +1103,13 @@ everywhere, and one without the setting keeps Portuguese (the unit isn't there).
 
 ### What the page sets in the guest
 
-Two machine settings have the guest change something at boot: **[Keyboard layout](ui:machines:MachinesPage.keyboard)** (above) and the Network tab's
-**[Take the connection's settings in the guest](ui:machines:MachinesPage.netConfig)** (on unless the user turns it off: `MachineRecord.netConfig`). Both are
+Two machine settings have the guest change something at boot: **[Keyboard layout](ui:machines:KeyboardField.keyboard)** (above) and the Network tab's
+**[Take the connection's settings in the guest](ui:machines:NetworkTab.netConfig)** (on unless the user turns it off: `MachineRecord.netConfig`). Both are
 units the page adds (`web/app/guest-unit.ts` `guestUnit`): `systemd.extra-unit.webpc-<what>.service`, a oneshot that
 runs a POSIX sh script given as a credential of its own (`webpc.<what>.sh`, `ImportCredential=`), and a
 `systemd.unit-dropin.*` that has the unit it serves want it (the generator reads no `[Install]`), all as SMBIOS type 11
 strings (systemd 256+; the keyboard's paragraph above says how they get there). Nothing is installed: a boot without
-the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)**
+the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)**
 gives a `.mount` and an `.automount` the same way ([shares.md](shares.md) §5). A ramdisk's **swap** box on the Machines page gives an `fstab.extra`
 credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap").
 
@@ -1122,7 +1134,7 @@ credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap").
   whose script copies the agent's binary out of fw_cfg (`opt/webpc/agent`, not a credential: too big for SMBIOS) into
   `/run/webpc` and runs it (docs/devices.md "The guest's agent"). Its description is
   [Clipboard sharing with the emulator](ui:guest:guest-words.agent). The setting is the Settings tab's
-  **[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** (off by default; a change of shape: the agent's device); ticking it is the click that asks
+  **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default; a change of shape: the agent's device); ticking it is the click that asks
   for the browser's read permission ("The toolbar", Clipboard).
 - **The keyboard layout** writes to the guest's disk instead (`/etc/default/keyboard`, localed's files,
   `/etc/environment`): Xorg's `xorg.conf.d`, localed, console-setup and pam_env read `/etc` only, so nothing in `/run`
@@ -1176,7 +1188,7 @@ Screen (the default, decision 2; edge to edge between the toolbar and the status
 black around the canvas), Serial terminal, or Both (side by side; stacked below 1100 px).
 The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
-it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs; its **[JIT cache](ui:machines:MachinesPage.jit)**, beside the RAM, is
+it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs; its **[JIT cache](ui:machines:SettingsTab.jit)**, beside the RAM, is
 the code cache's budget: Default (320 MiB) or 64 to 512 MiB, `MachineRecord.jitMiB`, in its definition and carried by
 its shape outside the hash, so changing it restarts the machine but orphans no snapshot); a transient
 machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
@@ -1360,7 +1372,7 @@ settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
 the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Machines
-page's **[Connections](ui:machines:MachinesPage.connections.heading)**: rename, Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
+page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: rename, Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
@@ -1386,7 +1398,7 @@ and the guest's default way out (below).
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
   noise), and the client isn't loaded until Connect. While the machine's [Take the connection's settings in the
-  guest](ui:machines:MachinesPage.netConfig) is on (`?netconfig=0` turns it off on a transient one), a systemd credential
+  guest](ui:machines:NetworkTab.netConfig) is on (`?netconfig=0` turns it off on a transient one), a systemd credential
   (`network.network.card`, over fw_cfg since phase B loop 3; on the command line before) gives
   networkd a `.network` file (systemd-network-generator writes it as `/run/systemd/network/card.network`), and a unit
   has every `.network` file take the lease's MTU and search domain ("What the page sets in the guest", below) (Debian's own units are all enabled under UEFI), so the guest asks the gateway for DHCP by itself; the gateway offers nothing
@@ -1482,7 +1494,7 @@ and the guest's default way out (below).
   Advanced [Let members connect to this machine](ui:network:NetWizard.room.incoming) (on by default; off, only replies
   to the guest's own flows come in) and [The machine's key](ui:network:NetWizard.room.key): a new one, or another stored room connection's (the
   same key in another room: docs/network-adapters.md §2.1). The connection's default name is the room's (a private
-  one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:MachinesPage.connection.room).
+  one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New
   name](ui:network:NetWizard.room.newName) gives the connection a new key after asking, so its old name stops working.
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the

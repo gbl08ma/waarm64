@@ -105,7 +105,7 @@ Since decided (the user, 2026-10-17):
 - **Storage:** the Machines page shows `navigator.storage.estimate()` and what each overlay, machine (variable store
   and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
   first time something is stored (without it the browser may evict the origin's data under pressure); while the
-  browser hasn't granted it, the storage bar offers [Protect from automatic deletion](ui:machines:MachinesPage.storage.persist),
+  browser hasn't granted it, the storage bar offers [Protect from automatic deletion](ui:machines:StorageBar.storage.persist),
   which asks again, with a tooltip saying what it means. A guest's
   write the storage refuses (over the quota: OPFS's sync handles come back short or throw `QuotaExceededError`)
   fails with `IOERR` after the remote disks' kept blocks give way (`releaseStores`), and the page says the storage
@@ -350,7 +350,7 @@ copy stale.
 ## 6. Machine definitions in and out
 
 `web/app/definitions.ts`; the page's side is frontend.md "Machines in the browser".
-- **[Export the definition](ui:machines:MachinesPage.exportDefinition):** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings (shared
+- **[Export the definition](ui:machines:MachinePane.exportDefinition):** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings (shared
   folders as `shares`, `sharesMount` and `sharesPath`, never the folders), the adapters' MACs (no connections), the
   remembered USB devices as identities (no grant travels), and per attachment the disk's kind, name, size, identity, URL, hash where the
   record has one, read-only, in place and serial. No handles, overlays, snapshots or file contents.
@@ -363,7 +363,7 @@ copy stale.
 
 ## 7. The page
 
-The Machines page (`MachinesPage.svelte`, `#machines` in the address), its tabs, wizards and storage footer:
+The Machines page (`MachinesPage.svelte` and its panes and tabs, `#machines` in the address), its tabs, wizards and storage footer:
 [frontend.md](frontend.md) "The Machines page". `web/app/machines.ts` is what it does to the records (make, copy,
 delete, edit, attach, detach, reorder; refused while the machine runs), `web/app/disks.ts` what it does with disks and
 their overlays.
@@ -373,7 +373,7 @@ their overlays.
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/snapshots.ts` (the shape now, the restore's plan, a
   machine like a snapshot), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
-  disk's estimate and import); the Svelte components (`MachinesPage.svelte`, `Disks.svelte`, `AddDisk.svelte`,
+  disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Machines page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte`).
 - `web/devices.ts`: the `zero` and `ram` sources, a stored disk under an overlay or written in place, the generation
   bump, the serial in `GET_ID`. `web/ramdisk.ts`, `web/stored.ts`, `web/overlay.ts` (overlays by path, `meta`, the

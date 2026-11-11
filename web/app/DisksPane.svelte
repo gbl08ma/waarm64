@@ -4,6 +4,7 @@
   Attach to a machine… (AttachDisk.svelte) and, when no machine has it, Delete with its overlays (`Store.deleteDisk`).
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import AttachDisk from './AttachDisk.svelte';
   import DiskInfo from './DiskInfo.svelte';
   import Button from './ui/Button.svelte';
@@ -22,7 +23,7 @@
     disks: Map<string, DiskRecord>;
     overlays: OverlayRecord[];
     running: Set<string>;
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
     offFirst(m: MachineRecord): Promise<boolean>;
   };
   let { store, machines, disks, overlays, running, act, offFirst }: Props = $props();

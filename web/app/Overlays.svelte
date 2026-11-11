@@ -4,6 +4,7 @@
   Delete, Merge into the disk (a stored disk) and Export. Which overlay a machine uses is chosen on its Disks tab.
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import ExportMenu from './ExportMenu.svelte';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
@@ -23,7 +24,7 @@
     /** Every overlay in this browser (the page's, reread after each change); the disk's are shown. */
     overlays: OverlayRecord[];
     machines: MachineRecord[];
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
     close(): void;
   };
   let { store, disk, overlays, machines, act, close }: Props = $props();

@@ -91,7 +91,7 @@ disconnects and says it was taken.
 ## 3. The page
 
 The Machines page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
-**[Connections](ui:machines:MachinesPage.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
+**[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
 browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine. What each shows and
 does: [frontend.md](frontend.md) "The Machines page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error; a
@@ -169,7 +169,7 @@ running in another tab takes effect there at once: that tab hears the record cha
   the machine's current attachments, and the restored guest renews its leases.
 - **A machine's definition** carries its adapters' MACs (`machine.macs`, left out for one at the default) and not its
   connections, which hold secrets and are this browser's: an imported machine's adapters come detached.
-- **[Duplicate](ui:machines:MachinesPage.duplicate)** copies the adapters with their MACs and no connections.
+- **[Duplicate](ui:machines:MachinePane.duplicate)** copies the adapters with their MACs and no connections.
 
 ## 6. Tests
 

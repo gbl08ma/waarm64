@@ -5,6 +5,7 @@
   overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Check from './ui/Check.svelte';
   import AddDisk from './AddDisk.svelte';
   import Button from './ui/Button.svelte';
@@ -34,7 +35,7 @@
     disks: Map<string, DiskRecord>;
     overlays: OverlayRecord[];
     running: boolean;
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
     offFirst(m: MachineRecord): Promise<boolean>;
   };
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();

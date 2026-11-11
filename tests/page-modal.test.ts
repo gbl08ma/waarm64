@@ -110,26 +110,26 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-field=name]').fill('Workbench');
   await m.locator('[data-field=ncpus]').selectOption('2');
   await m.locator('[data-field=ram]').selectOption('1024');
-  await m.locator('[data-field=jit]').selectOption({ label: t('machines:MachinesPage.mib', { n: 128 }) });
+  await m.locator('[data-field=jit]').selectOption({ label: t('machines:SettingsTab.mib', { n: 128 }) });
   await m.locator('[data-field=display]').selectOption('2d');
   // The keyboard layout: a new machine follows the browser, with its note; none set, no note; "Match this browser" answers either way.
-  assert.equal(await m.locator('[data-field=keyboard] option:checked').textContent(), t('machines:MachinesPage.keyboard.follow'));
+  assert.equal(await m.locator('[data-field=keyboard] option:checked').textContent(), t('machines:KeyboardField.keyboard.follow'));
   const followNote = await m.locator('[data-keyboard-note]').textContent() ?? '';
-  assert.ok(['machines:MachinesPage.keyboard.followNote.now', 'machines:MachinesPage.keyboard.followNote'].some((k) => words(k, {}, { whole: true }).test(followNote)), followNote);
+  assert.ok(['machines:KeyboardField.keyboard.followNote.now', 'machines:KeyboardField.keyboard.followNote'].some((k) => words(k, {}, { whole: true }).test(followNote)), followNote);
   await m.locator('[data-field=keyboard]').selectOption({ index: 0 });
   assert.equal(await m.locator('[data-keyboard-note]').count(), 0);
   await m.locator('[data-action=match-keyboard]').click();
   await m.locator('[data-keyboard-match]').waitFor();
   await m.locator('[data-field=keyboard]').selectOption({ label: t('machines:keyboard.pt') });
-  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', words('machines:MachinesPage.keyboard.setNote', {}, { whole: true }));
+  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', words('machines:KeyboardField.keyboard.setNote', {}, { whole: true }));
   await m.locator('[data-action=save]').click();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).waitFor();
   // The network's settings in the guest (the Network tab): on for a new machine, with its note; off is saved as false.
   await m.locator('[data-tab=network]').click();
   assert.equal(await m.locator('[data-field=net-config]').isChecked(), true);
-  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', words('machines:MachinesPage.netConfig.on', {}, { whole: true }));
+  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', words('machines:NetworkTab.netConfig.on', {}, { whole: true }));
   await m.locator('[data-field=net-config]').uncheck();
-  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', words('machines:MachinesPage.netConfig.off', {}, { whole: true }));
+  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', words('machines:NetworkTab.netConfig.off', {}, { whole: true }));
   await m.locator('[data-action=save]').click();
   await page.waitForFunction(() => document.querySelector('.machines [data-action=save]')?.hasAttribute('disabled'));
   // A URL disk (checked), a blank one, a ramdisk; a URL whose server lacks CORS is refused with the reason (the wizard stays open).
@@ -282,7 +282,7 @@ test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept 
   assert.equal(await modal(page).locator('section.machine [data-vulkan-orphans]').count(), 0);
   await modal(page).locator('section.machine [data-field=vulkan]').uncheck();
   await modal(page).locator('section.machine [data-vulkan-orphans]').waitFor();
-  assert.equal(await modal(page).locator('section.machine [data-vulkan-orphans]').textContent(), t('machines:MachinesPage.vulkan.orphans.off'));
+  assert.equal(await modal(page).locator('section.machine [data-vulkan-orphans]').textContent(), t('machines:SettingsTab.vulkan.orphans.off'));
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -314,7 +314,7 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   await page.reload();
   await page.click('#machines-open');
   const meta = (id: string) => modal(page).locator(`button.pick[data-machine="${id}"] .meta`);
-  const listMeta = (state: string) => words('machines:MachinesPage.list.meta', { count: 0, state: t(`machines:MachinesPage.state.${state}`) }, { whole: true });
+  const listMeta = (state: string) => words('machines:MachinesNav.list.meta', { count: 0, state: t(`machines:MachinesPage.state.${state}`) }, { whole: true });
   await page.waitForFunction(([id, src]) => new RegExp(src).test(document.querySelector(`.machines button.pick[data-machine="${id}"] .meta`)?.textContent ?? ''), [ids[0], listMeta('suspended').source], { timeout: 10_000 });
   assert.match(await meta(ids[1]).textContent() ?? '', listMeta('off'));
   await meta(ids[0]).click();
@@ -556,7 +556,7 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
   await page.click('#machines-open');
   const clear = page.locator('[data-action=clear-remote-cache]');
   await clear.waitFor();
-  assert.equal(await clear.textContent(), t('machines:MachinesPage.storage.clear', { size: 3 << 20 }));
+  assert.equal(await clear.textContent(), t('machines:StorageBar.storage.clear', { size: 3 << 20 }));
   await clear.click();
   await clear.waitFor({ state: 'detached' });
   const left = await page.evaluate(async () => {
@@ -590,7 +590,7 @@ test("the storage footer shows Vulkan's shader store and clears it; Preferences 
   await page.click('#machines-open');
   const clear = page.locator('[data-action=clear-shaders]');
   await clear.waitFor();
-  assert.equal(await clear.textContent(), t('machines:MachinesPage.storage.clearShaders', { size: stored }));
+  assert.equal(await clear.textContent(), t('machines:StorageBar.storage.clearShaders', { size: stored }));
   await clear.click();
   await clear.waitFor({ state: 'detached' });
   const left = await page.evaluate(async () => (await import('/web/venus-cache.ts' as string)).shaderStoreSize());

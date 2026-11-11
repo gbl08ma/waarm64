@@ -21,7 +21,7 @@ const NO_CONNECTION = t('network:Network.noConnection');
 const CHANGE = t('network:Network.change');
 const CONNECT = t('network:NetWizard.connect');
 const ATTACH = t('network:NetWizard.attach');
-const CHANGE_ADAPTER = t('machines:MachinesPage.adapter.change');
+const CHANGE_ADAPTER = t('machines:AdapterCard.adapter.change');
 /** A connection to choose in the wizard, in use by `holder`'s machine. */
 const heldBy = (holder: string) => words('network:NetWizard.kind.held', { holder });
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -147,7 +147,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await pageA.click('[data-tab="network"]');
   await pageA.waitForSelector('[data-adapter="0"] [data-action="detach-connection"]');
   await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
-  await pageA.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-adapter="0"] [data-connection-name]')?.textContent ?? ''), words('machines:MachinesPage.adapter.noConnection').source, { timeout: 10_000 });
+  await pageA.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-adapter="0"] [data-connection-name]')?.textContent ?? ''), words('machines:AdapterCard.adapter.noConnection').source, { timeout: 10_000 });
   assert.equal((await adapterOf(pageA, a)).connection, undefined);
 
   // Bravo: an ephemeral connection in its place, kept nowhere; after a reload it is gone and the adapter says so.

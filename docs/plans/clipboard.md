@@ -460,7 +460,7 @@ Images are the same path as text with another type: lazy offers, streamed chunks
 - **The machine's setting** (the Machines page, next to the other devices' switches: `MachineRecord.clipboard`,
   **off by default**, in the shape when on, §2). A draft of its words, for the catalog ([copy.md](../copy.md)),
   to be settled when it is built:
-  - Label: [Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)
+  - Label: [Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)
   - Note: "Copy text or an image on your computer and paste it in the guest, and the other way around. At every boot, this emulator
     starts a small program of its own in the guest, which passes the clipboard between the guest's desktop and
     this web app. In a Wayland session, the desktop must support the data-control protocol, as sway and KDE
@@ -474,7 +474,7 @@ Images are the same path as text with another type: lazy offers, streamed chunks
 
   The X11 sentence joins when X11 is built (§6 step 5; **joined**: "An X11 session works too, through the clipboard
   that Copy and Paste use. The middle-click selection isn't shared."), and so does a "text console" sentence when `TYPE` is
-  offered. **Settled (step 4)** in the catalog (`machines:MachinesPage.clipboard.note`): "Copy text" (images came
+  offered. **Settled (step 4)** in the catalog (`machines:DeviceSwitches.clipboard.note`): "Copy text" (images came
   with step 5, which made it "Copy text or an image", as the draft has it), and the console's sentence joins, since the menu types:
   "On a text console, the toolbar's clipboard menu can type what you copied." Stored machines all boot through
   UEFI, so the switch is always offered there; a transient machine has it only from `?clipboard=1` (the tests'),

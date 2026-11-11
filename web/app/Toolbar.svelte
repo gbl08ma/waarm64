@@ -22,6 +22,7 @@
   import { page, ui, type View } from './ui.svelte.ts';
   import { numaNote } from './machine.ts';
   import { t, text } from '../i18n.ts';
+  import { openPicker } from './file-pickers.ts';
 
   let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } =
     $props();
@@ -58,7 +59,7 @@
   });
   const loadFile = () => {
     loadOpen = false;
-    document.getElementById('load-snapshot-input')!.click();
+    openPicker('snapshot');
   };
 
   // The screen's size (virtio-gpu machines).

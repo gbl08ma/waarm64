@@ -120,7 +120,7 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     // The Machines page's From a disk image…: the same.
     await page.evaluate(() => { (window as unknown as { pick: string[] }).pick.push('second.raw'); });
     await page.locator('#machines-open').click();
-    await page.locator('.machines button', { hasText: t('machines:MachinesPage.fromImage') }).click();
+    await page.locator('.machines button', { hasText: t('machines:MachinesNav.fromImage') }).click();
     await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'second', null, { timeout: 10_000 });
 
     const disks = await page.evaluate(async () => {

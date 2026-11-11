@@ -4,6 +4,7 @@
   and from a folder on the computer, Empty. While a machine writes it (its lock is exclusive) those are off.
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Check from './ui/Check.svelte';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
@@ -21,11 +22,7 @@
   import type { Store } from './store.ts';
   import { ui } from './ui.svelte.ts';
 
-  let {
-    folders,
-    store,
-    act,
-  }: { folders: PageFolders; store: Store; act: (what: string, f: () => Promise<unknown>) => unknown } = $props();
+  let { folders, store, act }: { folders: PageFolders; store: Store; act: Act } = $props();
 
   const all = $derived((void ui.folders.tick, folders.folders));
   let open = $state<string>();

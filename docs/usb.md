@@ -791,7 +791,7 @@ controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes b
 
 Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the messages' words, the
 definition entries), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
-ports), `Usb.svelte` (the Machines page's USB tab), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
+ports), `UsbTab.svelte` (the Machines page's USB tab: the controller's switch over `Usb.svelte`, the devices), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
 toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (the Gamepad API's pads and their feed), `UsbProblems.svelte` (a device's problems, with their remedies folded), and the USB block of `web/app/main.ts`.
 
 ### The controller and the shape
@@ -799,7 +799,7 @@ toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (t
 `MachineRecord.usb` turns the controller on. The shape has `usb: true` only when it is on. When it is off the key is
 left out, so a machine made before USB keeps its canonical JSON and its shape hash (`tests/store.test.ts` pins the
 hash). New machines (`createMachine`: New machine, a disk file opened or dropped) have the controller; a definition
-without `machine.usb` imports with it off. It is turned on or off with the **[USB controller](ui:machines:MachinesPage.usb)** checkbox, which is on
+without `machine.usb` imports with it off. It is turned on or off with the **[USB controller](ui:machines:UsbSwitch.usb)** checkbox, which is on
 the Settings tab and on the USB tab. When the machine has snapshots, the checkbox warns that the change orphans them,
 as a RAM change does, and Save asks again. `shapeDiff` says "it had (no) a USB controller".
 A transient machine (a test's) has the controller with `?usb=1` only. With a controller, the page passes a
@@ -835,7 +835,7 @@ device again with `getDevices()` and needs no click.
 - **[Forget](ui:usb:Usb.forget.button)** detaches the device first. When no other machine remembers the device, Forget also calls
   `device.forget()`, so the browser's grant goes too.
 - **Edits:** the list is edited while the machine runs, so a settings save (`updateMachine`) keeps the stored list
-  rather than the draft's. **[Duplicate](ui:machines:MachinesPage.duplicate)** copies the entries with new ids.
+  rather than the draft's. **[Duplicate](ui:machines:MachinePane.duplicate)** copies the entries with new ids.
 - **Definitions** carry `machine.usb` and `usbDevices`, which are the entries without their ids. No grants travel.
 
 ### Device locks

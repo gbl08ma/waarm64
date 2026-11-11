@@ -139,6 +139,7 @@ import {
   type Host as ClipboardHost,
 } from './clipboard.ts';
 import { rgbaPng, toPng } from './png.ts';
+import { openPicker } from './file-pickers.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -524,7 +525,6 @@ flushSync();
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
 const lockCursor = $<HTMLCanvasElement>('screen-cursor');
-const loadSnapshotInput = $<HTMLInputElement>('load-snapshot-input');
 
 // The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`); the firmware's console is 80×25 (images/build.sh edk2 offers no other mode), so the terminal has 25 rows.
 const term = new Terminal({
@@ -975,7 +975,7 @@ const bootInstead: Action = {
         if (yes) void restart(false);
       }),
 };
-const loadAgain: Action = { label: t('snapshots:main.loadAgain'), run: () => loadSnapshotInput.click() };
+const loadAgain: Action = { label: t('snapshots:main.loadAgain'), run: () => openPicker('snapshot') };
 const ACTIONS: Record<Problem, Action[]> = {
   'missing-core': [retry],
   'missing-image': [retry],
@@ -1658,7 +1658,6 @@ async function resetDiskAsked() {
 
 // Your own disk: a local file (raw or qcow2, by its magic), by the picker or dropped on the page. The machine restarts on it; the
 // disk's changes are kept in the browser per file (name, size, modification time), so choosing it again continues where it left off.
-const openDiskInput = $<HTMLInputElement>('open-disk-input');
 /**
  * Open disk… (the first-run message's, the Machines page's From a disk image…): the browser's file picker where it has
  * one, so the machine keeps the file's handle (a reload's resume asks only to allow it, not to pick the file again), as
@@ -1667,7 +1666,7 @@ const openDiskInput = $<HTMLInputElement>('open-disk-input');
 async function openDisk() {
   const picker = (window as unknown as { showOpenFilePicker?: () => Promise<FileSystemFileHandle[]> })
     .showOpenFilePicker;
-  if (!picker) return openDiskInput.click();
+  if (!picker) return openPicker('disk');
   let handle: FileSystemFileHandle;
   try {
     [handle] = await picker.call(window);

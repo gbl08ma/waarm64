@@ -6,6 +6,7 @@
   transient machine: files only.
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
@@ -20,12 +21,13 @@
   import { importSnapshot, machineLike } from './snapshots.ts';
   import { opfsDir } from '../overlay.ts';
   import { page, ui } from './ui.svelte.ts';
+  import { openPicker } from './file-pickers.ts';
 
   type Props = {
     store: Store;
     machine?: MachineRecord;
     running?: boolean;
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
   };
   let { store, machine, running = false, act }: Props = $props();
 
@@ -116,7 +118,7 @@
     importInput!.value = '';
     if (f && machine) void act(t('snapshots:Snapshots.importing'), () => importSnapshot(store, machine.id, f));
   };
-  const restoreFile = () => document.getElementById('load-snapshot-input')!.click();
+  const restoreFile = () => openPicker('snapshot');
   async function toFile() {
     const whole =
       inPlace &&

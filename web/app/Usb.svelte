@@ -5,6 +5,7 @@
   device… opens the wizard (AddUsb.svelte). The controller's switch is the Machines page's (it is in the shape).
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Check from './ui/Check.svelte';
   import AddUsb from './AddUsb.svelte';
   import Button from './ui/Button.svelte';
@@ -26,7 +27,7 @@
     running: boolean;
     /** It has kept snapshots (turning the controller on would orphan them). */
     snapshots: boolean;
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
   };
   let { machine, running, snapshots, act }: Props = $props();
 

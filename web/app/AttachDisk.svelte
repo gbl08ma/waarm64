@@ -4,6 +4,7 @@
   overlays; one that has it already, has as many disks as a machine can, or runs in another tab says so instead.
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
@@ -21,7 +22,7 @@
     machines: MachineRecord[];
     /** The machines that run, in this tab or another. */
     running: Set<string>;
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
     offFirst(m: MachineRecord): Promise<boolean>;
     close(): void;
   };

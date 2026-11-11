@@ -311,7 +311,7 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
   await page.locator('.machines [data-selected] [data-tab=settings]').click();
   assert.equal(await page.isChecked('.machines [data-field=clipboard]'), false);
   const note = await page.locator('.machines .check-field', { has: page.locator('[data-field=clipboard]') }).locator('.note').textContent();
-  assert.equal(note?.replace(/\s+/g, ' ').trim(), plain(t('machines:MachinesPage.clipboard.note')).replace(/\s+/g, ' ').trim());
+  assert.equal(note?.replace(/\s+/g, ' ').trim(), plain(t('machines:DeviceSwitches.clipboard.note')).replace(/\s+/g, ' ').trim());
   assert.equal(await page.locator('.machines [data-clipboard-orphans]').count(), 0);
   // Ticking it is the click that asks: Chromium prompts (headless: denied at once).
   assert.equal(await readState(page), 'prompt');
@@ -320,10 +320,10 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
     if (i > 50) assert.fail(`ticking the switch didn't ask: the permission is ${await readState(page)}`);
     await page.waitForTimeout(100);
   }
-  assert.equal(await page.textContent('.machines [data-clipboard-orphans]'), t('machines:MachinesPage.clipboard.orphans.on'));
+  assert.equal(await page.textContent('.machines [data-clipboard-orphans]'), t('machines:DeviceSwitches.clipboard.orphans.on'));
   await page.click('.machines [data-action=save]');
   await page.waitForFunction(() => (document.querySelector('.machines [data-action=save]') as HTMLButtonElement).disabled, null, { polling: 100 });
-  assert.ok(asked.some((q) => q.text === t('machines:MachinesPage.orphans.confirm')), 'asked first');
+  assert.ok(asked.some((q) => q.text === t('machines:machine-edit.orphans.confirm')), 'asked first');
   const saved = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     return (await (await Store.open()).get('machines', 'cccccccccccc')).clipboard;
@@ -334,7 +334,7 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
   // Off again: the warning says so; unticking asks nothing.
   await page.locator('.machines [data-selected] [data-tab=settings]').click();
   await page.uncheck('.machines [data-field=clipboard]');
-  assert.equal(await page.textContent('.machines [data-clipboard-orphans]'), t('machines:MachinesPage.clipboard.orphans.off'));
+  assert.equal(await page.textContent('.machines [data-clipboard-orphans]'), t('machines:DeviceSwitches.clipboard.orphans.off'));
   assert.deepEqual(errors, []);
   await context.close();
 });

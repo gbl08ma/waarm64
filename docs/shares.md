@@ -36,7 +36,7 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
    root and the page shows **Allow access to *name*** (`requestPermission` needs a click), which adds it while the
    machine runs. Chromium's "allow on every visit" makes this rare. A grant lost while running (the user revoked it)
    turns the folder's requests into `EACCES` and brings the same button back.
-6. **The guest's side is set by the page:** with **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** on (`MachineRecord.sharesMount`,
+6. **The guest's side is set by the page:** with **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)** on (`MachineRecord.sharesMount`,
    default on), a systemd automount at the machine's **mount point** (`MachineRecord.sharesPath`, default
    `/mnt/shared`, left out of the record while it is the default), set per machine because distributions differ on
    what lives under `/mnt` and `/media` (§5). Both are carried by definitions and not in the shape (the guest's disk
@@ -153,8 +153,8 @@ after the request it names**. What changes while the machine runs comes over the
 
 ## 4. The page
 
-- **The Machines page:** a **[Shared folders](ui:machines:MachinesPage.tab.folders)** tab per machine: **[Shared folders](ui:machines:MachinesPage.shares)** (the switch: in the shape, so asked
-  as Settings' changes are), **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** and under it **[Mount point](ui:machines:MachinesPage.sharesPath)** (a text field, default
+- **The Machines page:** a **[Shared folders](ui:machines:MachinePane.tab.folders)** tab per machine: **[Shared folders](ui:machines:FoldersTab.shares)** (the switch: in the shape, so asked
+  as Settings' changes are), **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)** and under it **[Mount point](ui:machines:FoldersTab.sharesPath)** (a text field, default
   `/mnt/shared`, checked as typed by `sharesPathError`, §5; on the machine running on this page a change says it takes
   effect at the next start), and the attached folders in order (name, kind,
   Read-only, held by another machine, no permission in this browser; up, down, Detach, Allow…). [Attach a folder…](ui:folders:Folders.attach)

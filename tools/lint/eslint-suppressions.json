@@ -16,7 +16,7 @@
       "count": 1
     },
     "@typescript-eslint/unbound-method": {
-      "count": 3
+      "count": 2
     },
     "complexity": {
       "count": 1
@@ -60,7 +60,7 @@
       "count": 1
     },
     "@typescript-eslint/unbound-method": {
-      "count": 3
+      "count": 2
     },
     "svelte/no-useless-mustaches": {
       "count": 1
@@ -82,7 +82,7 @@
       "count": 4
     },
     "@typescript-eslint/unbound-method": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 1
@@ -93,7 +93,7 @@
   },
   "web/app/DisksPane.svelte": {
     "@typescript-eslint/unbound-method": {
-      "count": 2
+      "count": 1
     }
   },
   "web/app/ExportMenu.svelte": {
@@ -143,41 +143,11 @@
     }
   },
   "web/app/MachinesPage.svelte": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 5
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 24
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
       "count": 2
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 2
-    },
-    "complexity": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 1
-    },
-    "svelte/no-useless-mustaches": {
-      "count": 3
-    },
-    "svelte/require-each-key": {
-      "count": 6
     }
   },
   "web/app/NetWizard.svelte": {
@@ -251,7 +221,7 @@
       "count": 1
     },
     "@typescript-eslint/unbound-method": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 3
@@ -262,15 +232,9 @@
       "count": 1
     },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 4
+      "count": 3
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 1
-    },
-    "no-restricted-properties": {
       "count": 1
     }
   },
@@ -321,7 +285,7 @@
       "count": 1
     },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 4
@@ -330,9 +294,6 @@
       "count": 1
     },
     "max-lines": {
-      "count": 1
-    },
-    "no-restricted-properties": {
       "count": 1
     }
   },
@@ -344,9 +305,6 @@
       "count": 2
     },
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
       "count": 1
     }
   },

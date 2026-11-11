@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import Ask from './Ask.svelte';
+  import FilePickers from './FilePickers.svelte';
   import FolderWizard from './FolderWizard.svelte';
   import Button from './ui/Button.svelte';
   import ErrorBanner from './ui/ErrorBanner.svelte';
@@ -26,14 +27,6 @@
   $effect(() => {
     document.body.dataset.page = ui.machinesOpen ? 'machines' : 'machine';
   });
-
-  // The files the page takes (the inputs stay in the page, for the menus that open them and for tests).
-  const take = (f: (file: File) => void) => (e: Event) => {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) f(file);
-  };
 </script>
 
 <Toolbar {store} {audio} {net} {folders} />
@@ -100,9 +93,7 @@
 <NetWizard {net} />
 <FolderWizard {folders} />
 <Ask />
-<input type="file" id="load-snapshot-input" hidden onchange={take((f) => page.loadSnapshot(f))} />
-<input type="file" id="open-disk-input" hidden onchange={take((f) => page.openDiskFile(f))} />
-<input type="file" id="load-changes-input" hidden onchange={take((f) => page.importChanges(f))} />
+<FilePickers />
 
 <style>
   pre {

@@ -3,6 +3,7 @@
   switch and the mount in the guest are the Machines page's (they are settings, saved as a draft).
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Check from './ui/Check.svelte';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
@@ -24,7 +25,7 @@
     folders: PageFolders;
     /** The record as saved: its attachments. */
     machine: MachineRecord;
-    act: (what: string, f: () => Promise<unknown>) => unknown;
+    act: Act;
   } = $props();
 
   const all = $derived((void ui.folders.tick, folders.folders));

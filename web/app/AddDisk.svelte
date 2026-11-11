@@ -3,6 +3,7 @@
   then its details (the URL and the server's check, the file, the size) and whether the machine may write to it.
 -->
 <script lang="ts">
+  import type { Act } from './actions.svelte.ts';
   import Check from './ui/Check.svelte';
   import { onMount } from 'svelte';
   import DiskInfo from './DiskInfo.svelte';
@@ -26,7 +27,7 @@
   type Props = {
     store: Store;
     machine: MachineRecord;
-    act(what: string, f: () => Promise<unknown>): Promise<void>;
+    act: Act;
     offFirst(m: MachineRecord): Promise<boolean>;
     close(): void;
   };

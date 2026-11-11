@@ -1,6 +1,6 @@
 # Clipboard sharing
 
-A machine with **[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** shares the clipboard both
+A machine with **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** shares the clipboard both
 ways between the user's computer and the guest: text, images and HTML, between the browser's Clipboard API and the
 guest's Wayland or X11 desktop, and text typed at a text console. The guest's side is a small program of ours that the
 page starts at every boot with nothing written to the guest's disk. This page is the topic's overview. The details are
