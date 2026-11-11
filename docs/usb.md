@@ -672,7 +672,7 @@ by themselves.
   USB keyboard", and its ConnectAll reaches it: the UEFI shell, the boot manager's menus and GRUB read it beside the
   serial console. The drivers are dispatched on every machine (the firmware's step counts moved once for them:
   `edk2-shell`, `edk2-shell-again`).
-- **On the page** (web/app/main.ts):
+- **On the page** (web/app/areas/usb-actions.ts, usb-attach.ts, usb-view.ts, usb-entries.ts):
   - The keyboard is plugged in when the machine runs and its guest has no driver on the virtio keyboard (the
     worker's `keyboard {live}`). It is unplugged once that driver is live, so Linux doesn't get every key twice,
     and plugged in again if the driver goes away. A guest reboot is a new machine on the page, so the keyboard is
@@ -792,7 +792,7 @@ controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes b
 Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the messages' words, the
 definition entries), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
 ports), `UsbTab.svelte` (the Machines page's USB tab: the controller's switch over `Usb.svelte`, the devices), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
-toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (the Gamepad API's pads and their feed), `UsbProblems.svelte` (a device's problems, with their remedies folded), and the USB block of `web/app/main.ts`.
+toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (the Gamepad API's pads and their feed), `UsbProblems.svelte` (a device's problems, with their remedies folded), and `web/app/areas/usb-*.ts`.
 
 ### The controller and the shape
 
@@ -845,7 +845,7 @@ the store's `BroadcastChannel`, with notes (`Store.tell`, `onNote`):
 - `usb-who` asks who holds a lock, and the holder answers `usb-held` with its machine's name.
 - `usb-release` asks the holder to detach the device.
 
-Attaching a device that another machine holds names that machine and offers **[Detach it there](ui:usb:main.held.ok)**. The holder's page
+Attaching a device that another machine holds names that machine and offers **[Detach it there](ui:usb:usb-attach.held.ok)**. The holder's page
 then detaches it and says so.
 
 ### Attach and detach
@@ -855,9 +855,9 @@ They work while the machine runs on this page, from the USB tab or the toolbar's
   `running` state of each start. A start, a resume and a restored snapshot are treated alike, because a snapshot's
   ports are empty.
 - **Plugging in:** a granted device that is plugged in later (`connect`) is attached when its entry has *attach at
-  start* and its connector is free. Otherwise the menu offers it: *Attach* for an entry, *[Attach and remember](ui:usb:main.offer.remember)* for a
+  start* and its connector is free. Otherwise the menu offers it: *Attach* for an entry, *[Attach and remember](ui:usb:usb-actions.offer.remember)* for a
   device the machine doesn't remember.
-- **Re-enumeration:** when an attached device is unplugged, the menu offers **[Pick it…](ui:usb:main.offer.pick)**. That opens the chooser in
+- **Re-enumeration:** when an attached device is unplugged, the menu offers **[Pick it…](ui:usb:usb-attach.offer.pick)**. That opens the chooser in
   case the device came back as another one, such as a bootloader, because a device without a grant raises no
   `connect`. For 60 s after the unplug, a new granted device is offered on the same connector, as its own entry.
 - **What's left out:** an attach that worked can still leave part of the device out. Its `usb-state` lists those

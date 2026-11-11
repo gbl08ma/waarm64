@@ -107,8 +107,8 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
 
   // A kept snapshot: asked first (naming it), unplugged while it is written, attached again after.
   await page.click('#save-snapshot');
-  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:main.kept').source, { timeout: 120_000, polling: 250 });
-  assert.ok(asked.some((q) => q.text === t('usb:main.empty.snapshot', { count: 1, list: t('usb:usb-ports.gadgetZero') })), asked.map((q) => q.text).join(' | '));
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.kept').source, { timeout: 120_000, polling: 250 });
+  assert.ok(asked.some((q) => q.text === t('usb:usb-attach.empty.snapshot', { count: 1, list: t('usb:usb-ports.gadgetZero') })), asked.map((q) => q.text).join(' | '));
   await page.waitForFunction(() => document.getElementById('usb-menu')?.dataset.attached === '1', null, { timeout: 30_000, polling: 100 });
   assert.equal(await zeros(page, 1), '1');
   assert.match(await ok(page, 'dmesg | grep -c "USB disconnect"'), /^[1-9]/, 'the guest saw it unplugged');

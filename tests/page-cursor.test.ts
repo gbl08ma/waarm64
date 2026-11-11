@@ -43,12 +43,12 @@ test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when
     window.Worker = class extends RealWorker { constructor(...a: ConstructorParameters<typeof Worker>) { super(...a); workers.push(this); } };
   });
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
-  await page.waitForFunction(() => (window as unknown as { __channels: MessageChannel[] }).__channels.some((c) => /['"]cursor['"]/.test(String(c.port1.onmessage))), null, { timeout: 30_000 });
+  await page.waitForFunction(() => (window as unknown as { __channels: MessageChannel[] }).__channels.some((c) => /dispatch\(display\b/.test(String(c.port1.onmessage))), null, { timeout: 30_000 });
   // The machine boots in the background and its own resets would send cursor messages too: stop it, the page keeps its state.
   await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers.forEach((w) => w.terminate()));
   await page.waitForTimeout(500); // what the worker had sent
   const send = (image: 'red' | null | undefined, hotX = 0, hotY = 0) => page.evaluate(([image, hotX, hotY]) => {
-    const ch = (window as unknown as { __channels: MessageChannel[] }).__channels.find((c) => /['"]cursor['"]/.test(String(c.port1.onmessage)))!;
+    const ch = (window as unknown as { __channels: MessageChannel[] }).__channels.find((c) => /dispatch\(display\b/.test(String(c.port1.onmessage)))!;
     let data: ArrayBuffer | null | undefined = image === 'red' ? new Uint8Array(64 * 64 * 4).fill(0).map((_, i) => (i % 4 === 0 || i % 4 === 3 ? 255 : 0)).buffer : image as null | undefined;
     ch.port1.dispatchEvent(new MessageEvent('message', { data: { type: 'cursor', image: data, hotX, hotY } }));
     return null;

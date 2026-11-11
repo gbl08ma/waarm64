@@ -1,5 +1,5 @@
 // The mouse lock (docs/frontend.md "Mouse lock"): the toolbar's setting and its mode (remembered), and whether the
-// screen holds the mouse now. web/app/main.ts writes it.
+// screen holds the mouse now. web/app/areas/keys-actions.ts and the run write it.
 import type { LockMode } from '../../input.ts';
 import { settings } from '../settings.ts';
 

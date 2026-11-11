@@ -463,43 +463,43 @@
     "message": "No folders yet. Create one here or from a machine's Shared folders tab; a folder dropped here becomes one too.",
     "note": "Shared folders on the Machines page when the browser keeps no folder."
   },
-  "main.drop.confirm": {
+  "folder-actions.drop.confirm": {
     "message": "Attach {{folder}} to {{machine}}? The folder will be kept in this browser, for this or any other machine.",
     "note": "Text of the question asked when a folder is dropped on the page while a machine with shared folders runs; {{folder}} is the folder's name, {{machine}} the machine's."
   },
-  "main.drop.title": {
+  "folder-actions.drop.title": {
     "message": "Attach a folder",
     "note": "Title of the question asked when a folder is dropped on the page."
   },
-  "main.drop.ok": {
+  "folder-actions.drop.ok": {
     "message": "Attach",
     "note": "The confirm button of the question asked when a folder is dropped on the page: it is attached to the running machine."
   },
-  "main.inUse.confirm": {
+  "folder-actions.inUse.confirm": {
     "message": "Use {{name}} here instead? It is in use by {{holder}}, which will lose it while it runs.",
     "note": "Text of the question asked by Use it here for a shared folder another tab's machine has: {{name}} is the folder's name, {{holder}} that machine's."
   },
-  "main.inUse.folder": {
+  "folder-actions.inUse.folder": {
     "message": "the folder",
     "note": "Names the shared folder, mid-sentence in the question asked by Use it here, when its name isn't known."
   },
-  "main.inUse.otherTab": {
+  "folder-actions.inUse.otherTab": {
     "message": "a machine in another tab",
     "note": "Names the machine that has a shared folder, in the question asked by Use it here, when its name isn't known."
   },
-  "main.inUse.title": {
+  "folder-actions.inUse.title": {
     "message": "The folder is in use",
     "note": "Title of the question asked by Use it here for a shared folder another tab's machine has."
   },
-  "main.useHere": {
+  "folder-actions.useHere": {
     "message": "Use it here",
     "note": "The confirm button of the question asked by Use it here for a shared folder: the folder is taken from the other machine."
   },
-  "main.kept": {
+  "folder-actions.kept": {
     "message": "Couldn't take the folder from {{holder}}",
     "note": "Error headline shown when Use it here couldn't take a shared folder from the machine that has it; {{holder}} is that machine."
   },
-  "main.kept.thatMachine": {
+  "folder-actions.kept.thatMachine": {
     "message": "that machine",
     "note": "Names the machine that has a shared folder, in \"Couldn't take the folder from …\", when its name isn't known."
   }

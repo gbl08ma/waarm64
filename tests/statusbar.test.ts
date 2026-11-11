@@ -8,7 +8,7 @@ import type { Status } from '../web/app/protocol.ts';
 import { msg, t } from '../web/i18n.ts';
 
 const MiB = 2 ** 20;
-const RUNNING = t('machine:main.state.running');
+const RUNNING = t('machine:messages.state.running');
 const status = (o: Partial<Status> = {}): Status => ({
   ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0,
   loopMaxMs: 0, loopAgeMs: 0, vcpus: [], stats: {} as Status['stats'],

@@ -2,7 +2,7 @@
   A machine's snapshots on the Machines page (docs/machines.md §5): the ones kept in this browser, orphaned ones
   marked with what differs (their shape isn't the machine's now); restore (on this page's machine), rename, download,
   delete, delete all orphaned, make a machine like an orphaned one; a file restored at once or kept; one saved to a
-  file. The restore itself is the page's (web/app/main.ts: it confirms the forks). Without `machine`, the page's
+  file. The restore itself is the page's (web/app/areas/snapshot-restore.ts: it confirms the forks). Without `machine`, the page's
   transient machine: files only.
 -->
 <script lang="ts">

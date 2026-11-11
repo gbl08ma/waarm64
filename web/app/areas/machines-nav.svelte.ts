@@ -1,5 +1,5 @@
 // Where the page is (docs/machines.md §7): the machine, or the Machines page in its place (`#machines` in the address),
-// with its chosen pane and the machine tab shown. web/app/main.ts opens and closes it (`page.openMachines`); the
+// with its chosen pane and the machine tab shown. web/app/areas/page-window.ts opens and closes it (`page.openMachines`); the
 // Machines page's list chooses a pane.
 import { PAGE, PANES } from '../machines-panes.ts';
 import { current } from './current.svelte.ts';

@@ -1,5 +1,5 @@
-// The message bar (web/app/App.svelte): a problem or a note, its details and what can be done about it. web/app/main.ts
-// writes it (`showMessage`).
+// The message bar (web/app/App.svelte): a problem or a note, its details and what can be done about it. web/app/run/
+// messages.ts writes it (`Messages.show`).
 
 export type MessageKind = 'error' | 'warn';
 export type Action = { label: string; run: (button: HTMLButtonElement) => void };

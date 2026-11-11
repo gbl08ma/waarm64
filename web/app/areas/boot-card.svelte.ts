@@ -1,5 +1,5 @@
 // The boot card over the screen while a machine loads and boots (web/app/App.svelte): its title, progress and the
-// boot's last line. web/app/main.ts writes it.
+// boot's last line. The run writes it (web/app/run/).
 export const bootCard = $state({
   shown: true,
   /** The guest's screen has taken over (its console, the firmware's graphics): the card stays hidden. */

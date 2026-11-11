@@ -90,7 +90,7 @@ Since decided (the user, 2026-10-17):
   (`web/overlay.ts`, one probe per context) sends the store to memory (records and files, for the page's life) and the
   overlays, variable stores and suspended copies to the memory of the context that opens them (the machine's worker,
   for its run), and the URL disks' block cache is off. A machine opened from a disk runs; nothing outlives the tab,
-  and the message bar says so ([This browser doesn't let the web app keep anything (in a private window, for example): what the machine writes to its disks, its snapshots and the machines you make last only until this tab is closed.](ui:machine:main.noStorage)). What reads OPFS from the page directly (a kept
+  and the message bar says so ([This browser doesn't let the web app keep anything (in a private window, for example): what the machine writes to its disks, its snapshots and the machines you make last only until this tab is closed.](ui:machine:messages.noStorage)). What reads OPFS from the page directly (a kept
   snapshot's download, restore or move, the overlays' sizes, a folder in the browser) isn't adapted
   (`tests/no-opfs.test.ts`).
 - **Several tabs:** a running machine holds the Web Lock `webpc-machine:<id>` (beside its overlays' own), and a
@@ -157,10 +157,10 @@ date are the same disk to the page.
 ### 3.2 Re-granting a file
 
 A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
-a start that finds a file disk without permission stops at "[Allow and start](ui:disks:main.allowAndStart)" (one prompt per handle), or at
-"[Select and start](ui:disks:main.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
+a start that finds a file disk without permission stops at "[Allow and start](ui:disks:problems.allowAndStart)" (one prompt per handle), or at
+"[Select and start](ui:disks:problems.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
 no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
-Add a disk wizard's, Open disk…'s and From a disk image…'s (main.ts `openDisk`). A picked file is checked as in §6.
+Add a disk wizard's, Open disk…'s and From a disk image…'s (web/app/areas/disk-actions.ts `open`). A picked file is checked as in §6.
 
 ### 3.3 The overlay's generation
 

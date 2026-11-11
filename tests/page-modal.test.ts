@@ -218,7 +218,7 @@ test('a machine edited on the Machines page while it is off on this page starts 
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-action=open]').click();
   // On the page with no disks: it waits, and the Machines page offers Start (not a disabled "on this page").
-  await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.noDisks').source, { timeout: 10_000 });
+  await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:power-actions.noDisks').source, { timeout: 10_000 });
   await page.click('#machines-open');
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'blank', { size: '64' });
@@ -227,7 +227,7 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await m.locator('[data-action=start]').click();
   // It starts with the disk added since it was opened (the firmware loads and boots; a stale record would wait again).
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.doesNotMatch(await page.locator('#message-text').textContent() ?? '', words('disks:main.noDisks'));
+  assert.doesNotMatch(await page.locator('#message-text').textContent() ?? '', words('disks:power-actions.noDisks'));
   assert.deepEqual(errors, []);
   await context.close();
 });

@@ -3,7 +3,7 @@
 // can't be told from a device that isn't plugged in, so the page keeps the list), the device locks (a Web Lock per
 // identity, held while a machine has the device; who holds one and "let it go" go over the store's channel), and the
 // running machine's ports: `usb-attach` and `usb-detach` to the device worker, `usb-state` back (web/usb-device.ts).
-// The words and the matching are web/app/usb-ports.ts's; web/app/main.ts drives these for the page's machine.
+// The words and the matching are web/app/usb-ports.ts's; web/app/areas/usb-*.ts drive these for the page's machine.
 import type { PadState } from '../usb-gamepad.ts';
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
 import { fromWire, MsgError, type Params } from '../msg.ts';
@@ -158,7 +158,7 @@ export class UsbError extends MsgError {
   }
 }
 
-/** Another machine (in another tab) holds the device's lock: the page asks to take it (main.ts `attachEntry`). */
+/** Another machine (in another tab) holds the device's lock: the page asks to take it (web/app/areas/usb-attach.ts `attach`). */
 export class UsbHeldError extends Error {
   constructor() {
     super('held');

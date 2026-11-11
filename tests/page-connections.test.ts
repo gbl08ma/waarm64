@@ -135,7 +135,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.equal(asked.length, 1, `asked once: ${asked}`);
   assert.match(asked[0], /^B: /);
   assert.match(asked[0], words('network:net-live.held', { holder: 'Alpha' }));
-  assert.match(asked[0], words('network:main.held.useHere'));
+  assert.match(asked[0], words('network:network-actions.held.useHere'));
   await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 15_000 });
   await menu(pageA);
   assert.match(await text(pageA, '#net-hint'), words('network:net-live.taken'));
@@ -177,7 +177,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await row.locator('[data-action="delete-connection"]').click();
   await pageB.waitForFunction((id) => !document.querySelector(`li[data-connection="${id}"]`), t.id, { timeout: 10_000 });
   assert.equal(asked.length, 1);
-  assert.match(asked[0], words('network:main.delete.confirm.what', { name: 'Home tailnet' }));
+  assert.match(asked[0], words('network:network-actions.delete.confirm.what', { name: 'Home tailnet' }));
   assert.deepEqual(await records(pageB, 'connections'), []);
   assert.deepEqual(errors, []);
 });

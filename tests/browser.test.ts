@@ -577,8 +577,8 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   }));
   let r = await settled(page);
   assert.equal(r.state, 'failed');
-  assert.match(r.text!, words('machine:main.notIsolated', {}, { start: true }));
-  assert.match(r.details!, words('machine:main.notIsolated.cause', {}, { start: true }));
+  assert.match(r.text!, words('machine:power-actions.notIsolated', {}, { start: true }));
+  assert.match(r.details!, words('machine:power-actions.notIsolated.cause', {}, { start: true }));
   assert.equal(await page.locator('#restart').isHidden(), true);
   await page.close();
   // xterm.js not installed: the module graph fails to load.
@@ -596,7 +596,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
     assert.equal(r.state, 'failed', r.text!);
     assert.match(r.text!, want);
     assert.match(r.details!, why);
-    assert.deepEqual(r.actions, [t('machine:main.retry')]);
+    assert.deepEqual(r.actions, [t('machine:problems.retry')]);
     await page.unroute(pattern);
     await page.locator('#message-actions button').click();
     assert.equal((await settled(page, 30_000, 'failed')).state, 'running');
@@ -606,8 +606,8 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   page = await open((p) => p.addInitScript(() => Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 1 })));
   r = await settled(page);
   assert.equal(r.state, 'idle');
-  assert.match(r.text!, words('machine:main.memory', { need: '2.2', ram: 256, count: 1, has: 1 }, { start: true }));
-  assert.deepEqual(r.actions, [t('machine:main.memory.start')]);
+  assert.match(r.text!, words('machine:memory-signal.memory', { need: '2.2', ram: 256, count: 1, has: 1 }, { start: true }));
+  assert.deepEqual(r.actions, [t('machine:memory-signal.memory.start')]);
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
   // Running, it keeps a mark of itself and what it costs (web/app/memory.ts); a clean stop clears it.
@@ -621,9 +621,9 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   page = await open((p) => p.addInitScript(() => localStorage.setItem('webpc.alive.transient-buildroot', JSON.stringify({ name: 'Buildroot', ramMiB: 1024, ncpus: 1, jitMiB: 320, gib: 2.9, peakGiB: 3.1, t: Date.now() - 600_000 }))));
   r = await settled(page);
   assert.equal(r.state, 'idle');
-  assert.match(r.text!, words('machine:main.crashed', { name: 'Buildroot', gib: 2.9, peak: 3.1, ram: 1024, jit: 320 }, { start: true }));
-  assert.deepEqual(r.actions, [t('machine:main.crashed.jit', { mib: 160 }), t('machine:main.crashed.ram', { mib: 512 }), t('machine:main.crashed.asIs')]);
-  await page.locator('#message-actions button', { hasText: t('machine:main.crashed.jit', { mib: 160 }) }).click();
+  assert.match(r.text!, words('machine:memory-signal.crashed', { name: 'Buildroot', gib: 2.9, peak: 3.1, ram: 1024, jit: 320 }, { start: true }));
+  assert.deepEqual(r.actions, [t('machine:memory-signal.crashed.jit', { mib: 160 }), t('machine:memory-signal.crashed.ram', { mib: 512 }), t('machine:memory-signal.crashed.asIs')]);
+  await page.locator('#message-actions button', { hasText: t('machine:memory-signal.crashed.jit', { mib: 160 }) }).click();
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').jitMiB), 160);
   await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('webpc.settings') ?? '{}'); delete s.jitMiB; localStorage.setItem('webpc.settings', JSON.stringify(s)); });
@@ -642,7 +642,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   r = await settled(page);
   assert.equal(r.state, 'failed', r.text!);
   assert.match(r.text!, words('machine:worker.diskMismatch', { machine: t('machines:machine.buildroot') }, { start: true }));
-  assert.deepEqual(r.actions, [t('disks:main.resetDisk')]);
+  assert.deepEqual(r.actions, [t('disks:disk-actions.resetDisk')]);
   await answerAsks(page);
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'failed')).state, 'running');
@@ -665,17 +665,17 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   assert.match(r.text!, words('machine:worker.panic', {}, { start: true }));
   assert.match(r.details!, words('machine:worker.panic.cause', {}, { start: true }));
   assert.match(r.details!, /Kernel panic - not syncing: Requested init \/nonexistent failed/); // the panic line: the last detail
-  assert.deepEqual(r.actions, [t('machine:main.showLog'), t('machine:main.copyLog'), t('machine:main.saveLog')]);
+  assert.deepEqual(r.actions, [t('machine:serial-terminal.showLog'), t('machine:serial-terminal.copyLog'), t('machine:serial-terminal.saveLog')]);
   await page.waitForTimeout(500);
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed'); // not restarted by the reset
-  await page.getByText(t('machine:main.copyLog')).click();
-  await page.getByText(t('machine:main.copyLog.copied'), { exact: true }).waitFor({ timeout: 5_000 });
+  await page.getByText(t('machine:serial-terminal.copyLog')).click();
+  await page.getByText(t('machine:serial-terminal.copyLog.copied'), { exact: true }).waitFor({ timeout: 5_000 });
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.match(copied, /Booting Linux on physical CPU[^]*Kernel panic - not syncing: Requested init/);
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText(t('machine:main.saveLog')).click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByText(t('machine:serial-terminal.saveLog')).click()]);
   assert.match(download.suggestedFilename(), /^webpc-buildroot-serial-.*\.log$/);
   assert.equal((await readFile((await download.path())!)).toString(), copied);
-  await page.getByText(t('machine:main.showLog')).click();
+  await page.getByText(t('machine:serial-terminal.showLog')).click();
   assert.equal(await page.evaluate(() => document.body.dataset.view), 'both');
   await page.close();
   // The view chosen last is remembered (the panic's "Show serial log" doesn't count); ?view= overrides it.
@@ -694,7 +694,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   r = await settled(second);
   assert.equal(r.state, 'failed', r.text!);
   assert.match(r.text!, words('machine:worker.diskInUse', { machine: t('machines:machine.buildroot') }, { start: true }));
-  assert.deepEqual(r.actions, [t('machine:main.retry')]);
+  assert.deepEqual(r.actions, [t('machine:problems.retry')]);
   let asked = '';
   await answerAsks(page, (q) => { asked = q.text; });
   await page.locator('#restart').click();
@@ -709,7 +709,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.locator('#reset-disk').click();
   await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 10_000, polling: 50 });
   assert.equal((await settled(page)).state, 'running');
-  assert.match(asked, words('disks:main.reset.confirm.size', { disk: t('disks:main.machineDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
+  assert.match(asked, words('disks:disk-actions.reset.confirm.size', { disk: t('disks:disk-actions.machineDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
   await page.locator('[data-action=back]').click();
   await page.locator('.xterm').click();
   await page.keyboard.type('cat /mark || echo n""one\n');

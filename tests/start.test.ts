@@ -223,7 +223,7 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
       const t0 = performance.now();
       const page = await browser.newPage();
       await page.goto(url);
-      await page.waitForFunction((said) => document.body.dataset.state === 'idle' && (document.getElementById('message-text')?.textContent ?? '').includes(said), t('machine:main.openDisk.prompt'), { timeout: 30_000, polling: 100 });
+      await page.waitForFunction((said) => document.body.dataset.state === 'idle' && (document.getElementById('message-text')?.textContent ?? '').includes(said), t('machine:power-actions.openDisk.prompt'), { timeout: 30_000, polling: 100 });
       // Into the served copy (npm start serves the build, target/dist/).
       symlinkSync(join(ROOT, DEBIAN_DISK), join(d, 'target/dist/debian.qcow2'));
       await page.goto(`${url}?disk=/debian.qcow2`);

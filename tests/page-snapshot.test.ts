@@ -54,7 +54,7 @@ async function running(page: Page, ms = BOOT_MS) {
   assert.equal(state, 'running', `${message}; the terminal shows: ${await terminal(page)}`);
 }
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
-const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
+const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
 const message = (page: Page) => page.locator('#message-text').textContent();
 /** The message's details (an error's causes, under its headline). */
 const details = (page: Page) => page.evaluate(() => document.getElementById('message-details')?.textContent ?? '');
@@ -81,7 +81,7 @@ async function save(page: Page, name: string) {
   ]);
   const path = join(dir, name);
   await download.saveAs(path);
-  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
   const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, filename: download.suggestedFilename(), ...info };
@@ -163,7 +163,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap', { create: true });
   });
   await page.locator('#save-snapshot').click();
-  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', { name: 'picked.webpcsnap' }, { start: true }).source, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', { name: 'picked.webpcsnap' }, { start: true }).source, { timeout: 60_000 });
   const picked = await page.evaluate(async () => {
     const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap')).getFile();
     return { size: f.size, magic: new TextDecoder().decode(await f.slice(0, 8).arrayBuffer()) };
@@ -206,10 +206,10 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await loadingSnapshot(p2);
   await running(p2);
   console.log(`# snapshot load (buildroot): ${((performance.now() - t0) / 1000).toFixed(2)} s from the choice to running`);
-  asked('confirm', words('snapshots:main.load.confirm', { name: 'first.webpcsnap', replaces: t('snapshots:main.load.replaces.running') }, { whole: true }));
-  assert.match(dialogs.at(-1)!, words('snapshots:main.load.holds.when.cpus', { label: MACHINES.buildroot.label, count: 2 }));
-  const disk = t('disks:main.machineDisk', { machine: t('machines:machine.buildroot') });
-  assert.match(dialogs.at(-1)!, new RegExp(`${words('snapshots:main.load.written', { disk }).source}$|${words('snapshots:main.load.written.size', { disk }).source}$`));
+  asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.webpcsnap', replaces: t('snapshots:snapshot-restore.load.replaces.running') }, { whole: true }));
+  assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.holds.when.cpus', { label: MACHINES.buildroot.label, count: 2 }));
+  const disk = t('disks:disk-actions.machineDisk', { machine: t('machines:machine.buildroot') });
+  assert.match(dialogs.at(-1)!, new RegExp(`${words('snapshots:snapshot-restore.load.written', { disk }).source}$|${words('snapshots:snapshot-restore.load.written.size', { disk }).source}$`));
   // The terminal shows the saved output's tail, and the status the snapshot's vCPUs (the page asked for 1).
   await shows(p2, /saved-state/);
   await p2.waitForFunction((src) => new RegExp(`(?<!\\d)${src}`).test((document.getElementById('status')?.textContent ?? '')), words('statusbar:statusbar.vcpus', { count: 2 }).source, { timeout: 10_000 });
@@ -225,18 +225,18 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   writeFileSync(junk, Buffer.from('this is not a snapshot, only text'));
   await p2.setInputFiles('#load-snapshot-input', junk);
   await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:main.notSnapshot', { name: 'junk.webpcsnap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
+  asked('alert', words('snapshots:snapshot-restore.notSnapshot', { name: 'junk.webpcsnap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   // ... a snapshot of another machine, by the page (a real one on a Debian page, below, and a header-only one here) ...
   const other = await headerOnly('debian-header.webpcsnap', { machine: 'debian', label: MACHINES.debian.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', other);
   await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:main.load.otherMachine', { name: 'debian-header.webpcsnap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
+  asked('alert', words('snapshots:snapshot-restore.load.otherMachine', { name: 'debian-header.webpcsnap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
   // ... one taken on another disk, by name ...
   const elsewhere = await headerOnly('other-disk.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: 'mine.qcow2', devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', elsewhere);
   await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:main.load.otherDisk', { name: 'other-disk.webpcsnap', taken: t('disks:main.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:main.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
+  asked('alert', words('snapshots:snapshot-restore.load.otherDisk', { name: 'other-disk.webpcsnap', taken: t('disks:disk-actions.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:snapshot-restore.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   await onSerial(p2, 'echo ali""ve-$((6*7))\n');
   await shows(p2, /alive-42/);
@@ -248,7 +248,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await p2.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000, polling: 50 });
   assert.match((await message(p2))!, words('snapshots:worker.otherDevices', { name: 'disk2.webpcsnap' }, { whole: true }));
   assert.match(await details(p2), words('snapshots:worker.otherDevices.cause', { kinds: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], here: ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk'], machine: t('machines:machine.buildroot') }, { start: true }));
-  assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), [t('snapshots:main.startNormally'), t('snapshots:main.loadAgain')]);
+  assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), [t('snapshots:problems.startNormally'), t('snapshots:problems.loadAgain')]);
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
 
   // ... and a truncated snapshot: refused whole, before the disk is touched; Start boots the machine normally.
@@ -260,7 +260,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.match(await details(p2), words('snapshots:worker.notLoaded.cause', { machine: t('machines:machine.buildroot') }, { start: true }));
   assert.match(await details(p2), words('snapshots:snapshot-file.truncated')); // the refusal: the last detail
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
-  await p2.locator('#message-actions button', { hasText: t('snapshots:main.startNormally') }).click();
+  await p2.locator('#message-actions button', { hasText: t('snapshots:problems.startNormally') }).click();
   await p2.waitForFunction(() => document.body.dataset.state !== 'failed', null, { timeout: 10_000, polling: 20 });
   await running(p2);
   const bar = await status(p2);
@@ -272,7 +272,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await drop(p2, first.path);
   await loadingSnapshot(p2);
   await running(p2);
-  asked('confirm', words('snapshots:main.load.confirm', { name: 'first.webpcsnap' }, { start: true }));
+  asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.webpcsnap' }, { start: true }));
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile\n');
   await shows(p2, /var=\[kept-42\]\s*tmpfs-kept-42/);
   assert.deepEqual(errors2, []);
@@ -332,7 +332,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await running(page);
   assert.equal(await susvar(), 'three');
   await suspend();
-  await page.locator('#message-actions button', { hasText: t('machine:main.bootInstead') }).click();
+  await page.locator('#message-actions button', { hasText: t('machine:problems.bootInstead') }).click();
   await page.waitForFunction(() => document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 20 });
   await running(page);
   assert.equal(await suspendFile(), undefined);

@@ -77,7 +77,7 @@ export type ToWorker =
       vulkan?: boolean;
       /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
       display: MessagePort;
-      /** The display's size at the start (the page's screen box, `wantedSize` in main.ts): the console and the firmware get it with no event. Default: the machine's. */
+      /** The display's size at the start (the page's screen box, `wantedSize` in web/app/areas/screen-view.ts): the console and the firmware get it with no event. Default: the machine's. */
       size?: { width: number; height: number };
       /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
       simple?: boolean;
@@ -194,9 +194,9 @@ export type ToWorker =
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
   | { type: 'profile'; on: boolean }
-  /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline`. */
   /** Benchmarks: what the core's heap has touched (web/vm.ts `heapUse`), answered by `heap`. */
   | { type: 'heap' }
+  /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline`. */
   | { type: 'timeline'; on: boolean };
 
 /**
@@ -281,7 +281,6 @@ export type FromWorker =
   | { type: 'snapshot-error'; error: WireError }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
   | { type: 'profile'; samples: [string, number][] }
-  /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
   /** `heap`'s answer (web/vm.ts `heapUse`). */
   | {
       type: 'heap';
@@ -296,6 +295,7 @@ export type FromWorker =
         arenaHighBytes: number;
       };
     }
+  /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
   | { type: 'timeline'; timeline: Timeline }
   | { type: 'stopped' };
 

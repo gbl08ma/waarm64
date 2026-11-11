@@ -93,8 +93,8 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
   const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
   const file = join(dir, 'debian.webpcsnap');
   await download.saveAs(file);
-  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000 });
-  assert.match(await message(page), words('snapshots:main.saved.slept', {}, { start: true }));
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
+  assert.match(await message(page), words('snapshots:snapshot-actions.saved.slept', {}, { start: true }));
   const lz = await lzCodec(readFileSync(CORE));
   assert.equal((await openSnapshot(new Blob([readFileSync(file)]), { codecs: [lz] })).header.slept, true);
   await near(page, 'after its snapshot');
@@ -103,7 +103,7 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
 
   // A guest that suspends itself sleeps until a key (its clock runs on meanwhile: the counter doesn't stop).
   await onSerial(page, 'systemctl suspend\n');
-  await page.waitForFunction((said) => (document.getElementById('message-text')?.textContent ?? '') === said, t('machine:main.asleep'), { timeout: 60_000 });
+  await page.waitForFunction((said) => (document.getElementById('message-text')?.textContent ?? '') === said, t('machine:worker-messages.asleep'), { timeout: 60_000 });
   await page.waitForTimeout(5000);
   await onSerial(page, '\n');
   await onSerial(page, 'clear; echo aw""ake-$((6*7))\n');
@@ -128,7 +128,7 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
   await answerAsks(p2);
   await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
   await p2.setInputFiles('#load-snapshot-input', file);
-  await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
+  await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
   await running(p2, 180_000);
   await awake(p2);
   await near(p2, 'its snapshot loaded minutes later');

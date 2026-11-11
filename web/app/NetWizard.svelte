@@ -6,7 +6,7 @@
   ephemeral, gone when the page closes), the error and the submit; each step is a component with its own form
   (NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetRoomPickStep, NetRoomStep;
   web/app/net-wizard.ts). The toolbar's Network menu and the Machines page's Network tab and Connections open it; the
-  page (web/app/main.ts) attaches and connects.
+  page (web/app/areas/network-actions.ts) attaches and connects.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';

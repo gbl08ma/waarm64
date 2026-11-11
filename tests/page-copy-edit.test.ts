@@ -23,7 +23,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-const KEY = 'machine:main.openDisk';
+const KEY = 'machine:power-actions.openDisk';
 const NEW = 'Choose a disk image…'; // i18n-ignore
 /** The message bar's button for KEY. */
 const button = (page: Page, words: string) => page.locator('#message button', { hasText: words });
@@ -94,11 +94,11 @@ test('the catalog written from a dump: words changed, notes kept, unknown keys r
     assert.deepEqual(r.files, [join(dir, 'machine.json')]);
     assert.deepEqual(r.unknown.sort(), ['machine:nope.nope', 'nope:a.b']);
     const now = JSON.parse(readFileSync(join(dir, 'machine.json'), 'utf8'));
-    assert.equal(now['main.openDisk'].message, NEW);
-    assert.equal(now['main.openDisk'].note, before['main.openDisk'].note);
+    assert.equal(now['power-actions.openDisk'].message, NEW);
+    assert.equal(now['power-actions.openDisk'].note, before['power-actions.openDisk'].note);
     assert.equal(Object.keys(now).length, Object.keys(before).length);
     // The rest of the file as it was.
-    now['main.openDisk'].message = before['main.openDisk'].message;
+    now['power-actions.openDisk'].message = before['power-actions.openDisk'].message;
     assert.equal(`${JSON.stringify(now, null, 2)}\n`, readFileSync(new URL('../web/messages/en/machine.json', import.meta.url), 'utf8'));
   } finally {
     rmSync(dir, { recursive: true, force: true });

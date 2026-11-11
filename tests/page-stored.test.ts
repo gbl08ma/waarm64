@@ -148,7 +148,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
     const m = await store.get('machines', a);
     return store.get('overlays', m.attachments[0].overlay);
   }, id);
-  assert.equal(first.name, t('disks:main.overlayName'));
+  assert.equal(first.name, t('disks:page-disks.overlayName'));
   assert.ok(first.generation >= 1 && first.bytes > 0, `generation ${first.generation}, ${first.bytes} bytes`);
 
   // 2. Its changes saved and loaded into a new overlay; an empty one beside them; the machine switched to the loaded one.
@@ -162,7 +162,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
     await disks.switchOverlay(store, m, m.attachments[0].id, loaded.id);
     return { loaded: loaded.name, empty: empty.id, names: (await store.overlaysOf(d.id)).map((o: { name: string }) => o.name).sort() };
   }, id);
-  assert.deepEqual(variants.names, [t('disks:main.overlayName'), 'Fresh', 'saved-changes'].sort());
+  assert.deepEqual(variants.names, [t('disks:page-disks.overlayName'), 'Fresh', 'saved-changes'].sort());
   await boot(page, id, 'over the loaded changes');
   assert.equal(await ok(page, 'cat /root/one'), 'one');
   await ok(page, 'echo two > /root/two && sync');
@@ -185,7 +185,7 @@ test('a disk stored in the browser (2): an overlay merged into it, then written 
     await store.put('machines', m2);
     return { costs, blocks, before, after: (await store.get('disks', m.attachments[0].disk)).generation, overlays: (await store.overlaysOf(m.attachments[0].disk)).length, files: await store.files.list('overlays') };
   }, id);
-  assert.deepEqual(merged.costs, [t('disks:main.overlayName'), 'Fresh'].sort());
+  assert.deepEqual(merged.costs, [t('disks:page-disks.overlayName'), 'Fresh'].sort());
   assert.ok(merged.blocks > 0 && merged.after === merged.before + 1, JSON.stringify(merged));
   assert.equal(merged.overlays, 0);
   assert.deepEqual(merged.files, []);

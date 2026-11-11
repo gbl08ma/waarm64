@@ -1,11 +1,12 @@
 <!--
   The page (docs/frontend.md): the toolbar, the message bar, the machine (its screen and serial terminal) or the
-  Machines page in its place, the status line, and the page's questions. web/app/main.ts runs the machine: it draws on
-  the canvas and the terminal here, and writes what the rest shows into the areas' state (web/app/areas/). The body's
+  Machines page in its place, the status line, and the page's questions. The machine's run draws on the canvas and the
+  terminal here (given to its areas: `view`), and writes what the rest shows into the areas' state (web/app/areas/). The body's
   `data-*` (the tests' and the page's styles' hooks) follow that state here.
 -->
 <script lang="ts">
   import Ask from './Ask.svelte';
+  import BootCard from './BootCard.svelte';
   import FilePickers from './FilePickers.svelte';
   import FolderWizard from './FolderWizard.svelte';
   import Button from './ui/Button.svelte';
@@ -19,8 +20,8 @@
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
   import type { Store } from './store.ts';
+  import type { PageView } from './areas/page-window.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
-  import { bootCard } from './areas/boot-card.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
   import { keys } from './areas/keys.svelte.ts';
@@ -30,8 +31,25 @@
   import { page } from './page.ts';
   import { t } from '../i18n.ts';
 
-  let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } =
-    $props();
+  type Props = { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders; view: PageView };
+  let { store, audio, net, folders, view }: Props = $props();
+
+  // The machine's elements, given to its areas (web/app/areas/page-window.ts `PageView`): the canvas is made again for
+  // each start (`screen.generation`: a canvas hands its drawing over only once).
+  let canvas = $state<HTMLCanvasElement>();
+  let box = $state<HTMLElement>();
+  let lockCursor = $state<HTMLCanvasElement>();
+  let terminal = $state<HTMLElement>();
+  let main = $state<HTMLElement>();
+  $effect(() => {
+    if (canvas && box && lockCursor) view.screen({ canvas, box, lockCursor });
+  });
+  $effect(() => {
+    if (terminal) view.terminal(terminal);
+  });
+  $effect(() => {
+    if (main) view.main(main);
+  });
 
   $effect(() => {
     const body = document.body.dataset;
@@ -42,6 +60,19 @@
   });
 </script>
 
+<svelte:window
+  onfocus={view.events.focus}
+  onblur={view.events.focus}
+  onbeforeunload={view.events.beforeUnload}
+  onhashchange={view.events.hashChange}
+/>
+<svelte:document
+  onfocusin={view.events.focusLater}
+  onfocusout={view.events.focusLater}
+  ondragover={view.events.dragOver}
+  ondrop={view.events.drop}
+  onfullscreenchange={view.events.fullscreenChanged}
+/>
 <Toolbar {audio} {net} {folders} />
 <!-- Its own wrapper: the page in full screen hides it. -->
 <div class="message">
@@ -67,28 +98,28 @@
     {/snippet}
   </ErrorBanner>
 </div>
-<main>
-  <div id="screen-view">
+<main bind:this={main}>
+  <div id="screen-view" bind:this={box}>
     <div id="screen-frame">
-      <canvas id="screen" tabindex="0" aria-label={t('common:App.screen.label')}></canvas>
+      {#key screen.generation}
+        <canvas
+          id="screen"
+          bind:this={canvas}
+          tabindex="0"
+          aria-label={t('common:App.screen.label')}
+          width={screen.size.width}
+          height={screen.size.height}
+          data-scale={screen.scale}
+        ></canvas>
+      {/key}
       <div id="screen-hint">{mouse.lock ? t('common:App.screen.hintLock') : t('common:App.screen.hint')}</div>
-      <div id="screen-cursor-clip"><canvas id="screen-cursor" width="64" height="64" hidden></canvas></div>
-      <div id="boot" hidden={!bootCard.shown}>
-        <div id="boot-title">{bootCard.title}</div>
-        {#if bootCard.progress === undefined}<progress id="boot-progress"></progress>{:else}<progress
-            id="boot-progress"
-            value={bootCard.progress}
-          ></progress>{/if}
-        <div id="boot-line">{bootCard.line}</div>
-        <div id="boot-serial" hidden={!bootCard.serial}>
-          <span>{t('common:App.boot.serial')}</span><Button id="boot-serial-show" onclick={() => page.showLog()}
-            >{t('common:App.boot.serial.show')}</Button
-          >
-        </div>
+      <div id="screen-cursor-clip">
+        <canvas id="screen-cursor" bind:this={lockCursor} width="64" height="64" hidden></canvas>
       </div>
+      <BootCard />
     </div>
   </div>
-  <div id="terminal-view"><div id="terminal"></div></div>
+  <div id="terminal-view"><div id="terminal" bind:this={terminal}></div></div>
   {#if keys.osk}<Osk
       send={(code, down, mods, repeat) => page.oskKey(code, down, mods, repeat)}
       keyLayout={keys.layout}
@@ -120,7 +151,7 @@
     opacity: 0.8;
   }
 
-  /* The machine: its screen, its serial terminal, or both (`body[data-view]`, which main.ts sets at once with
+  /* The machine: its screen, its serial terminal, or both (`body[data-view]`, which `setView` sets at once with
      `screen.view`: it measures the screen's room right after). */
   main {
     flex: 1;
@@ -180,44 +211,6 @@
     position: absolute;
     left: 0;
     top: 0;
-  }
-  #boot {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-4);
-    padding: var(--space-6);
-    background: var(--screen-bg);
-    color: var(--text-dim);
-    pointer-events: none;
-  }
-  #boot-title {
-    color: var(--text);
-    font-size: var(--text-lg);
-  }
-  #boot progress {
-    width: min(320px, 80%);
-    height: 6px;
-    accent-color: var(--accent);
-  }
-  #boot-serial {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-3);
-    font-size: var(--text-md);
-    pointer-events: auto;
-  }
-  #boot-line {
-    max-width: 100%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
   }
   #terminal-view {
     min-height: 0;

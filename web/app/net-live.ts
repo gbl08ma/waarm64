@@ -2,7 +2,7 @@
 // (web/app/network.ts), the connection each one has attached (a record of the browser's, web/app/connections.ts) and
 // its client, and the connections' locks (one running machine has a connection at a time, in any tab:
 // web/app/locks.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The
-// toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/main.ts
+// toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/areas/network-actions.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { errorText, msg, MsgError, text, type Msg } from '../i18n.ts';
 import { isMsg } from '../msg.ts';

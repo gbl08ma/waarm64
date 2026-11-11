@@ -107,7 +107,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
 
     // Kept: the toolbar's Snapshot.
     await page.locator('#save-snapshot').click();
-    const kept = words('snapshots:main.kept', {}, { start: true }).source;
+    const kept = words('snapshots:snapshot-actions.kept', {}, { start: true }).source;
     const failed = words('snapshots:worker.notSaved', {}, { start: true }).source;
     await page.waitForFunction(([a, b]) => [a, b].some((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? '')), [kept, failed], { timeout: 300_000 });
     assert.match(await page.locator('#message-text').textContent() ?? '', new RegExp(kept), await said(page));

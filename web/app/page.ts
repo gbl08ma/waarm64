@@ -1,5 +1,6 @@
 // What the components ask of the page (docs/frontend.md "The page's code"): `page`'s actions, which web/app/main.ts
-// provides. What the page shows is in its areas' state (web/app/areas/).
+// assembles from the areas' modules and provides before it mounts the components. What the page shows is in its areas'
+// state (web/app/areas/).
 import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
 import type { Folder, NewFolder } from './folders.ts';
@@ -10,7 +11,7 @@ import type { LockMode } from '../input.ts';
 import type { Mods } from './osk.ts';
 import type { View } from './areas/screen.svelte.ts';
 
-/** What the components ask of the page (web/app/main.ts fills it in before the first start). */
+/** What the components ask of the page. */
 export type Page = {
   restart(): void;
   suspend(): void;
@@ -133,4 +134,8 @@ export type Page = {
   clipboardType(): Promise<void>;
   clipboardScreen(): Promise<void>;
 };
-export const page = {} as Page;
+/** The page's actions: given by web/app/main.ts (`providePage`) before the components mount. */
+export let page: Page;
+export function providePage(p: Page) {
+  page = p;
+}

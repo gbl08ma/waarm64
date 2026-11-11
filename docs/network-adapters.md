@@ -85,7 +85,7 @@ settings. Idempotent.
 
 A Web Lock `webpc-net:<id>` is held while a running machine has the connection's client (web/app/locks.ts, as USB's
 devices: [usb.md](usb.md) "Device locks"), over the store's `BroadcastChannel`: `net-who` asks which machine holds it,
-`net-held` answers, and `net-release` asks the holder to let go. The page offers [Use it here](ui:network:main.useHere), and the other tab
+`net-held` answers, and `net-release` asks the holder to let go. The page offers [Use it here](ui:network:network-actions.useHere), and the other tab
 disconnects and says it was taken.
 
 ## 3. The page

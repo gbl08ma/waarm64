@@ -57,7 +57,7 @@ test('a machine running in another tab: a second tab says so at once, and starts
     await page.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}: ${await message(page)}`); });
     const waited = Date.now() - t0;
-    assert.match(await message(page), words('machine:main.runsElsewhere', { name: 'Elsewhere' }));
+    assert.match(await message(page), words('machine:runner.runsElsewhere', { name: 'Elsewhere' }));
     assert.ok(waited < 8_000, `said after ${waited} ms (the overlay's wait is 10 s)`);
     // The page didn't queue for the lock behind the other tab: only the holder has it, and no one waits.
     const locks = await holder.evaluate(async (id) => {
@@ -69,8 +69,8 @@ test('a machine running in another tab: a second tab says so at once, and starts
 
     // The other tab lets it go: Retry starts it here (the page holds the lock while it's starting).
     await holder.evaluate(() => (window as unknown as { release: () => void }).release());
-    await page.locator('#message-actions button', { hasText: t('machine:main.retry') }).click();
-    await page.waitForFunction((src) => !new RegExp(src).test(document.getElementById('message-text')?.textContent ?? '') && document.body.dataset.state !== 'failed', words('machine:main.runsElsewhere', { name: 'Elsewhere' }).source, { timeout: 30_000 })
+    await page.locator('#message-actions button', { hasText: t('machine:problems.retry') }).click();
+    await page.waitForFunction((src) => !new RegExp(src).test(document.getElementById('message-text')?.textContent ?? '') && document.body.dataset.state !== 'failed', words('machine:runner.runsElsewhere', { name: 'Elsewhere' }).source, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}: ${await message(page)}`); });
   } finally {
     await context.close();
@@ -102,15 +102,15 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page); // "Open the other machine? This one stops…"
     await page.goto(`${base}/web/app/?${PAGE_QUERY}`);
-    await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('machine:main.openDisk.prompt').source, { timeout: 30_000 });
-    const openDisk = page.locator('#message-actions button', { hasText: t('machine:main.openDisk') });
+    await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('machine:power-actions.openDisk.prompt').source, { timeout: 30_000 });
+    const openDisk = page.locator('#message-actions button', { hasText: t('machine:power-actions.openDisk') });
 
     // Cancelled: nothing happens.
     await openDisk.click();
     await page.waitForFunction(() => (window as unknown as { picked: number }).picked === 1);
     await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
-    assert.equal(await page.locator('#machine').textContent(), t('machine:main.title.noDisk', { machine: t('machines:machine.uefi') }));
+    assert.equal(await page.locator('#machine').textContent(), t('machine:page-disks.title.noDisk', { machine: t('machines:machine.uefi') }));
 
     // Picked: a machine named after the file, its disk with the handle.
     await page.evaluate(() => { (window as unknown as { pick: string[] }).pick.push('first.raw'); });

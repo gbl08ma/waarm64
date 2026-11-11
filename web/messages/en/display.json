@@ -15,11 +15,11 @@
     "message": "The guest is decoding a video through the GPU, which can't be saved. Close the video player first.",
     "note": "Why a snapshot can't be taken, shown in the message bar (under the toolbar) as the detail under “The machine can't be saved.” (Snapshot, Save snapshot or Suspend while the machine runs): the guest is decoding a video through the browser's decoders, whose pictures can't be saved."
   },
-  "main.webglLost": {
+  "worker-messages.webglLost": {
     "message": "The browser lost the screen's WebGL context",
     "note": "Error headline in the message bar (under the toolbar) when the browser took away the 3D screen's WebGL context (the machine has crashed; Show serial log and the like follow)."
   },
-  "main.gpuWorkerFailed": {
+  "runner.gpuWorkerFailed": {
     "message": "The 3D renderer stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that draws a 3D machine's screen failed (the machine has crashed); the browser's error is the detail under it."
   }

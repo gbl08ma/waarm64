@@ -18,10 +18,12 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusOptions.svelte`, `status-drag.svelte.ts`) | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
-| `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes the areas' state, provides `page` |
+| `web/app/main.ts` | the composition root: opens the store and the page's machine, builds the areas' modules, assembles `page`, mounts the components, boots |
+| `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
+| `web/app/areas/*-actions.ts`, `screen-view.ts`, `serial-terminal.ts`, `page-window.ts`, `disk-changes.ts`, `disk-export.ts`, `snapshot-restore.ts`, `usb-view.ts`, `usb-attach.ts`, `usb-entries.ts`, `held.ts`, `hooks.ts`, `browser.d.ts` | each area's actions next to its state: the screen and the terminal, the views and the window, disks, snapshots, network, USB, folders, clipboard, keys; the held-by-another-tab flow; the test hooks' and the missing browser APIs' types |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
-| the toolbar's Snapshot and Load snapshot, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
+| the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts`, `web/app/store.ts` | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines page does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
 | `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk wizard, the browser's Disks pane and its dialogs |
@@ -60,7 +62,7 @@ its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](us
 ## The machines
 
 - **`uefi`**, the page's machine (M8 decision 1, since 2026-10-17): EDK2 and **no disk of its own**. The page
-  opens idle, says how to bring a disk ("Open a disk image…", with an **[Open disk…](ui:machine:main.openDisk)** button) and starts nothing until
+  opens idle, says how to bring a disk ("Open a disk image…", with an **[Open disk…](ui:machine:power-actions.openDisk)** button) and starts nothing until
   one is opened (below, "Your own disk": the picker, a drop, `?disk=<url>`); Start without one says the same. The
   toolbar shows "AArch64 machine · no disk", then the machine made for the disk (named after its file); Suspend
   appears with a disk. 2 GiB, a 1024×768 screen on virtio-gpu, the same devices and network credential as `debian`;
@@ -83,7 +85,7 @@ its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](us
   `/dev/console`, the serial port (GRUB passes no `console=`, so the kernel takes the device
   tree's PL011): it asks for a timezone, a locale and a root password on the serial terminal,
   with the screen waiting. The page passes no credentials (the user's answer); the boot card says
-  where the questions are ([Show serial console](ui:common:App.boot.serial.show) opens the serial view). Tests pass them over fw_cfg
+  where the questions are ([Show serial console](ui:common:BootCard.serial.show) opens the serial view). Tests pass them over fw_cfg
   (`tests/debian-unattended.ts`: `login.noauth`, `firstboot.*`, an empty root password).
 - **`buildroot`**, the test guest: `-- /bin/sh` on the serial console, 256 MiB, a 640×480
   framebuffer that stays black (its kernel has no fbcon), the overlay `webpc-buildroot` (mounted
@@ -142,16 +144,24 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
 ## The page's code
 
 Svelte 5 (runes), compiled by Vite's Svelte plugin (below, "The build": `.svelte` components, and `.svelte.ts`
-modules with runes). `main.ts` mounts `App.svelte` on the
-body first, then finds the canvas and the terminal's element in it and runs the machine as before. **What the page
+modules with runes). `main.ts` is the composition root ([frontend-code.md](frontend-code.md) §5.1): it makes the
+page's machine (`run/page-machine.svelte.ts` `PageMachine`: the stored machine or the transient one, its chosen disk,
+size, 3D and run, the owner every area's module is given), builds the areas' modules (classes taking what they need:
+`run/` the machine's run, `areas/*-actions.ts` the rest), assembles `page` from their actions and provides it
+(`providePage`), then mounts `App.svelte`, which gives the screen's elements, the terminal's and `main` back through
+its `view` prop (`areas/page-window.ts` `PageView`, with the window's and document's events), then boots. A run is a
+`run/run.ts` `Run`: what its workers and ports say goes through `Run.guard` (dropped once another run took its
+place) to handler tables keyed by the message's `type` (`run/worker-messages.ts`). The canvas is made again for each
+start by `App.svelte` (`{#key screen.generation}`, at `screen.size`: a canvas hands its drawing over only once).
+**What the page
 shows is its areas' state** ([frontend-code.md](frontend-code.md) §3), each a `$state` object or class in
 `web/app/areas/`: `power` (the state, its words, `busy` while a switch or a save runs; `isLive`), `messageBar`,
 `bootCard`, `current` (the page's machine: its id, title, what it has, a transient machine's size), `screen` (the
 view), `machinesNav` (the Machines page open, its tab, the chosen pane, `selected` derived from the records), `keys`,
 `mouse`, `status`, `sound` (following `PageAudio`), `clipboard` (following the run's `ClipboardShare`), `usb`,
 `shares` (shared folders), `network` and `records` (the browser's machines, disks, overlays and snapshots, read again
-on the store's `onChange`, another tab's writes, and `onWrite`, this tab's own). main.ts writes them instead of the
-DOM and reads them back (`power.state` is the state; `App.svelte` writes the body's `data-state`, `data-view`,
+on the store's `onChange`, another tab's writes, and `onWrite`, this tab's own). The areas' modules write them instead
+of the DOM and read them back; what follows from the page's machine is derived from it (`current.follow`, `usb.follow`) (`power.state` is the state; `App.svelte` writes the body's `data-state`, `data-view`,
 `data-graphics` and `data-page` from them). The live network, folders and on-screen keyboard keys are plain classes
 whose reads track a change signal (`changes.ts` `Changes`, Svelte's `createSubscriber`), so a component reads
 `net.views()` or `folders.folders` directly. A menu or wizard that opens itself (the Network and Folders menus, the
@@ -159,7 +169,8 @@ USB menu, the Network and Folder wizards) answers a `Command` (`command.ts`; `ne
 `shares.openMenu()`) while it is mounted, a call made before it is there waiting for it; the keys' events
 (`keys.released`, `keys.typed`) are listened to by the on-screen keyboard. **What the components do is `page`**
 (`page.ts`'s `Page`: restart, power off, suspend, take, load and restore snapshots, save disks, import changes, open
-machines, save settings…), which main.ts fills in before the first start. Ids the tests and tools use stay (`#state`,
+machines, save settings…), complete before the components mount. What escapes an action (a click's dropped promise) is
+shown in the message bar (`unhandledrejection`). Ids the tests and tools use stay (`#state`,
 `#message[data-snapshot]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`: `FilePickers.svelte` owns them, and a
 button opens one with `file-pickers.ts` `openPicker('disk' | 'snapshot' | 'changes')`). **Actions** a click starts that can fail
@@ -234,7 +245,7 @@ by default (below, "The status bar"). Menus (`ui/Menu.svelte`) keep the `<detail
 elsewhere and open under their right edge (a page's Export menus under their left).
 
 **Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
-`web/app/clipboard.ts`'s `ClipboardShare`, wired in `main.ts`): shown while the running machine has
+`web/app/clipboard.ts`'s `ClipboardShare`, wired in `areas/clipboard-actions.ts`): shown while the running machine has
 **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (or `?clipboard=1`). The button's state (`data-state`): *sharing* (pressed), *paused*
 (the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its port closed), each with
 its tooltip; a mark (and its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is
@@ -247,7 +258,7 @@ opening of the agent's port, so an agent restored paused is resumed); **[Send th
 wrong as the agent's TYPED says it: "[Nothing was typed, because the guest is showing a graphical desktop rather than a text console. Paste with the keyboard while the guest's screen has the focus instead.](ui:clipboard:ClipboardMenu.notText)"
 or "[Some of the text wasn't typed, as the guest's console didn't consume all of it.](ui:clipboard:ClipboardMenu.untyped)"; and
 **[Copy the screen](ui:clipboard:ClipboardMenu.screen)**, which needs no agent (shown while waiting or paused too): a PNG of the display
-written to the host's clipboard (`write` with a promise, so the click's activation outlasts the read-back; `main.ts`
+written to the host's clipboard (`write` with a promise, so the click's activation outlasts the read-back; `areas/clipboard-actions.ts`
 `screenPng`): a 3D machine's screen read back by its GPU worker (`grab`) and encoded in `web/app/png-worker.ts`, a 2D
 machine's from whoever draws it over the display port (`png`: virtio-gpu's scanout in the device worker,
 `gpu-present.ts` `scanoutPng`, or the framebuffer's canvas in the machine worker); a failure says "[The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation.](ui:clipboard:ClipboardMenu.screen.failed)". The permission is followed
@@ -451,8 +462,10 @@ Page → worker:
   canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the machine worker
   draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
   parameters (direct-boot machines). `credentials`: systemd credentials over fw_cfg for a firmware
-  machine, beside the machine's own (the network card's). `disk2`: a URL for the second disk.
-  `disk`: `{url?, file?, overlay}`, the root disk to boot instead of the machine's (below, "Your own disk").
+  machine, beside the machine's own (the network card's). `disks`: the machine's disks in slot order
+  (web/app/protocol.ts `StartDisk`: each one's source, a URL, a file, a blank or a ramdisk, and its overlay), the
+  transient machine's chosen disk (below, "Your own disk") and `?disk2=` among them; `home`: the OPFS directory of its
+  own files. The message is built in web/app/run/start-message.ts.
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); `ncpus` and `ramMiB`, the kernel
   and the command line are then the file's.
 - `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,
@@ -518,7 +531,7 @@ the kernel's console (fbcon) replays the boot log from the first line and system
 follow, so the Screen view stays the default (loop 0's finding). **Through UEFI it isn't**: GRUB
 passes no `console=tty0`, so the screen stays black until tty1's getty, and the firmware's menus
 and the first boot's questions are on the serial console; the card stays until `running` and
-says so, with a [Show serial console](ui:common:App.boot.serial.show) button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
+says so, with a [Show serial console](ui:common:BootCard.serial.show) button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
 Debian's kernel, its initrd and the core; the 403 MB disk is read by ranges as the guest needs it)
 take ~0.15 s from localhost, fbcon takes the screen ~2.4 s after the VM starts, and the login
 prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3: 28.6–29.0).
@@ -540,7 +553,7 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   GiB on 1 vCPU, 3.1 on 4, with 1 GiB of guest RAM), plus the JIT's budget past 160 MiB four times over
   (`jitHostGiB`: the rule was measured with up to 160 MiB; Firefox's pages session at 320 MiB took the renderer
   0.5-0.7 GiB higher; a smaller budget takes at most 0.25 GiB off), so 0.625 GiB more at the default 320. Below it the page doesn't start the machine
-  (state `idle`, "[Not started](ui:machine:main.state.idle)") and offers **[Start anyway](ui:machine:main.memory.start)**, naming a vCPU count that fits if one
+  (state `idle`, "[Not started](ui:machine:messages.state.idle)") and offers **[Start anyway](ui:machine:memory-signal.memory.start)**, naming a vCPU count that fits if one
   does. A device that reports 4 GB or more runs Debian's default on up to 4 vCPUs.
 - **A tab that went away with its machine running** (the memory signal, `web/app/memory.ts`; [jit.md](jit.md) "The
   page's memory signal"): while a machine runs, the page keeps a mark of it in `localStorage` (`webpc.alive.<stored
@@ -549,7 +562,7 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   that no tab has renewed for 30 s means the tab was closed for it, most likely out of memory: the next start of that
   machine (state `idle`) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
   or less), **Start with N MiB of RAM** (half or less; a stored machine's snapshots of the old size are orphaned, so
-  it asks first) and **[Start as it is](ui:machine:main.crashed.asIs)**. The choice is saved in the stored machine's record, or for a transient
+  it asks first) and **[Start as it is](ui:machine:memory-signal.crashed.asIs)**. The choice is saved in the stored machine's record, or for a transient
   machine in `webpc.settings` (`jitMiB`, `ramMiB`). While it runs, past what `navigator.deviceMemory` reports the
   machine worker caps the JIT cache at what it holds (it flushes there).
 - Another browser than Chromium (no `Chromium` brand in `navigator.userAgentData`): a standing
@@ -694,8 +707,8 @@ are Start and Boot instead). A failure before that leaves the machine running.
 - A suspended machine's file is not a snapshot to take elsewhere (it has no disk): `readSnapshot`
   refuses it without `resume`, and Save snapshot is what leaves the browser.
 - A disk of one's own (Open disk…, a drop) is a stored machine's, so its suspended copy is the machine's and the page
-  reopens it after a reload (the last machine): a file disk needs the user's click first ("[Allow and start](ui:disks:main.allowAndStart)", or
-  "[Select and start](ui:disks:main.pickAndStart)" without a handle), then it resumes.
+  reopens it after a reload (the last machine): a file disk needs the user's click first ("[Allow and start](ui:disks:problems.allowAndStart)", or
+  "[Select and start](ui:disks:problems.pickAndStart)" without a handle), then it resumes.
 
 ### The guest's clock
 
@@ -818,7 +831,7 @@ scales it down smoothly when it doesn't fit at 1:1. A `ResizeObserver` and a `re
 query refit it.
 
 **The guest's size follows the page** on a virtio-gpu machine (Debian's page). The page measures the
-screen's box (`wantedSize` in `main.ts`): CSS pixels by default, device pixels with the Screen menu's
+screen's box (`wantedSize` in `areas/screen-view.ts`): CSS pixels by default, device pixels with the Screen menu's
 **[HiDPI](ui:toolbar:ScreenMenu.screen.hidpi)** setting; the width is rounded down to a multiple of 8 (the guest's CVT modes are, and a
 sliver would show), at least 640×480, at most 4088 (what the EDID's detailed timing can say). The
 Screen menu's **[Size](ui:toolbar:ScreenMenu.screen.size)** picks a fixed size instead (1024×768, 1280×800, 1920×1080); both settings are
@@ -1190,7 +1203,7 @@ against a guest that polls): a person's typing is slower. The serial terminal, n
 setup (GRUB's "UEFI Firmware Settings" entry resets into it; the boot device menu's "EFI Firmware
 Setup") and GRUB's editor and command line.
 
-xterm.js and its stylesheet are imported as the package (`main.ts`: `@xterm/xterm`, `@xterm/xterm/css/xterm.css`).
+xterm.js and its stylesheet are imported as the package (`areas/serial-terminal.ts`: `@xterm/xterm`, `@xterm/xterm/css/xterm.css`).
 
 ## Views, settings and the disk
 
@@ -1210,7 +1223,7 @@ reports less than the choice needs (Chromium reports at most 8 GB, so past that 
 
 Restart and Power off ask for a confirmation while the machine is booting or running (they're a power cut); after
 a power off the button reads Start. One restart or disk reset at a time (`exclusively` in
-main.ts): Restart, Power off and Reset disk are disabled from the click until the new machine's worker is
+`run/power-actions.ts`): Restart, Power off and Reset disk are disabled from the click until the new machine's worker is
 started, so a second click can't start a machine beside the one being started (the first would
 keep the overlay, and the page would lose track of it). The disk overlay persists across reloads and restarts; OPFS
 belongs to the browser profile, so Playwright's temporary profiles start empty and tests don't see
@@ -1252,7 +1265,7 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 
 ## Your own disk
 
-A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): **[Open disk…](ui:machine:main.openDisk)** (the
+A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): **[Open disk…](ui:machine:power-actions.openDisk)** (the
 message's button while no disk is open, and the Machines page's From a disk image…: the browser's file picker, whose handle the machine keeps, or a file input where there is none), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own, or a chunked image's `manifest.json`, which any static host can serve:
 `node tools/chunk-image.ts <image> <dir> [MiB] [--name <name>]`, docs/devices.md "A chunked image"; `node tools/disk-trace.ts` adds a
@@ -1366,7 +1379,7 @@ docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own
 computer** (the local helper, below) or a **peer-to-peer room** (below), with its state (a tailnet's node, tailcat's served address, the helper's link, a room's link and key), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
 comes back detached, saying so. Any machine can use a kept connection; one running machine has it at a time (its Web
-Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:main.useHere), takes it
+Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:network-actions.useHere), takes it
 (the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
 
 The toolbar's **Network** menu (`Network.svelte`) has a section per adapter of the page's machine (`NetAdapter.svelte`, headed "Adapter n" when there are

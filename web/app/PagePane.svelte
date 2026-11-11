@@ -1,6 +1,6 @@
 <!--
   The Machines page's pane of the page's own machine, a transient one (a test's `?machine=`): its disk (export its
-  changes or the whole disk, import changes, reset it) and its snapshots. Logic is main.ts's, through `page`.
+  changes or the whole disk, import changes, reset it) and its snapshots. Logic is the areas' (disk-*.ts, snapshot-*.ts), through `page`.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';

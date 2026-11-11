@@ -1,329 +1,329 @@
 {
-  "main.title.disk": {
+  "page-disks.title.disk": {
     "message": "{{machine}} · {{disk}}",
     "note": "The toolbar's name of a machine opened from the page's address (not one kept in this browser) with a disk: {{machine}} is the machine's name (e.g. Debian 13), {{disk}} its disk's file name. Also how other tabs name it (a connection or a device it holds)."
   },
-  "main.title.noDisk": {
+  "page-disks.title.noDisk": {
     "message": "{{machine}} · no disk",
     "note": "The toolbar's name of a machine opened from the page's address that boots a disk of the user's and has none yet; {{machine}} is the machine's name."
   },
-  "main.noMachine": {
+  "page-machine.noMachine": {
     "message": "There is no machine {{id}} in this browser.",
     "note": "Detail under “Couldn't open the machine” in the message bar (under the toolbar) when the page's address (`?m=`) names a machine that isn't kept in this browser; {{id}} is the id in the address."
   },
-  "main.noDisk": {
+  "page-machine.noDisk": {
     "message": "The machine {{name}} has a disk that isn't stored in this browser any more: {{id}}.",
     "note": "Detail under “Couldn't open the machine” in the message bar (under the toolbar) when one of the machine's disks is gone from this browser; {{name}} is the machine's name, {{id}} the missing disk's id."
   },
-  "main.state.idle": {
+  "messages.state.idle": {
     "message": "Not started",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when no machine has started yet (a disk to open, a question first)."
   },
-  "main.state.loading": {
+  "messages.state.loading": {
     "message": "Loading",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine is being prepared: the emulator, its files, a snapshot."
   },
-  "main.state.booting": {
+  "messages.state.booting": {
     "message": "Booting",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine runs and hasn't finished booting."
   },
-  "main.state.running": {
+  "messages.state.running": {
     "message": "Running",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine runs."
   },
-  "main.state.off": {
+  "messages.state.off": {
     "message": "Powered off",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine was powered off."
   },
-  "main.state.suspended": {
+  "messages.state.suspended": {
     "message": "Suspended",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine was suspended (its memory kept in this browser)."
   },
-  "main.state.rebooting": {
+  "messages.state.rebooting": {
     "message": "Rebooting",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the guest asked for a restart."
   },
-  "main.state.crashed": {
+  "messages.state.crashed": {
     "message": "Crashed",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the guest or the emulator stopped with an error."
   },
-  "main.state.failed": {
+  "messages.state.failed": {
     "message": "Couldn't start",
     "note": "The machine's state in the status bar (inside “The machine: …”, and the page's state for tools) when the machine couldn't start."
   },
-  "main.state.loadingPercent": {
+  "worker-messages.state.loadingPercent": {
     "message": "Loading {{percent}}%",
     "note": "The machine's state in the status bar while the emulator's and the machine's files download; {{percent}} is how much of them has arrived."
   },
-  "main.progress": {
+  "messages.progress": {
     "message": "{{phase}} {{percent}}%",
     "note": "The machine's state in the status bar during a long job (a disk saved to a file, changes loaded, a snapshot written): {{phase}} is what it is doing (e.g. Writing the snapshot), {{percent}} how far it is."
   },
-  "main.retry": {
+  "problems.retry": {
     "message": "Retry",
     "note": "Button in the message bar (under the toolbar) after the machine couldn't start or stopped (a file missing, the disk in use, no memory): it starts the machine again."
   },
-  "main.showLog": {
+  "serial-terminal.showLog": {
     "message": "Show serial log",
     "note": "Button in the message bar (under the toolbar) after the guest's kernel panicked or the emulator failed: it shows the serial terminal (what led to it)."
   },
-  "main.copyLog": {
+  "serial-terminal.copyLog": {
     "message": "Copy serial log",
     "note": "Button in the message bar (under the toolbar) after the guest's kernel panicked or the emulator failed: it copies the serial console's output to the clipboard."
   },
-  "main.copyLog.copied": {
+  "serial-terminal.copyLog.copied": {
     "message": "Copied",
     "note": "What the Copy serial log button in the message bar (under the toolbar) says once the log is on the clipboard."
   },
-  "main.copyLog.failed": {
+  "serial-terminal.copyLog.failed": {
     "message": "Couldn't copy",
     "note": "What the Copy serial log button in the message bar (under the toolbar) says when the browser refused the clipboard (Save serial log is beside it)."
   },
-  "main.saveLog": {
+  "serial-terminal.saveLog": {
     "message": "Save serial log",
     "note": "Button in the message bar (under the toolbar) after the guest's kernel panicked or the emulator failed: it downloads the serial console's output as a file."
   },
-  "main.resume": {
+  "problems.resume": {
     "message": "Start",
     "note": "Button in the message bar (under the toolbar) after the machine was suspended: it starts the machine again, resuming it where it was."
   },
-  "main.bootInstead": {
+  "problems.bootInstead": {
     "message": "Boot instead",
     "note": "Button in the message bar (under the toolbar) after the machine was suspended: it asks, then boots the machine from its disk and drops its suspended memory."
   },
-  "main.bootInstead.confirm": {
+  "problems.bootInstead.confirm": {
     "message": "Boot the machine from its disk instead? This will discard its suspended memory, and anything the guest hadn't written to its disk will be lost, as after a power cut.",
     "note": "Text of the question asked by Boot instead (the message bar, after a suspend)."
   },
-  "main.bootInstead.ok": {
+  "problems.bootInstead.ok": {
     "message": "Boot",
     "note": "The confirm button (drawn as a warning) of the question asked by Boot instead."
   },
-  "main.boot.loading": {
+  "runner.boot.loading": {
     "message": "Loading {{name}}",
     "note": "Title of the boot card (over the screen while a machine starts) when it starts from a snapshot file; {{name}} is the file's name."
   },
-  "main.boot.starting": {
+  "runner.boot.starting": {
     "message": "Starting {{machine}}",
     "note": "Title of the boot card (over the screen while a machine starts) while its files load; {{machine}} is the machine's name (e.g. AArch64 machine)."
   },
-  "main.boot.booting": {
+  "worker-messages.boot.booting": {
     "message": "Booting {{machine}}",
     "note": "Title of the boot card (over the screen while a machine starts) once the machine runs and boots; {{machine}} is the machine's name."
   },
-  "main.boot.kernel": {
+  "worker-messages.boot.kernel": {
     "message": "Starting the kernel",
     "note": "Line on the boot card when the machine has just started running, before the guest's own lines replace it."
   },
-  "main.boot.downloading": {
+  "worker-messages.boot.downloading": {
     "message": "Downloading {{loaded, bytes}} of {{total, bytes}}",
     "note": "Line on the boot card while the emulator's and the machine's files download: {{loaded}} arrived so far of {{total}}."
   },
-  "main.boot.downloaded": {
+  "worker-messages.boot.downloaded": {
     "message": "Downloading {{loaded, bytes}}",
     "note": "Line on the boot card while the emulator's and the machine's files download and the server didn't say their size: {{loaded}} arrived so far."
   },
-  "main.asleep": {
+  "worker-messages.asleep": {
     "message": "The guest has suspended itself. Press a key or click its screen or terminal to wake it.",
     "note": "Notice in the message bar (under the toolbar) when the guest suspends itself (its own sleep, not the page's Suspend); it clears itself after a while."
   },
-  "main.workerFailed": {
+  "runner.workerFailed": {
     "message": "The emulator stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that runs the machine failed (the machine has crashed; Show serial log and the like follow); the browser's error is the detail under it."
   },
-  "main.runsElsewhere": {
+  "runner.runsElsewhere": {
     "message": "Couldn't start {{name}}",
     "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows): the headline; what to do is the cause under it (machine:main.runsElsewhere.cause); {{name}} is the machine's name."
   },
-  "main.runsElsewhere.cause": {
+  "runner.runsElsewhere.cause": {
     "message": "It's running in another tab of this web app. Power it off there or close that tab, then Retry.",
     "note": "Error details: the cause under the headline machine:main.runsElsewhere, on the line under it in the same place; what to do."
   },
-  "main.cantOpen": {
+  "power-actions.cantOpen": {
     "message": "Couldn't open the machine",
     "note": "Error headline in the message bar (under the toolbar) when the machine kept in this browser that the page opens is gone, or one of its disks is; why is the detail under it."
   },
-  "main.machines": {
+  "power-actions.machines": {
     "message": "Machines…",
     "note": "Button in the message bar (under the toolbar) after “Couldn't open the machine”: it opens the Machines page."
   },
-  "main.restart.confirm": {
+  "power-actions.restart.confirm": {
     "message": "Restart the machine? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked by the toolbar's Restart while the machine runs."
   },
-  "main.restart.title": {
+  "power-actions.restart.title": {
     "message": "Restart",
     "note": "Title of the question asked by the toolbar's Restart while the machine runs."
   },
-  "main.restart.ok": {
+  "power-actions.restart.ok": {
     "message": "Restart",
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Restart."
   },
-  "main.powerOff.confirm": {
+  "power-actions.powerOff.confirm": {
     "message": "Power off the machine? This will stop it at once, like pulling the plug, and unsaved work in the guest will be lost. To stop it cleanly, shut down the guest first, for example with the poweroff command.",
     "note": "Text of the question asked by the toolbar's Power off."
   },
-  "main.powerOff.title": {
+  "power-actions.powerOff.title": {
     "message": "Power off",
     "note": "Title of the question asked by the toolbar's Power off."
   },
-  "main.powerOff.ok": {
+  "power-actions.powerOff.ok": {
     "message": "Power off",
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Power off."
   },
-  "main.openDisk.prompt": {
+  "power-actions.openDisk.prompt": {
     "message": "Open a disk image to start the machine. It must be an arm64 Linux image that boots through UEFI: qcow2, raw, or an installer or live ISO. Use Open disk…, or drop the file on this web app. What the machine writes to the disk is kept in this browser, separately for each file.",
     "note": "What the message bar (under the toolbar) says on a first visit, when the page's machine has no disk yet; an Open disk… button follows."
   },
-  "main.openDisk": {
+  "power-actions.openDisk": {
     "message": "Open disk…",
     "note": "Button in the message bar (under the toolbar) on a first visit (the page's machine has no disk yet): it opens the browser's file picker for a disk image."
   },
-  "main.switch.confirm": {
+  "disk-actions.switch.confirm": {
     "message": "Open the other machine? This will power off this one at once, like pulling the plug, and unsaved work in its guest will be lost.",
     "note": "Text of the question asked when another machine is opened (the Machines page's Open, a disk file opened or dropped) while the one on the page runs."
   },
-  "main.switch.title": {
+  "disk-actions.switch.title": {
     "message": "Open the machine",
     "note": "Title of the question asked when another machine is opened while the one on the page runs."
   },
-  "main.switch.ok": {
+  "disk-actions.switch.ok": {
     "message": "Open",
     "note": "The confirm button (drawn as a warning) of the question asked when another machine is opened while the one on the page runs."
   },
-  "main.runsOn": {
+  "snapshot-actions.runsOn": {
     "message": "The machine is still running.",
     "note": "Line after the headline of an error in the message bar (under the toolbar) when Suspend failed: the machine wasn't suspended and still runs; why is the detail under it."
   },
-  "main.lessRam.confirm": {
+  "memory-signal.lessRam.confirm": {
     "message": "Start with less RAM? This will orphan the machine's snapshots, as they were taken with its old settings. They remain stored, marked as orphaned, until you delete them.",
     "note": "Text of the question asked by Start with N MiB of RAM (the message bar, after the machine's tab closed while it ran) when the machine has kept snapshots."
   },
-  "main.lessRam.ok": {
+  "memory-signal.lessRam.ok": {
     "message": "Use less RAM",
     "note": "The confirm button of the question asked by Start with N MiB of RAM when the machine has kept snapshots."
   },
-  "main.crashed": {
+  "memory-signal.crashed": {
     "message": "{{name}}'s tab closed while it was running ({{when}}), most likely because the browser ran out of memory. The emulator counted about {{gib}} GiB in use ({{peak}} GiB at most), with {{ram}} MiB of guest RAM and a {{jit}} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled; when the cache is full, the browser uses about six times its size for it. Less RAM leaves the guest less room.",
     "note": "What the message bar (under the toolbar) says when the page opens a machine whose tab closed while it ran (buttons to start it smaller follow): {{name}} is the machine's name, {{when}} when it was last seen running, {{gib}} and {{peak}} the memory it used then and at most (GiB), {{ram}} its RAM and {{jit}} its JIT cache (MiB)."
   },
-  "main.crashed.jit": {
+  "memory-signal.crashed.jit": {
     "message": "Start with a {{mib}} MiB JIT cache",
     "note": "Button in the message bar (under the toolbar) after the machine's tab closed while it ran: it starts the machine with a smaller JIT cache; {{mib}} is its size (160 or 64)."
   },
-  "main.crashed.ram": {
+  "memory-signal.crashed.ram": {
     "message": "Start with {{mib}} MiB of RAM",
     "note": "Button in the message bar (under the toolbar) after the machine's tab closed while it ran: it starts the machine with less RAM; {{mib}} is the RAM it gets."
   },
-  "main.crashed.asIs": {
+  "memory-signal.crashed.asIs": {
     "message": "Start as it is",
     "note": "Button in the message bar (under the toolbar) after the machine's tab closed while it ran: it starts the machine unchanged."
   },
-  "main.memoryWarning": {
+  "memory-signal.memoryWarning": {
     "message": "This needs about {{need}} GiB of memory, and your computer reports {{has}} GiB. If memory runs out, the browser will close the tab without warning.",
     "note": "Paragraph after the question asked before a restart with another size (the toolbar's Machine menu, a stored machine's Save) when your computer may not have the memory: {{need}} is what the machine needs, {{has}} what your computer reports (GiB)."
   },
-  "main.memoryWarning.max": {
+  "memory-signal.memoryWarning.max": {
     "message": "This needs about {{need}} GiB of memory, and your computer reports {{has}} GiB. Browsers report at most 8 GiB, so it may have more. If memory runs out, the browser will close the tab without warning.",
     "note": "Paragraph after the question asked before a restart with another size when your computer may not have the memory and reports 8 GiB, the most browsers report: {{need}} is what the machine needs, {{has}} what your computer reports (GiB)."
   },
-  "main.size_one": {
+  "size-actions.size_one": {
     "message": "{{count}} vCPU, {{ram}} MiB of RAM",
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for one vCPU (a machine without a GPU): {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
-  "main.size_other": {
+  "size-actions.size_other": {
     "message": "{{count}} vCPUs, {{ram}} MiB of RAM",
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for several vCPUs (a machine without a GPU): {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
-  "main.size.3d_one": {
+  "size-actions.size.3d_one": {
     "message": "{{count}} vCPU, {{ram}} MiB of RAM and 3D graphics",
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for one vCPU with 3D graphics: {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
-  "main.size.3d_other": {
+  "size-actions.size.3d_other": {
     "message": "{{count}} vCPUs, {{ram}} MiB of RAM and 3D graphics",
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for several vCPUs with 3D graphics: {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
-  "main.size.2d_one": {
+  "size-actions.size.2d_one": {
     "message": "{{count}} vCPU, {{ram}} MiB of RAM and 2D graphics",
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for one vCPU with 2D graphics: {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
-  "main.size.2d_other": {
+  "size-actions.size.2d_other": {
     "message": "{{count}} vCPUs, {{ram}} MiB of RAM and 2D graphics",
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for several vCPUs with 2D graphics: {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
-  "main.size.confirm": {
+  "size-actions.size.confirm": {
     "message": "Restart with {{size}}? If the machine is suspended, it will resume with the size it had, and the new size will apply from its next boot.",
     "note": "Text of the question asked when a size is chosen in the toolbar's Machine menu while the machine isn't running; {{size}} is the size chosen (vCPUs, RAM, graphics)."
   },
-  "main.size.confirm.running": {
+  "size-actions.size.confirm.running": {
     "message": "Restart with {{size}}? This will power off the machine at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when a size is chosen in the toolbar's Machine menu while the machine runs; {{size}} is the size chosen (vCPUs, RAM, graphics)."
   },
-  "main.size.title": {
+  "size-actions.size.title": {
     "message": "The machine's size",
     "note": "Title of the question asked when a size is chosen in the toolbar's Machine menu."
   },
-  "main.size.ok": {
+  "size-actions.size.ok": {
     "message": "Restart",
     "note": "The confirm button of the question asked when a size is chosen in the toolbar's Machine menu."
   },
-  "main.settings.confirm": {
+  "size-actions.settings.confirm": {
     "message": "Restart {{name}} with its new settings? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when the Machines page's Settings tab saves new settings for the machine running on the page; {{name}} is the machine's name."
   },
-  "main.settings.title": {
+  "size-actions.settings.title": {
     "message": "Save and restart",
     "note": "Title of the question asked when the Machines page's Settings tab saves new settings for the machine running on the page."
   },
-  "main.settings.ok": {
+  "size-actions.settings.ok": {
     "message": "Restart",
     "note": "The confirm button (drawn as a warning) of the question asked when new settings are saved for the machine running on the page."
   },
-  "main.notIsolated": {
+  "power-actions.notIsolated": {
     "message": "Couldn't start the machine",
     "note": "Error in the message bar (under the toolbar) when the page was served without the headers the emulator needs (nothing can run): the headline; why and what to do are the cause under it (machine:main.notIsolated.cause)."
   },
-  "main.notIsolated.cause": {
+  "power-actions.notIsolated.cause": {
     "message": "This web app needs cross-origin isolation (the COOP and COEP headers) for the emulator's shared memory, and the server didn't send them.",
     "note": "Error details: the cause under the headline machine:main.notIsolated, on the line under it in the message bar; why nothing can run."
   },
-  "main.notIsolated.fix": {
+  "power-actions.notIsolated.fix": {
     "message": "Run `npm start` in the repository and open the URL it prints; its server sends them.",
     "note": "Error details: the line under machine:main.notIsolated.cause in the message bar; what to do (a development checkout served by another server)."
   },
-  "main.memory_one": {
+  "memory-signal.memory_one": {
     "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPU, and the emulator itself. Your computer reports {{has}} GiB.\n{{advice}}",
     "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows): {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (one), {{advice}} what to do."
   },
-  "main.memory_other": {
+  "memory-signal.memory_other": {
     "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPUs, and the emulator itself. Your computer reports {{has}} GiB.\n{{advice}}",
     "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows): {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (several), {{advice}} what to do."
   },
-  "main.memory.max_one": {
+  "memory-signal.memory.max_one": {
     "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPU, and the emulator itself. Your computer reports {{has}} GiB; browsers report at most 8 GiB, so it may have more.\n{{advice}}",
     "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows) and reports 8 GiB, the most browsers report: {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (one), {{advice}} what to do."
   },
-  "main.memory.max_other": {
+  "memory-signal.memory.max_other": {
     "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPUs, and the emulator itself. Your computer reports {{has}} GiB; browsers report at most 8 GiB, so it may have more.\n{{advice}}",
     "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows) and reports 8 GiB, the most browsers report: {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (several), {{advice}} what to do."
   },
-  "main.memory.advice": {
+  "memory-signal.memory.advice": {
     "message": "If memory runs out, the browser closes the tab without warning. Close other tabs and apps first.",
     "note": "The advice line of the message bar's warning that your computer may not have the memory for the machine."
   },
-  "main.memory.advice.fewer": {
+  "memory-signal.memory.advice.fewer": {
     "message": "If memory runs out, the browser closes the tab without warning. Close other tabs and apps first, or use fewer vCPUs; {{fewer}} would fit (?ncpus={{fewer}}).",
     "note": "The advice line of the message bar's warning that your computer may not have the memory for the machine, when fewer vCPUs would fit; {{fewer}} is how many."
   },
-  "main.memory.start": {
+  "memory-signal.memory.start": {
     "message": "Start anyway",
     "note": "Button in the message bar (under the toolbar) after the warning that your computer may not have the memory for the machine: it starts it all the same."
   },
-  "main.noStorage": {
+  "messages.noStorage": {
     "message": "This browser doesn't let the web app keep anything (in a private window, for example): what the machine writes to its disks, its snapshots and the machines you make last only until this tab is closed.",
     "note": "Note in the message bar (under the toolbar) when the browser refuses the web app its storage (OPFS: Firefox's private windows), shown while there is nothing else to say. It takes the place of the note that the browser isn't Chromium."
   },
-  "main.notChromium": {
+  "messages.notChromium": {
     "message": "This web app is developed and tested in Chromium and Chrome. In this browser, parts of it may not work.",
     "note": "Note in the message bar (under the toolbar) in a browser other than Chromium or Chrome, shown while there is nothing else to say."
   },

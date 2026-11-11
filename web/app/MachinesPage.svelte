@@ -5,7 +5,7 @@
   (PagePane.svelte), the browser's Disks (DisksPane.svelte), Shared folders (FoldersPane.svelte) and Connections
   (ConnectionsPane.svelte), Preferences (PreferencesPane.svelte) and About (About.svelte); the browser's storage at the
   bottom (StorageBar.svelte). It reads the records, runs the panes' actions (one runner: what runs, the error) and
-  holds the machine being edited (machine-edit.svelte.ts). Logic is in web/app/machines.ts, disks.ts and main.ts
+  holds the machine being edited (machine-edit.svelte.ts). Logic is in web/app/machines.ts, disks.ts and the areas' modules
   (`page`); every action that loses data asks first.
 -->
 <script lang="ts">

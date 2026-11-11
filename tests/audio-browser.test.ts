@@ -179,7 +179,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await page.waitForTimeout(2000);
     const before = (await header(page))[READ];
     // Watched from before the click: the guest's power-off replaces the page's message.
-    const saved = page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000, polling: 20 })
+    const saved = page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000, polling: 20 })
       .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.locator('#message-text').textContent()}`); });
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.locator('#save-snapshot').click()]);
     const path = join(dir, 'snd.webpcsnap');
@@ -205,7 +205,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await p2.mouse.click(5, 5);
     await until(p2, /snd: hw params/);
     await p2.setInputFiles('#load-snapshot-input', path);
-    await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
+    await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
     await p2.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 20 }); // the old machine is gone
     await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio?.playing && (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
     // Listened to once the restored stream flows (half a second on the new ring): under load its vCPUs start late.

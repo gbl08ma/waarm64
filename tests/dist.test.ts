@@ -103,7 +103,7 @@ test('the static copy opens idle and boots Buildroot in Chromium', { skip }, asy
   await page.goto(`${base}/web/app/?probe=1#here`);
   await page.waitForURL(`${base}/?probe=1#here`);
   await page.goto(`${base}/`);
-  await page.waitForFunction((said) => document.body.dataset.state === 'idle' && (document.getElementById('message-text')?.textContent ?? '').includes(said), t('machine:main.openDisk.prompt'), { timeout: 10_000 });
+  await page.waitForFunction((said) => document.body.dataset.state === 'idle' && (document.getElementById('message-text')?.textContent ?? '').includes(said), t('machine:power-actions.openDisk.prompt'), { timeout: 10_000 });
   await page.goto(`${base}/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000, polling: 250 });
   assert.deepEqual(errors, []);

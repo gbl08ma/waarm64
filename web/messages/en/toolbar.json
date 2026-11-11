@@ -335,11 +335,11 @@
     "message": "This size is kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.",
     "note": "Fine print at the foot of the toolbar's Machine menu."
   },
-  "main.gpuLock.noWebgl2": {
+  "size-actions.gpuLock.noWebgl2": {
     "message": "This browser has no WebGL2, so only 2D is available.",
     "note": "Tooltip of the Machine menu's Graphics choice (the toolbar), turned off because the browser has no WebGL2."
   },
-  "main.gpuLock.address": {
+  "size-actions.gpuLock.address": {
     "message": "Set by ?gpu={{gpu}} in the address.",
     "note": "Tooltip of the Machine menu's Graphics choice (the toolbar), turned off because the page's address sets it; {{gpu}} is the address's value."
   }

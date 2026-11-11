@@ -396,7 +396,7 @@ covers it. Cases to recognise, and what the page does:
   come (its program refused it) is the text, escaped, so the rest is still written.
 - **Refusals** (`NotAllowedError`, `DataError`) are never shown as errors in the middle of work. The toolbar button
   shows the permission's state ("Allowed in this browser", "Blocked: allow it in the site's settings") from the
-  permission's `change` event, the way USB and folders show [Allow…](ui:usb:main.offer.allow).
+  permission's `change` event, the way USB and folders show [Allow…](ui:usb:usb-attach.offer.allow).
 
 ### 4.4 Images
 

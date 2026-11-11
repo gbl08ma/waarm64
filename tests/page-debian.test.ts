@@ -187,13 +187,13 @@ async function save(page: Page, name: string) {
   ]);
   const path = join(dir, name);
   await download.saveAs(path);
-  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
   const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, ...info };
 }
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
-const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
+const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
 /** The page's OPFS: each directory's files and their sizes. */
 const opfs = (page: Page) => page.evaluate(async () => {
   const out: Record<string, Record<string, number>> = {};
@@ -242,7 +242,7 @@ for (let run = 1; run <= RUNS; run++) {
     // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
     await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
     await page.waitForTimeout(1000);
-    assert.match(dialogs.at(-1)!, words('snapshots:main.load.otherMachine', { name: 'buildroot-header.webpcsnap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
+    assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.otherMachine', { name: 'buildroot-header.webpcsnap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
     assert.notEqual(await stateOf(page), 'failed');
 
     // GRUB's menu counts 5 s from when it starts (~5 s after the boot manager did): `c` on the screen until it is stopped.

@@ -631,147 +631,147 @@
     "message": "Details",
     "note": "Title of the folded details (a summary to click) under a USB problem that has no remedy of its own, only the browser's message."
   },
-  "main.machineGone": {
+  "usb-entries.machineGone": {
     "message": "The machine was deleted.",
     "note": "Error when a USB device's entry is changed for a machine that was deleted meanwhile (in another tab)."
   },
-  "main.stopped": {
+  "usb-actions.stopped": {
     "message": "The machine isn't running in this tab. Start it to attach devices.",
     "note": "Error when a USB device is attached (the USB menu, the Machines page's USB tab) while the machine isn't running in this tab."
   },
-  "main.offer.gone": {
+  "usb-attach.offer.gone": {
     "message": "{{name}} was unplugged from connector {{connector}}. If it came back as another device, such as a bootloader after a firmware upload, pick that one to attach it on the same connector.",
     "note": "An offer in the toolbar's USB menu when an attached device was unplugged (Pick it… follows); {{name}} is the device's name, {{connector}} its connector's number."
   },
-  "main.offer.pick": {
+  "usb-attach.offer.pick": {
     "message": "Pick it…",
     "note": "Button of the USB menu's offer after a device was unplugged: it opens the browser's chooser for the device that came back."
   },
-  "main.detached": {
+  "usb-attach.detached": {
     "message": "{{name}} was detached",
     "note": "Error headline in the message bar (under the toolbar) when an attached USB device was detached by an error; {{name}} is the device's name; the error is the detail under it."
   },
-  "main.attachFailed": {
+  "usb-attach.attachFailed": {
     "message": "Couldn't attach {{name}}",
     "note": "Error headline in the message bar (under the toolbar) when a USB device couldn't be attached; {{name}} is the device's name; why is the detail under it."
   },
-  "main.attachFailed.again": {
+  "usb-attach.attachFailed.again": {
     "message": "Couldn't attach {{name}} again",
     "note": "Error headline in the message bar (under the toolbar) when a USB device detached for a snapshot couldn't be attached again; {{name}} is the device's name; why is the detail under it."
   },
-  "main.held.left": {
+  "usb-attach.held.left": {
     "message": "{{name}} was left attached to {{who}}, in another tab.",
     "note": "Notice in the message bar (under the toolbar) when a device attached at start is attached to another tab's machine (left there); {{name}} is the device's name, {{who}} that machine's."
   },
-  "main.held.left.unknown": {
+  "usb-attach.held.left.unknown": {
     "message": "{{name}} was left attached to another machine, in another tab.",
     "note": "Notice in the message bar (under the toolbar) when a device attached at start is attached to another tab's machine whose name isn't known; {{name}} is the device's name."
   },
-  "main.held.confirm": {
+  "usb-attach.held.confirm": {
     "message": "Detach {{name}} from {{who}}, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
     "note": "Text of the question asked when a USB device is attached here while another tab's machine has it; {{name}} is the device's name, {{who}} that machine's."
   },
-  "main.held.confirm.unknown": {
+  "usb-attach.held.confirm.unknown": {
     "message": "Detach {{name}} from another machine, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
     "note": "Text of the question asked when a USB device is attached here while another tab's machine, whose name isn't known, has it; {{name}} is the device's name."
   },
-  "main.held.title": {
+  "usb-attach.held.title": {
     "message": "The device is in use",
     "note": "Title of the question asked when a USB device is attached here while another tab's machine has it."
   },
-  "main.held.ok": {
+  "usb-attach.held.ok": {
     "message": "Detach it there",
     "note": "The confirm button of the question asked when a USB device is attached here while another tab's machine has it."
   },
-  "main.held.kept": {
+  "usb-attach.held.kept": {
     "message": "Couldn't take {{name}} from {{who}}, in another tab",
     "note": "Error headline when another tab's machine didn't give up a USB device asked for here; {{who}} is that machine's name, {{name}} the device's."
   },
-  "main.held.kept.unknown": {
+  "usb-attach.held.kept.unknown": {
     "message": "Couldn't take {{name}} from the machine in another tab",
     "note": "Error headline when another tab's machine, whose name isn't known, didn't give up a USB device asked for here; {{name}} is the device's name."
   },
-  "main.taken": {
+  "usb-attach.taken": {
     "message": "{{name}} was detached, because another machine took it.",
     "note": "Notice in the message bar (under the toolbar) when another tab's machine took a USB device from this one; {{name}} is the device's name."
   },
-  "main.keyboardFailed": {
+  "usb-attach.keyboardFailed": {
     "message": "Couldn't plug in the built-in keyboard",
     "note": "Error headline in the message bar (under the toolbar) when the page's built-in USB keyboard (for the firmware and boot loaders) couldn't be attached; why is the detail under it."
   },
-  "main.offer.ungranted": {
+  "usb-attach.offer.ungranted": {
     "message": "This browser has no permission to use {{name}} yet, because the machine was set up in another browser.",
     "note": "An offer in the toolbar's USB menu for a remembered device the browser hasn't allowed (Allow… follows); {{name}} is the device's name."
   },
-  "main.offer.allow": {
+  "usb-attach.offer.allow": {
     "message": "Allow…",
     "note": "Button of the USB menu's offer for a device without permission: it opens the browser's chooser for it."
   },
-  "main.offer.plugged": {
+  "usb-actions.offer.plugged": {
     "message": "{{name}} was plugged in.",
     "note": "An offer in the toolbar's USB menu when a device was plugged into the computer; {{name}} is the device's name."
   },
-  "main.offer.attach": {
+  "usb-actions.offer.attach": {
     "message": "Attach",
     "note": "Button of the USB menu's offer for a remembered device that was plugged in: it attaches it."
   },
-  "main.offer.remember": {
+  "usb-actions.offer.remember": {
     "message": "Attach and remember",
     "note": "Button of the USB menu's offer for a device the machine doesn't remember that was plugged in: it attaches it and remembers it."
   },
-  "main.offer.back": {
+  "usb-actions.offer.back": {
     "message": "{{name}} just appeared where {{was}} was, on connector {{connector}}.",
     "note": "An offer in the toolbar's USB menu when a device appeared right after an attached one was unplugged (a bootloader after a firmware upload); {{name}} is the new device's name, {{was}} the old one's, {{connector}} the connector's number."
   },
-  "main.offer.there": {
+  "usb-actions.offer.there": {
     "message": "Attach it there",
     "note": "Button of the USB menu's offer for a device that appeared where another was: it attaches it on that connector."
   },
-  "main.empty.list": {
+  "usb-attach.empty.list": {
     "message": "{{first}} and {{last}}",
     "note": "Several USB devices named in the question asked before a snapshot or Suspend: {{first}} is all of them but the last (joined with commas), {{last}} the last."
   },
-  "main.empty.snapshot_one": {
+  "usb-attach.empty.snapshot_one": {
     "message": "Taking a snapshot needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. It will be attached again once the snapshot is saved.",
     "note": "Text of the question asked by Snapshot or Save snapshot while a USB device is attached; {{list}} is its name."
   },
-  "main.empty.snapshot_other": {
+  "usb-attach.empty.snapshot_other": {
     "message": "Taking a snapshot needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. They will be attached again once the snapshot is saved.",
     "note": "Text of the question asked by Snapshot or Save snapshot while USB devices are attached; {{list}} is their names, {{count}} how many."
   },
-  "main.empty.suspend_one": {
+  "usb-attach.empty.suspend_one": {
     "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. If it is marked At start, it will be attached again when the machine resumes.",
     "note": "Text of the question asked by Suspend while a USB device is attached; {{list}} is its name."
   },
-  "main.empty.suspend_other": {
+  "usb-attach.empty.suspend_other": {
     "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. Those marked At start will be attached again when the machine resumes.",
     "note": "Text of the question asked by Suspend while USB devices are attached; {{list}} is their names, {{count}} how many."
   },
-  "main.empty.title": {
+  "usb-attach.empty.title": {
     "message": "Detach the USB devices?",
     "note": "Title of the question asked by Snapshot, Save snapshot or Suspend while USB devices are attached."
   },
-  "main.empty.ok": {
+  "usb-attach.empty.ok": {
     "message": "Detach and continue",
     "note": "The confirm button of the question asked by Snapshot, Save snapshot or Suspend while USB devices are attached."
   },
-  "main.edit.detachFirst": {
+  "usb-actions.edit.detachFirst": {
     "message": "Detach the device before changing its connector.",
     "note": "Error when an attached USB device's connector is changed (the Machines page's USB tab)."
   },
-  "main.zero.stopped": {
+  "usb-actions.zero.stopped": {
     "message": "The machine isn't running with a USB controller.",
     "note": "Error of the test device's switch (`?usbzero=1`, the USB menu) when the machine isn't running with a USB controller."
   },
-  "main.zero.full": {
+  "usb-actions.zero.full": {
     "message": "Every connector is in use.",
     "note": "Error of the test device's switch (`?usbzero=1`, the USB menu) when no connector is free."
   },
-  "main.pad.full": {
+  "usb-actions.pad.full": {
     "message": "The game pad wasn't attached, because every USB connector is in use.",
     "note": "Error of a game pad's checkbox in the USB menu when no USB connector is free."
   },
-  "main.pad.gone": {
+  "usb-actions.pad.gone": {
     "message": "The game pad wasn't attached, because it is no longer connected to your computer.",
     "note": "Error of a game pad's checkbox in the USB menu when the browser no longer lists that game pad."
   }

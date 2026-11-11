@@ -105,9 +105,14 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 
 ## 5. TypeScript
 
-1. **`main.ts` is the composition root**: it builds the areas and mounts the page. Each area (screen, run, disks,
-   snapshots, network, USB, folders, clipboard) is its own module with its own state and its `page` actions. No new
-   top-level code in `main.ts`.
+1. **`main.ts` is the composition root**: it builds the areas and mounts the page. Each area is its own module with its
+   own state and its `page` actions: the run in `web/app/run/` (`page-machine.svelte.ts`, the page's machine every
+   area is given; `runner.ts`, `power-actions.ts`, `size-actions.ts`, `snapshot…`), the others in `web/app/areas/`
+   (`screen-view.ts`, `serial-terminal.ts`, `page-window.ts`, `disk-actions.ts`, `disk-changes.ts`, `disk-export.ts`,
+   `snapshot-actions.ts`, `snapshot-restore.ts`, `network-actions.ts`, `usb-actions.ts`, `usb-attach.ts`,
+   `folder-actions.ts`, `clipboard-actions.ts`, `keys-actions.ts`). An area's module is a class given what it takes
+   in its constructor (a later one as a function called once all are built), not module globals. No new top-level
+   code in `main.ts`.
 2. **No god functions.** A function over ~80 lines, or a message handler with more than a few branches, is split
    (a handler table keyed by the message's `type`).
 3. **Parse at the edge, once.** URL parameters and knobs are parsed into one typed object; no `params.get` scattered

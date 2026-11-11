@@ -1,6 +1,6 @@
 // Clipboard sharing as the toolbar's clipboard menu shows it (docs/plans/clipboard.md §5): the running machine's
 // sharing (web/app/clipboard.ts `ClipboardShare`, followed through its `onChange`), the browser's read permission, and
-// which of the menu's actions last failed. web/app/main.ts gives it each run's sharing.
+// which of the menu's actions last failed. web/app/run/runner.ts gives it each run's sharing.
 import { Changes } from '../changes.ts';
 import type { ClipboardShare, ReadPermission, ShareState } from '../clipboard.ts';
 

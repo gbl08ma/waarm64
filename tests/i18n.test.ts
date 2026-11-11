@@ -141,8 +141,8 @@ test('wording: the button says Retry', () => { assert.equal(label, 'Retry'); });
   assert.match(problems[0].text, /'Retry' says the page's words \(x:Thing\.retry\)/);
   // The helper: a message's words with the parameters given, the others any text.
   assert.equal(words('common:ask.ok', {}, { whole: true }).source, '^OK$');
-  assert.match(t('snapshots:main.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:main.saved', { name: 'a' }, { start: true }));
-  assert.doesNotMatch(t('snapshots:main.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:main.saved', { name: 'b' }));
+  assert.match(t('snapshots:snapshot-actions.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:snapshot-actions.saved', { name: 'a' }, { start: true }));
+  assert.doesNotMatch(t('snapshots:snapshot-actions.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:snapshot-actions.saved', { name: 'b' }));
 });
 
 const CAT2: Catalogs = {

@@ -109,7 +109,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const keep = async (name: string) => {
     const before = await page.locator('#message').getAttribute('data-snapshot');
     await page.locator('#save-snapshot').click();
-    await page.waitForFunction(([b, src]) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && new RegExp(src!).test(document.getElementById('message-text')?.textContent ?? ''), [before, words('snapshots:main.kept', {}, { start: true }).source] as const, { timeout: 120_000 });
+    await page.waitForFunction(([b, src]) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && new RegExp(src!).test(document.getElementById('message-text')?.textContent ?? ''), [before, words('snapshots:snapshot-actions.kept', {}, { start: true }).source] as const, { timeout: 120_000 });
     keepAs = name;
     await page.locator('#machines-open').click();
     await page.locator('.machines [data-tab=snapshots]').click();
@@ -141,7 +141,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   };
   // "one": the overlay moved on since, so its state goes into a new overlay; the newer state stays in the old one.
   await restore('one');
-  assert.match(dialogs.at(-2)!, words('snapshots:main.restore.fork.new'));
+  assert.match(dialogs.at(-2)!, words('snapshots:snapshot-restore.restore.fork.new'));
   assert.equal(await ok(page, 'cat /root/f /mnt/r/x'), 'a r-one');
   const after1 = await record<{ overlays: { name: string; fork?: unknown }[]; attached: string }>(page, `async (store, id) => {
     const m = await store.get('machines', id);
@@ -149,7 +149,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
     return { overlays: overlays.map((o) => ({ name: o.name, fork: o.fork })), attached: overlays.find((o) => o.id === m.attachments[0].overlay).name };
   }`, id);
   assert.equal(after1.attached, 'one', 'the fork is attached');
-  assert.deepEqual(after1.overlays.map((o) => o.name).sort(), [t('disks:main.overlayName'), 'one'].sort());
+  assert.deepEqual(after1.overlays.map((o) => o.name).sort(), [t('disks:page-disks.overlayName'), 'one'].sort());
   // "three" from there: its state was the old overlay's (moved on since too: the machine wrote after it), forked again.
   await restore('three');
   assert.equal(await ok(page, 'cat /root/f'), 'c');

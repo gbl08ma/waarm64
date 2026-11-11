@@ -15,11 +15,11 @@
     "message": "Click to type and capture the mouse, Esc to release it",
     "note": "Hint shown over the machine's screen while typing doesn't go to the machine and the toolbar's mouse lock is on: a click also hands the machine the mouse."
   },
-  "App.boot.serial": {
+  "BootCard.serial": {
     "message": "No video output. The guest may be sending boot menus and setup instructions to the serial console.",
     "note": "Line on the boot card (over the screen while a machine starts) when the guest's boot menus or first-boot questions go to the serial console instead of the screen; a Show serial console button follows."
   },
-  "App.boot.serial.show": {
+  "BootCard.serial.show": {
     "message": "Show serial console",
     "note": "Button after the boot card's line about the serial console: it shows the serial terminal."
   },

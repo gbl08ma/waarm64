@@ -376,59 +376,6 @@
       "count": 1
     }
   },
-  "web/app/main.ts": {
-    "@typescript-eslint/no-deprecated": {
-      "count": 1
-    },
-    "@typescript-eslint/no-empty-function": {
-      "count": 13
-    },
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 2
-    },
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 62
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 12
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-parameters": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 6
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 4
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 8
-    },
-    "complexity": {
-      "count": 11
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 7
-    },
-    "no-control-regex": {
-      "count": 1
-    }
-  },
   "web/app/net-live.ts": {
     "@typescript-eslint/await-thenable": {
       "count": 1
@@ -496,11 +443,6 @@
     },
     "max-lines-per-function": {
       "count": 2
-    }
-  },
-  "web/app/page.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
     }
   },
   "web/app/png-worker.ts": {

@@ -194,7 +194,7 @@ let seeded: Seed;
     await page.evaluate(async () => {
       const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
       const { t } = await import('/web/i18n.ts' as string);
-      messageBar.text = t('machine:main.cantOpen');
+      messageBar.text = t('machine:power-actions.cantOpen');
       messageBar.details = ['NotFoundError: A requested file or directory could not be found.']; // i18n-ignore: a browser's error, as shown
       messageBar.kind = 'error';
     });
@@ -205,7 +205,7 @@ let seeded: Seed;
   await setUi(page, `a.current.hasGpu = true; a.current.hasNetwork = true; a.current.hasMouse = true; a.usb.on = true;
     Object.defineProperty(folders, 'running', { get: () => true }); folders.changed();
     a.clipboard.share = { state: 'waiting', stopped: false, canType: false, typed: undefined };
-    a.current.size.cpuChoices = [1, 2, 4, 8]; a.current.size.ramChoices = [512, 1024, 2048, 4096]; a.power.state = 'running'; a.power.stateText = ''; a.messageBar.text = '';`);
+    a.current.size = { ...a.current.size, cpuChoices: [1, 2, 4, 8], ramChoices: [512, 1024, 2048, 4096] }; a.power.state = 'running'; a.power.stateText = ''; a.messageBar.text = '';`);
   await state('toolbar-all', async () => { await shot(page, 'toolbar-all'); });
   const MENUS = ['load-snapshot', 'screen-menu', 'keys', 'mouse-lock', 'sound-menu', 'network', 'usb-menu', 'folders', 'clipboard-menu', 'machine-menu'];
   for (const id of MENUS) {

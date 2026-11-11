@@ -4,7 +4,7 @@
   guest's program) and carries a mark while the browser's read permission is missing or the focus reads stopped. The
   menu: the permission's item (Allow… while `prompt`, how to allow it while `denied`), the switch (paused for the run),
   Send the clipboard to the guest, Type the clipboard (and what became of it: the agent's TYPED), Copy the screen (a PNG
-  of the display to the host's clipboard, with no agent: main.ts `screenPng`). Logic is web/app/clipboard.ts's, through
+  of the display to the host's clipboard, with no agent: areas/clipboard-actions.ts `screenPng`). Logic is web/app/clipboard.ts's, through
   `page`.
 -->
 <script lang="ts">

@@ -1,6 +1,6 @@
 // The keyboard as the page shows it (docs/frontend.md "Input", "The on-screen keyboard"): the on-screen keyboard and
 // its modifiers' setting, the guest's layout and LEDs, where keys go; and what happened to the keys that the on-screen
-// keyboard follows (`onReleased`, `onTyped`). web/app/main.ts writes it from the machine's input.
+// keyboard follows (`onReleased`, `onTyped`). The run writes it from the machine's input (web/app/run/runner.ts).
 import type { ModifierMode } from '../osk.ts';
 import { settings } from '../settings.ts';
 

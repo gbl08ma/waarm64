@@ -9,7 +9,7 @@ and the choices they made then; it grows as the user reviews more of the copy.
 - **Plain and conventional.** The words a user expects from other software: Create, Delete, Power off, Restore. No
   invented phrasing ("Make it"), no wordplay.
 - **The effect first.** Say what happens or what something does before why or how: [No video output. The guest may
-  be sending boot menus and setup instructions to the serial console.](ui:common:App.boot.serial); "Automatically configure the guest to use
+  be sending boot menus and setup instructions to the serial console.](ui:common:BootCard.serial); "Automatically configure the guest to use
   this ramdisk as swap."
 - **Full sentences**, ending with a period, tooltips and notes included. A button, a label, a title and an error's
   headline aren't sentences and take no period.
@@ -72,7 +72,7 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 
 ## The elements
 
-- **Buttons**: sentence case, a verb, short ("Create", [Show serial console](ui:common:App.boot.serial.show), "Detach"). An ellipsis when the button
+- **Buttons**: sentence case, a verb, short ("Create", [Show serial console](ui:common:BootCard.serial.show), "Detach"). An ellipsis when the button
   opens a further step that asks something ([Connect…](ui:network:NetAdapter.setup), [Add a disk…](ui:disks:Disks.add)), none when it acts at once.
 - **Busy text** (while an action runs): the verb's -ing form and its object, no period ([Creating the overlay](ui:disks:Disks.busy.newOverlay)).
 - **Titles and headings**: sentence case, no period.
@@ -81,7 +81,7 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 - **Confirmations**: the question first ("Delete the overlay Work?"), then what it will cause, with `will` ("This will
   delete the 12.0 MiB of changes made on top of the base image."). The OK button names the action ("Delete"), never
   "OK" for something destructive.
-- **Errors**: a headline that says what failed, active and without a subject or period: [Couldn't load the snapshot](ui:snapshots:main.notSnapshot.title).
+- **Errors**: a headline that says what failed, active and without a subject or period: [Couldn't load the snapshot](ui:snapshots:snapshot-restore.notSnapshot.title).
   Then the details, full sentences: what happened or why, then what the user can do. A message that is a cause
   (the details' line) is a full sentence too.
 - **Menu paths**: the items' own words joined with ›: "Add a disk… › A disk already in this browser".

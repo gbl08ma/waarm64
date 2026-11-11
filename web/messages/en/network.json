@@ -903,87 +903,87 @@
     "message": "No peer {{id}} offers to be an exit node.",
     "note": "The cause under “Couldn't use that exit node” (Network menu): the chosen peer isn't an exit node (any more). {{id}} is the peer's stable ID. A detail line."
   },
-  "main.ephemeral": {
+  "network-actions.ephemeral": {
     "message": "{{name}} is ephemeral and belongs to this tab, so a machine running in another tab can't use it.",
     "note": "Error when an ephemeral connection (kept in this tab's memory only) is attached to a machine that runs in another tab (the Network wizard, the Machines page's Network tab); {{name}} is the connection's name."
   },
-  "main.held.useHere": {
+  "network-actions.held.useHere": {
     "message": "{{held}} Use it here instead? That machine will disconnect from it.",
     "note": "Text of the question asked when a connection attached or connected here is in use by another tab's machine; {{held}} says who has it."
   },
-  "main.held.title": {
+  "network-actions.held.title": {
     "message": "The connection is in use",
     "note": "Title of the question asked when a connection is in use by another tab's machine."
   },
-  "main.useHere": {
+  "network-actions.useHere": {
     "message": "Use it here",
     "note": "The confirm button of the question asked when a connection is in use by another tab's machine: it is taken from that machine."
   },
-  "main.held.logOut": {
+  "network-actions.held.logOut": {
     "message": "{{held}} Log it out anyway? That machine will disconnect from it.",
     "note": "Text of the question asked by a connection's Log out (the Machines page's Connections) while another tab's machine uses it; {{held}} says who has it."
   },
-  "main.logOut": {
+  "network-actions.logOut": {
     "message": "Log out",
     "note": "The confirm button (drawn as a warning) of the question asked by Log out while another tab's machine uses the connection."
   },
-  "main.delete.leaves": {
+  "network-actions.delete.leaves": {
     "message": "Its node will leave the tailnet when it is next seen offline.",
     "note": "What deleting an ephemeral tailnet connection does, in the question asked by its Delete."
   },
-  "main.delete.loggedOut": {
+  "network-actions.delete.loggedOut": {
     "message": "Its node will be logged out of the tailnet and its keys forgotten in this browser.",
     "note": "What deleting a tailnet connection does, in the question asked by its Delete."
   },
-  "main.delete.tailcat": {
+  "network-actions.delete.tailcat": {
     "message": "Its tailcat address will stop working.",
     "note": "What deleting a tailcat connection that lets clients in does, in the question asked by its Delete."
   },
-  "main.delete.room": {
+  "network-actions.delete.room": {
     "message": "Its name in the room will stop working.",
     "note": "What deleting a room connection does (when no other connection shares its key), in the question asked by its Delete."
   },
-  "main.delete.confirm": {
+  "network-actions.delete.confirm": {
     "message": "Delete the connection {{name}}?",
     "note": "Text of the question asked by a connection's Delete (the Machines page's Connections) when no machine has it and deleting it does nothing more; {{name}} is its name."
   },
-  "main.delete.confirm.on": {
+  "network-actions.delete.confirm.on": {
     "message": "Delete the connection {{name}}? It will be detached from {{machines}}.",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs."
   },
-  "main.delete.confirm.what": {
+  "network-actions.delete.confirm.what": {
     "message": "Delete the connection {{name}}? {{what}}",
     "note": "Text of the question asked by a connection's Delete when no machine has it; {{name}} is its name, {{what}} what deleting it does."
   },
-  "main.delete.confirm.on.what": {
+  "network-actions.delete.confirm.on.what": {
     "message": "Delete the connection {{name}}? It will be detached from {{machines}}. {{what}}",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs, {{what}} what deleting it does."
   },
-  "main.delete.title": {
+  "network-actions.delete.title": {
     "message": "Delete the connection",
     "note": "Title of the question asked by a connection's Delete."
   },
-  "main.delete.ok": {
+  "network-actions.delete.ok": {
     "message": "Delete",
     "note": "The confirm button (drawn as a warning) of the question asked by a connection's Delete."
   },
-  "main.stranded": {
+  "network-actions.stranded": {
     "message": "{{name}} is deleted, but its control server didn't answer. Its node stays on the tailnet until it expires or an admin removes it.",
     "note": "Error shown after a tailnet connection was deleted and its control server couldn't be told; {{name}} is the connection's name."
   },
-  "main.newAddress.confirm": {
+  "network-actions.newAddress.confirm": {
     "message": "Forget {{name}}'s tailcat address? Whoever has it won't be able to come in any more, and the machine will get a new one when it next lets clients in.",
     "note": "Text of the question asked by a tailcat connection's New address; {{name}} is the connection's name."
   },
-  "main.newAddress.ok": {
+  "network-actions.newAddress.ok": {
     "message": "Forget address",
     "note": "The confirm button (drawn as a warning) of the question asked by a tailcat connection's New address."
   },
-  "main.newName.confirm": {
+  "network-actions.newName.confirm": {
     "message": "Give {{name}} a new name in its room? Members who have the machine's current name won't be able to reach it any more.",
     "note": "Text of the question asked by a room connection's New name (the Network wizard's edit, Advanced); {{name}} is the connection's name."
   },
-  "main.newName.ok": {
+  "network-actions.newName.ok": {
     "message": "New name",
     "note": "The confirm button (drawn as a warning) of the question asked by a room connection's New name."
   }

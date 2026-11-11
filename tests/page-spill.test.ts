@@ -103,7 +103,7 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 300_000 }), page.locator('#save-snapshot').click()]);
     const file = join(dir, 'spill.webpcsnap');
     await download.saveAs(file);
-    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 120_000 });
+    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 120_000 });
     assert.deepEqual(errors, []);
     await context.close();
     const fresh = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -113,7 +113,7 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
     await answerAsks(p2);
     await p2.goto(`${base}/web/app/?${query}`);
     await p2.setInputFiles('#load-snapshot-input', file);
-    await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
+    await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
     await p2.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), undefined, { timeout: 300_000, polling: 250 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await p2.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('status')?.textContent}`)}`); });
     const [state2, message2] = await p2.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')?.textContent ?? '']);

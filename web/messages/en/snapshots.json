@@ -407,223 +407,223 @@
     "message": "Its devices kept working through every attempt to save them.",
     "note": "Detail under “The machine can't be saved.”: the devices kept working through every try to save them."
   },
-  "main.startNormally": {
+  "problems.startNormally": {
     "message": "Start",
     "note": "Button in the message bar (under the toolbar) after a snapshot was refused: it boots the machine normally."
   },
-  "main.loadAgain": {
+  "problems.loadAgain": {
     "message": "Load snapshot…",
     "note": "Button in the message bar (under the toolbar) after a snapshot was refused: it picks another snapshot file."
   },
-  "main.busy": {
+  "power-actions.busy": {
     "message": "A snapshot is being saved. Try again once it's done.",
     "note": "Notice (a dialog) when something that stops the machine (a disk's export, Open disk, a snapshot's load) is asked while a snapshot is written."
   },
-  "main.large.confirm": {
+  "snapshot-actions.large.confirm": {
     "message": "Take the snapshot anyway? The machine is using 3D graphics, whose memory adds up to {{size, bytes}} to the snapshot before compression, and the machine will pause while it is read.",
     "note": "Text of the question asked by Snapshot (the toolbar) when the machine's 3D state is large; {{size}} is what it adds."
   },
-  "main.large.title": {
+  "snapshot-actions.large.title": {
     "message": "A large snapshot",
     "note": "Title of the question asked by Snapshot when the machine's 3D state is large."
   },
-  "main.large.ok": {
+  "snapshot-actions.large.ok": {
     "message": "Take snapshot",
     "note": "The confirm button of the question asked by Snapshot when the machine's 3D state is large."
   },
-  "main.fileType": {
+  "snapshot-actions.fileType": {
     "message": "webpc snapshot",
     "note": "The kind of file in the browser's save dialog of Save snapshot (a snapshot file, .webpcsnap)."
   },
-  "main.saved": {
+  "snapshot-actions.saved": {
     "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.",
     "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "main.saved.slept": {
+  "snapshot-actions.saved.slept": {
     "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The guest slept during the snapshot, so loading it will wake the guest with its clock caught up.",
     "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file with the clock catch-up on (Preferences) and the guest asleep for it: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "main.saved.awake": {
+  "snapshot-actions.saved.awake": {
     "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.\nThe guest didn't go to sleep when asked, so its clock will lag after the snapshot is loaded. Its sleep key may do nothing.",
     "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file with the clock catch-up on (Preferences) when the guest didn't go to sleep for it: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "main.kept": {
+  "snapshot-actions.kept": {
     "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "main.kept.slept": {
+  "snapshot-actions.kept.slept": {
     "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page. The guest slept during the snapshot, so loading it will wake the guest with its clock caught up.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser with the clock catch-up on (Preferences) and the guest asleep for it: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "main.kept.awake": {
+  "snapshot-actions.kept.awake": {
     "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page.\nThe guest didn't go to sleep when asked, so its clock will lag after the snapshot is loaded. Its sleep key may do nothing.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser with the clock catch-up on (Preferences) when the guest didn't go to sleep for it: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "main.runsOn.noFile": {
+  "snapshot-actions.runsOn.noFile": {
     "message": "The machine is still running, and no file was saved.",
     "note": "Line after the headline of an error in the message bar (under the toolbar) when Save snapshot failed; why is the detail under it."
   },
-  "main.runsOn.nothingKept": {
+  "snapshot-actions.runsOn.nothingKept": {
     "message": "The machine is still running, and nothing was stored in this browser.",
     "note": "Line after the headline of an error in the message bar (under the toolbar) when Snapshot (kept in this browser) failed; why is the detail under it."
   },
-  "main.restore.otherVersion": {
+  "snapshot-restore.restore.otherVersion": {
     "message": "it was made by another version of this web app",
     "note": "What differs, in the parentheses of “… was taken of … with other settings or disks (…).”, when the snapshot doesn't describe its machine (another version of the page made it)."
   },
-  "main.restore.otherShape": {
+  "snapshot-restore.restore.otherShape": {
     "message": "{{name}} was taken of {{machine}} with other settings or disks ({{why}}).\nTo use it, create a machine like it on the Machines page, in this machine's Snapshots tab.",
     "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Machines page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons)."
   },
-  "main.restore.cant": {
+  "snapshot-restore.restore.cant": {
     "message": "Couldn't restore the snapshot",
     "note": "Title of the notice when a snapshot is of a machine with other settings or disks."
   },
-  "main.restore.failed": {
+  "snapshot-restore.restore.failed": {
     "message": "Couldn't restore {{name}}",
     "note": "Error headline (a notice, or the message bar (under the toolbar)) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
   },
-  "main.restore.refused": {
+  "snapshot-restore.restore.refused": {
     "message": "Couldn't restore {{name}}",
     "note": "Dialog when a snapshot can't be restored onto the machine's disks as they are: the error headline; under it, the reason (e.g. snapshots:snapshots.writtenInPlace, a disk written in place moved on). {{name}} is the snapshot's name."
   },
-  "main.restore.confirm": {
+  "snapshot-restore.restore.confirm": {
     "message": "Restore {{name}}? The machine will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running and the snapshot has no date: {{name}} is the snapshot's name."
   },
-  "main.restore.confirm.taken": {
+  "snapshot-restore.restore.confirm.taken": {
     "message": "Restore {{name}}, taken {{when}}? The machine will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
-  "main.restore.confirm.running": {
+  "snapshot-restore.restore.confirm.running": {
     "message": "Restore {{name}}? This will power off the machine at once, like pulling the plug, and it will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs and the snapshot has no date: {{name}} is the snapshot's name."
   },
-  "main.restore.confirm.takenRunning": {
+  "snapshot-restore.restore.confirm.takenRunning": {
     "message": "Restore {{name}}, taken {{when}}? This will power off the machine at once, like pulling the plug, and it will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
-  "main.restore.kept": {
+  "snapshot-restore.restore.kept": {
     "message": "These disks are as the snapshot left them and will be kept: {{disks}}.",
     "note": "Line of the question asked before a snapshot is restored: the disks whose changes are as the snapshot left them (kept as they are); {{disks}} is their names."
   },
-  "main.restore.fork.reused": {
+  "snapshot-restore.restore.fork.reused": {
     "message": "{{disk}} will get back the overlay that an earlier restore of this snapshot made.",
     "note": "Line of the question asked before a snapshot is restored, for a disk that gets back the overlay an earlier restore of it made; {{disk}} is the disk's name."
   },
-  "main.restore.fork.new": {
+  "snapshot-restore.restore.fork.new": {
     "message": "{{disk}} has changed since the snapshot, so the snapshot's state will go into a new overlay, attached in place of the current one. The current overlay will be kept as it is.",
     "note": "Line of the question asked before a snapshot is restored, for a disk that changed since the snapshot; {{disk}} is the disk's name."
   },
-  "main.restore.title": {
+  "snapshot-restore.restore.title": {
     "message": "Restore a snapshot",
     "note": "Title of the question asked before a snapshot is restored."
   },
-  "main.restore.ok": {
+  "snapshot-restore.restore.ok": {
     "message": "Restore",
     "note": "The confirm button of the question asked before a snapshot is restored (drawn as a warning while the machine runs)."
   },
-  "main.restore.keep.item": {
+  "snapshot-restore.restore.keep.item": {
     "message": "{{name}} ({{size, bytes}})",
     "note": "An overlay in the question whether to keep the changes since a snapshot: {{name}} is its name, {{size}} what it holds."
   },
-  "main.restore.keep_one": {
+  "snapshot-restore.restore.keep_one": {
     "message": "Keep the overlay {{list}} as it is and restore into a new overlay? Replacing it will lose what the machine wrote since the snapshot.",
     "note": "Text of the question asked after Restore when one disk's overlay changed since the snapshot and could be replaced; {{list}} is that overlay (its name and size)."
   },
-  "main.restore.keep_other": {
+  "snapshot-restore.restore.keep_other": {
     "message": "Keep the overlays {{list}} as they are and restore into new overlays? Replacing them will lose what the machine wrote since the snapshot.",
     "note": "Text of the question asked after Restore when several disks' overlays changed since the snapshot and could be replaced; {{list}} is them (names and sizes), {{count}} how many."
   },
-  "main.restore.keep.title": {
+  "snapshot-restore.restore.keep.title": {
     "message": "Keep the changes made since the snapshot?",
     "note": "Title of the question whether to keep the changes made since a snapshot."
   },
-  "main.restore.keep.ok": {
+  "snapshot-restore.restore.keep.ok": {
     "message": "Keep and restore",
     "note": "The confirm button of the question whether to keep the changes made since a snapshot: they stay, the snapshot goes into new overlays."
   },
-  "main.restore.replace_one": {
+  "snapshot-restore.restore.replace_one": {
     "message": "Replace it",
     "note": "The cancel button of the question whether to keep the changes made since a snapshot, for one overlay: it is replaced."
   },
-  "main.restore.replace_other": {
+  "snapshot-restore.restore.replace_other": {
     "message": "Replace them",
     "note": "The cancel button of the question whether to keep the changes made since a snapshot, for several overlays ({{count}}): they are replaced."
   },
-  "main.ownDisk": {
+  "snapshot-restore.ownDisk": {
     "message": "{{machine}}'s own disk",
     "note": "Names a test machine's own disk (its image) in the notice that a snapshot was taken on another disk; {{machine}} is the machine's name."
   },
-  "main.notSnapshot": {
+  "snapshot-restore.notSnapshot": {
     "message": "{{name}}\n{{why}}",
     "note": "Text of the notice when a file opened as a snapshot isn't one this page can load: {{name}} (the file's name) on its own line, then {{why}}, the reason."
   },
-  "main.notSnapshot.title": {
+  "snapshot-restore.notSnapshot.title": {
     "message": "Couldn't load the snapshot",
     "note": "Title of the notice when a file opened as a snapshot isn't one this page can load."
   },
-  "main.load.otherMachine": {
+  "snapshot-restore.load.otherMachine": {
     "message": "{{name}} is a snapshot of {{other}} (?machine={{otherId}}), but the machine open here is {{machine}} (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address.",
     "note": "Notice when a snapshot file of another test machine is opened: {{name}} is the file's name, {{other}} and {{otherId}} its machine's name and id, {{machine}} and {{id}} the page's."
   },
-  "main.load.otherDisk": {
+  "snapshot-restore.load.otherDisk": {
     "message": "{{name}} was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Open that disk first with Open disk…, then load the snapshot.",
     "note": "Notice when a snapshot file taken on another disk is opened: {{name}} is the file's name, {{taken}} the disk it was taken on, {{open}} the one open now."
   },
-  "main.load.otherDisk.reload": {
+  "snapshot-restore.load.otherDisk.reload": {
     "message": "{{name}} was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Reload this web app, which starts with the machine's own disk, then load the snapshot.",
     "note": "Notice when a snapshot file taken on the machine's own disk is opened while another disk is: {{name}} is the file's name, {{taken}} the disk it was taken on, {{open}} the one open now."
   },
-  "main.load.confirm": {
+  "snapshot-restore.load.confirm": {
     "message": "Load the snapshot {{name}}? {{holds}} {{replaces}} {{lost}}",
     "note": "Text of the question asked before a snapshot file is loaded on a test machine: {{name}} is the file's name, then what it holds, what happens to the machine, and what happens to the disk's changes (each a sentence)."
   },
-  "main.load.holds.cpus_one": {
+  "snapshot-restore.load.holds.cpus_one": {
     "message": "It holds {{label}} ({{size, bytes}}, {{count}} vCPU).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it has no date: {{label}} is its machine's name, {{size}} the file's size, {{count}} its vCPUs."
   },
-  "main.load.holds.when.cpus_one": {
+  "snapshot-restore.load.holds.when.cpus_one": {
     "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}, {{count}} vCPU).",
     "note": "What a snapshot file holds, in the question asked before it's loaded: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size, {{count}} its vCPUs."
   },
-  "main.load.holds.cpus_other": {
+  "snapshot-restore.load.holds.cpus_other": {
     "message": "It holds {{label}} ({{size, bytes}}, {{count}} vCPUs).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it has no date: {{label}} is its machine's name, {{size}} the file's size, {{count}} its vCPUs."
   },
-  "main.load.holds.when.cpus_other": {
+  "snapshot-restore.load.holds.when.cpus_other": {
     "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}, {{count}} vCPUs).",
     "note": "What a snapshot file holds, in the question asked before it's loaded: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size, {{count}} its vCPUs."
   },
-  "main.load.holds": {
+  "snapshot-restore.load.holds": {
     "message": "It holds {{label}} ({{size, bytes}}).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it says neither its date nor its vCPUs: {{label}} is its machine's name, {{size}} the file's size."
   },
-  "main.load.holds.when": {
+  "snapshot-restore.load.holds.when": {
     "message": "It holds {{label}} as it was on {{when}} ({{size, bytes}}).",
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it doesn't say its vCPUs: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size."
   },
-  "main.load.replaces.running": {
+  "snapshot-restore.load.replaces.running": {
     "message": "This will power off this machine at once, like pulling the plug, and the snapshot's machine will take its place, continuing from where it was saved.",
     "note": "What happens to the machine, in the question asked before a snapshot file is loaded while it runs."
   },
-  "main.load.replaces": {
+  "snapshot-restore.load.replaces": {
     "message": "The snapshot's machine will take this machine's place, continuing from where it was saved.",
     "note": "What happens to the machine, in the question asked before a snapshot file is loaded while it isn't running."
   },
-  "main.load.written": {
+  "snapshot-restore.load.written": {
     "message": "Everything written to {{disk}} will be replaced by the snapshot's changes to the disk.",
     "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} names the disk."
   },
-  "main.load.written.size": {
+  "snapshot-restore.load.written.size": {
     "message": "Everything written to {{disk}} ({{size, bytes}}) will be replaced by the snapshot's changes to the disk.",
     "note": "What happens to the disk's changes, in the question asked before a snapshot file is loaded; {{disk}} names the disk, {{size}} what it has written."
   },
-  "main.load.title": {
+  "snapshot-restore.load.title": {
     "message": "Load a snapshot",
     "note": "Title of the question asked before a snapshot file is loaded on a test machine."
   },
-  "main.load.ok": {
+  "snapshot-restore.load.ok": {
     "message": "Load",
     "note": "The confirm button (drawn as a warning) of the question asked before a snapshot file is loaded."
   },

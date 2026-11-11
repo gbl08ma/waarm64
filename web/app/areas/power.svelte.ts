@@ -1,5 +1,5 @@
 // The machine's power state as the page shows it (docs/frontend.md "The page's code"): the state and its words, and
-// whether a stop, start or snapshot runs (the actions that would overlap it wait). web/app/main.ts writes it.
+// whether a stop, start or snapshot runs (the actions that would overlap it wait). The run writes it (web/app/run/messages.ts).
 import type { PowerState } from '../protocol.ts';
 import { t } from '../../i18n.ts';
 
@@ -13,7 +13,7 @@ class Power {
   state = $state<PageState>('loading');
   /** The state's words (a phase or a progress while loading or saving). */
   stateText = $state(t('statusbar:power.loading'));
-  /** A stop and start in progress (main.ts `exclusively`). */
+  /** A stop and start in progress (web/app/run/power-actions.ts `exclusively`). */
   switching = $state(false);
   /** A snapshot being written. */
   saving = $state(false);

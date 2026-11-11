@@ -99,21 +99,21 @@ test('a definition exported from one profile and imported into another: the same
   // Opened: its file disk is to be picked. The fixture's bytes under another date: the hash says it's the same file.
   await pb.locator('.machines .pick', { hasText: 'Portable' }).click();
   await pb.locator('.machines [data-action=open]').click();
-  await pb.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.needsUser', { count: 1, names: 'data.raw' }).source, { timeout: 30_000 });
-  const [chooser] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:main.pickAndStart') }).click()]);
+  await pb.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:problems.needsUser', { count: 1, names: 'data.raw' }).source, { timeout: 30_000 });
+  const [chooser] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:problems.pickAndStart') }).click()]);
   await chooser.setFiles(FIXTURE);
   await pb.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.equal(dialogs.filter((d) => words('disks:main.otherFile').test(d)).length, 0, 'taken by its hash, without asking');
+  assert.equal(dialogs.filter((d) => words('disks:disk-actions.otherFile').test(d)).length, 0, 'taken by its hash, without asking');
 
   // A file with other bytes: asked about (and taken, the dialog accepted).
   const other = join(dir, 'data.raw');
   writeFileSync(other, Buffer.alloc(4096, 1));
   await pb.reload();
   await pb.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 30_000 });
-  const [chooser2] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:main.pickAndStart') }).click()]);
+  const [chooser2] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: t('disks:problems.pickAndStart') }).click()]);
   await chooser2.setFiles(other);
   await pb.waitForFunction(() => ['loading', 'booting', 'running', 'failed'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.equal(dialogs.filter((d) => words('disks:main.otherFile').test(d)).length, 1);
+  assert.equal(dialogs.filter((d) => words('disks:disk-actions.otherFile').test(d)).length, 1);
   assert.deepEqual(errors, []);
   await b.close();
 });
