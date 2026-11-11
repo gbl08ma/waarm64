@@ -111,6 +111,16 @@ export type Phase =
   | 'connected'
   | 'error';
 
+/** A phase's light (the Network menu's dot, an adapter's heading: ui/StatusDot.svelte's tones). */
+const PHASE_TONES: Record<Phase, 'ok' | 'busy' | 'bad' | 'off'> = {
+  off: 'off',
+  connecting: 'busy',
+  login: 'busy',
+  connected: 'ok',
+  error: 'bad',
+};
+export const phaseTone = (phase: Phase | undefined) => (phase ? PHASE_TONES[phase] : 'off');
+
 export type NetworkView = {
   phase: Phase;
   /** One line for the menu. */

@@ -158,20 +158,6 @@
       "count": 2
     }
   },
-  "web/app/Network.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 3
-    }
-  },
   "web/app/Osk.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1

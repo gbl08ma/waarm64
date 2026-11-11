@@ -151,7 +151,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     const nameA = await a.locator('#net-room-name').inputValue();
     assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
     assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
-    assert.match(await text(a, '#net-room'), words('network:Network.room.note'));
+    assert.match(await text(a, '#net-room'), words('network:NetAdapter.room.note'));
 
     // Join: a damaged link is refused; the link the first one keeps joins the same room.
     await roomWizard(b);
@@ -196,7 +196,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await menuSays(b, words('network:network.room.connections', { count: 1 }), 30_000);
     const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
-    assert.equal(t('network:Network.room.copyLink'), await text(a, '#net-room-link-copy'));
+    assert.equal(t('network:NetAdapter.room.copyLink'), await text(a, '#net-room-link-copy'));
     // Where the clipboard refuses, the link is shown in a field of its own and selected (not the machine's name).
     await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
     if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();

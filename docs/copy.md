@@ -73,7 +73,7 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 ## The elements
 
 - **Buttons**: sentence case, a verb, short ("Create", [Show serial console](ui:common:App.boot.serial.show), "Detach"). An ellipsis when the button
-  opens a further step that asks something ([Connect…](ui:network:Network.setup), [Add a disk…](ui:disks:Disks.add)), none when it acts at once.
+  opens a further step that asks something ([Connect…](ui:network:NetAdapter.setup), [Add a disk…](ui:disks:Disks.add)), none when it acts at once.
 - **Busy text** (while an action runs): the verb's -ing form and its object, no period ([Creating the overlay](ui:disks:Disks.busy.newOverlay)).
 - **Titles and headings**: sentence case, no period.
 - **Tooltips**: full sentences, a period. Say what the control does, then what it affects ([Take the disk off this

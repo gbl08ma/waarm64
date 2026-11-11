@@ -31,7 +31,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts`, `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts`, `web/app/net-live.ts`, `Network.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
+| `web/app/network.ts`, `web/app/net-live.ts`, `Network.svelte` (`NetAdapter.svelte` per adapter, `CopyField.svelte`), `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -381,7 +381,7 @@ Duplicate, Export the definition, Delete; then tabs:
 - **[Network](ui:machines:MachinePane.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (random,
   `newMac`, since 2026-11-03: machines share LANs, such as a local helper's, whose network knows a guest by its MAC;
   machines made before have `52:54:00:12:34:56` first, as the one card was), added, removed and moved up or down
-  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:AdapterCard.adapter.attach)** or [Change connection…](ui:network:Network.change) (the Network wizard),
+  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:AdapterCard.adapter.attach)** or [Change connection…](ui:network:NetAdapter.change) (the Network wizard),
   **[Detach](ui:machines:AdapterCard.adapter.detach)**, **[Connect at start](ui:machines:AdapterCard.adapter.atStart)**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **[Take the connection's settings in the guest](ui:machines:NetworkTab.netConfig)** (on; off is
   `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **[Connections](ui:machines:ConnectionsPane.connections.heading)** (in the list of machines) is the
@@ -1360,13 +1360,13 @@ comes back detached, saying so. Any machine can use a kept connection; one runni
 Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:main.useHere), takes it
 (the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
 
-The toolbar's **Network** menu has a section per adapter of the page's machine (headed "Adapter n" when there are
+The toolbar's **Network** menu (`Network.svelte`) has a section per adapter of the page's machine (`NetAdapter.svelte`, headed "Adapter n" when there are
 several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
-[Log in…](ui:network:Network.login), [Internet through](ui:network:Network.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
-peers route subnets), [This machine's tailcat address](ui:network:Network.served) (when it lets clients
-in), [This machine's name in the room](ui:network:Network.room.name) (a room's, with Copy and [Copy room link](ui:network:Network.room.copyLink)), **[Connect](ui:network:Network.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:Network.retry)** (a connection that failed: disconnect and
-connect again), **[Disconnect](ui:network:Network.disconnect)**, [Log out](ui:network:Network.logout), and [Connect…](ui:network:Network.setup) or
-[Change connection…](ui:network:Network.change), which opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
+[Log in…](ui:network:NetAdapter.login), [Internet through](ui:network:NetAdapter.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
+peers route subnets), [This machine's tailcat address](ui:network:NetAdapter.served) (when it lets clients
+in), [This machine's name in the room](ui:network:NetAdapter.room.name) (a room's, with Copy and [Copy room link](ui:network:NetAdapter.room.copyLink)), **[Connect](ui:network:NetAdapter.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:NetAdapter.retry)** (a connection that failed: disconnect and
+connect again), **[Disconnect](ui:network:NetAdapter.disconnect)**, [Log out](ui:network:NetAdapter.logout), and [Connect…](ui:network:NetAdapter.setup) or
+[Change connection…](ui:network:NetAdapter.change), which opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
 the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
 `NetLocalStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
@@ -1426,7 +1426,7 @@ and the guest's default way out (below).
 - [A tailnet](ui:network:NetKindStep.kind.pickTailnet) takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
   `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a [Show the auth key](ui:network:NetTailnetStep.authKey.show) checkbox).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
-  with a [Log in…](ui:network:Network.login) link (a new tab; only `http(s)` URLs are ever offered); the client comes up
+  with a [Log in…](ui:network:NetAdapter.login) link (a new tab; only `http(s)` URLs are ever offered); the client comes up
   when the login completes. An admin-approval wait is shown as such. With an auth key (asked for only when the
   wizard connects the page's machine) there's no login; the key is never saved. A kept connection's node is kept
   either way; an ephemeral connection's node is an ephemeral node (the control server drops it once it's been away).
@@ -1439,7 +1439,7 @@ and the guest's default way out (below).
   address and no new login: **a connection connects at start** (`connectAtStart`, the Network tab's Connect at start)
   until Disconnect.
 - **Disconnect** withdraws the lease and stops the client (the guest keeps its address until the
-  lease runs out; the adapter and its connection stay); [Log out](ui:network:Network.logout) removes the node from the tailnet and deletes its
+  lease runs out; the adapter and its connection stay); [Log out](ui:network:NetAdapter.logout) removes the node from the tailnet and deletes its
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected. A machine that stops with no start to follow (powered off, suspended, crashed) stops its clients and lets
@@ -1456,7 +1456,7 @@ and the guest's default way out (below).
     `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
     through the exit node). What the guest reaches is TCP and UDP to wherever that computer
     reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out. Connected, the menu shows
-    [This machine's key](ui:network:Network.key) (`nodekey:…`, with Copy) and the command that lets only it use that
+    [This machine's key](ui:network:NetAdapter.key) (`nodekey:…`, with Copy) and the command that lets only it use that
     computer (`tailcat serve --allow=<key> exit-node`): the connection's identity is its node, going online alone too,
     so a kept connection's key is the same at every connect (an ephemeral one's, until the page closes).
   - [Let tailcat clients in to this machine](ui:network:NetTailcatStep.tailcat.serve): the machine is a tailcat server. The menu
@@ -1512,7 +1512,7 @@ and the guest's default way out (below).
   offers its /48 as a route: beside the local helper, say, the guest's defaults and other names stay the helper's
   while the room's members are reached by name on the second card (`tests/net-local.test.ts`).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
-  `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:Network.exitNode) with them and [No exit node](ui:network:Network.exitNode.none). Picking one
+  `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:NetAdapter.exitNode) with them and [No exit node](ui:network:NetAdapter.exitNode.none). Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
   status line says "internet through <name>". The choice is kept with the connection (`tailnet.exitNode`) and given
   to the client at the next Connect; using one makes the adapter the default way out (above). The guest's address, router and

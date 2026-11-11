@@ -17,8 +17,8 @@ import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 
-const NO_CONNECTION = t('network:Network.noConnection');
-const CHANGE = t('network:Network.change');
+const NO_CONNECTION = t('network:NetAdapter.noConnection');
+const CHANGE = t('network:NetAdapter.change');
 const CONNECT = t('network:NetWizard.connect');
 const ATTACH = t('network:NetWizard.attach');
 const CHANGE_ADAPTER = t('machines:AdapterCard.adapter.change');
@@ -154,7 +154,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await menu(pageB);
   await newTailnet(pageB, { hostname: 'bravo', pick: true, keep: false });
   assert.equal((await records(pageB, 'connections')).length, 1, 'the ephemeral one is not stored');
-  assert.match(await text(pageB, '#net-conn'), words('network:Network.connection.ephemeral'));
+  assert.match(await text(pageB, '#net-conn'), words('network:NetAdapter.connection.ephemeral'));
   const eph = (await adapterOf(pageB, b)).connection;
   assert.ok(eph && eph !== t.id);
   await pageB.reload();

@@ -419,15 +419,15 @@
     "message": "Cancel",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): the button that closes it without doing anything."
   },
-  "Network.exitNode.failed": {
+  "NetAdapter.exitNode.failed": {
     "message": "Couldn't use that exit node",
     "note": "The toolbar's Network menu: the error headline under an adapter when the exit node the user chose in “Internet through” wasn't taken. Its cause, the client's reason, is shown under it."
   },
-  "Network.exitNode.stopFailed": {
+  "NetAdapter.exitNode.stopFailed": {
     "message": "Couldn't stop using the exit node",
     "note": "The toolbar's Network menu: the error headline under an adapter when choosing “No exit node” in “Internet through” didn't work. Its cause is shown under it."
   },
-  "Network.logout.confirm": {
+  "NetAdapter.logout.confirm": {
     "message": "Log out of the tailnet? This will remove this machine from the tailnet and forget its keys in this browser. Connecting again will log in as a new node.",
     "note": "The toolbar's Network menu: the question asked (OK/Cancel dialog) when the user clicks “Log out” on a tailnet adapter."
   },
@@ -435,123 +435,123 @@
     "message": "Connect the machine's network adapters to a tailnet, tailcat, your computer, or a peer-to-peer room.",
     "note": "The toolbar's Network menu: the tooltip of the toolbar's Network button."
   },
-  "Network.adapter": {
+  "NetAdapter.adapter": {
     "message": "Adapter {{adapter}}",
     "note": "The toolbar's Network menu: the heading of one network adapter's section, when the machine has more than one. {{adapter}} is its number (1, 2, …)."
   },
-  "Network.adapter.primary": {
+  "NetAdapter.adapter.primary": {
     "message": "Adapter {{adapter}} (the default way out)",
     "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through, when the machine has more than one. {{adapter}} is its number."
   },
-  "Network.connection.ephemeral": {
+  "NetAdapter.connection.ephemeral": {
     "message": "{{name}} (ephemeral)",
     "note": "The toolbar's Network menu: the line that names an adapter's connection, when that connection is ephemeral (kept nowhere, gone when the tab closes). {{name}} is the connection's name."
   },
-  "Network.noConnection": {
+  "NetAdapter.noConnection": {
     "message": "No connection attached",
     "note": "The toolbar's Network menu: the line in an adapter's section when it has no connection."
   },
-  "Network.login": {
+  "NetAdapter.login": {
     "message": "Log in…",
     "note": "The toolbar's Network menu: the link that opens the tailnet's login page in a new tab, while the node waits for a login."
   },
-  "Network.exitNode": {
+  "NetAdapter.exitNode": {
     "message": "Internet through",
     "note": "The toolbar's Network menu: the label of the list of exit nodes (the tailnet's peers that offer to carry the internet traffic): “Internet through <peer>”."
   },
-  "Network.exitNode.none": {
+  "NetAdapter.exitNode.none": {
     "message": "No exit node",
     "note": "The toolbar's Network menu: the first choice of “Internet through”: no exit node, the internet directly."
   },
-  "Network.exitNode.offline": {
+  "NetAdapter.exitNode.offline": {
     "message": "{{name}} (offline)",
     "note": "The toolbar's Network menu: a choice of “Internet through” for an exit node that is offline. {{name}} is the peer's name."
   },
-  "Network.routes.more": {
+  "NetAdapter.routes.more": {
     "message": "Reach the subnets peers route ({{routes}}, …)",
     "note": "The toolbar's Network menu: the checkbox that installs the subnet routes the tailnet's peers offer, when there are more than two. {{routes}} is the first two (e.g. 192.168.1.0/24, 10.0.0.0/8); its tooltip lists them all."
   },
-  "Network.routes": {
+  "NetAdapter.routes": {
     "message": "Reach the subnets peers route ({{routes}})",
     "note": "The toolbar's Network menu: the checkbox that installs the subnet routes the tailnet's peers offer. {{routes}} is the list of them (e.g. 192.168.1.0/24)."
   },
-  "Network.served": {
+  "NetAdapter.served": {
     "message": "This machine's tailcat address",
     "note": "The toolbar's Network menu: the label of the (hidden by default) field with the machine's own tailcat address, when its connection lets tailcat clients in."
   },
-  "Network.copy": {
+  "NetAdapter.copy": {
     "message": "Copy",
     "note": "The toolbar's Network menu: the button that copies the machine's tailcat address or its name in a room."
   },
-  "Network.hide": {
+  "NetAdapter.hide": {
     "message": "Hide",
     "note": "The toolbar's Network menu: the button that hides the machine's tailcat address again."
   },
-  "Network.show": {
+  "NetAdapter.show": {
     "message": "Show",
     "note": "The toolbar's Network menu: the button that shows the machine's tailcat address instead of dots."
   },
-  "Network.served.note": {
+  "NetAdapter.served.note": {
     "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
     "note": "The toolbar's Network menu: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
   },
-  "Network.key": {
+  "NetAdapter.key": {
     "message": "This machine's key",
     "note": "The toolbar's Network menu: the label of the field with the machine's tailcat node key (nodekey:…), when it goes online through a computer running tailcat."
   },
-  "Network.key.note": {
+  "NetAdapter.key.note": {
     "message": "To let only this machine use that computer, run <code>{{allow}}</code> there. A connection that isn't kept has another key once this page closes.",
     "note": "The toolbar's Network menu: the text under the machine's tailcat key. {{allow}} is a command (tailcat serve --allow=nodekey:… exit-node), shown as code."
   },
-  "Network.room.name": {
+  "NetAdapter.room.name": {
     "message": "This machine's name in the room",
     "note": "The toolbar's Network menu: the label of the field with the machine's name in a peer-to-peer room (<key>.<tag>.p2p.internal), when its connection is a room's."
   },
-  "Network.room.link": {
+  "NetAdapter.room.link": {
     "message": "The room's link",
     "note": "The toolbar's Network menu: the label of a field with the room's link (webpc-room:…), shown under the machine's name in a room when Copy room link couldn't use the clipboard, so the user copies it from there."
   },
-  "Network.room.copyLink": {
+  "NetAdapter.room.copyLink": {
     "message": "Copy room link",
     "note": "The toolbar's Network menu: the button, beside the machine's name in a room, that copies the room's link."
   },
-  "Network.room.copyLink.title": {
+  "NetAdapter.room.copyLink.title": {
     "message": "Copy the room's link. Others need it to join the room.",
     "note": "The toolbar's Network menu: the tooltip of “Copy room link”."
   },
-  "Network.room.note": {
+  "NetAdapter.room.note": {
     "message": "Members who have this name can reach any port the guest listens on. Give it only to those you want to let in.",
     "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may connect to it."
   },
-  "Network.room.note.off": {
+  "NetAdapter.room.note.off": {
     "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
     "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may not connect to it (the connection's “Let members connect to this machine” is off)."
   },
-  "Network.connect": {
+  "NetAdapter.connect": {
     "message": "Connect",
     "note": "The toolbar's Network menu: the button that connects an adapter's attached connection, while the machine runs and it isn't connected."
   },
-  "Network.retry": {
+  "NetAdapter.retry": {
     "message": "Retry",
     "note": "The toolbar's Network menu: the button that connects again after the connection failed."
   },
-  "Network.change": {
+  "NetAdapter.change": {
     "message": "Change connection…",
     "note": "The toolbar's Network menu: the button that opens the Network wizard to attach another connection to the adapter."
   },
-  "Network.setup": {
+  "NetAdapter.setup": {
     "message": "Connect…",
     "note": "The toolbar's Network menu: the button that opens the Network wizard to give an adapter without a connection one."
   },
-  "Network.disconnect": {
+  "NetAdapter.disconnect": {
     "message": "Disconnect",
     "note": "The toolbar's Network menu: the button that stops the adapter's connection (it stays attached, and doesn't connect at the next start)."
   },
-  "Network.logout.title": {
+  "NetAdapter.logout.title": {
     "message": "Remove this machine from the tailnet and forget its keys.",
     "note": "The toolbar's Network menu: the tooltip of “Log out”."
   },
-  "Network.logout": {
+  "NetAdapter.logout": {
     "message": "Log out",
     "note": "The toolbar's Network menu: the button (on a tailnet adapter) that logs the machine's node out of the tailnet, and the confirm button of the question it asks."
   },

@@ -138,7 +138,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.equal(await visible(page, '#network'), true, 'Debian can have a card');
     await page.locator('#network summary').click();
     assert.match(await text(page, '#net-status'), words('network:network.notConnected'));
-    assert.equal(await text(page, '#net-setup'), t('network:Network.setup'));
+    assert.equal(await text(page, '#net-setup'), t('network:NetAdapter.setup'));
     assert.equal(await visible(page, '#net-disconnect'), false);
 
     // A tailnet: a bad control server or hostname is refused in the form; nothing restarts, nothing of them is saved.
@@ -176,7 +176,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.equal(await visible(page, '#net-status'), true, 'the menu shows how it goes');
     assert.equal(await visible(page, '#net-logout'), true, 'a kept connection is a kept node: it can be logged out');
     assert.equal(await visible(page, '#net-disconnect'), true);
-    assert.equal(await text(page, '#net-setup'), t('network:Network.change'));
+    assert.equal(await text(page, '#net-setup'), t('network:NetAdapter.change'));
     assert.ok(['connecting', 'login', 'error'].includes((await phase(page))!), `unreachable control server: ${await phase(page)}`);
     const saved = await connections(page);
     assert.ok(!JSON.stringify(saved).includes('SECRET'), 'the auth key is never saved');
@@ -196,7 +196,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.locator('#network summary').click();
     await page.click('#net-disconnect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
-    assert.equal(await text(page, '#net-setup'), t('network:Network.change'), 'the connection stays attached');
+    assert.equal(await text(page, '#net-setup'), t('network:NetAdapter.change'), 'the connection stays attached');
     assert.equal(await visible(page, '#net-connect-now'), true);
     assert.equal((await connections(page))[0].connectAtStart, false, 'off at the next start');
     assert.equal(await page.locator('#net-remove').count(), 0, 'the card is always there: nothing to remove');
@@ -303,13 +303,13 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.uncheck('#net-keep');
     await page.click('#net-connect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });
-    assert.match(await text(page, '#net-conn'), words('network:Network.connection.ephemeral'));
+    assert.match(await text(page, '#net-conn'), words('network:NetAdapter.connection.ephemeral'));
     const kept = (await connections(page)).length;
     await page.reload();
     await page.locator('#network summary').click();
     await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-hint')!.textContent!), words('network:net-live.gone').source, { timeout: 30_000 });
     assert.equal(await phase(page), 'off');
-    assert.match(await text(page, '#net-conn'), words('network:Network.noConnection'));
+    assert.match(await text(page, '#net-conn'), words('network:NetAdapter.noConnection'));
     assert.equal((await connections(page)).length, kept, 'the stored ones stay');
     await running(page);
     await onSerial(page, 'root\n');
