@@ -12,7 +12,7 @@ import type { MachinesTab } from './machines-nav.svelte.ts';
 import { machinesNav } from './machines-nav.svelte.ts';
 import { keys } from './keys.svelte.ts';
 import { network } from './network.ts';
-import { power } from './power.svelte.ts';
+import { isStopped, power } from './power.svelte.ts';
 import { screen, type View } from './screen.svelte.ts';
 import type { ScreenElements, ScreenView } from './screen-view.ts';
 import type { SerialTerminal } from './serial-terminal.ts';
@@ -158,8 +158,9 @@ export class PageWindow {
   }
   closeMachines() {
     machinesNav.open = false;
-    // What the page changed shows in the toolbar now (a running machine takes it at its next start).
-    if (!this.#d.machine.run && !power.busy) void this.#d.reloadStored();
+    // What the page changed shows in the toolbar now (a running machine takes it at its next start). Stopped by the
+    // guest (off, crashed, suspended), the run is still `machine.run` until the next stop: the state says.
+    if (isStopped(power.state) && !power.busy) void this.#d.reloadStored();
     if (location.hash) history.replaceState(null, '', `${location.pathname}${location.search}`);
     queueMicrotask(() => {
       this.#d.screen.fit();

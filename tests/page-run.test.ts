@@ -220,3 +220,24 @@ test("finding 9: \"Start with N MiB of RAM\" after a crash wins over the address
   assert.deepEqual(r, { kept: true, cleared: true, ram: 2048, ncpus: 2, address: '?ncpus=2' });
   await page.close();
 });
+
+test('finding 10: closing the Machines page after the guest itself stopped reads the edited record again', { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
+  const r = await page.evaluate(async () => {
+    const { PageWindow } = await import('/web/app/areas/page-window.ts' as string);
+    const { power } = await import('/web/app/areas/power.svelte.ts' as string);
+    let reloads = 0;
+    const machine = { run: {} }; // the run the guest's power-off ended: still the page's until the next stop
+    const w = new PageWindow({ machine, screen: { fit() {}, canvas: { focus() {} } }, terminal: { term: { focus() {} } }, reloadStored: async () => void reloads++ });
+    const closed = async (state: string) => {
+      power.state = state;
+      w.closeMachines();
+      await new Promise((r) => setTimeout(r, 0));
+      return reloads;
+    };
+    return { off: await closed('off'), crashed: await closed('crashed'), running: await closed('running') };
+  });
+  assert.deepEqual(r, { off: 1, crashed: 2, running: 2 });
+  await page.close();
+});

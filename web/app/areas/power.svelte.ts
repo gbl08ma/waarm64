@@ -8,6 +8,9 @@ export type PageState = PowerState | 'idle';
 
 /** The machine runs (or boots): what a stop would cut. */
 export const isLive = (s: PageState) => s === 'running' || s === 'booting';
+/** Stopped with no start to follow (or none yet): nothing runs, whether the page or the guest stopped it. */
+export const isStopped = (s: PageState) =>
+  s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle';
 
 class Power {
   state = $state<PageState>('loading');

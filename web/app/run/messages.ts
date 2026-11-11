@@ -3,7 +3,7 @@
 import { describe, msg, said, t, text, type Described, type Msg, type Said } from '../../i18n.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { messageBar, type Action, type MessageKind } from '../areas/message-bar.svelte.ts';
-import { power, type PageState } from '../areas/power.svelte.ts';
+import { isStopped, power, type PageState } from '../areas/power.svelte.ts';
 import { errorLines } from '../usb-ports.ts';
 import type { PageMachine } from './page-machine.svelte.ts';
 
@@ -21,8 +21,6 @@ const STATE_WORDS: Record<PageState, string> = {
 };
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
 const NOTICE_MS = 30_000;
-/** Stopped with no start to follow (a restart doesn't pass here: its clients stay, on the new machine's ports). */
-const STOPPED: PageState[] = ['off', 'suspended', 'crashed', 'failed', 'idle'];
 
 /** A job's phase (words already rendered, or a message) and how far it is, for the state's words. */
 export const progressText = (phase: string | Msg, f: number) =>
@@ -83,12 +81,11 @@ export class Messages {
     power.state = s;
     power.stateText = t(STATE_WORDS[s]);
     // A stopped machine's message stays what the bar comes back to; a running one's is a note for now.
-    this.#standing =
-      message && STOPPED.includes(s) ? { message, actions, kind } : { message: '', actions: [], kind: 'warn' };
+    this.#standing = message && isStopped(s) ? { message, actions, kind } : { message: '', actions: [], kind: 'warn' };
     this.show(message ?? this.note, actions, message ? kind : 'warn');
     bootCard.shown = (s === 'loading' || s === 'booting') && !bootCard.done;
     bootCard.serial = !!this.#machine.spec.firmware && s === 'booting';
-    if (STOPPED.includes(s)) this.#stopped();
+    if (isStopped(s)) this.#stopped(); // a restart doesn't pass here: its clients stay, on the new machine's ports
   }
 
   /**
