@@ -1732,6 +1732,8 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
       if (!(e instanceof HeldError)) throw e;
       if (!(await ask.confirm(t('network:main.held.useHere', { held: e.msg }), { title: t('network:main.held.title'), ok: t('network:main.useHere') }))) return;
       await net.takeFrom(i, c, authKey);
+    } finally {
+      ui.records++; // the record's attachment, written either way (an off machine's too, which connects at its start)
     }
     return;
   }
@@ -1740,14 +1742,20 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
   else remember({ transientNet: c.id });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
+  ui.records++; // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
 }
 
 async function netDetach(machine: string | undefined, i: number) {
-  if (netLive(machine, i)) return net.detach(i);
+  if (netLive(machine, i)) {
+    await net.detach(i);
+    ui.records++;
+    return;
+  }
   if (machine) await setAdapterConnection(store, machine, i, undefined);
   else remember({ transientNet: undefined });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
+  ui.records++; // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
 }
 
 /** Deletes connection `c` after asking (naming the machines it is attached to): it is detached from them, and its state forgotten. */

@@ -34,6 +34,12 @@ const marks = (page: Page) => page.evaluate(() => {
   for (const el of document.querySelectorAll('*')) for (const a of el.getAttributeNames()) if (el.getAttribute(a)!.includes('⁣')) found.push(`${el.tagName}[${a}]`);
   return found;
 });
+/** The marks left once the editor has had up to 5 s to take them out of what it rendered (CI's load once read them first). */
+const marksSettled = async (page: Page) => {
+  await page.waitForFunction(() => document.querySelector('[data-copy-edit]') && !document.body.innerText.includes('⁣')
+    && ![...document.querySelectorAll('*')].some((el) => el.getAttributeNames().some((a) => el.getAttribute(a)!.includes('⁣'))), null, { timeout: 5000 }).catch(() => {});
+  return marks(page);
+};
 
 test('the copy editor: words changed where they are shown, kept, dumped and forgotten', async () => {
   const context = await browser.newContext();
@@ -50,8 +56,7 @@ test('the copy editor: words changed where they are shown, kept, dumped and forg
   await page.waitForLoadState('load');
   await page.locator('#copy-edit').waitFor({ state: 'attached' });
   await button(page, t(KEY)).waitFor();
-  await page.waitForFunction(() => document.querySelector('[data-copy-edit]'));
-  assert.deepEqual(await marks(page), []);
+  assert.deepEqual(await marksSettled(page), []);
 
   // Alt+click opens the message's entry; saved words show at once.
   await button(page, t(KEY)).click({ modifiers: ['Alt'] });
@@ -66,7 +71,7 @@ test('the copy editor: words changed where they are shown, kept, dumped and forg
   // Kept across a reload (the editor still on), and rendered from the start.
   await page.reload();
   await button(page, NEW).waitFor();
-  assert.deepEqual(await marks(page), []);
+  assert.deepEqual(await marksSettled(page), []);
 
   // Off again: the catalog's words; the changes kept until cleared.
   await page.evaluate(() => (globalThis as unknown as { copyEdit: { stop(): void } }).copyEdit.stop());

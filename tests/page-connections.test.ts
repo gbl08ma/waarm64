@@ -21,6 +21,7 @@ const NO_CONNECTION = t('network:Network.noConnection');
 const CHANGE = t('network:Network.change');
 const CONNECT = t('network:NetWizard.connect');
 const ATTACH = t('network:NetWizard.attach');
+const CHANGE_ADAPTER = t('machines:MachinesPage.adapter.change');
 /** A connection to choose in the wizard, in use by `holder`'s machine. */
 const heldBy = (holder: string) => words('network:NetWizard.kind.held', { holder });
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -191,6 +192,15 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.goto(`${base}/web/app/`);
   const { a, b } = await seed(pageA);
   const locks = () => pageA.evaluate(async () => ((await navigator.locks.query()).held ?? []).map((l) => l.name!).filter((n) => n.startsWith('webpc-net:')));
+  /** The locks once they are `want` (or after 5 s): a lock is let go just after its client stops, and freed asynchronously. */
+  const locksBecome = async (want: string[]) => {
+    let got = await locks();
+    for (let k = 0; k < 50 && JSON.stringify(got) !== JSON.stringify(want); k++) {
+      await pageA.waitForTimeout(100);
+      got = await locks();
+    }
+    return got;
+  };
 
   // Alpha connects, and powered off lets go: nothing to Connect to, and Change connection… still there.
   await pageA.goto(`${base}/web/app/?m=${a}`);
@@ -201,7 +211,7 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.click('#power-off');
   await pageA.waitForFunction(() => document.getElementById('state')?.dataset.state === 'off', null, { timeout: 30_000 });
   await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
-  assert.deepEqual(await locks(), [], 'its lock is let go');
+  assert.deepEqual(await locksBecome([]), [], 'its lock is let go');
   assert.equal((await records(pageA, 'connections'))[0].connectAtStart, true, "it isn't a Disconnect");
   await menu(pageA);
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), false);
@@ -221,13 +231,13 @@ test('power off lets a connection go; a running machine follows what another tab
   assert.equal(await text(pageA, '#net-connect'), ATTACH);
   await pageA.click('#net-connect');
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 15_000 });
-  assert.deepEqual(await locks(), [`webpc-net:${t.id}`], 'Bravo holds it');
+  assert.deepEqual(await locksBecome([`webpc-net:${t.id}`]), [`webpc-net:${t.id}`], 'Bravo holds it');
   await menu(pageB);
   assert.match(await text(pageB, '#net-conn'), /127\.0\.0\.1:1/);
   // Detached there, it stops here.
   await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 15_000 });
-  assert.deepEqual(await locks(), []);
+  assert.deepEqual(await locksBecome([]), []);
   // The menu's line follows the phase a moment later (under CI's load it was read before it moved: 2026-11-02).
   await pageB.waitForFunction((words) => (document.querySelector('#net-conn')?.textContent ?? '').includes(words), NO_CONNECTION, { timeout: 5_000 }).catch(() => {});
   assert.ok((await text(pageB, '#net-conn')).includes(NO_CONNECTION), 'the menu says no connection is attached');
@@ -248,5 +258,23 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.click('[data-action="save"]');
   await pageA.waitForFunction(() => document.querySelector('[data-action="save"]')?.hasAttribute('disabled') !== false, null, { timeout: 10_000 });
   assert.deepEqual(await macs(), [before[1], before[0]]);
+
+  // Still off, the new adapter (now first) gets the connection from its row: the row says so at once (Change
+  // connection… and Detach), with no reload, though nothing connects until the machine starts; Detach brings Attach back.
+  const row = '.adapters [data-adapter="0"]';
+  const rowShows = (attached: boolean) => pageA.waitForFunction(([sel, attached, change]) => {
+    const detach = !!document.querySelector(`${sel} [data-action="detach-connection"]`);
+    return detach === attached && (document.querySelector(`${sel} [data-action="attach-connection"]`)?.textContent === change) === attached;
+  }, [row, attached, CHANGE_ADAPTER] as const, { timeout: 5_000 })
+    .catch(async (e) => { throw new Error(`${e}; the row says ${await text(pageA, row)}`); });
+  await rowShows(false);
+  await pageA.click(`${row} [data-action="attach-connection"]`);
+  await pageA.locator(`#net-wizard [data-connection="${t.id}"]`).click();
+  assert.equal(await text(pageA, '#net-connect'), ATTACH);
+  await pageA.click('#net-connect');
+  await rowShows(true);
+  assert.equal(((await records(pageA, 'machines')).find((m) => m.id === a)!.adapters as { connection?: string }[])[0].connection, t.id, 'kept in the record');
+  await pageA.click(`${row} [data-action="detach-connection"]`);
+  await rowShows(false);
   assert.deepEqual(errors, []);
 });
