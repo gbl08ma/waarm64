@@ -1250,7 +1250,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     a cause; it needs a headline where it reaches the user unwrapped. About 80 such keys are thrown (`folders-page.*`,
     `disks.*`, `usb-live.*`, `local-net.*`, …); most are wrapped by their callers (`new MsgError('…couldn't …', …, {
     cause: e })`), and only the network's four were audited and given one (`net-live.notConnected`,
-    `net-live.notLoggedOut`). Telling which reach the page bare means following each throw to where it's shown.
+    `net-nodes.notLoggedOut`). Telling which reach the page bare means following each throw to where it's shown.
   - **Parameters of a key that comes from elsewhere**: a function's parameter or a field (`t(d.name)`,
     `msg(m.key, m.params)`, the worker's `failure(problem, m)`), or another module's constant. The calls whose key the
     file names (a literal, a conditional, a map or constant of the file, by scope) are all checked.
@@ -1366,16 +1366,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `POINTER_SCROLL_WHEEL` with `v120` values off 120). The touchscreen's contacts have no size or pressure (`ABS_MT_TOUCH_MAJOR`, `ABS_MT_PRESSURE`), and a pen is the tablet.
   Checked on headless Chromium's synthetic events and on Debian's evdev, not on a real touchscreen or a desktop's
   compositor (GTK and Firefox on the Arch desktop guest).
-- **The page's lint suppressions left** (tools/lint/eslint-suppressions.json, 14 on 2026-11-11 after the frontend
-  refactor's phase 7 took it from 130; [frontend-code.md](frontend-code.md) §7). The size rules, by promise:
-  urlcheck.ts `checkUrl` (complexity 27: a step per check), net-live.ts `connect` and its length (419 lines: the locks'
-  and the clients' parts apart), usb-ports.ts (its length, `problemText`'s 96 lines: a table of the problems' words,
-  and `validDefinitionUsb`'s arrow), shape.ts `shapeDiff` (complexity 30: a comparer per part) and its length,
-  connections.ts `migrateLegacy`, export-worker.ts `exportDisk`. The 4 `!` left are the machine worker's status and
-  keyboard timers' `vm!` (worker.ts, beside the run loop, hot: kept). What phase 7 settled with a disable that says why:
-  environment probes (`navigator`, `location`, `document`, Web Locks: absent in Node's tests), flags that change across
-  an `await` or in a callback, the effects' tracking reads, and the data tables (keymaps.ts, keyboard.ts's layouts,
-  osk-layout.ts's builders).
+- **The page's lint suppressions left** (tools/lint/eslint-suppressions.json, 4 on 2026-11-11 after the frontend
+  refactor's phases 7 and 8 took it from 130; [frontend-code.md](frontend-code.md) §7): the 4 `vm!` of the machine
+  worker's status and keyboard timers and its JIT limit (worker.ts, `no-non-null-assertion`), kept: the module's `vm`
+  is set before they start and they stop with the run, beside the run loop (hot), where a check that can't fail is a
+  branch for nothing. Passing the booted `vm` to them instead is the fix, if the run's code is ever reworked. Settled
+  with a disable that says why: environment probes (`navigator`, `location`, `document`, Web Locks: absent in Node's
+  tests), flags that change across an `await` or in a callback, the effects' tracking reads, and the data tables
+  (keymaps.ts, keyboard.ts's layouts, osk-layout.ts's builders).
 - **The screen's cursor styles** (areas/screen-view.ts): the CSS cursor (`showCursor`) and the lock cursor's box
   (`placeCursor`) are still set on the elements, as they follow the guest's cursor messages; through state they would
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
