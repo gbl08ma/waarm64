@@ -3,6 +3,7 @@
 // What a run hears after another took its place is dropped in one place, `guard`.
 import type { Input } from '../../input.ts';
 import type { UsbPorts } from '../usb-live.ts';
+import type { Sample } from '../statusbar.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
 import type { Msg } from '../../msg.ts';
 
@@ -30,6 +31,8 @@ export class Run {
   usbStarted = false;
   /** The guest has suspended itself (`Status.asleep`): a key or a click wakes it. */
   asleep = false;
+  /** The run's last status (the status bar's rates are since it). */
+  last: Sample | undefined;
   /** A stored machine as this run's snapshots describe it (its start's `about`: the shape it runs with). */
   about?: Extract<ToWorker, { type: 'start' }>['about'];
   readonly #holder: RunHolder;

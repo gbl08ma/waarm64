@@ -12,7 +12,7 @@ const RUNNING = t('machine:messages.state.running');
 const status = (o: Partial<Status> = {}): Status => ({
   ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0,
   loopMaxMs: 0, loopAgeMs: 0, vcpus: [], stats: {} as Status['stats'],
-  memory: { ramBytes: 0, heapLive: 0, heapPeak: 0, jitLiveBytes: 10 * MiB, jitModules: 0, jitBudget: 320 * MiB, jitEpochs: 0, jitLimit: 0, jitKeys: 0, jitKeyBytes: 0, jitHeld: 0 },
+  memory: { ramBytes: 0, heapLive: 0, heapPeak: 0, jitLiveBytes: 10 * MiB, jitModules: 0, jitBudget: 320 * MiB, jitEpochs: 0, jitLimit: 0, jitKeys: 0, jitKeyBytes: 0, jitHeld: 0 }, estimateBytes: 0, peakBytes: 0,
   disks: [{ read: 0, written: 0 }], nets: [{ rx: 0, tx: 0 }, { rx: 0, tx: 0 }], cpus: [{ steps: 0, jitSteps: 0 }, { steps: 0, jitSteps: 0 }],
   ...o,
 });

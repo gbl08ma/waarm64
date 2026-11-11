@@ -330,6 +330,12 @@ export type Status = {
   /** What the machine holds that the host pays for (`Vm.hostUse`: RAM, the core's heap, the JIT's cache), for the page's memory signal (web/app/memory.ts). */
   memory: ReturnType<Vm['hostUse']>;
   /**
+   * The memory signal's estimate of what the tab holds for the machine now, and its peak since this start, bytes
+   * (web/app/memory.ts `Signal`, kept by the worker: the status bar's Tab memory and the page's mark).
+   */
+  estimateBytes: number;
+  peakBytes: number;
+  /**
    * Each disk's bytes the guest read and wrote since this start (a restart, a resume or a snapshot's load starts again
    * at 0), counted as its virtio-blk requests complete (failed ones, flushes, discards and write-zeroes count nothing):
    * one per entry of the start message's `disks`, in its order (that is, by slot). Undefined only from a worker that

@@ -839,11 +839,11 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
     if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
     const now = performance.now();
-    const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt, io);
+    const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt, io, signal);
     // The memory signal (web/app/memory.ts): past what the device reports, the JIT's cache holds no more than it does now
     // (the gauge's limit: it flushes there, docs/jit.md "The page's memory signal").
     const device = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-    if (device && signal.update(st.memory, ncpus) > device * 2 ** 30 && !st.memory.jitLimit)
+    if (device && st.estimateBytes > device * 2 ** 30 && !st.memory.jitLimit)
       vm!.setJitLimit(Math.max(st.memory.jitLiveBytes, 1));
     post({ type: 'status', status: st });
     loopMax = 0;
@@ -1083,7 +1083,7 @@ async function suspend(id: number, sleep = false) {
   }
 }
 
-/** `io`: the device index of each of the page's disks and adapters, in its order (none: a machine without `network`), and the xHCI's (none: no USB controller). */
+/** `io`: the device index of each of the page's disks and adapters, in its order (none: a machine without `network`), and the xHCI's (none: no USB controller); `signal`: the run's memory signal, updated. */
 function status(
   vm: Vm,
   ncpus: number,
@@ -1092,9 +1092,12 @@ function status(
   loopMaxMs: number,
   loopAgeMs: number,
   io: { disks: number[]; nets?: number[]; usb?: number },
+  signal: Signal,
 ): Status {
   const s = vm.stats();
   const c = vm.deviceIo(); // two per device: blk read, written; net received, sent
+  const memory = vm.hostUse();
+  const estimateBytes = signal.update(memory, ncpus);
   return {
     ncpus,
     ramMiB,
@@ -1110,7 +1113,9 @@ function status(
     loopAgeMs,
     vcpus: vm.liveness(),
     stats: s,
-    memory: vm.hostUse(),
+    memory,
+    estimateBytes,
+    peakBytes: signal.peak,
     disks: io.disks.map((i) => ({ read: c[2 * i], written: c[2 * i + 1] })),
     nets: io.nets?.map((i) => ({ rx: c[2 * i], tx: c[2 * i + 1] })),
     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },

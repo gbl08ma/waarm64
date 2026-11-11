@@ -17,14 +17,14 @@ import type { Runner } from './runner.ts';
 
 type StateMessage = Extract<FromWorker, { type: 'state' }>;
 
-/** The status for the status bar, with the rates since the run's last (`Runner.last`). */
-function showStatus(x: Runner, s: Status, tabBytes: number) {
+/** The status for the status bar, with the rates since the run's last (`Run.last`). */
+function showStatus(r: Run, s: Status, tabBytes: number) {
   const now = performance.now();
-  // A new run's counters start again from 0 (a restart, a resume, a snapshot load): no rates across that.
-  const prev = x.last && s.uptime >= x.last.status.uptime ? x.last : undefined;
-  x.last = { status: s, at: now, metrics: metrics(s, now, prev, tabBytes) };
+  // The worker's counters start again from 0 when it starts again (a suspended copy that couldn't resume boots): no rates across that.
+  const prev = r.last && s.uptime >= r.last.status.uptime ? r.last : undefined;
+  r.last = { status: s, at: now, metrics: metrics(s, now, prev, tabBytes) };
   status.data = JSON.stringify(s); // for tools (bench/stress)
-  status.metrics = x.last.metrics;
+  status.metrics = r.last.metrics;
 }
 /** The screen's report each second (a 3D machine's GPU worker, a 2D machine's presenter), for the status bar. */
 function showGraphics(mode: Graphics['mode'], m: Parameters<typeof graphics>[1]) {
@@ -121,7 +121,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     status: (m) => {
       if (m.status.asleep && !r.asleep && !power.saving) x.d.messages.notify(msg('machine:worker-messages.asleep'));
       r.asleep = !!m.status.asleep;
-      showStatus(x, m.status, x.d.alive.mark(m.status));
+      showStatus(r, m.status, x.d.alive.mark(m.status));
       if (benchHooks) window.__status = m.status;
     },
     profile: (m) => x.d.replies.worker.answer(m.id, m),

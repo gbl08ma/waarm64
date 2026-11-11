@@ -7,13 +7,12 @@ import { ask } from '../ask.svelte.ts';
 import type { Action } from '../areas/message-bar.svelte.ts';
 import { hostMemoryGiB, RAM_CHOICES } from '../machine.ts';
 import { updateMachine } from '../machines.ts';
-import { ALIVE_EVERY_MS, clearAlive, lastCrash, markAlive, Signal } from '../memory.ts';
+import { ALIVE_EVERY_MS, clearAlive, lastCrash, markAlive } from '../memory.ts';
 import type { Status } from '../protocol.ts';
 import { remember } from '../settings.ts';
 import type { Messages } from './messages.ts';
 import { machineTitle } from './page-disks.ts';
 import type { PageMachine } from './page-machine.svelte.ts';
-import type { Run } from './run.ts';
 
 type Crash = NonNullable<ReturnType<typeof lastCrash>>;
 
@@ -34,8 +33,6 @@ export class MemorySignal {
   readonly #messages: Messages;
   readonly #restart: () => Promise<void>;
   #at = 0;
-  #signal = new Signal();
-  #run: Run | undefined;
 
   constructor(machine: PageMachine, messages: Messages, restart: () => Promise<void>) {
     this.#machine = machine;
@@ -54,12 +51,11 @@ export class MemorySignal {
     clearAlive(this.#key());
   }
 
-  /** The mark renewed with a status (every `ALIVE_EVERY_MS`); returns the estimate (bytes), for the status bar's Tab memory. */
+  /** The mark renewed with a status (every `ALIVE_EVERY_MS`); returns the estimate (bytes, the worker's), for the status bar's Tab memory. */
   mark(st: Status) {
     const m = this.#machine;
     const now = Date.now();
-    if (this.#run !== m.run) [this.#signal, this.#run] = [new Signal(), m.run];
-    const est = this.#signal.update(st.memory, st.ncpus);
+    const est = st.estimateBytes;
     if (now - this.#at < ALIVE_EVERY_MS) return est;
     this.#at = now;
     markAlive(this.#key(), {
@@ -68,7 +64,7 @@ export class MemorySignal {
       ncpus: m.ncpus,
       jitMiB: Math.round(st.memory.jitBudget / 2 ** 20),
       gib: +(est / 2 ** 30).toFixed(2),
-      peakGiB: +(this.#signal.peak / 2 ** 30).toFixed(2),
+      peakGiB: +(st.peakBytes / 2 ** 30).toFixed(2),
       t: now,
     });
     return est;

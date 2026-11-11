@@ -22,7 +22,6 @@ import type { Grab } from '../hooks.ts';
 import { resolveKeyboard } from '../keyboard.ts';
 import type { PageNetwork } from '../net-live.ts';
 import type { FromWorker, MachineConfig, Status, ToWorker } from '../protocol.ts';
-import type { Sample } from '../statusbar.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
@@ -83,8 +82,6 @@ export class NeedsUser extends Error {
 export class Runner {
   readonly d: RunnerDeps;
   readonly lock = new MachineLock();
-  /** The run's last status (its rates are since it). */
-  last: Sample | undefined;
 
   constructor(d: RunnerDeps) {
     this.d = d;
@@ -180,7 +177,6 @@ export class Runner {
   /** The boot card and the state for a run that loads. */
   #loading(snapshot: File | undefined) {
     keys.live = false;
-    this.last = undefined;
     this.d.terminal.clear();
     bootCard.done = false;
     bootCard.line = '';

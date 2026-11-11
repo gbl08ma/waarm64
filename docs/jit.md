@@ -619,7 +619,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   every TLB fill and device write): over a session a guest's page cache fills its RAM anyway. The virgl resources
   aren't in the renderer: their textures are the GPU process's, their backing is guest RAM, and the GPU worker's
   shared transfer buffers were 37-45 MB.
-- **Where it goes:** the machine worker reads it each second into the status (`Status.memory`, `Vm.hostUse`). Past what
+- **Where it goes:** the machine worker reads it each second into the status (`Status.memory`, `Vm.hostUse`, and the
+  `Signal`'s estimate and peak, `Status.estimateBytes` and `peakBytes`, which the page's mark and Tab memory take). Past what
   `navigator.deviceMemory` reports (at most 8 in Chromium), it caps the JIT cache at what it holds then (the gauge's
   limit word, `G_LIMIT`: the cache flushes there and refills to it, never under 16 MiB). The flush comes at a
   dispatcher's emit, never at a tier-up: that runs inside JIT code (`jit_hot`), and checks for room and allocates its
