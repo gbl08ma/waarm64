@@ -779,11 +779,11 @@
     "message": "no connection: Not connected",
     "note": "Made-up words for the Preferences' status bar editor's preview while no machine runs: the second sample adapter, with no connection, in a Connection element's tooltip."
   },
-  "StatusBar.link": {
+  "status-live.link": {
     "message": "{{connection}}: {{state}}",
     "note": "After the adapter's name in the Connection element's tooltip in the status bar (the page's footer): {{connection}} is the connection's name, {{state}} how it's going (as the Network menu says it)."
   },
-  "StatusBar.link.none": {
+  "status-live.link.none": {
     "message": "no connection: {{state}}",
     "note": "After the adapter's name in the Connection element's tooltip in the status bar (the page's footer), for an adapter with no connection: {{state}} is its state (Not connected)."
   },
@@ -831,23 +831,23 @@
     "message": "The status bar's elements",
     "note": "Screen-reader name of the copy of the status bar in Preferences whose chips are the bar's elements, in order."
   },
-  "StatusEditor.chip.title": {
+  "StatusChip.title": {
     "message": "{{name}}\n{{about}}\nDrag it, or press Alt+←/→, to move it.",
     "note": "Tooltip of an element's chip in the Preferences' status bar editor, on three lines; a click chooses it. {{name}} is the element's name, {{about}} what it shows (a sentence)."
   },
-  "StatusEditor.chip.title.absent": {
+  "StatusChip.title.absent": {
     "message": "{{name}}\n{{about}} The running machine doesn't have it, so it shows nothing now.\nDrag it, or press Alt+←/→, to move it.",
     "note": "Tooltip of a dimmed element's chip in the Preferences' status bar editor, on three lines: the running machine hasn't its device (a second disk). {{name}} is the element's name, {{about}} what it shows (a sentence)."
   },
-  "StatusEditor.spacer": {
+  "StatusChip.spacer": {
     "message": "spacer",
     "note": "The words on a spacer's chip in the Preferences' status bar editor (between arrows: it takes the free room)."
   },
-  "StatusEditor.remove.title": {
+  "StatusChip.remove.title": {
     "message": "Remove this element.",
     "note": "Tooltip of the × on an element's chip in the Preferences' status bar editor."
   },
-  "StatusEditor.remove.label": {
+  "StatusChip.remove.label": {
     "message": "Remove {{name}}",
     "note": "Screen-reader name of the × on an element's chip in the Preferences' status bar editor. {{name}} is the element's name."
   },
@@ -899,11 +899,11 @@
     "message": "Remove",
     "note": "Button (with a bin icon) in the settings of a chosen element in the Preferences' status bar editor: removes it from the bar."
   },
-  "StatusEditor.palette": {
+  "StatusPalette.label": {
     "message": "Elements to add",
     "note": "Screen-reader name of the palette under the Preferences' status bar editor: the elements that can be added, by group."
   },
-  "StatusEditor.add.title": {
+  "StatusPalette.add.title": {
     "message": "{{about}}\nClick to add it at the end, or drag it into the bar.",
     "note": "Tooltip of an element's chip in the palette of the Preferences' status bar editor. {{about}} is what the element shows."
   },

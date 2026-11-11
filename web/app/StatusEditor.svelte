@@ -1,36 +1,25 @@
 <!--
-  The Preferences' status bar (docs/frontend.md "The status bar"): a copy of the bar whose elements are chips, dragged
-  to reorder them (or moved with Alt+←/→ when one has the focus) and dragged out or × to remove them; a chip chosen
-  shows its settings under the bar (its look, a vCPU element's bars or numbers, a `one` element's device). Below, the
-  palette: a click adds an element at the bar's end, a drag puts it where it's dropped. A mouse drags through HTML5
-  drag and drop; a finger or a pen through pointer events, after a long press (a swipe still scrolls the page). The chips draw what the
-  running machine shows, or a made-up machine's numbers (statusbar.ts `SAMPLE`) while none runs; one the running
-  machine hasn't (a second disk) is dimmed. Kept in the settings at each change.
+  The Preferences' status bar (docs/frontend.md "The status bar"): a copy of the bar whose elements are chips
+  (StatusChip.svelte), dragged to reorder them (or moved with Alt+←/→ when one has the focus) and dragged out or × to
+  remove them; a chip chosen shows its settings under the bar (StatusOptions.svelte: its look, a vCPU element's bars or
+  numbers, a `one` element's device). Below, the palette (StatusPalette.svelte): a click adds an element at the bar's
+  end, a drag puts it where it's dropped. A mouse drags through HTML5 drag and drop; a finger or a pen through pointer
+  events, after a long press (a swipe still scrolls the page): status-drag.svelte.ts. The chips draw what the running
+  machine shows, or a made-up machine's numbers (statusbar.ts `SAMPLE`) while none runs; one the running machine
+  hasn't (a second disk) is dimmed. Kept in the settings at each change.
 -->
 <script lang="ts">
-  import Icon from './ui/Icon.svelte';
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
   import type { PageNetwork } from './net-live.ts';
   import { remember } from './settings.ts';
-  import { liveNow } from './StatusBar.svelte';
+  import StatusChip from './StatusChip.svelte';
   import StatusOptions from './StatusOptions.svelte';
-  import StatusPiece from './StatusPiece.svelte';
+  import StatusPalette from './StatusPalette.svelte';
   import { ChipDrag } from './status-drag.svelte.ts';
-  import {
-    aboutOf,
-    DEFAULT_ITEMS,
-    groupName,
-    iconOf,
-    lookOf,
-    nameOf,
-    palette,
-    render,
-    SAMPLE,
-    shows,
-    type Item,
-  } from './statusbar.ts';
+  import { DEFAULT_ITEMS, lookOf, render, SAMPLE, shows, type Item } from './statusbar.ts';
   import { t } from '../i18n.ts';
+  import { liveNow } from './areas/status-live.ts';
   import { status } from './areas/status.svelte.ts';
 
   type Props = { net: PageNetwork };
@@ -38,7 +27,6 @@
 
   const items = $derived(status.items);
   let chosen = $state<number | undefined>(undefined);
-  const groups = palette();
   /** The running machine's numbers, else the sample's. */
   const sample = $derived(!status.metrics);
   const live = $derived.by(() => {
@@ -108,11 +96,6 @@
     }
   }
   const sel = $derived(chosen !== undefined ? items[chosen] : undefined);
-  const chipTitle = (it: Item, shown: boolean) =>
-    shown
-      ? t('statusbar:StatusEditor.chip.title', { name: nameOf(it), about: aboutOf(it.kind) })
-      : t('statusbar:StatusEditor.chip.title.absent', { name: nameOf(it), about: aboutOf(it.kind) });
-  const addKey = (it: Item) => `${it.kind}${it.scope ? `:${it.scope}` : ''}`;
 </script>
 
 <div class="status-edit" onclickcapture={drag.guard}>
@@ -126,51 +109,17 @@
     data-field="status-bar"
   >
     {#each items as it, at (at)}
-      {@const pieces = render(it, metrics, live)}
       {#if drag.over === at}<span class="mark" aria-hidden="true"></span>{/if}
-      <div
-        role="listitem"
-        class="chip"
-        class:spacer={it.kind === 'spacer'}
-        class:chosen={chosen === at}
-        class:absent={!pieces.length}
-        class:lifted={drag.lifted === at}
-        draggable="true"
-        onpointerdown={(e) => drag.press(e, { from: at })}
-        ondragstart={(e) => drag.start(e, { from: at })}
-        ondragend={drag.end}
-        ondragover={(e) => drag.overChip(e, at)}
-        data-at={at}
-        data-kind={it.kind}
-        {@attach drag.chip(at)}
-      >
-        <button
-          class="pick"
-          onclick={() => (chosen = chosen === at ? undefined : at)}
-          onkeydown={(e) => key(e, at)}
-          aria-pressed={chosen === at}
-          title={chipTitle(it, pieces.length > 0)}
-          {@attach drag.pick(at)}
-        >
-          {#if it.kind === 'spacer'}
-            <span class="gap"><Icon name="arrows-horizontal" size={14} />{t('statusbar:StatusEditor.spacer')}</span>
-          {:else if it.kind === 'divider'}
-            <span class="line"></span>
-          {:else if pieces.length}
-            {#each pieces as p, k (k)}<StatusPiece item={it} {p} />{/each}
-          {:else}
-            <span>{nameOf(it)}</span>
-          {/if}
-        </button>
-        <button
-          class="x"
-          onclick={() => removeAt(at)}
-          title={t('statusbar:StatusEditor.remove.title')}
-          aria-label={t('statusbar:StatusEditor.remove.label', { name: nameOf(it) })}
-        >
-          <Icon name="x" size={12} />
-        </button>
-      </div>
+      <StatusChip
+        item={it}
+        {at}
+        pieces={render(it, metrics, live)}
+        chosen={chosen === at}
+        {drag}
+        onpick={() => (chosen = chosen === at ? undefined : at)}
+        onkey={(e: KeyboardEvent) => key(e, at)}
+        onremove={() => removeAt(at)}
+      />
     {/each}
     {#if drag.over === items.length}<span class="mark" aria-hidden="true"></span>{/if}
     {#if !items.length}<span class="empty">{t('statusbar:StatusEditor.empty')}</span>{/if}
@@ -198,38 +147,7 @@
     />
   {/if}
 
-  <div
-    class="palette"
-    class:leaving={drag.leaving}
-    bind:this={drag.palette}
-    role="group"
-    aria-label={t('statusbar:StatusEditor.palette')}
-    ondragover={(e) => {
-      if (drag.fromChip) e.preventDefault();
-    }}
-    ondrop={drag.dropOut}
-  >
-    {#each groups as g (g.group)}
-      <span class="group">{groupName(g.group)}</span>
-      <div class="chips">
-        {#each g.items as it (addKey(it))}
-          {@const icon = iconOf(it.kind)}
-          <button
-            class="add"
-            draggable="true"
-            onpointerdown={(e) => drag.press(e, { add: it })}
-            ondragstart={(e) => drag.start(e, { add: it })}
-            ondragend={drag.end}
-            onclick={() => insert(it)}
-            title={t('statusbar:StatusEditor.add.title', { about: aboutOf(it.kind) })}
-            data-add={addKey(it)}
-          >
-            {#if icon}<Icon name={icon} size={14} />{/if}{nameOf(it, true)}
-          </button>
-        {/each}
-      </div>
-    {/each}
-  </div>
+  <StatusPalette {drag} oninsert={(it: Item) => insert(it)} />
 </div>
 
 <style>
@@ -253,65 +171,6 @@
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
   }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    cursor: grab;
-  }
-  .chip.spacer {
-    flex: 1;
-    justify-content: space-between;
-  }
-  .chip.spacer .pick {
-    flex: 1;
-    justify-content: center;
-  }
-  .chip.chosen {
-    border-color: var(--accent);
-  }
-  .chip.absent {
-    opacity: 0.5;
-    border-style: dashed;
-  }
-  .chip.lifted {
-    opacity: 0.5;
-    border-color: var(--accent);
-  }
-  /* A finger's long press picks a chip up: no selection or callout under it. */
-  .chip,
-  .add {
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
-  }
-  .pick {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
-    color: inherit;
-  }
-  .x {
-    padding: var(--space-1) var(--space-2);
-    color: var(--text-dim);
-  }
-  .x:hover {
-    color: var(--text);
-  }
-  .gap {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--text-dim);
-  }
-  .line {
-    width: 1px;
-    height: 14px;
-    background: var(--border);
-  }
   .mark {
     width: 2px;
     align-self: stretch;
@@ -330,36 +189,5 @@
   }
   .grow {
     flex: 1;
-  }
-  .palette.leaving {
-    outline: 2px dashed var(--accent);
-    outline-offset: 4px;
-    border-radius: var(--radius);
-  }
-  .palette {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--space-3) var(--space-5);
-    align-items: baseline;
-  }
-  .group {
-    color: var(--text-dim);
-    font-size: var(--text-sm);
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-  }
-  /* A palette's element: a chip to drag onto the bar, or click. */
-  .add {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-size: var(--text-sm);
-    padding: var(--space-1) var(--space-3);
-    cursor: grab;
   }
 </style>

@@ -27,23 +27,6 @@
       "count": 1
     }
   },
-  "web/app/StatusEditor.svelte": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "web/app/Usb.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1

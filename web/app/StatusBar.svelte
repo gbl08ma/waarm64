@@ -1,32 +1,3 @@
-<script module lang="ts">
-  /** What the page knows besides the statuses, for the elements (reactive: read in a `$derived`). */
-  export function liveNow(net: PageNetwork, now: number): Live {
-    return {
-      state: power.state,
-      stateText: power.stateText,
-      now,
-      mouseLock: mouse.lock,
-      mouseLocked: mouse.locked,
-      keyboardLocked: keys.locked,
-      keysFocused: keys.focused,
-      mic: sound.mic,
-      disks: status.disks,
-      gpu: status.gpu?.g,
-      nets: net.views().map((a) => ({
-        name: adapterName(a.index + 1),
-        phase: a.view.phase,
-        text: a.connection
-          ? t('statusbar:StatusBar.link', { connection: a.connection.name, state: a.view.text })
-          : t('statusbar:StatusBar.link.none', { state: a.view.text }),
-        details: a.view.details,
-      })),
-    };
-  }
-  /** Whether a dot goes between entries `a` and `b` (none beside a spacer or a divider). */
-  export const dotBetween = (a: Item | undefined, b: Item) =>
-    !!a && !['spacer', 'divider'].includes(a.kind) && !['spacer', 'divider'].includes(b.kind);
-</script>
-
 <!--
   The status bar (docs/frontend.md "The status bar"): the elements chosen in Preferences (web/app/statusbar.ts), in
   their order, from the last second's numbers. Neighbours are split by a dot; a spacer takes the free room, a divider
@@ -37,12 +8,9 @@
 <script lang="ts">
   import StatusPiece from './StatusPiece.svelte';
   import type { PageNetwork } from './net-live.ts';
-  import { adapterName, render, shows, type Item, type Live, type Piece } from './statusbar.ts';
-  import { t } from '../i18n.ts';
-  import { keys } from './areas/keys.svelte.ts';
-  import { mouse } from './areas/mouse.svelte.ts';
+  import { render, shows, type Item, type Live, type Piece } from './statusbar.ts';
   import { power } from './areas/power.svelte.ts';
-  import { sound } from './areas/sound.svelte.ts';
+  import { liveNow } from './areas/status-live.ts';
   import { status } from './areas/status.svelte.ts';
 
   let { net }: { net: PageNetwork } = $props();
@@ -56,6 +24,9 @@
   });
   const live: Live = $derived(liveNow(net, now));
   type Entry = { item: Item; at: number; pieces: Piece[] };
+  /** Whether a dot goes between entries `a` and `b` (none beside a spacer or a divider). */
+  const dotBetween = (a: Item | undefined, b: Item) =>
+    !!a && !['spacer', 'divider'].includes(a.kind) && !['spacer', 'divider'].includes(b.kind);
   const entries: Entry[] = $derived(
     status.items
       .map((item, at) => ({ item, at, pieces: render(item, status.metrics, live) }))
