@@ -62,11 +62,27 @@ is a wrapper there); the room on a second adapter beside the local helper (`test
 Attribution checked for the track (THIRD_PARTY.json: `k256` and `sha2` rows, k256's RustCrypto dependencies under the
 section's Cargo.lock rule; Trystero as a technique, Nostr's NIP-01 and BIP-340 as references).
 
-**Next, by hand (needs the user):** public Nostr relays against plan §7's "What a room needs from a Nostr relay" (the
-kind forwarded, lookup to call back, Trystero's relay list as the start, events dated ahead), the public tailcat
-relays carrying a room (their limits; whether their operators allow it), two browsers on different networks (the dev
-VM and a phone), how often ICE fails; the defaults (relays, DERP map, STUN) come out of it, and §9's public room with
-them. Then the track's end: its out-of-context review, `scripts/ci-debian.sh`, and the outcome into docs/ and PLAN.md
-§3.
+**Done 2026-11-11** (after the user's first try on vm.tny.im: 200 ms pings through New York, ICE failing between
+two windows of one desktop, mDNS the likely cause: docs/backlog.md): the public Nostr relays and tailcat's four regions
+measured (bench/net/REPORT.md "Rooms on public servers", `bench/net/room-public.ts`): nos.lol and relay.damus.io,
+two of our three defaults, carry no room; 21 of Trystero's 29 do. The home region by latency (room.rs `start_home`,
+`probed`; tailnet.md "DERP"): a link without regions takes all of the map's, and the first to answer a probe is home.
+The page: the room's status line and active connections, spacing; the Machines page's attach on a machine that's off. A review
+of the home-region change (a fresh agent, static) found eight defects, all fixed with tests (planted bugs caught):
+regions travel by map ID (`INLINE_REGION`), not index; the map waited for when it holds candidates; a missing region
+fails only a configured home; probes count only a DERP server key; a failing home hands over before `Running`;
+`close` ends the probes; the map's `Avoid`/`NoMeasureNoHome` respected. A second review of the fixes found nine more, fixed the
+same way: the fallback and the hand-over ranked (`best_untried`: may be home, then the probe's outcome), a configured
+home only a preference, a map ID named twice resolving to ours, the map's IDs and nodes filtered to what a room can
+name and reach; `cargo test -p webpc_ts room` 58. **Accepted:** pages from before and after this change
+don't reach each other in a room (a region's wire meaning changed from an index to an ID; rooms are pre-release, and a
+reload fixes it).
 
-Open questions for the user stay in plan §9 (the default public room, the relays); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).
+**Decided 2026-11-11** (plan §9): the default Nostr relays (primal.net and five of Trystero's list, in link.rs), and
+rooms on tailcat's public DERP relays (the user: a room uses them as tailcat's browser clients do, and less, going
+direct where it can).
+
+**Next:** two browsers on different networks (the dev VM and a phone), how often ICE fails. Then the track's end: its out-of-context review,
+`scripts/ci-debian.sh`, the outcome into docs/ and PLAN.md §3.
+
+Open questions for the user stay in plan §9 (the default public room); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).

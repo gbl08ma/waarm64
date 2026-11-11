@@ -1,0 +1,616 @@
+{
+ "date": "2026-11-11T00:59:38.794Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "derp": "303",
+ "nostr": [
+  {
+   "url": "wss://nos.lol",
+   "now": {
+    "firstMs": -1,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.damus.io",
+   "now": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://relay.damus.io closed; again in 2 s",
+     "Nostr: wss://relay.damus.io closed; again in 4 s",
+     "Nostr: wss://relay.damus.io closed; again in 8 s",
+     "Nostr: wss://relay.damus.io closed; again in 16 s"
+    ]
+   }
+  },
+  {
+   "url": "wss://relay.primal.net",
+   "now": {
+    "firstMs": 378.19909099999995,
+    "rttMs": 98.36338499999988,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 391.60840499999995,
+    "rttMs": 100.98355300000003,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 386.4351209999995,
+    "rttMs": 99.37863199999993,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1395.34263,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://0x-nostr-relay.fly.dev",
+   "now": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://0x-nostr-relay.fly.dev closed; again in 2 s",
+     "Nostr: wss://0x-nostr-relay.fly.dev closed; again in 4 s",
+     "Nostr: wss://0x-nostr-relay.fly.dev closed; again in 8 s",
+     "Nostr: wss://0x-nostr-relay.fly.dev closed; again in 16 s"
+    ]
+   }
+  },
+  {
+   "url": "wss://bendernostur.duckdns.org:8443",
+   "now": {
+    "firstMs": 294.42599500000006,
+    "rttMs": 98.24210800000014,
+    "said": [
+     "Nostr: wss://bendernostur.duckdns.org:8443 asks for authentication (NIP-42), which rooms don't do"
+    ]
+   },
+   "ahead60": {
+    "firstMs": 294.01587800000016,
+    "rttMs": 100.6686850000001,
+    "said": [
+     "Nostr: wss://bendernostur.duckdns.org:8443 asks for authentication (NIP-42), which rooms don't do"
+    ]
+   },
+   "ahead600": {
+    "firstMs": 293.0212670000001,
+    "rttMs": 98.33622999999989,
+    "said": [
+     "Nostr: wss://bendernostur.duckdns.org:8443 asks for authentication (NIP-42), which rooms don't do"
+    ]
+   },
+   "burst": {
+    "firstMs": 1296.3525580000005,
+    "said": [
+     "Nostr: wss://bendernostur.duckdns.org:8443 asks for authentication (NIP-42), which rooms don't do"
+    ]
+   }
+  },
+  {
+   "url": "wss://cdn.satellite.earth",
+   "now": {
+    "firstMs": 369.06787800000006,
+    "rttMs": 98.41564699999981,
+    "said": [
+     "Nostr: wss://cdn.satellite.earth asks for authentication (NIP-42), which rooms don't do"
+    ]
+   },
+   "ahead60": {
+    "firstMs": 360.3361289999998,
+    "rttMs": 98.3762099999999,
+    "said": [
+     "Nostr: wss://cdn.satellite.earth asks for authentication (NIP-42), which rooms don't do"
+    ]
+   },
+   "ahead600": {
+    "firstMs": 351.0593679999997,
+    "rttMs": 98.32637100000011,
+    "said": [
+     "Nostr: wss://cdn.satellite.earth asks for authentication (NIP-42), which rooms don't do"
+    ]
+   },
+   "burst": {
+    "firstMs": 1354.518328,
+    "said": [
+     "Nostr: wss://cdn.satellite.earth asks for authentication (NIP-42), which rooms don't do"
+    ]
+   }
+  },
+  {
+   "url": "wss://nostr.chaima.info",
+   "now": {
+    "firstMs": 305.48184200000105,
+    "rttMs": 98.34003200000006,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 303.6583069999997,
+    "rttMs": 98.06806899999901,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 307.76345500000025,
+    "rttMs": 98.05515999999989,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1325.9647280000008,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://nostr.christiansass.de",
+   "now": {
+    "firstMs": 443.3405409999996,
+    "rttMs": 97.56633499999953,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 319.7413889999989,
+    "rttMs": 97.82330100000036,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 318.40224900000067,
+    "rttMs": 98.95769400000063,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1333.388375999999,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://nostr.rblb.it",
+   "now": {
+    "firstMs": 409.10369399999945,
+    "rttMs": 98.512025,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 407.97523199999887,
+    "rttMs": 98.41585599999962,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 324.44063800000004,
+    "rttMs": 98.11001100000067,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1383.1398980000013,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://nostr.red5d.dev",
+   "now": {
+    "firstMs": 360.7486710000012,
+    "rttMs": 97.98326200000156,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 375.6225379999996,
+    "rttMs": 98.40658199999962,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 366.76654699999926,
+    "rttMs": 99.1509100000003,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1377.6676719999996,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://nostr.robosats.org",
+   "now": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://nostr.robosats.org closed; again in 2 s",
+     "Nostr: wss://nostr.robosats.org closed; again in 4 s",
+     "Nostr: wss://nostr.robosats.org closed; again in 8 s"
+    ]
+   }
+  },
+  {
+   "url": "wss://nostr.stakey.net",
+   "now": {
+    "firstMs": 416.6796580000009,
+    "rttMs": 98.95322400000077,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 405.97494200000074,
+    "rttMs": 97.92640499999834,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 408.59962099999757,
+    "rttMs": 100.65836599999966,
+    "said": []
+   },
+   "burst": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://nostr.stakey.net refused an event: rate-limited: too many requests"
+    ]
+   }
+  },
+  {
+   "url": "wss://nostrcity-club.fly.dev",
+   "now": {
+    "firstMs": 1408.5365040000033,
+    "rttMs": 99.13269600000058,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 400.7930090000009,
+    "rttMs": 98.29420300000129,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 390.3322819999994,
+    "rttMs": 99.85965600000054,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1390.7369670000007,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay-dev.gulugulu.moe",
+   "now": {
+    "firstMs": 1445.0933990000012,
+    "rttMs": 101.58751299999858,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 1435.6446419999993,
+    "rttMs": 98.32403799999884,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 440.47076200000083,
+    "rttMs": 98.73277900000176,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1456.9419499999967,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.aarpia.com",
+   "now": {
+    "firstMs": 598.8937179999994,
+    "rttMs": 98.43227400000251,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 616.3601799999997,
+    "rttMs": 101.06768999999986,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 1416.6059109999987,
+    "rttMs": 98.91028599999845,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1416.571258,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.agentry.com",
+   "now": {
+    "firstMs": 878.5743880000009,
+    "rttMs": 98.12952700000096,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 426.5341879999978,
+    "rttMs": 99.43608400000085,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 409.17507900000055,
+    "rttMs": 98.63535599999886,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1437.3639700000022,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.bitmacro.cloud",
+   "now": {
+    "firstMs": -1,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.bullishbounty.com",
+   "now": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://relay.bullishbounty.com didn't answer",
+     "Nostr: wss://relay.bullishbounty.com closed; again in 2 s"
+    ]
+   }
+  },
+  {
+   "url": "wss://relay.degmods.com",
+   "now": {
+    "firstMs": 1415.5274739999986,
+    "rttMs": 98.05859100000089,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 413.8082519999989,
+    "rttMs": 98.54741700000159,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 413.26837499999965,
+    "rttMs": 98.39505799999824,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1388.2610029999996,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.flashapp.me",
+   "now": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://relay.flashapp.me closed; again in 2 s",
+     "Nostr: wss://relay.flashapp.me closed; again in 4 s",
+     "Nostr: wss://relay.flashapp.me closed; again in 8 s"
+    ]
+   }
+  },
+  {
+   "url": "wss://relay.grigic.org",
+   "now": {
+    "firstMs": 330.9622139999992,
+    "rttMs": 98.46386400000483,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 337.49951399999554,
+    "rttMs": 98.59662899999967,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 331.7370410000003,
+    "rttMs": 98.75404200000048,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1334.7768149999974,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.hackshed.dev",
+   "now": {
+    "firstMs": 1478.2640539999993,
+    "rttMs": 97.49907900000107,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 473.22168399999646,
+    "rttMs": 98.79648799999995,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 482.0698060000068,
+    "rttMs": 99.04071300000214,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1442.9746710000036,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.kaleidoswap.com",
+   "now": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://relay.kaleidoswap.com asks for authentication (NIP-42), which rooms don't do",
+     "Nostr: wss://relay.kaleidoswap.com refused an event: blocked: event kind 26354 not allowed"
+    ]
+   }
+  },
+  {
+   "url": "wss://relay.layer.systems",
+   "now": {
+    "firstMs": 308.4616810000007,
+    "rttMs": 98.65306899999996,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 310.2797490000012,
+    "rttMs": 97.82677300000068,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 304.85144500000024,
+    "rttMs": 98.74606399999902,
+    "said": []
+   },
+   "burst": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://relay.layer.systems refused an event: mute: no one was listening for this",
+     "Nostr: wss://relay.layer.systems refused an event: rate-limited: slow down, please"
+    ]
+   }
+  },
+  {
+   "url": "wss://relay.nostr.blockhenge.com",
+   "now": {
+    "firstMs": 941.070292999997,
+    "rttMs": 98.50643400000263,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 490.68093000000226,
+    "rttMs": 97.92540700000245,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 441.91915000000154,
+    "rttMs": 98.11574100000144,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1466.3939509999982,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.nostr.dev.br",
+   "now": {
+    "firstMs": 943.566810999997,
+    "rttMs": 97.82384900000034,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 323.5465219999969,
+    "rttMs": 98.89098599999852,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 393.7046010000049,
+    "rttMs": 98.4774830000024,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1331.9850640000004,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.nostrmap.net",
+   "now": {
+    "firstMs": 605.1000050000002,
+    "rttMs": 98.80292200000258,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 429.70063200000004,
+    "rttMs": 97.97821300000214,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 430.63024099999893,
+    "rttMs": 98.43507899999531,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1402.5809599999993,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.novospes.com",
+   "now": {
+    "firstMs": 398.1177779999998,
+    "rttMs": 98.68636500000139,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 415.0675190000038,
+    "rttMs": 98.46670499999891,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 427.2421719999984,
+    "rttMs": 102.10430400000041,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1393.0080159999998,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.piazza.today",
+   "now": {
+    "firstMs": 1507.171629000004,
+    "rttMs": 98.31530699999712,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 369.7256000000052,
+    "rttMs": 99.20598099999916,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": -1,
+    "said": [
+     "Nostr: wss://relay.piazza.today refused an event: invalid: ephemeral event is in the future"
+    ]
+   },
+   "burst": {
+    "firstMs": 1483.1807220000046,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://relay.routstr.com",
+   "now": {
+    "firstMs": 375.6769439999989,
+    "rttMs": 98.46837499999674,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 439.2639659999986,
+    "rttMs": 98.48980699999811,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 407.5181009999942,
+    "rttMs": 97.65732800000114,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1409.5615909999979,
+    "said": []
+   }
+  },
+  {
+   "url": "wss://testr.nymble.world",
+   "now": {
+    "firstMs": 837.0898949999973,
+    "rttMs": 97.88078999999561,
+    "said": []
+   },
+   "ahead60": {
+    "firstMs": 460.14056600000185,
+    "rttMs": 98.25752900000225,
+    "said": []
+   },
+   "ahead600": {
+    "firstMs": 459.1278220000022,
+    "rttMs": 98.06393799999933,
+    "said": []
+   },
+   "burst": {
+    "firstMs": 1424.8317529999986,
+    "said": []
+   }
+  }
+ ]
+}

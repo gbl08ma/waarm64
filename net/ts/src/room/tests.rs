@@ -49,6 +49,12 @@ struct Faults {
     drop_next_from: Option<usize>,
     /// The Nostr relay takes what nodes send and does nothing (a half-open connection).
     silent_nostr: bool,
+    /// The first DERP connection node `.0` opens to URL `.1` gets its server's hello only when
+    /// `Net::release` says (a region far away, or down).
+    hold_first: Vec<(usize, String)>,
+    /// Node `.0`'s connections to URL `.1` after the first never get a hello (a region whose
+    /// probe answers but whose DERP doesn't work).
+    mute_after_first: Vec<(usize, String)>,
 }
 
 /// A subscription on the fake Nostr relay.
@@ -69,6 +75,10 @@ struct Net {
     now: Instant,
     faults: Faults,
     relayed: usize,
+    /// Hellos held by `Faults::hold_first`: (node, connection, the hello).
+    held: Vec<(usize, u32, Vec<u8>)>,
+    /// The (node, URL) pairs a DERP connection was opened for.
+    opened: std::collections::BTreeSet<(usize, String)>,
 }
 
 fn key(seed: u8) -> [u8; 32] {
@@ -97,7 +107,7 @@ fn config(seed: u8) -> Config {
     Config {
         link: link(&["derp.test"]),
         key: Some(key(seed)),
-        home: 0,
+        home: None,
         derp_map_url: String::new(),
         known: Vec::new(),
         relay_only: false,
@@ -123,6 +133,15 @@ fn node(c: Client) -> Node {
 
 impl Net {
     fn new(cfgs: Vec<Config>) -> Net {
+        let n = Net::build(cfgs, Faults::default());
+        for x in &n.nodes {
+            assert_eq!(x.c.state, State::Running);
+        }
+        n
+    }
+
+    /// The nodes started under `faults`, whatever state they reach.
+    fn build(cfgs: Vec<Config>, faults: Faults) -> Net {
         let now = Instant::now();
         let nodes = cfgs
             .into_iter()
@@ -134,14 +153,27 @@ impl Net {
             subs: Vec::new(),
             published: Vec::new(),
             now,
-            faults: Faults::default(),
+            faults,
             relayed: 0,
+            held: Vec::new(),
+            opened: Default::default(),
         };
         n.run();
-        for x in &n.nodes {
-            assert_eq!(x.c.state, State::Running);
-        }
         n
+    }
+
+    /// The held hellos arrive, on connections the client closed too (the page may still pass
+    /// on what came before its close took effect), and then those connections close.
+    fn release(&mut self) {
+        let now = self.now;
+        for (i, conn, hello) in std::mem::take(&mut self.held) {
+            self.nodes[i].c.ws_message(conn, &hello, now);
+            self.run();
+            if !self.nodes[i].conns.contains_key(&conn) {
+                self.nodes[i].c.ws_closed(conn, now);
+            }
+        }
+        self.run();
     }
 
     /// Node `i` restarts (its page reloads): a new client of `cfg`, its connections gone.
@@ -259,7 +291,19 @@ impl Net {
                 assert_eq!(protocol, "derp");
                 let server = DerpServer::new([100 + i as u8; 32]);
                 let hello = server.hello();
+                let hold = (self.faults.hold_first.iter()).position(|(j, u)| *j == i && *u == url);
+                let mute = self.opened.contains(&(i, url.clone()))
+                    && (self.faults.mute_after_first.iter()).any(|(j, u)| *j == i && *u == url);
+                self.opened.insert((i, url.clone()));
                 self.nodes[i].conns.insert(conn, Conn::Derp { url, server });
+                if mute {
+                    return;
+                }
+                if let Some(k) = hold {
+                    self.faults.hold_first.remove(k);
+                    self.held.push((i, conn, hello));
+                    return;
+                }
                 self.nodes[i].c.ws_message(conn, &hello, now);
             }
             Action::WsSend { conn, data } => {
@@ -764,26 +808,38 @@ fn stale_replayed_forged_and_misdirected_lookups_go_unanswered() {
         nonce: [nonce; 16],
     };
     let calls = |n: &Net| n.nodes[0].c.peers.len();
-    n.inject(&mk(T0 - 3700, 0, 1), &room, None, target, hour);
+    n.inject(&mk(T0 - 3700, INLINE_REGION, 1), &room, None, target, hour);
     assert_eq!(calls(&n), 0, "over an hour old");
-    n.inject(&mk(T0 + 3700, 0, 2), &room, None, target, hour);
+    n.inject(&mk(T0 + 3700, INLINE_REGION, 2), &room, None, target, hour);
     assert_eq!(calls(&n), 0, "over an hour ahead");
-    n.inject(&mk(T0, 5, 3), &room, None, target, hour);
+    n.inject(&mk(T0, INLINE_REGION | 5, 3), &room, None, target, hour);
     assert_eq!(calls(&n), 0, "a region outside the link");
-    n.inject(&mk(T0, 0, 4), &Room::derive("another"), None, target, hour);
+    n.inject(
+        &mk(T0, INLINE_REGION, 4),
+        &Room::derive("another"),
+        None,
+        target,
+        hour,
+    );
     assert_eq!(calls(&n), 0, "another room's keys");
-    n.inject(&mk(T0, 0, 5), &room, Some(&public(3)), target, hour);
+    n.inject(
+        &mk(T0, INLINE_REGION, 5),
+        &room,
+        Some(&public(3)),
+        target,
+        hour,
+    );
     assert_eq!(calls(&n), 0, "sealed to another key");
     let mut tagged = n.nodes[0].c.room.clone();
     tagged.salt[0] ^= 1;
-    n.inject(&mk(T0, 0, 6), &tagged, None, target, hour);
+    n.inject(&mk(T0, INLINE_REGION, 6), &tagged, None, target, hour);
     assert_eq!(calls(&n), 0, "under a tag that isn't ours");
-    n.inject(&mk(T0, 0, 7), &room, None, target, hour + 3);
+    n.inject(&mk(T0, INLINE_REGION, 7), &room, None, target, hour + 3);
     assert_eq!(calls(&n), 0, "under a later hour's tag");
     let logs = n.logs(0).len();
     assert_eq!(logs, 3, "{:?}", n.logs(0)); // the three that opened said why
     // A good one is called back (to a key nobody holds here: on trial, then forgotten)...
-    n.inject(&mk(T0, 0, 8), &room, None, target, hour);
+    n.inject(&mk(T0, INLINE_REGION, 8), &room, None, target, hour);
     assert_eq!(calls(&n), 1);
     // ...and its copy, replayed after the trial ended, isn't.
     let replay = n.published.last().unwrap().clone();
@@ -804,7 +860,7 @@ fn a_crowds_lookups_wait_for_the_budget_and_past_its_queue_are_dropped() {
     let crowd = TRIALS_PER_SECOND + MAX_CALLS_WAITING + 3;
     let lookup = |k: usize, nonce: u8| Lookup {
         key: public(30 + k as u8),
-        region: 0,
+        region: INLINE_REGION,
         time: T0,
         nonce: [nonce; 16],
     };
@@ -1062,7 +1118,7 @@ fn a_forged_lookup_naming_a_live_peer_doesnt_move_it() {
     let room = n.nodes[1].c.room.clone();
     let l = Lookup {
         key: public(1),
-        region: 1,
+        region: INLINE_REGION | 1,
         time: T0,
         nonce: [9; 16],
     };
@@ -1100,7 +1156,7 @@ fn the_call_back_joins_the_dialers_home_region_and_leaves_it_when_done() {
     for c in &mut cfgs {
         c.link = link(&["a.test", "b.test"]);
     }
-    cfgs[1].home = 1;
+    cfgs[1].home = Some(1);
     cfgs[1].relay_only = true; // the relay carries it all
     let mut n = Net::new(cfgs);
     assert_eq!(n.regions(0), ["wss://a.test/derp"]);
@@ -1298,7 +1354,7 @@ fn a_forged_lookup_naming_another_region_doesnt_cut_a_key_off() {
         let room = n.nodes[1].c.room.clone();
         let l = Lookup {
             key: public(1),
-            region: 1,
+            region: INLINE_REGION | 1,
             time: T0,
             nonce: [7; 16],
         };
@@ -1377,14 +1433,38 @@ fn a_relay_that_ends_our_subscription_or_goes_silent_is_subscribed_again() {
 }
 
 #[test]
-fn a_failed_map_doesnt_stop_a_room_whose_home_is_its_own_derper() {
+fn a_failed_map_doesnt_stop_a_room_with_a_derper_of_its_own() {
+    // Configured home of its own: up at once, the map loading or not.
     let mut cfg = config(1);
     cfg.link.derp.push(Region::Map(900));
+    cfg.home = Some(0);
     let mut n = Net::new(vec![cfg]);
     let now = n.now;
     n.nodes[0].c.fetched(1, false, b"", now);
     n.run();
     assert_eq!(n.nodes[0].c.state, State::Running);
+    // Home to be chosen: it waits for the map (its regions are candidates), and without it
+    // takes its own, whichever comes first in the link.
+    for derp in [
+        vec![
+            Region::Map(900),
+            Region::Inline(tailcat::parse_relay("derp.test").unwrap()),
+        ],
+        vec![
+            Region::Inline(tailcat::parse_relay("derp.test").unwrap()),
+            Region::Map(900),
+        ],
+    ] {
+        let mut cfg = config(1);
+        cfg.link.derp = derp;
+        let mut n = Net::build(vec![cfg], Faults::default());
+        assert_eq!(n.nodes[0].c.state, State::FetchingMap);
+        let now = n.now;
+        n.nodes[0].c.fetched(1, false, b"", now);
+        n.run();
+        assert_eq!(n.nodes[0].c.state, State::Running);
+        assert_eq!(n.regions(0), ["wss://derp.test/derp"]);
+    }
 }
 
 #[test]
@@ -1483,7 +1563,7 @@ fn junk_under_our_tag_is_opened_only_within_a_budget() {
     n.run();
     let good = |nonce: u8| Lookup {
         key: public(1),
-        region: 0,
+        region: INLINE_REGION,
         time: T0,
         nonce: [nonce; 16],
     };
@@ -1492,4 +1572,456 @@ fn junk_under_our_tag_is_opened_only_within_a_budget() {
     n.advance(Duration::from_millis(1001));
     n.inject(&good(2), &room, None, target, T0 / 3600);
     assert_eq!(n.nodes[0].c.peers.len(), 1, "the next second's");
+}
+
+#[test]
+fn the_home_region_is_the_first_to_answer_a_probe() {
+    let mut cfgs = configs(&[1, 2]);
+    for c in &mut cfgs {
+        c.link = link(&["a.test", "b.test", "c.test"]);
+    }
+    cfgs[1].home = Some(0); // configured: no probes
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(cfgs, faults);
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(n.nodes[0].c.home, 2, "c answered first");
+    assert_eq!(
+        n.regions(0),
+        ["wss://c.test/derp"],
+        "the other probes closed"
+    );
+    assert_eq!(
+        n.regions(1),
+        ["wss://a.test/derp"],
+        "a configured home isn't probed"
+    );
+    n.release(); // the slower regions' answers come too late to matter
+    assert_eq!(n.nodes[0].c.home, 2);
+    assert_eq!(n.regions(0), ["wss://c.test/derp"]);
+    // The lookup says the dialer's home region, and the call back goes there.
+    n.reach(1, 0, b"a");
+    assert_eq!(n.got(0), [b"a".to_vec()]);
+    assert_eq!(n.regions(0), ["wss://c.test/derp", "wss://a.test/derp"]);
+    n.send(0, 1, 9, b"b");
+    assert_eq!(n.got(1), [b"b".to_vec()]);
+    assert_eq!(
+        n.nodes[1].c.peers.values().next().unwrap().region,
+        Some(2),
+        "its hello named c"
+    );
+}
+
+#[test]
+fn with_no_probe_answering_in_time_the_first_region_is_home() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    assert_eq!(n.nodes[0].c.state, State::Connecting);
+    n.advance(PROBE_WAIT - Duration::from_millis(1));
+    assert_eq!(n.nodes[0].c.state, State::Connecting, "still waiting");
+    n.advance(Duration::from_millis(1));
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(n.nodes[0].c.home, 0);
+    assert_eq!(n.regions(0), ["wss://a.test/derp"], "the probes closed");
+    assert!(
+        n.nodes[0].events.iter().any(|e| e["type"] == "log"
+            && e["msg"]
+                .as_str()
+                .unwrap()
+                .starts_with("DERP: no region answered")),
+        "said"
+    );
+    n.release();
+    assert_eq!(n.regions(0), ["wss://a.test/derp"]);
+}
+
+#[test]
+fn a_link_without_regions_takes_the_maps_and_the_nearest_is_home() {
+    let mut cfg = config(1);
+    cfg.link.derp = vec![Region::Map(0)];
+    cfg.link.default_derp = true;
+    let faults = Faults {
+        hold_first: vec![(0, "wss://a.test/derp".into())],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    assert_eq!(n.nodes[0].c.state, State::FetchingMap);
+    let map = br#"{"Regions":{"12":{"Nodes":[{"HostName":"b.test"}]},"9":{"Nodes":[{"HostName":"a.test"}]},"20":{"Nodes":[{"HostName":"stun.test","STUNOnly":true}]}}}"#;
+    let now = n.now;
+    n.nodes[0].c.fetched(1, true, map, now);
+    n.run();
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(
+        n.nodes[0].c.cfg.link.derp,
+        [Region::Map(9), Region::Map(12)],
+        "the map's DERP regions, lowest ID first"
+    );
+    assert_eq!(n.nodes[0].c.home, 1, "b answered first");
+    assert_eq!(n.regions(0), ["wss://b.test/derp"]);
+    assert_eq!(
+        n.nodes[0].c.cfg.link.encode(),
+        "webpc-room:test%20room?nostr=wss%3A%2F%2Fnostr.test",
+        "the link handed out still follows the defaults"
+    );
+}
+
+#[test]
+fn every_probe_closing_falls_back_at_once_and_says_why() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    let probes: Vec<u32> = n.nodes[0].conns.keys().copied().collect::<Vec<_>>();
+    let now = n.now;
+    for conn in probes {
+        if !matches!(n.nodes[0].conns.get(&conn), Some(Conn::Derp { .. })) {
+            continue;
+        }
+        n.nodes[0].conns.remove(&conn);
+        n.nodes[0].c.ws_closed(conn, now);
+    }
+    n.held.clear();
+    n.run();
+    assert_eq!(
+        n.nodes[0].c.state,
+        State::Running,
+        "without waiting out the 3 s"
+    );
+    assert_eq!(n.regions(0), ["wss://a.test/derp"]);
+    assert!(n.nodes[0].events.iter().any(|e| {
+        e["type"] == "log"
+            && e["msg"]
+                .as_str()
+                .unwrap()
+                .starts_with("DERP: every region's probe closed")
+    }));
+}
+
+#[test]
+fn a_probe_answered_by_something_other_than_a_derper_doesnt_count() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    let (_, a, _) = n.held[0].clone();
+    let now = n.now;
+    n.nodes[0].c.ws_message(a, b"HTTP/1.1 200 OK", now); // a's answer isn't a server key
+    n.run();
+    assert_eq!(n.nodes[0].c.state, State::Connecting, "b's probe still out");
+    n.held.remove(0);
+    n.release(); // b's real answer
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(n.nodes[0].c.home, 1);
+}
+
+#[test]
+fn a_home_that_keeps_failing_before_running_hands_over_to_the_next_region() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    // a's probe answers first, but its DERP connections never get a hello; b's probe is slower.
+    let faults = Faults {
+        hold_first: vec![(0, "wss://b.test/derp".into())],
+        mute_after_first: vec![(0, "wss://a.test/derp".into())],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    assert_eq!(n.nodes[0].c.home, 0);
+    assert_eq!(n.nodes[0].c.state, State::Connecting);
+    n.advance(Duration::from_secs(300));
+    assert_eq!(n.nodes[0].c.state, State::Running, "b took over");
+    assert_eq!(n.nodes[0].c.home, 1);
+    assert_eq!(n.regions(0), ["wss://b.test/derp"], "a's left");
+}
+
+#[test]
+fn members_with_different_maps_name_the_same_region() {
+    // Node 0 loaded the map before region 5 went; node 1 after. A default link takes the map's
+    // regions, so their indexes differ, but lookups and hellos name regions by ID.
+    let before = br#"{"Regions":{"5":{"Nodes":[{"HostName":"e.test"}]},"7":{"Nodes":[{"HostName":"g.test"}]},"9":{"Nodes":[{"HostName":"i.test"}]}}}"#;
+    let after = br#"{"Regions":{"7":{"Nodes":[{"HostName":"g.test"}]},"9":{"Nodes":[{"HostName":"i.test"}]}}}"#;
+    let mut cfgs = configs(&[1, 2]);
+    for c in &mut cfgs {
+        c.link.derp = vec![Region::Map(0)];
+        c.link.default_derp = true;
+    }
+    // Node 0's nearest is 9 (index 2 for it), node 1's is 7.
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://e.test/derp".into()),
+            (0, "wss://g.test/derp".into()),
+            (1, "wss://i.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(cfgs, faults);
+    let now = n.now;
+    n.nodes[0].c.fetched(1, true, before, now);
+    n.nodes[1].c.fetched(1, true, after, now);
+    n.run();
+    assert_eq!(n.nodes[0].c.home, 2);
+    assert_eq!(n.nodes[1].c.home, 0);
+    n.reach(0, 1, b"a");
+    assert_eq!(n.got(1), [b"a".to_vec()]);
+    assert_eq!(
+        n.regions(1),
+        ["wss://g.test/derp", "wss://i.test/derp"],
+        "node 1 called back into node 0's home, region 9 (its index 1)"
+    );
+    n.send(1, 0, 9, b"b");
+    assert_eq!(n.got(0), [b"b".to_vec()]);
+}
+
+#[test]
+fn the_map_takes_at_most_eight_regions_and_skips_those_not_for_home() {
+    let regions: Vec<String> = (1..=10)
+        .map(|k| {
+            let flag = if k == 1 {
+                r#","Avoid":true"#
+            } else if k == 2 {
+                r#","NoMeasureNoHome":true"#
+            } else {
+                ""
+            };
+            format!(r#""{k}":{{"Nodes":[{{"HostName":"r{k}.test"}}]{flag}}}"#)
+        })
+        .collect();
+    let map = format!(r#"{{"Regions":{{{}}}}}"#, regions.join(","));
+    let mut cfg = config(1);
+    cfg.link.derp = vec![Region::Map(0)];
+    cfg.link.default_derp = true;
+    let mut n = Net::build(vec![cfg], Faults::default());
+    let now = n.now;
+    n.nodes[0].c.fetched(1, true, map.as_bytes(), now);
+    n.run();
+    assert_eq!(
+        n.nodes[0].c.cfg.link.derp,
+        (1..=8).map(Region::Map).collect::<Vec<_>>(),
+        "the eight lowest IDs"
+    );
+    assert_eq!(
+        n.nodes[0].c.home, 2,
+        "regions 1 and 2 aren't probed: region 3 answered first"
+    );
+}
+
+#[test]
+fn a_region_missing_from_the_map_doesnt_fail_the_client() {
+    let map = br#"{"Regions":{"1":{"Nodes":[{"HostName":"a.test"}]}}}"#;
+    for home in [None, Some(0)] {
+        let mut cfg = config(1);
+        cfg.link.derp = vec![Region::Map(999), Region::Map(1)];
+        cfg.home = home;
+        let mut n = Net::build(vec![cfg], Faults::default());
+        let now = n.now;
+        n.nodes[0].c.fetched(1, true, map, now);
+        n.run();
+        assert_eq!(n.nodes[0].c.state, State::Running, "home {home:?}");
+        assert_eq!(n.nodes[0].c.home, 1);
+        assert_eq!(n.regions(0), ["wss://a.test/derp"]);
+    }
+}
+
+#[test]
+fn a_configured_home_that_isnt_usable_is_chosen_past_by_probes() {
+    // One not on the map, and one past the link's regions: the probes choose, as unconfigured.
+    for home in [2, 7] {
+        let mut cfg = config(1);
+        cfg.link = link(&["a.test", "b.test"]);
+        cfg.link.derp.push(Region::Map(900));
+        cfg.home = Some(home);
+        let faults = Faults {
+            hold_first: vec![(0, "wss://a.test/derp".into())],
+            ..Faults::default()
+        };
+        let mut n = Net::build(vec![cfg], faults);
+        let now = n.now;
+        n.nodes[0].c.fetched(
+            1,
+            true,
+            br#"{"Regions":{"1":{"Nodes":[{"HostName":"x.test"}]}}}"#,
+            now,
+        );
+        n.run();
+        assert_eq!(n.nodes[0].c.state, State::Running, "home {home}");
+        assert_eq!(n.nodes[0].c.home, 1, "b answered first");
+    }
+    // And the probed home hands over when it keeps failing, as an unconfigured one does.
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    cfg.home = Some(7);
+    let faults = Faults {
+        hold_first: vec![(0, "wss://b.test/derp".into())],
+        mute_after_first: vec![(0, "wss://a.test/derp".into())],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    assert_eq!(n.nodes[0].c.home, 0);
+    n.advance(Duration::from_secs(300));
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(n.nodes[0].c.home, 1);
+}
+
+#[test]
+fn the_fallback_is_a_probe_still_out_not_one_that_failed() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    let (_, a, _) = n.held.remove(0);
+    let now = n.now;
+    n.nodes[0].conns.remove(&a);
+    n.nodes[0].c.ws_closed(a, now); // a is down; b is slow
+    n.advance(PROBE_WAIT);
+    assert_eq!(n.nodes[0].c.home, 1, "b, still out, over a, which closed");
+    assert!(n.nodes[0].c.probes.is_empty());
+}
+
+#[test]
+fn the_hand_over_takes_the_best_region_left() {
+    // Regions 1 (Avoid), 2 and 3; 3 answers first but its DERP never works; 2's probe was still
+    // out: 2 takes over, not 1.
+    let map = br#"{"Regions":{"1":{"Avoid":true,"Nodes":[{"HostName":"r1.test"}]},"2":{"Nodes":[{"HostName":"r2.test"}]},"3":{"Nodes":[{"HostName":"r3.test"}]}}}"#;
+    let mut cfg = config(1);
+    cfg.link.derp = vec![Region::Map(0)];
+    cfg.link.default_derp = true;
+    let faults = Faults {
+        hold_first: vec![(0, "wss://r2.test/derp".into())],
+        mute_after_first: vec![(0, "wss://r3.test/derp".into())],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    let now = n.now;
+    n.nodes[0].c.fetched(1, true, map, now);
+    n.run();
+    assert_eq!(n.nodes[0].c.home, 2);
+    n.advance(Duration::from_secs(300));
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(n.nodes[0].c.home, 1, "region 2");
+}
+
+#[test]
+fn a_region_not_for_home_is_handed_over_to_last() {
+    // Regions 1 (Avoid), 2 and 3; 2's probe fails, 3 answers but its DERP never works: 2, whose
+    // probe failed, still comes before 1, which may not be home.
+    let map = br#"{"Regions":{"1":{"Avoid":true,"Nodes":[{"HostName":"r1.test"}]},"2":{"Nodes":[{"HostName":"r2.test"}]},"3":{"Nodes":[{"HostName":"r3.test"}]}}}"#;
+    let mut cfg = config(1);
+    cfg.link.derp = vec![Region::Map(0)];
+    cfg.link.default_derp = true;
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://r2.test/derp".into()),
+            (0, "wss://r3.test/derp".into()),
+        ],
+        mute_after_first: vec![(0, "wss://r3.test/derp".into())],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    let now = n.now;
+    n.nodes[0].c.fetched(1, true, map, now);
+    n.run();
+    let (_, r2, _) = n.held.remove(0);
+    n.nodes[0].conns.remove(&r2);
+    n.nodes[0].c.ws_closed(r2, now); // 2's probe closes
+    n.release(); // 3 answers
+    assert_eq!(n.nodes[0].c.home, 2);
+    n.advance(Duration::from_secs(300));
+    assert_eq!(n.nodes[0].c.state, State::Running);
+    assert_eq!(n.nodes[0].c.home, 1, "region 2, not region 1");
+}
+
+#[test]
+fn with_every_region_failing_the_client_fails() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test", "c.test"]);
+    let faults = Faults {
+        mute_after_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+            (0, "wss://c.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    n.advance(Duration::from_secs(1200));
+    assert_eq!(n.nodes[0].c.state, State::Failed);
+    let mut tried = n.nodes[0].c.tried.clone();
+    tried.sort();
+    assert_eq!(tried, [0, 1, 2], "each was home once");
+}
+
+#[test]
+fn a_map_region_named_twice_resolves_to_ours() {
+    let map = br#"{"Regions":{"5":{"Nodes":[{"HostName":"e.test"}]}}}"#;
+    let mut cfg = config(1);
+    cfg.link.derp = vec![Region::Map(5), Region::Map(5)];
+    cfg.home = Some(1);
+    let mut n = Net::build(vec![cfg], Faults::default());
+    let now = n.now;
+    n.nodes[0].c.fetched(1, true, map, now);
+    n.run();
+    assert_eq!(n.nodes[0].c.home, 1);
+    assert_eq!(
+        n.nodes[0].c.local_region(5),
+        Some(1),
+        "the home entry, not the first"
+    );
+    assert_eq!(n.regions(0), ["wss://e.test/derp"], "one connection");
+}
+
+#[test]
+fn the_maps_regions_a_room_can_name_and_reach() {
+    let map = br#"{"Regions":{"4":{"Nodes":[{"HostName":"d.test","CertName":"other.test"}]},"40000":{"Nodes":[{"HostName":"big.test"}]},"6":{"Nodes":[{"HostName":"f.test"}]}}}"#;
+    assert_eq!(tailcat::region_ids(map).unwrap(), [(6, true)]);
+}
+
+#[test]
+fn closing_while_probing_leaves_nothing_open_or_scheduled() {
+    let mut cfg = config(1);
+    cfg.link = link(&["a.test", "b.test"]);
+    let faults = Faults {
+        hold_first: vec![
+            (0, "wss://a.test/derp".into()),
+            (0, "wss://b.test/derp".into()),
+        ],
+        ..Faults::default()
+    };
+    let mut n = Net::build(vec![cfg], faults);
+    n.nodes[0].c.close();
+    n.run();
+    assert!(n.nodes[0].c.probes.is_empty());
+    assert_eq!(n.nodes[0].c.probe_until, None);
+    assert_eq!(n.regions(0), Vec::<String>::new(), "the probes closed");
+    n.release(); // late answers: nothing opens
+    assert_eq!(n.regions(0), Vec::<String>::new());
 }

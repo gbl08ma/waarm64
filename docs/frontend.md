@@ -1447,7 +1447,7 @@ and the guest's default way out (below).
   `privateRoomId`, the only form the page takes as private; off: the name is the ID, and anyone who knows it can join);
   its [Advanced](ui:network:NetWizard.advanced) has the room's [Nostr relays](ui:network:NetWizard.room.nostr) (`ws://` or
   `wss://`, one per line; empty: the module's defaults) and [DERP relays](ui:network:NetWizard.room.derp) (a region's
-  number in tailcat's public map, or one's own derper's `host[:port]`; empty: the map's first region), from which
+  number in tailcat's public map, or one's own derper's `host[:port]`; empty: all of the map's regions), from which
   `roomLink` writes the link link.rs reads (`webpc-room:<id>?nostr=…&derp=…`, percent-encoded). Join takes a link (a
   password field: a private room's link is a secret) or a public room's name (a bare ID, the defaults); `parseRoomLink`
   checks it as link.rs would. Both have [Allow direct connections between members](ui:network:NetWizard.room.direct)

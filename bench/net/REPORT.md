@@ -457,3 +457,76 @@ node bench/net/lna.ts bench/net/results/local-helper/lna.json
 node bench/net/local-ipv6.ts mac bench/net/results/local-helper/ipv6-mac.json
 (cd net/webpc-net && go build -o ../../target/net/webpc-net .) && unshare -Urn node bench/net/local-ipv6.ts netns bench/net/results/local-helper/ipv6-reach.json
 ```
+
+## Rooms on public servers (R4, 2026-11-11)
+
+docs/plans/networking-p2p.md's R4, from the dev VM (Lima on the M4 Mac mini, on a home connection in Europe; no
+IPv6): `bench/net/room-public.ts`, Node members (bench/net/room-member.ts: the module, relay only). JSON:
+`results/r4/nostr-2026-11-11.json`, `results/r4/derp-2026-11-11.json`.
+
+**Nostr relays** (our three defaults, then Trystero 0.26.0's maintained list), each alone in a fresh private room, DERP
+through tailcat's Frankfurt region (303): the first echo, in ms, after the members are `Running` (the lookup, the
+call back, the handshake and the echo over DERP, whose RTT here is 98 ms); the same with both members' clocks 60 s
+and 600 s fast; and a real lookup right after 16 lookups to absent members at the guest's cap (8 a second). "no":
+no echo in 15 s.
+
+| Relay | now | +60 s | +600 s | after a burst | What it said |
+|---|---|---|---|---|---|
+| nos.lol (ours) | no | | | | nothing: takes the REQ (EOSE) and the events, forwards none; from Chromium too |
+| relay.damus.io (ours) | no | | | | closes Node's WebSocket in its handshake (Cloudflare); from Chromium, 1 lookup of 4 came through (3.5 s) |
+| relay.primal.net (ours) | 378 | 392 | 386 | 1,395 | |
+| bendernostur.duckdns.org:8443 | 294 | 294 | 293 | 1,296 | asks for NIP-42 auth, carries the room anyway |
+| cdn.satellite.earth | 369 | 360 | 351 | 1,355 | asks for NIP-42 auth, carries the room anyway |
+| nostr.chaima.info | 305 | 304 | 308 | 1,326 | |
+| nostr.christiansass.de | 443 | 320 | 318 | 1,333 | |
+| nostr.rblb.it | 409 | 408 | 324 | 1,383 | |
+| nostr.red5d.dev | 361 | 376 | 367 | 1,378 | |
+| nostr.stakey.net | 417 | 406 | 409 | no | rate-limited: too many requests |
+| nostrcity-club.fly.dev | 1,409 | 401 | 390 | 1,391 | |
+| relay-dev.gulugulu.moe | 1,445 | 1,436 | 440 | 1,457 | |
+| relay.aarpia.com | 599 | 616 | 1,417 | 1,417 | |
+| relay.agentry.com | 879 | 427 | 409 | 1,437 | |
+| relay.degmods.com | 1,416 | 414 | 413 | 1,388 | |
+| relay.grigic.org | 331 | 337 | 332 | 1,335 | |
+| relay.hackshed.dev | 1,478 | 473 | 482 | 1,443 | |
+| relay.layer.systems | 308 | 310 | 305 | no | "mute: no one was listening", then rate-limited |
+| relay.nostr.blockhenge.com | 941 | 491 | 442 | 1,466 | |
+| relay.nostr.dev.br | 944 | 324 | 394 | 1,332 | |
+| relay.nostrmap.net | 605 | 430 | 431 | 1,403 | |
+| relay.novospes.com | 398 | 415 | 427 | 1,393 | |
+| relay.piazza.today | 1,507 | 370 | no | 1,483 | "ephemeral event is in the future" at +600 s |
+| relay.routstr.com | 376 | 439 | 408 | 1,410 | |
+| testr.nymble.world | 837 | 460 | 459 | 1,425 | |
+| 0x-nostr-relay.fly.dev, nostr.robosats.org, relay.flashapp.me, relay.bullishbounty.com | no | | | | close the connection (from Chromium too) |
+| relay.bitmacro.cloud | no (2.5 s on a second run) | | | | |
+| relay.kaleidoswap.com | no | | | | NIP-42 auth, and "event kind 26354 not allowed" |
+
+- **Two of our three defaults don't carry rooms**: nos.lol forwards nothing, damus.io refuses Node and is unreliable
+  from Chromium; relay.primal.net alone carried the user's first try. 21 of Trystero's 29 carry a room, most in
+  300–450 ms to the first echo (about two DERP RTTs of it); about 1.4 s is a lookup lost (the subscription not yet
+  active, or the relay slow) and its resend after 1 s.
+- **Clocks ahead:** one relay of those that carry rooms refuses events 600 s ahead (piazza.today); none refused 60 s.
+- **After a burst** every relay takes ~1.4 s: our own cap (`LOOKUPS_PER_SECOND`) holds the real lookup until the
+  burst's second has passed (the resend after 1 s), not the relays. Two relays rate-limit the burst itself
+  (stakey.net, layer.systems) and then drop the real lookup.
+
+**tailcat's public DERP regions** (each the room's only region; lookups on the tests' own relay, on loopback): two
+members on this machine, so every echo crosses the region twice each way. 20 echoes one at a time, then 4 MB each way
+at 32 packets of 1,232 bytes in flight.
+
+| Region | `Running` | first echo | RTT | Mbit/s each way | lost |
+|---|---|---|---|---|---|
+| 301 New York | 1,453 ms | 713 ms | 211 ms | 1.5 | 0 |
+| 302 San Francisco | 1,943 ms | 845 ms | 335 ms | 0.9 | 0 |
+| 303 Frankfurt | 857 ms | 255 ms | 99 ms | 3.1 | 0 |
+| 304 Tokyo | 2,286 ms | 1,489 ms | 482 ms | 0.6 | 0 |
+
+- All four carry a room, nothing lost. Throughput is the window over the RTT (32 × 1,232 bytes per RTT), so it says
+  nothing about the relays' rate limits. Not measured further on purpose: tailcat's README calls them "free
+  rate-limited DERP relays" with "no uptime SLAs or throughput targets", and `tailcat perf` refuses to run through
+  them, so throughput tests belong on one's own derper.
+- **The home region by latency** (the user's 200 ms pings, 2026-11-10: a link without `derp=` used only the map's
+  first region, New York): a link without regions now takes all of the map's, and a member's home is the first to
+  answer a probe (docs/tailnet.md "DERP"). Two members on such a link from this machine: 99 ms RTT (Frankfurt), up in
+  1.2 s.
+

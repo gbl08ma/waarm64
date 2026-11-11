@@ -162,7 +162,9 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
 
 - **A room's link** (`room::Link`): `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
   `derp` is a region ID of the DERP map (0: its first) or a derper inline (`host[:port]`). Anything without the scheme
-  is a bare ID, with the defaults (placeholders until R4: three public Nostr relays, the DERP map's first region). At
+  is a bare ID, with the defaults: six public Nostr relays (`DEFAULT_NOSTR`: relay.primal.net and five of Trystero's
+  list, those that carried every case R4 measured, bench/net/REPORT.md "Rooms on public servers"), and every region of the DERP map with DERP nodes a browser can reach and an ID from 1 to 0x7FFF, lowest ID first (at most 8; taken
+  once the map loads). At
   most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read, without
   the parts that were the defaults (`Link::encode`), so a link copied from the menu follows the defaults as they change.
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
@@ -176,7 +178,11 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   same second), so a dialer's clock may be off by most of an hour. When the guest sends to a room address nobody
   has, the packet waits (16 at most) and a **lookup** goes out as an ephemeral event under the target's tag of the
   dialer's hour, signed with BIP-340 (`k256`) by a key random per session, on every relay: the dialer's node key, its
-  home region (an index into the link's regions), the time and a random nonce, sealed with ChaCha20-Poly1305 to the
+  home region (`INLINE_REGION`: a map region by its ID, one of the link's own derpers as `0x8000` plus its index, so
+  members whose maps differ, one loaded before a region went or came, name the same region; a member that hasn't it
+  drops the lookup; one whose link names the region twice takes the entry that's home or connected; the same in
+  `hello`. Since 2026-11-11: a page from before, which sent an index, and one after don't reach each other in a room,
+  nothing versioning the field; accepted while rooms are pre-release), the time and a random nonce, sealed with ChaCha20-Poly1305 to the
   target's own key when the dialer knows it (an X25519 box from an ephemeral key; a name the resolver answered, or
   `known` keys) and with the room's lookup key otherwise; both mix in the lookup key, the tag is the associated
   data, and both look alike (106 bytes: 32 of an ephemeral key or of random bytes, then the ciphertext; the target
@@ -254,9 +260,22 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
 - **DERP:** one connection per region in use (`Relay`): the home region (`home`, an index into the link's; the
   `preferred` one) always, another while a peer is reached through it (the dialer's home region a call back joined;
   where a peer's data last came from) and for 60 s after; packets for a region wait (64 at most) until its connection
-  is up. Each has tailcat's liveness and reconnects; only the home region's failures before `Running` fail the client,
-  and a DERP map that doesn't load fails it only when the home region is the map's (an inline home connects at once).
-  A peer that left a region (`PeerGone`) is sent to its home region, if its `hello` said one. A failed client closes
+  is up. Each has tailcat's liveness and reconnects; before `Running`, a home region that keeps failing hands over to
+  the best usable one not yet tried (`best_untried`: one that may be home first, then by its probe, answered, still
+  out, not probed, failed, then the link's order; a usable configured home is kept and fails the client), and the
+  client fails only when none is left. A DERP map that doesn't load, or lacks a region, fails the client only when no
+  region is usable: a configured home is a preference, and an unusable one (not on the map, or past the link's
+  regions) is chosen past as if there were none.
+  A peer that left a region (`PeerGone`) is sent to its home region, if its `hello` said one. **The home region** is
+  chosen before the first connection, after the map when the link has map regions and no configured home (so they're
+  candidates): the configured one (`Config.home`, the page's `home`) if it's usable; else, with several usable
+  candidates (not regions the map marks `Avoid` or `NoMeasureNoHome`, unless only those are usable), a probe to each
+  at once (a `derp` WebSocket, which counts once its first frame is a DERP server's key, `derp::is_server_key`), the
+  first to answer being home (the nearest), the others closed; none in 3 s (`PROBE_WAIT`), or every probe closed, the
+  best by the same ranking (a probe still out before one that failed), the log saying which. `close` ends the probes too. In
+  the module, not the page's `/derp/probe` fetches as tailcat's client picks by (`nearestRegion`, web/tailcat.ts), so a
+  link's own derpers are probed too and nothing new crosses the ABI. Lookups and incoming lookups wait for `Running`,
+  so none names a region before the choice. A failed client closes
   its DERP and Nostr connections and keeps nothing scheduled (no reconnects while the page shows the error).
 - **Tests:** `cargo test -p webpc_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
   to a key on the same region, a fake Nostr relay and a fake WebRTC: lookups, names, sealing, stale, replayed, forged

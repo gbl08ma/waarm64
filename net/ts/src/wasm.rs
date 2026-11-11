@@ -86,9 +86,9 @@ struct JsConfig {
 struct JsRoom {
     /// The room's link (room/link.rs), or a bare ID.
     link: String,
-    /// The home region: an index into the link's DERP regions.
+    /// The home region: an index into the link's DERP regions (default: the nearest, probed).
     #[serde(default)]
-    home: usize,
+    home: Option<usize>,
     /// Node keys known by hand (`nodekey:` and 64 hex digits): lookups to them are sealed to them.
     #[serde(default)]
     known: Vec<String>,

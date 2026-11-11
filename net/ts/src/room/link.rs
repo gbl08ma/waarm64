@@ -9,13 +9,17 @@
 use crate::tailcat::{self, DerpNode};
 
 pub const SCHEME: &str = "webpc-room:";
-/// Placeholders until R4 picks the defaults (docs/plans/networking-p2p.md §7).
-pub const DEFAULT_NOSTR: [&str; 3] = [
-    "wss://nos.lol",
-    "wss://relay.damus.io",
+/// The default Nostr relays: those that carried every case of R4's measurements (bench/net/REPORT.md
+/// "Rooms on public servers"; the user's choice, 2026-11-11).
+pub const DEFAULT_NOSTR: [&str; 6] = [
     "wss://relay.primal.net",
+    "wss://nostr.chaima.info",
+    "wss://relay.grigic.org",
+    "wss://nostr.red5d.dev",
+    "wss://relay.novospes.com",
+    "wss://relay.routstr.com",
 ];
-const MAX_RELAYS: usize = 8;
+pub const MAX_RELAYS: usize = 8;
 const MAX_ID: usize = 256;
 
 #[derive(Debug, Clone, PartialEq)]

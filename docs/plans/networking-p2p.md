@@ -334,7 +334,11 @@ client was built.
   the internet (a Debian test beside `tests/net-local.test.ts`'s). *Those three done 2026-11-10 in the dev VM*:
   `scripts/ci-net.sh` OK (885 s), R0's gate holds there too (direct 183 Mbit/s each way against DERP's 126, 32%
   less CPU per Mbit; bench/net/REPORT.md), and `tests/net-local.test.ts`'s second case (the helper's adapter the
-  primary, the room's member by name on the second card). By hand: public
+  primary, the room's member by name on the second card). *2026-11-11*: the public Nostr relays and tailcat's regions
+  measured from the dev VM (bench/net/REPORT.md "Rooms on public servers"; two of our three default Nostr relays
+  carry no room), and the DERP choice fixed after the user's first try (200 ms pings through New York): a link
+  without regions takes all of the map's, and the home region is the first to answer a probe (tailnet.md "DERP").
+  By hand: public
   Nostr relays (the fixed kind forwarded, time from a lookup to its call back, Trystero's relay list as
   the start, events dated ahead of their clocks) and the public tailcat relays carrying a room (their
   limits; whether their operators allow this use), two browsers on different networks (the dev VM and a
@@ -386,5 +390,9 @@ client was built.
   other way). Separate regions would work. The ways out: one DERP connection per key carrying every
   room on it (one worker per key, the module routing by the room's PSK); a key a running connection
   holds can't start in another (a lock per key, an error naming the holder); or the option goes.
-- Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
-  forward a busy room's lookups.
+- *Decided 2026-11-11, the user:* **the default Nostr relays** are relay.primal.net, nostr.chaima.info,
+  relay.grigic.org, nostr.red5d.dev, relay.novospes.com and relay.routstr.com (link.rs `DEFAULT_NOSTR`): those that
+  carried every case R4 measured (bench/net/REPORT.md "Rooms on public servers"); nos.lol and relay.damus.io, two of
+  the placeholders, carried no room. **Rooms use tailcat's public DERP relays** by default: a room's client uses DERP
+  as tailcat's and a tailnet's browser clients do, and tries direct WebRTC first, which Tailscale's browser clients
+  can't, so it leans on the relays less than they do (the user's reasoning; tailcat's README sets no terms for them).

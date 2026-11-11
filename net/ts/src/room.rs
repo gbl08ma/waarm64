@@ -142,6 +142,14 @@ pub const MAX_RTC: usize = 64;
 pub const RTC_IDLE: Duration = Duration::from_secs(60);
 /// A region other than the home one is left this long after no peer needs it.
 const REGION_IDLE: Duration = Duration::from_secs(60);
+/// The home region is the first of the link's regions to answer a probe (a DERP WebSocket's
+/// first frame, the server's key: the nearest, as all are probed at once); none in this long,
+/// the configured one.
+const PROBE_WAIT: Duration = Duration::from_secs(3);
+/// A region in a lookup or a `hello`: a map region by its ID (below this), else one of the link's
+/// own derpers as this plus its index. So members whose maps differ (one loaded before a region
+/// went or came) still name the same region; a member that hasn't it drops the lookup.
+const INLINE_REGION: u16 = 0x8000;
 /// Packets for a region's relay before its connection is up.
 const REGION_QUEUE: usize = 64;
 /// How many signalling sequence numbers a peer's are remembered (to drop resent copies).
@@ -270,8 +278,9 @@ pub struct Config {
     pub link: Link,
     /// The node's private key; a fresh one when None.
     pub key: Option<[u8; 32]>,
-    /// The home region: an index into the link's DERP regions.
-    pub home: usize,
+    /// The home region: an index into the link's DERP regions; None: the first of them to
+    /// answer a probe (the link's first if none does).
+    pub home: Option<usize>,
     pub derp_map_url: String,
     /// Node keys known by hand (as names the resolver answered): lookups to them are sealed to them.
     pub known: Vec<[u8; 32]>,
@@ -399,9 +408,51 @@ fn is_false(x: &bool) -> bool {
 }
 
 /// One of the link's DERP regions, and our connection to it while it's in use.
+/// A region's probe ([`Client::start_home`]), ranked: a region to fall back on or hand over to is
+/// the best of these (after being allowed as home).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Probe {
+    /// Closed, or not a DERP server.
+    Failed,
+    NotProbed,
+    /// Sent, not answered.
+    Pending,
+    Answered,
+}
+
+impl Relay {
+    fn new(r: &Region, now: Instant) -> Relay {
+        Relay {
+            nodes: match r {
+                Region::Inline(n) => n.browser_url().into_iter().collect(),
+                Region::Map(_) => Vec::new(),
+            },
+            map_id: match r {
+                Region::Map(id) if *id != 0 => Some(*id),
+                _ => None,
+            },
+            home_ok: true,
+            probe: Probe::NotProbed,
+            node: 0,
+            conn: None,
+            ready: None,
+            failures: 0,
+            reconnect_at: None,
+            used: now,
+            queue: Vec::new(),
+        }
+    }
+}
+
 struct Relay {
     /// Its nodes' URLs (from the map, for a region of it); empty: unusable.
     nodes: Vec<String>,
+    /// A map region's ID (`Map(0)`'s once the map says it).
+    map_id: Option<i64>,
+    /// It may be home: not a region the map marks `Avoid` or `NoMeasureNoHome`.
+    home_ok: bool,
+    /// What its probe found, while the home region is chosen.
+    probe: Probe,
     node: usize,
     conn: Option<(u32, derp::Conn)>,
     ready: Option<Instant>,
@@ -453,6 +504,11 @@ pub struct Client {
     next_rtc: u32,
     home: usize,
     relays: Vec<Relay>,
+    /// The home region's probes while it is chosen: (connection, region), and until when.
+    probes: Vec<(u32, usize)>,
+    probe_until: Option<Instant>,
+    /// The regions that were home before `Running` (one that fails then hands over to another).
+    tried: Vec<usize>,
     nostr: Vec<Nostr>,
     author: nostr::Author,
     /// The clock: Unix seconds at `t0`.
@@ -517,24 +573,7 @@ impl Client {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs())
         });
-        let relays = cfg
-            .link
-            .derp
-            .iter()
-            .map(|r| Relay {
-                nodes: match r {
-                    Region::Inline(n) => n.browser_url().into_iter().collect(),
-                    Region::Map(_) => Vec::new(),
-                },
-                node: 0,
-                conn: None,
-                ready: None,
-                failures: 0,
-                reconnect_at: None,
-                used: now,
-                queue: Vec::new(),
-            })
-            .collect();
+        let relays = cfg.link.derp.iter().map(|r| Relay::new(r, now)).collect();
         let nostr = cfg
             .link
             .nostr
@@ -558,7 +597,7 @@ impl Client {
         let mut c = Client {
             addr: room.addr(&public),
             resolver: room.resolver(),
-            home: cfg.home.min(cfg.link.derp.len().saturating_sub(1)),
+            home: cfg.home.filter(|h| *h < cfg.link.derp.len()).unwrap_or(0),
             room,
             private,
             public,
@@ -568,6 +607,9 @@ impl Client {
             next_peer: 1,
             next_rtc: 1,
             relays,
+            probes: Vec::new(),
+            probe_until: None,
+            tried: Vec::new(),
             nostr,
             author: nostr::Author::random()?,
             t0: now,
@@ -598,7 +640,10 @@ impl Client {
         for i in 0..c.nostr.len() {
             c.nostr_connect(i, now);
         }
-        let home_on_map = matches!(c.cfg.link.derp[c.home], Region::Map(_));
+        // The map first, when the home region is the map's or is to be chosen among regions some
+        // of which are the map's; a configured home of the link's own connects at once.
+        let wait_for_map = c.cfg.link.needs_map()
+            && (c.configured().is_none() || matches!(c.cfg.link.derp[c.home], Region::Map(_)));
         if c.cfg.link.needs_map() {
             c.map_pending = true;
             c.actions.push_back(Action::Fetch {
@@ -606,14 +651,14 @@ impl Client {
                 url: c.cfg.derp_map_url.clone(),
             });
         }
-        if home_on_map {
+        if wait_for_map {
             c.state = State::FetchingMap;
             c.state_event();
-        } else if c.relays[c.home].nodes.is_empty() {
+        } else if c.relays.iter().all(|g| g.nodes.is_empty()) {
             c.fail("no-browser-relay", "");
         } else {
             c.state_event();
-            c.relay_connect(c.home, now);
+            c.start_home(now);
         }
         Ok(c)
     }
@@ -723,7 +768,11 @@ impl Client {
         };
         g.reconnect_at = Some(now + backoff);
         self.log(format!("DERP region {r}: {why}"));
-        if r == self.home && self.state != State::Running && failures as usize > 2 * nodes.max(2) {
+        if r == self.home
+            && self.state != State::Running
+            && failures as usize > 2 * nodes.max(2)
+            && !self.next_home(now)
+        {
             self.fail("relay", &why);
         }
     }
@@ -760,46 +809,219 @@ impl Client {
             return;
         }
         self.map_pending = false;
-        let home_on_map = self.state == State::FetchingMap;
+        let waiting = self.state == State::FetchingMap;
+        let url = self.cfg.derp_map_url.clone();
         if !ok {
-            let url = self.cfg.derp_map_url.clone();
-            if !home_on_map {
-                return self.log(format!(
-                    "the DERP map {url} didn't load: only the link's own derpers"
-                ));
+            self.log(format!(
+                "the DERP map {url} didn't load: only the link's own derpers"
+            ));
+            // Waiting, what's usable starts (a configured home on the map is only a preference).
+            if waiting && self.relays.iter().all(|g| g.nodes.is_empty()) {
+                return self.fail("derp-map", &url);
             }
-            return self.fail("derp-map", &url);
+            if waiting {
+                self.start(now);
+            }
+            return;
+        }
+        // A link without its own regions takes the map's, lowest ID first (at most
+        // [`link::MAX_RELAYS`]); lookups and hellos name a map region by its ID.
+        if self.cfg.link.default_derp && waiting {
+            match tailcat::region_ids(body) {
+                Ok(ids) if !ids.is_empty() => {
+                    let derp: Vec<Region> = ids
+                        .iter()
+                        .take(link::MAX_RELAYS)
+                        .map(|(id, _)| Region::Map(*id))
+                        .collect();
+                    self.relays = derp.iter().map(|r| Relay::new(r, now)).collect();
+                    for (g, (_, home_ok)) in self.relays.iter_mut().zip(&ids) {
+                        g.home_ok = *home_ok;
+                    }
+                    self.cfg.link.derp = derp;
+                    self.home = self.configured().unwrap_or(0);
+                }
+                Ok(_) => return self.fail("derp-map-invalid", "the DERP map has no regions"),
+                Err(e) => return self.fail("derp-map-invalid", &e),
+            }
         }
         for r in 0..self.relays.len() {
             let Region::Map(id) = self.cfg.link.derp[r] else {
                 continue;
             };
             match tailcat::region_nodes(body, id) {
-                Ok((_, nodes)) => {
+                Ok((id, nodes)) => {
+                    self.relays[r].map_id = Some(id);
                     self.relays[r].nodes = nodes
                         .iter()
                         .filter_map(tailcat::DerpNode::browser_url)
                         .collect();
                 }
-                Err(e) if r == self.home => return self.fail("derp-map-invalid", &e),
+                // Not there: unusable, a configured home too (the others are chosen from).
                 Err(e) => self.log(format!("DERP region {r}: {e}")),
             }
         }
-        if !home_on_map {
-            return; // the home region connected already
+        if waiting {
+            self.start(now);
         }
-        if self.relays[self.home].nodes.is_empty() {
+    }
+
+    /// The regions known (the map loaded, or not to be waited for): the home one is chosen and
+    /// connects, or the client fails with none usable.
+    fn start(&mut self, now: Instant) {
+        if self.relays.iter().all(|g| g.nodes.is_empty()) {
             return self.fail("region-no-browser-relay", "");
         }
         self.state = State::Connecting;
         self.state_event();
+        self.start_home(now);
+    }
+
+    /// Chooses the home region and connects it: the configured one, if usable; else, with several
+    /// usable regions that may be home, a probe to each at once, the first to answer being home
+    /// ([`PROBE_WAIT`]); else the first usable one.
+    fn start_home(&mut self, now: Instant) {
+        let usable: Vec<usize> = (0..self.relays.len())
+            .filter(|r| !self.relays[*r].nodes.is_empty())
+            .collect();
+        if let Some(h) = self.configured().filter(|h| usable.contains(h)) {
+            self.home = h;
+            return self.connect_home(now);
+        }
+        let mut candidates: Vec<usize> = usable
+            .iter()
+            .copied()
+            .filter(|r| self.relays[*r].home_ok)
+            .collect();
+        if candidates.is_empty() {
+            candidates = usable;
+        }
+        self.home = candidates[0];
+        if candidates.len() < 2 {
+            return self.connect_home(now);
+        }
+        for r in candidates {
+            self.relays[r].probe = Probe::Pending;
+            let conn = self.next_conn;
+            self.next_conn += 1;
+            let url = self.relays[r].nodes[0].clone();
+            self.actions.push_back(Action::WsOpen {
+                conn,
+                url,
+                protocol: "derp",
+            });
+            self.probes.push((conn, r));
+        }
+        self.probe_until = Some(now + PROBE_WAIT);
+    }
+
+    fn connect_home(&mut self, now: Instant) {
+        self.tried.push(self.home);
         self.relay_connect(self.home, now);
+    }
+
+    /// Ends the probes: none left open, no deadline.
+    fn end_probes(&mut self) {
+        for (conn, _) in std::mem::take(&mut self.probes) {
+            self.actions.push_back(Action::WsClose { conn });
+        }
+        self.probe_until = None;
+    }
+
+    /// The home region is chosen (`r`; None: no probe answered, for `why`, and the first
+    /// candidate is home): the probes close, and its relay connects.
+    fn probed(&mut self, r: Option<usize>, why: &str, now: Instant) {
+        self.end_probes();
+        match r {
+            Some(r) => {
+                self.relays[r].probe = Probe::Answered;
+                self.home = r;
+            }
+            None => {
+                if let Some(b) = self.best_untried() {
+                    self.home = b;
+                }
+                self.log(format!("DERP: {why}; home is region {}", self.home));
+            }
+        }
+        self.connect_home(now);
+    }
+
+    /// Before `Running`, a home region that keeps failing hands over to the next usable one not
+    /// tried (unless the home was configured): whether one took over.
+    fn next_home(&mut self, now: Instant) -> bool {
+        if self.configured() == Some(self.home) {
+            return false;
+        }
+        let Some(r) = self.best_untried() else {
+            return false;
+        };
+        let old = self.home;
+        self.relay_close(old);
+        self.relays[old].reconnect_at = None;
+        self.log(format!(
+            "DERP: region {old} keeps failing; home is region {r}"
+        ));
+        self.home = r;
+        self.connect_home(now);
+        true
+    }
+
+    /// The configured home, if the link has it (only a preference: an unusable one is chosen past).
+    fn configured(&self) -> Option<usize> {
+        self.cfg.home.filter(|h| *h < self.relays.len())
+    }
+
+    /// The usable region not yet home that's best to try: allowed as home first, then by what its
+    /// probe found ([`Probe`]), then the link's order.
+    fn best_untried(&self) -> Option<usize> {
+        (0..self.relays.len())
+            .filter(|r| !self.relays[*r].nodes.is_empty() && !self.tried.contains(r))
+            .min_by_key(|r| {
+                let g = &self.relays[*r];
+                (!g.home_ok, std::cmp::Reverse(g.probe), *r)
+            })
+    }
+
+    /// How lookups and hellos name region `r` ([`INLINE_REGION`]).
+    fn wire_region(&self, r: usize) -> u16 {
+        match self.relays[r].map_id {
+            Some(id) if (1..INLINE_REGION as i64).contains(&id) => id as u16,
+            _ => INLINE_REGION | r as u16,
+        }
+    }
+
+    /// The region a lookup or hello names, if we have it and it's usable.
+    fn local_region(&self, w: u16) -> Option<usize> {
+        let r = if w & INLINE_REGION != 0 {
+            Some((w & !INLINE_REGION) as usize).filter(|r| *r < self.relays.len())
+        } else {
+            // Two of the link's entries may name one map region: ours if it's home or connected.
+            let ids: Vec<usize> = (0..self.relays.len())
+                .filter(|r| self.relays[*r].map_id == Some(w as i64))
+                .collect();
+            ids.iter()
+                .copied()
+                .find(|r| *r == self.home)
+                .or_else(|| ids.iter().copied().find(|r| self.relays[*r].conn.is_some()))
+                .or_else(|| ids.first().copied())
+        }?;
+        (!self.relays[r].nodes.is_empty()).then_some(r)
     }
 
     // ---- WebSockets ----
 
     pub fn ws_closed(&mut self, conn: u32, now: Instant) {
-        if let Some(r) = self.relay_of(conn) {
+        if self.state == State::Failed {
+            return;
+        }
+        if let Some(k) = self.probes.iter().position(|(c, _)| *c == conn) {
+            let (_, r) = self.probes.remove(k);
+            self.relays[r].probe = Probe::Failed;
+            if self.probes.is_empty() {
+                self.probed(None, "every region's probe closed", now);
+            }
+        } else if let Some(r) = self.relay_of(conn) {
             self.relays[r].conn = None;
             self.relay_lost(r, now, "the connection closed".into());
         } else if let Some(i) = self.nostr.iter().position(|n| n.conn == Some(conn)) {
@@ -835,7 +1057,19 @@ impl Client {
     }
 
     pub fn ws_message(&mut self, conn: u32, data: &[u8], now: Instant) {
-        if let Some(r) = self.relay_of(conn) {
+        if self.state == State::Failed {
+            return;
+        }
+        if let Some(&(_, r)) = self.probes.iter().find(|(c, _)| *c == conn) {
+            // A DERP server's key answers; anything else isn't a derper: that probe is done.
+            if derp::is_server_key(data) {
+                self.probed(Some(r), "", now);
+            } else {
+                self.log(format!("DERP region {r}: not a DERP server"));
+                self.actions.push_back(Action::WsClose { conn });
+                self.ws_closed(conn, now);
+            }
+        } else if let Some(r) = self.relay_of(conn) {
             let (_, d) = self.relays[r].conn.as_mut().unwrap();
             let events = d.input(data, now);
             self.flush_relays();
@@ -979,7 +1213,7 @@ impl Client {
         let unix = self.unix(now);
         let l = Lookup {
             key: self.public,
-            region: self.home as u16,
+            region: self.wire_region(self.home),
             time: unix,
             nonce,
         };
@@ -1011,11 +1245,7 @@ impl Client {
             Some("too old")
         } else if self.nonces.contains(&l.nonce) {
             Some("seen")
-        } else if self
-            .relays
-            .get(l.region as usize)
-            .is_none_or(|g| g.nodes.is_empty())
-        {
+        } else if self.local_region(l.region).is_none() {
             Some("a region outside the link")
         } else if !self.cfg.incoming && !self.has_flow(&addr, now) {
             Some("incoming connections are off")
@@ -1025,6 +1255,9 @@ impl Client {
         if let Some(why) = why {
             return self.log(format!("lookup dropped: {why}"));
         }
+        let Some(region) = self.local_region(l.region) else {
+            return;
+        };
         if self.nonce_order.len() >= MAX_NONCES
             && let Some((old, _)) = self.nonce_order.pop_front()
         {
@@ -1044,7 +1277,7 @@ impl Client {
                     && now.saturating_duration_since(at) >= INIT_AGAIN
                 {
                     p.init = Some((init.clone(), now));
-                    self.relay_send(l.region as usize, &l.key, &init, now);
+                    self.relay_send(region, &l.key, &init, now);
                     self.flush_relays();
                 }
                 return;
@@ -1052,7 +1285,7 @@ impl Client {
             if p.probe.is_some() {
                 return;
             }
-            p.probe = Some((now + PROBE, l.region as usize));
+            p.probe = Some((now + PROBE, region));
             return self.signal_at(id, "ping", 0, now);
         }
         if self.pending.contains_key(&addr) && self.public > l.key {
@@ -1060,7 +1293,7 @@ impl Client {
             // abandon its own for the other's, and neither complete); our lookup brings its call.
             return;
         }
-        self.call_back(l.key, l.region as usize, now);
+        self.call_back(l.key, region, now);
     }
 
     /// Answers a lookup from `key`: our handshake through the dialer's home region `r`, or, past
@@ -1321,7 +1554,7 @@ impl Client {
     }
 
     fn hello(&mut self, id: PeerId, now: Instant) {
-        let (region, relay_only) = (self.home as i64, self.cfg.relay_only);
+        let (region, relay_only) = (self.wire_region(self.home) as i64, self.cfg.relay_only);
         let Some(p) = self.peers.get_mut(&id) else {
             return;
         };
@@ -1512,13 +1745,13 @@ impl Client {
             p.seen.pop_first();
         }
         self.signal(id, ack, now);
-        let regions = self.relays.len();
         match m.t.as_str() {
             "hello" => {
+                let region =
+                    m.g.and_then(|g| u16::try_from(g).ok())
+                        .and_then(|g| self.local_region(g));
                 let p = self.peers.get_mut(&id).unwrap();
-                p.region =
-                    m.g.and_then(|g| usize::try_from(g).ok())
-                        .filter(|g| *g < regions);
+                p.region = region;
                 if m.r {
                     self.close_rtc(id, None);
                     self.peers.get_mut(&id).unwrap().rtc = Rtc::Off;
@@ -1941,6 +2174,10 @@ impl Client {
         if self.state == State::Failed {
             return;
         }
+        if self.probe_until.is_some_and(|t| t <= now) {
+            let why = format!("no region answered in {} s", PROBE_WAIT.as_secs());
+            self.probed(None, &why, now);
+        }
         let r = self.wg.dispatch_events(now);
         self.send_to_peers(r.to_peers, now);
         let running = self.state == State::Running;
@@ -2135,18 +2372,22 @@ impl Client {
         let calls = (!self.calls_waiting.is_empty())
             .then(|| self.trials_out.front().map(|t| *t + Duration::from_secs(1)))
             .flatten();
-        [self.wg.next_event().map(|r| r.start()), calls]
-            .into_iter()
-            .chain(peers)
-            .chain(relays)
-            .chain(
-                self.nostr
-                    .iter()
-                    .flat_map(|n| [n.reconnect_at, n.answer_by, n.check_at]),
-            )
-            .chain(self.pending.values().map(|w| self.lookup_due(w)))
-            .flatten()
-            .min()
+        [
+            self.wg.next_event().map(|r| r.start()),
+            calls,
+            self.probe_until,
+        ]
+        .into_iter()
+        .chain(peers)
+        .chain(relays)
+        .chain(
+            self.nostr
+                .iter()
+                .flat_map(|n| [n.reconnect_at, n.answer_by, n.check_at]),
+        )
+        .chain(self.pending.values().map(|w| self.lookup_due(w)))
+        .flatten()
+        .min()
     }
 
     pub fn poll(&mut self) -> Option<Action> {
@@ -2154,6 +2395,7 @@ impl Client {
     }
 
     pub fn close(&mut self) {
+        self.end_probes();
         let ids: Vec<PeerId> = self.peers.keys().copied().collect();
         for id in ids {
             self.close_rtc(id, None);

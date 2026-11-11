@@ -1451,11 +1451,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
-- **A room's home region by latency** (the user's first try, 2026-11-10: 200 ms pings between two windows of one
-  Chromium, on DERP): a member's home region is the link's first (`Config.home`), and a link without `derp=` names
-  tailcat's map, whose first region is New York, so from Europe every relayed packet crosses the Atlantic twice. A
-  member could take the nearest of the link's regions by a probe at the start, as Tailscale's clients do (call backs
-  already go into the dialer's home region, plan §3). Belongs with R4's defaults.
 - **Why a room's direct path fails, said** (the same try: `WebRTC: no channel to peer 1 in time` every attempt, ICE
   never connecting between two windows of one desktop Chromium, while the dev VM's go direct): the likeliest cause is a
   firewall dropping mDNS (Chromium hides host addresses behind `.local` names in every window), leaving the STUN

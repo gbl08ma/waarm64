@@ -41,7 +41,7 @@ export type RoomConfig = {
   room: {
     /** The room's link (`webpc-room:<id>?nostr=…&derp=…`, net/ts/src/room/link.rs), or a bare ID (the defaults). */
     link: string;
-    /** The home region: an index into the link's DERP regions (default 0). */
+    /** The home region: an index into the link's DERP regions (default: the first of them to answer a probe, the nearest). */
     home?: number;
     /** Node keys known by hand (`nodekey:` and 64 hex digits): lookups to them are sealed to them. */
     known?: string[];

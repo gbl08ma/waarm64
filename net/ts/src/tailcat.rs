@@ -205,6 +205,10 @@ struct DerpMapJson {
 struct RegionJson {
     #[serde(default)]
     nodes: Vec<NodeJson>,
+    #[serde(default)]
+    avoid: bool,
+    #[serde(default)]
+    no_measure_no_home: bool,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +222,29 @@ struct NodeJson {
     derp_port: u16,
     #[serde(rename = "STUNOnly", default)]
     stun_only: bool,
+}
+
+/// The IDs (1 to 0x7FFF) of a DERP map's regions with DERP nodes a browser can reach, lowest
+/// first, each with whether it may be a home region (not marked `Avoid` or `NoMeasureNoHome`).
+pub fn region_ids(derp_map: &[u8]) -> Result<Vec<(i64, bool)>, String> {
+    let dm: DerpMapJson =
+        serde_json::from_slice(derp_map).map_err(|e| format!("the DERP map: {e}"))?;
+    let mut ids: Vec<(i64, bool)> = dm
+        .regions
+        .iter()
+        // A node a browser can reach (`DerpNode::browser_url`); an ID a room's lookup can carry.
+        .filter(|(_, r)| {
+            r.nodes.iter().any(|n| {
+                !n.stun_only
+                    && !n.host_name.is_empty()
+                    && (n.cert_name.is_empty() || n.cert_name == n.host_name)
+            })
+        })
+        .filter_map(|(k, r)| Some((k.parse().ok()?, !r.avoid && !r.no_measure_no_home)))
+        .filter(|(id, _)| (1..0x8000).contains(id))
+        .collect();
+    ids.sort_unstable();
+    Ok(ids)
 }
 
 /// The nodes of region `id` in a DERP map (Tailscale's JSON `tailcfg.DERPMap`); id 0 is the

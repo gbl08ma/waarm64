@@ -20,6 +20,14 @@ const MAGIC: &[u8; 8] = b"DERP\xF0\x9F\x94\x91";
 const MAX_FRAME: usize = 1 << 16 | 1 << 10; // a packet plus its key, with room to spare
 
 const SERVER_KEY: u8 = 0x01;
+
+/// Whether `b`, a connection's first message, is a DERP server's key frame (its type, length and magic).
+pub fn is_server_key(b: &[u8]) -> bool {
+    b.len() >= 5 + 40
+        && b[0] == SERVER_KEY
+        && u32::from_be_bytes([b[1], b[2], b[3], b[4]]) as usize >= 40
+        && &b[5..13] == MAGIC
+}
 const CLIENT_INFO: u8 = 0x02;
 const SERVER_INFO: u8 = 0x03;
 const SEND_PACKET: u8 = 0x04;
