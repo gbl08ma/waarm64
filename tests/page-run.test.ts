@@ -142,3 +142,20 @@ test('finding 6: a guest reboot during a save restarts the machine once the save
   assert.deepEqual(r, { during: 0, after: 1 });
   await page.close();
 });
+
+test('finding 7: a kept snapshot restored during a save says to wait, and asks nothing', { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
+  const r = await page.evaluate(async () => {
+    const { SnapshotRestore } = await import('/web/app/areas/snapshot-restore.ts' as string);
+    const calls: string[] = [];
+    const restore = new SnapshotRestore({
+      machine: { stored: { record: { id: 'aaaaaaaaaaaa' } }, store: { get: async () => void calls.push('store') } },
+      power: { busy: () => (calls.push('busy'), true), exclusively: async () => void calls.push('exclusively') },
+    });
+    await restore.restoreKept('bbbbbbbbbbbb');
+    return calls;
+  });
+  assert.deepEqual(r, ['busy'], 'the busy check (which says to wait) first, nothing else');
+  await page.close();
+});

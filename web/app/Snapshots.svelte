@@ -169,7 +169,7 @@
                 <Button
                   icon="history"
                   onclick={() => restore(s)}
-                  disabled={!here}
+                  disabled={!here || power.busy}
                   title={here ? t('snapshots:Snapshots.restore.title') : t('snapshots:Snapshots.restore.notHere')}
                   data-action="restore">{t('snapshots:Snapshots.restore')}</Button
                 >

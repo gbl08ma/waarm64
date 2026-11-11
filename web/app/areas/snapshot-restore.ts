@@ -147,6 +147,7 @@ export class SnapshotRestore {
       return;
     const replace = await replaceForks(plan);
     const { power: pw, runner, messages, terminal } = this.#c;
+    if (pw.busy()) return; // a save began while the questions were open: said, nothing restored
     await pw.exclusively(async () => {
       await runner.stop();
       let disks: DiskPlan[];
@@ -165,6 +166,7 @@ export class SnapshotRestore {
 
   /** Restores the kept snapshot `id` of the stored machine. */
   async restoreKept(id: string) {
+    if (this.#c.power.busy()) return; // a save or a switch runs: said (as a load is)
     const s = this.#c.machine.stored;
     const rec = await this.#c.machine.store.get('snapshots', id);
     if (!s || rec?.machine !== s.record.id) return;
