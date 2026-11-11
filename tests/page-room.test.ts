@@ -143,7 +143,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     assert.match(await text(a, '#net-error'), words('network:room.badDerp', { relay: 'derp.invalid:443:1' }));
     await a.fill('#net-room-derp', RIG_RELAY);
     await a.click('#net-connect');
-    await menuSays(a, words('network:network.room', { count: 0 }), 60_000);
+    await menuSays(a, words('network:network.room.connections', { count: 0 }), 60_000);
     const [ra] = await rooms(a);
     assert.deepEqual([ra.room.incoming, ra.room.relayOnly], [true, false], 'the switches as they were left');
     assert.equal(ra.name, 'test lan', 'named by the room, without its private suffix');
@@ -162,7 +162,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await b.fill('#net-room-link', ra.room.link);
     await b.uncheck('#net-keep'); // ephemeral: its key lives in the connection's record, which New name changes
     await b.click('#net-connect');
-    await menuSays(b, words('network:network.room', { count: 0 }), 60_000);
+    await menuSays(b, words('network:network.room.connections', { count: 0 }), 60_000);
     const nameB = await b.locator('#net-room-name').inputValue();
     assert.equal(nameB.split('.')[1], nameA.split('.')[1], 'one room, one tag');
     assert.notEqual(nameB, nameA);
@@ -192,8 +192,8 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     // By name, through the relay first and then directly: the first ping waits for the lookup and its call back.
     const ping = await run(b, `ping -6 -c 4 -W 10 ${nameA} | tail -2`, 120_000);
     assert.match(ping, / 0% packet loss/, `B pings A by name: ${ping}`);
-    await menuSays(a, words('network:network.room', { count: 1 }), 30_000);
-    await menuSays(b, words('network:network.room', { count: 1 }), 30_000);
+    await menuSays(a, words('network:network.room.connections', { count: 1 }), 30_000);
+    await menuSays(b, words('network:network.room.connections', { count: 1 }), 30_000);
     const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
     assert.equal(t('network:Network.room.copyLink'), await text(a, '#net-room-link-copy'));

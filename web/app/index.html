@@ -67,6 +67,7 @@
   #network .items.panel { width: 320px; }
   #network .panel p { margin: 0; }
   .net-status { font-weight: 600; }
+  .net-detail { font-weight: 400; color: var(--dim); font-size: 12px; }
   .net-adapter { display: flex; flex-direction: column; gap: 8px; }
   .net-adapter + .net-adapter { padding-top: 10px; border-top: 1px solid var(--line); }
   .net-head { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; }
@@ -79,6 +80,8 @@
   .net-note { color: var(--dim); font-size: 12px; margin: 0; white-space: pre-line; }
   .net-note a { color: var(--accent); }
   .net-row { display: flex; gap: 8px; }
+  .net-group { display: flex; flex-direction: column; gap: 8px; }
+  .net-group[hidden] { display: none; }
   .net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
   /* Dialogs (their shell and shared rules: Modal.svelte; the page's questions: Ask.svelte). Below, the wizards' choices and
@@ -96,6 +99,8 @@
   .net-sub { display: flex; flex-direction: column; gap: 8px; margin-left: 24px; }
   #net-wizard details summary { cursor: pointer; color: var(--dim); font-size: 12px; }
   #net-wizard details[open] { display: flex; flex-direction: column; gap: 8px; }
+  /* A details element's children are in its content slot: the gap between them is set there. */
+  #net-wizard details[open]::details-content { display: flex; flex-direction: column; gap: 8px; }
   #net-wizard code { font-size: 12px; }
   #net-wizard button:not(.net-choice):not(.primary), #folder-wizard button:not(.net-choice):not(.primary) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
   #folder-wizard #folder-choose { border-color: var(--accent); }

@@ -79,7 +79,7 @@ export type NetworkView = {
   phase: Phase;
   /** One line for the menu. */
   text: string;
-  /** An error's details, when there's one (`phase` `error`): what it said, one line each. */
+  /** Lines under `text`, one each: an error's (`phase` `error`) what it said; a room's its active connections. */
   details?: string[];
   /** Where to log in (only http(s) URLs). */
   loginURL?: string;
@@ -154,7 +154,7 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
     if (c.state === 'Running' && c.netmap && r) {
       const address = c.netmap.addresses[0]?.replace(/\/\d+$/, '');
       // A room reaches only its members: never the internet, so never the default way out over another adapter's.
-      return { phase: 'connected', address, exitNodes: [], internet: false, room: { name: r.name, link: r.link, incoming: r.incoming }, text: t('network:network.room', { count: c.netmap.peers.length }) };
+      return { phase: 'connected', address, exitNodes: [], internet: false, room: { name: r.name, link: r.link, incoming: r.incoming }, text: t('network:network.room'), details: [t('network:network.room.connections', { count: c.netmap.peers.length })] };
     }
     const doing: Record<string, string> = { FetchingMap: t('network:network.fetchingMap'), Connecting: t('network:network.connectingRelay'), Running: t('network:network.connectingRelay') };
     return { phase: 'connecting', text: doing[c.state] ?? t('network:network.loadingClient'), exitNodes: [] };

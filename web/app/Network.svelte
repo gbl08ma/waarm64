@@ -103,17 +103,17 @@
           {(v.subnets?.routes.length ?? 0) > 2 ? t('network:Network.routes.more', { routes: v.subnets?.routes.slice(0, 2) }) : t('network:Network.routes', { routes: v.subnets?.routes ?? [] })}
         </Check>
       </div>
-      <div id={`net-served${s}`} hidden={!v.served}>
+      <div id={`net-served${s}`} class="net-group" hidden={!v.served}>
         <label>{t('network:Network.served')}<input id={`net-served-addr${s}`} type={revealed[a.index] ? 'text' : 'password'} readonly spellcheck="false" value={v.served ?? ''}></label>
         <div class="net-row"><button id={`net-served-copy${s}`} onclick={() => copyServed(a.index, v.served ?? '')}>{t('network:Network.copy')}</button><button id={`net-served-show${s}`} onclick={() => (revealed = { ...revealed, [a.index]: !revealed[a.index] })}>{revealed[a.index] ? t('network:Network.hide') : t('network:Network.show')}</button></div>
         <p class="net-note"><T k="network:Network.served.note" params={{ ssh: 'tailcat ssh <address>', connect: 'tailcat <address> <port>' }}>{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
       </div>
-      <div id={`net-key${s}`} hidden={!v.tailcatKey}>
+      <div id={`net-key${s}`} class="net-group" hidden={!v.tailcatKey}>
         <label>{t('network:Network.key')}<input id={`net-key-value${s}`} type="text" readonly spellcheck="false" value={v.tailcatKey ?? ''}></label>
         <div class="net-row"><button id={`net-key-copy${s}`} onclick={() => copyKey(a.index, v.tailcatKey ?? '')}>{t('network:Network.copy')}</button></div>
         <p class="net-note"><T k="network:Network.key.note" params={{ allow: `tailcat serve --allow=${v.tailcatKey ?? ''} exit-node` }}>{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
       </div>
-      <div id={`net-room${s}`} hidden={!v.room}>
+      <div id={`net-room${s}`} class="net-group" hidden={!v.room}>
         <label>{t('network:Network.room.name')}<input id={`net-room-name${s}`} type="text" readonly spellcheck="false" value={v.room?.name ?? ''}></label>
         <div class="net-row"><button id={`net-room-name-copy${s}`} onclick={() => copyRoom(a.index, v.room?.name ?? '', false)}>{t('network:Network.copy')}</button><button id={`net-room-link-copy${s}`} title={t('network:Network.room.copyLink.title')} onclick={() => copyRoom(a.index, v.room?.link ?? '', true)}>{t('network:Network.room.copyLink')}</button></div>
         {#if linkShown[a.index]}<label>{t('network:Network.room.link')}<input id={`net-room-link-value${s}`} type="text" readonly spellcheck="false" value={v.room?.link ?? ''}></label>{/if}

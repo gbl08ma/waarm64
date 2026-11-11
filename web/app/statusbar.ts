@@ -238,7 +238,7 @@ export type Live = {
   mic: string;
   /** The machine's disks' and adapters' names, in its order; an adapter's connection phase (web/app/network.ts) and words. */
   disks: string[];
-  /** `details`: why a connection failed, a line each (the tooltip's, under its words). */
+  /** `details`: lines under its words in the tooltip (why a connection failed; a room's active connections). */
   nets: { name: string; phase: string; text: string; details?: string[] }[];
   /** The screen's last second (none yet, or no screen). */
   gpu?: Graphics;

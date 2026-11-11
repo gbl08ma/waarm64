@@ -54,8 +54,10 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   (region IDs in the public tailcat relays' map, or a derper's URL inline). Members with the same link
   find each other; a call back goes only to a region in the link's map (§3). The page builds the link
   ([Create a room](ui:network:NetWizard.room.create)) and takes one ([Join a room](ui:network:NetWizard.room.join)); a bare ID gets the defaults (R4 picks them).
-- **Who sees a node's real IP address:** the members it connects to directly (its public address
-  and port from the candidates; a LAN address stays behind Chromium's `.local` name); the operators
+- **Who sees a node's real IP address:** the members it connects to directly, either way round (its public address
+  and port from the candidates; a LAN address stays behind Chromium's `.local` name): one whose guest reaches it, with
+  incoming on, and every one its own guest reaches, which learn it as it learns theirs, since a direct connection
+  starts once the handshake is confirmed, unless either side is relay only; the operators
   of its DERP regions (with its node key, so its room address, and which keys it exchanges packets
   with), of the room's Nostr relays (with its opaque tags; a relay can match a lookup to the
   subscriber of its tag, so which IP address looked up which, without the room or the addresses)
@@ -351,6 +353,10 @@ client was built.
   real TLDs refused, or everything under `.alt`. Browsers don't validate DNSSEC, so validation would
   be the page's (or a guest resolver's with per-TLD trust anchors). The keys TLD above stays
   reserved for names that are keys.
+  *Names stay full keys* (the user, 2026-11-11, asked whether a name could carry only the address's 80 bits, as long
+  as the address): kept at 52 characters, since only the full key lets a lookup be sealed to its target (§3) and the
+  handshake accept that one key rather than any key with its first 80 bits. Shorter, nicer names belong here, and
+  likely to a DNS system run within the guests' world (no directory in the protocol, §1) rather than to the room.
 - **Onion routing**, so that neither peers nor relays see who talks to whom from where: circuits
   through other members (or volunteer nodes), the address still the key's, as only the outer path
   changes. A milestone of its own if wanted; relay only (§1) covers hiding from peers until then.

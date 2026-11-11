@@ -394,7 +394,7 @@ test('a room connection: its link and switches go to the room client; the view s
     room: { name, link: room.link, incoming: false, relayOnly: true },
   };
   rooms[0].setState('Running', nm); // i18n-ignore
-  assert.deepEqual(net.view(), { phase: 'connected', address: 'fd12:3456:789a:1:2:3:4:5', exitNodes: [], internet: false, room: { name, link: room.link, incoming: false }, text: t('network:network.room', { count: 1 }) });
+  assert.deepEqual(net.view(), { phase: 'connected', address: 'fd12:3456:789a:1:2:3:4:5', exitNodes: [], internet: false, room: { name, link: room.link, incoming: false }, text: t('network:network.room'), details: [t('network:network.room.connections', { count: 1 })] });
   assert.equal(primaryOf([net.view(), { phase: 'connected', internet: true }]), 1, 'a room beside a way to the internet is never the default way out');
   rooms[0].emit({ type: 'error', error: toWire(new Error('the relay closed')) });
   assert.equal(net.view().phase, 'error');

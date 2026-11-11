@@ -112,7 +112,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the first choice of the list, which goes on to make a new connection."
   },
   "NetWizard.pick.new.note": {
-    "message": "A tailnet, tailcat, or your computer.",
+    "message": "A tailnet, tailcat, your computer, or a peer-to-peer room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the line under “New connection…”, the kinds it can make."
   },
   "NetWizard.kind.note": {
@@ -671,13 +671,17 @@
     "message": "Connected through the tailcat server",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): online through a tailcat server (no IPv4 address known)."
   },
-  "network.room_one": {
-    "message": "Connected to the room, {{count}} member reached",
-    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected to a peer-to-peer room. {{count}} is the number of members the machine has exchanged traffic with."
+  "network.room": {
+    "message": "Connected to the room",
+    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected to a peer-to-peer room. Its line below says how many active connections the machine has (network.room.connections)."
   },
-  "network.room_other": {
-    "message": "Connected to the room, {{count}} members reached",
-    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected to a peer-to-peer room. {{count}} is the number of members the machine has exchanged traffic with."
+  "network.room.connections_one": {
+    "message": "{{count}} active connection",
+    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
+  },
+  "network.room.connections_other": {
+    "message": "{{count}} active connections",
+    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
   },
   "network.fetchingMap": {
     "message": "Looking up the relay…",
