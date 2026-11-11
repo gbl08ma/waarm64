@@ -241,3 +241,27 @@ test('finding 10: closing the Machines page after the guest itself stopped reads
   assert.deepEqual(r, { off: 1, crashed: 2, running: 2 });
   await page.close();
 });
+
+test('finding 11: the screen follows every density change, not only the first', { timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  const cdp = await ctx.newCDPSession(page);
+  // The width moves too: an override that changes only the density re-evaluates the media queries once (Chromium 14x).
+  let width = 800;
+  const density = (deviceScaleFactor: number) => cdp.send('Emulation.setDeviceMetricsOverride', { width: width += 10, height: 600, deviceScaleFactor, mobile: false });
+  await page.goto(`${base}/tests/browser/core.html`); // any page of the origin, at 1 dppx
+  await page.evaluate(async () => {
+    const { watchDensity } = await import('/web/app/areas/screen-view.ts' as string);
+    const w = window as unknown as { __densities: number[] };
+    w.__densities = [];
+    watchDensity(() => w.__densities.push(devicePixelRatio));
+  });
+  const seen = () => page.evaluate(() => (window as unknown as { __densities: number[] }).__densities);
+  for (const d of [2, 1.5, 3]) {
+    await density(d);
+    await page.waitForFunction((d) => (window as unknown as { __densities: number[] }).__densities.at(-1) === d, d, { timeout: 5000, polling: 50 })
+      .catch(async () => assert.fail(`no change heard at ${d}: ${JSON.stringify(await seen())}`));
+  }
+  assert.deepEqual(await seen(), [2, 1.5, 3]);
+  await ctx.close();
+});

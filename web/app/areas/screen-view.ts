@@ -37,6 +37,22 @@ const imageOf = (c: GuestCursor & { image: ArrayBuffer }) =>
 /** The screen's elements, as web/app/App.svelte gives them. */
 export type ScreenElements = { canvas: HTMLCanvasElement; box: HTMLElement; lockCursor: HTMLCanvasElement };
 
+/**
+ * Calls `changed` at each change of the screen's density (a move to another screen, the browser's zoom): the query
+ * names the density now, so it is made again for the next one (one query only hears its own density left or entered).
+ */
+export function watchDensity(changed: () => void) {
+  const q = matchMedia(`(resolution: ${devicePixelRatio}dppx)`);
+  q.addEventListener(
+    'change',
+    () => {
+      watchDensity(changed);
+      changed();
+    },
+    { once: true },
+  );
+}
+
 export class ScreenView {
   #els: ScreenElements | undefined;
   readonly #machine: PageMachine;
@@ -66,7 +82,7 @@ export class ScreenView {
       this.scheduleSize();
       this.placeCursor();
     }).observe(els.box);
-    matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => {
+    watchDensity(() => {
       this.fit();
       this.scheduleSize();
     }); // moved to a screen with another density
