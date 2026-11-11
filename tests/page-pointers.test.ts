@@ -46,13 +46,14 @@ async function open(query = '', booting = false, devices = 'mouse=1&touch=1') {
     Worker.prototype.postMessage = function (this: Worker, m: Record<string, unknown>, transfer: Transferable[]) {
       if (m?.type === 'start') {
         w.__workers.push(this);
-        w.__display = m.display as MessagePort; // the device's end of the display port: the test posts the guest's cursor on it
+        const ports = m.ports as Record<string, MessagePort | undefined>; // the start's `MachinePorts`
+        w.__display = ports.display; // the device's end of the display port: the test posts the guest's cursor on it
         for (const k of ['tablet', 'mouse', 'touch', 'display'] as const) {
-          const port = m[k] as MessagePort | undefined;
+          const port = ports[k];
           if (!port) continue;
           if (k !== 'display') port.onmessage = (e: MessageEvent<number[][]>) => w.__events[k].push(e.data);
           const stand = new MessageChannel().port2;
-          m[k] = stand;
+          ports[k] = stand;
           transfer = transfer.map((x) => (x === port ? stand : x));
         }
       }

@@ -45,12 +45,13 @@ async function open(live = true, viewport = { width: 1400, height: 900 }, query 
     Worker.prototype.postMessage = function (this: Worker, m: Record<string, unknown>, transfer: Transferable[]) {
       if (m?.type === 'start') {
         w.__workers.push(this);
+        const ports = m.ports as Record<string, MessagePort>; // the start's `MachinePorts`
         for (const [k, into] of [['keyboard', w.__keys], ['tablet', w.__tablet], ['serial', w.__serial]] as const) {
-          const port = m[k] as MessagePort;
+          const port = ports[k];
           port.onmessage = (e: MessageEvent) => (into as unknown[]).push(e.data);
           w.__ports[k] = port; // the device's end: the test speaks as the guest's device on it
           const stand = new MessageChannel().port2;
-          m[k] = stand;
+          ports[k] = stand;
           transfer = transfer.map((x) => (x === port ? stand : x));
         }
       }
