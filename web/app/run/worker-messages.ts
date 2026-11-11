@@ -5,6 +5,7 @@ import { msg, MsgError, t, text } from '../../i18n.ts';
 import { fromWire } from '../../msg.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
 import type { FromGpuWorker } from '../../gpu-worker.ts';
+import type { EvdevEvent } from '../../input.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';
 import { power } from '../areas/power.svelte.ts';
@@ -105,6 +106,14 @@ function progress(x: Runner, m: Extract<FromWorker, { type: 'progress' }>) {
         ? msg('machine:worker-messages.state.loadingPercent', { percent: Math.floor((100 * m.loaded) / m.total) })
         : msg('machine:messages.state.loading'),
     );
+}
+
+/** The guest's LEDs on the virtio keyboard's port: its status events (EV_LED, code 0 Num, 1 Caps, 2 Scroll Lock). */
+const EV_LED = 0x11;
+export function ledEvent([type, code, value]: EvdevEvent) {
+  if (type !== EV_LED || code > 2) return;
+  const bits = keys.ledBits;
+  bits.virtio = value ? bits.virtio | (1 << code) : bits.virtio & ~(1 << code);
 }
 
 export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {

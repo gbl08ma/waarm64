@@ -32,7 +32,7 @@ import type { Problems } from './problems.ts';
 import type { Replies } from './replies.ts';
 import { dispatch, Run } from './run.ts';
 import { channels, startMessage, type Channels, type StartWith } from './start-message.ts';
-import { displayHandlers, gpuHandlers, workerHandlers } from './worker-messages.ts';
+import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
 
@@ -210,25 +210,45 @@ export class Runner {
     });
   }
 
-  /** Once the lock is held and the disks are open: the start message. */
+  /**
+   * Once the lock is held and the disks are open: the start message, unless the run was stopped meanwhile (each await
+   * is a moment a stop can come in: a start posted after its `stop` would boot a machine nothing stops).
+   */
   async #begin(r: Run, ch: Channels, w: StartArgs & Pick<StartWith, 'screen' | 'size' | 'three'>) {
     const { machine: m, folders } = this.d;
     if (!r.live()) return;
     if (!(await this.#holdLock(r))) return;
     const opened = await this.#openDisks(r, w.config);
     if (!opened) return;
-    const list = ch.shares && m.stored ? await folders.begin(m.stored.record, ch.shares.port1) : undefined;
-    shares.path = m.stored ? (sharesPath(m.stored.record) ?? '') : '';
-    if (!r.live()) {
-      folders.end();
-      return;
-    }
+    const ready = await this.#prepare(r, ch);
+    if (!ready) return;
     if (folders.views().some((v) => v.problem)) shares.openMenu(); // Allow access…, Use it here
     if (m.hasGpu) current.graphics = w.three ? '3d' : '2d'; // `data-graphics`, for tests
-    const layout = await resolveKeyboard(m.resolve().keyboard);
-    keys.layout = layout?.id;
+    keys.layout = ready.layout?.id;
     const screen = w.three ? undefined : w.screen;
-    r.worker.postMessage(...startMessage(m, w.config, ch, { ...w, ...opened, screen, layout, folders: list }));
+    r.worker.postMessage(
+      ...startMessage(m, w.config, ch, { ...w, ...opened, screen, layout: ready.layout, folders: ready.folders }),
+    );
+  }
+
+  /** The start's folders and keyboard layout; none if the run stopped meanwhile or one failed (said, with Retry). */
+  async #prepare(r: Run, ch: Channels) {
+    const { machine: m, folders } = this.d;
+    try {
+      const list = ch.shares && m.stored ? await folders.begin(m.stored.record, ch.shares.port1) : undefined;
+      shares.path = m.stored ? (sharesPath(m.stored.record) ?? '') : '';
+      const layout = r.live() ? await resolveKeyboard(m.resolve().keyboard) : undefined;
+      if (r.live()) return { folders: list, layout };
+      folders.end();
+    } catch (e) {
+      if (!r.live()) return undefined;
+      this.lock.drop();
+      folders.end();
+      this.d.messages.setState('failed', new MsgError('machine:runner.notStarted', {}, { cause: e }), [
+        this.d.later.problems().retry,
+      ]);
+    }
+    return undefined;
   }
 
   /** The machine's lock (a stored machine's), or the run fails: it runs in another tab. */
@@ -298,8 +318,7 @@ export class Runner {
     void this.stop();
   }
 
-  /** The stop under way (a crash's, which nothing awaits): the next stop waits for it. */
-  #stopping: Promise<void> = Promise.resolve();
+  #stopping: Promise<void> = Promise.resolve(); // the stop under way (a crash's): the next stop waits for it
 
   /** Stops the machine, if any: its worker releases the disk overlay and lands what its folders hold first (or gets 4 s to). */
   stop(): Promise<void> {
@@ -331,12 +350,4 @@ export class Runner {
     this.d.folders.end();
     await refreshRecords(m);
   }
-}
-
-/** The guest's LEDs on the virtio keyboard: its status events (EV_LED, code 0 Num, 1 Caps, 2 Scroll Lock). */
-const EV_LED = 0x11;
-function ledEvent([type, code, value]: EvdevEvent) {
-  if (type !== EV_LED || code > 2) return;
-  const bits = keys.ledBits;
-  bits.virtio = value ? bits.virtio | (1 << code) : bits.virtio & ~(1 << code);
 }

@@ -168,9 +168,9 @@ test("finding 8: a notice's end brings back the stopped machine's error and its 
     const { Messages } = await import('/web/app/run/messages.ts' as string);
     const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
     const messages = new Messages({ spec: {} }, () => undefined);
-    const retry = { label: 'Retry', run() {} };
-    messages.setState('failed', 'The disk is in use in another tab.', [retry]);
-    messages.notify('A network action failed.', 'error');
+    const retry = { label: 'action-1', run() {} };
+    messages.setState('failed', 'failure-1', [retry]);
+    messages.notify('notice-1', 'error');
     (window as unknown as { __bar: unknown }).__bar = messageBar;
   });
   await page.clock.runFor(31_000);
@@ -178,7 +178,7 @@ test("finding 8: a notice's end brings back the stopped machine's error and its 
     const b = (window as unknown as { __bar: { text: string; actions: { label: string }[]; kind: string } }).__bar;
     return { text: b.text, actions: b.actions.map((a) => a.label), kind: b.kind };
   });
-  assert.deepEqual(bar, { text: 'The disk is in use in another tab.', actions: ['Retry'], kind: 'error' });
+  assert.deepEqual(bar, { text: 'failure-1', actions: ['action-1'], kind: 'error' });
   await page.close();
 });
 
@@ -263,5 +263,41 @@ test('finding 11: the screen follows every density change, not only the first', 
       .catch(async () => assert.fail(`no change heard at ${d}: ${JSON.stringify(await seen())}`));
   }
   assert.deepEqual(await seen(), [2, 1.5, 3]);
+  await ctx.close();
+});
+
+test('finding 12: a run stopped while its start waits for the keyboard layout posts no start', { skip, timeout: 120_000 }, async () => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await answerAsks(page);
+  await page.addInitScript(() => {
+    // The browser's layout answers only when the test says (`__layout`).
+    const waiting: (() => void)[] = [];
+    (window as unknown as { __layout: () => void }).__layout = () => waiting.splice(0).forEach((f) => f());
+    Object.defineProperty(navigator, 'keyboard', { value: { getLayoutMap: () => new Promise((r) => waiting.push(() => r(new Map()))) } });
+    const RealWorker = window.Worker;
+    const all: { url: string; posted: string[] }[] = [];
+    (window as unknown as { __workers: typeof all }).__workers = all;
+    window.Worker = class extends RealWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        const entry = { url: String(url), posted: [] as string[] };
+        all.push(entry);
+        const post = this.postMessage.bind(this) as (m: unknown, t?: Transferable[]) => void;
+        this.postMessage = ((m: { type?: string }, t?: Transferable[]) => { entry.posted.push(String(m?.type)); post(m, t); }) as Worker['postMessage'];
+      }
+    };
+  });
+  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal&keyboard=browser`);
+  const machines = () => page.evaluate(() => (window as unknown as { __workers: { url: string; posted: string[] }[] }).__workers.filter((w) => /\/app\/worker\.ts/.test(w.url)).map((w) => w.posted));
+  await page.waitForFunction(() => (window as unknown as { __workers: { url: string }[] }).__workers.some((w) => /\/app\/worker\.ts/.test(w.url)), null, { timeout: 30_000 });
+  await page.waitForTimeout(1000); // the first run waits for the layout
+  await page.locator('#restart').click(); // not running yet: no question; the first run stops, a second waits too
+  await page.waitForFunction(() => (window as unknown as { __workers: { url: string }[] }).__workers.filter((w) => /\/app\/worker\.ts/.test(w.url)).length === 2, null, { timeout: 30_000 });
+  await page.evaluate(() => (window as unknown as { __layout: () => void }).__layout());
+  assert.equal((await settled(page, 60_000)).state, 'running');
+  const [first, second] = await machines();
+  assert.ok(!first.includes('start'), `the stopped run's worker was posted: ${first.join(', ')}`);
+  assert.ok(second.includes('start'));
   await ctx.close();
 });

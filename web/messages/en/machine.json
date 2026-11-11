@@ -131,6 +131,10 @@
     "message": "The emulator stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that runs the machine failed (the machine has crashed; Show serial log and the like follow); the browser's error is the detail under it."
   },
+  "runner.notStarted": {
+    "message": "Couldn't start the machine",
+    "note": "Error headline in the message bar (under the toolbar) when something the page prepares before a machine starts (its shared folders, its keyboard layout) failed (Retry follows); the error is the detail under it."
+  },
   "runner.runsElsewhere": {
     "message": "Couldn't start {{name}}",
     "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows): the headline; what to do is the cause under it (machine:main.runsElsewhere.cause); {{name}} is the machine's name."
