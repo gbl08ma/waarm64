@@ -1,5 +1,6 @@
-// The address's knobs (docs/frontend.md "The page's code"): the query as the run reads it, collected here as the page
-// parsed it before (a later pass makes it one typed machine configuration). `?machine=buildroot` picks the test
+// The address's knobs (docs/frontend.md "The page's code"): the query as the run reads it. What a machine is made of
+// (its size, devices, display: web/app/run/config.ts `resolveMachine`) and the workers' development knobs
+// (web/app/run/dev-knobs.ts, web/gpu-knobs.ts) are parsed in their own modules. `?machine=buildroot` picks the test
 // guest, `?ncpus=N` the vCPU count, `?view=screen|terminal|both` the first view, `?params=` extra kernel parameters
 // (direct-boot machines), `?credential=name:value` a systemd credential over fw_cfg (firmware machines),
 // `?keyboard=<id>` the guest's keyboard layout (web/app/keyboard.ts), `?disk2=<url>` a read-only second disk,
