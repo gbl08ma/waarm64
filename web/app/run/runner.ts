@@ -164,9 +164,7 @@ export class Runner {
     const fromWorker = workerHandlers(this, r);
     worker.onmessage = r.guard((e: MessageEvent<FromWorker>) => dispatch(fromWorker, e.data));
     worker.onerror = r.guard((e: ErrorEvent) => {
-      const error = new MsgError('machine:runner.workerFailed', {}, { cause: new Error(e.message) });
-      r.failJobs(error);
-      this.d.messages.setState('crashed', error, this.d.later.problems().table.emulator);
+      this.crash(r, new MsgError('machine:runner.workerFailed', {}, { cause: new Error(e.message) }));
     });
     return r;
   }
@@ -205,14 +203,10 @@ export class Runner {
       this.d.machine.run = undefined;
       this.start(args.snapshot, args.resume, args.plan);
     };
-    const fromGpu = gpuHandlers(this, ready, failed);
+    const fromGpu = gpuHandlers(this, r, ready, failed);
     gpu.onmessage = r.guard((e: MessageEvent<FromGpuWorker>) => dispatch(fromGpu, e.data));
     gpu.onerror = r.guard((e: ErrorEvent) => {
-      this.d.messages.setState(
-        'crashed',
-        new MsgError('display:runner.gpuWorkerFailed', {}, { cause: new Error(e.message) }),
-        this.d.later.problems().table.emulator,
-      );
+      this.crash(r, new MsgError('display:runner.gpuWorkerFailed', {}, { cause: new Error(e.message) }));
     });
   }
 
@@ -292,12 +286,31 @@ export class Runner {
     void refreshRecords(this.d.machine);
   }
 
+  /**
+   * The run can't go on (its machine worker failed, its GPU worker failed or lost its context): said crashed, and
+   * stopped as a stop does (the worker lands its disks if it still can), so the guest doesn't run on unseen holding the
+   * machine's lock and disks. A restart meanwhile waits for that stop (`stop`).
+   */
+  crash(r: Run, error: MsgError) {
+    if (!r.live()) return;
+    r.failJobs(error);
+    this.d.messages.setState('crashed', error, this.d.later.problems().table.emulator);
+    void this.stop();
+  }
+
+  /** The stop under way (a crash's, which nothing awaits): the next stop waits for it. */
+  #stopping: Promise<void> = Promise.resolve();
+
   /** Stops the machine, if any: its worker releases the disk overlay and lands what its folders hold first (or gets 4 s to). */
-  async stop() {
+  stop(): Promise<void> {
+    const r = this.d.machine.run;
+    this.d.machine.run = undefined;
+    if (!r) return this.#stopping;
+    return (this.#stopping = this.#stopRun(r));
+  }
+
+  async #stopRun(r: Run) {
     const m = this.d.machine;
-    const r = m.run;
-    m.run = undefined;
-    if (!r) return;
     this.d.alive.clear();
     r.input.detach();
     this.d.audio.detach();

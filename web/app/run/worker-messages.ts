@@ -1,7 +1,7 @@
 // What the run's workers and display port say (web/app/protocol.ts `FromWorker`, web/gpu-present.ts `DisplayToPage`,
 // web/gpu-worker.ts `FromGpuWorker`), by message type: each table is a run's (web/app/run/runner.ts sets them,
 // dropped once the run is replaced: `Run.guard`).
-import { msg, t, text } from '../../i18n.ts';
+import { msg, MsgError, t, text } from '../../i18n.ts';
 import { fromWire } from '../../msg.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
 import type { FromGpuWorker } from '../../gpu-worker.ts';
@@ -148,6 +148,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
 
 export function gpuHandlers(
   x: Runner,
+  r: Run,
   ready: (caps: Uint8Array) => void,
   failed: (reason: string) => void,
 ): Handlers<FromGpuWorker> {
@@ -158,8 +159,7 @@ export function gpuHandlers(
     },
     failed: (m) => failed(m.reason),
     stats: (m) => showGraphics('3d', m),
-    lost: () =>
-      x.d.messages.setState('crashed', msg('display:worker-messages.webglLost'), x.d.later.problems().table.emulator),
+    lost: () => x.crash(r, new MsgError('display:worker-messages.webglLost')),
     snapshotBytes: (m) => x.d.replies.bytes.answer(m.id, m.bytes),
     'render-stats': (m) => {
       (window.__renderStats ??= []).push(m);

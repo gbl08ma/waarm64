@@ -517,7 +517,9 @@ Page → worker:
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
-  an answer, anyway).
+  an answer, anyway). The page stops a run this way too when it can't go on from the page's side (an uncaught error
+  in the machine worker or the GPU worker, a lost WebGL context: `Runner.crash`), and says `crashed`: nothing runs on
+  unseen with the machine's lock and disks; a restart meanwhile waits for that stop.
 
 Worker → page:
 - `state {state, error?, note?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
