@@ -1366,6 +1366,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `POINTER_SCROLL_WHEEL` with `v120` values off 120). The touchscreen's contacts have no size or pressure (`ABS_MT_TOUCH_MAJOR`, `ABS_MT_PRESSURE`), and a pen is the tablet.
   Checked on headless Chromium's synthetic events and on Debian's evdev, not on a real touchscreen or a desktop's
   compositor (GTK and Firefox on the Arch desktop guest).
+- **The page's lint suppressions left** (tools/lint/eslint-suppressions.json, 130 on 2026-11-11 after the frontend
+  refactor's phase 4 took it from 376; [frontend-code.md](frontend-code.md) §7). By promise: the size rules (30
+  `complexity`, 12 `max-lines`, 12 `max-lines-per-function`): statusbar.ts `render` (a 340-line switch: one renderer
+  per group, the page's own, the machine's numbers, graphics, traffic), worker.ts `start`/`saveSnapshot`/`suspend`,
+  network.ts `createNetwork`/`viewOf`, clipboard.ts `frame`/`paste`, definitions.ts `importDefinition`/
+  `parseDefinition`, snapshots.ts `planRestore`, osk.ts's layouts (tables more than code); the long modules
+  (clipboard, network, net-live, statusbar, store, usb-ports, worker) split by responsibility, the keymaps' and
+  keyboard's tables excepted (data: a disable there). Then the 58 `no-unnecessary-condition`, most of them checks the
+  types call dead but aren't: `globalThis.navigator`/`location` probes (the modules run in Node's tests too), input
+  validated at the edge (definitions.ts, statusbar.ts `normalize`: better typed `unknown` there), worker.ts flags that
+  change across an `await` (`stopping`). The 5 `!` left are the machine worker's run loop (`vm!`, hot: a hoisted
+  `const` per start would do) and its `kinds` in a snapshot.
+- **The screen's cursor styles** (areas/screen-view.ts): the CSS cursor (`showCursor`) and the lock cursor's box
+  (`placeCursor`) are still set on the elements, as they follow the guest's cursor messages; through state they would
+  render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
