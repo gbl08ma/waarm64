@@ -104,6 +104,8 @@ needs no CI run.
   (not too many, none redundant, none of known bad quality). Fewest dependencies isn't a goal in itself: an
   industry-standard set of dependencies and build steps beats a bespoke setup.
 - Anything that runs in the browser must work with cross-origin isolation (COOP/COEP) on.
+- **The page's code** (`web/app/`) follows [docs/frontend-code.md](docs/frontend-code.md): design tokens, shared
+  components, small components, reactive state by area.
 - **Words the user reads come from the catalog** (`web/messages/en/`, i18next; [docs/i18n.md](docs/i18n.md)): a new
   message gets an entry with a note, keyed by its source file; workers, libraries, the core and C send keys, codes and
   data, only the page renders; errors for the user are `MsgError`s (headline, cause as details). `tools/i18n-check.ts`
