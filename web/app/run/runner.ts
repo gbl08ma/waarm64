@@ -24,7 +24,6 @@ import type { PageNetwork } from '../net-live.ts';
 import type { FromWorker, MachineConfig, Status, ToWorker } from '../protocol.ts';
 import type { Sample } from '../statusbar.ts';
 import type { UsbPorts } from '../usb-live.ts';
-import type { SnapshotJob } from '../areas/snapshot-actions.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
 import type { Messages } from './messages.ts';
@@ -47,7 +46,13 @@ export type RunnerDeps = {
   net: PageNetwork;
   audio: PageAudio;
   folders: PageFolders;
-  replies: { grabs: Replies<Grab>; screens: Replies<Blob | undefined>; bytes: Replies<number> };
+  replies: {
+    grabs: Replies<Grab>;
+    screens: Replies<Blob | undefined>;
+    bytes: Replies<number>;
+    /** The machine worker's answers to the benchmarks' questions (`profile`, `timeline`, `heap`), by id. */
+    worker: Replies<FromWorker>;
+  };
   /** The run's USB (web/app/areas/usb-actions.ts). */
   usb: {
     ports(port: MessagePort): UsbPorts;
@@ -78,8 +83,6 @@ export class NeedsUser extends Error {
 export class Runner {
   readonly d: RunnerDeps;
   readonly lock = new MachineLock();
-  /** The snapshot being written: the worker's messages for it (web/app/areas/snapshot-actions.ts). */
-  job: SnapshotJob | undefined;
   /** The run's last status (its rates are since it). */
   last: Sample | undefined;
 
@@ -168,7 +171,7 @@ export class Runner {
     worker.onmessage = r.guard((e: MessageEvent<FromWorker>) => dispatch(fromWorker, e.data));
     worker.onerror = r.guard((e: ErrorEvent) => {
       const error = new MsgError('machine:runner.workerFailed', {}, { cause: new Error(e.message) });
-      this.job?.error(error);
+      r.failJobs(error);
       this.d.messages.setState('crashed', error, this.d.later.problems().table.emulator);
     });
     return r;

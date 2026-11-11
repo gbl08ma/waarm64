@@ -73,17 +73,17 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       state(vm ? 'crashed' : 'failed', { error, problem });
     });
   } else if (m.type === 'snapshot') {
-    void saveSnapshot(m.handle, m.keep, m.whole, m.sleep);
+    void saveSnapshot(m.id, m.handle, m.keep, m.whole, m.sleep);
   } else if (m.type === 'suspend') {
-    void suspend(m.sleep);
+    void suspend(m.id, m.sleep);
   } else if (m.type === 'wake') {
     vm?.wake();
   } else if (m.type === 'profile') {
-    void profile(m.on);
+    void profile(m.on, m.id);
   } else if (m.type === 'timeline') {
-    void timeline(m.on);
+    void timeline(m.on, m.id);
   } else if (m.type === 'heap') {
-    if (vm) post({ type: 'heap', heap: vm.heapUse() });
+    if (vm) post({ type: 'heap', id: m.id, heap: vm.heapUse() });
   } else if (m.type === 'stop') {
     stopping = true;
     void (async () => {
@@ -102,7 +102,7 @@ let stopSampler: (() => Promise<[string, number][]>) | undefined;
  * the vCPU is, not where its last long chunk ended.
  */
 const PROFILE_CHUNK = 256;
-async function profile(on: boolean) {
+async function profile(on: boolean, id = 0) {
   if (on && vm && !stopSampler) {
     vm.setChunk(PROFILE_CHUNK);
     stopSampler = await startSampler(vm.memory, vm.counterBlocks, 50);
@@ -110,19 +110,19 @@ async function profile(on: boolean) {
     const stop = stopSampler;
     stopSampler = undefined;
     vm?.setChunk(0);
-    post({ type: 'profile', samples: await stop() });
+    post({ type: 'profile', id, samples: await stop() });
   }
 }
 
 let stopTimeline: (() => Promise<Timeline>) | undefined;
 /** The vCPU timeline (web/profiler.ts `startTimeline`), for benchmarks. */
-async function timeline(on: boolean) {
+async function timeline(on: boolean, id = 0) {
   if (on && vm && !stopTimeline) {
     stopTimeline = await startTimeline(vm.memory, vm.counterBlocks, vm.liveBlock);
   } else if (!on && stopTimeline) {
     const stop = stopTimeline;
     stopTimeline = undefined;
-    post({ type: 'timeline', timeline: await stop() });
+    post({ type: 'timeline', id, timeline: await stop() });
   }
 }
 
@@ -186,8 +186,8 @@ const SLEEP_MS = 10_000;
  * The clock catch-up (docs/frontend.md "The guest's clock"): waits up to `SLEEP_MS` for the guest to suspend itself
  * (PSCI SYSTEM_SUSPEND) after the page pressed its sleep key; whether it did.
  */
-async function guestSleeps(v: Vm) {
-  post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.sleep'), fraction: 0 });
+async function guestSleeps(v: Vm, id: number) {
+  post({ type: 'snapshot-progress', id, phase: msg('snapshots:worker.phase.sleep'), fraction: 0 });
   for (const until = performance.now() + SLEEP_MS; !v.suspended() && performance.now() < until && !stopping;)
     await new Promise((r) => setTimeout(r, 50));
   return v.suspended();
@@ -921,8 +921,8 @@ let liveSpecs: DeviceSpec[] = [];
  * writing is between pause and resume: the file's stream is opened before, and closed (flushed)
  * after.
  */
-async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole = false, sleep = false) {
-  const fail = (error: unknown) => post({ type: 'snapshot-error', error: toWire(error) });
+async function saveSnapshot(id: number, handle?: FileSystemFileHandle, keep?: string, whole = false, sleep = false) {
+  const fail = (error: unknown) => post({ type: 'snapshot-error', id, error: toWire(error) });
   const v = vm;
   const s = session;
   if (!v || !s || stopping || closed)
@@ -948,10 +948,10 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
       if (kept) return kept.write(chunk);
       if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
       const copy = chunk.slice(); // a transferred buffer must be ours alone
-      post({ type: 'snapshot-chunk', data: copy }, [copy.buffer]);
+      post({ type: 'snapshot-chunk', id, data: copy }, [copy.buffer]);
     };
-    if (sleep) await guestSleeps(v);
-    post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.pausing'), fraction: 0 });
+    if (sleep) await guestSleeps(v, id);
+    post({ type: 'snapshot-progress', id, phase: msg('snapshots:worker.phase.pausing'), fraction: 0 });
     const t0 = performance.now();
     if (!(await v.pause())) throw new MsgError('snapshots:worker.ended');
     paused = true;
@@ -969,6 +969,7 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
         posted = now;
         post({
           type: 'snapshot-progress',
+          id,
           phase: msg('snapshots:worker.phase.writing'),
           fraction: total ? done / total : 0,
         });
@@ -980,13 +981,14 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
     paused = false;
     if (sleep) v.wake(); // asleep for the file only (or late to it: it slept after the wait)
     const pausedMs = performance.now() - t0;
-    post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.finishing'), fraction: 1 });
+    post({ type: 'snapshot-progress', id, phase: msg('snapshots:worker.phase.finishing'), fraction: 1 });
     await out?.close();
     out = undefined;
     kept?.close();
     kept = undefined;
     post({
       type: 'snapshot-done',
+      id,
       bytes: w.bytes,
       pausedMs,
       stateMs: w.stateMs,
@@ -1010,8 +1012,8 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
  * is written beside the overlay, and the machine is closed without running another step, so the
  * overlay is exactly what the file's RAM expects. A failure before that leaves it running.
  */
-async function suspend(sleep = false) {
-  const fail = (error: unknown) => post({ type: 'snapshot-error', error: toWire(error) });
+async function suspend(id: number, sleep = false) {
+  const fail = (error: unknown) => post({ type: 'snapshot-error', id, error: toWire(error) });
   const v = vm;
   const s = session;
   const machine = current;
@@ -1037,8 +1039,8 @@ async function suspend(sleep = false) {
   let paused = false;
   try {
     const lz = await codec();
-    if (sleep) await guestSleeps(v);
-    post({ type: 'snapshot-progress', phase: msg('snapshots:worker.phase.pausing'), fraction: 0 });
+    if (sleep) await guestSleeps(v, id);
+    post({ type: 'snapshot-progress', id, phase: msg('snapshots:worker.phase.pausing'), fraction: 0 });
     if (!(await v.pause())) throw new MsgError('snapshots:worker.ended');
     paused = true;
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
@@ -1055,6 +1057,7 @@ async function suspend(sleep = false) {
           posted = now;
           post({
             type: 'snapshot-progress',
+            id,
             phase: msg('machine:worker.phase.suspending'),
             fraction: total ? done / total : 0,
           });
@@ -1069,6 +1072,7 @@ async function suspend(sleep = false) {
     // From here the machine must not run: the file is only good for the disk as it is now.
     isSuspended = true;
     await shutdown(v, machine);
+    post({ type: 'suspend-done', id, bytes });
     state('suspended', { note: msg('machine:worker.suspended', { size: bytes }) });
   } catch (err) {
     if (paused && !isSuspended) v.resume();

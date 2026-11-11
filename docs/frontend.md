@@ -500,10 +500,15 @@ Page → worker:
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
   features, the kernel and the command line are then the file's.
-- `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,
+- `snapshot {id, handle?}`: save a snapshot of the running machine to the file handle's stream, or,
   without one, back in `snapshot-chunk` messages; answered by `snapshot-done` or `snapshot-error`.
-- `suspend`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered
-  by the state `suspended`, or by `snapshot-error` (the machine runs on). `start.resume` false
+- `suspend {id}`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered
+  by `suspend-done` and the state `suspended`, or by `snapshot-error` (the machine runs on). A save's messages
+  (`snapshot-progress`, `snapshot-chunk`, its end) echo its `id`: the page posts it through `Run.save`, which hands
+  them to that save's job (web/app/run/run.ts), so no job is global and an old run's answers find none.
+- `profile {on, id?}`, `timeline {on, id?}`, `heap {id}` (the benchmarks' hooks, web/app/run/bench-hooks.ts): a stop
+  and the heap are answered with their `id` (web/app/run/replies.ts `Replies`); the page keeps the answer in
+  `window.__profile`, `__timeline`, `__heap`, which bench/ waits on. `start.resume` false
   boots even if a suspended machine is there (it is dropped); otherwise a start resumes one.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
@@ -545,9 +550,11 @@ Worker → page:
 - `phase {text}`: what a machine `loading` from a snapshot is doing (it has no download to report), a message.
 - `notice {message}`: what the devices say while the machine runs on (a ramdisk out of memory, the storage full), a
   message.
-- `snapshot-progress {phase, fraction}` (the phase a message), `snapshot-chunk {data}` (transferred; without a handle),
-  `snapshot-done {bytes, pausedMs}` (the file is complete; the ms from the pause request to the
-  resume) and `snapshot-error {error}` (the machine runs on; `toWire`'s error).
+- `snapshot-progress {id, phase, fraction}` (the phase a message), `snapshot-chunk {id, data}` (transferred; without a
+  handle), `snapshot-done {id, bytes, pausedMs}` (the file is complete; the ms from the pause request to the
+  resume), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
+  `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
+- `profile {id, samples}`, `timeline {id, timeline}`, `heap {id, heap}`: the benchmarks' answers.
 - `serial` also has `replay` for a restored terminal's saved tail.
 - `stopped`.
 

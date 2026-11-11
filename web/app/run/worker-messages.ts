@@ -84,10 +84,7 @@ function stateChanged(x: Runner, r: Run, m: StateMessage) {
 }
 
 function state(x: Runner, r: Run, m: StateMessage) {
-  if (m.state === 'suspended') {
-    power.saving = false;
-    x.job = undefined;
-  }
+  if (m.state === 'suspended') power.saving = false;
   const problems = x.d.later.problems();
   // A message without a problem is a note (resumed, suspended, a suspended copy that couldn't be resumed), not an error.
   const actions = m.problem ? problems.table[m.problem] : m.state === 'suspended' ? problems.suspended : [];
@@ -127,18 +124,19 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
       showStatus(x, m.status, x.d.alive.mark(m.status));
       if (benchHooks) window.__status = m.status;
     },
-    profile: (m) => (window.__profile = m.samples),
-    timeline: (m) => (window.__timeline = m.timeline),
-    heap: (m) => (window.__heap = m.heap),
+    profile: (m) => x.d.replies.worker.answer(m.id, m),
+    timeline: (m) => x.d.replies.worker.answer(m.id, m),
+    heap: (m) => x.d.replies.worker.answer(m.id, m),
     phase: (m) => {
       bootCard.line = text(m.text);
       bootCard.progress = undefined;
       if (power.state === 'loading') x.d.messages.stateText(m.text);
     },
-    'snapshot-progress': (m) => x.job?.progress(m.phase, m.fraction),
-    'snapshot-chunk': (m) => x.job?.chunk(m.data),
-    'snapshot-done': (m) => x.job?.done(m),
-    'snapshot-error': (m) => x.job?.error(fromWire(m.error)),
+    'snapshot-progress': (m) => r.job(m.id)?.progress(m.phase, m.fraction),
+    'snapshot-chunk': (m) => r.job(m.id)?.chunk(m.data),
+    'snapshot-done': (m) => r.job(m.id, true)?.done(m),
+    'suspend-done': (m) => r.job(m.id, true)?.done(m),
+    'snapshot-error': (m) => r.job(m.id, true)?.error(fromWire(m.error)),
     progress: (m) => progress(x, m),
     screen: () => {
       // The guest's console has the screen: it shows the boot from here. (Through the firmware the

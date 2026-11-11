@@ -19,13 +19,6 @@ import { isLive, power } from './power.svelte.ts';
 
 /** A snapshot's end, as the worker says it. */
 type Done = Extract<FromWorker, { type: 'snapshot-done' }>;
-/** The save in progress: the worker's messages for it (web/app/run/worker-messages.ts forwards them). */
-export type SnapshotJob = {
-  progress(phase: Msg, fraction: number): void;
-  chunk(data: Uint8Array): void;
-  done(m: Done): void;
-  error(e: unknown): void;
-};
 
 /** What `emptyPorts` detached, to attach again after. */
 export type Unplugged = Awaited<ReturnType<NonNullable<Run['usb']>['detachAll']>>;
@@ -98,16 +91,18 @@ export class SnapshotActions {
   }
 
   /** The snapshot written by the worker: its messages (`chunk`: the file's bytes, without a handle or a keep) until it's done. */
-  #write(r: Run, send: ToWorker, chunk: (data: Uint8Array) => void = () => undefined) {
+  #write(
+    r: Run,
+    send: Omit<Extract<ToWorker, { type: 'snapshot' }>, 'id'>,
+    chunk: (data: Uint8Array) => void = () => undefined,
+  ) {
     return new Promise<Done>((resolve, reject) => {
-      this.#d.runner.job = { progress: this.#progress, chunk, done: resolve, error: reject };
-      r.worker.postMessage(send);
+      r.save(send, { progress: this.#progress, chunk, done: (m) => resolve(m as Done), error: reject });
     });
   }
   /** The save is over (it worked or not): the devices go back on. */
   #over(r: Run, unplugged: Unplugged) {
     power.saving = false;
-    this.#d.runner.job = undefined;
     void this.#d.plugBack(r, unplugged);
   }
   /** Says a snapshot was saved, if the machine runs on. */
@@ -240,28 +235,30 @@ export class SnapshotActions {
   // Suspend: the machine stops with its memory kept beside its disk in this browser; the next start (this page opened
   // again, Start) resumes it. Nothing is asked: nothing is lost.
   async suspend() {
-    const { machine: m, runner, messages } = this.#d;
+    const { machine: m, messages } = this.#d;
     const r = m.run;
     if (!r || power.busy || !isLive(power.state)) return;
     // Its devices are unplugged first; the next start attaches the ones attached at start (docs/usb.md "The page").
     const unplugged = await this.#d.emptyPorts(r, 'suspend');
     if (!unplugged || !this.#ready(r)) return;
     power.saving = true;
-    runner.job = {
-      progress: this.#progress,
-      chunk: () => undefined,
-      done: () => undefined,
-      // It runs on; the `suspended` state ends a suspend that worked (web/app/run/worker-messages.ts).
-      error: (e) => {
-        power.saving = false;
-        runner.job = undefined;
-        if (r.live()) {
-          messages.setState(power.state);
-          messages.notify(withNote(e, t('machine:snapshot-actions.runsOn')), 'error');
-        }
-        void this.#d.plugBack(r, unplugged);
+    r.save(
+      { type: 'suspend', sleep: this.#sleepFirst(r) },
+      {
+        progress: this.#progress,
+        chunk: () => undefined,
+        // The `suspended` state that follows ends it (web/app/run/worker-messages.ts).
+        done: () => undefined,
+        // It runs on.
+        error: (e) => {
+          power.saving = false;
+          if (r.live()) {
+            messages.setState(power.state);
+            messages.notify(withNote(e, t('machine:snapshot-actions.runsOn')), 'error');
+          }
+          void this.#d.plugBack(r, unplugged);
+        },
       },
-    };
-    r.worker.postMessage({ type: 'suspend', sleep: this.#sleepFirst(r) } satisfies ToWorker);
+    );
   }
 }

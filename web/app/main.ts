@@ -45,6 +45,7 @@ import { lastMachine, loadStored, PageMachine } from './run/page-machine.svelte.
 import { PowerActions } from './run/power-actions.ts';
 import { Problems } from './run/problems.ts';
 import { Replies } from './run/replies.ts';
+import type { FromWorker } from './protocol.ts';
 import { Runner } from './run/runner.ts';
 import { SizeActions, sizeOf } from './run/size-actions.ts';
 import { remember } from './settings.ts';
@@ -111,7 +112,12 @@ store.onChange((c) => {
 });
 
 // The machine's areas, each given what it takes (late: what is made after it, called only once all are).
-const replies = { grabs: new Replies<Grab>(), screens: new Replies<Blob | undefined>(), bytes: new Replies<number>() };
+const replies = {
+  grabs: new Replies<Grab>(),
+  screens: new Replies<Blob | undefined>(),
+  bytes: new Replies<number>(),
+  worker: new Replies<FromWorker>(),
+};
 const screen = new ScreenView(machine);
 const terminal = new SerialTerminal();
 const messages = new Messages(machine, () => {
@@ -260,7 +266,7 @@ for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () =>
 clipboardActions.listen();
 usbActions.listen();
 usbView.refresh();
-installBenchHooks(machine, terminal, replies.grabs, audio);
+installBenchHooks(machine, terminal, replies, audio);
 // What escapes an action (its promise dropped: a click's) is shown as the page shows errors.
 addEventListener('unhandledrejection', (e) => messages.notify(describe(e.reason), 'error'));
 

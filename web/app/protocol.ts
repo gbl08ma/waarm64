@@ -174,30 +174,31 @@ export type ToWorker =
     }
   /**
    * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
-   * in the overlay) is written beside the overlay, and it stops: state `suspended`. On a failure it
-   * runs on, with a `snapshot-error`. Progress comes as `snapshot-progress`. `sleep`: the page has
+   * in the overlay) is written beside the overlay, and it stops: `suspend-done`, then the state `suspended`. On a
+   * failure it runs on, with a `snapshot-error`. Progress comes as `snapshot-progress`; each of them echoes `id` (the
+   * page's, web/app/run/run.ts `Run.save`). `sleep`: the page has
    * pressed the guest's sleep key (the clock catch-up, docs/frontend.md "The guest's clock"): it waits
    * a while for the guest to suspend itself first, and the file then says it slept.
    */
-  | { type: 'suspend'; sleep?: boolean }
+  | { type: 'suspend'; id: number; sleep?: boolean }
   /**
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
    * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/machines.md
    * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). Answered by
-   * `snapshot-done` or `snapshot-error`. `sleep`: as `suspend`'s; the guest is woken once the file is written.
+   * `snapshot-done` or `snapshot-error`, each message of it with its `id`. `sleep`: as `suspend`'s; the guest is woken once the file is written.
    */
-  | { type: 'snapshot'; handle?: FileSystemFileHandle; keep?: string; whole?: boolean; sleep?: boolean }
+  | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean; sleep?: boolean }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
-  /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
-  | { type: 'profile'; on: boolean }
-  /** Benchmarks: what the core's heap has touched (web/vm.ts `heapUse`), answered by `heap`. */
-  | { type: 'heap' }
-  /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline`. */
-  | { type: 'timeline'; on: boolean };
+  /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile` with its `id`. */
+  | { type: 'profile'; on: boolean; id?: number }
+  /** Benchmarks: what the core's heap has touched (web/vm.ts `heapUse`), answered by `heap` with its `id`. */
+  | { type: 'heap'; id: number }
+  /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline` with its `id`. */
+  | { type: 'timeline'; on: boolean; id?: number };
 
 /**
  * Where a disk's bytes come from: an image by URL (read by ranges) or as a `File` (read in slices), a blank disk of
@@ -263,13 +264,14 @@ export type FromWorker =
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
   | { type: 'phase'; text: Msg }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */
-  | { type: 'snapshot-progress'; phase: Msg; fraction: number }
+  | { type: 'snapshot-progress'; id: number; phase: Msg; fraction: number }
   /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
-  | { type: 'snapshot-chunk'; data: Uint8Array }
+  | { type: 'snapshot-chunk'; id: number; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
   | {
       type: 'snapshot-done';
+      id: number;
       bytes: number;
       pausedMs: number;
       stateMs: number;
@@ -278,12 +280,15 @@ export type FromWorker =
       slept?: boolean;
     }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
-  | { type: 'snapshot-error'; error: WireError }
+  | { type: 'snapshot-error'; id: number; error: WireError }
+  /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size. */
+  | { type: 'suspend-done'; id: number; bytes: number }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
-  | { type: 'profile'; samples: [string, number][] }
+  | { type: 'profile'; id: number; samples: [string, number][] }
   /** `heap`'s answer (web/vm.ts `heapUse`). */
   | {
       type: 'heap';
+      id: number;
       heap: {
         belowBytes: number;
         reserveBytes: number;
@@ -296,7 +301,7 @@ export type FromWorker =
       };
     }
   /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
-  | { type: 'timeline'; timeline: Timeline }
+  | { type: 'timeline'; id: number; timeline: Timeline }
   | { type: 'stopped' };
 
 /** Once a second while the machine runs. */
