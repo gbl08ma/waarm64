@@ -77,12 +77,17 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 ## 3. State and reactivity
 
 1. **One source of truth, reactive.** State that the page shows lives in `$state`, in a class or module of its area
-   (`*.svelte.ts`), and is read directly. No plain `let` mirrored into `ui` by hand (`sync*()`), no change counters
-   (`tick`, `ui.net++`) and no `(void tick, value())` reads to force a redraw.
-2. **`ui` is split by area.** Not one global bag: the machine's run state, the message bar, network, USB, folders,
-   clipboard, status bar… each its own state object. A component takes what it needs as props, or imports its area's.
-3. **Commands are calls, not state.** To open a menu or a wizard, call a function (`network.openMenu()`); don't bump a
-   counter for an `$effect` to notice.
+   (`web/app/areas/*.svelte.ts`), and is read directly. No plain `let` mirrored into an area by hand (`sync*()`), no
+   change counters (`tick`, `n++`) and no `(void tick, value())` reads to force a redraw. State kept in a plain class
+   (the live network, a DOM-free class the tests run in Node) tracks its reads with `changes.ts` `Changes`
+   (`createSubscriber`); state the page reads from elsewhere (IndexedDB, Web Locks) is read into `$state` by a store
+   that reads again on a change (`areas/records.svelte.ts`).
+2. **State is split by area.** Not one global bag: `power`, `messageBar`, `current`, `network`, `usb`, `shares`,
+   `clipboard`, `status`… each its own state object in `web/app/areas/`. A component takes what it needs as props, or
+   imports its area's.
+3. **Commands are calls, not state.** To open a menu or a wizard, call a function (`network.openMenu()`): the component
+   that owns it answers its `Command` (`command.ts`) while mounted; an event a component follows is a listener it adds
+   in an `$effect` (`keys.typed.on(f)`). Don't bump a counter for an `$effect` to notice.
 4. **`$derived` for what follows from state; `$effect` only to touch the outside** (the DOM, timers, subscriptions),
    always returning its cleanup. An `$effect` that writes `$state` is almost always a `$derived`.
 5. **`page` is complete before the components mount**: no `{} as Page` filled in later.

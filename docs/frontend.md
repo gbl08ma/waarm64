@@ -15,10 +15,10 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
 | `web/app/osk.ts`, `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
-| `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
+| `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusOptions.svelte`, `status-drag.svelte.ts`) | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
-| `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |
+| `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes the areas' state, provides `page` |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
 | the toolbar's Snapshot and Load snapshot, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
@@ -144,12 +144,22 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
 Svelte 5 (runes), compiled by Vite's Svelte plugin (below, "The build": `.svelte` components, and `.svelte.ts`
 modules with runes). `main.ts` mounts `App.svelte` on the
 body first, then finds the canvas and the terminal's element in it and runs the machine as before. **What the page
-shows is `ui`** (`ui.svelte.ts`, one `$state` object: the state and its words, the message and its actions, the view,
-the boot card, the status line, the Machines page's tab and choice, a transient machine's size, which menus apply), and
-main.ts writes it instead of the DOM; **what the components do is `page`** (`ui.svelte.ts`'s `Page`: restart, power
-off, suspend, take, load and restore snapshots, save disks, import changes, open machines, save settings…), which
-main.ts fills in before the first start. Records the components read come from the store directly (its `onChange`;
-`ui.records` moves on every change, for the toolbar's snapshot list). Ids the tests and tools use stay (`#state`,
+shows is its areas' state** ([frontend-code.md](frontend-code.md) §3), each a `$state` object or class in
+`web/app/areas/`: `power` (the state, its words, `busy` while a switch or a save runs; `isLive`), `messageBar`,
+`bootCard`, `current` (the page's machine: its id, title, what it has, a transient machine's size), `screen` (the
+view), `machinesNav` (the Machines page open, its tab, the chosen pane, `selected` derived from the records), `keys`,
+`mouse`, `status`, `sound` (following `PageAudio`), `clipboard` (following the run's `ClipboardShare`), `usb`,
+`shares` (shared folders), `network` and `records` (the browser's machines, disks, overlays and snapshots, read again
+on the store's `onChange` and, after this tab's own writes, `records.reread()`). main.ts writes them instead of the
+DOM and reads them back (`power.state` is the state; `App.svelte` writes the body's `data-state`, `data-view`,
+`data-graphics` and `data-page` from them). The live network, folders and on-screen keyboard keys are plain classes
+whose reads track a change signal (`changes.ts` `Changes`, Svelte's `createSubscriber`), so a component reads
+`net.views()` or `folders.folders` directly. A menu or wizard that opens itself (the Network and Folders menus, the
+USB menu, the Network and Folder wizards) answers a `Command` (`command.ts`; `network.openWizard(o)`,
+`shares.openMenu()`) while it is mounted, a call made before it is there waiting for it; the keys' events
+(`keys.released`, `keys.typed`) are listened to by the on-screen keyboard. **What the components do is `page`**
+(`page.ts`'s `Page`: restart, power off, suspend, take, load and restore snapshots, save disks, import changes, open
+machines, save settings…), which main.ts fills in before the first start. Ids the tests and tools use stay (`#state`,
 `#message[data-snapshot]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`: `FilePickers.svelte` owns them, and a
 button opens one with `file-pickers.ts` `openPicker('disk' | 'snapshot' | 'changes')`). **Actions** a click starts that can fail
@@ -193,14 +203,13 @@ tools/lint`, which `scripts/ci.sh` and `scripts/cloud-setup.sh` run when it's st
 Svelte, to the root's): they need the compiler API TypeScript 7 doesn't have, and a package linked from the root's
 had its dependencies hoisted next to the root's TypeScript 7, where they loaded it. ESLint runs under
 `tools/lint/ts6.ts`, a module hook that makes every `typescript` import the package's (eslint-plugin-svelte loads it
-from the working directory). A `$derived` that only reads a value to depend on it writes `(void tick, value())`:
-TypeScript rejects an unused left side of a comma.
+from the working directory).
 
 **Screenshots:** `node tools/screens.ts --label <name>` (headless Chromium on the dev server, ~1 min; `--only <part>`
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
 overlays, kept snapshots, three connections, a folder), then captures each state that needs no guest as
 `bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
-machine can have shown through `ui`), the message bar (warn, error), the Machines page's panes and a machine's tabs
+machine can have shown through its areas' state), the message bar (warn, error), the Machines page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
 page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
 page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
@@ -997,7 +1006,7 @@ height allow. The toolbar's menus open over it.
   Q's. They leave the symbols' page. A row past ten keys narrows them to share the 10u; the bottom one narrows Shift
   and Backspace to 1.25u first. A letter without a capital of its own (ß, º, µ) stays a symbol.
 - **Layouts:** the legends are the machine's [Keyboard layout](ui:machines:KeyboardField.keyboard)'s (the one a start
-  gives the guest, `ui.keyLayout`; none set: US, the guests' default), from `web/app/keymaps.ts`: each layout's four
+  gives the guest, `keys.layout`; none set: US, the guests' default), from `web/app/keymaps.ts`: each layout's four
   levels by `KeyboardEvent.code` (unshifted, Shift, AltGr, AltGr with Shift), generated by `tools/osk-keymaps.ts` from
   xkeyboard-config with `xkbcomp` (`pc+<layout>(<variant>)`, as the guest's XKB compiles it) and keysymdef.h's
   characters; a dead key's is its spacing accent. A letter key shows its capital alone, another its shifted character
@@ -1031,7 +1040,7 @@ height allow. The toolbar's menus open over it.
   Held keys are drawn pressed, latched ones tinted (`data-state` `held`, `latched`).
   A press elsewhere (a click or a touch on the screen) while a finger holds a modifier uses it as a key would
   (Shift-click: released when the finger lifts). A key typed on the physical keyboard ends the latches as a key here
-  does (`Input.onTyped`, `ui.keyTyped`).
+  does (`Input.onTyped`, `keys.typed`).
 - **Holders:** `attachInput` keeps who holds each key (`KeySource`: the screen's key events, the keyboard, the Keys
   menu, Hold Esc). A key goes down with its first holder and up with its last, so the physical Shift pressed and let
   go doesn't release a Shift latched here, a menu's Ctrl+W doesn't release a latched Ctrl, and a second Hold Esc ends
@@ -1040,13 +1049,13 @@ height allow. The toolbar's menus open over it.
   `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
   screen or the window loses the focus, or the guest's keyboard driver comes or goes, which moves the keys between
   the virtio keyboard and the built-in USB one or the serial console), `Input`'s `onRelease` tells the keyboard
-  (`ui.keysReleased`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended
+  (`keys.released`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended
   guest, as the screen's do.
 - **Without a touchscreen** a finger landing on the screen with no other finger on it is the tablet's (the screen's
   own fingers are counted, not the page's: a finger on the keyboard doesn't make the screen's touch a second one).
 - **LEDs:** Num Lock, Caps Lock and Scroll Lock carry a light, as the guest set it on the keyboard it reads now: the
   virtio keyboard's status events (`EV_LED`, on the keyboard's port) once its driver is up, the built-in USB
-  keyboard's output report (`usb-leds`, docs/usb.md) before (`ui.leds`, main.ts `showLeds`). A guest that sets none
+  keyboard's output report (`usb-leds`, docs/usb.md) before (`keys.leds`, derived from `keys.ledBits` and `keys.live`). A guest that sets none
   (no driver, a firmware without LEDs) leaves them dark.
 
 `tests/osk.test.ts` tests the layouts for every keymap (the compact pages covering the full one's keys, the legends, AltGr) and `OskKeys` (with the repeat); `tests/page-osk.test.ts` the keyboard and the Keys menu on the page,

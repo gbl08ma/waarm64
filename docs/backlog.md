@@ -1243,6 +1243,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **What frontend-code.md §3 leaves to main.ts's split** (2026-11-11, the refactor's phase 3a): `page` is still
+  `{} as Page`, filled after the mount (§3.5: its actions are main.ts's closures over the machine's lets, and the
+  mount comes before the code that finds the canvas); and three writers still copy main.ts's lets into an area by hand
+  (`syncDiskButtons` and `syncMachineMenu` into `current`, `syncUsb` into `usb`), since their sources (`stored`,
+  `chosen`, the size's lets, the run's `UsbPorts`) are main.ts's. Both go when those move into their areas' modules.
 - **What the i18n checks can't see** (tools/i18n-check.ts, [i18n.md](i18n.md) "Checks"; 2026-11-02, when the
   headline-and-line errors were split and the AST rules added). Each needs data flow across functions or modules, which
   the checker doesn't have (it reads one file's syntax, no types):
