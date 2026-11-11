@@ -150,7 +150,7 @@ shows is its areas' state** ([frontend-code.md](frontend-code.md) §3), each a `
 view), `machinesNav` (the Machines page open, its tab, the chosen pane, `selected` derived from the records), `keys`,
 `mouse`, `status`, `sound` (following `PageAudio`), `clipboard` (following the run's `ClipboardShare`), `usb`,
 `shares` (shared folders), `network` and `records` (the browser's machines, disks, overlays and snapshots, read again
-on the store's `onChange` and, after this tab's own writes, `records.reread()`). main.ts writes them instead of the
+on the store's `onChange`, another tab's writes, and `onWrite`, this tab's own). main.ts writes them instead of the
 DOM and reads them back (`power.state` is the state; `App.svelte` writes the body's `data-state`, `data-view`,
 `data-graphics` and `data-page` from them). The live network, folders and on-screen keyboard keys are plain classes
 whose reads track a change signal (`changes.ts` `Changes`, Svelte's `createSubscriber`), so a component reads

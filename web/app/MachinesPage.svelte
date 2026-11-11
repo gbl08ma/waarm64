@@ -64,7 +64,7 @@
     suspended = await which(list, (m) => suspendedCopy(machineDir(m.id)).catch(() => undefined));
     storage = await storageReport(store).catch(() => undefined);
   }
-  // This tab's own writes aren't announced to it: the records are read again after each action.
+  // An action ends once the records it wrote are read again.
   const runner = new Actions(() => records.reread());
   const act = runner.run;
   // The store is the page's one, for the page's life.

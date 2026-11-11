@@ -2211,7 +2211,6 @@ async function keepSnapshot(name: string) {
       blobBytes: result.blobBytes,
       id,
     });
-    void records.reread(); // this tab's own writes aren't announced to it (Store.onChange)
     if (run === r && isLive(power.state)) {
       setState(power.state);
       const words = { name, size: result.bytes, seconds: (result.pausedMs / 1000).toFixed(1) };
@@ -2577,8 +2576,6 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
       )
         return;
       await net.takeFrom(i, c, authKey);
-    } finally {
-      void records.reread(); // the record's attachment, written either way (an off machine's too, which connects at its start)
     }
     return;
   }
@@ -2587,20 +2584,17 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
   else remember({ transientNet: c.id });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
-  void records.reread(); // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
 }
 
 async function netDetach(machine: string | undefined, i: number) {
   if (netLive(machine, i)) {
     await net.detach(i);
-    void records.reread();
     return;
   }
   if (machine) await setAdapterConnection(store, machine, i, undefined);
   else remember({ transientNet: undefined });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
-  void records.reread(); // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
 }
 
 /** Deletes connection `c` after asking (naming the machines it is attached to): it is detached from them, and its state forgotten. */
@@ -3093,7 +3087,6 @@ async function editUsbEntriesNow(id: string | undefined, f: (e: UsbEntry[]) => U
     if (!m.usbDevices.length) delete m.usbDevices;
     await store.put('machines', m);
     if (stored?.record.id === id) stored.record.usbDevices = m.usbDevices;
-    void records.reread(); // this tab's own writes aren't announced to it
   }
   syncUsb();
 }
@@ -3502,7 +3495,7 @@ syncUsb();
 /** Reads the page's machine's record again, if `machine` is it. */
 const rereadRecord = async (machine: string) => {
   if (stored?.record.id === machine) stored.record = (await store.get('machines', machine)) ?? stored.record;
-  await records.reread(); // this tab's own writes aren't announced to it
+  await records.reread(); // the Machines page's tabs show the change once this resolves
 };
 const folderPage = {
   folderPick: async (readOnly: boolean) => {

@@ -157,6 +157,8 @@ async function storeFlows(make: () => Promise<{ a: Store; b: Store; write(path: 
   const { a, b, write } = await make();
   const heard: string[] = [];
   b.onChange((c) => heard.push(`${c.kind}:${c.id}${c.deleted ? ':deleted' : ''}`));
+  const wrote: string[] = [];
+  a.onWrite((c) => wrote.push(`${c.kind}:${c.id}${c.deleted ? ':deleted' : ''}`));
   const m = { id: 'aaaaaaaaaaaa', name: 'Brisk Heron', ncpus: 2, ramMiB: 1024, display: '3d' as const, network: true, created: 0, modified: 0, attachments: [{ id: 'a00000000001', disk: 'd00000000001', readOnly: false, overlay: 'c00000000001' }] };
   const d = { id: 'd00000000001', kind: 'url' as const, name: 'disk.qcow2', size: 1 << 30, identity: { kind: 'url' as const, path: '/disk.qcow2', bytes: 1 << 20 }, created: 0 };
   const o = { id: 'c00000000001', name: 'Changes', disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: 0, modified: 0 }; // i18n-ignore: a name the test gives
@@ -191,7 +193,7 @@ async function storeFlows(make: () => Promise<{ a: Store; b: Store; write(path: 
   await new Promise((r) => setTimeout(r, 100)); // the channel delivers asynchronously
   a.close();
   b.close();
-  return { swept, reread, sizes, refused, afterMachine, afterDisk, heard };
+  return { swept, reread, sizes, refused, afterMachine, afterDisk, heard, wrote };
 }
 
 const expected = {
@@ -203,6 +205,8 @@ const expected = {
   afterDisk: { overlays: 0, files: 0, disks: 0 },
   // `a`'s puts and `b`'s deletions: `b` hears only what another store did.
   heard: ['disks:d00000000001', 'overlays:c00000000001', 'machines:aaaaaaaaaaaa', 'snapshots:b00000000001'],
+  // `a` hears its own writes (the page's records follow them), not `b`'s.
+  wrote: ['disks:d00000000001', 'overlays:c00000000001', 'machines:aaaaaaaaaaaa', 'snapshots:b00000000001'],
 };
 
 test('the store over memory: records after bytes, the sweep of what a crash left, deletions in order, another tab hears the changes', async () => {

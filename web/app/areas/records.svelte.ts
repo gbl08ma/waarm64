@@ -1,6 +1,6 @@
 // The browser's records as the page shows them (docs/machines.md): its machines, disks, overlays and snapshots, read
-// from the store (web/app/store.ts) when it opens and again whenever they change: in another tab (the store says so)
-// or in this one (whoever wrote calls `reread`: the store doesn't tell a tab of its own writes). The Machines page,
+// from the store (web/app/store.ts) when it opens and again whenever they change, in another tab (`onChange`) or in
+// this one (`onWrite`; `reread` resolves once a read that follows the call is done). The Machines page,
 // its tabs and the toolbar's snapshot list read them here.
 import type { DiskRecord, MachineRecord } from '../shape.ts';
 import type { OverlayRecord, SnapshotRecord, Store } from '../store.ts';
@@ -16,14 +16,15 @@ class Records {
   #reading: Promise<void> | undefined;
   #next: Promise<void> | undefined;
 
-  /** Reads `store`'s records, and again whenever another tab changes them. */
+  /** Reads `store`'s records, and again whenever they change (in this tab or another). */
   watch(store: Store) {
     this.#store = store;
     store.onChange(() => void this.reread());
+    store.onWrite(() => void this.reread());
     return this.reread();
   }
 
-  /** Reads the records again (after this tab wrote them); resolves once a read that started after the call is done. */
+  /** Reads the records again; resolves once a read that started after the call is done. */
   reread(): Promise<void> {
     if (!this.#reading) {
       this.#reading = this.#read()

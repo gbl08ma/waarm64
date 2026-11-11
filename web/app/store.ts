@@ -108,6 +108,7 @@ export class Store {
   private channel?: BroadcastChannel;
   private listeners = new Set<(c: Change) => void>();
   private notes = new Set<(n: Note) => void>();
+  private writes = new Set<(c: Change) => void>();
   readonly records: Records;
   readonly files: Files;
 
@@ -140,6 +141,14 @@ export class Store {
     };
   }
 
+  /** Calls `f` with every change this Store makes (the other tabs hear of it through `onChange`); returns the unsubscribe. */
+  onWrite(f: (c: Change) => void) {
+    this.writes.add(f);
+    return () => {
+      this.writes.delete(f);
+    };
+  }
+
   /** Calls `f` with every note another tab sends (`tell`); returns the unsubscribe. */
   onNote(f: (n: Note) => void) {
     this.notes.add(f);
@@ -156,10 +165,12 @@ export class Store {
     this.channel?.close();
     this.listeners.clear();
     this.notes.clear();
+    this.writes.clear();
   }
 
   private said(c: Change) {
     this.channel?.postMessage(c);
+    for (const f of this.writes) f(c);
   }
 
   get<K extends Kind>(kind: K, id: string) {
