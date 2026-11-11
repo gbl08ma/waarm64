@@ -4,7 +4,11 @@
 -->
 <script lang="ts">
   import Check from './ui/Check.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
+  import Note from './ui/Note.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import { msg, t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
@@ -35,61 +39,67 @@
 
 {#if machine.shares}
   <div class="folders">
-    <ul class="folders-list">
+    <CardList class="folders-list" empty={machine.folders?.length ? undefined : t('folders:Folders.none')}>
       {#each machine.folders ?? [] as a, i (a.id)}
         {@const f = all.find((x) => x.id === a.id)}
         {@const v = live.find((x) => x.id === a.id)}
-        <li data-folder={a.id} data-problem={v?.problem}>
-          <Icon name="folder" size={18} />
-          <div class="what">
-            <strong>{v?.name ?? f?.name ?? t('folders:Folders.gone')}</strong>
-            <span class="meta"
-              >{kindText({ kind: f?.kind ?? 'opfs', readOnly: !!f?.readOnly })}{#if folders.held.has(a.id)}
-                · {t('folders:Folders.held')}{/if}</span
-            >
-            {#if v?.problem === 'permission'}<span class="meta warn">{t('folders:Folders.noPermission')}</span>{/if}
-            {#if v?.problem === 'held'}<span class="meta warn"
-                >{v.holder ? t('folders:Folders.inUseBy', { holder: v.holder }) : t('folders:Folders.inUse')}</span
-              >{/if}
+        <Card data-folder={a.id} data-problem={v?.problem}>
+          <div class="named">
+            <Icon name="folder" size={18} />
+            <div class="lines">
+              <strong>{v?.name ?? f?.name ?? t('folders:Folders.gone')}</strong>
+              <Note inline class="meta"
+                >{kindText({ kind: f?.kind ?? 'opfs', readOnly: !!f?.readOnly })}{#if folders.held.has(a.id)}
+                  · {t('folders:Folders.held')}{/if}</Note
+              >
+              {#if v?.problem === 'permission'}<Note inline tone="warn" class="meta"
+                  >{t('folders:Folders.noPermission')}</Note
+                >{/if}
+              {#if v?.problem === 'held'}<Note inline tone="warn" class="meta"
+                  >{v.holder ? t('folders:Folders.inUseBy', { holder: v.holder }) : t('folders:Folders.inUse')}</Note
+                >{/if}
+            </div>
           </div>
-          <Check
-            compact
-            checked={a.readOnly}
-            disabled={here && !v?.problem}
-            onchange={(on) =>
-              void act(t('folders:Folders.busy.saving'), () => page.folderReadOnly(machine.id, a.id, on))}
-            field="folder-read-only"
-            title={t('folders:Folders.readOnly.title')}>{t('folders:Folders.readOnly')}</Check
-          >
-          <MoveButtons
-            index={i}
-            count={machine.folders?.length ?? 0}
-            onmove={(by) => act(t('folders:Folders.busy.moving'), () => page.folderMove(machine.id, a.id, by))}
-            action="folder"
-          />
-          {#if v?.problem === 'permission'}<button
-              onclick={() => act(t('folders:Folders.busy.asking'), () => page.folderAllow(a.id))}
-              data-action="allow-folder">{t('folders:Folders.allow')}</button
-            >{/if}
-          {#if v?.problem === 'held'}<button
-              onclick={() => act(t('folders:Folders.busy.taking'), () => page.folderUseHere(a.id))}
-              data-action="use-folder">{t('folders:Folders.useHere')}</button
-            >{/if}
-          <button
-            onclick={() => act(t('folders:Folders.busy.detaching'), () => page.folderDetach(machine.id, a.id))}
-            data-action="detach-folder">{t('folders:Folders.detach')}</button
-          >
-        </li>
-      {:else}
-        <li class="none">{t('folders:Folders.none')}</li>
+          {#snippet actions()}
+            <Check
+              compact
+              checked={a.readOnly}
+              disabled={here && !v?.problem}
+              onchange={(on) =>
+                void act(t('folders:Folders.busy.saving'), () => page.folderReadOnly(machine.id, a.id, on))}
+              field="folder-read-only"
+              title={t('folders:Folders.readOnly.title')}>{t('folders:Folders.readOnly')}</Check
+            >
+            <MoveButtons
+              index={i}
+              count={machine.folders?.length ?? 0}
+              onmove={(by) => act(t('folders:Folders.busy.moving'), () => page.folderMove(machine.id, a.id, by))}
+              action="folder"
+            />
+            {#if v?.problem === 'permission'}<Button
+                onclick={() => act(t('folders:Folders.busy.asking'), () => page.folderAllow(a.id))}
+                data-action="allow-folder">{t('folders:Folders.allow')}</Button
+              >{/if}
+            {#if v?.problem === 'held'}<Button
+                onclick={() => act(t('folders:Folders.busy.taking'), () => page.folderUseHere(a.id))}
+                data-action="use-folder">{t('folders:Folders.useHere')}</Button
+              >{/if}
+            <Button
+              onclick={() => act(t('folders:Folders.busy.detaching'), () => page.folderDetach(machine.id, a.id))}
+              data-action="detach-folder">{t('folders:Folders.detach')}</Button
+            >
+          {/snippet}
+        </Card>
       {/each}
-    </ul>
+    </CardList>
     {#if (machine.folders?.length ?? 0) < MAX_FOLDERS}<div class="row">
-        <button onclick={() => page.folderWizard(machine.id, machine.folders ?? [])} data-action="attach-folder"
-          ><Icon name="plus" size={16} />{t('folders:Folders.attach')}</button
+        <Button
+          icon="plus"
+          onclick={() => page.folderWizard(machine.id, machine.folders ?? [])}
+          data-action="attach-folder">{t('folders:Folders.attach')}</Button
         >
       </div>{/if}
-    <p class="note">{t('folders:Folders.note')}</p>
+    <Note>{t('folders:Folders.note')}</Note>
   </div>
 {/if}
 
@@ -97,59 +107,22 @@
   .folders {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-4);
   }
-  .folders-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  /* A row's icon beside its name and lines. */
+  .named {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .folders-list li {
-    display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
+    gap: var(--space-4);
   }
-  .folders-list li.none {
-    color: var(--dim);
-  }
-  .what {
-    flex: 1;
-    min-width: 200px;
+  .lines {
+    min-width: 0;
     display: flex;
     flex-direction: column;
-  }
-  .meta {
-    color: var(--dim);
-    font-size: 12px;
-  }
-  .warn {
-    color: #ffb36b;
   }
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-  }
-  button {
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
-  }
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-    margin: 0;
+    gap: var(--space-3);
   }
 </style>

@@ -5,7 +5,12 @@
 -->
 <script lang="ts">
   import Check from './ui/Check.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
+  import NameInput from './ui/NameInput.svelte';
+  import Note from './ui/Note.svelte';
   import { ask } from './ask.svelte.ts';
   import { t } from '../i18n.ts';
   import { bytesText } from './bytes.ts';
@@ -149,30 +154,28 @@
   }
 </script>
 
-<ul class="cards">
+<CardList empty={all.length ? undefined : t('folders:FoldersPane.none')}>
   {#each all as f (f.id)}
-    <li data-folder={f.id} data-kind={f.kind}>
+    <Card data-folder={f.id} data-kind={f.kind}>
       <div class="line">
         <Icon name="folder" size={18} />
         <div class="what">
-          <input
+          <NameInput
             class="name"
             value={f.name}
             aria-label={t('folders:FoldersPane.name')}
             data-field="folder-name"
-            onchange={(e) => {
-              const name = e.currentTarget.value;
-              void act(t('folders:FoldersPane.busy.renaming'), () => editFolderOf(folders, store, f, { name }));
-            }}
+            onchange={(name: string) =>
+              void act(t('folders:FoldersPane.busy.renaming'), () => editFolderOf(folders, store, f, { name }))}
           />
-          <span class="meta"
+          <Note inline
             >{f.kind === 'host' ? t('folders:FoldersPane.kind.host') : t('folders:FoldersPane.kind.opfs')} · {users[
               f.id
             ]?.length
               ? t('folders:FoldersPane.attachedTo', { machines: users[f.id] })
               : t('folders:FoldersPane.attachedToNone')}{#if folders.held.has(f.id)}
               · {t('folders:FoldersPane.heldElsewhere')}{/if}{#if folders.mine(f.id)}
-              · {t('folders:FoldersPane.heldHere')}{/if}</span
+              · {t('folders:FoldersPane.heldHere')}{/if}</Note
           >
         </div>
         <Check
@@ -183,11 +186,11 @@
           field="folder-ro"
           title={t('folders:FoldersPane.readOnly.title')}>{t('folders:FoldersPane.readOnly')}</Check
         >
-        {#if f.kind === 'opfs'}<button onclick={() => show(f)} data-action="folder-files"
-            >{t('folders:FoldersPane.files')}</button
+        {#if f.kind === 'opfs'}<Button onclick={() => show(f)} data-action="folder-files"
+            >{t('folders:FoldersPane.files')}</Button
           >{/if}
-        <button onclick={() => remove(f)} data-action="delete-folder"
-          ><Icon name="trash" size={16} />{t('folders:FoldersPane.delete')}</button
+        <Button icon="trash" onclick={() => remove(f)} data-action="delete-folder"
+          >{t('folders:FoldersPane.delete')}</Button
         >
       </div>
       {#if open === f.id}
@@ -208,69 +211,47 @@
                 {x.name}{x.kind === 'directory' ? '/' : ''} <span class="meta">{bytesText(x.size)}</span>
               </li>{:else}<li class="meta">{t('folders:FoldersPane.files.empty')}</li>{/each}
           </ul>
-          {#if busy(f)}<p class="note" data-busy>{t('folders:FoldersPane.busyNote')}</p>{/if}
+          {#if busy(f)}<Note data-busy>{t('folders:FoldersPane.busyNote')}</Note>{/if}
           <div class="row">
-            <button disabled={busy(f)} onclick={() => addPicked(f)} data-action="add-files"
-              >{t('folders:FoldersPane.add')}</button
+            <Button disabled={busy(f)} onclick={() => addPicked(f)} data-action="add-files"
+              >{t('folders:FoldersPane.add')}</Button
             >
-            <button disabled={folders.held.has(f.id)} onclick={() => copyOut(f)} data-action="copy-out"
-              >{t('folders:FoldersPane.copyOut')}</button
+            <Button disabled={folders.held.has(f.id)} onclick={() => copyOut(f)} data-action="copy-out"
+              >{t('folders:FoldersPane.copyOut')}</Button
             >
-            <button disabled={busy(f)} onclick={() => copyIn(f)} data-action="copy-in"
-              >{t('folders:FoldersPane.copyIn')}</button
+            <Button disabled={busy(f)} onclick={() => copyIn(f)} data-action="copy-in"
+              >{t('folders:FoldersPane.copyIn')}</Button
             >
-            <button disabled={busy(f)} onclick={() => empty(f)} data-action="empty-folder"
-              >{t('folders:FoldersPane.empty')}</button
+            <Button disabled={busy(f)} onclick={() => empty(f)} data-action="empty-folder"
+              >{t('folders:FoldersPane.empty')}</Button
             >
           </div>
-          {#if copying}<p class="note" data-copying>
+          {#if copying}<p class="copying" data-copying>
               {t('folders:FoldersPane.copying', {
                 what: copying.what,
                 done: copying.done,
                 total: copying.total || '…',
                 bytes: copying.bytes,
               })}
-              <button
+              <Button
                 onclick={() => {
                   copying!.stop = true;
                 }}
-                data-action="cancel-copy">{t('folders:FoldersPane.copying.cancel')}</button
+                data-action="cancel-copy">{t('folders:FoldersPane.copying.cancel')}</Button
               >
             </p>{/if}
         </div>
       {/if}
-    </li>
-  {:else}
-    <li class="none">{t('folders:FoldersPane.none')}</li>
+    </Card>
   {/each}
-</ul>
+</CardList>
 
 <style>
-  .cards {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .cards > li {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
-  }
-  .cards > li.none {
-    color: var(--dim);
-  }
   .line {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-3) var(--space-4);
   }
   .what {
     flex: 1;
@@ -278,54 +259,37 @@
     display: flex;
     flex-direction: column;
   }
-  .meta {
-    color: var(--dim);
-    font-size: 12px;
-  }
-  .name {
-    font: inherit;
-    font-weight: 600;
-    color: var(--text);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 1px 4px;
-    margin-left: -5px;
-  }
-  .name:hover,
-  .name:focus {
-    border-color: var(--line);
-  }
+  /* The name, edited in place: a field that looks like the row's title until it's pointed at. */
   .files {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
   }
   .files.dropping {
-    outline: 1px dashed var(--line);
+    outline: 1px dashed var(--border);
   }
   .files ul {
     list-style: none;
     margin: 0;
     padding: 0;
   }
+  .meta {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+  .copying {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin: 0;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-  }
-  button {
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
-  }
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-    margin: 0;
+    gap: var(--space-3);
   }
 </style>

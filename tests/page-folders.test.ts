@@ -134,7 +134,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.click('[data-tab="folders"]');
   await b.waitForSelector(`.folders-list [data-folder="${made.id}"]`);
   // A Svelte component's styles stop at its own markup: the settings and the pane's frame have the Machines page's.
-  assert.equal(await b.locator('.folders-switch').evaluate((e) => getComputedStyle(e).rowGap), '10px', "the settings' layout");
+  assert.equal(await b.locator('.folders-switch').evaluate((e) => getComputedStyle(e).rowGap), '12px', "the settings' layout");
   await b.fill('[data-field="shares-path"]', '/etc');
   await b.waitForSelector('[data-shares-path-error]');
   await b.fill('[data-field="shares-path"]', '/mnt/elsewhere');

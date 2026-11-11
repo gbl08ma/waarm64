@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import about from 'virtual:webpc-about';
+  import Note from './ui/Note.svelte';
   import T from './T.svelte';
   import { t } from '../i18n.ts';
   import type { Group } from '../../tools/third-party.ts';
@@ -54,7 +55,7 @@
   </dl>
 
   <h4>{t('machines:About.thirdParty')}</h4>
-  <p class="note">{t('machines:About.thirdParty.intro')}</p>
+  <Note>{t('machines:About.thirdParty.intro')}</Note>
   {#each about.groups as g (g.group)}
     <section data-about-group={g.group}>
       <h5>{t(GROUP_WORDS[g.group])}</h5>
@@ -95,11 +96,13 @@
         </table>
       </div>
       {#each g.bundled as file (file.name)}
-        <p class="note">
-          <T k="machines:About.bundled" params={{ file: file.name }}
-            >{#snippet link(text: string)}<a href={file.href} {...BESIDE}>{text}</a>{/snippet}</T
-          >
-        </p>
+        <div class="bundled">
+          <Note>
+            <T k="machines:About.bundled" params={{ file: file.name }}
+              >{#snippet link(text: string)}<a href={file.href} {...BESIDE}>{text}</a>{/snippet}</T
+            >
+          </Note>
+        </div>
       {/each}
     </section>
   {/each}
@@ -109,35 +112,33 @@
   .about {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-3);
   }
   dl {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
-    gap: 6px 16px;
-    margin: 0 0 8px;
+    gap: var(--space-3) var(--space-5);
+    margin: 0 0 var(--space-3);
   }
   dt {
-    color: var(--dim);
+    color: var(--text-dim);
   }
   dd {
     margin: 0;
     overflow-wrap: anywhere;
   }
   h4 {
-    margin: 8px 0 0;
-    font-size: 14px;
-    font-weight: 600;
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-base);
+    font-weight: var(--weight-bold);
   }
   h5 {
-    margin: 12px 0 6px;
-    font-size: 13px;
-    font-weight: 600;
+    margin: var(--space-4) 0 var(--space-3);
+    font-size: var(--text-md);
+    font-weight: var(--weight-bold);
   }
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-    margin: 4px 0 0;
+  .bundled {
+    margin-top: var(--space-2);
   }
   .scroll {
     overflow-x: auto;
@@ -145,7 +146,7 @@
   /* The same columns in every group's table. */
   table {
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--text-sm);
     width: 100%;
     min-width: 640px;
     table-layout: fixed;
@@ -166,31 +167,31 @@
     overflow-wrap: anywhere;
   }
   th {
-    text-align: left;
-    font-weight: 600;
-    color: var(--dim);
+    text-align: start;
+    font-weight: var(--weight-bold);
+    color: var(--text-dim);
   }
   th,
   td {
-    padding: 4px 10px 4px 0;
-    border-bottom: 1px solid var(--line);
+    padding: var(--space-2) var(--space-4) var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
     vertical-align: top;
   }
   td code {
-    font-size: 11px;
+    font-size: var(--text-xs);
   }
   .texts {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px 10px;
+    gap: var(--space-1) var(--space-4);
   }
   .derived {
-    margin-left: 8px;
-    padding: 0 6px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    color: var(--dim);
-    font-size: 11px;
+    margin-left: var(--space-3);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-dim);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
   a {

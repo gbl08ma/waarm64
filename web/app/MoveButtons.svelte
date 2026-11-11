@@ -3,7 +3,7 @@
   means there goes in `upTitle` and `downTitle`, and `action` names them for the tests (`<action>-up`, `<action>-down`).
 -->
 <script lang="ts">
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
   import { t } from '../i18n.ts';
 
   let {
@@ -24,27 +24,19 @@
   } = $props();
 </script>
 
-<button
+<Button
+  icon="arrow-up"
   onclick={() => onmove(-1)}
   disabled={index === 0}
   aria-label={t('common:MoveButtons.up')}
   title={upTitle}
-  data-action={action && `${action}-up`}><Icon name="arrow-up" size={16} /></button
->
-<button
+  data-action={action && `${action}-up`}
+></Button>
+<Button
+  icon="arrow-down"
   onclick={() => onmove(1)}
   disabled={index >= count - 1}
   aria-label={t('common:MoveButtons.down')}
   title={downTitle}
-  data-action={action && `${action}-down`}><Icon name="arrow-down" size={16} /></button
->
-
-<style>
-  button {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 5px;
-  }
-</style>
+  data-action={action && `${action}-down`}
+></Button>

@@ -11,7 +11,15 @@
   import About from './About.svelte';
   import Disks from './Disks.svelte';
   import DisksPane from './DisksPane.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
+  import ErrorBanner from './ui/ErrorBanner.svelte';
+  import Field from './ui/Field.svelte';
+  import Fields from './ui/Fields.svelte';
   import Icon from './ui/Icon.svelte';
+  import NameInput from './ui/NameInput.svelte';
+  import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import Menu from './ui/Menu.svelte';
@@ -386,12 +394,12 @@
     <Check bind:checked={draft.usb} field="usb" title={t('machines:MachinesPage.usb.title')}
       >{t('machines:MachinesPage.usb')}</Check
     >
-    {#if orphanable && !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p
-        class="note warn"
+    {#if orphanable && !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<Note
+        tone="warn"
         data-usb-orphans
       >
         {draft.usb ? t('machines:MachinesPage.usb.orphans.on') : t('machines:MachinesPage.usb.orphans.off')}
-      </p>{/if}
+      </Note>{/if}
   {/if}
 {/snippet}
 
@@ -401,16 +409,16 @@
       >{t('machines:MachinesPage.vulkan')}</Check
     >
     {#if !!draft.vulkan !== !!machines.find((x) => x.id === draft?.id)?.vulkan}
-      {#if orphanable}<p class="note warn" data-vulkan-orphans>
+      {#if orphanable}<Note tone="warn" data-vulkan-orphans>
           {!draft.vulkan
             ? t('machines:MachinesPage.vulkan.orphans.off')
             : hasWebgpu
               ? t('machines:MachinesPage.vulkan.orphans.on')
               : t('machines:MachinesPage.vulkan.orphans.onNoWebgpu')}
-        </p>
-      {:else if draft.vulkan && !hasWebgpu}<p class="note warn" data-vulkan-no-webgpu>
+        </Note>
+      {:else if draft.vulkan && !hasWebgpu}<Note tone="warn" data-vulkan-no-webgpu>
           {t('machines:MachinesPage.vulkan.noWebgpu')}
-        </p>{/if}
+        </Note>{/if}
     {/if}
   {/if}
 {/snippet}
@@ -427,12 +435,12 @@
     <Check bind:checked={draft.clock} field="clock" title={t('machines:MachinesPage.clock.title')}
       >{t('machines:MachinesPage.clock')}</Check
     >
-    {#if orphanable && (!!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock)}<p
-        class="note warn"
+    {#if orphanable && (!!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock)}<Note
+        tone="warn"
         data-pointer-orphans
       >
         {t('machines:MachinesPage.pointers.orphans')}
-      </p>{/if}
+      </Note>{/if}
   {/if}
 {/snippet}
 
@@ -454,48 +462,51 @@
       }}
       note={clipboardNote}>{t('machines:MachinesPage.clipboard')}</Check
     >
-    {#if orphanable && !!draft.clipboard !== !!rec?.clipboard}<p class="note warn" data-clipboard-orphans>
+    {#if orphanable && !!draft.clipboard !== !!rec?.clipboard}<Note tone="warn" data-clipboard-orphans>
         {draft.clipboard
           ? t('machines:MachinesPage.clipboard.orphans.on')
           : t('machines:MachinesPage.clipboard.orphans.off')}
-      </p>{/if}
+      </Note>{/if}
   {/if}
 {/snippet}
 
 {#snippet saveRow()}
   <div class="row">
-    <button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty || !!splitProblem}
-      >{restartsToSave ? t('machines:MachinesPage.saveRestart') : t('machines:MachinesPage.save')}</button
+    <Button variant="primary" onclick={saveSettings} data-action="save" disabled={!dirty || !!splitProblem}
+      >{restartsToSave ? t('machines:MachinesPage.saveRestart') : t('machines:MachinesPage.save')}</Button
     >
-    {#if dirty}<button
+    {#if dirty}<Button
         onclick={() => {
           dirty = false;
           void reread();
-        }}>{t('machines:MachinesPage.revert')}</button
+        }}>{t('machines:MachinesPage.revert')}</Button
       >{/if}
   </div>
 {/snippet}
 
 <div class="machines" data-busy={busy || undefined}>
   <div class="bar">
-    <button
-      class="tool labelled"
+    <Button
+      variant="tool"
+      labelled
+      icon="arrow-left"
       onclick={() => page.closeMachines()}
       data-action="back"
-      title={t('machines:MachinesPage.back')}
-      ><Icon name="arrow-left" /><span class="label">{t('machines:MachinesPage.back')}</span></button
+      title={t('machines:MachinesPage.back')}>{t('machines:MachinesPage.back')}</Button
     >
     <h2>{t('machines:MachinesPage.heading')}</h2>
     {#if busy}<span class="busy">{t('machines:MachinesPage.busy', { what: busy })}</span>{/if}
   </div>
-  {#if error}<div class="error" role="alert">
-      <div class="text">
+  {#if error}<ErrorBanner
+      class="error"
+      role="alert"
+      dismissLabel={t('machines:MachinesPage.dismiss')}
+      ondismiss={() => (error = '')}
+    >
+      <p class="error-text">
         {error}{#if usbError?.words && usbError.text === error}<UsbProblems words={usbError.words} />{/if}
-      </div>
-      <button class="dismiss" aria-label={t('machines:MachinesPage.dismiss')} onclick={() => (error = '')}
-        ><Icon name="x" size={14} /></button
-      >
-    </div>{/if}
+      </p>
+    </ErrorBanner>{/if}
   <div class="panes">
     <nav>
       <ul>
@@ -594,7 +605,7 @@
         title={t('machines:MachinesPage.preferences')}
         meta={t('machines:MachinesPage.preferences.meta')}
       >
-        <div class="settings">
+        <Fields>
           <Check
             bind:checked={warnOnLeave}
             onchange={() => remember({ leaveWarning: warnOnLeave })}
@@ -616,29 +627,30 @@
             field="osk-toggle"
             note={t('machines:MachinesPage.oskToggle.note')}>{t('machines:MachinesPage.oskToggle')}</Check
           >
-          <label
-            >{t('machines:MachinesPage.shaderBudget')}
+          <Field label={t('machines:MachinesPage.shaderBudget')}>
             <select bind:value={shaderMiB} onchange={() => remember({ shaderMiB })} data-field="shader-budget"
               >{#each [...new Set([...CACHE_BUDGET_CHOICES, shaderMiB])].sort((a, b) => a - b) as n}<option value={n}
                   >{n === CACHE_BUDGET / 2 ** 20
                     ? t('machines:MachinesPage.shaderBudget.default', { n })
                     : t('machines:MachinesPage.mib', { n })}</option
                 >{/each}</select
-            ></label
+            ></Field
           >
-          <p class="note">{t('machines:MachinesPage.shaderBudget.note')}</p>
-        </div>
+          <Note>{t('machines:MachinesPage.shaderBudget.note')}</Note>
+        </Fields>
         <div class="part">
           <h4>{t('machines:MachinesPage.statusBar')}</h4>
           <StatusEditor {net} />
-          <div class="settings status-fullscreen">
-            <Check
-              bind:checked={ui.statusFullscreen}
-              onchange={() => remember({ statusFullscreen: ui.statusFullscreen })}
-              field="status-fullscreen"
-              note={t('machines:MachinesPage.statusFullscreen.note')}
-              >{t('machines:MachinesPage.statusFullscreen')}</Check
-            >
+          <div class="status-fullscreen">
+            <Fields>
+              <Check
+                bind:checked={ui.statusFullscreen}
+                onchange={() => remember({ statusFullscreen: ui.statusFullscreen })}
+                field="status-fullscreen"
+                note={t('machines:MachinesPage.statusFullscreen.note')}
+                >{t('machines:MachinesPage.statusFullscreen')}</Check
+              >
+            </Fields>
           </div>
         </div>
       </Pane>
@@ -657,8 +669,8 @@
         meta={t('machines:MachinesPage.folders.meta')}
       >
         {#snippet actions()}
-          <button onclick={() => page.folderWizard(undefined, [])} data-action="new-folder"
-            ><Icon name="plus" size={16} />{t('machines:MachinesPage.folders.new')}</button
+          <Button icon="plus" onclick={() => page.folderWizard(undefined, [])} data-action="new-folder"
+            >{t('machines:MachinesPage.folders.new')}</Button
           >
         {/snippet}
         <FoldersPane {folders} {store} {act} />
@@ -670,70 +682,71 @@
         meta={t('machines:MachinesPage.connections.meta')}
       >
         {#snippet actions()}
-          <button onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"
-            ><Icon name="plus" size={16} />{t('machines:MachinesPage.connections.new')}</button
+          <Button icon="plus" onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"
+            >{t('machines:MachinesPage.connections.new')}</Button
           >
         {/snippet}
-        <ul class="adapters connections">
+        <CardList class="connections" empty={conns.length ? undefined : t('machines:MachinesPage.connections.none')}>
           {#each conns as c (c.id)}
-            <li data-connection={c.id}>
-              <Icon name="network" size={18} />
-              <div class="what">
-                <input
-                  class="conn-name"
-                  value={c.name}
-                  aria-label={t('machines:MachinesPage.connection.name')}
-                  data-field="connection-name"
-                  onchange={(e) => {
-                    const name = e.currentTarget.value;
-                    void act(t('machines:MachinesPage.busy.renaming'), () => page.netRename(c, name));
-                  }}
-                />
-                <span class="meta"
-                  >{t('machines:MachinesPage.connection.meta', {
-                    kind: kindText(c),
-                    state: stateOf(c),
-                    used: usedBy(c).length
-                      ? msg('machines:MachinesPage.connection.usedBy', { machines: usedBy(c) })
-                      : msg('machines:MachinesPage.connection.usedByNone'),
-                  })}</span
-                >
+            <Card data-connection={c.id}>
+              <div class="named">
+                <Icon name="network" size={18} />
+                <div class="lines">
+                  <NameInput
+                    class="conn-name"
+                    value={c.name}
+                    aria-label={t('machines:MachinesPage.connection.name')}
+                    data-field="connection-name"
+                    onchange={(name: string) =>
+                      void act(t('machines:MachinesPage.busy.renaming'), () => page.netRename(c, name))}
+                  />
+                  <Note inline class="meta"
+                    >{t('machines:MachinesPage.connection.meta', {
+                      kind: kindText(c),
+                      state: stateOf(c),
+                      used: usedBy(c).length
+                        ? msg('machines:MachinesPage.connection.usedBy', { machines: usedBy(c) })
+                        : msg('machines:MachinesPage.connection.usedByNone'),
+                    })}</Note
+                  >
+                </div>
               </div>
-              <button
-                onclick={() => page.netWizard({ mode: 'edit', connection: c.id })}
-                data-action="edit-connection"
-                title={c.kind === 'tailnet'
-                  ? t('machines:MachinesPage.connection.edit.tailnet')
-                  : c.kind === 'local'
-                    ? t('machines:MachinesPage.connection.edit.local')
-                    : c.kind === 'room'
-                      ? t('machines:MachinesPage.connection.edit.room')
-                      : t('machines:MachinesPage.connection.edit.tailcat')}
-                >{t('machines:MachinesPage.connection.edit')}</button
-              >
-              {#if c.tailcat?.serve}<button
-                  onclick={() => act(t('machines:MachinesPage.busy.forgettingAddress'), () => page.netNewAddress(c))}
-                  data-action="new-address"
-                  title={t('machines:MachinesPage.connection.newAddress.title')}
-                  >{t('machines:MachinesPage.connection.newAddress')}</button
-                >{/if}
-              {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<button
-                  onclick={() => logoutConnection(c)}
-                  data-action="logout-connection"
-                  title={t('machines:MachinesPage.connection.logout.title')}
-                  >{t('machines:MachinesPage.connection.logout')}</button
-                >{/if}
-              <button
-                onclick={() => act(t('machines:MachinesPage.busy.deleting'), () => page.netDelete(c))}
-                data-action="delete-connection"
-                title={t('machines:MachinesPage.connection.delete.title')}
-                ><Icon name="trash" size={16} />{t('machines:MachinesPage.connection.delete')}</button
-              >
-            </li>
-          {:else}
-            <li class="none">{t('machines:MachinesPage.connections.none')}</li>
+              {#snippet actions()}
+                <Button
+                  onclick={() => page.netWizard({ mode: 'edit', connection: c.id })}
+                  data-action="edit-connection"
+                  title={c.kind === 'tailnet'
+                    ? t('machines:MachinesPage.connection.edit.tailnet')
+                    : c.kind === 'local'
+                      ? t('machines:MachinesPage.connection.edit.local')
+                      : c.kind === 'room'
+                        ? t('machines:MachinesPage.connection.edit.room')
+                        : t('machines:MachinesPage.connection.edit.tailcat')}
+                  >{t('machines:MachinesPage.connection.edit')}</Button
+                >
+                {#if c.tailcat?.serve}<Button
+                    onclick={() => act(t('machines:MachinesPage.busy.forgettingAddress'), () => page.netNewAddress(c))}
+                    data-action="new-address"
+                    title={t('machines:MachinesPage.connection.newAddress.title')}
+                    >{t('machines:MachinesPage.connection.newAddress')}</Button
+                  >{/if}
+                {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<Button
+                    onclick={() => logoutConnection(c)}
+                    data-action="logout-connection"
+                    title={t('machines:MachinesPage.connection.logout.title')}
+                    >{t('machines:MachinesPage.connection.logout')}</Button
+                  >{/if}
+                <Button
+                  icon="trash"
+                  onclick={() => act(t('machines:MachinesPage.busy.deleting'), () => page.netDelete(c))}
+                  data-action="delete-connection"
+                  title={t('machines:MachinesPage.connection.delete.title')}
+                  >{t('machines:MachinesPage.connection.delete')}</Button
+                >
+              {/snippet}
+            </Card>
           {/each}
-        </ul>
+        </CardList>
       </Pane>
     {:else if ui.machinesSelected === PAGE && ui.transient}
       <Pane
@@ -751,7 +764,7 @@
           <div class="disk" data-attachment={PAGE}>
             <div class="row">
               <Icon name="database" size={18} /><strong>{ui.transient.disk}</strong>
-              {#if ui.hasOverlay}<span class="meta">{t('machines:MachinesPage.transient.overlay')}</span>{/if}
+              {#if ui.hasOverlay}<Note inline class="meta">{t('machines:MachinesPage.transient.overlay')}</Note>{/if}
             </div>
             {#if ui.hasOverlay}
               <div class="row actions">
@@ -763,20 +776,23 @@
                   bind:open={pageExportOpen}
                   align="left"
                 >
-                  <button
+                  <Button
+                    variant="item"
                     data-save="changes"
                     title={t('machines:MachinesPage.export.changes.title')}
-                    onclick={() => savePage('changes')}>{t('machines:MachinesPage.export.changes')}</button
+                    onclick={() => savePage('changes')}>{t('machines:MachinesPage.export.changes')}</Button
                   >
-                  <button
+                  <Button
+                    variant="item"
                     data-save="qcow2"
                     title={t('machines:MachinesPage.export.qcow2.title')}
-                    onclick={() => savePage('qcow2')}>{t('machines:MachinesPage.export.qcow2')}</button
+                    onclick={() => savePage('qcow2')}>{t('machines:MachinesPage.export.qcow2')}</Button
                   >
-                  <button
+                  <Button
+                    variant="item"
                     data-save="raw"
                     title={t('machines:MachinesPage.export.raw.title')}
-                    onclick={() => savePage('raw')}>{t('machines:MachinesPage.export.raw')}</button
+                    onclick={() => savePage('raw')}>{t('machines:MachinesPage.export.raw')}</Button
                   >
                   <Check
                     id="save-compress"
@@ -785,23 +801,24 @@
                     title={t('machines:MachinesPage.export.compress.title')}
                     >{t('machines:MachinesPage.export.compress')}</Check
                   >
-                  <p class="hint">
+                  <Note>
                     <T k="machines:MachinesPage.export.hint"
                       >{#snippet code(words: string)}<code>{words}</code>{/snippet}</T
                     >
-                  </p>
+                  </Note>
                 </Menu>
-                <button
+                <Button
+                  icon="upload"
                   onclick={() => document.getElementById('load-changes-input')!.click()}
                   title={t('machines:MachinesPage.importChanges.title')}
-                  ><Icon name="upload" size={16} />{t('machines:MachinesPage.importChanges')}</button
+                  >{t('machines:MachinesPage.importChanges')}</Button
                 >
-                <button
+                <Button
+                  icon="trash"
                   id="reset-disk"
                   disabled={ui.busy}
                   onclick={() => page.resetDisk()}
-                  title={t('machines:MachinesPage.resetDisk.title')}
-                  ><Icon name="trash" size={16} />{t('machines:MachinesPage.resetDisk')}</button
+                  title={t('machines:MachinesPage.resetDisk.title')}>{t('machines:MachinesPage.resetDisk')}</Button
                 >
               </div>
             {/if}
@@ -848,51 +865,52 @@
       >
         {#snippet actions()}
           {#if m.id !== ui.current}
-            <button onclick={() => page.openMachine(m.id)} data-action="open"
-              ><Icon name="player-play" size={16} />{t('machines:MachinesPage.open')}</button
+            <Button icon="player-play" onclick={() => page.openMachine(m.id)} data-action="open"
+              >{t('machines:MachinesPage.open')}</Button
             >
           {:else if ui.state === 'running' || ui.state === 'booting' || ui.state === 'loading'}
-            <button data-action="open" disabled title={t('machines:MachinesPage.runningHere.title')}
-              >{t('machines:MachinesPage.runningHere')}</button
+            <Button data-action="open" disabled title={t('machines:MachinesPage.runningHere.title')}
+              >{t('machines:MachinesPage.runningHere')}</Button
             >
           {:else}
-            <button
-              class="primary"
+            <Button
+              icon="player-play"
+              variant="primary"
               onclick={() => {
                 page.closeMachines();
                 page.restart();
               }}
               data-action="start"
-              title={t('machines:MachinesPage.start.title')}
-              ><Icon name="player-play" size={16} />{t('machines:MachinesPage.start')}</button
+              title={t('machines:MachinesPage.start.title')}>{t('machines:MachinesPage.start')}</Button
             >
           {/if}
-          <button
+          <Button
+            icon="copy"
             onclick={() =>
               act(t('machines:MachinesPage.busy.copying'), async () => {
                 choose((await duplicateMachine(store, m.id)).id);
               })}
-            title={t('machines:MachinesPage.duplicate.title')}
-            ><Icon name="copy" size={16} />{t('machines:MachinesPage.duplicate')}</button
+            title={t('machines:MachinesPage.duplicate.title')}>{t('machines:MachinesPage.duplicate')}</Button
           >
-          <button onclick={() => exportDef(m)} title={t('machines:MachinesPage.exportDefinition.title')}
-            ><Icon name="file-export" size={16} />{t('machines:MachinesPage.exportDefinition')}</button
+          <Button
+            icon="file-export"
+            onclick={() => exportDef(m)}
+            title={t('machines:MachinesPage.exportDefinition.title')}
+            >{t('machines:MachinesPage.exportDefinition')}</Button
           >
-          <button onclick={() => remove(m)} title={t('machines:MachinesPage.machine.delete.title')}
-            ><Icon name="trash" size={16} />{t('machines:MachinesPage.machine.delete')}</button
+          <Button icon="trash" onclick={() => remove(m)} title={t('machines:MachinesPage.machine.delete.title')}
+            >{t('machines:MachinesPage.machine.delete')}</Button
           >
         {/snippet}
         {#if ui.machinesTab === 'settings'}
-          <div class="settings" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
-            <label>{t('machines:MachinesPage.name')} <input bind:value={draft.name} data-field="name" /></label>
-            <label
-              >{t('machines:MachinesPage.ncpus')}
+          <Fields oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
+            <Field label={t('machines:MachinesPage.name')}><input bind:value={draft.name} data-field="name" /></Field>
+            <Field label={t('machines:MachinesPage.ncpus')}>
               <select bind:value={draft.ncpus} data-field="ncpus"
                 >{#each CPU_CHOICES as n}<option value={n}>{n}</option>{/each}</select
-              ></label
+              ></Field
             >
-            <label
-              >{t('machines:MachinesPage.ram')}
+            <Field label={t('machines:MachinesPage.ram')}>
               <select
                 bind:value={draft.ramMiB}
                 data-field="ram"
@@ -901,11 +919,11 @@
                 >{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}
                     >{t('machines:MachinesPage.mib', { n })}</option
                   >{/each}</select
-              ></label
+              ></Field
             >
-            {#if numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}<p class="note warn" data-numa>
+            {#if numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}<Note tone="warn" data-numa>
                 {text(numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)!)}
-              </p>{/if}
+              </Note>{/if}
             <details class="advanced" data-ram-split open={!!draft.ramSplit}>
               <summary>{t('machines:MachinesPage.split')}</summary>
               <Check checked={!!draft.ramSplit} onchange={customSplit} field="custom-split"
@@ -936,12 +954,11 @@
                     /></label
                   >
                 </div>
-                {#if splitProblem}<p class="note warn" data-split-problem>{text(splitProblem)}</p>{/if}
+                {#if splitProblem}<Note tone="warn" data-split-problem>{text(splitProblem)}</Note>{/if}
               {/if}
-              <p class="note">{t('machines:MachinesPage.split.note', { max: MEMORY0_MIB })}</p>
+              <Note>{t('machines:MachinesPage.split.note', { max: MEMORY0_MIB })}</Note>
             </details>
-            <label
-              >{t('machines:MachinesPage.jit')}
+            <Field label={t('machines:MachinesPage.jit')}>
               <select bind:value={draft.jitMiB} data-field="jit" title={t('machines:MachinesPage.jit.title')}
                 >{#each [undefined, ...new Set( [...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])] )].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option
                     value={n}
@@ -949,19 +966,26 @@
                       ? t('machines:MachinesPage.mib', { n })
                       : t('machines:MachinesPage.jit.default', { n: JIT_DEFAULT_MIB })}</option
                   >{/each}</select
-              ></label
+              ></Field
             >
-            <label
-              >{t('machines:MachinesPage.display')}
+            <Field label={t('machines:MachinesPage.display')}>
               <select bind:value={draft.display} data-field="display"
                 ><option value="3d">{t('machines:MachinesPage.display.3d')}</option><option value="2d"
                   >{t('machines:MachinesPage.display.2d')}</option
                 ></select
-              ></label
+              ></Field
             >
             {@render vulkanSwitch()}
-            <label
-              >{t('machines:MachinesPage.keyboard')}
+            <Field label={t('machines:MachinesPage.keyboard')}>
+              {#snippet after()}
+                <Button
+                  icon="keyboard"
+                  onclick={matchKeyboard}
+                  data-action="match-keyboard"
+                  title={t('machines:MachinesPage.keyboard.match.title')}
+                  >{t('machines:MachinesPage.keyboard.match')}</Button
+                >
+              {/snippet}
               <select
                 bind:value={draft.keyboard}
                 onchange={() => (keyboardNote = undefined)}
@@ -974,124 +998,120 @@
                         ? text(KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label)
                         : t('machines:MachinesPage.keyboard.none')}</option
                   >{/each}</select
-              ></label
+              ></Field
             >
-            <button
-              class="beside"
-              onclick={matchKeyboard}
-              data-action="match-keyboard"
-              title={t('machines:MachinesPage.keyboard.match.title')}
-              ><Icon name="keyboard" size={16} />{t('machines:MachinesPage.keyboard.match')}</button
-            >
-            {#if keyboardNote}<p class="note" data-keyboard-match>{text(keyboardNote)}</p>{/if}
-            {#if draft.keyboard === FOLLOW_BROWSER}<p class="note" data-keyboard-note>
+            {#if keyboardNote}<Note data-keyboard-match>{text(keyboardNote)}</Note>{/if}
+            {#if draft.keyboard === FOLLOW_BROWSER}<Note data-keyboard-note>
                 {browserNow
                   ? t('machines:MachinesPage.keyboard.followNote.now', { layout: browserNow })
                   : t('machines:MachinesPage.keyboard.followNote')}
-              </p>{:else if draft.keyboard}<p class="note" data-keyboard-note>
+              </Note>{:else if draft.keyboard}<Note data-keyboard-note>
                 {t('machines:MachinesPage.keyboard.setNote')}
-              </p>{/if}
+              </Note>{/if}
             {@render usbSwitch()}
             {@render pointerSwitches()}
             {@render clipboardSwitch()}
             {@render saveRow()}
-            <p class="note">{t('machines:MachinesPage.shape.note')}</p>
-          </div>
+            <Note>{t('machines:MachinesPage.shape.note')}</Note>
+          </Fields>
         {:else if ui.machinesTab === 'network'}
           <div class="network">
-            <ul class="adapters">
+            <CardList empty={adaptersOf(draft).length ? undefined : t('machines:MachinesPage.adapters.none')}>
               {#each adaptersOf(draft) as a, i (a.id)}
                 {@const rec = machines.find((x) => x.id === m.id)}
                 {@const at = rec ? adaptersOf(rec).findIndex((x) => x.id === a.id) : -1}
                 {@const c = at >= 0 ? conns.find((x) => x.id === adaptersOf(rec!)[at].connection) : undefined}
                 {@const here = m.id === ui.current && at >= 0 ? live[at] : undefined}
-                <li data-adapter={i}>
-                  <Icon name="network" size={18} />
-                  <div class="what">
-                    <strong>{t('machines:MachinesPage.adapter', { n: i + 1 })}</strong><span class="meta"
-                      >{t('machines:MachinesPage.adapter.mac', { mac: a.mac })}</span
-                    >
-                    <span class="meta" data-connection-name
-                      >{c
-                        ? t('machines:MachinesPage.adapter.connection', { name: c.name, kind: kindText(c) })
-                        : t('machines:MachinesPage.adapter.noConnection')}{#if here?.active}{' · '}{said(here.view.text)
-                          .headline}{#each here.view.details ?? [] as d, k (k)}{' · '}{d}{/each}{/if}{#if here?.primary}{' · '}{t(
-                          'machines:MachinesPage.adapter.primary',
-                        )}{/if}</span
-                    >
-                    {#if here?.note}<span class="meta warn">{said(here.note).headline}</span>{/if}
+                <Card data-adapter={i}>
+                  <div class="named">
+                    <Icon name="network" size={18} />
+                    <div class="lines">
+                      <strong>{t('machines:MachinesPage.adapter', { n: i + 1 })}</strong>
+                      <Note inline class="meta">{t('machines:MachinesPage.adapter.mac', { mac: a.mac })}</Note>
+                      <Note inline class="meta" data-connection-name
+                        >{c
+                          ? t('machines:MachinesPage.adapter.connection', { name: c.name, kind: kindText(c) })
+                          : t('machines:MachinesPage.adapter.noConnection')}{#if here?.active}{' · '}{said(
+                            here.view.text,
+                          )
+                            .headline}{#each here.view.details ?? [] as d, k (k)}{' · '}{d}{/each}{/if}{#if here?.primary}{' · '}{t(
+                            'machines:MachinesPage.adapter.primary',
+                          )}{/if}</Note
+                      >
+                      {#if here?.note}<Note inline tone="warn" class="meta">{said(here.note).headline}</Note>{/if}
+                    </div>
                   </div>
-                  {#if at >= 0}
-                    {#if c}<Check
-                        compact
-                        checked={c.connectAtStart}
-                        onchange={(on) => void act(t('machines:MachinesPage.busy.saving'), () => setAtStart(c, on))}
-                        field="connect-at-start"
-                        title={t('machines:MachinesPage.adapter.atStart.title')}
-                        >{t('machines:MachinesPage.adapter.atStart')}</Check
-                      >{/if}
-                    <button
-                      onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: !!here?.on })}
-                      data-action="attach-connection"
-                      title={t('machines:MachinesPage.adapter.attach.title')}
-                      >{c
-                        ? t('machines:MachinesPage.adapter.change')
-                        : t('machines:MachinesPage.adapter.attach')}</button
-                    >
-                    {#if c}<button
-                        onclick={() => act(t('machines:MachinesPage.busy.detaching'), () => page.netDetach(m.id, at))}
-                        data-action="detach-connection"
-                        title={t('machines:MachinesPage.adapter.detach.title')}
-                        >{t('machines:MachinesPage.adapter.detach')}</button
-                      >{/if}
-                    {#if here && c && (here.on || here.active)}
-                      {#if here.active}<button
-                          onclick={() =>
-                            act(t('machines:MachinesPage.busy.disconnecting'), () => page.netDisconnect(at))}
-                          data-action="disconnect">{t('machines:MachinesPage.adapter.disconnect')}</button
-                        >
-                      {:else}<button
-                          onclick={() => act(t('machines:MachinesPage.busy.connecting'), () => page.netConnect(at))}
-                          data-action="connect">{t('machines:MachinesPage.adapter.connect')}</button
+                  {#snippet actions()}
+                    {#if at >= 0}
+                      {#if c}<Check
+                          compact
+                          checked={c.connectAtStart}
+                          onchange={(on) => void act(t('machines:MachinesPage.busy.saving'), () => setAtStart(c, on))}
+                          field="connect-at-start"
+                          title={t('machines:MachinesPage.adapter.atStart.title')}
+                          >{t('machines:MachinesPage.adapter.atStart')}</Check
                         >{/if}
-                    {/if}
-                  {:else}<span class="meta">{t('machines:MachinesPage.adapter.saveFirst')}</span>{/if}
-                  <MoveButtons
-                    index={i}
-                    count={adaptersOf(draft).length}
-                    onmove={(by) => {
-                      draft = movedAdapter(draft!, a.id, by);
-                      dirty = true;
-                    }}
-                    upTitle={MOVE_ADAPTER}
-                    downTitle={MOVE_ADAPTER}
-                    action="adapter"
-                  />
-                  <button
-                    onclick={() => {
-                      draft = withoutAdapter(draft!, a.id);
-                      dirty = true;
-                    }}
-                    title={t('machines:MachinesPage.adapter.remove.title')}
-                    data-action="remove-adapter"
-                    ><Icon name="trash" size={16} />{t('machines:MachinesPage.adapter.remove')}</button
-                  >
-                </li>
-              {:else}
-                <li class="none">{t('machines:MachinesPage.adapters.none')}</li>
+                      <Button
+                        onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: !!here?.on })}
+                        data-action="attach-connection"
+                        title={t('machines:MachinesPage.adapter.attach.title')}
+                        >{c
+                          ? t('machines:MachinesPage.adapter.change')
+                          : t('machines:MachinesPage.adapter.attach')}</Button
+                      >
+                      {#if c}<Button
+                          onclick={() => act(t('machines:MachinesPage.busy.detaching'), () => page.netDetach(m.id, at))}
+                          data-action="detach-connection"
+                          title={t('machines:MachinesPage.adapter.detach.title')}
+                          >{t('machines:MachinesPage.adapter.detach')}</Button
+                        >{/if}
+                      {#if here && c && (here.on || here.active)}
+                        {#if here.active}<Button
+                            onclick={() =>
+                              act(t('machines:MachinesPage.busy.disconnecting'), () => page.netDisconnect(at))}
+                            data-action="disconnect">{t('machines:MachinesPage.adapter.disconnect')}</Button
+                          >
+                        {:else}<Button
+                            onclick={() => act(t('machines:MachinesPage.busy.connecting'), () => page.netConnect(at))}
+                            data-action="connect">{t('machines:MachinesPage.adapter.connect')}</Button
+                          >{/if}
+                      {/if}
+                    {:else}<Note inline class="meta">{t('machines:MachinesPage.adapter.saveFirst')}</Note>{/if}
+                    <MoveButtons
+                      index={i}
+                      count={adaptersOf(m).length}
+                      onmove={(by) => {
+                        draft = movedAdapter(draft!, a.id, by);
+                        dirty = true;
+                      }}
+                      upTitle={MOVE_ADAPTER}
+                      downTitle={MOVE_ADAPTER}
+                      action="adapter"
+                    />
+                    <Button
+                      icon="trash"
+                      onclick={() => {
+                        draft = withoutAdapter(draft!, a.id);
+                        dirty = true;
+                      }}
+                      title={t('machines:MachinesPage.adapter.remove.title')}
+                      data-action="remove-adapter">{t('machines:MachinesPage.adapter.remove')}</Button
+                    >
+                  {/snippet}
+                </Card>
               {/each}
-            </ul>
+            </CardList>
             {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row">
-                <button
+                <Button
+                  icon="plus"
                   onclick={() => {
                     draft = withAdapter(draft!);
                     dirty = true;
                   }}
-                  data-action="add-adapter"
-                  ><Icon name="plus" size={16} />{t('machines:MachinesPage.adapters.add')}</button
+                  data-action="add-adapter">{t('machines:MachinesPage.adapters.add')}</Button
                 >
               </div>{/if}
-            <p class="note">{t('machines:MachinesPage.adapters.note', { max: MAX_ADAPTERS })}</p>
+            <Note>{t('machines:MachinesPage.adapters.note', { max: MAX_ADAPTERS })}</Note>
             <Check
               checked={draft.netConfig !== false}
               onchange={(on) => {
@@ -1111,28 +1131,30 @@
             {@render saveRow()}
           </div>
         {:else if ui.machinesTab === 'usb'}
-          <div class="settings usb-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
+          <Fields class="usb-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
             {@render usbSwitch()}
             {#if dirty}{@render saveRow()}{/if}
+          </Fields>
+          <div class="below">
+            <Usb
+              machine={machines.find((x) => x.id === m.id) ?? m}
+              running={isOn(m.id)}
+              snapshots={withSnapshots.has(m.id)}
+              {act}
+            />
           </div>
-          <Usb
-            machine={machines.find((x) => x.id === m.id) ?? m}
-            running={isOn(m.id)}
-            snapshots={withSnapshots.has(m.id)}
-            {act}
-          />
         {:else if ui.machinesTab === 'folders'}
           {@const rec = machines.find((x) => x.id === m.id) ?? m}
           {@const pathError = sharesPathError(draft.sharesPath ?? DEFAULT_SHARES_PATH)}
-          <div class="settings folders-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
+          <Fields class="folders-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
             <Check bind:checked={draft.shares} field="shares" title={t('machines:MachinesPage.shares.title')}
               >{t('machines:MachinesPage.shares')}</Check
             >
-            {#if orphanable && !!draft.shares !== !!rec.shares}<p class="note warn" data-shares-orphans>
+            {#if orphanable && !!draft.shares !== !!rec.shares}<Note tone="warn" data-shares-orphans>
                 {draft.shares
                   ? t('machines:MachinesPage.shares.orphans.on')
                   : t('machines:MachinesPage.shares.orphans.off')}
-              </p>{/if}
+              </Note>{/if}
             {#if draft.shares}
               <Check
                 checked={draft.sharesMount !== false}
@@ -1144,8 +1166,7 @@
                 title={t('machines:MachinesPage.sharesMount.title')}>{t('machines:MachinesPage.sharesMount')}</Check
               >
               {#if draft.sharesMount !== false}
-                <label
-                  >{t('machines:MachinesPage.sharesPath')}
+                <Field label={t('machines:MachinesPage.sharesPath')}>
                   <input
                     value={draft.sharesPath ?? DEFAULT_SHARES_PATH}
                     oninput={(e) => {
@@ -1154,19 +1175,19 @@
                     }}
                     data-field="shares-path"
                     spellcheck="false"
-                  /></label
+                  /></Field
                 >
-                {#if pathError}<p class="note warn" data-shares-path-error>{said(pathError).headline}</p>{/if}
-                <p class="note" data-shares-path-note>
+                {#if pathError}<Note tone="warn" data-shares-path-error>{said(pathError).headline}</Note>{/if}
+                <Note data-shares-path-note>
                   {m.id === ui.current && ui.state === 'running'
                     ? t('machines:MachinesPage.sharesPath.noteRunning')
                     : t('machines:MachinesPage.sharesPath.note')}
-                </p>
+                </Note>
               {/if}
             {/if}
             {#if dirty}{@render saveRow()}{/if}
-          </div>
-          <Folders {folders} machine={rec} {act} />
+          </Fields>
+          <div class="below"><Folders {folders} machine={rec} {act} /></div>
         {:else if ui.machinesTab === 'disks'}
           <Disks {store} machine={m} {machines} {disks} {overlays} running={isOn(m.id)} {act} {offFirst} />
         {:else}
@@ -1185,22 +1206,25 @@
           ? t('machines:MachinesPage.storage.persisted', { used: storage.usage, quota: storage.quota })
           : t('machines:MachinesPage.storage', { used: storage.usage, quota: storage.quota })}</span
       >
-      {#if !storage.persisted}<button
+      {#if !storage.persisted}<Button
+          variant="plain"
           title={t('machines:MachinesPage.storage.persist.title')}
           onclick={() => act(t('machines:MachinesPage.busy.asking'), askPersist)}
-          >{t('machines:MachinesPage.storage.persist')}</button
+          >{t('machines:MachinesPage.storage.persist')}</Button
         >{/if}
-      {#if storage.remote > 0}<button
+      {#if storage.remote > 0}<Button
+          variant="plain"
           data-action="clear-remote-cache"
           title={t('machines:MachinesPage.storage.clear.title')}
           onclick={() => act(t('machines:MachinesPage.busy.clearing'), clearCaches)}
-          >{t('machines:MachinesPage.storage.clear', { size: storage.remote })}</button
+          >{t('machines:MachinesPage.storage.clear', { size: storage.remote })}</Button
         >{/if}
-      {#if storage.shaders > 0}<button
+      {#if storage.shaders > 0}<Button
+          variant="plain"
           data-action="clear-shaders"
           title={t('machines:MachinesPage.storage.clearShaders.title')}
           onclick={() => act(t('machines:MachinesPage.busy.clearing'), clearShaderStore)}
-          >{t('machines:MachinesPage.storage.clearShaders', { size: storage.shaders })}</button
+          >{t('machines:MachinesPage.storage.clearShaders', { size: storage.shaders })}</Button
         >{/if}
       <details>
         <summary>{t('machines:MachinesPage.storage.items')}</summary>
@@ -1220,45 +1244,28 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
+    background: var(--surface);
   }
   .bar {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--line);
-    background: var(--panel);
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-raised);
   }
   h2 {
     margin: 0;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-bold);
   }
   .busy {
-    color: var(--busy);
-    font-size: 13px;
+    color: var(--status-busy);
+    font-size: var(--text-md);
   }
-  .error {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
+  .error-text {
     margin: 0;
-    padding: 8px 12px;
-    color: #ffb4b6;
-    background: #2a1215;
-    border-bottom: 1px solid #5c1d22;
     white-space: pre-wrap;
-  }
-  .error .text {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .error .dismiss {
-    margin-left: auto;
-    padding: 2px;
-    color: inherit;
   }
   .panes {
     flex: 1;
@@ -1269,12 +1276,12 @@
   nav {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-3);
     min-height: 0;
     overflow: auto;
-    padding: 8px;
-    border-right: 1px solid var(--line);
-    background: var(--panel);
+    padding: var(--space-3);
+    border-right: 1px solid var(--border);
+    background: var(--surface-raised);
   }
   nav ul {
     list-style: none;
@@ -1282,41 +1289,42 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
   }
-  nav li.chosen .pick {
-    background: var(--pressed);
+  /* The page's list: a machine (its name and its line), then the page's own panes and commands. */
+  .pick,
+  .new button {
+    display: flex;
+    width: 100%;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    text-align: start;
   }
   .pick {
-    display: flex;
     flex-direction: column;
     align-items: flex-start;
-    width: 100%;
-    padding: 6px 10px;
-    border-radius: 4px;
-    text-align: left;
+  }
+  nav li.chosen .pick,
+  .new .chosen {
+    background: var(--pressed-bg);
   }
   .name {
-    font-weight: 600;
+    font-weight: var(--weight-bold);
   }
   .meta {
-    color: var(--dim);
-    font-size: 12px;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
   .new {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding-top: 8px;
-    border-top: 1px solid var(--line);
+    gap: var(--space-1);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
   }
   .new button {
-    display: flex;
     align-items: center;
-    gap: 8px;
-    text-align: left;
-    border-radius: 4px;
-    padding: 5px 10px;
+    gap: var(--space-3);
   }
   section.empty {
     min-width: 0;
@@ -1324,180 +1332,82 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: var(--dim);
-  }
-  .row button,
-  .settings button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
+    color: var(--text-dim);
   }
   .part {
-    margin-top: 32px;
+    margin-top: var(--space-6);
   }
-  .settings {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 320px) 1fr;
-    gap: 10px 16px;
-    align-items: center;
-  }
-  /* A full-row note's text would widen the labels' max-content column and squeeze the controls to nothing: it takes the row's width instead. */
-  .settings > .note,
-  .settings > .advanced {
-    contain: inline-size;
-  }
-  .settings > label {
-    grid-column: 1 / 3;
-    display: grid;
-    grid-template-columns: subgrid;
-    align-items: center;
-    color: var(--dim);
-  }
-  .settings .row,
-  .settings .note,
-  .settings > :global(.check),
-  .settings > :global(.check-field) {
-    grid-column: 1 / -1;
+  h4 {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-base);
+    font-weight: var(--weight-bold);
   }
   .status-fullscreen {
-    margin-top: 20px;
+    margin-top: var(--space-5);
   }
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-3);
     align-items: center;
-  }
-  .primary {
-    background: #24406b;
-    border-color: #3b6db3 !important;
-    color: #fff;
-  }
-  .primary:disabled {
-    background: transparent;
-    color: var(--text);
-  }
-  .note,
-  .hint {
-    color: var(--dim);
-    font-size: 12px;
-    margin: 0;
-  }
-  .note.warn {
-    color: #ffb36b;
-  }
-  .settings .warn {
-    grid-column: 1 / -1;
-  }
-  .settings > .beside {
-    justify-self: start;
   }
   .advanced {
-    grid-column: 1 / -1;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-3);
   }
   .advanced summary {
-    color: var(--dim);
+    color: var(--text-dim);
     cursor: pointer;
   }
-  .advanced .split {
+  .split {
     display: grid;
     grid-template-columns: max-content minmax(0, 200px);
-    gap: 8px 16px;
+    gap: var(--space-3) var(--space-5);
     align-items: center;
   }
-  .advanced .split label {
+  .split label {
     display: contents;
-    color: var(--dim);
+    color: var(--text-dim);
   }
-  .usb-switch,
-  .folders-switch {
-    margin-bottom: 12px;
+  /* A tab's list under its switches (USB devices, shared folders). */
+  .below {
+    margin-top: var(--space-4);
   }
-  .disk {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
+  .disk,
   .network {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
-  .adapters {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .network {
+    gap: var(--space-4);
+  }
+  /* A row's name with its icon. */
+  /* A row's icon beside its name and lines. */
+  .named {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .lines {
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-  }
-  .adapters li {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
-  }
-  .adapters li.none {
-    color: var(--dim);
-  }
-  .adapters .what {
-    flex: 1;
-    min-width: 200px;
-    display: flex;
-    flex-direction: column;
-  }
-  .adapters .warn {
-    color: #ffb36b;
-  }
-  .conn-name {
-    font: inherit;
-    font-weight: 600;
-    color: var(--text);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 1px 4px;
-    margin-left: -5px;
-  }
-  .conn-name:hover,
-  .conn-name:focus {
-    border-color: var(--line);
-  }
-  .new .chosen {
-    background: var(--pressed);
-  }
-  .adapters button {
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
   }
   .storage {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px 16px;
-    padding: 6px 16px;
-    border-top: 1px solid var(--line);
-    background: var(--panel);
-    font-size: 12px;
-    color: var(--dim);
+    gap: var(--space-3) var(--space-5);
+    padding: var(--space-2) var(--space-5);
+    border-top: 1px solid var(--border);
+    background: var(--surface-raised);
+    font-size: var(--text-sm);
+    color: var(--text-dim);
   }
   .storage details ul {
-    margin: 4px 0;
+    margin: var(--space-2) 0;
   }
   /* A toolbar button's icon named in a sentence (the clipboard note): on the text's line, the words' color. */
   .inline-icon {
@@ -1510,7 +1420,7 @@
     }
     nav {
       border-right: 0;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid var(--border);
     }
   }
 </style>

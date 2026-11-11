@@ -63,3 +63,22 @@ test('the message: one line of text centered on its buttons', async () => {
   assert.ok(Math.abs(text - button) <= 0.5 && Math.abs(close - button) <= 0.5, `centers: text ${text}, button ${button}, close ${close}`);
   await page.close();
 });
+
+test("the primitives: a form's buttons are one height (ui/Button.svelte), and the page's styles are the tokens'", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await page.click('[data-action=new-machine]');
+  await page.locator('section.machine[data-selected] [data-tab=settings]').waitFor();
+  const got = await page.evaluate(() => {
+    const control = getComputedStyle(document.documentElement).getPropertyValue('--control-h').trim();
+    const heights = [...document.querySelectorAll('section.machine .button.bordered, section.machine .button.primary')]
+      .filter((b) => (b as HTMLElement).offsetParent)
+      .map((b) => b.getBoundingClientRect().height);
+    return { control, heights };
+  });
+  assert.equal(got.control, '28px', 'tokens.css is loaded');
+  assert.ok(got.heights.length >= 2, `buttons: ${got.heights.length}`);
+  assert.deepEqual([...new Set(got.heights)], [28], `heights: ${got.heights.join(', ')}`);
+  await page.close();
+});

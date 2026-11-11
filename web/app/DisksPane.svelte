@@ -6,7 +6,9 @@
 <script lang="ts">
   import AttachDisk from './AttachDisk.svelte';
   import DiskInfo from './DiskInfo.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Overlays from './Overlays.svelte';
   import { ask } from './ask.svelte.ts';
   import { msg, t } from '../i18n.ts';
@@ -70,36 +72,36 @@
   }
 </script>
 
-<ul class="cards">
+<CardList empty={all.length ? undefined : t('disks:DisksPane.none')}>
   {#each all as d (d.id)}
     {@const mine = overlaysOf(d.id)}
     {@const users = usersOf(d.id)}
-    <li data-disk={d.id} data-kind={d.kind}>
-      <DiskInfo disk={d} overlays={mine} {users} />
-      {#if mine.length}<button
-          onclick={() => (showing = { disk: d.id, what: 'overlays' })}
-          data-action="disk-overlays"
-          title={t('disks:DisksPane.overlaysButton.title')}>{t('disks:DisksPane.overlaysButton')}</button
-        >{/if}
-      <button
-        onclick={() => (showing = { disk: d.id, what: 'attach' })}
-        data-action="attach-disk"
-        title={t('disks:DisksPane.attach.title')}>{t('disks:DisksPane.attach')}</button
-      >
-      <button
-        onclick={() => remove(d)}
-        disabled={users.length > 0}
-        data-action="delete-disk"
-        title={users.length
-          ? t('disks:DisksPane.deleteAttached.title', { machines: users })
-          : t('disks:DisksPane.deleteButton.title')}
-        ><Icon name="trash" size={16} />{t('disks:DisksPane.deleteButton')}</button
-      >
-    </li>
-  {:else}
-    <li class="none">{t('disks:DisksPane.none')}</li>
+    <Card data-disk={d.id} data-kind={d.kind}>
+      <div class="info"><DiskInfo disk={d} overlays={mine} {users} /></div>
+      {#snippet actions()}
+        {#if mine.length}<Button
+            onclick={() => (showing = { disk: d.id, what: 'overlays' })}
+            data-action="disk-overlays"
+            title={t('disks:DisksPane.overlaysButton.title')}>{t('disks:DisksPane.overlaysButton')}</Button
+          >{/if}
+        <Button
+          onclick={() => (showing = { disk: d.id, what: 'attach' })}
+          data-action="attach-disk"
+          title={t('disks:DisksPane.attach.title')}>{t('disks:DisksPane.attach')}</Button
+        >
+        <Button
+          icon="trash"
+          onclick={() => remove(d)}
+          disabled={users.length > 0}
+          data-action="delete-disk"
+          title={users.length
+            ? t('disks:DisksPane.deleteAttached.title', { machines: users })
+            : t('disks:DisksPane.deleteButton.title')}>{t('disks:DisksPane.deleteButton')}</Button
+        >
+      {/snippet}
+    </Card>
   {/each}
-</ul>
+</CardList>
 {#if showing?.what === 'overlays' && shown}
   <Overlays {store} disk={shown} {overlays} {machines} {act} close={() => (showing = undefined)} />
 {:else if showing?.what === 'attach' && shown}
@@ -107,34 +109,9 @@
 {/if}
 
 <style>
-  .cards {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .info {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .cards > li {
-    display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
-  }
-  .cards > li.none {
-    color: var(--dim);
-  }
-  button {
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
+    gap: var(--space-3);
   }
 </style>

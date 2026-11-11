@@ -7,7 +7,11 @@
 <script lang="ts">
   import Check from './ui/Check.svelte';
   import AddUsb from './AddUsb.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
+  import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import { ask } from './ask.svelte.ts';
@@ -72,102 +76,109 @@
 
 <div class="usb">
   {#if !machine.usb}
-    <p class="note" data-usb-off>{snapshots ? t('usb:Usb.noController.orphans') : t('usb:Usb.noController')}</p>
+    <Note data-usb-off>{snapshots ? t('usb:Usb.noController.orphans') : t('usb:Usb.noController')}</Note>
   {/if}
-  <ul class="entries">
+  <CardList class="entries" empty={views.length ? undefined : t('usb:Usb.none')}>
     {#each views as v (v.entry.id)}
       {@const e = v.entry}
       {@const c = here && v.state === 'attached' ? ui.usb.connectors[e.connector] : null}
-      <li data-usb-entry={e.id} data-state={v.state}>
-        <Icon name={e.api === 'hid' ? 'device-gamepad-2' : 'usb'} size={18} />
-        <div class="what">
-          <strong>{deviceName(e)}</strong>
-          <span class="meta"
-            >{e.api === 'hid'
-              ? t('usb:Usb.meta.hid', { ids: idsText(e) })
-              : t('usb:Usb.meta.usb', { ids: idsText(e) })}{#if e.serialNumber}
-              · {t('usb:Usb.meta.serial', { serial: e.serialNumber })}{:else if e.index}
-              · {nth(e.index + 1)}{/if} · <span data-usb-state>{stateText(v)}</span></span
-          >
-          {#if c?.entry === e.id && c.problems?.length}
-            <div class="problems" data-usb-problems={e.id}><UsbProblems words={c.problems} /></div>
-          {/if}
+      <Card data-usb-entry={e.id} data-state={v.state}>
+        <div class="named">
+          <Icon name={e.api === 'hid' ? 'device-gamepad-2' : 'usb'} size={18} />
+          <div class="lines">
+            <strong>{deviceName(e)}</strong>
+            <Note inline class="meta"
+              >{e.api === 'hid'
+                ? t('usb:Usb.meta.hid', { ids: idsText(e) })
+                : t('usb:Usb.meta.usb', { ids: idsText(e) })}{#if e.serialNumber}
+                · {t('usb:Usb.meta.serial', { serial: e.serialNumber })}{:else if e.index}
+                · {nth(e.index + 1)}{/if} ·
+              <span
+                data-usb-state
+                class={{ ok: v.state === 'attached', warn: v.state === 'held' || v.state === 'ungranted' }}
+                >{stateText(v)}</span
+              ></Note
+            >
+            {#if c?.entry === e.id && c.problems?.length}
+              <div class="problems" data-usb-problems={e.id}><UsbProblems words={c.problems} /></div>
+            {/if}
+          </div>
         </div>
-        <label class="field" title={t('usb:Usb.connector.title')}
-          >{t('usb:Usb.connector')}
-          <select
-            value={e.connector}
-            disabled={here && v.state === 'attached'}
-            onchange={(ev) =>
-              act(t('usb:Usb.busy.saving'), () =>
-                page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }),
-              )}
-            data-field="connector"
+        {#snippet actions()}
+          <label class="field" title={t('usb:Usb.connector.title')}
+            >{t('usb:Usb.connector')}
+            <select
+              value={e.connector}
+              disabled={here && v.state === 'attached'}
+              onchange={(ev) =>
+                act(t('usb:Usb.busy.saving'), () =>
+                  page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }),
+                )}
+              data-field="connector"
+            >
+              {#each Array.from({ length: USER_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option
+                >{/each}
+            </select></label
           >
-            {#each Array.from({ length: USER_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option
-              >{/each}
-          </select></label
-        >
-        <Check
-          compact
-          checked={e.atStart}
-          onchange={(on) => act(t('usb:Usb.busy.saving'), () => page.usbEdit(machine.id, e.id, { atStart: on }))}
-          field="at-start"
-          title={t('usb:Usb.atStart.title')}>{t('usb:Usb.atStart')}</Check
-        >
-        {#if v.state === 'ungranted'}
-          <button
-            onclick={() => act(t('usb:Usb.busy.asking'), () => page.usbAllow(machine.id, e.id))}
-            data-action="allow"
-            title={t('usb:Usb.allow.title')}>{t('usb:Usb.allow')}</button
+          <Check
+            compact
+            checked={e.atStart}
+            onchange={(on) => act(t('usb:Usb.busy.saving'), () => page.usbEdit(machine.id, e.id, { atStart: on }))}
+            field="at-start"
+            title={t('usb:Usb.atStart.title')}>{t('usb:Usb.atStart')}</Check
           >
-        {/if}
-        {#if here && v.state === 'attached'}
-          <button
-            onclick={() => act(t('usb:Usb.busy.detaching'), () => page.usbDetach(e.id))}
-            data-action="detach"
-            title={t('usb:Usb.detach.title')}><Icon name="plug" size={16} />{t('usb:Usb.detach')}</button
+          {#if v.state === 'ungranted'}
+            <Button
+              onclick={() => act(t('usb:Usb.busy.asking'), () => page.usbAllow(machine.id, e.id))}
+              data-action="allow"
+              title={t('usb:Usb.allow.title')}>{t('usb:Usb.allow')}</Button
+            >
+          {/if}
+          {#if here && v.state === 'attached'}
+            <Button
+              icon="plug"
+              onclick={() => act(t('usb:Usb.busy.detaching'), () => page.usbDetach(e.id))}
+              data-action="detach"
+              title={t('usb:Usb.detach.title')}>{t('usb:Usb.detach')}</Button
+            >
+          {:else if here && (v.state === 'plugged' || v.state === 'held')}
+            <Button
+              icon="plug-connected"
+              variant="primary"
+              onclick={() => act(t('usb:Usb.busy.attaching'), () => page.usbAttach(e.id))}
+              data-action="attach"
+              title={v.state === 'held' ? t('usb:Usb.attachHere.title') : t('usb:Usb.attach.title')}
+              >{v.state === 'held' ? t('usb:Usb.attachHere') : t('usb:Usb.attach')}</Button
+            >
+          {/if}
+          <Button icon="trash" onclick={() => forget(v)} data-action="forget" title={t('usb:Usb.forget.button.title')}
+            >{t('usb:Usb.forget.button')}</Button
           >
-        {:else if here && (v.state === 'plugged' || v.state === 'held')}
-          <button
-            class="primary"
-            onclick={() => act(t('usb:Usb.busy.attaching'), () => page.usbAttach(e.id))}
-            data-action="attach"
-            title={v.state === 'held' ? t('usb:Usb.attachHere.title') : t('usb:Usb.attach.title')}
-            ><Icon name="plug-connected" size={16} />{v.state === 'held'
-              ? t('usb:Usb.attachHere')
-              : t('usb:Usb.attach')}</button
-          >
-        {/if}
-        <button onclick={() => forget(v)} data-action="forget" title={t('usb:Usb.forget.button.title')}
-          ><Icon name="trash" size={16} />{t('usb:Usb.forget.button')}</button
-        >
-      </li>
-    {:else}
-      <li class="none">{t('usb:Usb.none')}</li>
+        {/snippet}
+      </Card>
     {/each}
-  </ul>
+  </CardList>
   {#if machine.usb}
     {@const k = here ? ui.usb.connectors[KEYBOARD_CONNECTOR] : null}
-    <p class="note" data-usb-builtin data-state={k?.builtin ? k.state : 'detached'}>
+    <Note data-usb-builtin data-state={k?.builtin ? k.state : 'detached'}>
       {here
         ? k?.builtin
           ? t('usb:Usb.builtin.pluggedNow', { connector: KEYBOARD_CONNECTOR + 1 })
           : t('usb:Usb.builtin.asNow', { connector: KEYBOARD_CONNECTOR + 1 })
         : t('usb:Usb.builtin', { connector: KEYBOARD_CONNECTOR + 1 })}
-    </p>
+    </Note>
   {/if}
   <div class="row">
-    <button onclick={() => (adding = true)} data-action="add-usb" disabled={!machine.usb}
-      ><Icon name="plus" size={16} />{t('usb:Usb.add')}</button
+    <Button icon="plus" onclick={() => (adding = true)} data-action="add-usb" disabled={!machine.usb}
+      >{t('usb:Usb.add')}</Button
     >
   </div>
   {#if hasTwins(machine.usbDevices ?? [])}
-    <p class="note" data-usb-twins>{t('usb:Usb.twins')}</p>
+    <Note data-usb-twins>{t('usb:Usb.twins')}</Note>
   {/if}
-  <p class="note">
+  <Note>
     {running && !here ? t('usb:Usb.note.otherTab') : !running ? t('usb:Usb.note.stopped') : t('usb:Usb.note')}
-  </p>
+  </Note>
 </div>
 {#if adding}<AddUsb machine={machine.id} name={machine.name} close={() => (adding = false)} />{/if}
 
@@ -175,79 +186,40 @@
   .usb {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-4);
   }
-  .entries {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  /* A row's icon beside its name and lines. */
+  .named {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .entries li {
-    display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
+    gap: var(--space-4);
   }
-  .entries li.none {
-    color: var(--dim);
-  }
-  .what {
-    flex: 1;
-    min-width: 200px;
+  .lines {
+    min-width: 0;
     display: flex;
     flex-direction: column;
   }
-  .meta {
-    color: var(--dim);
-    font-size: 12px;
+  .ok {
+    color: var(--ok-fg);
   }
-  li[data-state='attached'] [data-usb-state] {
-    color: #8fd18f;
-  }
-  li[data-state='held'] [data-usb-state],
-  li[data-state='ungranted'] [data-usb-state] {
-    color: #ffb36b;
+  .warn {
+    color: var(--warn-fg);
   }
   .problems {
-    margin-top: 4px;
-    color: #ffb36b;
-    font-size: 12px;
+    margin-top: var(--space-2);
+    color: var(--warn-fg);
+    font-size: var(--text-sm);
   }
   .field {
     display: flex;
     align-items: center;
-    gap: 6px;
-    color: var(--dim);
-    font-size: 12px;
+    gap: var(--space-3);
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-  }
-  button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
-  }
-  .primary {
-    background: #24406b;
-    border-color: #3b6db3;
-    color: #fff;
-  }
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-    margin: 0;
+    gap: var(--space-3);
   }
 </style>

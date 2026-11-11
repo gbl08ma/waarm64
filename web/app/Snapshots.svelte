@@ -6,7 +6,11 @@
   transient machine: files only.
 -->
 <script lang="ts">
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
+  import Note from './ui/Note.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, SnapshotRecord } from './store.ts';
   import type { MachineRecord, Shape } from './shape.ts';
@@ -127,62 +131,70 @@
 
 <div class="snapshots">
   {#if machine}
-    {#if !kept.length}<p class="note">{t('snapshots:Snapshots.none')}</p>{/if}
-    <ul>
-      {#each kept as s (s.id)}
-        <li data-snapshot={s.id} class:orphaned={orphaned(s)}>
-          <Icon name="history" size={18} />
-          <div class="what">
-            <strong>{s.name}</strong>
-            <span class="meta">{t('snapshots:Snapshots.meta', { when: new Date(s.created), size: s.bytes })}</span>
-            {#if orphaned(s)}<span class="orphan" title={why(s)}
-                >{t('snapshots:Snapshots.orphaned', { why: why(s) })}</span
-              >{/if}
-          </div>
-          {#if orphaned(s)}
-            <button onclick={() => like(s)} title={t('snapshots:Snapshots.like.title')}
-              >{t('snapshots:Snapshots.like')}</button
-            >
-          {:else}
-            <button
-              onclick={() => restore(s)}
-              disabled={!here}
-              title={here ? t('snapshots:Snapshots.restore.title') : t('snapshots:Snapshots.restore.notHere')}
-              data-action="restore"><Icon name="history" size={16} />{t('snapshots:Snapshots.restore')}</button
-            >
-          {/if}
-          <button
-            class="icon"
-            onclick={() => rename(s)}
-            aria-label={t('snapshots:Snapshots.rename')}
-            title={t('snapshots:Snapshots.rename')}><Icon name="pencil" size={16} /></button
-          >
-          <button
-            class="icon"
-            onclick={() => download(s)}
-            aria-label={t('snapshots:Snapshots.download')}
-            title={t('snapshots:Snapshots.download.title')}><Icon name="download" size={16} /></button
-          >
-          <button
-            class="icon"
-            onclick={() => remove(s)}
-            aria-label={t('snapshots:Snapshots.delete')}
-            title={t('snapshots:Snapshots.delete')}><Icon name="trash" size={16} /></button
-          >
-        </li>
-      {/each}
-    </ul>
+    {#if !kept.length}<Note>{t('snapshots:Snapshots.none')}</Note>{:else}
+      <CardList>
+        {#each kept as s (s.id)}
+          <Card data-snapshot={s.id} class={orphaned(s) ? 'orphaned' : undefined}>
+            <div class="named">
+              <Icon name="history" size={18} />
+              <div class="lines">
+                <strong class={{ struck: orphaned(s) }}>{s.name}</strong>
+                <Note inline class="meta"
+                  >{t('snapshots:Snapshots.meta', { when: new Date(s.created), size: s.bytes })}</Note
+                >
+                {#if orphaned(s)}<Note inline tone="warn" class="orphan" title={why(s)}
+                    >{t('snapshots:Snapshots.orphaned', { why: why(s) })}</Note
+                  >{/if}
+              </div>
+            </div>
+            {#snippet actions()}
+              {#if orphaned(s)}
+                <Button onclick={() => like(s)} title={t('snapshots:Snapshots.like.title')}
+                  >{t('snapshots:Snapshots.like')}</Button
+                >
+              {:else}
+                <Button
+                  icon="history"
+                  onclick={() => restore(s)}
+                  disabled={!here}
+                  title={here ? t('snapshots:Snapshots.restore.title') : t('snapshots:Snapshots.restore.notHere')}
+                  data-action="restore">{t('snapshots:Snapshots.restore')}</Button
+                >
+              {/if}
+              <Button
+                icon="pencil"
+                onclick={() => rename(s)}
+                aria-label={t('snapshots:Snapshots.rename')}
+                title={t('snapshots:Snapshots.rename')}
+              ></Button>
+              <Button
+                icon="download"
+                onclick={() => download(s)}
+                aria-label={t('snapshots:Snapshots.download')}
+                title={t('snapshots:Snapshots.download.title')}
+              ></Button>
+              <Button
+                icon="trash"
+                onclick={() => remove(s)}
+                aria-label={t('snapshots:Snapshots.delete')}
+                title={t('snapshots:Snapshots.delete')}
+              ></Button>
+            {/snippet}
+          </Card>
+        {/each}
+      </CardList>
+    {/if}
   {/if}
   <div class="row">
-    {#if machine && kept.some(orphaned)}<button onclick={removeOrphaned} data-action="delete-orphaned"
-        ><Icon name="trash" size={16} />{t('snapshots:Snapshots.deleteOrphaned')}</button
+    {#if machine && kept.some(orphaned)}<Button icon="trash" onclick={removeOrphaned} data-action="delete-orphaned"
+        >{t('snapshots:Snapshots.deleteOrphaned')}</Button
       >{/if}
-    {#if here}<button onclick={restoreFile} title={t('snapshots:Snapshots.restoreFile.title')}
-        ><Icon name="history" size={16} />{t('snapshots:Snapshots.restoreFile')}</button
+    {#if here}<Button icon="history" onclick={restoreFile} title={t('snapshots:Snapshots.restoreFile.title')}
+        >{t('snapshots:Snapshots.restoreFile')}</Button
       >{/if}
     {#if machine}
-      <button onclick={() => importInput?.click()} title={t('snapshots:Snapshots.import.title')}
-        ><Icon name="file-import" size={16} />{t('snapshots:Snapshots.import')}</button
+      <Button icon="file-import" onclick={() => importInput?.click()} title={t('snapshots:Snapshots.import.title')}
+        >{t('snapshots:Snapshots.import')}</Button
       >
       <input
         type="file"
@@ -193,67 +205,36 @@
         data-field="import-snapshot"
       />
     {/if}
-    {#if live}<button onclick={toFile} title={t('snapshots:Snapshots.toFile.title')}
-        ><Icon name="file-export" size={16} />{t('snapshots:Snapshots.toFile')}</button
+    {#if live}<Button icon="file-export" onclick={toFile} title={t('snapshots:Snapshots.toFile.title')}
+        >{t('snapshots:Snapshots.toFile')}</Button
       >{/if}
   </div>
 </div>
 
 <style>
-  .snapshots ul {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 12px;
+  .snapshots {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-4);
   }
-  .snapshots li {
+  /* A row's icon beside its name and lines. */
+  .named {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
     align-items: center;
-    padding: 8px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
+    gap: var(--space-4);
   }
-  .what {
-    flex: 1;
-    min-width: 200px;
+  .lines {
+    min-width: 0;
     display: flex;
     flex-direction: column;
   }
-  .orphaned strong {
+  .struck {
     text-decoration: line-through;
     opacity: 0.7;
-  }
-  .orphan {
-    color: #ffb36b;
-    font-size: 12px;
-  }
-  .meta,
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-  }
-  .note {
-    margin: 0 0 8px;
   }
   .row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-  }
-  button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
-  }
-  button.icon {
-    padding: 3px 5px;
+    gap: var(--space-3);
   }
 </style>

@@ -7,7 +7,11 @@
 <script lang="ts">
   import Check from './ui/Check.svelte';
   import AddDisk from './AddDisk.svelte';
+  import Button from './ui/Button.svelte';
+  import Card from './ui/Card.svelte';
+  import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
+  import Note from './ui/Note.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import ExportMenu from './ExportMenu.svelte';
   import Overlays from './Overlays.svelte';
@@ -110,23 +114,23 @@
   const overlaysShown = $derived(overlaysOpen ? disks.get(overlaysOpen) : undefined);
 </script>
 
-<ol class="disks">
+<CardList empty={machine.attachments.length ? undefined : t('disks:Disks.none')}>
   {#each machine.attachments as a, i (a.id)}
     {@const d = disks.get(a.disk)}
-    <li data-attachment={a.id}>
+    <Card data-attachment={a.id}>
       <div class="row">
         <span class="kind" title={d ? diskKind(d.kind).text : ''}
           ><Icon name={d ? diskKind(d.kind).icon : 'x'} size={18} /></span
         >
         <strong>{d?.name ?? t('disks:Disks.missing')}</strong>
-        <span class="meta"
+        <Note inline class="meta"
           >{d
             ? t('disks:Disks.meta', {
                 kind: diskKind(d.kind).text,
                 size: bytesText(d.size),
                 letter: String.fromCharCode(97 + i),
               })
-            : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</span
+            : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</Note
         >
         <span class="grow"></span>
         <Check
@@ -159,11 +163,11 @@
           upTitle={t('disks:Disks.moveUp.title')}
           downTitle={t('disks:Disks.moveDown.title')}
         />
-        <button onclick={() => detach(a.id, d)} title={t('disks:Disks.detach.button.title')}
-          >{t('disks:Disks.detach.button')}</button
+        <Button onclick={() => detach(a.id, d)} title={t('disks:Disks.detach.button.title')}
+          >{t('disks:Disks.detach.button')}</Button
         >
       </div>
-      {#if d?.kind === 'url'}<p class="note">{text(URL_SLOW)}</p>{/if}
+      {#if d?.kind === 'url'}<div class="url-note"><Note>{text(URL_SLOW)}</Note></div>{/if}
       {#if d && !a.readOnly && d.kind !== 'ramdisk' && !a.inPlace}
         <div class="overlays">
           <label
@@ -181,13 +185,13 @@
                 >{/each}
             </select>
           </label>
-          <button onclick={() => newOverlay(a.id, d)} title={t('disks:Disks.newEmpty.title')}
-            ><Icon name="plus" size={16} />{t('disks:Disks.newEmpty')}</button
+          <Button icon="plus" onclick={() => newOverlay(a.id, d)} title={t('disks:Disks.newEmpty.title')}
+            >{t('disks:Disks.newEmpty')}</Button
           >
-          {#if overlaysOf(d.id).length}<button
+          {#if overlaysOf(d.id).length}<Button
               onclick={() => (overlaysOpen = d.id)}
               title={t('disks:Disks.overlaysButton.title')}
-              data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</button
+              data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</Button
             >{/if}
           {#if a.overlay && overlays.some((x) => x.id === a.overlay)}<ExportMenu
               id={a.id}
@@ -196,8 +200,10 @@
               changes={d.kind !== 'blank'}
             />{/if}
           {#if d.kind !== 'blank'}
-            <button onclick={() => importInputs[a.id]?.click()} title={t('disks:Disks.importChanges.title')}
-              ><Icon name="upload" size={16} />{t('disks:Disks.importChanges')}</button
+            <Button
+              icon="upload"
+              onclick={() => importInputs[a.id]?.click()}
+              title={t('disks:Disks.importChanges.title')}>{t('disks:Disks.importChanges')}</Button
             >
             <input
               type="file"
@@ -210,26 +216,24 @@
         </div>
       {:else if d?.kind === 'stored'}
         <div class="overlays">
-          {#if overlaysOf(d.id).length}<button
+          {#if overlaysOf(d.id).length}<Button
               onclick={() => (overlaysOpen = d.id)}
               title={t('disks:Disks.overlaysButton.title')}
-              data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</button
+              data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</Button
             >{/if}
           <ExportMenu id={a.id} disk={d} overlay={undefined} changes={false} />
         </div>
       {/if}
-    </li>
-  {:else}
-    <li class="none">{t('disks:Disks.none')}</li>
+    </Card>
   {/each}
-</ol>
-{#if machine.attachments.length < MAX_DISKS}
-  <button class="add" onclick={() => (adding = true)} data-action="add-disk-open"
-    ><Icon name="plus" size={16} />{t('disks:Disks.add')}</button
-  >
-{:else}
-  <p class="note">{t('disks:Disks.full', { max: MAX_DISKS })}</p>
-{/if}
+</CardList>
+<div class="after">
+  {#if machine.attachments.length < MAX_DISKS}
+    <Button icon="plus" onclick={() => (adding = true)} data-action="add-disk-open">{t('disks:Disks.add')}</Button>
+  {:else}
+    <Note>{t('disks:Disks.full', { max: MAX_DISKS })}</Note>
+  {/if}
+</div>
 {#if adding}<AddDisk {store} {machine} {act} {offFirst} close={() => (adding = false)} />{/if}
 {#if overlaysShown}<Overlays
     {store}
@@ -241,65 +245,34 @@
   />{/if}
 
 <style>
-  .disks {
-    list-style: none;
-    margin: 0 0 12px;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .disks > li {
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--panel);
-  }
-  .disks > li.none {
-    color: var(--dim);
-  }
   .row,
   .overlays {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-3);
     align-items: center;
   }
   .overlays {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--line);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
   }
   .grow {
     flex: 1;
   }
   .kind {
-    color: var(--dim);
-  }
-  .meta,
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-  }
-  .note {
-    margin: 4px 0 0;
+    display: inline-flex;
+    color: var(--text-dim);
   }
   .overlays > label {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
   }
-  .row > button,
-  .overlays > button,
-  .add {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
+  .url-note {
+    margin-top: var(--space-2);
   }
-  .add {
-    padding: 5px 12px;
+  .after {
+    margin-top: var(--space-4);
   }
 </style>

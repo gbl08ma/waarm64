@@ -3,7 +3,9 @@
   qcow2 or raw, compressed or not. On a machine's Disks tab (its chosen overlay) and in a disk's Overlays dialog (each one).
 -->
 <script lang="ts">
+  import Button from './ui/Button.svelte';
   import Check from './ui/Check.svelte';
+  import Note from './ui/Note.svelte';
   import Menu from './ui/Menu.svelte';
   import { t } from '../i18n.ts';
   import type { DiskRecord } from './shape.ts';
@@ -31,26 +33,27 @@
   bind:open
   align="left"
 >
-  {#if changes}<button data-save="changes" title={t('disks:ExportMenu.changes.title')} onclick={() => save('changes')}
-      >{t('disks:ExportMenu.changes')}</button
+  {#if changes}<Button
+      variant="item"
+      data-save="changes"
+      title={t('disks:ExportMenu.changes.title')}
+      onclick={() => save('changes')}>{t('disks:ExportMenu.changes')}</Button
     >{/if}
-  <button data-save="qcow2" title={t('disks:ExportMenu.qcow2.title')} onclick={() => save('qcow2')}
-    >{t('disks:ExportMenu.qcow2')}</button
+  <Button variant="item" data-save="qcow2" title={t('disks:ExportMenu.qcow2.title')} onclick={() => save('qcow2')}
+    >{t('disks:ExportMenu.qcow2')}</Button
   >
-  <button data-save="raw" title={t('disks:ExportMenu.raw.title')} onclick={() => save('raw')}
-    >{t('disks:ExportMenu.raw')}</button
+  <Button variant="item" data-save="raw" title={t('disks:ExportMenu.raw.title')} onclick={() => save('raw')}
+    >{t('disks:ExportMenu.raw')}</Button
   >
   <Check bind:checked={compress} onchange={() => remember({ compress })} title={t('disks:ExportMenu.compress.title')}
     >{t('disks:ExportMenu.compress')}</Check
   >
-  <p class="hint">{t('disks:ExportMenu.hint')}</p>
+  <div class="hint"><Note>{t('disks:ExportMenu.hint')}</Note></div>
 </Menu>
 
 <style>
   .hint {
-    color: var(--dim);
-    font-size: 12px;
-    margin: 4px 8px;
     max-width: 260px;
+    padding: var(--space-2) var(--space-4);
   }
 </style>
