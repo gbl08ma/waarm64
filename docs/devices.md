@@ -720,7 +720,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   tables are kept. The caps the guest read are saved; a restore in a browser that can't back them (`capsBacked`) keeps
   them for the guest and turns 3D off (new contexts refused, a saved 3D state not loaded) rather than refusing the
   machine.
-- **Video** (graphics.md "Video", [plans/video.md](plans/video.md)): the caps' `video_caps`, and video commands in the
+- **Video** ([graphics.md](graphics.md) "Video"): the caps' `video_caps`, and video commands in the
   submits, which the device hands to the host like any other (a capture includes DECODE_BITSTREAM's buffers).
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).

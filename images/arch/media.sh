@@ -8,7 +8,7 @@
 #   sintel.webm   a real video for the ear: the Sintel trailer (Blender Foundation, CC BY 3.0, from download.blender.org),
 #                 854x480 VP9 and Opus; sintel-silent.webm, the same video without its sound (the decode's cost of sound).
 #   avsync-vp9.webm, avsync.mp4   the sync clip again as VP9 (with Opus) and as H.264 High with B-pictures and AAC.
-#   res-vp9.webm, res-h264.ts   a stream whose size changes (the video track, docs/plans/video.md V3): the trailer from
+#   res-vp9.webm, res-h264.ts   a stream whose size changes (the video track, docs/graphics.md "Video's findings"): the trailer from
 #                 20 s to 32 s in three 4 s segments, 854x480, 640x360 and 1280x720, each from a key picture, joined
 #                 without re-encoding (one track); VP9 in WebM (Firefox plays it), H.264 High with B-pictures in MPEG-TS.
 #   sintel-av1.webm, sintel-aom.webm, sintel-grain.webm   AV1 (the video track's V3): the trailer in SVT-AV1 with
@@ -39,7 +39,7 @@ podman run --rm -v "$OUT:/out:Z" "$CONTAINER" sh -euc '
     -f lavfi -i "color=c=black:s=640x360:r=30:d=60,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable=lt(mod(n\,30)\,1)" \
     -f lavfi -i "aevalsrc=if(lt(mod(t\,1)\,0.04)\,0.5*sin(2*PI*1000*t)\,0):s=48000:d=60" \
     -ac 2 -c:v libvpx -b:v 400k -g 30 -deadline good -c:a libopus -b:a 96k avsync.webm
-  # The same in the codecs the host decodes for the guest (VA-API over virgl, docs/plans/video.md): VP9, and H.264 High
+  # The same in the codecs the host decodes for the guest (VA-API over virgl, docs/graphics.md "Video"): VP9, and H.264 High
   # with B-pictures (x264 defaults) and AAC.
   [ -f avsync-vp9.webm ] || ffmpeg -loglevel error -y -i avsync.webm -c:v libvpx-vp9 -b:v 400k -g 30 -deadline good -cpu-used 4 -c:a copy avsync-vp9.webm
   [ -f avsync.mp4 ] || ffmpeg -loglevel error -y -i avsync.webm -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -crf 23 -c:a aac -b:a 128k -movflags +faststart avsync.mp4

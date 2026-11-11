@@ -313,7 +313,7 @@ guest (Arch Linux, GTK 4.24.1, Mesa 26.2.5, sway 1.12 on GLES 2), 4 vCPUs; `benc
   draws a second through virgl), so Vulkan helps it only if Venus's encoding costs the guest less than virgl's
   (B's estimate: about the same at light settings). VK1's gate measures exactly this.
 - themes redraws only when its toggle is pressed: measured idle, no number.
-- **mpv** (from the video track, docs/plans/video.md §7: Sintel's H.264 trailer, `--hwdec=vaapi`, the host
+- **mpv** (from the video track, docs/graphics.md "Video's findings": Sintel's H.264 trailer, `--hwdec=vaapi`, the host
   decoding): 0 of 527 frames dropped, the guest 19–27% busy. On Vulkan libplacebo would take VA-API's surfaces only
   by importing their dma-bufs (`VK_EXT_external_memory_dma_buf` with modifiers), which the direct set lacks: whether
   mpv then decodes on the guest's CPU instead (and so misses this bar) is VK2's to check.

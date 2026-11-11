@@ -1,4 +1,4 @@
-// The video track's V0 guest gate (docs/plans/video.md §3; dev-only, not in tests): the desktop guest
+// The video track's V0 guest gate (docs/graphics.md "Video"; dev-only, not in tests): the desktop guest
 // (images/arch/desktop.sh) on the page with video advertised (`?gpu=virgl,video`) and the renderer's null decoder.
 // What VA-API the guest's Mesa offers (`vainfo`), whether FFmpeg decodes through it (`-hwaccel vaapi`, the Sintel
 // trailer's H.264 and VP9), and whether Firefox does (its log: `MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5`) with

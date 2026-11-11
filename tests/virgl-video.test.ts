@@ -1,4 +1,4 @@
-// Video over virgl in Node (docs/plans/video.md): the caps' video entries as Mesa reads them, a restore's check that the
+// Video over virgl in Node (docs/graphics.md "Video"): the caps' video entries as Mesa reads them, a restore's check that the
 // browser still has the decoders the guest was told of, the codec and buffer tables the video commands keep, the
 // pictures through a fake decoder into their planes, and the GPU worker's queue holding what follows a picture.
 import assert from 'node:assert/strict';

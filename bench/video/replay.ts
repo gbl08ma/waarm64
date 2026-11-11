@@ -1,4 +1,4 @@
-// V1's check in Chromium (docs/plans/video.md): a capture's pictures (bench/video/pictures.ts) as the host will hand
+// V1's check in Chromium (docs/graphics.md "Video"): a capture's pictures (bench/video/pictures.ts) as the host will hand
 // them to WebCodecs, one chunk per picture (AV1: per temporal unit, web/video-av1.ts), each output frame copied out (I420, the visible width) and hashed as
 // ffmpeg's framemd5 does (md5 of the planes' rows), against the original file's frames (`<name>.md5`: ffmpeg's
 // framemd5 hashes, one a line). Prints how many frames came out, in what order, how many match, and how long the

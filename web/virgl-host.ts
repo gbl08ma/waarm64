@@ -256,7 +256,7 @@ function destroysSub(words: Uint32Array) {
 }
 
 /**
- * The GPU worker's calls in order, with video (docs/plans/video.md §5, §7). The guest expects a picture decoded once
+ * The GPU worker's calls in order, with video (docs/graphics.md "Video's findings"). The guest expects a picture decoded once
  * its END_FRAME has run (Mesa's virgl makes no fence for it; virglrenderer decodes synchronously), while WebCodecs
  * decodes asynchronously, and a software decoder may hold a picture until later ones come. So a call waits here while
  * it could see a pending picture: one of a context that has a pending picture's plane attached (the renderer gives a

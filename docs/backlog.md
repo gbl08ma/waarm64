@@ -479,7 +479,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **HEVC on the host** (dropped with the video track's end, 2026-10-15, the user: H.264, VP9 and AV1 cover what the
   web serves; Chromium on Linux has no HEVC decoder of its own, so only hosts with hardware HEVC would offer it; HEVC
-  files still play, decoded in the guest). What it would need ([plans/video.md](plans/video.md) §11): VPS, SPS and PPS
+  files still play, decoded in the guest). What it would need ([graphics.md](graphics.md) "Video's design"): VPS, SPS and PPS
   written from `virgl_h265_picture_desc` (offsets from a C program against Mesa's `virgl_video_hw.h`), and every slice
   header rewritten, since VA's parameters lose the SPS's short-term reference picture sets (only their count): an
   explicit set built from the picture's DPB list (`ref[]`, `PicOrderCntVal[]`, the RefPicSetSt*/Lt indices; the rest
@@ -487,18 +487,26 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   long-term pictures from the SPS can't be rebuilt (their POCs aren't sent). Testable only where the browser has
   HEVC (the Mac's hardware), and offline with FFmpeg in Podman.
 - **A VA-API consumer that waits on each picture, where the browser decodes H.264 in software** (the guest's
-  `ffmpeg -hwaccel vaapi` reading frames back, as in transcoding; plans/video.md §7, §12): every frame right, 120 frames
+  `ffmpeg -hwaccel vaapi` reading frames back, as in transcoding; graphics.md "Video's findings"): every frame right, 120 frames
   in 2.1 s on the Mac (23 s before the call queue's waits became per picture and per submit), a drain now and then
-  where the decoder holds more pictures than the guest sends before it waits. Filler pictures (plans/video.md §12:
+  where the decoder holds more pictures than the guest sends before it waits. Filler pictures (graphics.md "Video's findings":
   measured, exact, then dropped) took it to 1.5 s; worth bringing back only if transcoding in the guest matters, with
   their hazards (OpenH264 under Chromium's FFmpeg wants nothing sent until a filler has left the queue).
-- **H.264 that jumps to a picture that isn't an IDR** (plans/video.md §9: the guest's FFmpeg seeking in an MPEG-TS,
+- **H.264 that jumps to a picture that isn't an IDR** (graphics.md "Video's findings": the guest's FFmpeg seeking in an MPEG-TS,
   which has no index, lands mid-GOP; a stream whose key pictures are recovery-point I pictures): the guest's own
   decoder conceals the missing references, the browser's decoders (VideoToolbox, Chrome's FFmpeg, OpenH264) report a
   decoding error, and the host drops the codec's pictures until its next IDR (the guest sees a still picture, up to a
   GOP: ~10 s for x264's defaults). Idea, not tried: after an error, restart the decoder at the next picture whose
   slices are all I by rewriting it as an IDR (NAL type 5, an `idr_pic_id`, `dec_ref_pic_marking` without MMCO; the
   slice header re-encoded). Worth it only if TS playback or such streams matter (MP4 and WebM seek to key pictures).
+- **Video streams no test has exercised** (graphics.md "Video's measurements"): AV1's superres (libaom through FFmpeg
+  won't take the option: `-aom-params` keys only, `superres-mode` isn't one), non-uniform tiles, translation and affine
+  global motion, intra block copy, switch frames, and a hidden key frame the guest shows later (not output by the host;
+  none of the encoders tried made one); VP9's size change without a key frame (reference scaling, libvpx's real-time
+  resizing). Each needs a clip in images/arch/media.sh and a `v1.ts` run against the guest's software decode.
+- **10-bit video isn't offered** (graphics.md "Video's design"): VP9 profile 2 and AV1 10-bit, which the browsers
+  decode, would need P010 video buffers (16-bit planes in virgl, a WebCodecs frame's 16-bit `copyTo`) and Mesa's
+  profile entries; none of the web's common streams need it yet.
 - **mpv on virgl's GL with VA-API pauses on another frame** (VK2 L6, bench/vulkan/REPORT.md "VK2 L6",
   `bench/vulkan/mpv-frames.ts`): paused at 20 s in Sintel's trailer, `--vo=gpu --gpu-api=opengl --hwdec=vaapi` shows a
   picture a frame or two away from the one mpv shows decoding in software, or on Vulkan with VA-API (those three agree
@@ -1324,7 +1332,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   browser's indicator going off when it stops and a refusal's hint (e.g. on the desktop guest `pw-record /tmp/a.wav`,
   `pw-play /tmp/a.wav`, with and without Raw microphone); a video in Firefox on the desktop guest
   (`avsync.html?v=sintel.webm`) in sync by ear (the measurement is -17 to +20 ms after Firefox's first 4 s; decoded on
-  the host since video V2, -10 to -13 ms median: plans/video.md §6).
+  the host since video V2, -10 to -13 ms median: graphics.md "Video's measurements").
 - **Audio, not built** ([audio.md](audio.md)): capture controls (the controls are the output's Master volume and
   switch; the microphone has the browser's gain only), controls in the native twin and the snd guest (the page's
   machines have them, the test guests not: QEMU's device has none; Debian's ALSA is checked by the page test, the
@@ -1705,7 +1713,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 Bugs found in other projects, kept here until the user's round-up of upstream reports; each with what's needed to
 report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
 
-- **Mesa, virgl's VA-API driver offers I420 and YV12 decode surfaces** ([plans/video.md](plans/video.md) §1, §4):
+- **Mesa, virgl's VA-API driver offers I420 and YV12 decode surfaces** ([graphics.md](graphics.md) "Video's design"):
   `virgl_is_video_format_supported` is `vl_video_buffer_is_format_supported`, which only checks that the planes'
   formats sample and render, so `vaQuerySurfaceAttributes` lists NV12, YV12 and I420; FFmpeg's
   `vaapi_decode_find_best_format` then takes I420 for H.264 and VP9 (yuv420p), and Firefox's VA-API path (NV12, YV12,
@@ -1713,12 +1721,11 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   alone for decoding. Fix: virgl answers decode entrypoints with NV12/P010/P016 only. Seen with Mesa 26.2.4, libva
   2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `webpc-va` package (`images/arch/webpc-va/`), which goes
   away with the fix.
-- **Mesa and virglrenderer disagree on virgl's video profile numbers** ([plans/video.md](plans/video.md) §4,
-  [graphics.md](graphics.md) "Video"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped
+- **Mesa and virglrenderer disagree on virgl's video profile numbers** ([graphics.md](graphics.md) "Video"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped
   `MPEG4_SIMPLE`/`MPEG4_ADVANCED_SIMPLE` (and added HEVC 4:2:2/4:4:4 profiles) that virglrenderer's copy (`c8e3fc3b`)
   still has, so every later value (H.264, HEVC, VP9, AV1) means a different profile to each. The protocol needs its
   own fixed numbering.
-- **Mesa's virgl AV1 decode loses three things** ([plans/video.md](plans/video.md) §10; Mesa 26.2.4,
+- **Mesa's virgl AV1 decode loses three things** ([graphics.md](graphics.md) "Video's findings"; Mesa 26.2.4,
   `src/gallium/frontends/va/picture_av1.c`, `picture.c`, `src/gallium/drivers/virgl/virgl_video.c`): the VA frontend
   writes `refresh_frame_flags = 1` whatever the frame refreshes (a stateful host decoder needs it; webpc keeps its own
   slots instead); it sets `film_grain_target` in `vlVaEndPicture`, after `vaRenderPicture` has sent the frame's desc
@@ -1727,7 +1734,7 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   `fill_av1_picture_desc` doesn't copy `lr_unit_size` (the shifts are copied). Repro: the guest's `ffmpeg -hwaccel
   vaapi` on an SVT-AV1 clip with `-svtav1-params film-grain=8` against its software decode.
 - **Chromium (libyuv's SME kernels) SIGILLs on CPUs with SME but no SVE** (Apple M4 under Linux, e.g. a Lima VM;
-  plans/video.md §4): reading a decoded `VideoFrame` (`copyTo`, a WebGL upload, `createImageBitmap`) faults at `cntd`
+  graphics.md "Video's findings"): reading a decoded `VideoFrame` (`copyTo`, a WebGL upload, `createImageBitmap`) faults at `cntd`
   in the prologue of a locally streaming function compiled with SVE (LLVM saves the vector length with an SVE
   instruction there). Seen with openSUSE's Chromium 153.0.8010.52 on aarch64; libyuv picks SME from
   `getauxval(AT_HWCAP2)`. Our workaround: `tools/nosme` as `LD_PRELOAD` for the tests' Chromium.

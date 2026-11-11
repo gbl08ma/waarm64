@@ -176,7 +176,8 @@ The dev VM unless noted, headless Chromium 153. JSON in `bench/audio/results/`; 
   start-up transient of 4 s (the sound first while Firefox's video catches up) **every offset is within -17 to +20 ms**
   (two clusters ~17 ms apart: a 60 Hz frame), inside ±45 ms (ITU-R BT.1359's detectability threshold). The dev VM's
   SwiftShader saturates the guest, so A/V sync is measured on a real GPU only. The user judged a video by ear "good
-  enough": the decode is too slow to judge sync by ear ([backlog.md](backlog.md) "Hardware video decoding").
+  enough": decoded in the guest, the video was too slow to judge sync by ear (it's decoded on the host now:
+  [graphics.md](graphics.md) "Video's measurements").
 - **Cost:** mpv on Sintel's sound alone, `--ao=pipewire` against `--ao=null`: the guest's 4 vCPUs 10% busy against 9%
   (PipeWire's data loop 34 ms of CPU a second). **The sound costs the guest under 1% of its CPU.** The video's decode is
   the cost: Firefox's VP9 decoder takes 1.7-1.8 s of CPU a second for 480p and still shows ~10% of its frames.

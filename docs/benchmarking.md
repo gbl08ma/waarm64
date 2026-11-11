@@ -302,7 +302,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   inside one `vm_run_cpu` call that retired nothing; a vCPU publishes at a chunk's end, so a stall's compile time shows
   in the bin after it). An install of JIT code over 20 ms logs a `webpc-slow install` line (its compile,
   instantiation, GC and size), collected into results' `slow`. `sway-mac.sh` samples the Mac's `vm_stat` each second
-  (`<name>.vmstat`): its memory is overcommitted by the Lima VMs (plans/video.md §8), which shows in latency. Firefox's
+  (`<name>.vmstat`): its memory is overcommitted by the Lima VMs (graphics.md "Video's measurements"), which shows in latency. Firefox's
   start-up work runs ~30 s past its window: measure steady state at least that long after a launch (`WARM_S`).
   firefox-load's `TIMELINE_ALL=1` records the timeline over its whole `pages` phase (every Firefox start and load,
   where the JIT compiles most), and `QUERY` adds to the page's query (`jit=nocw`: the JIT without its compile

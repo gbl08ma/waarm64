@@ -1,5 +1,5 @@
 // The video pictures in a virgl capture (web/virgl-trace.ts; bench/video/v0.ts CAPTURE=1), and the streams the host
-// makes of them for WebCodecs (docs/plans/video.md): per codec, each picture's desc and bitstream as the guest sent
+// makes of them for WebCodecs (docs/graphics.md "Video"): per codec, each picture's desc and bitstream as the guest sent
 // them (BEGIN_FRAME to END_FRAME, its bitstream buffers joined). As a tool it writes each codec's stream (H.264 as
 // Annex B with the rebuilt parameter sets, VP9 as IVF, AV1 as the OBUs Av1Stream makes: `ffmpeg -f obu`) so a
 // software decoder can check it against the original file.

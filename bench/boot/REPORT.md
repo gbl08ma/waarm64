@@ -1414,7 +1414,7 @@ test in 2.651G steps against 2.821G, its userspace benchmark in 10.613G against 
 
 ## M8: the JIT's compile worker (2026-10-15)
 
-The backlog's "a compile worker: the host's installs stop every vCPU at once" (plans/video.md §8: with Firefox on the
+The backlog's "a compile worker: the host's installs stop every vCPU at once" (graphics.md "Video's measurements": with Firefox on the
 desktop guest, installs of 20-58 ms for a few KB, up to 739 ms, most on all four vCPUs at once). All on the dev VM
 (Lima on the M4 Mac mini, 8 vCPUs), headless Chromium 153.0.8010.52, Node 26.7.0; the Firefox sessions are
 `bench/gpu/firefox-load.ts virgl` with `PHASES=pages` (the desktop image, 4 vCPUs, 2.5 GiB; Firefox started on five
@@ -1486,8 +1486,8 @@ devices too; can copies, MMIO or the vCPUs' traffic with the device worker go fa
 153.0.8010.52 headless, Node 26.7.0, at `b4e19e4aa1a9`; raw: `results/m8-devlat/`.
 
 **How much the video case copies:** Firefox's VA-API path never puts a picture in guest RAM (dmabuf planes the host
-writes, plans/video.md §1). What it sends the GPU is ~175-440 KB a second of `SUBMIT_3D` command streams, ~100-280
-requests a second (plans/video.md §6's JSON and this session's runs); the host's write into the planes is 0.04 ms a
+writes, graphics.md "Video's design"). What it sends the GPU is ~175-440 KB a second of `SUBMIT_3D` command streams, ~100-280
+requests a second (the video track's JSON, docs/graphics.md "Video's measurements", and this session's runs); the host's write into the planes is 0.04 ms a
 picture. In the guest's kernel profile `__arch_copy_from_user` is 0.3% and `memset` 0.4%; in the guest's Chromium
 (`results/m8-chromium/perf-base-run1.txt`) glibc's `memcpy`, `memmove` and `memset` are under 2% together.
 
@@ -1553,7 +1553,7 @@ integer load loop (the table above), but at that share they cost well under 0.1%
 whose cold code is larger (bench/apps/REPORT.md: 2-5% of its steps interpreted), is where to count them again.
 
 **So:** nothing in copies, MMIO or the device worker's round trip is a lever for Firefox's video; what it drops is the
-guest's CPU over its media pipeline, as plans/video.md §6 found.
+guest's CPU over its media pipeline, as graphics.md "Video's measurements" found.
 
 ## M8: V8's GC on the vCPU threads (2026-10-15)
 
