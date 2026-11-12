@@ -1564,6 +1564,24 @@ fn a_forgotten_peer_says_so() {
 }
 
 #[test]
+fn a_forgotten_peers_channel_closes_before_it_says_gone() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.reach(0, 1, b"a");
+    assert_eq!(n.paths(0), ["direct"]);
+    let id = n.nodes[0].c.by_addr[&n.addr(1)];
+    n.nodes[0].c.forget(id); // idle, lost, or its probe unanswered
+    n.run();
+    let kinds: Vec<&str> = n.nodes[0]
+        .events
+        .iter()
+        .map(|e| e["type"].as_str().unwrap())
+        .filter(|t| ["peer", "path", "peer-gone"].contains(t))
+        .collect();
+    // A `path` after `peer-gone` would bring it back in the page's list (web/room.ts).
+    assert_eq!(kinds, ["peer", "path", "path", "peer-gone"]);
+}
+
+#[test]
 fn junk_under_our_tag_is_opened_only_within_a_budget() {
     let mut n = Net::new(configs(&[2]));
     let room = n.nodes[0].c.room.clone();

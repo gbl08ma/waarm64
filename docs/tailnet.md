@@ -271,8 +271,8 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   answerer ignores a newer attempt sooner, so a member's signalling can't make the page set up connections as fast as
   it sends; an offerer, after a restart's epoch, waits), and our own offers, all peers', at most 4 a second. Relay only
   (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take;
-  `peer` says a session is confirmed, and `peer-gone` that such a peer was forgotten (the page's list of members
-  reached follows both).
+  `peer` says a session is confirmed, and `peer-gone` that such a peer was forgotten, after the `path` of its channel's
+  close (the page's list of members reached follows them).
 - **A browser without direct paths:** a browser that uses no UDP for WebRTC gathers no candidate at all, not even a
   host one, and can only take the relay. Chromium does this with the WebRTC IP handling policy
   `disable_non_proxied_udp`: ungoogled-chromium's default (its `#webrtc-ip-handling-policy` flag), or the profile's

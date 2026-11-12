@@ -1445,10 +1445,11 @@ impl Client {
     }
 
     fn forget(&mut self, id: PeerId) {
+        // Its channel first: a `path` event after `peer-gone` would bring it back in a list of peers.
+        self.close_rtc(id, None);
         if self.peers.get(&id).is_some_and(|p| p.confirmed) {
             self.peer_event(id, "peer-gone");
         }
-        self.close_rtc(id, None);
         self.wg.remove_peer(id);
         if let Some(p) = self.peers.remove(&id) {
             self.by_addr.remove(&p.addr);
