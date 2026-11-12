@@ -1950,6 +1950,24 @@
           }
         },
         {
+          "id": "dev-curve25519-dalek",
+          "name": "curve25519-dalek",
+          "md": {
+            "package": "curve25519-dalek (`net/ts`'s room key miner, `examples/room-key-mine.rs`, only; also through `x25519-dalek`)",
+            "version": "5.0.0",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "dev-regex",
+          "name": "regex",
+          "md": {
+            "package": "regex (`net/ts`'s room key miner only)",
+            "version": "1.13.1",
+            "license": "MIT OR Apache-2.0"
+          }
+        },
+        {
           "id": "dev-capstone-rs",
           "name": "capstone / capstone-sys",
           "md": {

@@ -63,8 +63,7 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
 - **A room's link and key**: the link (`room.link`, `webpc-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
   private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
   `webpc-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
-  machine's address and name in the room stay the same. A connection made with another's key ([The machine's
-  key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
+  machine's address and name in the room stay the same. A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
   own), so another connection on that key, on another adapter or in another tab, doesn't connect while it runs and
   says which has it (two DERP connections under one key break each other on a shared region: a derper delivers the

@@ -29,8 +29,9 @@ export type NetMap = {
   serving?: string;
   /** tailcat: the machine's node key (`nodekey:…`), the same at each connect for a kept connection, so a server can `--allow` it. */
   tailcatKey?: string;
-  /** A room: the member's name to give out (`<key>.<tag>.p2p.internal`), the room's link, and its switches. */
-  room?: { name: string; link: string; incoming: boolean; relayOnly: boolean };
+  /** A room: the member's name to give out (`<key>.<tag>.p2p.internal`), the room's link, and its switches;
+   * `directBlocked`: this browser makes no direct paths (web/room.ts `RoomEvent`), so every member goes through the relay. */
+  room?: { name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean };
 };
 
 export type TailscaleConfig = {

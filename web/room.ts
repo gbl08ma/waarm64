@@ -69,8 +69,16 @@ export type Room = {
 /** A connection the worker asked for. */
 type Conn = { pc: RTCPeerConnection; pending: RTCIceCandidateInit[] | null };
 
+/**
+ * A room's events: the client's, and the page's own `direct`: whether this browser can make direct paths at all. A
+ * connection whose ICE gathering completes without one candidate can't (`blocked`): the browser uses no UDP for WebRTC,
+ * as with Chromium's `webrtc.ip_handling_policy` `disable_non_proxied_udp` (ungoogled-chromium's default, its
+ * `#webrtc-ip-handling-policy` flag), so every peer goes through the relay. The next connection that gathers one says so.
+ */
+export type RoomEvent = TsEvent | { type: 'direct'; blocked: boolean };
+
 /** `onError`: the worker failed (after `Running` too, which `running` can't say). */
-export function startRoom(config: StartRoom, onEvent: (e: TsEvent) => void = () => {}, onError: (e: WireError) => void = () => {}): Room {
+export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = () => {}, onError: (e: WireError) => void = () => {}): Room {
   const worker = new Worker(new URL('./room-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();
   const port1 = config.ip ?? own!.port1;
@@ -80,6 +88,12 @@ export function startRoom(config: StartRoom, onEvent: (e: TsEvent) => void = () 
   let me: ReturnType<Room['self']>;
   let lease: Lease | null = null;
   let detached: ((ip?: MessagePort) => void) | undefined;
+  let blocked = false;
+  const gathered = (n: number) => {
+    if (blocked === (n === 0)) return;
+    blocked = n === 0;
+    onEvent({ type: 'direct', blocked });
+  };
   const t0 = performance.now();
   const timings: { loadMs?: number; runningMs?: number } = {};
   const post = (m: ToRoom, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
@@ -97,7 +111,12 @@ export function startRoom(config: StartRoom, onEvent: (e: TsEvent) => void = () 
     conns.set(rtc, c);
     const channel = pc.createDataChannel('wg', { negotiated: true, id: 0, ordered: false, maxRetransmits: 0 });
     post({ type: 'rtc-channel', rtc, channel }, [channel as unknown as Transferable]);
-    pc.onicecandidate = (e) => { if (e.candidate && conns.get(rtc) === c) signal(rtc, e.candidate.toJSON()); };
+    let candidates = 0;
+    pc.onicecandidate = (e) => {
+      if (e.candidate?.candidate) candidates++;
+      if (e.candidate && conns.get(rtc) === c) signal(rtc, e.candidate.toJSON());
+    };
+    pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete' && conns.get(rtc) === c) gathered(candidates); };
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') fail(rtc); };
     if (!offer) return;
     try {
@@ -221,6 +240,21 @@ export async function roomIdentity(key: string): Promise<RoomIdentity> {
   // `add` refuses a key that's there (two workers sharing it, starting at once): then the kept one is read.
   const added = await idb('readwrite', (s) => s.add(made, key)).then(() => true, () => false);
   return added ? made : (await idb<RoomIdentity | undefined>('readonly', (s) => s.get(key))) ?? Promise.reject(new Error(`no room identity under ${key}`));
+}
+
+/** The identity kept under `key`, if there is one (none is made). */
+export const readRoomIdentity = (key: string) => idb<RoomIdentity | undefined>('readonly', (s) => s.get(key));
+
+/** Keeps `identity` under `key` (a pasted key), in place of what's there. */
+export const keepRoomIdentity = (key: string, identity: RoomIdentity) => idb('readwrite', (s) => s.put(identity, key)).then(() => {});
+
+/**
+ * A node key as the user pastes it (one copied from a room connection, or mined by net/ts/examples/room-key-mine.rs): 64 hex
+ * digits, the X25519 private key, spaces around it ignored; written back in lower case, or undefined if it isn't one.
+ */
+export function parseRoomKey(s: string): string | undefined {
+  const k = s.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(k) ? k : undefined;
 }
 
 /** Whether there's an identity kept under `key`. */
@@ -367,6 +401,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   let netmap: NetMap | undefined;
   let lease: Lease | null = null;
   let me: { name?: string; link?: string; address6: number[] } | undefined;
+  let directBlocked = false;
   const peers = new Map<string, { name: string; address6: number[] }>();
   let resolveRunning: (n: NetMap) => void = () => {};
   const map = (): NetMap | undefined => {
@@ -376,7 +411,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       addresses: lease.address6 ? [`${v6text(lease.address6)}/128`] : [],
       dns: (lease.dns6 ?? []).map(v6text),
       peers: [...peers.entries()].map(([key, p]) => ({ id: key, name: p.name, addresses: [`${v6text(p.address6)}/128`], exitNodeOption: false })),
-      room: { name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly },
+      room: { name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked },
     };
   };
   const changed = () => {
@@ -400,6 +435,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       else if (ev.type === 'lease') lease = ev.lease;
       else if (ev.type === 'peer') peers.set(ev.key, { name: ev.name ?? '', address6: ev.address6 });
       else if (ev.type === 'peer-gone') peers.delete(ev.key);
+      else if (ev.type === 'direct') directBlocked = ev.blocked;
       else return;
       changed();
     },

@@ -92,8 +92,9 @@ export type NewConnection = {
   tailnet?: Omit<TailnetConnection, 'stateKey'>;
   tailcat?: Omit<TailcatConnection, 'identityKey' | 'identity'>;
   local?: LocalConnection;
-  /** `keyOf`: another stored room connection's id, whose key this one shares; none: a key of its own. */
-  room?: Omit<RoomConnection, 'identityKey' | 'identity'> & { keyOf?: string };
+  /** `keyOf`: another stored room connection's id, whose key this one shares; `key`: a pasted key (web/room.ts
+   * `parseRoomKey`), which is another connection's when it has that key; neither: a new key of its own. */
+  room?: Omit<RoomConnection, 'identityKey' | 'identity'> & { keyOf?: string; key?: string };
 };
 
 /** Where a stored connection's state is, to forget it with the connection (the page's: IndexedDB; the tests' fakes). */
@@ -101,6 +102,9 @@ export type ConnectionState = {
   forgetTailnet(stateKey: string): Promise<void>;
   forgetTailcat(identityKey: string): Promise<void>;
   forgetRoom(identityKey: string): Promise<void>;
+  /** A room's key under `identityKey`, and one pasted kept there. */
+  readRoom(identityKey: string): Promise<RoomIdentity | undefined>;
+  keepRoom(identityKey: string, identity: RoomIdentity): Promise<void>;
 };
 
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
@@ -140,10 +144,31 @@ export function preselect(all: Connection[], held: (id: string) => boolean): str
   return all.filter((c) => c.lastUsed > 0 && !held(c.id)).sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
 }
 
+/**
+ * A new room connection's record, id `id`: a key of its own (a pasted one, `own`; an ephemeral one's in the record), or
+ * `shared`'s, through its entry in `webpc-room` (or its key itself, when it's ephemeral too).
+ */
+function roomOf(
+  r: NonNullable<NewConnection['room']>,
+  id: string,
+  ephemeral: boolean,
+  shared?: RoomConnection,
+  own?: RoomIdentity,
+): RoomConnection {
+  const rest = { ...r };
+  delete rest.keyOf;
+  delete rest.key;
+  const identityKey = shared && !shared.identity ? shared.identityKey : id;
+  const identity = shared?.identity ?? (ephemeral && !shared ? (own ?? newRoomIdentity()) : undefined);
+  return { ...rest, identityKey, ...(identity ? { identity } : {}) };
+}
+
 const NO_STATE: ConnectionState = {
   forgetTailnet: () => Promise.resolve(),
   forgetTailcat: () => Promise.resolve(),
   forgetRoom: () => Promise.resolve(),
+  readRoom: () => Promise.resolve(undefined),
+  keepRoom: () => Promise.resolve(),
 };
 
 /** The page's connections: the store's, and its own ephemeral ones. */
@@ -177,16 +202,9 @@ export class Connections {
     const all = await this.list();
     const taken = all.map((c) => c.name);
     const ephemeral = !!o.ephemeral;
-    const keyOf = o.room?.keyOf;
-    const shared = keyOf ? all.find((c) => c.id === keyOf)?.room : undefined;
-    const room = (r: NonNullable<NewConnection['room']>): RoomConnection => {
-      const rest = { ...r };
-      delete rest.keyOf;
-      // Another connection's key: its entry in `webpc-room` (or its key itself, when it's ephemeral too).
-      const identityKey = shared && !shared.identity ? shared.identityKey : id;
-      const identity = shared?.identity ?? (ephemeral && !shared ? newRoomIdentity() : undefined);
-      return { ...rest, identityKey, ...(identity ? { identity } : {}) };
-    };
+    const { shared, own } = await this.roomKey(o.room, all);
+    const room = (r: NonNullable<NewConnection['room']>) => roomOf(r, id, ephemeral, shared, own);
+    if (own && !ephemeral) await this.state.keepRoom(id, own); // before the connection: it never starts without it
     const c: Connection = {
       id,
       // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a blank name is none
@@ -215,6 +233,28 @@ export class Connections {
     };
     await this.put(c);
     return c;
+  }
+
+  /** A new room connection's key: another connection's (`keyOf`, or the one that has the pasted key), or its own pasted one. */
+  private async roomKey(
+    r: NewConnection['room'],
+    all: Connection[],
+  ): Promise<{ shared?: RoomConnection; own?: RoomIdentity }> {
+    const pasted = r?.keyOf ? undefined : r?.key;
+    const keyOf = r?.keyOf ?? (pasted ? await this.holderOf(pasted, all) : undefined);
+    const shared = keyOf ? all.find((c) => c.id === keyOf)?.room : undefined;
+    return { shared, own: pasted && !shared ? { key: pasted } : undefined };
+  }
+
+  /**
+   * The room connection that has node key `key`, if one does: a pasted key is that one's, shared as `keyOf` shares it,
+   * so one key runs in one connection at a time (`roomKeyLock` names the entry, not the key).
+   */
+  private async holderOf(key: string, all: Connection[]): Promise<string | undefined> {
+    for (const c of all) {
+      if (c.room && (c.room.identity?.key ?? (await this.state.readRoom(c.room.identityKey))?.key) === key) return c.id;
+    }
+    return undefined;
   }
 
   /** Writes a connection back (a rename, an edit, `connectAtStart`, `lastUsed`). */

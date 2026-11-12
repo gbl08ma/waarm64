@@ -7,9 +7,11 @@
 // Opt-in, with the rig: WEBPC_TAILCAT=1 (Go for derper, and target/net/ts.wasm, net/ts/build.sh).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { startNostrRelay, type NostrRelay } from './net/nostr-relay.ts';
 
@@ -45,9 +47,9 @@ after(async () => {
 type Member = { state: string; self?: { key: string; address6: number[]; tag?: string; name?: string }; peers: { key: string; path: string }[]; timings: { runningMs?: number } };
 type Echoes = { back: number; ms: number; rtts: number[] };
 
-/** A member's page in room `room`, `Running`. */
-async function member(room: string, q: Record<string, string> = {}): Promise<Page> {
-  const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the relay's self-signed certificate
+/** A member's page in room `room`, `Running` (in its own context, or `ctx`). */
+async function member(room: string, q: Record<string, string> = {}, ctx?: BrowserContext): Promise<Page> {
+  ctx ??= await browser.newContext({ ignoreHTTPSErrors: true }); // the relay's self-signed certificate
   const page = await ctx.newPage();
   page.on('console', (m) => { if (/rror|panic|room:/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
@@ -113,6 +115,35 @@ test('relay only never opens a data channel, and the relay carries everything', 
   const opened = await a.evaluate('window.harness.events().filter((e) => e.type === "path").length') as number;
   assert.equal(opened, 0, 'no path change: never direct');
   await close(a, b);
+});
+
+test('a browser that uses no UDP for WebRTC says so, and the relay carries everything', { skip, timeout: 120_000 }, async () => {
+  // As ungoogled-chromium by default: a profile whose WebRTC IP handling policy is `disable_non_proxied_udp` gathers no
+  // candidate. (Its own `--force-webrtc-ip-handling-policy` switch isn't upstream's; the preference is.)
+  const dir = mkdtempSync(join(tmpdir(), 'room-')); // short: Chromium's singleton socket path has a limit
+  mkdirSync(join(dir, 'Default'));
+  writeFileSync(join(dir, 'Default', 'Preferences'), JSON.stringify({ webrtc: { ip_handling_policy: 'disable_non_proxied_udp' } })); // i18n-ignore: Chromium's profile file
+  const ctx = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', ignoreHTTPSErrors: true });
+  try {
+    const room = `test ${Math.random()}`;
+    const b = await member(room);
+    const bs = (await of(b)).self!;
+    const a = await member(room, { peer: bs.key }, ctx);
+    const aKey = (await of(a)).self!.key;
+    assert.ok(await a.evaluate(`window.harness.first(${JSON.stringify(bs.address6)})`) as number >= 0, 'an echo came back');
+    // Whichever side offers, the blocked member's connection gathers nothing and it says so.
+    await a.waitForFunction('window.harness.events().some((e) => e.type === "direct" && e.blocked)', null, { timeout: 15_000, polling: 50 });
+    const small = await a.evaluate(`window.harness.echoes(${JSON.stringify(bs.address6)}, 100, 32, 1)`) as Echoes;
+    assert.equal(small.back, 100, 'through the relay');
+    assert.equal(await pathTo(a, bs.key), 'relay');
+    assert.equal(await pathTo(b, aKey), 'relay');
+    const bEvents = await b.evaluate('window.harness.events().filter((e) => e.type === "direct")') as unknown[];
+    assert.deepEqual(bEvents, [], 'the other member gathers candidates: nothing to say');
+    await close(b);
+  } finally {
+    await ctx.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a member reached by its name, and one with incoming connections off not at all', { skip, timeout: 120_000 }, async () => {

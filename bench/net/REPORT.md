@@ -501,6 +501,13 @@ no echo in 15 s.
 | relay.bitmacro.cloud | no (2.5 s on a second run) | | | | |
 | relay.kaleidoswap.com | no | | | | NIP-42 auth, and "event kind 26354 not allowed" |
 
+- **Each REQ's EOSE** (2026-11-12, ad hoc from the dev VM, twice: the room's own REQ, `limit: 0` and three `#x`
+  values, then the same ID again 2 s later on that connection): nostr.chaima.info, relay.grigic.org, nostr.red5d.dev,
+  nostr.christiansass.de, nostrcity-club.fly.dev, relay.aarpia.com, relay.nostr.dev.br and bendernostur (AUTH) never
+  answer with an EOSE, though they forward events, so a member takes them for dead every 15 s and reconnects (the
+  rooms' logs, "didn't answer"); primal.net, novospes.com, routstr.com, rblb.it, degmods.com, nostrmap.net,
+  hackshed.dev, agentry.com, blockhenge.com, nymble.world, gulugulu.moe and satellite.earth (AUTH asked, not needed)
+  answer both, 0.3–1.6 s. The defaults are now the first six (plan §9).
 - **Two of our three defaults don't carry rooms**: nos.lol forwards nothing, damus.io refuses Node and is unreliable
   from Chromium; relay.primal.net alone carried the user's first try. 21 of Trystero's 29 carry a room, most in
   300–450 ms to the first echo (about two DERP RTTs of it); about 1.4 s is a lookup lost (the subscription not yet

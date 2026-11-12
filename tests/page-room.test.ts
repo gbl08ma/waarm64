@@ -21,6 +21,8 @@ import { answerAsks } from './page-ask.ts';
 import { startNostrRelay, type NostrRelay } from './net/nostr-relay.ts';
 import { RIG_RELAY } from './net/tailcat-cli.ts';
 import { t } from '../web/i18n.ts';
+import { parseRoomLink } from '../web/room.ts';
+import { keyPair, nameOf, roomPrefix } from './net/room-keys.ts';
 import { words } from './words.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -161,9 +163,22 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     assert.match(await text(b, '#net-error'), words('network:room.badLink'));
     await b.fill('#net-room-link', ra.room.link);
     await b.uncheck('#net-keep'); // ephemeral: its key lives in the connection's record, which New name changes
+    // With a pasted key (as net/ts/examples/room-key-mine.rs mines one): what isn't one is refused; the name is the key's.
+    await b.locator('#net-room-advanced summary').click();
+    await b.selectOption('#net-room-key', '#paste');
+    assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.key.paste.note'));
+    await b.fill('#net-room-key-paste', 'not a key');
+    await b.click('#net-connect');
+    assert.match(await text(b, '#net-error'), words('network:NetRoomStep.room.key.bad'));
+    const pasted = keyPair();
+    const parsed = parseRoomLink(ra.room.link);
+    assert.ok('room' in parsed);
+    const prefix = roomPrefix(parsed.room.id);
+    await b.fill('#net-room-key-paste', ` ${pasted.key.toUpperCase()} `);
     await b.click('#net-connect');
     await menuSays(b, words('network:network-view.room.connections', { count: 0 }), 60_000);
     const nameB = await b.locator('#net-room-name').inputValue();
+    assert.equal(nameB, nameOf(prefix, pasted.pub), 'the pasted key\'s name');
     assert.equal(nameB.split('.')[1], nameA.split('.')[1], 'one room, one tag');
     assert.notEqual(nameB, nameA);
 
@@ -209,8 +224,26 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await b.click('[data-machine="connections"]');
     await b.click('li[data-connection] [data-action="edit-connection"]');
     await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
+    // Copy key copies the connection's key; where the clipboard refuses, it's shown in its field, selected.
+    await b.evaluate(() => {
+      const w = window as unknown as { copied: string[] };
+      w.copied = [];
+      navigator.clipboard.writeText = (s: string) => { w.copied.push(s); return Promise.resolve(); };
+    });
+    await b.waitForFunction(() => !(document.getElementById('net-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'hidden');
+    await b.click('#net-room-key-copy');
+    assert.deepEqual(await b.evaluate(() => (window as unknown as { copied: string[] }).copied), [pasted.key]);
+    await b.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
+    await b.click('#net-room-key-copy');
+    await b.waitForFunction(() => document.activeElement?.id === 'net-room-key-value', null, { timeout: 5_000 });
+    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
+    assert.equal(await b.locator('#net-room-key-value').inputValue(), pasted.key);
     await b.click('#net-room-new-name');
     await b.waitForFunction(() => (document.getElementById('net-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+    // Ephemeral: the new key is in the record already, so it's the one to copy (a stored one's comes at its next start).
+    await b.waitForFunction((old) => { const v = (document.getElementById('net-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
+    assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.exportKey.note'));
     await b.click('#net-connect');
     await b.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the wizard says ${await text(b, '#net-error')}; step ${await b.evaluate(() => [...document.querySelectorAll('#net-wizard section:not([hidden])')].map((x) => x.id))}`); });

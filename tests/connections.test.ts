@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { connectionLock, Connections, defaultName, migrateLegacy, preselect, type Connection } from '../web/app/connections.ts';
+import { connectionLock, Connections, defaultName, migrateLegacy, preselect, sameRoomKey, type Connection } from '../web/app/connections.ts';
+import { parseRoomKey } from '../web/room.ts';
 import { connectOf } from '../web/app/net-connect.ts';
 import { Locks } from '../web/app/locks.ts';
 import { DEFAULT_SETTINGS } from '../web/app/network.ts';
@@ -19,7 +20,16 @@ import { t } from '../web/i18n.ts';
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
   const forgot: string[] = [];
-  return { forgot, state: { forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); }, forgetRoom: async (k: string) => { forgot.push(`room:${k}`); } } };
+  /** `webpc-room`'s entries: what a room connection's first start keeps, and pasted keys. */
+  const rooms = new Map<string, { key: string }>();
+  return {
+    forgot, rooms,
+    state: {
+      forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); },
+      forgetRoom: async (k: string) => { forgot.push(`room:${k}`); rooms.delete(k); },
+      readRoom: async (k: string) => rooms.get(k), keepRoom: async (k: string, i: { key: string }) => { rooms.set(k, i); },
+    },
+  };
 };
 
 test('connections: stored and ephemeral, their names and state keys, deleted with their state', async () => {
@@ -95,6 +105,39 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
   await conns.delete(priv.id);
   await conns.delete(eph.id);
   assert.deepEqual(forgot, [`room:${pub.id}`, `room:${priv.id}`], 'a key of its own is forgotten; an ephemeral one\'s own is in memory');
+});
+
+test('rooms: a pasted key is kept as the new connection\'s, or is the connection\'s that has it', async () => {
+  const { rooms, state } = fakeState();
+  const conns = new Connections(store(), state);
+  const link = 'webpc-room:lobby';
+  const [k1, k2, k3] = ['1', '2', '3'].map((d) => d.repeat(64));
+  const stored = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k1 } });
+  assert.equal(stored.room!.identityKey, stored.id);
+  assert.equal(stored.room!.identity, undefined, 'stored: in webpc-room, not the record');
+  assert.deepEqual(rooms.get(stored.id), { key: k1 });
+  assert.equal(Object.hasOwn(stored.room!, 'key'), false, 'the key is not in the record');
+  const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false, key: k2 } });
+  assert.deepEqual(eph.room!.identity, { key: k2 }, 'ephemeral: in memory');
+  assert.equal(rooms.has(eph.id), false);
+  // The same key again is that connection's: one entry, so one lock (roomKeyLock) between them.
+  const again = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, key: k1 } });
+  assert.equal(again.room!.identityKey, stored.id);
+  assert.equal(rooms.has(again.id), false);
+  assert.ok(sameRoomKey(again.room!, stored.room!));
+  // A key kept by a connection's first start (not pasted) is found as well, and an ephemeral one's.
+  const plain = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  rooms.set(plain.id, { key: k3 });
+  assert.equal((await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k3 } })).room!.identityKey, plain.id);
+  assert.deepEqual((await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k2 } })).room!.identity, { key: k2 });
+  // `keyOf` wins over a pasted key.
+  const of = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, keyOf: plain.id, key: k1 } });
+  assert.equal(of.room!.identityKey, plain.id);
+});
+
+test('pasted room keys: 64 hex digits, spaces around them ignored, lower case', () => {
+  assert.equal(parseRoomKey(` ${'AB'.repeat(32)}\n`), 'ab'.repeat(32));
+  for (const bad of ['', 'ab'.repeat(31), 'ab'.repeat(33), `${'ab'.repeat(31)}zz`, `${'ab'.repeat(16)} ${'ab'.repeat(16)}`]) assert.equal(parseRoomKey(bad), undefined, bad);
 });
 
 test('the Attach wizard preselects the most recently used connection no other machine holds', () => {

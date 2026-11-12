@@ -13,11 +13,11 @@ pub const SCHEME: &str = "webpc-room:";
 /// "Rooms on public servers"; the user's choice, 2026-11-11).
 pub const DEFAULT_NOSTR: [&str; 6] = [
     "wss://relay.primal.net",
-    "wss://nostr.chaima.info",
-    "wss://relay.grigic.org",
-    "wss://nostr.red5d.dev",
     "wss://relay.novospes.com",
     "wss://relay.routstr.com",
+    "wss://nostr.rblb.it",
+    "wss://relay.degmods.com",
+    "wss://relay.nostrmap.net",
 ];
 pub const MAX_RELAYS: usize = 8;
 const MAX_ID: usize = 256;

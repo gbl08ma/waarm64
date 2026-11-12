@@ -1578,16 +1578,22 @@ and the guest's default way out (below).
   saying who can learn one's IP address as the switch stands (with it: the members it connects to directly, the
   operators of the room's DERP and Nostr relays, and STUN servers; without: the relays' operators only, as no STUN
   server is asked), each term linked to what explains it, and under
-  Advanced [Let members connect to this machine](ui:network:NetRoomStep.room.incoming) (on by default; off, only replies
-  to the guest's own flows come in) and [The machine's key](ui:network:NetRoomStep.room.key): a new one, or another stored room connection's (the
+  Advanced [Allow incoming connections from members](ui:network:NetRoomStep.room.incoming) (on by default; off, only replies
+  to the guest's own flows come in) and [The connection's key](ui:network:NetRoomStep.room.key): a new one, [A key to paste](ui:network:NetRoomStep.room.key.paste)
+  (a hidden field for it; 64 hex digits, web/room.ts `parseRoomKey`; one another room connection has makes the new
+  one share that connection's, as choosing it would, so the key's lock holds), or another stored room connection's (the
   same key in another room: docs/network-adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New
-  name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working.
+  name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working,
+  and [Copy key](ui:network:NetRoomStep.room.exportKey.copy) copies its key (shown, selected, in its hidden field where
+  the clipboard refuses; off before the connection's first start makes one), to paste in another connection, on this
+  computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/tailnet.md
+  "Rooms").
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `webpc-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
-  then [Connected to the room](ui:network:network-view.room) with [1 active connection](ui:network:network-view.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). The
+  then [Connected to the room](ui:network:network-view.room) with [1 active connection](ui:network:network-view.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). A browser that makes no direct connections (docs/tailnet.md "Rooms") adds a line saying so, with the flag to change ([This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.](ui:network:network-view.room.directBlocked)); a relay-only connection doesn't. The
   menu then shows the machine's name in the room (`<key>.<tag>.p2p.internal`) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
   The guest's lease: its room address as a /128 (DHCPv6, the router advertisement), IPv4 `192.0.0.2` with no IPv4

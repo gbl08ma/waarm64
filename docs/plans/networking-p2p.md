@@ -321,7 +321,8 @@ client was built.
 - **What a room needs from a Nostr relay** (R3, for R4 to check public ones against): NIP-01 over a
   plain WebSocket, no NIP-42 AUTH and no NIP-13 proof of work (a relay that requires either carries no
   room); ephemeral kind 26354 accepted and forwarded; filters by a single-letter tag (`#x`, three
-  values) with `limit: 0`; `created_at` within the relay's tolerance of the dialer's clock (R1: some
+  values) with `limit: 0`, each REQ answered with an EOSE (a renewal under the same ID too: 15 s without one and the
+  member takes the connection for dead and reconnects); `created_at` within the relay's tolerance of the dialer's clock (R1: some
   refuse events dated ahead). A member holds one connection and one subscription a relay, renewed
   every minute (one REQ; at the hour's turn, within the next minute, a CLOSE and a REQ under a new
   subscription ID); a lookup is one event of ~550 bytes on the wire, forwarded to one subscriber (a tag
@@ -390,9 +391,11 @@ client was built.
   other way). Separate regions would work. The ways out: one DERP connection per key carrying every
   room on it (one worker per key, the module routing by the room's PSK); a key a running connection
   holds can't start in another (a lock per key, an error naming the holder); or the option goes.
-- *Decided 2026-11-11, the user:* **the default Nostr relays** are relay.primal.net, nostr.chaima.info,
-  relay.grigic.org, nostr.red5d.dev, relay.novospes.com and relay.routstr.com (link.rs `DEFAULT_NOSTR`): those that
-  carried every case R4 measured (bench/net/REPORT.md "Rooms on public servers"); nos.lol and relay.damus.io, two of
-  the placeholders, carried no room. **Rooms use tailcat's public DERP relays** by default: a room's client uses DERP
+- *Decided 2026-11-11, the user:* **the default Nostr relays** are relay.primal.net, relay.novospes.com,
+  relay.routstr.com, nostr.rblb.it, relay.degmods.com and relay.nostrmap.net (link.rs `DEFAULT_NOSTR`): of those that
+  carried every case R4 measured (bench/net/REPORT.md "Rooms on public servers"), the ones that also answer each REQ
+  with an EOSE (2026-11-12: nostr.chaima.info, relay.grigic.org and nostr.red5d.dev, first chosen, never do with
+  `limit: 0`, so members reconnected to them every few seconds; the user: a relay that behaves strangely is dropped,
+  there are plenty); nos.lol and relay.damus.io, two of the placeholders, carried no room. **Rooms use tailcat's public DERP relays** by default: a room's client uses DERP
   as tailcat's and a tailnet's browser clients do, and tries direct WebRTC first, which Tailscale's browser clients
   can't, so it leans on the relays less than they do (the user's reasoning; tailcat's README sets no terms for them).

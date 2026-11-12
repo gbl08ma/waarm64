@@ -51,6 +51,8 @@ and the choices they made then; it grows as the user reviews more of the copy.
 | **a computer**, **the computer running tailcat** | another physical device, by its role (a tailcat or helper end); "exit node" only where it's the tool's own term (`tailcat serve exit-node`, a tailnet's exit node setting) | "the exit node" as a general name, "the host" |
 | **machine**, **virtual machine** | a virtual machine as the user keeps it: its settings and disks; "virtual machine" where it must be explicit | "VM" in copy, "computer" |
 | **guest** | the operating system running in a machine | "the OS" |
+| **connection** | a way onto a network kept in this browser (a tailnet, tailcat, this computer's helper, a room) and what goes with it: its settings, a room connection's key and so its name and address in the room. A machine has it attached; detached, it keeps all of that for the next machine | "this machine's key", "this machine's name in the room", "let members connect to this machine" where the connection holds it |
+| **member** | another room connection in the same room (whichever machine it's attached to) | "machine" for the other end |
 | **image**, **base image** | a disk's normally unchanging contents: a file, a URL, a copy stored in this browser; a blank disk's base image is all zeros | |
 | **overlay** | where a machine's writes to a disk go, over its base image; a disk can have several | "variant", "changes file" (that's an export) |
 | **disk** | a base image and the overlay a machine uses, as the machine has them paired; a disk written in place has no overlay and no base image | |

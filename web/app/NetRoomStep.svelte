@@ -1,11 +1,13 @@
 <!--
   The Network wizard's room step (NetWizard.svelte; docs/tailnet.md "Rooms"): create a room (a name, private or
   public, its relays under Advanced: web/room.ts builds the link), join one (a link, or a public room's name), or edit
-  one (its switches, a new name). Direct connections and incoming ones are switches; a new room connection has a key
-  of its own or another room connection's.
+  one (its switches, a new name, its key to copy). Direct connections and incoming ones are switches; a new room
+  connection has a key of its own, another room connection's, or one pasted (copied from a connection, perhaps on
+  another computer, or mined by net/ts/examples/room-key-mine.rs for an address).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import CopyField from './CopyField.svelte';
   import Check from './ui/Check.svelte';
   import Disclosure from './ui/Disclosure.svelte';
   import Field from './ui/Field.svelte';
@@ -16,7 +18,7 @@
   import { ROOM_STEPS, type Flow, type Step as StepName } from './net-wizard.ts';
   import type { PageNetwork } from './net-live.ts';
   import { tailcatBuilt } from './network.ts';
-  import { hasRoomIdentity, parseRoomLink, privateRoomId, roomLink, type RoomLink } from '../room.ts';
+  import { parseRoomKey, parseRoomLink, privateRoomId, readRoomIdentity, roomLink, type RoomLink } from '../room.ts';
   import { page } from './page.ts';
 
   type Props = { flow: Flow; net: PageNetwork; step: StepName };
@@ -35,7 +37,14 @@
   let derp = $state('');
   let incoming = $state(true);
   let relayOnly = $state(false);
+  /** The Key list's choice: '' a new key, `PASTE` a pasted one (`pastedKey`), or another connection's id. */
   let keyOf = $state('');
+  const PASTE = '#paste';
+  let pastedKey = $state('');
+  /** The edited connection's key, to copy ('' before it's made), shown in clear where the clipboard refused it. */
+  let exported = $state('');
+  let keyShown = $state(false);
+  let keyField = $state<{ select: () => void }>();
   let advanced = $state(false);
   /** The room connection being edited keeps its identity: New name can drop it. */
   let kept = $state(false);
@@ -49,17 +58,29 @@
 
   export function begin() {
     const r = flow.editing?.room;
-    [name, isPrivate, joinLink, nostr, derp, keyOf, advanced] = ['', true, '', '', '', '', false];
+    [name, isPrivate, joinLink, nostr, derp, keyOf, pastedKey, exported, advanced, keyShown] = [
+      '',
+      true,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      false,
+      false,
+    ];
     incoming = r?.incoming ?? true;
     relayOnly = r?.relayOnly ?? false;
   }
   export function enter() {
     const r = flow.editing?.room;
-    if (step === 'roomEdit' && r?.identity) kept = true;
+    if (step === 'roomEdit' && r?.identity) [kept, exported] = [true, r.identity.key];
     else if (step === 'roomEdit' && r)
-      void hasRoomIdentity(r.identityKey).then((k) => {
-        kept = k;
-      });
+      void readRoomIdentity(r.identityKey).then(
+        (k) => ([kept, exported] = [!!k, k?.key ?? '']),
+        () => ([kept, exported] = [false, '']),
+      );
     queueMicrotask(() => firstControl()?.focus());
   }
   /** What a step's focus starts on: the name, the link, or (editing) the first switch. */
@@ -81,16 +102,26 @@
       link = roomLink({ id: isPrivate ? privateRoomId(n) : n, nostr: lines(nostr), derp: lines(derp) });
     } else link = parseRoomLink(joinLink);
     if ('error' in link) return flow.fail(link.error);
+    const key = keyOf === PASTE ? parseRoomKey(pastedKey) : undefined;
+    if (keyOf === PASTE && !key) return flow.fail(msg('network:NetRoomStep.room.key.bad'));
     if (!(await tailcatBuilt())) return flow.fail(msg('network:NetTailcatStep.tailcatNotBuilt'));
     const c = await page.netCreate({
       kind: 'room',
       ephemeral: !flow.keep,
-      room: { link: link.link, incoming, relayOnly, ...(keyOf ? { keyOf } : {}) },
+      room: { link: link.link, incoming, relayOnly, ...(key ? { key } : keyOf ? { keyOf } : {}) },
     });
     await flow.made(c);
   }
   async function forget() {
-    if (await flow.forget()) kept = false;
+    // A stored connection's next start makes its new key; an ephemeral one has it now (`forget` replaced `editing`).
+    if (await flow.forget()) [kept, exported] = [false, flow.editing?.room?.identity?.key ?? ''];
+  }
+  /** Copies the key; where the clipboard refuses, it's shown in its field, selected. */
+  function copyKey() {
+    void navigator.clipboard.writeText(exported).catch(() => {
+      keyShown = true;
+      queueMicrotask(() => keyField?.select());
+    });
   }
 </script>
 
@@ -157,6 +188,21 @@
         </Button>
       </div>
       <Note size="md">{t('network:NetRoomStep.room.newName.note')}</Note>
+      <CopyField
+        bind:this={keyField}
+        id="net-room-key-value"
+        label={t('network:NetRoomStep.room.exportKey')}
+        value={exported}
+        type={keyShown ? 'text' : 'password'}
+      />
+      <div class="row">
+        <Button type="button" id="net-room-key-copy" disabled={!exported} onclick={copyKey}>
+          {t('network:NetRoomStep.room.exportKey.copy')}
+        </Button>
+      </div>
+      <Note size="md">
+        {exported ? t('network:NetRoomStep.room.exportKey.note') : t('network:NetRoomStep.room.exportKey.none')}
+      </Note>
     {:else}
       {#if step === 'roomCreate'}
         <Field label={t('network:NetRoomStep.room.nostr')}>
@@ -187,11 +233,19 @@
       <Field label={t('network:NetRoomStep.room.key')}>
         <select id="net-room-key" bind:value={keyOf}>
           <option value="">{t('network:NetRoomStep.room.key.new')}</option>
+          <option value={PASTE}>{t('network:NetRoomStep.room.key.paste')}</option>
           {#each keys as k (k.id)}<option value={k.id}>{t('network:NetRoomStep.room.key.of', { name: k.name })}</option
             >{/each}
         </select>
       </Field>
-      <Note size="md">{t('network:NetRoomStep.room.key.note')}</Note>
+      {#if keyOf === PASTE}
+        <Field label={t('network:NetRoomStep.room.key.pasted')}>
+          <input id="net-room-key-paste" bind:value={pastedKey} type="password" autocomplete="off" spellcheck="false" />
+        </Field>
+      {/if}
+      <Note size="md">
+        {keyOf === PASTE ? t('network:NetRoomStep.room.key.paste.note') : t('network:NetRoomStep.room.key.note')}
+      </Note>
     {/if}
   </Disclosure>
 </Step>

@@ -127,7 +127,11 @@ function roomView(c: ClientReport): NetworkView {
       internet: false,
       room: { name: r.name, link: r.link, incoming: r.incoming },
       text: t('network:network-view.room'),
-      details: [t('network:network-view.room.connections', { count: c.netmap.peers.length })],
+      details: [
+        t('network:network-view.room.connections', { count: c.netmap.peers.length }),
+        // The browser uses no UDP for WebRTC (web/room.ts `RoomEvent`): say why it's all relayed, and the usual fix.
+        ...(r.directBlocked && !r.relayOnly ? [t('network:network-view.room.directBlocked')] : []),
+      ],
     };
   }
   const doing: Record<string, string> = {

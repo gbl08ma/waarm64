@@ -184,7 +184,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it is ticked."
   },
   "NetRoomStep.room.public.note": {
-    "message": "Anyone who knows the room's name can join it. Members can reach this machine only if you give them its name in the room.",
+    "message": "Anyone who knows the room's name can join it. Members can reach this connection only if you give them its name in the room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it isn't ticked (the room is public)."
   },
   "NetRoomStep.room.link": {
@@ -196,23 +196,23 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under the field for the room to join, a warning."
   },
   "NetRoomStep.room.incoming": {
-    "message": "Let members connect to this machine",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit, under Advanced: the checkbox (on by default) that lets the room's members open connections to the guest."
+    "message": "Allow incoming connections from members",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit, under Advanced: the checkbox (on by default) that lets the room's members open connections to the guest (of whichever machine the room connection is attached to)."
   },
   "NetRoomStep.room.incoming.note": {
-    "message": "Members who have this machine's name in the room can reach any port the guest listens on, such as an SSH server.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it is ticked."
+    "message": "Members who have this connection's name in the room can reach any port the guest listens on, such as an SSH server, on whichever machine the connection is attached to.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Allow incoming connections from members” while it is ticked."
   },
   "NetRoomStep.room.incoming.off": {
     "message": "Members can't open connections to the guest. Only replies to connections the guest opens come in.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it isn't ticked."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Allow incoming connections from members” while it isn't ticked."
   },
   "NetRoomStep.room.direct": {
     "message": "Allow direct connections between members",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (on by default) that lets the machine connect directly to other members of the room (WebRTC); off, all of its traffic goes through the room's DERP relays."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (on by default) that lets the connection connect directly to other members of the room (WebRTC); off, all of its traffic goes through the room's DERP relays."
   },
   "NetRoomStep.room.ip.direct": {
-    "message": "Your computer's real, public IP address will be obtainable by members that this machine directly connects to, by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>, and by <stun>STUN servers</stun>.",
+    "message": "Your computer's real, public IP address will be obtainable by the members this connection connects to directly, by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>, and by <stun>STUN servers</stun>.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it is ticked: who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol, <stun>…</stun> to Wikipedia's article on STUN."
   },
   "NetRoomStep.room.ip.relayed": {
@@ -228,7 +228,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the placeholder of the empty Nostr relays field (what is used then)."
   },
   "NetRoomStep.room.nostr.note": {
-    "message": "One wss:// address per line. Machines in the room find each other through these relays.",
+    "message": "One wss:// address per line. Members of the room find each other through these relays.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under the Nostr relays field."
   },
   "NetRoomStep.room.derp": {
@@ -240,12 +240,12 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the placeholder of the empty DERP relays field (what is used then)."
   },
   "NetRoomStep.room.derp.note": {
-    "message": "One per line: a region's number in tailcat's public relays, or the host name or host:port of your own <a>derper</a>. Traffic between machines goes through these relays when it can't go directly.",
+    "message": "One per line: a region's number in tailcat's public relays, or the host name or host:port of your own <a>derper</a>. Traffic between members goes through these relays when it can't go directly.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under the DERP relays field. <a>…</a> links to derper (Tailscale's relay server), a program's name."
   },
   "NetRoomStep.room.key": {
-    "message": "The machine's key",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the label of the list that picks the machine's key in the room: a new one, or another room connection's."
+    "message": "The connection's key",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the label of the list that picks the connection's key in the room (its name and address come from it; the key goes with the connection, whichever machine it's attached to): a new one, one to paste, or another room connection's."
   },
   "NetRoomStep.room.key.new": {
     "message": "A new key",
@@ -256,15 +256,47 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: a choice of “Key”: share another room connection's key. {{name}} is that connection's name."
   },
   "NetRoomStep.room.key.note": {
-    "message": "With another connection's key, this machine's name in this room starts the same as in that connection's room, so members of both rooms can tell it's the same machine. Only one of the two connections can be connected at a time.",
+    "message": "With another connection's key, this connection's name in this room starts the same as that connection's name in its room, so members of both rooms can tell they're the same. Only one of the two connections can be connected at a time.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “Key”."
+  },
+  "NetRoomStep.room.key.paste": {
+    "message": "A key to paste",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: a choice of “The connection's key” (network.NetRoomStep.room.key): a key the user pastes, copied from another room connection (“Copy key” while editing it) or made by the project's key-mining tool, for a chosen address. It shows a field to paste it in."
+  },
+  "NetRoomStep.room.key.pasted": {
+    "message": "The key to use",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced, with “A key to paste” chosen: the label of the (hidden, password-like) field the key is pasted into."
+  },
+  "NetRoomStep.room.key.paste.note": {
+    "message": "A key copied from a room connection (Advanced, while editing it), from this computer or another. The connection's name and address in the room come from its key, so the same key gives the same ones. Don't connect with one key in two places at once.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “The connection's key” while “A key to paste” is chosen, in place of network.NetRoomStep.room.key.note."
+  },
+  "NetRoomStep.room.key.bad": {
+    "message": "That isn't a key. A key is 64 hexadecimal digits (0–9 and a–f).",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the error when Create or Join is clicked with “A key to paste” chosen and what's pasted isn't a key."
+  },
+  "NetRoomStep.room.exportKey": {
+    "message": "The connection's key",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the label of the field (hidden, like a password) holding the connection's key, to copy with “Copy key”."
+  },
+  "NetRoomStep.room.exportKey.copy": {
+    "message": "Copy key",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the button that copies the connection's key to the clipboard (where the browser refuses, the key is shown in its field, selected)."
+  },
+  "NetRoomStep.room.exportKey.note": {
+    "message": "Whoever has this key can take this connection's name and address in a room: keep it secret. To use it in another connection, perhaps on another computer, choose “A key to paste” when creating or joining a room, and don't connect both at once.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the text under “Copy key”. “A key to paste” is network.NetRoomStep.room.key.paste."
+  },
+  "NetRoomStep.room.exportKey.none": {
+    "message": "The key is made when the connection first connects.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection that has never connected, Advanced: the text under “Copy key” (disabled): there's no key yet."
   },
   "NetRoomStep.room.newName": {
     "message": "New name",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the button that gives the connection a new key, and so a new name in the room (it asks first)."
   },
   "NetRoomStep.room.newName.note": {
-    "message": "Give the machine a new key, and so a new name in the room. Whoever has the old name can't reach the machine any more.",
+    "message": "Give the connection a new key, and so a new name in the room. Whoever has the old name can't reach it any more.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the line under “New name”, what the button does."
   },
   "NetLocalStep.local.link": {
@@ -525,7 +557,7 @@
   },
   "NetAdapter.room.note.off": {
     "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
-    "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may not connect to it (the connection's “Let members connect to this machine” is off)."
+    "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
   },
   "NetAdapter.connect": {
     "message": "Connect",
@@ -682,6 +714,10 @@
   "network-view.room.connections_other": {
     "message": "{{count}} active connections",
     "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
+  },
+  "network-view.room.directBlocked": {
+    "message": "This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.",
+    "note": "In the Network menu, under “Connected to the room” and its count of active connections (also the Machines page's Network tab and the status bar's network item's tooltip), shown when the browser gathered no address for a direct (WebRTC) connection to a member: it uses no UDP for WebRTC, so every member is reached through the room's DERP relays, slower. ungoogled-chromium does this by default; #webrtc-ip-handling-policy and chrome://flags are the flag's and the page's names, kept as they are."
   },
   "network-view.fetchingMap": {
     "message": "Looking up the relay…",

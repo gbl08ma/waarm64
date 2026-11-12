@@ -171,6 +171,18 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
   of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
   /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.internal`.
+  So a key can be mined for an address: `cargo run --release -p webpc_ts --example room-key-mine -- <link> --prefix
+  HEX | --suffix HEX | --regex RE` (all given must hold) prints keys whose address has those digits after the room's /48
+  at its start or end (compared as bits, no text), or matches the expression on the address written out whole (8 groups
+  of 4; `--compressed`: as the page writes it, where `::` moves with the zeros), with the address and the name, and the
+  average time to a match (16 to the digits fixed, times the expression's odds from a sample of random addresses). Each
+  thread draws one random clamped scalar and steps it by 8 (clamping clears the low three bits) as a point addition of
+  8·B, converting 512 points to Montgomery form with one inversion (`EdwardsPoint::to_montgomery_batch`); a match is
+  derived again by X25519 before it's printed. 26–34 M keys a second on the dev VM's 8 vCPUs (2026-11-12): 6 digits in
+  under a second, 7 in ~10 s, 8 in ~3 minutes, 9 in ~45 minutes. The wizard takes the key as [A key to paste](ui:network:NetRoomStep.room.key.paste)
+  (frontend.md "Network"), for a member others type the address of (a directory service). Its tests (`cargo test`)
+  check the stepping against X25519 key by key, the address and name against what the module said for a key in a
+  room, and that a mined key matches; `tests/net/room-keys.ts` is the derivation for the page's tests.
 - **Finding a peer** (`room/lookup.rs`, `nostr.rs`): a node's tag in an hour is BLAKE2s of the tag salt, its address
   and the Unix hour (16 bytes, hex); it keeps one subscription on each of the link's Nostr relays (`REQ`, the kind
   `room::KIND` = 26354, and its tags of the previous, current and next hour; after the hour turns, the next renewal is a
@@ -257,6 +269,16 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take;
   `peer` says a session is confirmed, and `peer-gone` that such a peer was forgotten (the page's list of members
   reached follows both).
+- **A browser without direct paths:** a browser that uses no UDP for WebRTC gathers no candidate at all, not even a
+  host one, and can only take the relay. Chromium does this with the WebRTC IP handling policy
+  `disable_non_proxied_udp`: ungoogled-chromium's default (its `#webrtc-ip-handling-policy` flag), or the profile's
+  `webrtc.ip_handling_policy` (which an extension can set); its log says "UDP ports disabled". The answerer then
+  answers but trickles no candidate, the offer times out, and the backoff repeats (found 2026-11-11 between two of the
+  user's machines; first taken for mDNS between two windows of one desktop, which worked only because the other side's
+  candidates were enough there). web/room.ts watches each connection's gathering: completed without a candidate, it
+  emits `direct` `blocked` (the next that gathers one clears it), the network map's `room.directBlocked`, and the
+  status line says so with the flag to change ([This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.](ui:network:network-view.room.directBlocked)).
+  `tests/room-browser.test.ts` seeds the preference in a profile (upstream has no switch for it).
 - **DERP:** one connection per region in use (`Relay`): the home region (`home`, an index into the link's; the
   `preferred` one) always, another while a peer is reached through it (the dialer's home region a call back joined;
   where a peer's data last came from) and for 60 s after; packets for a region wait (64 at most) until its connection

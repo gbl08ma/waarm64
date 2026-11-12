@@ -41,3 +41,12 @@ ts_disco_protocol = "0.6.1"
 # Rooms (docs/plans/networking-p2p.md): BIP-340 signatures on secp256k1 for Nostr events, and their SHA-256 ids.
 k256 = { version = "0.13", default-features = false, features = ["schnorr", "alloc"] }
 sha2 = { version = "0.10", default-features = false }
+
+# The room key miner (examples/room-key-mine.rs, docs/tailnet.md "Rooms"): native only, never in the wasm module.
+[dev-dependencies]
+curve25519-dalek = "5"
+regex = "1"
+
+[[example]]
+name = "room-key-mine"
+test = true
