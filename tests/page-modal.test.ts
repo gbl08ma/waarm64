@@ -523,7 +523,11 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await page.click('#machines-open');
   await m.locator('[data-tab=disks]').click();
   await page.waitForFunction((s) => (document.querySelector('.machines .head .meta')?.textContent ?? '').includes(s), t('machines:MachinesPage.state.running'), { timeout: 10_000 });
-  await m.locator('[data-attachment]').first().getByRole('checkbox', { name: t('disks:Disks.readOnly') }).check();
+  // A click, then a wait: the box takes its value only after the power-off it asks for (`check()` verifies at once,
+  // which a loaded run's slower power-off failed).
+  const box = m.locator('[data-attachment]').first().getByRole('checkbox', { name: t('disks:Disks.readOnly') });
+  await box.click();
+  await page.waitForFunction((el) => (el as HTMLInputElement).checked, await box.elementHandle(), { timeout: 15_000 });
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
