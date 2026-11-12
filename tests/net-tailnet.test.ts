@@ -4,7 +4,7 @@
 // `tests/net/tailnet.sh` starts in rootless Podman (its range is not the default 100.64.0.0/10:
 // the guest's address is whatever the client reports). The guest takes a DHCP lease from
 // systemd-networkd, pings the peer, resolves it through MagicDNS, and the peer connects to a
-// server in the guest. Then two adapters: this tailnet beside tailcat through a server (below).
+// server in the guest, and reaches this machine through the peer as a subnet router. Then two adapters: this tailnet beside tailcat through a server (below).
 // Realtime, so not exact: two boots, ~4 min alone.
 // Opt-in: WEBPC_TAILNET=1 (needs Podman, target/net/ts.wasm (net/ts/build.sh) and the Debian image,
 // `npm start` or tools/debian.ts).
@@ -160,6 +160,29 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       assert.match(reply, /HTTP\/1\.0 200 OK/);
       assert.match(reply, /hello-from-the-guest/);
       assert.match(peerTs('status'), new RegExp(`${self}\\s+guest`));
+
+      // Subnet routes: the peer advertises this machine's address as a /32 subnet (tests/net/tailnet.sh), approved only
+      // here (the next test's guest reaches that address through tailcat). Not approved, nothing reaches it; approved
+      // while the client runs, the guest reaches a server on it through the peer; with the page's toggle off, not again.
+      const subnet = env.WEBPC_TS_SUBNET;
+      const lan = createServer((_req, res) => res.end('hello-from-the-subnet\n'));
+      await new Promise<void>((resolve) => lan.listen(0, subnet, resolve));
+      const get = `curl -s -m 5 http://${subnet}:${(lan.address() as { port: number }).port}/; echo " exit=$?"`;
+      try {
+        assert.doesNotMatch(await run(get), /hello-from-the-subnet/, 'a route not approved isn\'t taken');
+        execFileSync(script, ['routes', `${subnet}/32`], { timeout: 60_000 });
+        await page.waitForFunction((r) => (window as never as { harness: { tailscale(): { netmap?: { peers: { routes?: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.routes?.includes(r)), `${subnet}/32`, { timeout: 30_000, polling: 250 })
+          .catch(async (e) => { throw new Error(`${e}: the approved route never reached the client${await context()}`); });
+        let got = '';
+        for (let k = 0; k < 6 && !got.includes('hello-from-the-subnet'); k++) got = await run(get);
+        assert.match(got, /hello-from-the-subnet/, `the guest reaches the subnet through the peer: ${got}${await context()}`);
+        await harness(page, 'setAcceptRoutes(false)');
+        assert.doesNotMatch(await run(get), /hello-from-the-subnet/, 'with subnet routes off, not');
+        await harness(page, 'setAcceptRoutes(true)');
+      } finally {
+        lan.close();
+        execFileSync(script, ['routes'], { timeout: 60_000 });
+      }
 
       // The exit node: the peer offers to carry the guest's internet traffic. Tailscale's exit nodes
       // never forward RFC 1918 addresses, the exit node's own LAN included (ipn/ipnlocal's

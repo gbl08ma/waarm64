@@ -28,6 +28,7 @@
     output: () => output,
     error: () => error,
     events: () => events,
+    setAcceptRoutes: (on) => ts.setAcceptRoutes(on),
     setExitNode: (id) => ts.setExitNode(id).then(() => '', (e) => String(e?.message ?? e)),
     tailscale: () => ({ state: ts.state(), netmap: ts.netmap(), timings: ts.timings(), loginURL: ts.loginURL() }),
   };

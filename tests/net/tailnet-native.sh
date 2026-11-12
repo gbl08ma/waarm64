@@ -3,7 +3,7 @@
 # (headscale v0.29.4 with its embedded DERP, a TLS proxy that adds CORS on /key, one peer that is
 # an approved exit node) as native processes. Go builds headscale and tailscale once, at the
 # versions tailnet.sh pins, into target/net/tailnet-bin. The proxy is tests/net/tls-proxy.ts.
-# Same usage and output: up | env | key [lasting] | nodes | peer <tailscale args> | register <auth ID> | down. The peer's socket is /tmp/ts.sock, so a `podman`
+# Same usage and output: up | env | key [lasting] | nodes | peer <tailscale args> | routes [prefixes] | register <auth ID> | down. The peer's socket is /tmp/ts.sock, so a `podman`
 # shim that turns `podman exec webpc-peer tailscale …` into the native `tailscale …` serves the
 # tests that talk to the peer (tests/net/podman-shim, put first on PATH).
 set -eu
@@ -30,11 +30,23 @@ hs() { "$BIN/headscale" -c "$DIR/config/config.yaml" "$@"; }
 peerts() { "$BIN/tailscale" --socket=$SOCK "$@"; }
 authkey() { hs preauthkeys create -u 1 --reusable $([ "${1:-}" = lasting ] || echo --ephemeral) -e 24h -o json | sed -n 's/.*"key": *"\([^"]*\)".*/\1/p'; }
 
+# This machine's IPv4 address: the peer advertises it as a /32 subnet route, approved only by `routes` (a test that
+# wants it), so a guest reaches a server here through the peer as through a subnet router.
+LAN=$(ip -4 -o addr show scope global 2>/dev/null | awk '{split($4, a, "/"); print a[1]; exit}')
+[ -n "$LAN" ] || LAN=$(hostname -I | awk '{print $1}')
+
+# Approves the peer's exit-node routes and these others (comma-separated; none: back to the exit node's only).
+approve() {
+	id=$(hs nodes list -o json 2>/dev/null | python3 -c 'import json, sys; print(next(n["id"] for n in json.load(sys.stdin) if "peer" in (n.get("name"), n.get("given_name"))))' 2>/dev/null) &&
+		hs nodes approve-routes -i "$id" -r "0.0.0.0/0,::/0${1:+,$1}" >/dev/null 2>&1
+}
+
 env_() {
 	echo "WEBPC_TS_CONTROL=https://127.0.0.1:$PORT"
 	echo "WEBPC_TS_PEER_IP=$(peerts ip -4)"
 	echo "WEBPC_TS_PEER_IP6=$(peerts ip -6)"
 	echo "WEBPC_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
+	echo "WEBPC_TS_SUBNET=$LAN"
 	echo "NODE_EXTRA_CA_CERTS=$DIR/tls/ca.pem"
 }
 
@@ -112,12 +124,11 @@ YAML
 	for _ in $(seq 20); do hs users create tailnet >/dev/null 2>&1 && break; sleep 1; done
 	SSL_CERT_FILE=$DIR/config/tls/ca.pem start peer "$BIN/tailscaled" --tun=userspace-networking --socket=$SOCK --statedir="$DIR/peer" --port=0
 	for _ in $(seq 40); do [ -S $SOCK ] && break; sleep 0.25; done
-	peerts up --login-server="https://127.0.0.1:$PORT" --authkey="$(authkey lasting)" --hostname=peer --advertise-exit-node >/dev/null
+	peerts up --login-server="https://127.0.0.1:$PORT" --authkey="$(authkey lasting)" --hostname=peer --advertise-exit-node --advertise-routes=$LAN/32 >/dev/null
 	peerts ip -4 >/dev/null 2>&1 || { echo "tailnet: the peer didn't join:" >&2; tail -20 "$DIR/run/peer.log" >&2; exit 1; }
 	approved=
 	for _ in $(seq 60); do
-		id=$(hs nodes list -o json 2>/dev/null | python3 -c 'import json, sys; print(next(n["id"] for n in json.load(sys.stdin) if "peer" in (n.get("name"), n.get("given_name"))))' 2>/dev/null) &&
-			hs nodes approve-routes -i "$id" -r 0.0.0.0/0,::/0 >/dev/null 2>&1 && { approved=1; break; }
+		approve && { approved=1; break; }
 		sleep 1
 	done
 	[ -n "$approved" ] || { echo "tailnet: couldn't approve the peer's routes:" >&2; hs nodes list >&2; exit 1; }
@@ -127,6 +138,7 @@ env) env_ ;;
 key) authkey "${2:-}" ;;
 nodes) hs nodes list -o json ;;
 peer) shift; peerts "$@" ;;
+routes) approve "${2:-}" || { echo "tailnet: couldn't approve the peer's routes" >&2; exit 1; } ;;
 register) hs auth register --auth-id "$2" --user tailnet ;;
 hs) shift; hs "$@" ;;
 down)
@@ -136,5 +148,5 @@ down)
 	sleep 0.5
 	rm -rf "$DIR" $SOCK
 	;;
-*) echo "usage: $0 up|env|key [lasting]|nodes|peer <tailscale args>|register <auth ID>|hs <args>|down" >&2; exit 2 ;;
+*) echo "usage: $0 up|env|key [lasting]|nodes|peer <tailscale args>|routes [prefixes]|register <auth ID>|hs <args>|down" >&2; exit 2 ;;
 esac

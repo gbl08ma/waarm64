@@ -222,7 +222,8 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
   inside the tailnet's own domains; the rest by the longest matching route's resolvers, or the
   netmap's. Every resolver (up to 4) is asked at once and the first answer that isn't SERVFAIL or
   REFUSED goes back (a failure only when all failed), as Go's forwarder races them: a resolver that's
-  down costs nothing while another answers. A plain resolver the tunnel reaches (a peer, a subnet, or
+  down costs nothing while another answers. With no answer after 10 s the guest gets the failure one sent,
+  or SERVFAIL (as Go's), not its resolver's timeout. A plain resolver the tunnel reaches (a peer, a subnet, or
   anything through the exit node; 1.1.1.1 through the exit node when the tailnet names none) is asked
   through it from the node's address (ports 61000–61999, above Linux's ephemeral range; 10 s);
   otherwise DNS over HTTPS by `fetch`: the route's own `https://` resolver, or the well-known
@@ -231,7 +232,7 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
   guest asks again over TCP; there, a truncated answer from a well-known public resolver is asked of
   its DoH service. Through an exit node, plain DNS where Go uses the exit node's peerapi DoH.
 - **Disco:** pings from known peers over DERP get pongs (`ts_disco_protocol`), so peers see us
-  properly; none sent (no direct path to offer).
+  properly; none sent and no CallMeMaybe (a browser has no direct path to offer).
 - **Refused or left out:** a tailnet with Tailnet Lock on fails with that reason (not half-working);
   no direct connections, Taildrop, SSH server, serve/funnel or logtail.
 
@@ -257,7 +258,9 @@ natively by Go at pinned versions, the relay on `127.0.0.1:8444` with a self-sig
 `tests/tailcat-browser.test.ts`, `tests/net-tailcat.test.ts` and `tests/page-network.test.ts`; the
 test tailnet (`tests/net/tailnet.sh`, headscale and a peer in rootless Podman; natively in a cloud
 session, `tests/net/tailnet-native.sh`) under `tests/ts-tailnet.test.ts`,
-`tests/tailscale-browser.test.ts` and `tests/net-tailnet.test.ts`; the tailcat rig again under
+`tests/tailscale-browser.test.ts` and `tests/net-tailnet.test.ts` (its peer also a subnet router for this machine's
+address, approved only while the guest's first test checks it: not reached, reached through the peer, not with the
+page's toggle off); the tailcat rig again under
 `tests/ts-tailcat.test.ts` (a relay's path cut off while its WebSocket stays open), and its derper alone under
 the rooms' tests ([rooms.md](rooms.md) "Tests"). Serving, against the real CLI
 (`tests/net/tailcat-cli.ts`): `tailcat ping` (the rig's relay; tailcat's public ones opt-in), a kept key let in by a

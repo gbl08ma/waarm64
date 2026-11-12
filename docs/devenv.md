@@ -74,7 +74,8 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
   exports host-visible memory through it).
 - dash (tests/keyboard.test.ts runs the keyboard script under it).
 - **Go** (`net/tailscale/go.mod` pins the toolchain) builds the Go Tailscale client, `net/tailscale/build.sh` (no
-  longer the page's: a test fixture, tests/ts-tailnet.test.ts's hand-over), the tailcat rig, and the local network
+  longer the page's: a test fixture, tests/ts-tailnet.test.ts's hand-over, kept because the Rust client keeps its node in
+  the Go client's store format, `net/ts/src/store.rs`, its only format), the tailcat rig, and the local network
   helper, `github.com/gbl08ma/webpc-net` (its own repository, checked out at `../webpc-net`; its `go.mod` pins go1.27.3; **go1.27-race** too, or `go test -race` doesn't link: `relocation target
   __tsan_free not defined`). The networking tests'
   headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.

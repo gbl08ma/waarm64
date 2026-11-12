@@ -1532,32 +1532,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     docs/networking/adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
     several machines can already share its LAN, each with a connection of its own.
 - **The Rust Tailscale client's loose ends** ([networking/tailnet.md](networking/tailnet.md) "Tailscale"):
-  - Subnet routes (on by default, a menu toggle; 2026-10-24): checked by unit tests and `viewOf`'s only, no subnet
-    router in the Podman tailnet; an adapter that isn't the default way out learns a new IPv4 subnet route only at
-    the guest's next DHCP renewal (option 121; IPv6's router advertisement is at once).
+  - Subnet routes: an adapter that isn't the default way out learns a new IPv4 subnet route only at the guest's next
+    DHCP renewal (option 121; IPv6's router advertisement is at once).
   - A tailnet with IPv6 addresses only gets no lease (the gateway's DHCP needs an IPv4 address: `leaseFrom`).
-  - An exit node that goes offline or stops offering itself stays selected and the guest's internet traffic is
-    dropped, as Go fails closed; the menu shows it "(offline)", but the status line still says "internet through" it.
   - IPv6 extension headers aren't followed by the filter (such a packet is judged by its first next-header).
   - MagicDNS answers A and AAAA only (no PTR for tailnet addresses, no SRV/TXT from extra records; other types
-    forward); a query that no resolver answers within 10 s gets no answer (the guest's resolver times out and
-    retries; Go answers SERVFAIL); its TCP side (`dns_tcp.rs`) and DNS-over-HTTPS fallback (Cloudflare, Google or
+    forward); its TCP side (`dns_tcp.rs`) and DNS-over-HTTPS fallback (Cloudflare, Google or
     Quad9 by `fetch`) are unit-tested only (the cloud has no DNS out; no guest test asks a name whose answer is
     over 512 bytes); a truncated answer over TCP from a resolver that isn't well-known goes back truncated (no TCP
     client in the module to ask it again).
   - The exit node's DNS goes as UDP to the tailnet's resolvers or 1.1.1.1, not to the exit node's peerapi DoH as Go's
     does (it would need a TCP client in the module): check against an exit node that blocks plain DNS.
-  - Disco answers pings only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet
-    Lock is refused, not supported.
-  - Headscale answers the first map ~2 s after registration for both clients, and a peer takes our new node
-    0.6–0.7 s after our first handshake (docs/networking/tailnet.md "Findings"; not ours to fix). Tailscale's own servers
-    unmeasured: an auth key's ephemeral node there is where to look.
+  - Tailnet Lock is refused, not supported: a large feature, worth a track only if someone needs it.
+  - Timings against Tailscale's own servers are unmeasured (Headscale's are in docs/networking/tailnet.md
+    "Findings"): an auth key's ephemeral node there is where to look.
   - The module in the device worker instead of its own (one worker and one hop less): only if its cost there is
     small; the worker spends 3.1 core-ms per Mbit/s (bench/net/REPORT.md "T6"), unmeasured inside the device worker.
-  - Go is left only for test fixtures: the Go client (`net/tailscale`) for `tests/ts-tailnet.test.ts`'s hand-over of
-    a node it kept, and the tailcat rig's `derper` and `tailcat`. Dropping the hand-over test and building those two
-    in a container image would remove Go from development and CI; the user kept Go (2026-10-17), so not before the
-    Go client's store format stops mattering.
 
 ## USB ([usb.md](usb.md))
 
