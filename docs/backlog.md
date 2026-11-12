@@ -1531,14 +1531,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     rather than a socket per adapter. It needs connections modeled as exclusive or shared (a Web Lock holds each now,
     docs/networking/adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
     several machines can already share its LAN, each with a connection of its own.
-- **tailcat loose ends**: an address that names only a region (tailcat's public relays) fetches
-  `https://tailcat.dev/derpmap.json`, run against the real map once by hand (2026-10-23: `tailcat serve exit-node`
-  with no `--key` on the Mac, region 303 Frankfurt, the page's Debian through it), never in a test; the relay's loss while running is
-  covered natively (`relay_loss_while_running`, a server's restart) and in Node against the rig (a path cut off while
-  its WebSocket stays open: tests/ts-tailcat.test.ts), not in a browser; a guest spraying UDP flows
-  (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
-  `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,
-  not fragmented (`nat46.rs`), unchecked with `tcpdump`.
 - **The Rust Tailscale client's loose ends** ([networking/tailnet.md](networking/tailnet.md) "Tailscale"):
   - Subnet routes (on by default, a menu toggle; 2026-10-24): checked by unit tests and `viewOf`'s only, no subnet
     router in the Podman tailnet; an adapter that isn't the default way out learns a new IPv4 subnet route only at

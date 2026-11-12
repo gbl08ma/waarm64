@@ -82,7 +82,9 @@ WebSockets:
   10 s counts as failing: a growing backoff, 0.5 s to 30 s), with what it had queued. The home relay
   dropped by its liveness check also has the control connection reconnect, unless it brought
   something in the last 15 s. Measured against the tailcat rig: traffic back ~8.3 s after the path
-  died (tests/ts-tailcat.test.ts); before, never (the socket stayed open).
+  died (tests/ts-tailcat.test.ts); before, never (the socket stayed open). Checked once in Chromium too (2026-11-12, a
+  TCP forwarder on the rig's relay port freezing the page's connections): back 8.3 s after the freeze, and 0.55 s
+  after a derper that was down 3 s came back.
 - **Frames are joined** into messages of up to 4 KiB (`queue_frames`): the server reads the WebSocket
   as a byte stream (frames may straddle messages, as its own 4 KB writes do), so what was queued
   before the host takes the actions (an IP-port batch: `ts_guest` per packet, then one pump) leaves
@@ -113,7 +115,10 @@ WebSockets:
   travel as NAT64 (`64:ff9b::/96`). Tunnel MTU 1280.
 - **`serve exit-node`** isn't IP forwarding: it terminates TCP and UDP flows in its gVisor netstack and
   proxies each to its destination, private addresses included (unlike Tailscale's exit nodes), its
-  own address meaning its `localhost`. No ICMP beyond it. **Pre-1.0**: no API, CLI or wire-format
+  own address meaning its `localhost`. Two limits follow, the server's and not ours to lift: **no ICMP beyond it**
+  (the guest's `ping` past the exit node gets no reply; test reachability with TCP, e.g. `curl`), and **many UDP
+  flows starve it**: it keeps each flow's proxy for two minutes, so a guest that uses a new port per packet (a port
+  scan, some games) slows it to nothing until the server restarts (bench/net/REPORT.md "T1"). **Pre-1.0**: no API, CLI or wire-format
   promises; the tests pin the version (`tests/net/tailcat.sh`), re-checked on bumps.
 - **The public relays** are rate-limited, best-effort and revocable; the page recommends one's own
   derper (`tailcat genkey --region=<host>`).
@@ -132,8 +137,9 @@ stateless RFC 7915 for TCP, UDP and ICMP echo), so the gateway stays the same fo
 from the guest becomes IPv6 from the tunnel address to `64:ff9b::<v4>`, and back. Translated IPv4 must
 fit 1260 bytes, but the link stays at 1280 (under 1280 Linux turns IPv6 off on the interface), so the
 translator clamps TCP's MSS in SYNs to 1220 and answers DF-set IPv4 over 1260 with "fragmentation
-needed" from 192.0.0.1; fragments, DF-clear oversized packets and other ICMP types are dropped. IPv6
-goes as is.
+needed" from 192.0.0.1; fragments, DF-clear oversized packets and other ICMP types are dropped (checked once on the
+wire, 2026-11-12: DF-clear 1,268- and 1,280-byte packets never reached the exit node's side, a DF-set one drew
+"fragmentation needed" with MTU 1260, and 1,260 bytes passed either way). IPv6 goes as is.
 
 **The VM as a server** (`Config.serve`). The kept identity (node key and pre-shared key, IndexedDB
 `webpc-tailcat`) makes a kept address: the disco key is derived from the node key (BLAKE2s).
@@ -270,9 +276,8 @@ a run of `scripts/ci-net.sh`; a tailcat bump, a re-check of the address and the 
 - A test must never run the tailcat CLI with `spawnSync`: the test process serves the page's disk, and
   the guest's server read it lazily while the CLI waited on the guest (a 60 s timeout that looked like
   a routing bug).
-- A tailcat exit node slows to nothing under one UDP flow per packet (a harness's mistake; a guest
-  spraying flows would do the same). It doesn't answer IPv6 to its own `[::1]`: the tests use the
-  machine's non-link-local IPv6 address (testing.md).
+- A tailcat exit node doesn't answer IPv6 to its own `[::1]`: the tests use the machine's non-link-local IPv6
+  address (testing.md). A harness that used a new UDP port per echo starved it (above, "`serve exit-node`").
 - The first packet to a fresh peer after the tailnet comes up waited ~4.5 s for a WireGuard retry
   (the Go client's "5 s first ping", bench/net/REPORT.md, too): the peer's map doesn't have our node
   yet, and drops our initiation. On 2026-10-24 (tests/ts-tailnet.test.ts's first echo, a new auth-key

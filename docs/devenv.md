@@ -54,7 +54,7 @@ branch kept). A worktree made with plain `git worktree add` gets the setup by ha
 From zypper (add what's missing with `sudo zypper in`, and note it here):
 - Node 26, Chromium 155 (`/usr/bin/chromium`: Tumbleweed's, the newest Chromium released for Linux arm64 there; keep
   it current with `sudo zypper in chromium`; Google builds no Chrome for Testing for Linux arm64), clang/lld/llvm, qemu (user, system, tools), podman (rootless), dtc,
-  capstone, qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no
+  capstone, tcpdump (checking packets on the wire), qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no
   page text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
 - Graphics: qemu-hw-display-virtio-gpu (QEMU's virtio-gpu device is a separate package) and edid-decode (the graphics
   oracle); for the virgl oracle virglrenderer-test-server (`virgl_test_server`, vtest), Mesa-demo (`eglinfo`,
