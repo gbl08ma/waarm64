@@ -3,11 +3,11 @@
   given), the machine's hostname, and an auth key when it connects now. Editing changes the hostname alone.
 -->
 <script lang="ts">
-  import Check from './ui/Check.svelte';
   import Field from './ui/Field.svelte';
   import Note from './ui/Note.svelte';
   import Step from './ui/Step.svelte';
   import T from './T.svelte';
+  import ValueField from './ui/ValueField.svelte';
   import { msg, t } from '../i18n.ts';
   import type { Flow } from './net-wizard.ts';
   import { DEFAULT_CONTROL, parseControlURL, parseHostname, tailscaleBuilt } from './network.ts';
@@ -81,16 +81,14 @@
     />
   </Field>
   {#if flow.here}
-    <Field label={t('network:NetTailnetStep.authKey')}>
-      <input
-        id="net-authkey"
-        bind:value={authKey}
-        type={reveal ? 'text' : 'password'}
-        autocomplete="off"
-        spellcheck="false"
-      />
-    </Field>
-    <Check id="net-reveal" bind:checked={reveal}>{t('network:NetTailnetStep.authKey.show')}</Check>
+    <ValueField
+      id="net-authkey"
+      showId="net-authkey-show"
+      label={t('network:NetTailnetStep.authKey')}
+      bind:value={authKey}
+      bind:shown={reveal}
+      secret
+    />
     <Note size="md">{t('network:NetTailnetStep.authKey.note')}</Note>
   {:else if flow.editing}
     <Note size="md">{t('network:NetTailnetStep.control.edit')}</Note>

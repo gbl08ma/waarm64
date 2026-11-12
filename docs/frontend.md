@@ -33,7 +33,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts` (`usb-problems.ts`: the device worker's problems in words, with the host's remedies), `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter, `CopyField.svelte`), `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
+| `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetDetails.svelte` (an adapter's details), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -269,7 +269,8 @@ offers of a device that just appeared or has no permission here yet, Add a devic
 **Clipboard** (below), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item
 by default (below, "The status bar"). Menus (`ui/Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
-elsewhere and open under their right edge (a page's Export menus under their left).
+elsewhere and open under their right edge (a page's Export menus under their left); a panel ends a step above the
+window's bottom and its contents scroll (many adapters, many USB devices), never the page.
 
 **Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
 `web/app/clipboard.ts`'s `ClipboardShare`, with the guest-to-host way in `clipboard-guest.ts`, the transfers and ACKs in
@@ -1451,13 +1452,30 @@ comes back detached, saying so. Any machine can use a kept connection; one runni
 Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:network-actions.useHere), takes it
 (the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
 
-The toolbar's **Network** menu (`Network.svelte`) has a section per adapter of the page's machine (`NetAdapter.svelte`, headed "Adapter n" when there are
-several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
+The toolbar's **Network** buttons (`Network.svelte`): where the toolbar keeps to one row with them, each adapter of the
+page's machine has its own, with its state's light and its number (1–4), and its menu holds that adapter alone (adapter
+1's is `#network`, adapter n's `#network-<n-1>`); where they'd take the toolbar onto a second row, one button's menu
+(`#network`) has a section per adapter. `Toolbar.svelte`'s `fits` decides from its children's widths (the adapters'
+buttons as last measured, so the choice doesn't flip-flop), after each layout change (a `ResizeObserver` on it and its
+children). A section (`NetAdapter.svelte`; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): "Adapter
+n", or [Adapter {{adapter}} (default gateway)](ui:network:NetAdapter.adapter.primary) for the guest's default route's,
+when there are several,
+with the connection's name beside it (under it where it doesn't fit), the status,
 [Log in…](ui:network:NetAdapter.login), [Internet through](ui:network:NetAdapter.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
 peers route subnets), [This machine's tailcat address](ui:network:NetAdapter.served) (when it lets clients
-in), [This machine's name in the room](ui:network:NetAdapter.room.name) (a room's, with Copy and [Copy room link](ui:network:NetAdapter.room.copyLink)), **[Connect](ui:network:NetAdapter.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:NetAdapter.retry)** (a connection that failed: disconnect and
-connect again), **[Disconnect](ui:network:NetAdapter.disconnect)**, [Log out](ui:network:NetAdapter.logout), and [Connect…](ui:network:NetAdapter.setup) or
-[Change connection…](ui:network:NetAdapter.change), which opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
+in), [This machine's key](ui:network:NetAdapter.key) (tailcat through a server), [This machine's name in the
+room](ui:network:NetAdapter.room.name) and [The room's link](ui:network:NetAdapter.room.link) (a room's), **[Connect](ui:network:NetAdapter.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:NetAdapter.retry)** (a connection that failed: disconnect and
+connect again), **[Disconnect](ui:network:NetAdapter.disconnect)**, [Log out](ui:network:NetAdapter.logout), [Connect…](ui:network:NetAdapter.setup) or
+[Change connection…](ui:network:NetAdapter.change), and [Details…](ui:network:NetAdapter.details). The values to
+copy are `ui/ValueField.svelte`s: Copy (a check for a moment once copied) and, for a secret, Show and Hide are icons
+inside the field, after its text; where the clipboard refuses, the value is shown and selected. The wizard's pasted
+secrets (a tailcat address, the helper's link, a room's link or key, an auth key) are the same fields, with Show alone.
+[Details…](ui:network:NetAdapter.details) opens the adapter's details (`NetDetails.svelte`, a dialog that follows the adapter live), with what the
+menu leaves out to stay short: the guest's IPv4 address; a tailnet's hostname and control server; tailcat's address
+and the commands that use it, or the machine's key and the line that lets only it through the server
+(`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines (`NetLocalInstall.svelte`, the
+wizard's too); a room's name, link and who may connect; and [Edit connection…](ui:network:NetDetails.edit), the
+wizard on the connection. Change connection… opens the **Network wizard** (`NetWizard.svelte`, the shell: the session, the steps' navigation, Keep, the error and
 the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
 `NetLocalStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
@@ -1515,7 +1533,7 @@ and the guest's default way out (below).
   lease renewed every 10 s, so IPv4's default follows the primary within that (8–9 s measured, 10 at most; 49 s with the two-minute lease before); IPv6's moves with
   the advertisement, at once.
 - [A tailnet](ui:network:NetKindStep.kind.pickTailnet) takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
-  `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a [Show the auth key](ui:network:NetTailnetStep.authKey.show) checkbox).
+  `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with Show).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
   with a [Log in…](ui:network:NetAdapter.login) link (a new tab; only `http(s)` URLs are ever offered); the client comes up
   when the login completes. An admin-approval wait is shown as such. With an auth key (asked for only when the
@@ -1547,11 +1565,11 @@ and the guest's default way out (below).
     `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
     through the exit node). What the guest reaches is TCP and UDP to wherever that computer
     reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out. Connected, the menu shows
-    [This machine's key](ui:network:NetAdapter.key) (`nodekey:…`, with Copy) and the command that lets only it use that
-    computer (`tailcat serve --allow=<key> exit-node`): the connection's identity is its node, going online alone too,
+    [This machine's key](ui:network:NetAdapter.key) (`nodekey:…`, to copy) and its details the command that lets only it
+    use that computer (`tailcat serve --allow=<key> exit-node`): the connection's identity is its node, going online alone too,
     so a kept connection's key is the same at every connect (an ephemeral one's, until the page closes).
   - [Let tailcat clients in to this machine](ui:network:NetTailcatStep.tailcat.serve): the machine is a tailcat server. The menu
-    shows **its own tailcat address** (a password field with Show and Copy) and how to use it:
+    shows **its own tailcat address** (a hidden field to copy), and its details how to use it:
     on another computer, `tailcat ssh <address>` logs in to the guest's sshd (tailcat runs `ssh`
     with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
     port the guest listens on; `tailcat ping <address>` gets its pong over the relay. Clients reach the guest at its tunnel
@@ -1594,8 +1612,8 @@ and the guest's default way out (below).
   one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New
   name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working,
-  and [Copy key](ui:network:NetRoomStep.room.exportKey.copy) copies its key (shown, selected, in its hidden field where
-  the clipboard refuses; off before the connection's first start makes one), to paste in another connection, on this
+  [The connection's key](ui:network:NetRoomStep.room.exportKey) is a hidden field to copy (shown, selected, where
+  the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/tailnet.md
   "Rooms").
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
@@ -1638,8 +1656,8 @@ and the guest's default way out (below).
 - **Before connections** the page kept one connection in `webpc.settings` `net`; the first load with connections makes
   it (and its kept node, and the served tailcat identity) into kept connections, attaches the one in use to the
   transient machine's adapter (`webpc.settings` `transientNet`) and every stored machine's first, and drops `net`
-  (`migrateLegacy`, under the Web Lock `webpc-net-migrate`). The state dot (the default way out's, else adapter 1's;
-  each section's heading has its own): grey off, amber connecting or waiting for the user, green connected, red
+  (`migrateLegacy`, under the Web Lock `webpc-net-migrate`). The state dot (the single button's: the default way
+  out's, else adapter 1's; each adapter's button and each section's heading has its own): grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` call `tools/tailscale.ts`'s `prepareTailnetClient` first: it builds `net/ts` with `net/ts/build.sh` into `target/net/ts.wasm` when it's missing or a hash of `net/ts` and `Cargo.lock` (stamp `ts.wasm.inputs`) changed (cargo only, as the core). It never stops the server: if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `scripts/ci-net.sh` runs `tools/tailscale.ts` as a step (it also builds the Go client, the hand-over test's fixture).
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):

@@ -277,19 +277,15 @@
   },
   "NetRoomStep.room.exportKey": {
     "message": "The connection's key",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the label of the field (hidden, like a password) holding the connection's key, to copy with “Copy key”."
-  },
-  "NetRoomStep.room.exportKey.copy": {
-    "message": "Copy key",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the button that copies the connection's key to the clipboard (where the browser refuses, the key is shown in its field, selected)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the label of the field (hidden by default, with Show and Copy icons in it) holding the connection's key."
   },
   "NetRoomStep.room.exportKey.note": {
     "message": "Whoever has this key can take this connection's name and address in a room: keep it secret. To use it in another connection, perhaps on another computer, choose “A key to paste” when creating or joining a room, and don't connect both at once.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the text under “Copy key”. “A key to paste” is network.NetRoomStep.room.key.paste."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the text under the connection's key. “A key to paste” is network.NetRoomStep.room.key.paste."
   },
   "NetRoomStep.room.exportKey.none": {
     "message": "The key is made when the connection first connects.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection that has never connected, Advanced: the text under “Copy key” (disabled): there's no key yet."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection that has never connected, Advanced: the text under the connection's key (empty, its Copy icon disabled): there's no key yet."
   },
   "NetRoomStep.room.newName": {
     "message": "New name",
@@ -315,21 +311,21 @@
     "message": "Opening the link does the same. Keep the link to yourself, as it lets any page the helper accepts use your network. When this browser asks whether this site may reach devices on your local network, allow it.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the note under its numbered steps (below the link's field), for consequences and warnings."
   },
-  "NetLocalStep.install": {
+  "NetLocalInstall.install": {
     "message": "Install webpc-net {{version}}",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the summary of the section with the install lines, when there's a release. {{version}} is the release's version (e.g. v1.0.0)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog): the summary of the section with the install lines, when there's a release. {{version}} is the release's version (e.g. v1.0.0)."
   },
-  "NetLocalStep.install.for": {
+  "NetLocalInstall.install.for": {
     "message": "For",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog): the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
   },
-  "NetLocalStep.install.note": {
+  "NetLocalInstall.install.note": {
     "message": "In a terminal, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog), inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
   },
-  "NetLocalStep.install.note.windows": {
+  "NetLocalInstall.install.note.windows": {
     "message": "In PowerShell, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog), inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
   },
   "NetTailnetStep.control": {
     "message": "Control server",
@@ -351,13 +347,9 @@
     "message": "Auth key (optional, never saved)",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the label of the field for a tailnet auth key."
   },
-  "NetTailnetStep.authKey.show": {
-    "message": "Show the auth key",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the checkbox that shows the typed auth key instead of dots."
-  },
   "NetTailnetStep.authKey.note": {
     "message": "Without an auth key, you will log in, in a new tab, when the machine connects.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the note under the auth key and its Show checkbox."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the note under the auth key."
   },
   "NetTailnetStep.control.edit": {
     "message": "A different control server needs a new connection.",
@@ -465,15 +457,19 @@
   },
   "Network.title": {
     "message": "Connect the machine's network adapters to a tailnet, tailcat, your computer, or a peer-to-peer room.",
-    "note": "The toolbar's Network menu: the tooltip of the toolbar's Network button."
+    "note": "The toolbar: the tooltip of the Network button, when it is the only one (the machine has one network adapter, or the toolbar has no room for a button per adapter: its menu then has a section per adapter)."
+  },
+  "Network.title.adapter": {
+    "message": "Network adapter {{adapter}}. Connect it to a tailnet, tailcat, your computer, or a peer-to-peer room.",
+    "note": "The toolbar: the tooltip of one network adapter's button, when the machine has more than one and the toolbar has room for a button per adapter (each shows its number, {{adapter}}: 1, 2, …, and opens a menu for that adapter alone)."
   },
   "NetAdapter.adapter": {
     "message": "Adapter {{adapter}}",
-    "note": "The toolbar's Network menu: the heading of one network adapter's section, when the machine has more than one. {{adapter}} is its number (1, 2, …)."
+    "note": "The toolbar's Network menu: the heading of one network adapter's section, when the machine has more than one (the connection's name follows it, on the same line where it fits); also the line under the title of an adapter's details (a dialog). {{adapter}} is its number (1, 2, …)."
   },
   "NetAdapter.adapter.primary": {
-    "message": "Adapter {{adapter}} (the default way out)",
-    "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through, when the machine has more than one. {{adapter}} is its number."
+    "message": "Adapter {{adapter}} (default gateway)",
+    "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through (its default gateway is on that adapter), when the machine has more than one; also the line under the title of an adapter's details (a dialog). {{adapter}} is its number."
   },
   "NetAdapter.connection.ephemeral": {
     "message": "{{name}} (ephemeral)",
@@ -509,55 +505,19 @@
   },
   "NetAdapter.served": {
     "message": "This machine's tailcat address",
-    "note": "The toolbar's Network menu: the label of the (hidden by default) field with the machine's own tailcat address, when its connection lets tailcat clients in."
-  },
-  "NetAdapter.copy": {
-    "message": "Copy",
-    "note": "The toolbar's Network menu: the button that copies the machine's tailcat address or its name in a room."
-  },
-  "NetAdapter.hide": {
-    "message": "Hide",
-    "note": "The toolbar's Network menu: the button that hides the machine's tailcat address again."
-  },
-  "NetAdapter.show": {
-    "message": "Show",
-    "note": "The toolbar's Network menu: the button that shows the machine's tailcat address instead of dots."
-  },
-  "NetAdapter.served.note": {
-    "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
-    "note": "The toolbar's Network menu: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
+    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the machine's own tailcat address, when its connection lets tailcat clients in."
   },
   "NetAdapter.key": {
     "message": "This machine's key",
-    "note": "The toolbar's Network menu: the label of the field with the machine's tailcat node key (nodekey:…), when it goes online through a computer running tailcat."
-  },
-  "NetAdapter.key.note": {
-    "message": "To let only this machine use that computer, run <code>{{allow}}</code> there. A connection that isn't kept has another key once this page closes.",
-    "note": "The toolbar's Network menu: the text under the machine's tailcat key. {{allow}} is a command (tailcat serve --allow=nodekey:… exit-node), shown as code."
+    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (with a Copy icon in it) with the machine's tailcat node key (nodekey:…), when it goes online through a computer running tailcat."
   },
   "NetAdapter.room.name": {
     "message": "This machine's name in the room",
-    "note": "The toolbar's Network menu: the label of the field with the machine's name in a peer-to-peer room (<key>.<tag>.p2p.internal), when its connection is a room's."
+    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<tag>.p2p.internal), when its connection is a room's."
   },
   "NetAdapter.room.link": {
     "message": "The room's link",
-    "note": "The toolbar's Network menu: the label of a field with the room's link (webpc-room:…), shown under the machine's name in a room when Copy room link couldn't use the clipboard, so the user copies it from there."
-  },
-  "NetAdapter.room.copyLink": {
-    "message": "Copy room link",
-    "note": "The toolbar's Network menu: the button, beside the machine's name in a room, that copies the room's link."
-  },
-  "NetAdapter.room.copyLink.title": {
-    "message": "Copy the room's link. Others need it to join the room.",
-    "note": "The toolbar's Network menu: the tooltip of “Copy room link”."
-  },
-  "NetAdapter.room.note": {
-    "message": "Members who have this name can reach any port the guest listens on. Give it only to those you want to let in.",
-    "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may connect to it."
-  },
-  "NetAdapter.room.note.off": {
-    "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
-    "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
+    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the room's link (webpc-room:…), which others need to join the room."
   },
   "NetAdapter.connect": {
     "message": "Connect",
@@ -586,6 +546,74 @@
   "NetAdapter.logout": {
     "message": "Log out",
     "note": "The toolbar's Network menu: the button (on a tailnet adapter) that logs the machine's node out of the tailnet, and the confirm button of the question it asks."
+  },
+  "NetAdapter.details": {
+    "message": "Details…",
+    "note": "The toolbar's Network menu: the small link-like button at the end of an adapter's section (when it has a connection) that opens the adapter's details, a dialog with its connection's settings, what it lets in and how to use it."
+  },
+  "NetAdapter.details.title": {
+    "message": "Show this connection's settings, what it lets in and how to use it.",
+    "note": "The toolbar's Network menu: the tooltip of “Details…”."
+  },
+  "NetDetails.address": {
+    "message": "The guest's IPv4 address",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's IPv4 address on that adapter's network, while it is connected."
+  },
+  "NetDetails.tailnet.hostname": {
+    "message": "Hostname",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the machine's hostname on the tailnet."
+  },
+  "NetDetails.tailnet.control": {
+    "message": "Control server",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the label of the field (with a Copy icon in it) with the tailnet's control server's URL (Tailscale's, or another such as Headscale)."
+  },
+  "NetDetails.tailnet.note": {
+    "message": "The tailnet's admin console lists this machine under its hostname. Log out, in the Network menu, removes it from the tailnet and forgets its keys in this browser.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailnet connection: the text under its settings. “Log out” is network.NetAdapter.logout."
+  },
+  "NetDetails.served.note": {
+    "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection that lets clients in: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
+  },
+  "NetDetails.key.note": {
+    "message": "To let only this machine use that computer, run this command there:",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection through a computer running tailcat: the text under the machine's key, before a field (with a Copy icon in it) holding the command, tailcat serve --allow=nodekey:… exit-node."
+  },
+  "NetDetails.key.ephemeral": {
+    "message": "This connection is ephemeral, so the machine will have another key after this tab closes or reloads.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for an ephemeral tailcat connection through a computer running tailcat: the text under the command that lets only this machine use that computer."
+  },
+  "NetDetails.tailcat.offline": {
+    "message": "The machine's tailcat address or key will show here once it's connected.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection that isn't connected: the text in place of the machine's tailcat address and key."
+  },
+  "NetDetails.local.note": {
+    "message": "The guest's network goes through <a>webpc-net</a>, a helper that runs on your computer. It has to be running for the machine to connect.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: its first text. <a>…</a> links to the helper's source and releases; its install lines (network.NetLocalInstall.install) follow."
+  },
+  "NetDetails.local.link": {
+    "message": "If the helper prints a different link, use Edit connection… to paste it.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: the text under its install lines. “Edit connection…” is network.NetDetails.edit, the dialog's button."
+  },
+  "NetDetails.room.note": {
+    "message": "Members who have the machine's name can reach any port the guest listens on. Give it only to those you want to let in.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may connect to it."
+  },
+  "NetDetails.room.note.off": {
+    "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection: the text under the machine's name and the room's link, while members may not connect to it (the connection's “Allow incoming connections from members” is off)."
+  },
+  "NetDetails.room.offline": {
+    "message": "The machine's name in the room will show here once it's connected.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection that isn't connected: the text in place of the machine's name in the room."
+  },
+  "NetDetails.edit": {
+    "message": "Edit connection…",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the button that closes it and opens the Network wizard on the adapter's connection, to change its settings."
+  },
+  "NetDetails.close": {
+    "message": "Close",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the button that closes it."
   },
   "connections.thisComputer": {
     "message": "Your computer",

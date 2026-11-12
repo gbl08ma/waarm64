@@ -11,6 +11,7 @@
   import Step from './ui/Step.svelte';
   import Steps from './ui/Steps.svelte';
   import T from './T.svelte';
+  import ValueField from './ui/ValueField.svelte';
   import { msg, t } from '../i18n.ts';
   import type { Flow } from './net-wizard.ts';
   import { hasTailcatIdentity, parseAllow, parseRelay, parseTailcatAddr, tailcatBuilt } from './network.ts';
@@ -88,17 +89,15 @@
       </li>
       <li><T k="network:NetTailcatStep.tailcat.exit.run" {code} /></li>
       <li>
-        <Field label={t('network:NetTailcatStep.tailcat.exit.paste')}>
-          <input
-            id="net-tailcat"
-            bind:value={address}
-            type="password"
-            // i18n-ignore-next: how an address starts, not words
-            placeholder="tc…"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </Field>
+        <ValueField
+          id="net-tailcat"
+          showId="net-tailcat-show"
+          label={t('network:NetTailcatStep.tailcat.exit.paste')}
+          bind:value={address}
+          secret
+          // i18n-ignore-next: how an address starts, not words
+          placeholder="tc…"
+        />
       </li>
     </Steps>
     <Note size="md">{t('network:NetTailcatStep.tailcat.exit.note')}</Note>

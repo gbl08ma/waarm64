@@ -122,7 +122,7 @@
   async function attach(c: Connection, key?: string) {
     await page.netAttach(opened.machine, opened.adapter ?? 0, c, key);
     close();
-    if (here) network.openMenu();
+    if (here) network.openMenu(opened.adapter ?? 0);
   }
 
   function submit(e?: SubmitEvent) {

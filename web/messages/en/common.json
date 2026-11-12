@@ -54,5 +54,21 @@
   "ask.cancel": {
     "message": "Cancel",
     "note": "The button that dismisses one of the page's questions or text prompts without doing anything (Esc does the same)."
+  },
+  "ValueField.copy": {
+    "message": "Copy",
+    "note": "A field with a value in it (an address, a key, a link, a command: the toolbar's Network menu, an adapter's details, the Network wizard): the tooltip and spoken name of the copy icon inside the field, after its text, that copies the value."
+  },
+  "ValueField.copied": {
+    "message": "Copied",
+    "note": "A field with a value in it (an address, a key, a link, a command: the toolbar's Network menu, an adapter's details, the Network wizard): the copy icon's tooltip and spoken name for a moment after it copied the value (the icon is a check then)."
+  },
+  "ValueField.show": {
+    "message": "Show",
+    "note": "A field with a value in it (an address, a key, a link, a command: the toolbar's Network menu, an adapter's details, the Network wizard), a secret shown as dots: the tooltip and spoken name of the eye icon inside the field that shows its text."
+  },
+  "ValueField.hide": {
+    "message": "Hide",
+    "note": "A field with a value in it (an address, a key, a link, a command: the toolbar's Network menu, an adapter's details, the Network wizard), a secret shown in clear: the tooltip and spoken name of the crossed-out eye icon inside the field that hides its text again."
   }
 }

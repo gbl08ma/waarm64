@@ -7,13 +7,13 @@
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
-  import CopyField from './CopyField.svelte';
   import Check from './ui/Check.svelte';
   import Disclosure from './ui/Disclosure.svelte';
   import Field from './ui/Field.svelte';
   import Note from './ui/Note.svelte';
   import Step from './ui/Step.svelte';
   import T from './T.svelte';
+  import ValueField from './ui/ValueField.svelte';
   import { msg, t, type Msg } from '../i18n.ts';
   import { ROOM_STEPS, type Flow, type Step as StepName } from './net-wizard.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -41,10 +41,9 @@
   let keyOf = $state('');
   const PASTE = '#paste';
   let pastedKey = $state('');
-  /** The edited connection's key, to copy ('' before it's made), shown in clear where the clipboard refused it. */
+  /** The edited connection's key, to copy ('' before it's made), hidden until shown (or the clipboard refused it). */
   let exported = $state('');
   let keyShown = $state(false);
-  let keyField = $state<{ select: () => void }>();
   let advanced = $state(false);
   /** The room connection being edited keeps its identity: New name can drop it. */
   let kept = $state(false);
@@ -116,13 +115,6 @@
     // A stored connection's next start makes its new key; an ephemeral one has it now (`forget` replaced `editing`).
     if (await flow.forget()) [kept, exported] = [false, flow.editing?.room?.identity?.key ?? ''];
   }
-  /** Copies the key; where the clipboard refuses, it's shown in its field, selected. */
-  function copyKey() {
-    void navigator.clipboard.writeText(exported).catch(() => {
-      keyShown = true;
-      queueMicrotask(() => keyField?.select());
-    });
-  }
 </script>
 
 {#snippet link(href: string, words: string)}<a {href} target="_blank" rel="noopener">{words}</a>{/snippet}
@@ -152,16 +144,14 @@
       {t('network:NetRoomStep.room.private')}
     </Check>
   {:else if step === 'roomJoin'}
-    <Field label={t('network:NetRoomStep.room.link')}>
-      <input
-        id="net-room-link"
-        bind:this={linkInput}
-        bind:value={joinLink}
-        type="password"
-        autocomplete="off"
-        spellcheck="false"
-      />
-    </Field>
+    <ValueField
+      id="net-room-link"
+      showId="net-room-link-show"
+      label={t('network:NetRoomStep.room.link')}
+      bind:ref={linkInput}
+      bind:value={joinLink}
+      secret
+    />
     <Note size="md">{t('network:NetRoomStep.room.link.note')}</Note>
   {/if}
   <Check
@@ -188,18 +178,18 @@
         </Button>
       </div>
       <Note size="md">{t('network:NetRoomStep.room.newName.note')}</Note>
-      <CopyField
-        bind:this={keyField}
+      <ValueField
         id="net-room-key-value"
+        copyId="net-room-key-copy"
+        showId="net-room-key-show"
         label={t('network:NetRoomStep.room.exportKey')}
         value={exported}
-        type={keyShown ? 'text' : 'password'}
+        bind:shown={keyShown}
+        readonly
+        copy
+        secret
+        mono
       />
-      <div class="row">
-        <Button type="button" id="net-room-key-copy" disabled={!exported} onclick={copyKey}>
-          {t('network:NetRoomStep.room.exportKey.copy')}
-        </Button>
-      </div>
       <Note size="md">
         {exported ? t('network:NetRoomStep.room.exportKey.note') : t('network:NetRoomStep.room.exportKey.none')}
       </Note>
@@ -239,9 +229,14 @@
         </select>
       </Field>
       {#if keyOf === PASTE}
-        <Field label={t('network:NetRoomStep.room.key.pasted')}>
-          <input id="net-room-key-paste" bind:value={pastedKey} type="password" autocomplete="off" spellcheck="false" />
-        </Field>
+        <ValueField
+          id="net-room-key-paste"
+          showId="net-room-key-paste-show"
+          label={t('network:NetRoomStep.room.key.pasted')}
+          bind:value={pastedKey}
+          secret
+          mono
+        />
       {/if}
       <Note size="md">
         {keyOf === PASTE ? t('network:NetRoomStep.room.key.paste.note') : t('network:NetRoomStep.room.key.note')}

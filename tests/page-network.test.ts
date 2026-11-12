@@ -164,9 +164,9 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.fill('#net-hostname', 'testbox');
     await page.fill('#net-authkey', 'tskey-auth-SECRET-1234');
     assert.equal(await page.getAttribute('#net-authkey', 'type'), 'password');
-    await page.check('#net-reveal');
+    await page.click('#net-authkey-show');
     assert.equal(await page.getAttribute('#net-authkey', 'type'), 'text');
-    await page.uncheck('#net-reveal');
+    await page.click('#net-authkey-show');
     assert.equal(await page.getAttribute('#net-authkey', 'type'), 'password');
     await page.click('#net-connect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });

@@ -13,6 +13,7 @@
   import ErrorBanner from './ui/ErrorBanner.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import NetWizard from './NetWizard.svelte';
+  import NetDetails from './NetDetails.svelte';
   import Osk from './Osk.svelte';
   import StatusBar from './StatusBar.svelte';
   import Toolbar from './Toolbar.svelte';
@@ -145,6 +146,7 @@
 {#if machinesNav.open}<MachinesPage {store} {net} {folders} />{/if}
 <StatusBar {net} />
 <NetWizard {net} />
+<NetDetails {net} />
 <FolderWizard {folders} />
 <Ask />
 <FilePickers />

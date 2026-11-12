@@ -1,6 +1,8 @@
 <!--
   The toolbar (docs/frontend.md "The toolbar"): the running machine's quick actions. The Machines page holds the rest
   (settings, disks, overlays, snapshots). Icons with tooltips; the main gates (Machines, Start) also have their names.
+  Each network adapter has its own button where the toolbar keeps to one row with them; where they'd take it onto
+  another, one button has them all (Network.svelte `split`).
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -43,6 +45,74 @@
   } as const;
   const canSnapshot = $derived(running && !power.busy);
 
+  /** Each network adapter has its own button (`fits`). */
+  let split = $state(true);
+  let bar = $state<HTMLElement>();
+  /** The adapters' buttons' widths together, as last measured, and how many they were. */
+  let measured = { width: 0, count: 0 };
+  /** The adapters' buttons beside the single one's, in its place: none when there's one adapter. */
+  const adapters = $derived(current.hasNetwork ? net.views().length : 0);
+
+  /**
+   * Whether the toolbar's contents, with a button for each adapter, fit on one row: its children's widths (their margins
+   * too), their gaps and its padding against its own width. With the single button, the adapters' are as wide as last
+   * measured (before that, the single one's and a digit each), so the answer is the same whichever is shown (no
+   * flip-flop). Hidden children (no width) don't count. The children include the menus' `details` (`data-net-menu`,
+   * Network.svelte), measured, not touched.
+   */
+  function fits(el: HTMLElement): boolean {
+    const style = getComputedStyle(el);
+    const gap = parseFloat(style.columnGap) || 0;
+    let width = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    let items = 0;
+    let single = 0;
+    const apart = { width: 0, count: 0 };
+    for (const child of el.children) {
+      const w = child.getBoundingClientRect().width;
+      if (!w) continue;
+      const cs = getComputedStyle(child);
+      width += w + parseFloat(cs.marginLeft) + parseFloat(cs.marginRight);
+      items++;
+      const menu = child instanceof HTMLElement ? child.dataset.netMenu : undefined;
+      if (menu === 'all') single = w;
+      else if (menu !== undefined) [apart.width, apart.count] = [apart.width + w, apart.count + 1];
+    }
+    if (apart.count) measured = apart;
+    if (single && adapters > 1) {
+      const all = measured.count === adapters ? measured.width : (single + parseFloat(style.fontSize)) * adapters;
+      width += all - single + gap * (adapters - 1);
+    }
+    return width + gap * Math.max(0, items - 1) <= el.clientWidth + 0.5;
+  }
+  // Measured after a layout, outside the observer's callback (changing the toolbar from inside it would loop).
+  $effect(() => {
+    // Without adapters there's nothing to choose; a machine with more or fewer: measure again.
+    if (!bar || !adapters) return;
+    const el = bar;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => (split = fits(el)));
+    };
+    const sizes = new ResizeObserver(measure);
+    const watch = () => {
+      sizes.disconnect();
+      sizes.observe(el);
+      for (const child of el.children) sizes.observe(child);
+    };
+    const children = new MutationObserver(() => {
+      watch();
+      measure();
+    });
+    children.observe(el, { childList: true });
+    watch();
+    return () => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+      children.disconnect();
+    };
+  });
+
   const VIEWS: { v: View; icon: 'device-desktop' | 'terminal-2' | 'layout-columns'; title: string }[] = [
     { v: 'screen', icon: 'device-desktop', title: t('toolbar:Toolbar.view.screen') },
     { v: 'terminal', icon: 'terminal-2', title: t('toolbar:Toolbar.view.terminal') },
@@ -50,7 +120,7 @@
   ];
 </script>
 
-<header class="toolbar">
+<header class="toolbar" bind:this={bar}>
   <h1>{t('toolbar:Toolbar.name')}</h1>
   <Button
     variant="tool"
@@ -137,7 +207,7 @@
   />
   <span class="sep"></span>
   <Sound {audio} />
-  {#if current.hasNetwork}<Network {net} />{/if}
+  {#if current.hasNetwork}<Network {net} {split} />{/if}
   {#if usb.on}<UsbMenu />{/if}
   {#if folders.running}<FoldersMenu {folders} />{/if}
   {#if clipboard.on && running}<ClipboardMenu />{/if}

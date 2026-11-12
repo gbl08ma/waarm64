@@ -3,7 +3,8 @@
   - `variant`: `plain` (no frame: a list's command, a close), `bordered` (the default: a pane's, a row's, a dialog's
     buttons), `primary` (a form's or a dialog's main action), `danger` (one that destroys), `tool` (a toolbar button:
     `labelled` when it has words beside its icon), `item` (a command in a menu: full width, its words at the start and a
-    dim second part at the end).
+    dim second part at the end), `link` (words that read as a link: a menu's Details…), `inline` (an icon inside a
+    field's frame, beside its text: ValueField's Copy and Show).
   - `icon` (and `iconSize`): an icon before the words (alone, the button is a square of a control's height). `align`: `center` for a grid of keys.
   - Everything else (`id`, `title`, `disabled`, `type`, `onclick`, `data-*`, `aria-*`) goes on the element, and `class`
     too (a test's hook; the parent's styles don't reach it: it places its buttons with its own wrapper). `ref` binds the
@@ -15,7 +16,7 @@
   import Icon from './Icon.svelte';
   import type { IconName } from '../icons.ts';
 
-  type Variant = 'plain' | 'bordered' | 'primary' | 'danger' | 'tool' | 'item';
+  type Variant = 'plain' | 'bordered' | 'primary' | 'danger' | 'tool' | 'item' | 'link' | 'inline';
   type Props = {
     variant?: Variant;
     icon?: IconName;
@@ -125,6 +126,28 @@
   }
   .item[aria-pressed='true'] {
     color: var(--accent);
+  }
+  /* Words in the accent, framed by nothing: they read as a link, and act at once (a dialog opens). */
+  .link {
+    align-self: flex-start;
+    padding: 0;
+    color: var(--accent);
+    font-size: var(--text-sm);
+  }
+  .link:hover {
+    background: transparent;
+    text-decoration: underline;
+  }
+  /* An icon inside a field's frame: the frame's height, dim until pointed at. */
+  .inline {
+    justify-content: center;
+    align-self: stretch;
+    padding: 0 var(--space-2);
+    color: var(--text-dim);
+    border-radius: var(--radius-sm);
+  }
+  .inline:hover {
+    color: var(--text);
   }
   .center {
     justify-content: center;

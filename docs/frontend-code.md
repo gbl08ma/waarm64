@@ -43,7 +43,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 1. **A pattern seen twice becomes a component.** The primitives are in `web/app/ui/`, each with a header that says
    what it's for:
    - `Button`: `variant` `bordered` (the default), `plain`, `primary`, `danger`, `tool` (`labelled`), `item` (a menu's
-     command); `icon`; the rest of its props go on the `<button>`, `ref` binds it.
+     command), `link` (words that read as a link), `inline` (an icon inside a field's frame); `icon`; the rest of its props go on the `<button>`, `ref` binds it.
    - `Card` in a `CardList`: the bordered rows of the panes and dialogs (the main column, `actions` beside it;
      `empty` for the list's empty line).
    - `Note`: fine print, `tone` `dim`/`warn`/`error`/`ok`, `size` `sm`/`md`, `inline` for a row's small line.
@@ -56,6 +56,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `ErrorBanner`: the dismissible error or warning bar (the message bar, the Machines page's error).
    - `StatusDot`: a state's light.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
+   - `ValueField`: a value to copy or a secret to show, its Copy and Show icons inside the field (an address, a key, a
+     link, a command; a pasted secret).
    - `Modal` (a dialog's shell), `Pane` (a pane of the Machines page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.

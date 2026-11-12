@@ -2,7 +2,8 @@
   A toolbar menu: a tool button (an icon, a label where it needs one) that opens a panel under it. It closes on a click
   elsewhere, and opens under its left edge where its right one would put it past the window's. `on` shows the button
   pressed while what it controls is on (`data-on`: the mouse lock, the clipboard's sharing), `attention` frames it in
-  the accent (sound waiting for a click). The panel (`panel`: a form of controls; otherwise a list of commands) is a
+  the accent (sound waiting for a click). The panel ends above the window's bottom and scrolls when its contents are
+  taller (many adapters, many devices). The panel (`panel`: a form of controls; otherwise a list of commands) is a
   column of what it's given, a step apart: its content is the primitives (`Button variant="item"` for a command,
   Field, Check, Radio, Note) and the caller's own markup. The summary is styled here as Button's `tool` is (a summary
   can't be a Button); `variant` `bordered` frames it as a bordered Button (a menu among a pane's or a card's buttons:
@@ -66,9 +67,16 @@
   });
   $effect(() => {
     if (!open || !items) return;
-    items.style.right = items.style.left = '';
-    if (align === 'left' || items.getBoundingClientRect().left < 0)
-      [items.style.left, items.style.right] = ['0', 'auto'];
+    const panel = items;
+    panel.style.right = panel.style.left = '';
+    if (align === 'left' || panel.getBoundingClientRect().left < 0)
+      [panel.style.left, panel.style.right] = ['0', 'auto'];
+    // The panel ends above the window's bottom (its contents scroll, not the page): its height is capped by where it
+    // starts, which the toolbar's rows move.
+    const fit = () => panel.style.setProperty('--menu-top', `${panel.getBoundingClientRect().top}px`);
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
   });
   $effect(() => {
     if (disabled) open = false;
@@ -183,6 +191,9 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-menu);
+    max-height: calc(100dvh - var(--menu-top) - var(--space-4));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .items.panel {
     width: 260px;

@@ -5,6 +5,7 @@ import IconArrowLeft from '@tabler/icons-svelte-runes/icons/arrow-left';
 import IconArrowUp from '@tabler/icons-svelte-runes/icons/arrow-up';
 import IconAspectRatio from '@tabler/icons-svelte-runes/icons/aspect-ratio';
 import IconBolt from '@tabler/icons-svelte-runes/icons/bolt';
+import IconCheck from '@tabler/icons-svelte-runes/icons/check';
 import IconChevronDown from '@tabler/icons-svelte-runes/icons/chevron-down';
 import IconClipboard from '@tabler/icons-svelte-runes/icons/clipboard';
 import IconClipboardOff from '@tabler/icons-svelte-runes/icons/clipboard-off';
@@ -16,6 +17,8 @@ import IconDeviceDesktop from '@tabler/icons-svelte-runes/icons/device-desktop';
 import IconDeviceMobile from '@tabler/icons-svelte-runes/icons/device-mobile';
 import IconDeviceGamepad2 from '@tabler/icons-svelte-runes/icons/device-gamepad-2';
 import IconDownload from '@tabler/icons-svelte-runes/icons/download';
+import IconEye from '@tabler/icons-svelte-runes/icons/eye';
+import IconEyeOff from '@tabler/icons-svelte-runes/icons/eye-off';
 import IconFile from '@tabler/icons-svelte-runes/icons/file';
 import IconFileExport from '@tabler/icons-svelte-runes/icons/file-export';
 import IconFileImport from '@tabler/icons-svelte-runes/icons/file-import';
@@ -70,6 +73,7 @@ export const ICONS = {
   'arrow-up': IconArrowUp,
   'aspect-ratio': IconAspectRatio,
   bolt: IconBolt,
+  check: IconCheck,
   'chevron-down': IconChevronDown,
   clipboard: IconClipboard,
   'clipboard-off': IconClipboardOff,
@@ -81,6 +85,8 @@ export const ICONS = {
   'device-mobile': IconDeviceMobile,
   'device-gamepad-2': IconDeviceGamepad2,
   download: IconDownload,
+  eye: IconEye,
+  'eye-off': IconEyeOff,
   file: IconFile,
   'file-export': IconFileExport,
   'file-import': IconFileImport,

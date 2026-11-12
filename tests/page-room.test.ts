@@ -153,7 +153,14 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     const nameA = await a.locator('#net-room-name').inputValue();
     assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
     assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
-    assert.match(await text(a, '#net-room'), words('network:NetAdapter.room.note'));
+    assert.equal(await a.locator('#net-room-link-value').getAttribute('type'), 'password', 'the link is hidden');
+    // Details…: the name, the link and who may connect, in a dialog of their own.
+    await a.click('#net-details-open');
+    assert.equal(await a.locator('#net-details-room-name').inputValue(), nameA);
+    assert.equal(await a.locator('#net-details-room-link').inputValue(), ra.room.link);
+    assert.match(await text(a, '#net-details-room-note'), words('network:NetDetails.room.note'));
+    await a.click('#net-details-close');
+    assert.equal(await a.evaluate(() => (document.getElementById('net-details') as HTMLDialogElement).open), false, 'Close closes it');
 
     // Join: a damaged link is refused; the link the first one keeps joins the same room.
     await roomWizard(b);
@@ -211,8 +218,8 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await menuSays(b, words('network:network-view.room.connections', { count: 1 }), 30_000);
     const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
-    assert.equal(t('network:NetAdapter.room.copyLink'), await text(a, '#net-room-link-copy'));
-    // Where the clipboard refuses, the link is shown in a field of its own and selected (not the machine's name).
+    assert.equal(await a.locator('#net-room-link-copy').getAttribute('aria-label'), t('common:ValueField.copy'));
+    // Where the clipboard refuses, the link is shown in its field and selected (not the machine's name).
     await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
     if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
     await a.click('#net-room-link-copy');
@@ -234,6 +241,11 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'hidden');
     await b.click('#net-room-key-copy');
     assert.deepEqual(await b.evaluate(() => (window as unknown as { copied: string[] }).copied), [pasted.key]);
+    assert.equal(await b.locator('#net-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
+    await b.click('#net-room-key-show');
+    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'Show');
+    await b.click('#net-room-key-show');
+    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'Hide');
     await b.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
     await b.click('#net-room-key-copy');
     await b.waitForFunction(() => document.activeElement?.id === 'net-room-key-value', null, { timeout: 5_000 });
