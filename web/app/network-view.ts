@@ -202,8 +202,11 @@ function tailnetView(netmap: NetMap | undefined): NetworkView {
   const routes = [...new Set(peers.flatMap((p) => p.routes ?? []))];
   const subnets = routes.length ? { subnets: { routes, on: netmap?.acceptRoutes !== false } } : {};
   const connected = connectedAs(netmap?.name ? netmap.name.replace(/\.$/, '') : '', address);
+  // An exit node reported offline is named as such: its traffic is dropped (the client fails closed, as Go's does).
   const text = via
-    ? t('network:network-view.connectedPeers.via', { connected, count: peers.length, via: via.name })
+    ? via.online
+      ? t('network:network-view.connectedPeers.via', { connected, count: peers.length, via: via.name })
+      : t('network:network-view.connectedPeers.viaOffline', { connected, count: peers.length, via: via.name })
     : t('network:network-view.connectedPeers', { connected, count: peers.length });
   return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text };
 }

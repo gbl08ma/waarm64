@@ -152,6 +152,9 @@ test('exit nodes: the menu lists the approved ones and the one in use; the choic
   const used = viewOf({ state: 'Running', netmap: netmap({ peers, exitNode: 'nA' }) }); // i18n-ignore
   assert.deepEqual(used.exitNodes.map((e) => e.use), [true, false]);
   assert.equal(used.text, t('network:network-view.connectedPeers.via', { connected: msg('network:network-view.connected.as.address', { name: 'guest.tail.test', address: '100.90.0.2' }), count: 3, via: 'a.tail.test' }));
+  const offline = viewOf({ state: 'Running', netmap: netmap({ peers, exitNode: 'nB' }) }); // i18n-ignore
+  assert.equal(offline.text, t('network:network-view.connectedPeers.viaOffline', { connected: msg('network:network-view.connected.as.address', { name: 'guest.tail.test', address: '100.90.0.2' }), count: 3, via: 'b.tail.test' }), 'an offline exit node is named as such');
+  assert.equal(offline.internet, true, 'still the way out: the choice stands, and the report may be wrong');
   assert.deepEqual(viewOf({ state: 'Starting', netmap: netmap({ peers }) }).exitNodes, [], 'only when connected');
 
   const f = fake();

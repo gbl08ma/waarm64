@@ -811,6 +811,14 @@
     "message": "{{connected}}, {{count}} peers, internet through {{via}}",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet with an exit node in use. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
+  "network-view.connectedPeers.viaOffline_one": {
+    "message": "{{connected}}, {{count}} peer, exit node {{via}} offline",
+    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet whose chosen exit node the tailnet reports offline, so the internet traffic is likely dropped. Says “exit node”, not “internet through”: the user chose one, and if the report is wrong it doesn't mislead. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
+  },
+  "network-view.connectedPeers.viaOffline_other": {
+    "message": "{{connected}}, {{count}} peers, exit node {{via}} offline",
+    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet whose chosen exit node the tailnet reports offline, so the internet traffic is likely dropped. Says “exit node”, not “internet through”: the user chose one, and if the report is wrong it doesn't mislead. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
+  },
   "network-view.connectedPeers_one": {
     "message": "{{connected}}, {{count}} peer",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet. {{connected}} is “Connected as …”; {{count}} the number of peers."

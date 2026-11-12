@@ -1633,7 +1633,8 @@ and the guest's default way out (below).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:NetAdapter.exitNode) with them and [No exit node](ui:network:NetAdapter.exitNode.none). Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
-  status line says "internet through <name>". The choice is kept with the connection (`tailnet.exitNode`) and given
+  status line says "internet through <name>", or "exit node <name> offline" while the tailnet reports it offline
+  (its traffic is dropped, as Go's client fails closed; the adapter stays the way out, the report may be wrong). The choice is kept with the connection (`tailnet.exitNode`) and given
   to the client at the next Connect; using one makes the adapter the default way out (above). The guest's address, router and
   DHCP lease don't change: its default route is the gateway, which hands every packet to the client,
   and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
