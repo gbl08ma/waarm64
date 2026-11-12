@@ -103,8 +103,10 @@ fill its trial budget: WireGuard's) with the rest of 8 (other tabs' ephemeral co
 "Rooms' loose ends", beside 1's remainder (a flood through every relay of a link). Reasoned, not measured: the data
 channel's 64 KiB cap and 128 lookups a second a relay. `scripts/ci.sh`, `ci-net.sh` and `ci-debian.sh` OK after them.
 
-**Next:** the rest of the track's end: `scripts/ci-debian.sh --platform`, `ci-graphics.sh`, `ci-machines.sh`, then the
-outcome into docs/ and PLAN.md §3 and this handover deleted. Open for the user: plan §9's default public room. A GPU
+The track-end runs after them, 2026-11-12: `ci-debian.sh --platform` OK (523 s), `ci-graphics.sh` OK (261 s),
+`ci-machines.sh` OK (287 s).
+
+**Next:** closing the track: the outcome into docs/ and PLAN.md §3, and this handover deleted. Open for the user: plan §9's default public room. A GPU
 (OpenCL) miner was discussed, not asked for.
 
 Open questions for the user stay in plan §9 (the default public room); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).
