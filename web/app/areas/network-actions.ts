@@ -2,7 +2,6 @@
 // of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Machines
 // page's Network tab and Connections act through these (web/app/page.ts's `net*`).
 import { msg, MsgError, t, text } from '../../i18n.ts';
-import { forgetRoomIdentity, newRoomIdentity } from '../../room.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../../tailcat.ts';
 import { keptProfiles } from '../../tailscale-state.ts';
 import { ask } from '../ask.svelte.ts';
@@ -197,12 +196,7 @@ export class NetworkActions {
     const ok = t('network:network-actions.newName.ok');
     if (!(await ask.confirm(t('network:network-actions.newName.confirm', { name: c.name }), { ok, danger: true })))
       return false;
-    if (c.ephemeral) await net.conns.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
-    else {
-      const shared = await net.conns.sharesKey(c);
-      await net.conns.put({ ...c, room: { ...r, identityKey: shared ? `${c.id}.${Date.now()}` : r.identityKey } });
-      if (!shared) await forgetRoomIdentity(r.identityKey);
-    }
+    await net.conns.newRoomKey({ ...c, room: r });
     return true;
   }
 

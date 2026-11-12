@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { connectionLock, Connections, defaultName, migrateLegacy, preselect, sameRoomKey, type Connection } from '../web/app/connections.ts';
-import { parseRoomKey } from '../web/room.ts';
+import { connectionLock, Connections, defaultName, migrateLegacy, preselect, type Connection } from '../web/app/connections.ts';
+import { newRoomIdentity, parseRoomKey } from '../web/room.ts';
 import { connectOf } from '../web/app/net-connect.ts';
 import { Locks } from '../web/app/locks.ts';
 import { DEFAULT_SETTINGS } from '../web/app/network.ts';
@@ -28,6 +28,7 @@ const fakeState = () => {
       forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); },
       forgetRoom: async (k: string) => { forgot.push(`room:${k}`); rooms.delete(k); },
       readRoom: async (k: string) => rooms.get(k), keepRoom: async (k: string, i: { key: string }) => { rooms.set(k, i); },
+      roomIdentity: async (k: string) => { if (!rooms.has(k)) rooms.set(k, newRoomIdentity()); return rooms.get(k)!; },
     },
   };
 };
@@ -124,15 +125,41 @@ test('rooms: a pasted key is kept as the new connection\'s, or is the connection
   const again = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, key: k1 } });
   assert.equal(again.room!.identityKey, stored.id);
   assert.equal(rooms.has(again.id), false);
-  assert.ok(sameRoomKey(again.room!, stored.room!));
-  // A key kept by a connection's first start (not pasted) is found as well, and an ephemeral one's.
+  assert.equal(await conns.keyLock(again.room!), await conns.keyLock(stored.room!));
+  // A key kept by a connection's first start (not pasted) is found as well, and an ephemeral one's, which a stored
+  // connection keeps in its own entry (never in its record), on the same lock.
   const plain = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
   rooms.set(plain.id, { key: k3 });
   assert.equal((await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k3 } })).room!.identityKey, plain.id);
-  assert.deepEqual((await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k2 } })).room!.identity, { key: k2 });
+  const ofEph = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k2 } });
+  assert.equal(ofEph.room!.identity, undefined);
+  assert.deepEqual(rooms.get(ofEph.id), { key: k2 });
+  assert.equal(await conns.keyLock(ofEph.room!), await conns.keyLock(eph.room!));
+  assert.deepEqual((await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false, key: k2 } })).room!.identity, { key: k2 }, 'ephemeral too: its key');
   // `keyOf` wins over a pasted key.
   const of = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, keyOf: plain.id, key: k1 } });
   assert.equal(of.room!.identityKey, plain.id);
+});
+
+test("rooms: a stored connection made with an ephemeral one's key keeps it in webpc-room, never in its record, and New name changes it", async () => {
+  const { state } = fakeState();
+  const s = store();
+  const conns = new Connections(s, state);
+  const link = 'webpc-room:lobby';
+  const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false } });
+  const key = eph.room!.identity!.key;
+  /** The key a start of connection `c` uses (web/room-worker.ts: `identity`, else the one under `identityKey`). */
+  const used = async (c: Connection) => c.room!.identity?.key ?? (await state.roomIdentity(c.room!.identityKey)).key;
+  for (const how of [{ key }, { keyOf: eph.id }]) {
+    const stored = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, ...how } });
+    const record = (await s.get('connections', stored.id))!;
+    assert.equal(record.room!.identity, undefined, `${JSON.stringify(Object.keys(how))}: no key in the stored record`);
+    assert.equal(await used(record), key, 'the same key, in webpc-room');
+    await conns.newRoomKey({ ...record, room: record.room! });
+    const renamed = (await conns.get(stored.id))!;
+    assert.notEqual(await used(renamed), key, 'New name: a new key');
+    assert.equal(await used((await conns.get(eph.id))!), key, 'the ephemeral one keeps its own');
+  }
 });
 
 test('pasted room keys: 64 hex digits, spaces around them ignored, lower case', () => {

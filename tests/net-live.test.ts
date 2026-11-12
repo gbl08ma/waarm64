@@ -5,7 +5,7 @@
 // connection is gone detached, and the guest's default way out moving to the adapter that reaches the internet.
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { connectionLock, type Connection } from '../web/app/connections.ts';
+import { connectionLock, memoryState, type Connection, type ConnectionState } from '../web/app/connections.ts';
 import { HeldError } from '../web/app/net-claims.ts';
 import { connectOf } from '../web/app/net-connect.ts';
 import { PageNetwork } from '../web/app/net-live.ts';
@@ -49,11 +49,11 @@ const opened: (() => void)[] = [];
 after(() => { for (const close of opened) close(); }); // a failed test's pages too
 
 /** A page: its store (on `channel`, shared with the other "tabs"), its network, and what it saved for its machine. */
-function pageOn(channel: string, name: string, records = memoryRecords(), kept: string[] = []) {
+function pageOn(channel: string, name: string, records = memoryRecords(), kept: string[] = [], state?: ConnectionState) {
   const store = new Store(records, memoryFiles(), { channel });
   const c = clients(() => { kept.length = 0; }); // the client forgets the node
   const saved: (string | undefined)[] = [];
-  const net = new PageNetwork({ store, me: () => name, onChange: () => {}, save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, kept: async () => kept });
+  const net = new PageNetwork({ store, state, me: () => name, onChange: () => {}, save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, kept: async () => kept });
   const close = () => { net.locks.close(); store.close(); };
   opened.push(close);
   return { store, records, net, saved, ...c, close };
@@ -456,7 +456,8 @@ const errorOf = (e: unknown) => JSON.stringify(toWire(e));
 
 test("a room's key runs in one connection at a time: another adapter's, then another tab's, named", async () => {
   const records = memoryRecords();
-  const p = pageOn('nl-roomkey', 'M', records);
+  const state = memoryState(); // webpc-room, which the tabs share
+  const p = pageOn('nl-roomkey', 'M', records, [], state);
   const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'webpc-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
   const first = await room();
   const second = await room(first.id); // the same key in another room
@@ -472,12 +473,51 @@ test("a room's key runs in one connection at a time: another adapter's, then ano
   await p.net.connect(1, (await p.net.conns.get(second.id))!);
   assert.equal(p.net.runs(second.id), 1);
   // Another tab's machine: the first, on the shared key, is refused there and names this machine.
-  const q = pageOn('nl-roomkey', 'N', records);
+  const q = pageOn('nl-roomkey', 'N', records, [], state);
   q.net.ports('m2', adapters(first));
   await assert.rejects(q.net.connect(0, (await q.net.conns.get(first.id))!), (e: Error) => errorOf(e).includes('network:net-claims.keyHeld') && errorOf(e).includes('"holder":"M"'), 'named: this machine');
   await p.net.disconnect(1);
   await q.net.connect(0, (await q.net.conns.get(first.id))!);
   assert.equal(q.net.runs(first.id), 0, 'free once this tab let it go');
+  p.close();
+  q.close();
+});
+
+test("a room's key: two connects at once on one page run one of them", async () => {
+  const p = pageOn('nl-roomrace', 'M');
+  const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'webpc-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
+  const first = await room();
+  const second = await room(first.id);
+  p.net.ports('m1', adapters(first, second));
+  // A lock taken resolves a little later (the page busy): the first's claim has the key while the second's runs.
+  const take = p.net.locks.take.bind(p.net.locks);
+  p.net.locks.take = async (lock, o) => {
+    const got = await take(lock, o);
+    await new Promise((r) => setTimeout(r, 20));
+    return got;
+  };
+  // Autoconnect walking the adapters while the user presses Connect on the other, say.
+  const r = await Promise.allSettled([p.net.connect(0, first), p.net.connect(1, second)]);
+  assert.equal(r.filter((x) => x.status === 'fulfilled').length, 1, 'one connects, the other is refused');
+  assert.equal([first, second].filter((c) => p.net.runs(c.id) >= 0).length, 1);
+  p.close();
+});
+
+test("a room's key: an ephemeral connection and a stored one on its key, in two tabs, take one lock", async () => {
+  const records = memoryRecords();
+  const state = memoryState(); // webpc-room, which the tabs share as they share IndexedDB
+  const p = pageOn('nl-roomkinds', 'M', records, [], state);
+  const eph = await p.net.conns.create({ kind: 'room', ephemeral: true, room: { link: 'webpc-room:r', incoming: true, relayOnly: false } });
+  p.net.ports('m1', adapters(eph));
+  await p.net.connect(0, eph);
+  // Another tab can't see the ephemeral one: its key, pasted, is kept as the new connection's own.
+  const q = pageOn('nl-roomkinds', 'N', records, [], state);
+  const pasted = await q.net.conns.create({ kind: 'room', room: { link: 'webpc-room:s', incoming: true, relayOnly: false, key: eph.room!.identity!.key } });
+  q.net.ports('m2', adapters(pasted));
+  await assert.rejects(q.net.connect(0, pasted), (e: Error) => errorOf(e).includes('network:net-claims.keyHeld'), 'refused: the key runs in the other tab');
+  await p.net.disconnect(0);
+  await q.net.connect(0, (await q.net.conns.get(pasted.id))!);
+  assert.equal(q.net.runs(pasted.id), 0, 'free once the other let it go');
   p.close();
   q.close();
 });

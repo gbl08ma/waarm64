@@ -72,7 +72,12 @@ export class PageNetwork {
   constructor(o: PageNetworkOptions) {
     this.o = o;
     this.conns = new Connections(o.store, o.state);
-    this.claims = new NetClaims(o.store, o.me, (lock) => void this.release(lock));
+    this.claims = new NetClaims(
+      o.store,
+      o.me,
+      (lock) => void this.release(lock),
+      (r) => this.conns.keyLock(r),
+    );
     this.locks = this.claims.locks;
     this.nodes = new KeptNodes(o.kept, o.start);
   }
@@ -243,8 +248,6 @@ export class PageNetwork {
       // It stopped, or its adapters changed, while the lock was asked for.
       stopped: () => (!this.on || this.nets[i] !== n ? new MsgError('network:net-live.off') : undefined),
       runs: () => this.running.includes(c.id),
-      others: () =>
-        Promise.all(this.running.flatMap((id, k) => (id && id !== c.id && k !== i ? [this.conns.get(id)] : []))),
     };
   }
 

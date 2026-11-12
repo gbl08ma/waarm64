@@ -1488,6 +1488,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   that still has a session after we forgot it, a peer reloading with packets in flight) are refused while that goes
   on. Mitigations: charge the budget only once a trial confirms (its data decrypts, which takes the pre-shared key),
   and cap the trial peers not yet confirmed apart, dropping the oldest first.
+  Another tab's ephemeral room connections are invisible to this one (they live in that page's memory): Delete or New
+  name of a stored connection whose `webpc-room` entry another tab's ephemeral connection shares (made with "another
+  connection's key") forgets the entry, as `sharesKey` can't see that one, and its next start makes a new key under
+  the orphaned entry, which nothing deletes later (the key changes without the user asking); and a key pasted in one
+  tab from another tab's ephemeral connection isn't found as that one's (`holderOf`), so it gets an entry of its own
+  (the key's lock still holds between them, named by the key). A shared registry of ephemeral connections' entries
+  (a BroadcastChannel census, or the entries' users counted in `webpc-room`) would close both.
 - **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

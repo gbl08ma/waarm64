@@ -1581,7 +1581,8 @@ and the guest's default way out (below).
   Advanced [Allow incoming connections from members](ui:network:NetRoomStep.room.incoming) (on by default; off, only replies
   to the guest's own flows come in) and [The connection's key](ui:network:NetRoomStep.room.key): a new one, [A key to paste](ui:network:NetRoomStep.room.key.paste)
   (a hidden field for it; 64 hex digits, web/room.ts `parseRoomKey`; one another room connection has makes the new
-  one share that connection's, as choosing it would, so the key's lock holds), or another stored room connection's (the
+  one share that connection's, as choosing it would; a stored one made with an ephemeral one's key keeps a copy in
+  `webpc-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
   same key in another room: docs/network-adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New

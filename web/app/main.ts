@@ -6,7 +6,7 @@ import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { PageAudio } from '../audio.ts';
 import { hasOpfs } from '../overlay.ts';
-import { forgetRoomIdentity, keepRoomIdentity, readRoomIdentity } from '../room.ts';
+import { forgetRoomIdentity, keepRoomIdentity, readRoomIdentity, roomIdentity } from '../room.ts';
 import { forgetTailcatIdentity } from '../tailcat.ts';
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import { current } from './areas/current.svelte.ts';
@@ -89,6 +89,7 @@ const net = new PageNetwork({
     forgetTailcat: forgetTailcatIdentity,
     forgetRoom: forgetRoomIdentity,
     readRoom: readRoomIdentity,
+    roomIdentity,
     keepRoom: keepRoomIdentity,
   },
   kept: keptProfiles,

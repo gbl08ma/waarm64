@@ -3,7 +3,7 @@
 // at a time), and the connections whose nodes are being logged out (nobody connects them meanwhile). For
 // web/app/net-live.ts; DOM-free.
 import { MsgError } from '../i18n.ts';
-import { connectionLock, roomKeyLock, sameRoomKey, type Connection, type RoomConnection } from './connections.ts';
+import { connectionLock, type Connection, type RoomConnection } from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { Store } from './store.ts';
 
@@ -25,8 +25,6 @@ export type ClaimHere = {
   stopped: () => MsgError | undefined;
   /** Whether an adapter here runs the connection already (its lock then stays). */
   runs: () => boolean;
-  /** The connections this page's other adapters run. */
-  others: () => Promise<(Connection | undefined)[]>;
 };
 
 /** Who has a room key that a connection couldn't take: `here`, another adapter's connection on this page, or another tab. */
@@ -36,12 +34,22 @@ export class NetClaims {
   readonly locks: Locks;
   /** The connections whose nodes are being logged out: nothing connects them meanwhile, and no other tab is let in. */
   readonly leaving = new Set<string>();
-  /** The room key locks the running room connections hold, by connection (`roomKeyLock`). */
-  private keyLocks = new Map<string, string>();
+  /**
+   * The room key locks this page's room connections hold or are taking (`roomKeyLock`), by connection: set before the
+   * lock is asked for, so two connections on one key claimed at once here don't both pass.
+   */
+  private keyLocks = new Map<string, { lock: string; c: Connection }>();
+  private keyLock: (r: RoomConnection) => Promise<string>;
 
-  /** `release`: another tab asks for a lock held here. */
-  constructor(store: Store, me: () => string, release: (lock: string) => void) {
+  /** `release`: another tab asks for a lock held here; `keyLock`: a room connection's key lock (`Connections.keyLock`). */
+  constructor(
+    store: Store,
+    me: () => string,
+    release: (lock: string) => void,
+    keyLock: (r: RoomConnection) => Promise<string>,
+  ) {
     this.locks = new Locks(store, 'net', me, release);
+    this.keyLock = keyLock;
   }
 
   /** Takes connection `c`'s lock: `HeldError` if another tab's machine has it. */
@@ -63,7 +71,7 @@ export class NetClaims {
       return stopped;
     }
     if (!c.room) return undefined;
-    const busy = await this.takeKey(c, c.room, await here.others());
+    const busy = await this.takeKey(c, c.room);
     if (!busy) return undefined;
     if (!here.runs()) this.locks.drop(lock);
     return this.keyRefusal(busy);
@@ -76,19 +84,18 @@ export class NetClaims {
   }
 
   /**
-   * Takes the lock of room connection `c`'s key: this page's other adapters' connections (`others`) first, then other
-   * tabs'. Who has it when it can't, else nothing.
+   * Takes the lock of room connection `c`'s key: refused when another connection here holds or is taking it (`take`
+   * says yes to a lock this page holds), then when another tab has it. Who has it when it can't, else nothing.
    */
-  private async takeKey(
-    c: Connection,
-    room: RoomConnection,
-    others: (Connection | undefined)[],
-  ): Promise<KeyBusy | undefined> {
-    const here = others.find((o) => o?.room && sameRoomKey(o.room, room));
-    const key = await roomKeyLock(room);
-    if (here || !(await this.locks.take(key))) return { here, key };
-    this.keyLocks.set(c.id, key);
-    return undefined;
+  private async takeKey(c: Connection, room: RoomConnection): Promise<KeyBusy | undefined> {
+    const key = await this.keyLock(room);
+    const here = [...this.keyLocks].find(([id, k]) => id !== c.id && k.lock === key)?.[1].c;
+    if (here) return { here, key };
+    const mine = { lock: key, c };
+    this.keyLocks.set(c.id, mine); // before the wait: a claim of another connection on it meanwhile is refused
+    if (await this.locks.take(key)) return undefined;
+    if (this.keyLocks.get(c.id) === mine) this.keyLocks.delete(c.id);
+    return { key };
   }
 
   /** Why a room key couldn't be taken, in words: the other adapter's connection, or the tab that has it. */
@@ -122,7 +129,7 @@ export class NetClaims {
     this.locks.drop(connectionLock(id));
     const k = this.keyLocks.get(id);
     this.keyLocks.delete(id);
-    if (k) this.locks.drop(k);
+    if (k) this.locks.drop(k.lock);
   }
 
   /** Whether `lock` is a connection's whose node is being logged out. */

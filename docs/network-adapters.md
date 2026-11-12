@@ -65,9 +65,12 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   `webpc-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
   machine's address and name in the room stay the same. A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
-  own), so another connection on that key, on another adapter or in another tab, doesn't connect while it runs and
-  says which has it (two DERP connections under one key break each other on a shared region: a derper delivers the
-  key's packets to one of them). Delete forgets the key only when no other connection uses it, and New name gives the
+  own; named by a hash of the key, a stored connection's read from its entry and made there at its first claim, so
+  every kind of connection that has a key, in any tab, names one lock), so another connection on that key, on another
+  adapter or in another tab, doesn't connect while it runs and says which has it (two DERP connections under one key
+  break each other on a shared region: a derper delivers the key's packets to one of them). A page notes a key it is
+  taking before it waits for the lock, so two connects on one key at once there don't both pass. A stored connection
+  made with an ephemeral one's key (pasted, or chosen) keeps a copy in its own entry, never the key in its record. Delete forgets the key only when no other connection uses it, and New name gives the
   connection a key of its own (a new `identityKey` when it was shared). Each room has its own /48, so rooms on several
   adapters route apart.
 
