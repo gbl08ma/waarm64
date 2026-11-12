@@ -275,8 +275,10 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   two of WireGuard's passive keepalives, so one lost on the unreliable channel doesn't count), sends the peer back to DERP, and a new offer comes after 30 s. At most 64
   connections (`MAX_RTC`): past that the offerer waits for the guests' next packet, and an answerer refuses with a
   `bye`; a channel without the guests' traffic for 60 s (`RTC_IDLE`) is closed, and the offerer offers again at the
-  next packet either way (a `bye` for an open channel isn't a failure: no backoff); a full channel drops the packet
-  (`send` throws, `web/ts-client.ts` catches it). A peer's new connection comes at most every 2 s (`RTC_GAP`: an
+  next packet either way (a `bye` for an open channel isn't a failure: no backoff); a full channel drops the packet:
+  one holding more than 64 KiB unsent (`bufferedAmount`; `RTC_BUFFER`, `rtcSend` in `web/ts-client.ts`), so the loss is
+  at the path's rate and not seconds of queue in front of every flow and keepalive (Chromium queues megabytes before
+  `send` throws, which drops it too). A peer's new connection comes at most every 2 s (`RTC_GAP`: an
   answerer ignores a newer attempt sooner, so a member's signalling can't make the page set up connections as fast as
   it sends; an offerer, after a restart's epoch, waits), and our own offers, all peers', at most 4 a second. Relay only
   (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take;

@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
+import { RTC_BUFFER, rtcSend, TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
 
 const WASM = 'target/net/ts.wasm';
 const skip = existsSync(WASM) ? false : `${WASM} isn't built (net/ts/build.sh)`;
@@ -101,3 +101,17 @@ test('a relay that isn\'t one is dropped and another connection tried after a ba
   StubSocket.opened[1].drop();
   c.close();
 }));
+
+test("a room's data channel drops a packet once its queue holds more than a few dozen: loss at the path, not seconds of queue", () => {
+  /** A channel whose path carries nothing: what is sent stays queued, as Chromium's `bufferedAmount` counts it. */
+  const dc = { readyState: 'open' as RTCDataChannelState, bufferedAmount: 0, send(b: Uint8Array) { this.bufferedAmount += b.length; } };
+  const packet = new Uint8Array(1312);
+  let sent = 0;
+  for (let k = 0; k < 4000; k++) if (rtcSend(dc, packet)) sent++;
+  assert.ok(dc.bufferedAmount <= RTC_BUFFER + packet.length, `${dc.bufferedAmount} bytes queued`);
+  assert.ok(sent >= 16, `${sent} sent`);
+  dc.bufferedAmount = 0; // the path took them
+  assert.equal(rtcSend(dc, packet), true);
+  dc.readyState = 'closing';
+  assert.equal(rtcSend(dc, packet), false);
+});

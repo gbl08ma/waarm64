@@ -159,6 +159,23 @@ export const DNS6 = [[0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0
 /** How long a fetch (the control server's key, a DERP map or probe, DNS over HTTPS) may take. */
 const FETCH_MS = 15_000;
 
+/**
+ * The most bytes a room's data channel holds unsent (`bufferedAmount`) before its packets are dropped: ~50 of them.
+ * Chromium queues megabytes before `send` throws, so a guest sending faster than the direct path carries would see
+ * seconds of latency (a keepalive behind them stalls the channel) where a congested path loses packets.
+ */
+export const RTC_BUFFER = 64 * 1024;
+
+/** A room's WireGuard packet on a peer's data channel (`RtcSend`): whether it went (a full channel drops it). */
+export function rtcSend(
+  dc: { readonly readyState: RTCDataChannelState; readonly bufferedAmount: number; send(b: Uint8Array<ArrayBuffer>): void },
+  b: Uint8Array<ArrayBuffer>,
+): boolean {
+  if (dc.readyState !== 'open' || dc.bufferedAmount > RTC_BUFFER) return false;
+  // A send queue full in spite of that throws: lost too.
+  try { dc.send(b); return true; } catch { return false; }
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -339,8 +356,7 @@ export class TsClient {
           break;
         case 9: {
           const dc = this.channels.get(id);
-          // A full send queue throws: the packet is lost, as on any congested path.
-          if (dc?.readyState === 'open') try { dc.send(rest); } catch { /* dropped */ }
+          if (dc) rtcSend(dc, rest);
           break;
         }
         case 10: {
