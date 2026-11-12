@@ -236,8 +236,12 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   carries its packets. A peer's packets reach the guest only from that peer's own address to ours. A key we don't
   know that starts a handshake is let in **on trial** (incoming connections, on by default) and forgotten 20 s after it
   came in unless its data decrypted, which only the room's key allows; 16 such a second, a budget apart from call
-  backs', charged only once WireGuard answered the handshake (its MAC1 right), so junk from anyone who knows the key
-  can't use it up. DERP proves a packet's sender, so a peer's packets go back through the region its last one came
+  backs', charged only once WireGuard answered the handshake (its MAC1 right), so junk that isn't a handshake can't use
+  it up. A valid initiation can, though: in IKpsk2 the pre-shared key enters only at the response, so an initiation
+  needs nothing but the responder's public key, which its name carries. Anyone with a node's name (not only a member)
+  can send it 16 initiations a second from fresh keys, each answered and let in on trial for 20 s (up to 320 at once),
+  and the node refuses members' unasked handshakes meanwhile (call backs keep their own budget; [backlog.md](backlog.md)
+  "Rooms' loose ends"). DERP proves a packet's sender, so a peer's packets go back through the region its last one came
   from (our response to its new initiation too). A peer is forgotten after 3 minutes without the
   guests' traffic, or 30 s after we sent it the guest's packets with nothing back (the next packet looks it up again;
   past two of WireGuard's passive keepalives, each 9 to 11 s after the data it answers, so a guest's one-way traffic

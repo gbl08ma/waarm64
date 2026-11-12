@@ -1482,6 +1482,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   through some relays are handled). A cheap check before the X25519 would end it: a MAC under the room's lookup key
   over the content (a change of the lookup's form), or NIP-13 proof of work on lookups; relays' own rate limits help
   meanwhile.
+  The unasked handshakes' trial budget (16 a second) is open to anyone with a node's name, not only members: an
+  IKpsk2 initiation needs only the responder's public key (the pre-shared key enters at the response), so fresh keys'
+  valid initiations are answered, charged and kept on trial 20 s each, and members' unasked handshakes (a member
+  that still has a session after we forgot it, a peer reloading with packets in flight) are refused while that goes
+  on. Mitigations: charge the budget only once a trial confirms (its data decrypts, which takes the pre-shared key),
+  and cap the trial peers not yet confirmed apart, dropping the oldest first.
 - **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer
