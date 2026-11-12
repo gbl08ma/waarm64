@@ -119,8 +119,10 @@ const NOSTR_RESUBSCRIBE: Duration = Duration::from_secs(10);
 /// (its page reloaded, say) is forgotten and called back afresh, in the lookup's region.
 const PROBE: Duration = Duration::from_secs(4);
 /// A peer we sent the guest's packets to and heard nothing from this long is forgotten (the next
-/// packet looks it up again); one without the guests' traffic this long, too.
-const PEER_LOST: Duration = Duration::from_secs(20);
+/// packet looks it up again); one without the guests' traffic this long, too. Past two of
+/// WireGuard's passive keepalives (each 9 to 11 s after the data it answers) with a margin, so
+/// one-way traffic doesn't lose its peer to one lost keepalive.
+const PEER_LOST: Duration = Duration::from_secs(30);
 const PEER_IDLE: Duration = Duration::from_secs(180);
 /// Signalling resends: after these waits, then the message is dropped.
 const RESENDS: [Duration; 3] = [
@@ -133,9 +135,10 @@ const RTC_CONNECT: Duration = Duration::from_secs(10);
 /// The wait before the next offer after one failed, doubling up to [`RTC_BACKOFF_MAX`].
 const RTC_BACKOFF: Duration = Duration::from_secs(30);
 const RTC_BACKOFF_MAX: Duration = Duration::from_secs(300);
-/// A channel we sent on with nothing back for this long has stalled (WireGuard's passive
-/// keepalive answers data within 10 s): back to DERP.
-const RTC_STALL: Duration = Duration::from_secs(15);
+/// A channel we sent on with nothing back for this long has stalled: back to DERP. Past two of
+/// WireGuard's passive keepalives (each 9 to 11 s after the data it answers), so one lost on the
+/// unreliable channel doesn't count.
+const RTC_STALL: Duration = Duration::from_secs(25);
 /// A peer's new WebRTC connection comes at most this often (an answerer ignores new attempts
 /// sooner; an offerer waits), so a member's signalling can't make the page set up connections as
 /// fast as it sends; our own offers, all peers', at most [`RTC_NEW_PER_SECOND`] a second (an

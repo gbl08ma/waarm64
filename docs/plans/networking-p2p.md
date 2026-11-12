@@ -197,8 +197,8 @@ address and name don't change when it rejoins. "New identity" makes a new key.
    seen as one and its signalling starts afresh.)
 4. When the channel opens, the peer's WireGuard packets move to it, except handshake messages, which
    always go through DERP (R0: they're rare, and a peer that restarted has no channel to take our
-   response); when it closes or stalls (nothing back 15 s after we sent, past WireGuard's 10 s passive
-   keepalive), back to DERP, and a new offer 30 s later. Both
+   response); when it closes or stalls (nothing back 25 s after we sent, past two of WireGuard's
+   passive keepalives), back to DERP, and a new offer 30 s later. Both
    sides stay joined to a region that reaches the other while the peer is open, so that fallback
    never needs a new lookup.
 

@@ -51,6 +51,11 @@ struct Faults {
     lossy_relay: bool,
     /// The next relay packet node `.0` sends is lost.
     drop_next_from: Option<usize>,
+    /// The next WireGuard keepalive node `.0` sends is lost, on either path.
+    drop_keepalive_from: Option<usize>,
+    /// Node `.0` is ticked this long after the deadline it asks for (WireGuard's timers are a
+    /// range, the module asks for its start; a busy worker's timer is late, a path has latency).
+    late: Option<(usize, Duration)>,
     /// The Nostr relay takes what nodes send and does nothing (a half-open connection).
     silent_nostr: bool,
     /// The first DERP connection node `.0` opens to URL `.1` gets its server's hello only when
@@ -344,6 +349,9 @@ impl Net {
                         self.faults.drop_next_from = None;
                         continue;
                     }
+                    if self.lose_keepalive(i, &p) {
+                        continue;
+                    }
                     // A third lost, at random (a fixed sequence).
                     if self.faults.lossy_relay
                         && (self.relayed as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 61 < 3
@@ -428,6 +436,9 @@ impl Net {
                 };
                 let (j, r) = (*j, *r);
                 self.nodes[i].rtc_packets += 1;
+                if self.lose_keepalive(i, &data) {
+                    return;
+                }
                 if !self.faults.blackhole_rtc {
                     self.nodes[j].c.rtc_message(r, &data, now);
                 }
@@ -445,6 +456,15 @@ impl Net {
             }
             Action::Fetch { .. } => {}
         }
+    }
+
+    /// Whether node `i`'s WireGuard packet `p` is the keepalive `Faults::drop_keepalive_from` loses.
+    fn lose_keepalive(&mut self, i: usize, p: &[u8]) -> bool {
+        let lost = self.faults.drop_keepalive_from == Some(i) && p.len() == 32 && p[0] == 4;
+        if lost {
+            self.faults.drop_keepalive_from = None;
+        }
+        lost
     }
 
     /// Carries out every node's actions until none is left.
@@ -466,15 +486,27 @@ impl Net {
     /// Runs time forward to `now + d`, ticking each node when it asks.
     fn advance(&mut self, d: Duration) {
         let end = self.now + d;
+        let late = self.faults.late;
+        let due = move |j: usize, n: &Node| {
+            let l = late
+                .filter(|(k, _)| *k == j)
+                .map_or(Duration::ZERO, |(_, l)| l);
+            n.c.deadline().map(|t| t + l)
+        };
         loop {
             self.run();
-            let next = self.nodes.iter().filter_map(|n| n.c.deadline()).min();
+            let next = self
+                .nodes
+                .iter()
+                .enumerate()
+                .filter_map(|(j, n)| due(j, n))
+                .min();
             match next {
                 Some(t) if t <= end => {
                     self.now = t.max(self.now);
                     let now = self.now;
-                    for n in &mut self.nodes {
-                        if n.c.deadline().is_some_and(|t| t <= now) {
+                    for (j, n) in self.nodes.iter_mut().enumerate() {
+                        if due(j, n).is_some_and(|t| t <= now) {
                             n.c.tick(now);
                         }
                     }
@@ -1080,10 +1112,55 @@ fn a_stalled_channel_falls_back_to_the_relay() {
     n.got(1);
     n.faults.blackhole_rtc = true;
     n.send(0, 1, 9, b"lost");
-    n.advance(Duration::from_secs(16));
+    n.advance(RTC_STALL + Duration::from_secs(1));
     assert_eq!(n.paths(0), ["direct", "relay"], "{:?}", n.nodes[0].events);
     n.send(0, 1, 9, b"b");
     assert_eq!(n.got(1), [b"b".to_vec()]);
+}
+
+/// Node 0's guest streams UDP to node 1's for a minute, which never answers (only WireGuard's
+/// passive keepalive comes back, every 9 to 11 s: here the end of that, and 200 ms of latency),
+/// and one of node 1's keepalives is lost after 15 s.
+fn one_way_with_a_keepalive_lost(n: &mut Net) {
+    n.faults.late = Some((1, Duration::from_millis(1200)));
+    for k in 0..600 {
+        if k == 150 {
+            n.faults.drop_keepalive_from = Some(1);
+        }
+        n.send(0, 1, 9, b"stream");
+        n.advance(Duration::from_millis(100));
+    }
+    assert!(
+        n.faults.drop_keepalive_from.is_none(),
+        "a keepalive was lost"
+    );
+    assert_eq!(n.got(1).len(), 600);
+}
+
+#[test]
+fn one_lost_keepalive_keeps_the_direct_path() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.reach(0, 1, b"a");
+    assert_eq!(n.paths(0), ["direct"]);
+    n.got(1);
+    one_way_with_a_keepalive_lost(&mut n);
+    assert_eq!(n.paths(0), ["direct"], "{:?}", n.logs(0));
+}
+
+#[test]
+fn one_lost_keepalive_keeps_the_peer() {
+    let mut cfgs = configs(&[1, 2]);
+    cfgs[1].relay_only = true; // through the relay
+    let mut n = Net::new(cfgs);
+    n.reach(0, 1, b"a");
+    n.got(1);
+    one_way_with_a_keepalive_lost(&mut n);
+    let gone = n.nodes[0]
+        .events
+        .iter()
+        .filter(|e| e["type"] == "peer-gone")
+        .count();
+    assert_eq!(gone, 0, "{:?}", n.logs(0));
 }
 
 #[test]

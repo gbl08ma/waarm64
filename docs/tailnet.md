@@ -238,7 +238,9 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   backs', charged only once WireGuard answered the handshake (its MAC1 right), so junk from anyone who knows the key
   can't use it up. DERP proves a packet's sender, so a peer's packets go back through the region its last one came
   from (our response to its new initiation too). A peer is forgotten after 3 minutes without the
-  guests' traffic, or 20 s after we sent it the guest's packets with nothing back (the next packet looks it up again).
+  guests' traffic, or 30 s after we sent it the guest's packets with nothing back (the next packet looks it up again;
+  past two of WireGuard's passive keepalives, each 9 to 11 s after the data it answers, so a guest's one-way traffic
+  doesn't lose its peer to one lost keepalive).
 - **Incoming off** (`incoming: false`): lookups go unanswered and handshakes from unknown keys are refused, unless the
   guest has a flow with that address; a flow table (the peer's address, the protocol, both ports or an echo's
   identifier; 5 minutes idle, 4,096 at most) lets in only replies to the guest's own flows (and ICMPv6 errors from a
@@ -264,8 +266,8 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   `RTCPeerConnection` in a worker, but transfers a channel), so packets never touch the page's thread. Once it
   opens, the peer's WireGuard packets take it, one message each, except handshake messages, which always go
   through DERP (rare, and a peer that restarted has no channel to take ours). An attempt not open in 10 s is closed
-  and the next waits 30 s, doubling to 5 min; a closed channel, or one we sent on with nothing back for 15 s (past
-  WireGuard's 10 s passive keepalive), sends the peer back to DERP, and a new offer comes after 30 s. At most 64
+  and the next waits 30 s, doubling to 5 min; a closed channel, or one we sent on with nothing back for 25 s (past
+  two of WireGuard's passive keepalives, so one lost on the unreliable channel doesn't count), sends the peer back to DERP, and a new offer comes after 30 s. At most 64
   connections (`MAX_RTC`): past that the offerer waits for the guests' next packet, and an answerer refuses with a
   `bye`; a channel without the guests' traffic for 60 s (`RTC_IDLE`) is closed, and the offerer offers again at the
   next packet either way (a `bye` for an open channel isn't a failure: no backoff); a full channel drops the packet
