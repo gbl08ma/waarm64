@@ -1494,7 +1494,36 @@ fn a_guest_sweeping_the_room_is_bounded() {
         LOOKUPS_PER_SECOND,
         "a few a second on the relays"
     );
-    n.advance(Duration::from_secs(7));
+    for s in 1..=7 {
+        n.advance(Duration::from_secs(1));
+        assert!(
+            n.published.len() <= (s + 1) * LOOKUPS_PER_SECOND,
+            "at {s} s"
+        );
+    }
+    // Each went out (first sends before resends), then was given up.
+    n.advance(LOOKUP_GIVE_UP);
+    assert!(n.nodes[0].c.pending.is_empty());
+    assert_eq!(n.icmp(0).len(), MAX_PENDING);
+}
+
+#[test]
+fn a_guest_dialing_many_members_at_once_reaches_them_all() {
+    let members = 4 * LOOKUPS_PER_SECOND - 2;
+    let seeds: Vec<u8> = (1..=members as u8 + 1).collect();
+    let mut n = Net::new(configs(&seeds));
+    let now = n.now;
+    for j in 1..=members {
+        let p = udp(n.addr(0), n.addr(j), 9, b"hi");
+        n.nodes[0].c.guest_packet(&p, now);
+    }
+    n.run();
+    assert_eq!(n.published.len(), LOOKUPS_PER_SECOND, "the rate's at once");
+    n.advance(LOOKUP_GIVE_UP);
+    for j in 1..=members {
+        assert_eq!(n.got(j), [b"hi".to_vec()], "member {j}");
+    }
+    assert!(n.icmp(0).is_empty(), "nobody unreachable");
     assert!(n.nodes[0].c.pending.is_empty());
 }
 

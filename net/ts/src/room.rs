@@ -101,8 +101,9 @@ const MAX_OPENED: usize = 8192;
 const LOOKUP_MAX_AGE: u64 = 3600;
 const MAX_NONCES: usize = 8192;
 /// The guest's lookups: at most this many waiting at once (more get ICMPv6 unreachable at once),
-/// published at most this many a second (more wait for their resend), unreachable addresses
-/// remembered at most this many.
+/// published at most this many a second (more wait for room, first sends before resends; one is
+/// given up [`LOOKUP_GIVE_UP`] after its first send), unreachable addresses remembered at most
+/// this many.
 const MAX_PENDING: usize = 64;
 const LOOKUPS_PER_SECOND: usize = 8;
 const MAX_UNREACHABLE: usize = 1024;
@@ -494,9 +495,12 @@ struct Nostr {
 /// A lookup the guest's packets wait on.
 struct Pending {
     packets: VecDeque<Vec<u8>>,
-    started: Instant,
+    /// When it first went out (None: not yet, past the publish rate).
+    started: Option<Instant>,
     /// How many times it went out.
     sent: usize,
+    /// When it goes out next, or (sent [`LOOKUP_AT`]'s times) is given up.
+    next: Instant,
 }
 
 /// A flow of the guest's: the peer's address, the protocol, the peer's port and the guest's (an
@@ -1222,10 +1226,10 @@ impl Client {
         self.nostr_subscribe(i, now);
     }
 
-    /// Publishes a lookup for `addr` on every relay of the link.
-    fn publish_lookup(&mut self, addr: &[u8; 16], now: Instant) {
+    /// Publishes a lookup for `addr` on every relay of the link, unless the rate's window is full.
+    fn publish_lookup(&mut self, addr: &[u8; 16], now: Instant) -> bool {
         if !Self::take(&mut self.published, LOOKUPS_PER_SECOND, now) {
-            return; // a guest sweeping the /48: this one waits for its resend
+            return false; // a guest sweeping the /48, say
         }
         let mut nonce = [0u8; 16];
         let _ = getrandom::fill(&mut nonce);
@@ -1241,6 +1245,25 @@ impl Client {
         let text = nostr::publish(&self.author.event(KIND, &tag, &content, unix));
         for i in 0..self.nostr.len() {
             self.nostr_send(i, text.clone());
+        }
+        true
+    }
+
+    /// Sends the guest's lookup for `addr` (out again at [`LOOKUP_AT`]'s times after the first),
+    /// or, past the rate, when the window has room (it counts only once it went out).
+    fn send_lookup(&mut self, addr: [u8; 16], now: Instant) {
+        let out = self.publish_lookup(&addr, now);
+        let room = self.published.front().map(|t| *t + Duration::from_secs(1));
+        let Some(w) = self.pending.get_mut(&addr) else {
+            return;
+        };
+        if out {
+            w.sent += 1;
+            let s = *w.started.get_or_insert(now);
+            w.next = s + LOOKUP_AT.get(w.sent).copied().unwrap_or(LOOKUP_GIVE_UP);
+        } else {
+            let room = room.unwrap_or(now + Duration::from_secs(1)).max(now);
+            w.next = w.started.map_or(room, |s| room.min(s + LOOKUP_GIVE_UP));
         }
     }
 
@@ -2205,11 +2228,12 @@ impl Client {
             dst,
             Pending {
                 packets,
-                started: now,
-                sent: 1,
+                started: None,
+                sent: 0,
+                next: now,
             },
         );
-        self.publish_lookup(&dst, now);
+        self.send_lookup(dst, now);
     }
 
     pub fn tick(&mut self, now: Instant) {
@@ -2239,18 +2263,18 @@ impl Client {
                 self.nostr_subscribe(i, now);
             }
         }
-        // Lookups: resent, then given up.
-        let due: Vec<[u8; 16]> = self
+        // Lookups: sent (first sends before resends, the earliest first), then given up.
+        let mut due: Vec<(usize, Instant, [u8; 16])> = self
             .pending
             .iter()
-            .filter(|(_, w)| self.lookup_due(w).is_some_and(|t| t <= now))
-            .map(|(a, _)| *a)
+            .filter(|(_, w)| w.next <= now)
+            .map(|(a, w)| (w.sent, w.next, *a))
             .collect();
-        for addr in due {
-            let w = self.pending.get_mut(&addr).unwrap();
-            if w.sent < LOOKUP_AT.len() {
-                w.sent += 1;
-                self.publish_lookup(&addr, now);
+        due.sort();
+        for (_, _, addr) in due {
+            let w = &self.pending[&addr];
+            if !w.started.is_some_and(|s| now >= s + LOOKUP_GIVE_UP) {
+                self.send_lookup(addr, now);
             } else {
                 let w = self.pending.remove(&addr).unwrap();
                 if self.by_addr.contains_key(&addr) {
@@ -2371,13 +2395,6 @@ impl Client {
         self.flush_relays();
     }
 
-    fn lookup_due(&self, w: &Pending) -> Option<Instant> {
-        Some(match LOOKUP_AT.get(w.sent) {
-            Some(d) => w.started + *d,
-            None => w.started + LOOKUP_GIVE_UP,
-        })
-    }
-
     pub fn deadline(&self) -> Option<Instant> {
         if self.state == State::Failed {
             return None; // closed: nothing comes back
@@ -2427,8 +2444,8 @@ impl Client {
                 .iter()
                 .flat_map(|n| [n.reconnect_at, n.answer_by, n.check_at]),
         )
-        .chain(self.pending.values().map(|w| self.lookup_due(w)))
         .flatten()
+        .chain(self.pending.values().map(|w| w.next))
         .min()
     }
 

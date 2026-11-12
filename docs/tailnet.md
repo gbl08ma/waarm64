@@ -200,8 +200,9 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   data, and both look alike (106 bytes: 32 of an ephemeral key or of random bytes, then the ciphertext; the target
   tries the seal first). Again after 1 s and 3 s; at 6 s the waiting packets get ICMPv6 address unreachable (type 1, code 3, from the
   room's `::53`), as does anything to that address for 5 s more. At most 64 lookups wait at once (past that, the
-  guest's packet gets the ICMPv6 at once) and 8 go out a second (more wait for their resend), so a guest sweeping the
-  /48 can't grow the worker or flood the relays. The Nostr relays are plain WebSockets in text mode (`WsOpen` with an
+  guest's packet gets the ICMPv6 at once) and 8 go out a second (more wait for room, first sends before resends; a send
+  counts only once it went out, and the 6 s run from a lookup's first), so a guest sweeping the /48 can't grow the
+  worker or flood the relays, and one dialing 30 members at once reaches them all. The Nostr relays are plain WebSockets in text mode (`WsOpen` with an
   empty protocol; `web/ts-client.ts` opens it without one, carries the module's bytes as UTF-8 and holds at most 256
   messages before it opens). The subscription is renewed every 60 s and must be answered (EOSE) within 15 s, or the
   connection is presumed dead (half open after a network change, say); a relay's CLOSED of it is subscribed again
