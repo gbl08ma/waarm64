@@ -1034,10 +1034,16 @@ impl Client {
             }
         }
         let p = self.queries.remove(&id).expect("there");
-        let msg = match (good, answer, p.failed) {
-            (true, Some(a), _) => a.to_vec(),
-            (_, _, Some(f)) => f,
-            _ => match dns::parse(&p.query) {
+        let answer = answer.filter(|_| good).map(<[u8]>::to_vec);
+        self.dns_finish(p, answer);
+    }
+
+    /// Answers the guest's query `p` with `answer`, or else the last failure a resolver sent, or else
+    /// SERVFAIL (as Go's forwarder does when none answers).
+    fn dns_finish(&mut self, p: Pending, answer: Option<Vec<u8>>) {
+        let msg = match (answer, p.failed) {
+            (Some(a), _) | (None, Some(a)) => a,
+            (None, None) => match dns::parse(&p.query) {
                 Some(q) => dns::answer(&p.query, &q, dns::SERVFAIL, &[], 0),
                 None => return,
             },
@@ -1229,10 +1235,18 @@ impl Client {
                 self.actions.push_back(Action::WsClose { conn: r.conn });
             }
         }
+        // Queries no resolver answered in time get the guest an answer rather than its resolver's timeout.
+        let expired: Vec<u32> = (self.queries.iter())
+            .filter(|(_, q)| q.until <= now)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in expired {
+            let p = self.queries.remove(&id).expect("there");
+            self.dns_finish(p, None);
+        }
         if self.sweep_at <= now {
             self.sweep_at = now + Duration::from_secs(30);
             self.flows.retain(|_, t| *t > now);
-            self.queries.retain(|_, q| q.until > now);
             let queries = &self.queries;
             self.dns_udp.retain(|_, q| queries.contains_key(q));
             self.dns_doh.retain(|_, q| queries.contains_key(q));
@@ -1258,6 +1272,7 @@ impl Client {
             .values()
             .map(|(_, sent, n)| resend_at(*sent, *n))
             .min();
+        let query = self.queries.values().map(|q| q.until).min();
         [
             self.session.deadline(),
             self.wg
@@ -1268,6 +1283,7 @@ impl Client {
             idle,
             liveness,
             resend,
+            query,
             (!self.flows.is_empty() || !self.queries.is_empty() || !self.dns_tcp.is_empty())
                 .then_some(self.sweep_at),
         ]
@@ -1800,6 +1816,41 @@ mod tests {
         c.fetched(f[0].0, false, b"", now);
         let id = *c.dns_udp.values().next().unwrap();
         c.dns_answer(id, Some(&dns_response(&q, dns::REFUSED, 0)));
+        let a = to_guest(&mut c);
+        assert_eq!(a[0][28 + 3] & 15, dns::REFUSED);
+    }
+
+    #[test]
+    fn magic_dns_answers_servfail_when_no_resolver_answers_in_time() {
+        let (mut c, now) = two_resolvers();
+        let q = dns_query("example.com");
+        c.guest_packet(
+            &ip::udp((IpAddr::from(SELF4), 40000), (ip::MAGIC_DNS4, 53), &q),
+            now,
+        );
+        fetches(&mut c);
+        assert!(c.deadline().is_some_and(|d| d <= now + DNS_TIMEOUT));
+        c.tick(now + DNS_TIMEOUT - Duration::from_millis(1));
+        assert!(to_guest(&mut c).is_empty(), "not before the timeout");
+        c.tick(now + DNS_TIMEOUT);
+        let a = to_guest(&mut c);
+        assert_eq!(a.len(), 1, "an answer at the timeout");
+        assert_eq!(a[0][28 + 3] & 15, dns::SERVFAIL);
+        assert!(c.queries.is_empty());
+        let late = *c.dns_udp.values().next().unwrap();
+        c.dns_answer(late, Some(&dns_response(&q, dns::NOERROR, 0)));
+        assert!(to_guest(&mut c).is_empty(), "nothing after it");
+
+        // A resolver's failure came before the timeout: that failure, not SERVFAIL.
+        let (mut c, now) = two_resolvers();
+        c.guest_packet(
+            &ip::udp((IpAddr::from(SELF4), 40000), (ip::MAGIC_DNS4, 53), &q),
+            now,
+        );
+        let f = fetches(&mut c);
+        c.fetched(f[0].0, true, &dns_response(&q, dns::REFUSED, 0), now);
+        assert!(to_guest(&mut c).is_empty());
+        c.tick(now + DNS_TIMEOUT);
         let a = to_guest(&mut c);
         assert_eq!(a[0][28 + 3] & 15, dns::REFUSED);
     }
