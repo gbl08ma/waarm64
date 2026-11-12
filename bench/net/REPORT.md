@@ -86,7 +86,7 @@ the control server's `/key` is in docs/plans/networking.md (N4).
 
 ## T1: the Rust tailnet client, tailcat, in Node (2026-10-16)
 
-The tailnet client's T1 (docs/tailnet.md): `net/ts` (Rust, tailscale-rs's `ts_tunnel` for WireGuard) built to
+The tailnet client's T1 (docs/networking/tailnet.md): `net/ts` (Rust, tailscale-rs's `ts_tunnel` for WireGuard) built to
 `wasm32-wasip1`, driven by `web/ts-client.ts`; `bench/net/tailcat.ts` against a tailcat exit node.
 **Setup:** a cloud session container (x86_64, 4 vCPUs, Xeon @ 2.80 GHz, Node 26.11.1, no IPv6), not
 the M4 VM; `derper` (from the `tailscale.com` tailcat v0.7.0 pins) on `derp.test:443` with a
@@ -344,7 +344,7 @@ the helper's Go tests: under `-race` an idle gVisor stack keeps every core busy 
 
 ## Rooms: the direct path against DERP (R0, 2026-11-10)
 
-docs/plans/networking-p2p.md's R0: is a room's direct path (WireGuard inside a WebRTC data channel) clearly better
+the P2P track's R0 (docs/networking/rooms.md): is a room's direct path (WireGuard inside a WebRTC data channel) clearly better
 than DERP? `bench/net/room.ts`, 5 rounds alternating three arms, fresh pages each: **direct** (two members of a room
 in two pages, tests/browser/room.html, the dialer given the other's key, on the tailcat rig's derper; the first echo
 goes through the relay, then the data channel opens), **relay** (the same, the dialer relay only: no WebRTC) and
@@ -362,7 +362,7 @@ the dev VM's (docs/cloud.md), the arms are with each other. JSON: `results/r0/ro
 
 - **The gate holds**: the direct path's slowest round is faster than the relay's fastest (+45% at the medians), at
   31% less CPU per Mbit, with a derper on the same machine, DERP's best case; a real relay adds its distance to
-  every packet and caps what it forwards (tailnet.md "tailcat": the public relays are rate-limited). R0's other
+  every packet and caps what it forwards (docs/networking/tailnet.md "tailcat": the public relays are rate-limited). R0's other
   questions left for R3: setup time across real NATs, and how often ICE fails.
 - **The inner WireGuard and the plumbing** (the module, the worker, the gateway's port) cost about 28% of raw's
   throughput and 40% more CPU per Mbit; the RTT difference (0.77 against 0.24 ms) is mostly the hops between the
@@ -387,7 +387,7 @@ line before, which on this VM is a wrapper script, so it read 0 for Chromium):
 
 ## Rooms at scale (R3, 2026-11-10)
 
-docs/plans/networking-p2p.md's R3: what a room costs as it grows, with nothing outside the test harness.
+the P2P track's R3 (docs/networking/rooms.md): what a room costs as it grows, with nothing outside the test harness.
 `bench/net/room-scale.ts` starts **1,000 members** in 4 Node processes (`bench/net/room-member.ts`: the Rust client
 in a module instance each, as a page's worker holds one, relay only since Node has no WebRTC, its guest an echo on
 UDP port 7) at 100 a second, on the tests' Nostr relay (tests/net/nostr-relay.ts, a process of its own; it matches
@@ -430,7 +430,7 @@ What the crowds and the turn found, before and after the fixes in room.rs:
   subscription covers the next hour's tag already, so the turn now waits for each relay's next renewal (within a
   minute), spread as the members' joins are; a dialer more than ~59 minutes ahead of the target misses it for that
   minute at most.
-- What a room needs from a relay (the kind, the filter, the rates above) is written in the plan's §7 for R4.
+- What a room needs from a relay (the kind, the filter, the rates above) is written in docs/networking/rooms.md "What a room needs from a Nostr relay".
 
 ## Reproduce
 ```sh
@@ -460,7 +460,7 @@ node bench/net/local-ipv6.ts mac bench/net/results/local-helper/ipv6-mac.json
 
 ## Rooms on public servers (R4, 2026-11-11)
 
-docs/plans/networking-p2p.md's R4, from the dev VM (Lima on the M4 Mac mini, on a home connection in Europe; no
+the P2P track's R4 (docs/networking/rooms.md), from the dev VM (Lima on the M4 Mac mini, on a home connection in Europe; no
 IPv6): `bench/net/room-public.ts`, Node members (bench/net/room-member.ts: the module, relay only). JSON:
 `results/r4/nostr-2026-11-11.json`, `results/r4/derp-2026-11-11.json`.
 
@@ -534,6 +534,6 @@ at 32 packets of 1,232 bytes in flight.
   them, so throughput tests belong on one's own derper.
 - **The home region by latency** (the user's 200 ms pings, 2026-11-10: a link without `derp=` used only the map's
   first region, New York): a link without regions now takes all of the map's, and a member's home is the first to
-  answer a probe (docs/tailnet.md "DERP"). Two members on such a link from this machine: 99 ms RTT (Frankfurt), up in
+  answer a probe (docs/networking/rooms.md "DERP"). Two members on such a link from this machine: 99 ms RTT (Frankfurt), up in
   1.2 s.
 

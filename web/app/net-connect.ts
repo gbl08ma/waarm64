@@ -1,4 +1,4 @@
-// What a connection's client is started with (docs/network-adapters.md §3): a stored connection's settings
+// What a connection's client is started with (docs/networking/adapters.md §3): a stored connection's settings
 // (web/app/connections.ts) as web/app/network.ts's `Connect`, for each kind's client. DOM-free.
 import { settingsOf, type Connection } from './connections.ts';
 import type { Connect } from './network.ts';

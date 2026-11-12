@@ -458,7 +458,7 @@
           "md": {
             "where": "`net/ts/src/room/lookup.rs`, `net/ts/src/nostr.rs`, `net/ts/src/room.rs` (P2P R1)",
             "idea": "Finding peers for WebRTC through public Nostr relays: ephemeral events (kinds 20000–29999, forwarded and not stored) under a single-letter tag a topic hashes to, each member subscribed to its tag (`REQ` with the kind and an `#x` filter); ours seals each lookup to its target and carries WireGuard over the channel",
-            "source": "Trystero 0.26.0 (`44b5073`, MIT), its Nostr strategy, read as a design (docs/plans/networking-p2p.md §2–§3); no code copied"
+            "source": "Trystero 0.26.0 (`44b5073`, MIT), its Nostr strategy, read as a design (docs/networking/rooms.md \"Decisions\"); no code copied"
           }
         }
       ]
@@ -632,7 +632,7 @@
       "id": "rust-net-ts",
       "title": "Rust dependencies of the tailnet client (`net/ts`)",
       "intro": [
-        "Built to `target/net/ts.wasm` by `net/ts/build.sh` (docs/tailnet.md), loaded only when the user connects. Its direct dependencies, and those of theirs named here (`Cargo.lock` pins them, with their own; all permissive; licenses as their Cargo.toml says them)."
+        "Built to `target/net/ts.wasm` by `net/ts/build.sh` (docs/networking/tailnet.md), loaded only when the user connects. Its direct dependencies, and those of theirs named here (`Cargo.lock` pins them, with their own; all permissive; licenses as their Cargo.toml says them)."
       ],
       "columns": [
         {
@@ -2638,7 +2638,7 @@
             "project": "[tailscale-rs](https://github.com/tailscale/tailscale-rs)",
             "version": "v0.6.1 (`main` at `0d41a6f` read)",
             "license": "BSD-3-Clause",
-            "notes": "Tailscale's Rust client: its sans-I/O crates are the tailnet client's dependencies (above); its control, DERP and runtime crates, which need sockets and tokio's runtime, are the reference for ours (docs/tailnet.md \"The module\")"
+            "notes": "Tailscale's Rust client: its sans-I/O crates are the tailnet client's dependencies (above); its control, DERP and runtime crates, which need sockets and tokio's runtime, are the reference for ours (docs/networking/tailnet.md \"The module\")"
           }
         },
         {

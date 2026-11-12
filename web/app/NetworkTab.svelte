@@ -1,5 +1,5 @@
 <!--
-  A machine's Network tab (docs/network-adapters.md §3.2): its adapters (AdapterCard.svelte), add one, and whether the
+  A machine's Network tab (docs/networking/adapters.md §3.2): its adapters (AdapterCard.svelte), add one, and whether the
   page sets the guest's network up at every boot. Adding, moving and removing adapters change the shape: saved with
   Save (machine-edit.svelte.ts).
 -->

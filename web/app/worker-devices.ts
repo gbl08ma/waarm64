@@ -94,7 +94,7 @@ const gpu: Maker = (_slot, m, machine) => {
 const net: Maker = (slot, m) => {
   if (slot.adapter === undefined) throw new Error('a network slot without its adapter'); // as a disk's, above
   const n = m.ports.nets[slot.adapter];
-  // Several adapters: frequent renewals, so the default route follows the primary (network-adapters.md §4).
+  // Several adapters: frequent renewals, so the default route follows the primary (docs/networking/adapters.md §4).
   return {
     type: 'net',
     mac: n.mac,

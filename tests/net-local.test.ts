@@ -212,7 +212,7 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
   });
 });
 
-// A room on a second adapter beside the local helper (docs/plans/networking-p2p.md R2, docs/network-adapters.md §4):
+// A room on a second adapter beside the local helper (docs/networking/rooms.md "Tests", docs/networking/adapters.md §4):
 // tests/browser/adapters.html with card 1 on the helper and card 2 in a room on the tailcat rig's derper and the tests'
 // Nostr relay, whose other member is tests/browser/room.html in another context. The helper's adapter is the primary
 // (`primaryOf`), so the defaults stay its own and the room's adds only its /48 and its names: the guest reaches the room's

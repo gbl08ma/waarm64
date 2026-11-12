@@ -1,4 +1,4 @@
-// The Rust Tailscale client in Node against a headscale (docs/tailnet.md "Tailscale"), in one
+// The Rust Tailscale client in Node against a headscale (docs/networking/tailnet.md "Tailscale"), in one
 // file because they share the rig.
 // T4, the kept node carries over (§5): the Go client (net/tailscale,
 // in Node: tests/net/go-client.ts) and the Rust one (net/ts: tests/net/rust-client.ts) run on the

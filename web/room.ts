@@ -1,4 +1,4 @@
-// A room from the page's side (docs/plans/networking-p2p.md, docs/tailnet.md "Rooms"): the client
+// A room from the page's side (docs/networking/rooms.md): the client
 // (net/ts, room.rs) in its own worker (web/room-worker.ts), and the WebRTC connections it asks for,
 // which live here because Chromium has no RTCPeerConnection in workers. Each connection's data channel
 // is negotiated (id 0, unordered, no retransmits: WireGuard's packets, which tolerate loss) and
@@ -211,7 +211,7 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
   };
 }
 
-/** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `webpc-room` (docs/network-adapters.md §2.1). */
+/** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `webpc-room` (docs/networking/adapters.md §2.1). */
 export type RoomIdentity = { key: string };
 const IDB = 'webpc-room';
 
@@ -297,6 +297,9 @@ export const isPrivateRoom = (id: string) => PRIVATE.test(id);
 
 /** The name a room's ID shows: a private one's without its suffix. */
 export const roomName = (id: string) => id.replace(PRIVATE, '');
+
+/** The global public room's name: the wizard's first choice for a room joins it, on the defaults (docs/networking/rooms.md). */
+export const GLOBAL_ROOM = 'global';
 
 /** A room's parts, as the link carries them; empty lists: the defaults. */
 export type RoomLink = { id: string; nostr: string[]; derp: string[] };

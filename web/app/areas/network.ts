@@ -1,4 +1,4 @@
-// The network's commands (docs/network-adapters.md §3): the toolbar's Network menu (web/app/Network.svelte), the Network
+// The network's commands (docs/networking/adapters.md §3): the toolbar's Network menu (web/app/Network.svelte), the Network
 // wizard (web/app/NetWizard.svelte) and an adapter's details (web/app/NetDetails.svelte) open themselves when called;
 // the page's live network is web/app/net-live.ts.
 import { Command } from '../command.ts';

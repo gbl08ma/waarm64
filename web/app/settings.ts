@@ -8,7 +8,7 @@ import type { ModifierMode } from './osk.ts';
 import type { Layout } from './osk-layout.ts';
 
 /**
- * `net`: the network before connections (docs/network-adapters.md §2.2), read once by the migration, which drops it;
+ * `net`: the network before connections (docs/networking/adapters.md §2.2), read once by the migration, which drops it;
  * `transientNet`: the connection attached to a transient machine's adapter (a stored machine's is in its record).
  */
 export type Settings = {

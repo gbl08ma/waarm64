@@ -17,9 +17,9 @@
   // `?port=1`: the gateway's backend is this page's end of an IP port (as in the real page), whose
   // lease `harness.lease()` sends whenever the test wants (a client that connects after the boot).
   const ip = q.get('port') ? new MessageChannel() : undefined;
-  // `?adapters=<n>`: that many cards on the echo backend, each on its own gateway (docs/network-adapters.md §4).
+  // `?adapters=<n>`: that many cards on the echo backend, each on its own gateway (docs/networking/adapters.md §4).
   // `?ports=<n>`: that many cards, each on an IP port whose lease `harness.primary(k)` sends: card k's with the default
-  // route, the others' with the tailnet's routes only (docs/network-adapters.md §4).
+  // route, the others' with the tailnet's routes only (docs/networking/adapters.md §4).
   // `?port=1&local=1`: the card on an IP port as the page has it, and `harness.connectLocal(ws)` hands its page end to the
   // local helper's client (web/local-net.ts `startLocal`: its worker puts the card on frames to the helper, the link
   // flapping), as the page's Network menu does (tests/net-local.test.ts).

@@ -1,6 +1,6 @@
 # A local network helper (L0 to L3 done, v0.1.0 released; L4 next)
 
-A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
+A third kind of connection, beside a tailnet and tailcat ([networking/adapters.md](../networking/adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
 puts the guest's traffic on the host's own sockets. It is for the user who runs their own machine for a long
 while and wants a fast connection they trust; the demo's connection (a snapshot and a disk over HTTP, online with no
@@ -10,7 +10,7 @@ Why: a browser has no UDP, so tailcat and a tailnet always go through DERP. The 
 users, rate-limited and best-effort: under 20 Mbit/s and a relay's round trip in the user's experience, and a
 friend's tailcat connection behaves worse still. A helper on the user's machine has the latency of loopback and
 the user's own uplink. Every name here (`webpc-net`, the subprotocol, the kind) is provisional: the project's
-name may change. **How it works now:** [local-helper.md](../local-helper.md). **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper,
+name may change. **How it works now:** [networking/local-helper.md](../networking/local-helper.md). **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper,
 with its README, THIRD_PARTY.md and CLAUDE.md, is its own repository, `github.com/gbl08ma/webpc-net` (private until the
 user makes it public).
 
@@ -130,14 +130,14 @@ with tun2socks-style forwarders.
   (`navigator.userAgentData.getHighEntropyValues(["architecture", "platform"])`, the others listed too) and the
   published hashes.
 - **The client** opens the WebSocket and moves frames between it and the adapter's machine port, with QEMU's
-  framing, several frames per message (as DERP's are joined, tailnet.md "Transports and DERP"). **In a small worker,
+  framing, several frames per message (as DERP's are joined, networking/tailnet.md "Transports and DERP"). **In a small worker,
   and batched** (measured, L0; bench/net/REPORT.md "The local helper"): a worker takes half a core off the main thread at no
   cost, and a worker's socket makes the permission's request as the page's does; flushing on `setTimeout(0)` instead of a microtask
   doubles the upload (357 to 766 Mbit/s) without moving the round trip. L2 does both (web/local-net-worker.ts). A
   batch goes out early at the helper's limit on a message (§2 "Frames").
 - **No gateway:** the machine port's frames go to the helper untouched, and the helper's DHCP gives the guest its
   lease, routes and resolvers.
-- **The primary** ([network-adapters.md](../network-adapters.md) §4): a connected `local` adapter reaches the
+- **The primary** ([networking/adapters.md](../networking/adapters.md) §4): a connected `local` adapter reaches the
   internet, so it can be primary. Its lease always carries a default route (the helper's DHCP), which a
   non-primary adapter's mustn't: a `local` adapter ranks first among those that reach the internet, so a tailcat
   or tailnet adapter beside it gets the routed lease. Two `local` adapters both offer a default route; say so,
@@ -192,7 +192,7 @@ with tun2socks-style forwarders.
   - **Since:** the second host's check passed (the dev VM, aarch64, 2026-11-02), and the move brought GitHub's releases
     (§1): v0.1.0 built identically on GitHub's x86_64 and arm64 runners and in the dev VM.
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
-  - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/network-adapters.md): the kind `local` (its
+  - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/networking/adapters.md): the kind `local` (its
     link in the record); the wizard's [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) step (the link, or the pairing link, pasted; the
     install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s: v0.1.0's since
     2026-11-02); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
@@ -214,12 +214,12 @@ with tun2socks-style forwarders.
   `tests/webpc-net.ts` pins, fetched with git and built: `go install` refuses the module while it has a `replace`): Debian's lease, a TCP transfer to a server on this machine, a
   wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these
   already, from L0). The framing's unit tests in Node. How it
-  works goes into tailnet.md's neighbor (a page of its own, or network-adapters.md), frontend.md "Network" and
+  works goes into networking/tailnet.md's neighbor (a page of its own, or networking/adapters.md), frontend.md "Network" and
   the backlog's loose ends.
   - **Done** (2026-11-02): the move first (§1); `tests/page-local.test.ts` from a public origin (the test server's
     address called public by `--ip-address-space-overrides`: connected once CDP grants `loopback-network`, the
     refusal said otherwise); the Debian list was `tests/net-local.test.ts`'s already, now at the pinned commit; the
-    framing's tests were L2's. How it works: [local-helper.md](../local-helper.md), its own page; the loose ends in
+    framing's tests were L2's. How it works: [networking/local-helper.md](../networking/local-helper.md), its own page; the loose ends in
     backlog.md "Network".
   - **A static review** (out of context, `review/net-local`; 2026-11-02) found 14; fixed, each from a failing test:
     the guest's UDP to `0.0.0.0` and `::ffff:0.0.0.0` reaching the host's loopback without `--host-loopback`; another
@@ -239,7 +239,7 @@ The guest always has IPv6 on the link: the helper's /64 (`fd77:6562:7063::/64`, 
 the gateway and its resolver at `::1`. **The default route is the question.** If the router advertisement offered one
 while the host has no IPv6 out, the guest's IPv6 SYNs would go to the helper, whose forwarder can't dial and answers a
 reset: better than tailcat's exit node (which accepts and closes empty, so curl and browsers never fell back,
-network-adapters.md §4 "IPv6 out"), but each connection would still try IPv6 first and fail. So the helper does what
+networking/adapters.md §4 "IPv6 out"), but each connection would still try IPv6 first and fail. So the helper does what
 the page does for a tunnel's far end (web/reach6.ts), from the host's own sockets: a DNS query for the root's NS
 records over IPv6 to Cloudflare's, Google's and Quad9's resolvers at once, any answer counting, at the start and every
 minute; three lost in a row (3 s each) make IPv6 out, one answer brings it back, and until the first answer it is out.

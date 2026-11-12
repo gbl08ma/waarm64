@@ -23,7 +23,7 @@ export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: 
 /** A prefix: its address (4 or 16 bytes) and length. */
 export type Prefix = [number[], number];
 /**
- * The networks behind a gateway that isn't the guest's way to everything else (docs/network-adapters.md §4): the
+ * The networks behind a gateway that isn't the guest's way to everything else (docs/networking/adapters.md §4): the
  * lease's `routes`, per family. Without a family's the gateway is that family's default router; with them, it is the
  * router for these prefixes only (IPv4: option 121's routes and no option 3; IPv6: a router advertisement with
  * lifetime 0 and a Route Information option per prefix), so another adapter's gateway can be the default, or none
@@ -90,7 +90,7 @@ export const GATEWAY_IP = [169, 254, 0, 1];
 export const GATEWAY_IP6 = linkLocal(GATEWAY_MAC);
 
 /**
- * The gateway of a machine's adapter `n` (docs/network-adapters.md §4): its own MAC and IPv4 address, so the
+ * The gateway of a machine's adapter `n` (docs/networking/adapters.md §4): its own MAC and IPv4 address, so the
  * guest tells its adapters' routers apart (the IPv6 one is the MAC's link-local). Adapter 0's are `GATEWAY_MAC` and
  * `GATEWAY_IP`, as the one card's were.
  */

@@ -1,5 +1,5 @@
 #!/bin/sh
-# A tailcat exit node for the tailnet client's tests (docs/tailnet.md "tailcat"):
+# A tailcat exit node for the tailnet client's tests (docs/networking/tailnet.md "tailcat"):
 # derper on 127.0.0.1:8444 with a self-signed certificate for that address, and
 # `tailcat serve exit-node` on it, both native and unprivileged (Go builds them once, at the
 # versions pinned below, into target/net/tailcat-test/bin; derper has no official image).

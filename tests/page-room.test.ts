@@ -1,4 +1,4 @@
-// Peer-to-peer rooms on the page (docs/frontend.md "Network", docs/tailnet.md "Rooms", plan R2): two Debian guests in
+// Peer-to-peer rooms on the page (docs/frontend.md "Network", docs/networking/rooms.md): two Debian guests in
 // one Chromium, each its own profile (two browsers, as far as the page knows). One creates a private room in the
 // Network wizard, its relays under Advanced (the tests' Nostr relay, tests/net/nostr-relay.ts, and the tailcat rig's
 // derper, tests/net/tailcat.sh: only its derper is used); the wizard refuses a room without a name and a damaged link

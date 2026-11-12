@@ -135,7 +135,7 @@ export function movedAdapter(m: MachineRecord, id: string, by: number): MachineR
 }
 
 /**
- * Machine `id` with connection `connection` (undefined: none) attached to its adapter `index` (docs/network-adapters.md
+ * Machine `id` with connection `connection` (undefined: none) attached to its adapter `index` (docs/networking/adapters.md
  * §3.1): saved now, also while it runs (a connection isn't in the shape). A machine made before adapters gets its card as
  * an adapter (the same MAC: the shape stays).
  */

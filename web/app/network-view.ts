@@ -55,13 +55,13 @@ export type NetworkView = {
 };
 
 /**
- * Which of a machine's adapters is the guest's default way out (docs/network-adapters.md §4): the first connected
+ * Which of a machine's adapters is the guest's default way out (docs/networking/adapters.md §4): the first connected
  * local helper's; else the first, in order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
  * keeps its default route, as it always had); -1 when none is connected.
  */
 export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local'>[]): number {
   // A local helper's lease always carries a default route (its DHCP, not the page's): it goes first, so a tailnet or
-  // tailcat adapter beside it is the one given only its routes (docs/network-adapters.md §4).
+  // tailcat adapter beside it is the one given only its routes (docs/networking/adapters.md §4).
   const local = views.findIndex((v) => v.phase === 'connected' && v.local);
   if (local >= 0) return local;
   const net = views.findIndex((v) => v.phase === 'connected' && v.internet);

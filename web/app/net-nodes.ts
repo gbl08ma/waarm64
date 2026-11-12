@@ -1,4 +1,4 @@
-// The tailnet nodes kept in this browser (docs/network-adapters.md §3; web/tailscale-state.ts `keptProfiles`): which
+// The tailnet nodes kept in this browser (docs/networking/adapters.md §3; web/tailscale-state.ts `keptProfiles`): which
 // connections have one, and logging one out. A logout always goes through a client of its own: the module, not
 // connected, would only forget the keys here, and only `logOutNode` knows the control server has answered. For
 // web/app/net-live.ts; DOM-free.

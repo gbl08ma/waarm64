@@ -1,4 +1,4 @@
-// A minimal Nostr relay for the tests (docs/plans/networking-p2p.md §7, R1): NIP-01's EVENT, REQ and CLOSE, filters
+// A minimal Nostr relay for the tests (docs/networking/rooms.md "Tests"): NIP-01's EVENT, REQ and CLOSE, filters
 // by `kinds` and `#x` tags (what a room's lookups use; other filter fields are ignored), forwarding without storing
 // (so EOSE at once: ephemeral events are never stored anyway). Signatures aren't checked (the module's are, by its own
 // tests against BIP-340's vectors); the id is, as SHA-256 of NIP-01's serialization. No dependency: a small RFC 6455

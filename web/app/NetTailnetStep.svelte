@@ -1,5 +1,5 @@
 <!--
-  The Network wizard's tailnet step (NetWizard.svelte; docs/tailnet.md): the control server (Tailscale's unless
+  The Network wizard's tailnet step (NetWizard.svelte; docs/networking/tailnet.md): the control server (Tailscale's unless
   given), the machine's hostname, and an auth key when it connects now. Editing changes the hostname alone.
 -->
 <script lang="ts">

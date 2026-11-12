@@ -518,7 +518,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
   (`02:77:65:62:70:63`); a machine's adapter `n` (`NetSpec.gateway`) has its own, 169.254.0.<n+1> at
   `02:77:65:62:70:63` plus `n` (`gatewayOf`), and its echo backend leases 198.18.0.<15+n> (`echoLease`), so a guest
-  with several cards tells them apart (docs/network-adapters.md §4). A lease with `routes` (`Routes`, per family: the
+  with several cards tells them apart (docs/networking/adapters.md §4). A lease with `routes` (`Routes`, per family: the
   client's `setPrimary(false)`, `routedLease`; for IPv6 alone, `unreached6`, web/reach6.ts) makes the gateway that
   family's router for those prefixes only (IPv6's at `pref6`, the adapter's rank's preference, `ranked`): option 121 without a default and no option 3, a router advertisement with
   lifetime 0 and a Route Information option per IPv6 prefix (systemd-networkd installs them). When the advertisement

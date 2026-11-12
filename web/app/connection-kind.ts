@@ -1,4 +1,4 @@
-// A network connection's kind in words (docs/network-adapters.md §2), for its line on the Connections pane and an
+// A network connection's kind in words (docs/networking/adapters.md §2), for its line on the Connections pane and an
 // adapter's on a machine's Network tab.
 import { msg, type Msg } from '../msg.ts';
 import type { Connection } from './connections.ts';

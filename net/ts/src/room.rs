@@ -1,4 +1,4 @@
-//! A room's client (docs/plans/networking-p2p.md, docs/tailnet.md "Rooms"), sans I/O: VMs in
+//! A room's client (docs/networking/rooms.md), sans I/O: VMs in
 //! different browsers on one network, each a WireGuard node whose packets go browser to browser
 //! over a WebRTC data channel when one is open and through DERP otherwise.
 //!
@@ -55,10 +55,10 @@ const TUNNEL_MTU: usize = 1280;
 /// the guest's packets to or from it are dropped.
 pub const SIGNAL_PORT: u16 = 1;
 /// The names' suffix under the room's tag: `.internal`, which ICANN reserved for private use and
-/// never delegates (plan §5: systemd-resolved answers RFC 9476's `.alt` NXDOMAIN itself).
+/// never delegates (docs/networking/rooms.md "Findings": systemd-resolved answers RFC 9476's `.alt` NXDOMAIN itself).
 pub const SUFFIX: &str = "p2p.internal";
 /// The ephemeral event kind of every room's lookups (R3: clear of every kind the NIPs list;
-/// docs/plans/networking-p2p.md §2).
+/// docs/networking/rooms.md "The room and its names").
 pub const KIND: u32 = 26354;
 /// A WireGuard handshake initiation's type and size.
 const INITIATION: (u8, usize) = (1, 148);
@@ -96,7 +96,7 @@ const LOOKUP_EVENTS_PER_SECOND: usize = 128;
 const OPENED_FOR: Duration = Duration::from_secs(10);
 const MAX_OPENED: usize = 8192;
 /// A target drops lookups this much older (or newer) than its clock: the tags' window, as a
-/// dialer's clock may be off by most of an hour (plan §3); a copy within it is dropped by its
+/// dialer's clock may be off by most of an hour (rooms.md "Finding a peer"); a copy within it is dropped by its
 /// nonce, remembered for twice as long (at most [`MAX_NONCES`]).
 const LOOKUP_MAX_AGE: u64 = 3600;
 const MAX_NONCES: usize = 8192;
@@ -173,7 +173,8 @@ const MAX_KNOWN: usize = 4096;
 /// tailcat's ULA /48, which no room's may be (the guest may be on tailcat beside it).
 const TAILCAT_PREFIX: [u8; 6] = [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0];
 
-/// What a room's ID derives (plan §2): every member derives the same, nobody hands anything out.
+/// What a room's ID derives (rooms.md "The room and its names"): every member derives the same,
+/// nobody hands anything out.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Room {
     /// The room's /48: `fd` and 40 bits of a hash (RFC 4193's form).

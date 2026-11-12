@@ -1,5 +1,5 @@
 <!--
-  The toolbar's Network menus (docs/frontend.md "Network", docs/network-adapters.md §3.3). Where the toolbar has room
+  The toolbar's Network menus (docs/frontend.md "Network", docs/networking/adapters.md §3.3). Where the toolbar has room
   (`split`), each network adapter of the page's machine has its own button, its state's light and its number on it,
   and its menu holds that adapter alone; otherwise one button's menu has a section per adapter (NetAdapter.svelte).
   Each section shows the adapter's connection and what can be done with it; Change connection… opens the Network wizard

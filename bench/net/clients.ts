@@ -1,4 +1,4 @@
-// T6 (docs/tailnet.md "Numbers"): the page's Tailscale client in Chromium, no guest, against
+// T6 (docs/networking/tailnet.md "Numbers"): the page's Tailscale client in Chromium, no guest, against
 // the test tailnet (tests/net/tailnet.sh) and its local DERP. (T6 ran it against the Go client too,
 // alternating, before the Go client left the page: bench/net/REPORT.md.) A fresh browser context
 // each run, the page of tests/tailscale-browser.test.ts

@@ -1,4 +1,4 @@
-//! Mines a room connection's node key for an address (docs/tailnet.md "Rooms"): a member's address is the room's
+//! Mines a room connection's node key for an address (docs/networking/rooms.md): a member's address is the room's
 //! /48 and the first 80 bits of its WireGuard public key (`room::Room::addr`), so keys are tried until the address
 //! has the chosen hex digits at its start (`--prefix`) or its end (`--suffix`), or matches a regular expression
 //! (`--regex`, on the address written out whole: 8 groups of 4 digits; `--compressed`: as the page writes it, the

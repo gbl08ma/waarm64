@@ -1,4 +1,4 @@
-// The live side of the page's machine's network adapters (docs/network-adapters.md §3): a `Network` per adapter
+// The live side of the page's machine's network adapters (docs/networking/adapters.md §3): a `Network` per adapter
 // (web/app/network.ts), the connection each one has attached (a record of the browser's, web/app/connections.ts) and
 // its client (what it starts with: web/app/net-connect.ts), and the connections' locks (one running machine has a
 // connection at a time, in any tab: web/app/net-claims.ts) and kept nodes (web/app/net-nodes.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The

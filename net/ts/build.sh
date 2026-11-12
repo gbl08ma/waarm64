@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the tailnet client (docs/tailnet.md) to
+# Builds the tailnet client (docs/networking/tailnet.md) to
 # target/net/ts.wasm. wasm32-wasip1, not the core's target: std's clocks and
 # randomness go through a few WASI imports (web/ts-wasi.ts). Not shared memory,
 # no threads: the root .cargo/config.toml's flags are for wasm32-unknown-unknown.

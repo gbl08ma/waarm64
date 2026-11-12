@@ -31,7 +31,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
-| `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
+| `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/networking/adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts` (`usb-problems.ts`: the device worker's problems in words, with the host's remedies), `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
 | `web/app/network.ts` (`network-view.ts`: the view of a client's state and of an adapter, the default way out), `web/app/net-live.ts` (`net-claims.ts`: the connections' and room keys' locks; `net-connect.ts`: what a connection's client starts with; `net-nodes.ts`: the tailnet nodes kept here and their logout), `Network.svelte` (`NetAdapter.svelte` per adapter), `NetDetails.svelte` (an adapter's details), `NetLocalInstall.svelte`, `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
@@ -433,7 +433,7 @@ Duplicate, Export the definition, Delete; then tabs:
   listed with its overlays and the machines that have it, and attached again as it was. A file or URL added again (or opened, or
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
-- **[Network](ui:machines:MachinePane.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (random,
+- **[Network](ui:machines:MachinePane.tab.network):** the machine's network adapters (docs/networking/adapters.md): up to four, each with its MAC (random,
   `newMac`, since 2026-11-03: machines share LANs, such as a local helper's, whose network knows a guest by its MAC;
   machines made before have `52:54:00:12:34:56` first, as the one card was), added, removed and moved up or down
   with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:AdapterCard.adapter.attach)** or [Change connection…](ui:network:NetAdapter.change) (the Network wizard),
@@ -1445,7 +1445,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 
 A machine has up to four **network adapters** (machines with a `network` entry in machine.ts; a stored machine's
 are on its Network tab, above), and each adapter has a **connection** attached, or none (the cable out). A
-connection is the browser's, not the machine's (docs/network-adapters.md): a tailnet (a Tailscale network,
+connection is the browser's, not the machine's (docs/networking/adapters.md): a tailnet (a Tailscale network,
 docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker), tailcat (below), **this
 computer** (the local helper, below) or a **peer-to-peer room** (below), with its state (a tailnet's node, tailcat's served address, the helper's link, a room's link and key), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
@@ -1489,7 +1489,7 @@ page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: renam
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
-- [Your computer](ui:network:connections.thisComputer) (the local helper, webpc-net: [local-helper.md](local-helper.md)): a
+- [Your computer](ui:network:connections.thisComputer) (the local helper, webpc-net: [networking/local-helper.md](networking/local-helper.md)): a
   program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>` (and one for each `--origin`). Opening it
   takes the fragment out of the address at once (it holds the token) and opens the wizard on [Your computer](ui:network:connections.thisComputer), the
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
@@ -1527,7 +1527,7 @@ and the guest's default way out (below).
   admin console has the setting): reach peers' IPv6 addresses by address, or turn it on. The machine worker gets `nets`,
   each adapter's MAC and the gateway's end of its IP port, and adds a `{type: 'net', mac, gateway, adapter: {ip}}` per
   adapter (docs/devices.md "net"); the page keeps the other ends (web/app/network.ts) for as long as no client holds them.
-- **The default way out** (docs/network-adapters.md §4): the first adapter that is connected and reaches the
+- **The default way out** (docs/networking/adapters.md §4): the first adapter that is connected and reaches the
   internet (a tailnet with an exit node in use, tailcat through a server), else the first connected
   (`primaryOf`). Its lease has the default route; the others' have only their network's routes (DHCP option 121, a
   router advertisement with lifetime 0 and Route Information options). A machine with several adapters has its
@@ -1540,7 +1540,7 @@ and the guest's default way out (below).
   when the login completes. An admin-approval wait is shown as such. With an auth key (asked for only when the
   wizard connects the page's machine) there's no login; the key is never saved. A kept connection's node is kept
   either way; an ephemeral connection's node is an ephemeral node (the control server drops it once it's been away).
-- **The client** is our tailnet client (`net/ts`, `web/tailnet-worker.ts`; docs/tailnet.md),
+- **The client** is our tailnet client (`net/ts`, `web/tailnet-worker.ts`; docs/networking/tailnet.md),
   the page's since 2026-10-16 (until then Tailscale's Go client built to wasm). It keeps the node in
   the Go client's store format, so a node kept by the Go client is still the same node.
 - **The node is kept:** a kept connection's node (its keys, a secret) lives in this origin's IndexedDB
@@ -1553,8 +1553,8 @@ and the guest's default way out (below).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected. A machine that stops with no start to follow (powered off, suspended, crashed) stops its clients and lets
-  their connections go; they connect again at its next start ([network-adapters.md](network-adapters.md) §1).
-- **tailcat** (docs/tailnet.md "tailcat") has two choices, either or both:
+  their connections go; they connect again at its next start ([networking/adapters.md](networking/adapters.md) §1).
+- **tailcat** (docs/networking/tailnet.md "tailcat") has two choices, either or both:
   - [Go online through a computer](ui:network:NetTailcatStep.tailcat.exit) (the default): numbered steps that end at
     the **tailcat address** (a password field; a secret, kept only in a kept connection): install tailcat on a computer
     of the user's, run `tailcat serve exit-node` there, paste the address it prints; then a short note on what the
@@ -1588,10 +1588,12 @@ and the guest's default way out (below).
     forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
     connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says [Letting tailcat clients in](ui:network:network-view.servingOnly) (or adds it to the exit node's).
-- [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom) (docs/tailnet.md "Rooms", plans/networking-p2p.md): machines in
+- [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom) (docs/networking/rooms.md): machines in
   other browsers that join the same room reach each other by name, browser to browser over WebRTC when they can and
-  through the room's DERP relays otherwise. The step asks [Create a room](ui:network:NetRoomPickStep.room.create) or [Join a
-  room](ui:network:NetRoomPickStep.room.join). Create takes the [Room name](ui:network:NetRoomStep.room.name) and [Private
+  through the room's DERP relays otherwise. The step asks [Join the global public room](ui:network:NetRoomPickStep.room.global),
+  [Create a room](ui:network:NetRoomPickStep.room.create) or [Join a room](ui:network:NetRoomPickStep.room.join), in that
+  order. The global room skips the name: it is the public room `global` (web/room.ts `GLOBAL_ROOM`) on the defaults,
+  its step a note in place of a name or a link, then the switches below, both on. Create takes the [Room name](ui:network:NetRoomStep.room.name) and [Private
   room](ui:network:NetRoomStep.room.private) (on: the ID is the name, a hyphen and 128 random bits in base32, web/room.ts
   `privateRoomId`, the only form the page takes as private; off: the name is the ID, and anyone who knows it can join);
   its [Advanced](ui:network:NetTailcatStep.advanced) has the room's [Nostr relays](ui:network:NetRoomStep.room.nostr) (`ws://` or
@@ -1599,7 +1601,7 @@ and the guest's default way out (below).
   number in tailcat's public map, or one's own derper's `host[:port]`; empty: all of the map's regions), from which
   `roomLink` writes the link link.rs reads (`webpc-room:<id>?nostr=…&derp=…`, percent-encoded). Join takes a link (a
   password field: a private room's link is a secret) or a public room's name (a bare ID, the defaults); `parseRoomLink`
-  checks it as link.rs would. Both have [Allow direct connections between members](ui:network:NetRoomStep.room.direct)
+  checks it as link.rs would. All three have [Allow direct connections between members](ui:network:NetRoomStep.room.direct)
   (on by default; off is relay only, `relayOnly`: no WebRTC, everything through the room's DERP relays), its note
   saying who can learn one's IP address as the switch stands (with it: the members it connects to directly, the
   operators of the room's DERP and Nostr relays, and STUN servers; without: the relays' operators only, as no STUN
@@ -1609,18 +1611,18 @@ and the guest's default way out (below).
   (a hidden field for it; 64 hex digits, web/room.ts `parseRoomKey`; one another room connection has makes the new
   one share that connection's, as choosing it would; a stored one made with an ephemeral one's key keeps a copy in
   `webpc-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
-  same key in another room: docs/network-adapters.md §2.1). The connection's default name is the room's (a private
+  same key in another room: docs/networking/adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New
   name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working,
   [The connection's key](ui:network:NetRoomStep.room.exportKey) is a hidden field to copy (shown, selected, where
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
-  computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/tailnet.md
+  computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `webpc-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
-  then [Connected to the room](ui:network:network-view.room) with [1 active connection](ui:network:network-view.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). A browser that makes no direct connections (docs/tailnet.md "Rooms") adds a line saying so, with the flag to change ([This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.](ui:network:network-view.room.directBlocked)); a relay-only connection doesn't. The
+  then [Connected to the room](ui:network:network-view.room) with [1 active connection](ui:network:network-view.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). A browser that makes no direct connections (docs/networking/rooms.md) adds a line saying so, with the flag to change ([This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.](ui:network:network-view.room.directBlocked)); a relay-only connection doesn't. The
   menu then shows the machine's name in the room (`<key>.<tag>.p2p.internal`) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
   The guest's lease: its room address as a /128 (DHCPv6, the router advertisement), IPv4 `192.0.0.2` with no IPv4
@@ -1637,7 +1639,7 @@ and the guest's default way out (below).
   and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
   node**: MagicDNS (100.100.100.100, which the lease gives first) answers the tailnet's names and
   sends the rest as plain DNS through the exit node, to the tailnet's resolvers or 1.1.1.1
-  (docs/tailnet.md "Tailscale"; the Go client used the exit node's DoH service instead).
+  (docs/networking/tailnet.md "Tailscale"; the Go client used the exit node's DoH service instead).
 - **Subnet routes:** when peers route subnets (subnet routers, their routes approved by an admin) the menu shows
   **Reach the subnets peers route** with the first of them, on by default as in Tailscale's own apps (the Linux CLI's
   `--accept-routes` is off by default). The choice is the client's `setAcceptRoutes(on)`, kept with the connection

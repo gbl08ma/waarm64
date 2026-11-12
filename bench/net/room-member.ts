@@ -1,4 +1,4 @@
-// A room's member in Node, as R3's synthetic members (bench/net/room-scale.ts, docs/plans/networking-p2p.md §7): the
+// A room's member in Node, as R3's synthetic members (bench/net/room-scale.ts, docs/networking/rooms.md "Numbers"): the
 // Rust client (target/net/ts.wasm, room.rs) in a module instance of its own, as a page's worker has, relay only (Node
 // has no WebRTC), its guest played as tests/browser/room.html plays it: UDP to its port 7 is echoed back, and `ping`
 // sends to another member's port 7 until an echo comes back.

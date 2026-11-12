@@ -1,4 +1,4 @@
-// The locks of the page's machine's connections (docs/network-adapters.md §3, web/app/locks.ts): a connection's (one
+// The locks of the page's machine's connections (docs/networking/adapters.md §3, web/app/locks.ts): a connection's (one
 // running machine has it at a time, in any tab), a room connection's key's (`roomKeyLock`: one connection runs a key
 // at a time), and the connections whose nodes are being logged out (nobody connects them meanwhile). For
 // web/app/net-live.ts; DOM-free.

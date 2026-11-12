@@ -1,4 +1,4 @@
-// R0 (docs/plans/networking-p2p.md §7): a room's data path against the DERP path, in headless Chromium with no guest.
+// R0 (docs/networking/rooms.md "Numbers"): a room's data path against the DERP path, in headless Chromium with no guest.
 // Each round, in an order that alternates, three arms on fresh pages: `direct` (two members of a fresh room on the
 // tailcat rig's relay, tests/browser/room.html: the first echo through the relay, then the data channel), `relay`
 // (the same, the dialer relay only: everything through DERP) and `raw` (bench/net/rtc-raw.html: the same echoes over a

@@ -1,5 +1,5 @@
 <!--
-  How to install and run the local helper (webpc-net, docs/local-helper.md), folded under a line with its version:
+  How to install and run the local helper (webpc-net, docs/networking/local-helper.md), folded under a line with its version:
   the platform to install it on (this browser's first, else Linux x86-64), its note, and the lines to type. The Network
   wizard's local step (NetLocalStep.svelte) and a local connection's details (NetDetails.svelte). `open`: unfolded at
   first; `prefix` names its elements (tests' handles): `<prefix>-install` (the Disclosure), `-target`, `-lines`.

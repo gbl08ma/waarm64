@@ -1,5 +1,5 @@
 // The tailnet clients' builds. `prepareTailnetClient`: the page's client (net/ts → target/net/ts.wasm,
-// docs/tailnet.md: tailcat and Tailscale), which needs only cargo, as the core does;
+// docs/networking/tailnet.md: tailcat and Tailscale), which needs only cargo, as the core does;
 // `npm run serve` and `npm start` call it. `prepareTailscale`: Tailscale's Go client (net/tailscale →
 // target/net/tailscale.wasm and Go's wasm_exec.js, by net/tailscale/build.sh), no longer the page's,
 // kept as a test fixture: tests/ts-tailnet.test.ts hands a kept node between it and the Rust client

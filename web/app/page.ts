@@ -85,7 +85,7 @@ export type Page = {
   /** Attaches the game pad of ours fed by the host's pad `index` (`Gamepad.index`) on a free connector, or detaches it. */
   usbPad(index: number): Promise<void>;
   /**
-   * The network (docs/network-adapters.md §3). `machine`: a stored machine's id, or undefined for the page's
+   * The network (docs/networking/adapters.md §3). `machine`: a stored machine's id, or undefined for the page's
    * transient one; `adapter`: its index. The page's machine connects what is attached to it at once (one another tab's
    * machine has is taken after asking); another machine connects it when it starts.
    */

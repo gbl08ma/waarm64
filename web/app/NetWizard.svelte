@@ -1,5 +1,5 @@
 <!--
-  The Network wizard (docs/network-adapters.md §3.2), a dialog opened by web/app/areas/network.ts `openWizard`: attach a connection
+  The Network wizard (docs/networking/adapters.md §3.2), a dialog opened by web/app/areas/network.ts `openWizard`: attach a connection
   to a machine's adapter (one of the browser's, or a new one: New connection… first), make a new connection on its own,
   or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay, a room's switches).
   The shell: the session, the steps' navigation, Keep (a new connection is kept in this browser unless it's off:
@@ -56,6 +56,7 @@
     tailcat,
     local,
     roomPick,
+    roomGlobal: room,
     roomCreate: room,
     roomJoin: room,
     roomEdit: room,
@@ -111,7 +112,7 @@
   }
   function goBack() {
     if (step === 'kind') show('pick');
-    else if (step === 'roomCreate' || step === 'roomJoin') show('roomPick');
+    else if (step === 'roomGlobal' || step === 'roomCreate' || step === 'roomJoin') show('roomPick');
     else show('kind');
   }
   function close() {
@@ -138,6 +139,7 @@
     tailscale: () => t('network:NetWizard.title.tailnet'),
     local: () => t('network:NetWizard.title.local'),
     roomPick: () => t('network:NetWizard.title.room'),
+    roomGlobal: () => t('network:NetWizard.title.roomGlobal'),
     roomCreate: () => t('network:NetWizard.title.roomCreate'),
     roomJoin: () => t('network:NetWizard.title.roomJoin'),
     roomEdit: () => t('network:NetWizard.title.tailcat'),

@@ -143,7 +143,7 @@ node tools/screens.ts --label <name>   # screenshots of every page state without
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 (cd ../webpc-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
 WEBPC_NET_SRC=../webpc-net node --test tests/page-local.test.ts   # webpc's tests against that checkout instead of the commit tests/webpc-net.ts pins
-net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; tailnet.md)
+net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; networking/tailnet.md)
 node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
 node bench/net/clients.ts 5    # the Tailscale client in Chromium (the Podman tailnet): load, Running, RTT, throughput, the worker's memory and CPU
 WEBPC_DISTROS=debian WEBPC_START_COLD=1 node --test tests/start.test.ts  # npm start on a fresh copy, building its own core

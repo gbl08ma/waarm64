@@ -1,4 +1,4 @@
-// Whether an adapter's IPv6 reaches the internet (docs/network-adapters.md §4 "IPv6 out"). A backend whose far end
+// Whether an adapter's IPv6 reaches the internet (docs/networking/adapters.md §4 "IPv6 out"). A backend whose far end
 // may have no IPv6 route out (a tailcat exit node on a machine without one accepts the guest's IPv6 connections and
 // closes them empty, so a client that tries IPv6 first never falls back to IPv4) asks public resolvers over IPv6, from
 // the guest's own address, through the backend: at the start, every minute, and when the browser's network changes. While

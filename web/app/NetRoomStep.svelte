@@ -1,6 +1,7 @@
 <!--
-  The Network wizard's room step (NetWizard.svelte; docs/tailnet.md "Rooms"): create a room (a name, private or
-  public, its relays under Advanced: web/room.ts builds the link), join one (a link, or a public room's name), or edit
+  The Network wizard's room step (NetWizard.svelte; docs/networking/rooms.md): join the global public room (its name
+  given, the defaults), create a room (a name, private or public, its relays under Advanced: web/room.ts builds the
+  link), join one (a link, or a public room's name), or edit
   one (its switches, a new name, its key to copy). Direct connections and incoming ones are switches; a new room
   connection has a key of its own, another room connection's, or one pasted (copied from a connection, perhaps on
   another computer, or mined by net/ts/examples/room-key-mine.rs for an address).
@@ -18,7 +19,15 @@
   import { ROOM_STEPS, type Flow, type Step as StepName } from './net-wizard.ts';
   import type { PageNetwork } from './net-live.ts';
   import { tailcatBuilt } from './network.ts';
-  import { parseRoomKey, parseRoomLink, privateRoomId, readRoomIdentity, roomLink, type RoomLink } from '../room.ts';
+  import {
+    GLOBAL_ROOM,
+    parseRoomKey,
+    parseRoomLink,
+    privateRoomId,
+    readRoomIdentity,
+    roomLink,
+    type RoomLink,
+  } from '../room.ts';
   import { page } from './page.ts';
 
   type Props = { flow: Flow; net: PageNetwork; step: StepName };
@@ -95,7 +104,8 @@
     if (step === 'roomEdit' && editing?.room)
       return flow.edited({ ...editing, room: { ...editing.room, incoming, relayOnly } });
     let link: { link: string; room?: RoomLink } | { error: Msg };
-    if (step === 'roomCreate') {
+    if (step === 'roomGlobal') link = roomLink({ id: GLOBAL_ROOM, nostr: [], derp: [] });
+    else if (step === 'roomCreate') {
       const n = name.trim();
       if (!n) return flow.fail(msg('network:NetRoomStep.room.noName'));
       link = roomLink({ id: isPrivate ? privateRoomId(n) : n, nostr: lines(nostr), derp: lines(derp) });
@@ -153,6 +163,8 @@
       secret
     />
     <Note size="md">{t('network:NetRoomStep.room.link.note')}</Note>
+  {:else if step === 'roomGlobal'}
+    <Note size="md" id="net-room-global-note">{t('network:NetRoomStep.room.global.note')}</Note>
   {/if}
   <Check
     id="net-room-direct"

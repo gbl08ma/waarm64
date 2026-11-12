@@ -93,7 +93,7 @@ export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
  */
 export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSeconds?: number; renewSeconds?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
 /**
- * The DHCP timers of a machine with several adapters (docs/network-adapters.md §4): the guest renews every 10 s,
+ * The DHCP timers of a machine with several adapters (docs/networking/adapters.md §4): the guest renews every 10 s,
  * so the IPv4 default route follows the primary within that (IPv6's moves with the router advertisement), and the lease
  * itself lasts two minutes, so a gateway that stops answering for a while (its client reconnecting) costs no address.
  */

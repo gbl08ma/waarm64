@@ -1,4 +1,4 @@
-// The browser's network connections (docs/network-adapters.md §2): tailnets, tailcat, the local helper and peer-to-peer
+// The browser's network connections (docs/networking/adapters.md §2): tailnets, tailcat, the local helper and peer-to-peer
 // rooms, each with its own state, which a machine's adapters attach to. Stored ones are records in IndexedDB `webpc`
 // `connections` (web/app/store.ts); their state stays where the clients keep it: a tailnet's node in `webpc-tailscale`
 // under the profile `stateKey` (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under
@@ -67,7 +67,7 @@ export type Connection = {
   tailcat?: TailcatConnection;
   /** The local helper on this computer (github.com/gbl08ma/webpc-net, docs/plans/networking-local.md). */
   local?: LocalConnection;
-  /** A peer-to-peer room (docs/plans/networking-p2p.md, docs/tailnet.md "Rooms"). */
+  /** A peer-to-peer room (docs/networking/rooms.md). */
   room?: RoomConnection;
   /** Connect when a machine attached to it starts (off after Disconnect). */
   connectAtStart: boolean;
@@ -115,7 +115,7 @@ export const connectionLock = (id: string) => `webpc-net:${id}`;
 /**
  * The lock on room node key `key`, which a running room connection holds beside its own: two connections on one key,
  * each with its own DERP connection under it, break each other on a shared region (a derper delivers a key's packets
- * to one connection), so one key runs in one connection at a time (docs/plans/networking-p2p.md §1). Named by a hash
+ * to one connection), so one key runs in one connection at a time (docs/networking/rooms.md "Decisions"). Named by a hash
  * of the key (never the key itself), so connections of every kind that have it, in any tab, name one lock.
  */
 async function roomKeyLock(key: string): Promise<string> {
@@ -336,7 +336,7 @@ export class Connections {
   }
 }
 
-/** What the page kept before connections (docs/network-adapters.md §2.2). */
+/** What the page kept before connections (docs/networking/adapters.md §2.2). */
 export type Legacy = {
   /** `webpc.settings` `net`. */
   settings?: NetworkSettings;

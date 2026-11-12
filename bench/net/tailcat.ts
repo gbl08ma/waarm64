@@ -1,4 +1,4 @@
-// T1 (docs/tailnet.md): the tailnet client module in Node,
+// T1 (docs/networking/tailnet.md): the tailnet client module in Node,
 // against a tailcat exit node: connect, then UDP echoes from a "guest" through
 // the exit node to an echo server on the exit node's machine (IPv4, translated
 // to the tunnel's IPv6, and IPv6 to this machine's non-link-local IPv6 address: the exit node's

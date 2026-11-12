@@ -32,7 +32,7 @@ public: nobody has run them against the real release yet (the Linux line ran aga
 
 **L3 is done** (2026-11-02): `tests/page-local.test.ts` from a public origin (granted through CDP, connected; refused,
 the menu's words for it; a planted `loopbackRefused` that never says denied is caught), and how it works in its own
-page, docs/local-helper.md, with the loose ends in backlog.md "Network".
+page, docs/networking/local-helper.md, with the loose ends in backlog.md "Network".
 
 **The out-of-context review** (`review/net-local`, 2026-11-02): 14 findings, 13 fixed from failing tests (plan §4 "L3"),
 the helper's in v0.1.1; one in the backlog. **v0.1.2** prints a pairing link for each `--origin` again (the
@@ -58,7 +58,7 @@ machines (the user's idea, low priority).
 1. **L4, with the user:** the deploy (the wizard offers v0.1.0's install lines) and making `gbl08ma/webpc-net` public;
    then run the install lines against the real release on Linux, the Mac and, if one is at hand, Windows
    (backlog.md "The local helper's loose ends").
-2. At the track's end: the plan's outcome is local-helper.md already; delete this handover, mark the plan done.
+2. At the track's end: the plan's outcome is docs/networking/local-helper.md already; delete this handover, mark the plan done.
 
 ## Found (worth not re-discovering)
 

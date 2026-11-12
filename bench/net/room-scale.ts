@@ -1,4 +1,4 @@
-// R3 (docs/plans/networking-p2p.md §7): a room at scale, with nothing outside the test harness. N synthetic members
+// R3 (docs/networking/rooms.md "Numbers"): a room at scale, with nothing outside the test harness. N synthetic members
 // (bench/net/room-member.ts: the Rust client, a module instance each as a page's worker has, relay only) in P worker
 // processes join one room on the tests' Nostr relay (tests/net/nostr-relay.ts, its own process) and the tailcat rig's
 // derper (tests/net/tailcat.sh), then, in phases:

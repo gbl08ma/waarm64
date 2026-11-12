@@ -1,4 +1,4 @@
-// The network (docs/frontend.md "Network", docs/network-adapters.md): the machine's adapters, each with a connection
+// The network (docs/frontend.md "Network", docs/networking/adapters.md): the machine's adapters, each with a connection
 // of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Machines
 // page's Network tab and Connections act through these (web/app/page.ts's `net*`).
 import { msg, MsgError, t, text } from '../../i18n.ts';
@@ -52,7 +52,7 @@ export class NetworkActions {
 
   /**
    * The network as it was kept before connections (`webpc.settings` `net`, a kept node, the served tailcat identity)
-   * made into connections (docs/network-adapters.md §2.2), once: the transient machine's adapter and every stored
+   * made into connections (docs/networking/adapters.md §2.2), once: the transient machine's adapter and every stored
    * machine's first one get the one the settings were on.
    */
   async migrate() {
@@ -81,7 +81,7 @@ export class NetworkActions {
     else await run();
   }
 
-  /** Another tab changed the page's machine's record: its attachments take effect here (docs/network-adapters.md §3). */
+  /** Another tab changed the page's machine's record: its attachments take effect here (docs/networking/adapters.md §3). */
   async follow() {
     const s = this.#m.stored;
     const record = s && (await this.#m.store.get('machines', s.record.id));

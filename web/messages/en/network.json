@@ -77,7 +77,11 @@
   },
   "NetWizard.title.room": {
     "message": "New room connection",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that asks whether to create a peer-to-peer room or join one."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that asks whether to join the global public room, create a peer-to-peer room or join one."
+  },
+  "NetWizard.title.roomGlobal": {
+    "message": "Join the global public room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that joins the global public room (a room named “global” that anyone can join)."
   },
   "NetWizard.title.roomCreate": {
     "message": "Create a room",
@@ -151,9 +155,17 @@
     "message": "Machines in other browsers that join the same room reach each other by name, directly when they can. No account is needed. A room doesn't reach the internet.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “A peer-to-peer room”."
   },
+  "NetRoomPickStep.room.global": {
+    "message": "Join the global public room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's first choice: join the one room every user of this web app can join, named “global” (its button's name)."
+  },
+  "NetRoomPickStep.room.global.note": {
+    "message": "Meet machines in other browsers without making a room first. Anyone can join it.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step: the line under “Join the global public room”."
+  },
   "NetRoomPickStep.room.create": {
     "message": "Create a room",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's first choice: make a new room (its button's name)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's second choice: make a new room (its button's name)."
   },
   "NetRoomPickStep.room.create.note": {
     "message": "Choose a name for a new room, then give its link to the people whose machines should join it.",
@@ -161,7 +173,7 @@
   },
   "NetRoomPickStep.room.join": {
     "message": "Join a room",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's second choice: join a room someone else made (its button's name)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's third choice: join a room someone else made (its button's name)."
   },
   "NetRoomPickStep.room.join.note": {
     "message": "Paste the link someone gave you, or enter the name of a public room.",
@@ -190,6 +202,10 @@
   "NetRoomStep.room.link": {
     "message": "Paste the room's link, or enter the name of a public room:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the label of the field for the room to join (Join a room)."
+  },
+  "NetRoomStep.room.global.note": {
+    "message": "Anyone can join the global public room. Members can reach this connection only if you give them its name in the room.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step for the global public room (a room named “global” that anyone can join): the note at its top, in place of a name or a link."
   },
   "NetRoomStep.room.link.note": {
     "message": "Keep a private room's link to yourself, as it lets anyone join the room.",

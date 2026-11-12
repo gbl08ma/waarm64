@@ -1,4 +1,4 @@
-//! The control session (docs/tailnet.md "Tailscale"), sans I/O: the server's Noise key by
+//! The control session (docs/networking/tailnet.md "Tailscale"), sans I/O: the server's Noise key by
 //! `fetch` (`/key`), the Noise channel over a WebSocket to `/ts2021` (the initiation in the URL,
 //! as Tailscale's js/wasm client does: a browser can't set headers), HTTP/2 inside it, then
 //! registration and the map stream (`/machine/map`, streaming, uncompressed). Tailscale's

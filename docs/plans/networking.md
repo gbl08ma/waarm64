@@ -4,7 +4,7 @@
 Network menu on the page, a kept node, exit-node selection; a VM on the page reaches its tailnet and,
 through an exit node, the internet (checked by hand with a real login). IPv6 (N6) and the card for Alpine (N7, it needs nothing) are done. It feeds M8's "networking backend
 API" (PLAN.md, M8). What exists is described in [devices.md](../devices.md) "net",
-[tailnet.md](../tailnet.md) and [frontend.md](../frontend.md) "Network"; this file holds the decisions and what's left.
+[networking/tailnet.md](../networking/tailnet.md) and [frontend.md](../frontend.md) "Network"; this file holds the decisions and what's left.
 
 The question: how does a VM in the page reach other networks, the internet included, **without
 the guest knowing how**? Today the guest has virtio-net (`docs/devices.md` "net"):
@@ -28,11 +28,11 @@ test adapter, or anything on the page behind a `MessagePort`).
 - **The main cost to fight is the optional download** (§4.4). That's also what makes
   `tailscale-rs` interesting later (§5). *Proposed 2026-10-16:* our own client, a Rust wasm module
   built from tailscale-rs's sans-I/O crates, speaking tailcat first and then Tailscale, to replace
-  the Go client. *Done 2026-10-16:* the Rust client ([tailnet.md](../tailnet.md)) is
+  the Go client. *Done 2026-10-16:* the Rust client ([networking/tailnet.md](../networking/tailnet.md)) is
   the page's Tailscale client, and the Go one left the page (2026-10-17; `net/tailscale` stays as a
   test fixture).
 - WebRTC peer-to-peer networks (M8's original idea) stay an experimental backend behind the same
-  interface (§6; *proposed 2026-10-18:* rooms, [networking-p2p.md](networking-p2p.md)).
+  interface (§6; *proposed 2026-10-18:* rooms, [networking/rooms.md](../networking/rooms.md)).
 
 ## 2. What exists elsewhere (findings, 2026-09-27)
 
@@ -65,14 +65,14 @@ test adapter, or anything on the page behind a `MessagePort`).
   browser has anyway. Pre-1.0 with no compatibility promises; no wasm support or plans stated.
   *Since (v0.6.0, 2026-09-17):* its WireGuard crypto (`ts_tunnel`) had a third-party audit and the
   `TS_RS_EXPERIMENT` opt-in is gone; which of its crates we use, and why not the rest, is in
-  [tailnet.md](../tailnet.md) "The module".
+  [networking/tailnet.md](../networking/tailnet.md) "The module".
 - **Rolling our own client** would mean the control protocol (Noise IK to the coordination server,
   map polls, capability versions, packet filters), WireGuard, DERP and disco: what `tailscale-rs`
   needs ~30 crates for, tracking a protocol that isn't a stable public API. Rejected (2026-09-27);
-  reopened 2026-10-16 on top of tailscale-rs's protocol crates ([tailnet.md](../tailnet.md)).
+  reopened 2026-10-16 on top of tailscale-rs's protocol crates ([networking/tailnet.md](../networking/tailnet.md)).
 - **[tailcat](https://github.com/tailscale/tailcat)** (BSD-3, found 2026-10-16): Tailscale's data
   plane without its control plane; `tailcat serve exit-node` on any machine prints an address a
-  client connects to, no account. The basis of [tailnet.md](../tailnet.md) "tailcat".
+  client connects to, no account. The basis of [networking/tailnet.md](../networking/tailnet.md) "tailcat".
 - **Direct Sockets API** (Chromium): raw TCP/UDP, but only for Isolated Web Apps. Not a page
   feature; noted, not planned.
 - **[Rings](https://github.com/RingsNetwork/rings)** (checked 2026-10-18 at v0.33.0, `cf6c0ed`, as
@@ -97,7 +97,7 @@ test adapter, or anything on the page behind a `MessagePort`).
     datagrams top out at **~1,060 packets/s (10 Mbit/s) each way**, the rest dropped; echo RTT 3.7 ms.
     A guest's packets are one message each (batching them reintroduces head-of-line blocking on its
     ordered, reliable channels); our tailnet client does 138 Mbit/s through DERP
-    ([tailnet.md](../tailnet.md) "Numbers"). A browser node would be slower still (one thread,
+    ([networking/tailnet.md](../networking/tailnet.md) "Numbers"). A browser node would be slower still (one thread,
     IndexedDB per message; not measured).
   - **No IP layer to reuse**: `crates/gateway` is native-only (it refuses to build for wasm) and
     terminates IPv4/TCP flows in smoltcp toward onion exits; nothing assigns addresses. Payloads are
@@ -210,7 +210,7 @@ loaded only on "connect", but it's still the biggest cost. Levers, each to be me
 
 ## 5. Later: tailscale-rs
 
-*Superseded 2026-10-16 by [tailnet.md](../tailnet.md)* (the user: the Go module is too
+*Superseded 2026-10-16 by [networking/tailnet.md](../networking/tailnet.md)* (the user: the Go module is too
 heavy; the audit is no longer a condition). What follows is the original reasoning.
 
 `tailscale-rs` may be the answer to §4.4, and it fits the project: Rust like our core, smoltcp
@@ -230,7 +230,7 @@ backends can coexist and be compared.
 
 ## 6. WebRTC peer-to-peer networks (experimental)
 
-*Superseded 2026-10-18 by [networking-p2p.md](networking-p2p.md)* (rooms: layer 3 with addresses
+*Superseded 2026-10-18 by [networking/rooms.md](../networking/rooms.md)* (rooms: layer 3 with addresses
 from keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory; since 2026-11-10 live lookups over Nostr ephemeral events instead). The
 original sketch: M8's original idea: VMs in different browsers on one virtual LAN over WebRTC data channels
 (unordered, unreliable channels match Ethernet's semantics). It's layer 2, so it sits directly on
@@ -302,7 +302,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
   login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
   `ci.sh` (the user, 2026-09-30: only when a change touches the network).
-- Later: our own client with tailcat and Tailscale ([tailnet.md](../tailnet.md), done: it replaced §5's Go client as the default) and §6 (WebRTC), and further backends, each behind the same interfaces.
+- Later: our own client with tailcat and Tailscale ([networking/tailnet.md](../networking/tailnet.md), done: it replaced §5's Go client as the default) and §6 (WebRTC), and further backends, each behind the same interfaces.
 
 ## 8. Open questions
 

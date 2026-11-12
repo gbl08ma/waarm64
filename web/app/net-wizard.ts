@@ -3,7 +3,7 @@
 import type { Connection } from './connections.ts';
 
 /**
- * How the wizard was opened (web/app/areas/network.ts `openWizard`; docs/network-adapters.md §3.2): `attach` a
+ * How the wizard was opened (web/app/areas/network.ts `openWizard`; docs/networking/adapters.md §3.2): `attach` a
  * connection to `machine`'s adapter `adapter` (machine undefined: the page's transient one), a `new` connection on its
  * own, or `edit` connection `connection`. `here`: the machine is the page's (it connects now, so an auth key is asked for).
  */
@@ -18,13 +18,29 @@ export type Opened = {
 };
 
 export type Step =
-  'pick' | 'kind' | 'tailscale' | 'tailcat' | 'local' | 'roomPick' | 'roomCreate' | 'roomJoin' | 'roomEdit';
+  | 'pick'
+  | 'kind'
+  | 'tailscale'
+  | 'tailcat'
+  | 'local'
+  | 'roomPick'
+  | 'roomGlobal'
+  | 'roomCreate'
+  | 'roomJoin'
+  | 'roomEdit';
 
-/** The steps NetRoomStep.svelte shows (one form, three ways). */
-export const ROOM_STEPS: ReadonlySet<Step> = new Set(['roomCreate', 'roomJoin', 'roomEdit']);
+/** The steps NetRoomStep.svelte shows (one form, four ways). */
+export const ROOM_STEPS: ReadonlySet<Step> = new Set(['roomGlobal', 'roomCreate', 'roomJoin', 'roomEdit']);
 
 /** The steps that make a connection: Keep shows under them. */
-export const MAKING_STEPS: ReadonlySet<Step> = new Set(['tailscale', 'tailcat', 'local', 'roomCreate', 'roomJoin']);
+export const MAKING_STEPS: ReadonlySet<Step> = new Set([
+  'tailscale',
+  'tailcat',
+  'local',
+  'roomGlobal',
+  'roomCreate',
+  'roomJoin',
+]);
 
 /** The step a connection is edited on. */
 export const EDIT_STEP: Record<Connection['kind'], Step> = {

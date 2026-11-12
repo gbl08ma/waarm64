@@ -5,7 +5,7 @@
 // command line and takes the gateway's lease, and the guest pings an address that
 // exists nowhere and its router. It also checks that the units the card needs don't make the
 // boot wait for a network that isn't coming (a login prompt inside the boot's usual time), and that three cards each
-// get their own lease and router (docs/network-adapters.md §4).
+// get their own lease and router (docs/networking/adapters.md §4).
 // Realtime, one Debian boot, ~2 min alone. Opt-in with WEBPC_DISTROS=debian, like Debian's
 // other Chromium tests.
 import assert from 'node:assert/strict';
@@ -91,7 +91,7 @@ test('the page\'s Debian with a card takes the gateway\'s lease by itself and pi
   });
 });
 
-// Several adapters (docs/network-adapters.md §4, L1): each card has its own gateway (MAC and address) and its own
+// Several adapters (docs/networking/adapters.md §4, L1): each card has its own gateway (MAC and address) and its own
 // echo lease, and the guest reaches each gateway through its own interface.
 test('three adapters, each on its own gateway and lease', { skip, timeout: 600_000 }, async () => {
   await withDebianLock(async () => {
@@ -129,7 +129,7 @@ test('three adapters, each on its own gateway and lease', { skip, timeout: 600_0
   });
 });
 
-// Routes over several adapters (docs/network-adapters.md §4, L2): the primary's gateway is the default router; the
+// Routes over several adapters (docs/networking/adapters.md §4, L2): the primary's gateway is the default router; the
 // other's gives only its network's routes (option 121 without a default, a router advertisement with lifetime 0 and a
 // Route Information option). Made the other the primary, IPv6 moves at once and IPv4 at the next renewal (every 10 s:
 // `SEVERAL_ADAPTERS`; the times are printed, and IPv4's bounded at 45 s, for a loaded machine).

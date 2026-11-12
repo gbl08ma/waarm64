@@ -1,4 +1,4 @@
-// The local network helper's client (docs/plans/networking-local.md, the connection kind `local`: docs/network-adapters.md).
+// The local network helper's client (docs/plans/networking-local.md, the connection kind `local`: docs/networking/adapters.md).
 // The helper (github.com/gbl08ma/webpc-net) runs on the user's computer and serves the guest DHCP, DNS and a gateway onto its own
 // sockets, so this only moves Ethernet frames: between a card's frame port (web/net.ts `portAdapter`: one frame per
 // message, the page's gateway bypassed: web/gateway.ts `FramePath`) and a WebSocket on loopback. On the socket each

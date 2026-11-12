@@ -3,10 +3,10 @@
 A machine has up to four network adapters, and each is attached to one of the browser's **connections** (a tailnet,
 tailcat, the local helper or a peer-to-peer room), or to none. This page is the model and the guest side: what a connection is and where its state lives, the
 locks between tabs, the guest's routes over several adapters and the numbers measured. The page's menus and wizard
-are in [frontend.md](frontend.md) "Network" and "The Machines page", the gateway's DHCP and router advertisements in
-[devices.md](devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
-[backlog.md](backlog.md) "Several adapters' loose ends". (Built 2026-10-18/19, from a plan whose section numbers the
-code's comments still cite; machines had first left several adapters for later: [machines.md](machines.md).)
+are in [frontend.md](../frontend.md) "Network" and "The Machines page", the gateway's DHCP and router advertisements in
+[devices.md](../devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
+[backlog.md](../backlog.md) "Several adapters' loose ends". (Built 2026-10-18/19, from a plan whose section numbers the
+code's comments still cite; machines had first left several adapters for later: [machines.md](../machines.md).)
 
 ## 1. The rules (the user's, 2026-10-18)
 
@@ -15,7 +15,7 @@ code's comments still cite; machines had first left several adapters for later: 
    (as a disk does).
 2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet, tailcat, the
    local helper on this computer (`local`: [local-helper.md](local-helper.md)) or a peer-to-peer room (`room`:
-   [tailnet.md](tailnet.md) "Rooms"). A connection carries its own state (a tailnet's node, tailcat's identity and
+   [rooms.md](rooms.md)). A connection carries its own state (a tailnet's node, tailcat's identity and
    address, a room's node key), so it keeps working as the user moves from one machine to the next. There is no "default" connection.
 3. **An adapter with no connection is allowed:** a card with no cable.
 4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3). A machine that
@@ -86,7 +86,7 @@ settings. Idempotent.
 ### 2.3 Locks between tabs
 
 A Web Lock `webpc-net:<id>` is held while a running machine has the connection's client (web/app/locks.ts, as USB's
-devices: [usb.md](usb.md) "Device locks"), over the store's `BroadcastChannel`: `net-who` asks which machine holds it,
+devices: [usb.md](../usb.md) "Device locks"), over the store's `BroadcastChannel`: `net-who` asks which machine holds it,
 `net-held` answers, and `net-release` asks the holder to let go. The page offers [Use it here](ui:network:network-actions.useHere), and the other tab
 disconnects and says it was taken.
 
@@ -95,7 +95,7 @@ disconnects and says it was taken.
 The Machines page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
 **[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
 browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
-does: [frontend.md](frontend.md) "The Machines page" and "Network". The live side is web/app/net-live.ts
+does: [frontend.md](../frontend.md) "The Machines page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error; a
 restart hands the new machine's port to the running client, matched by the adapter's id (so a client follows its
 adapter when they move), and Disconnect takes the port back. A connection attached to or detached from a machine
@@ -135,7 +135,7 @@ running in another tab takes effect there at once: that tab hears the record cha
   this works on any guest without configuration: Debian's `network.network.card` credential matches `e*`.
 - **A connection that changes under a running guest** (another on the adapter, or the local helper's path in or out):
   the guest's IPv4 lease would stay until its renewal (half an hour on one adapter), so the card's link flaps
-  ([devices.md](devices.md) "net") and the guest asks for a lease at once; a reconnect to the same address doesn't
+  ([devices.md](../devices.md) "net") and the guest asks for a lease at once; a reconnect to the same address doesn't
   flap. **Measured** in `tests/net-local.test.ts` (Debian 13's networkd, the page's gateway's lease to the helper's).
 - **The takeover:** when the primary loses the internet, the next one becomes primary. Its router advertisement goes
   out at once, and IPv4's default moves at the guest's next DHCP renewal, so a machine with several adapters has its
@@ -175,7 +175,7 @@ running in another tab takes effect there at once: that tab hears the record cha
 
 ## 6. Tests
 
-[testing.md](testing.md) "Network adapters and connections" lists them. On Debian (`scripts/ci-net.sh`):
+[testing.md](../testing.md) "Network adapters and connections" lists them. On Debian (`scripts/ci-net.sh`):
 `tests/net-guest.test.ts` (three cards on the echo backend, each with its own lease, router and gateway MAC; two
 whose default route goes through the primary only and moves when the primary does, IPv4's bounded at 45 s) and
 `tests/net-tailnet.test.ts`'s two adapters (`tests/browser/adapters.html`: two `Network`s and `primaryOf` as the page

@@ -1,4 +1,4 @@
-// The IPv6 reach prober (web/reach6.ts, docs/network-adapters.md §4 "IPv6 out"): its probes, the answers it takes from
+// The IPv6 reach prober (web/reach6.ts, docs/networking/adapters.md §4 "IPv6 out"): its probes, the answers it takes from
 // the guest's packets, when it counts IPv6 as out and back, and the lease it makes then. On mocked timers.
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';

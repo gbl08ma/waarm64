@@ -1,4 +1,4 @@
-// The tailcat backend's worker (web/tailcat.ts, docs/tailnet.md
+// The tailcat backend's worker (web/tailcat.ts, docs/networking/tailnet.md
 // §4): the Rust tailnet client (net/ts) connected to a tailcat server, its
 // packets on the gateway's IP port. It speaks the Go client's worker protocol
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`) as far as tailcat has the
@@ -21,7 +21,7 @@ const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessa
 let ip: MessagePort | undefined;
 let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
-/** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
+/** This adapter is the guest's default way out (docs/networking/adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
 /** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
 let rank = 0;
@@ -32,7 +32,7 @@ let exit = true;
 let selfKey: string | undefined;
 /** Through a server: whether its machine's IPv6 reaches the internet. */
 let reach: Reach6 | undefined;
-/** The clients let in: each a route of its own, so the guest answers them here beside a tailnet's /48 (docs/network-adapters.md §4). */
+/** The clients let in: each a route of its own, so the guest answers them here beside a tailnet's /48 (docs/networking/adapters.md §4). */
 let clients: Prefix[] = [];
 const offered = () => {
   const l = routedLease(lease, primary, TAILCAT_ROUTES);

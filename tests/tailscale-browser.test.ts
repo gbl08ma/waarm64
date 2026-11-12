@@ -1,5 +1,5 @@
 // The Tailscale backend (web/tailscale.ts) in headless Chromium with no guest
-// (docs/tailnet.md "Tailscale"): the tailnet client (net/ts) in its worker against the test
+// (docs/networking/tailnet.md "Tailscale"): the tailnet client (net/ts) in its worker against the test
 // tailnet (tests/net/tailnet.sh): it reaches `Running`, leases the gateway an address and carries UDP
 // to the peer and back (its numbers); a kept node comes back after reloads as the same node (the
 // store in IndexedDB); logging out forgets it, also with no machine running it. The guest's side is tests/net-tailnet.test.ts's; the

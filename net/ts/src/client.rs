@@ -1,4 +1,4 @@
-//! The tailcat client (docs/tailnet.md "tailcat"), sans I/O: the host
+//! The tailcat client (docs/networking/tailnet.md "tailcat"), sans I/O: the host
 //! feeds it WebSocket messages, `fetch` results, guest packets and the time,
 //! and carries out the actions it queues. It connects to a tailcat server (an
 //! exit node), lets tailcat clients in to the guest (the VM as a server, T3),
@@ -105,7 +105,7 @@ pub struct Config {
     pub dns6: Vec<[u8; 16]>,
 }
 
-/// The VM as a tailcat server (docs/tailnet.md "tailcat").
+/// The VM as a tailcat server (docs/networking/tailnet.md "tailcat").
 pub struct Serve {
     /// The address's pre-shared key: a client needs it (tailcat's default).
     pub psk: [u8; 32],

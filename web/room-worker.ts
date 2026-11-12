@@ -1,4 +1,4 @@
-// A room's worker (web/room.ts, docs/tailnet.md "Rooms"): the Rust client (net/ts, room.rs) of one room's
+// A room's worker (web/room.ts, docs/networking/rooms.md): the Rust client (net/ts, room.rs) of one room's
 // member, its packets on the gateway's IP port. The page holds the WebRTC connections (Chromium has no
 // RTCPeerConnection in workers) and transfers each one's data channel here as it makes it, so the peers'
 // packets never touch the page's thread; descriptions and candidates pass through.
@@ -16,7 +16,7 @@ let lease: (Lease & { prefix6?: Prefix }) | null = null;
 let primary = true;
 let rank = 0;
 let client: TsClient | undefined;
-/** On another adapter, the room offers its /48 only (docs/network-adapters.md §4). */
+/** On another adapter, the room offers its /48 only (docs/networking/adapters.md §4). */
 const offered = () => ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }), rank);
 
 function attach(port: MessagePort) {
@@ -60,7 +60,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     const mod = await TsModule.load(m.wasm);
     post({ type: 'loaded', ms: performance.now() - t0 });
     if (!ip) return; // detached meanwhile
-    // The kept identity (docs/network-adapters.md §2.1): the same address and name each time it joins.
+    // The kept identity (docs/networking/adapters.md §2.1): the same address and name each time it joins.
     const id = m.identity ?? (m.identityKey !== undefined ? await roomIdentity(m.identityKey) : undefined);
     const config = id ? { ...m.config, key: id.key } : m.config;
     if (!ip) return; // detached meanwhile

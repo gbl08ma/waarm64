@@ -1,4 +1,4 @@
-// The browser's network connections on the page (docs/network-adapters.md §3), in Chromium, on two stored machines
+// The browser's network connections on the page (docs/networking/adapters.md §3), in Chromium, on two stored machines
 // whose only disk is blank: the firmware runs and finds nothing to boot, which is all an adapter needs to be live (its
 // client gets the machine's port at the start). The control server, 127.0.0.1:1, never answers, so no client gets
 // further than trying, and its connection is held all the same. A new machine connects in one wizard (no connections
@@ -276,5 +276,40 @@ test('power off lets a connection go; a running machine follows what another tab
   assert.equal(((await records(pageA, 'machines')).find((m) => m.id === a)!.adapters as { connection?: string }[])[0].connection, t.id, 'kept in the record');
   await pageA.click(`${row} [data-action="detach-connection"]`);
   await rowShows(false);
+  assert.deepEqual(errors, []);
+});
+
+test('a room connection to the global public room: the room\'s first choice, straight to its switches, both on', { skip, timeout: 2 * 60_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  contexts.push(context);
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`${e}`));
+  await answerAsks(page, () => {});
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await page.click('[data-machine="connections"]');
+  await page.click('[data-action="new-connection"]');
+  await page.click('#net-pick-room');
+  const choices = await page.locator('#net-step-room-pick button').evaluateAll((bs) => bs.map((b) => b.id));
+  assert.deepEqual(choices, ['net-room-global', 'net-room-create', 'net-room-join'], 'the global room first');
+  await page.waitForFunction(() => document.activeElement?.id === 'net-room-global', null, { timeout: 5_000 });
+  await page.click('#net-room-global');
+  assert.equal(await text(page, '#net-wizard-title'), t('network:NetWizard.title.roomGlobal'));
+  assert.equal(await page.locator('#net-room-id').count(), 0, 'no name to give');
+  assert.equal(await page.locator('#net-room-link').count(), 0, 'no link to paste');
+  assert.match(await text(page, '#net-room-global-note'), words('network:NetRoomStep.room.global.note'));
+  assert.equal(await page.isChecked('#net-room-direct'), true, 'direct connections on');
+  assert.equal(await page.isChecked('#net-room-incoming'), true, 'incoming connections on');
+  await page.click('#net-back');
+  assert.equal(await page.locator('#net-step-room-pick').isVisible(), true, 'Back goes to the room\'s choice');
+  await page.click('#net-room-global');
+  await page.click('#net-connect');
+  await page.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 10_000 });
+  const [c] = await records(page, 'connections');
+  assert.equal(c?.kind, 'room');
+  assert.equal(c.name, 'global');
+  const room = c.room as { link: string; incoming: boolean; relayOnly: boolean };
+  assert.deepEqual([room.link, room.incoming, room.relayOnly], ['webpc-room:global', true, false]);
   assert.deepEqual(errors, []);
 });

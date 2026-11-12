@@ -1,6 +1,6 @@
 # The local network helper
 
-The third kind of connection, beside a tailnet and tailcat ([network-adapters.md](network-adapters.md) §1): **webpc-net**,
+The third kind of connection, beside a tailnet and tailcat ([adapters.md](adapters.md) §1): **webpc-net**,
 a program the user runs on their own computer. The page reaches it over a WebSocket on loopback, and the guest's
 traffic goes out through that computer's sockets, at loopback's latency and the user's own uplink. tailcat and
 Tailscale always go through DERP, because a page has no UDP.
@@ -8,7 +8,7 @@ Tailscale always go through DERP, because a page has no UDP.
 The helper is its own repository, [`github.com/gbl08ma/webpc-net`](https://github.com/gbl08ma/webpc-net) (private
 until the user makes it public). Its README covers the flags, the network it serves, the protocol and the trust
 argument, its THIRD_PARTY.md what it links, and its CLAUDE.md its rules. This page covers webpc's side. The decisions
-and their history are in [plans/networking-local.md](plans/networking-local.md).
+and their history are in [plans/networking-local.md](../plans/networking-local.md).
 
 ## The helper, briefly
 
@@ -32,7 +32,7 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
   address. What's kept comes from the pool, for MACs seen on a link, never from frames a guest could make up.
 - **IPv6 out only while the host has it.** The helper asks three public resolvers over IPv6 every minute. While none
   answers, its router advertisements carry no default route, so the guest's IPv6 to the internet fails at once and
-  programs fall back to IPv4 without waiting, as the page does for a tunnel's far end ([network-adapters.md](network-adapters.md)
+  programs fall back to IPv4 without waiting, as the page does for a tunnel's far end ([adapters.md](adapters.md)
   §4 "IPv6 out"). The helper also solicits advertisements on each guest's behalf, and sets the Router flag on its
   gateway's neighbor advertisements. Upstream does neither, so without them the guest's default route would lapse.
 - **The MTU is 1500** (`--mtu` takes 1280 to 65520). 65520 is about 1.7× faster down and 1.6× up here
@@ -41,11 +41,11 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
 ## The page's side
 
 - **The kind `local`** (web/app/connections.ts). Its record holds the link, `local.url`, which carries the token: a
-  secret, as tailcat's `exit` is ([network-adapters.md](network-adapters.md) §2.1).
+  secret, as tailcat's `exit` is ([adapters.md](adapters.md) §2.1).
 - **The pairing link** (web/app/areas/page-window.ts `takePairing`): `#net=ws://…` is taken out of the address at once and opens the Network
   wizard on [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) with the link filled in. Pasting the
   link, or just its `ws://` part, does the same (web/local-net.ts `parseLocalURL`). The wizard's steps are in
-  [frontend.md](frontend.md) "Network".
+  [frontend.md](../frontend.md) "Network".
 - **The install lines** (web/local-release.ts): the release the page offers (`RELEASE`: its version and SHA256SUMS),
   and for each of the six targets the same lines as the release's `INSTALL.md`: download, check the SHA-256, make it
   executable, run it. The browser's platform is picked from its client hints, with a choice of the others.
@@ -55,8 +55,8 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
   helper closes the socket.
 - **No gateway in the page.** The card goes onto a frame port (web/gateway.ts `FramePath`), and the helper's DHCP,
   DNS and gateway serve the guest. Switching between the page's gateway and the helper flaps the card's link, so the
-  guest asks for a new lease at once; a reconnect to the same helper doesn't flap it ([devices.md](devices.md) "net",
-  [network-adapters.md](network-adapters.md) §4).
+  guest asks for a new lease at once; a reconnect to the same helper doesn't flap it ([devices.md](../devices.md) "net",
+  [adapters.md](adapters.md) §4).
 - **The primary:** a connected `local` adapter ranks first among the adapters that reach the internet (`primaryOf`).
   Its lease always carries a default route, so a tailcat or tailnet adapter beside it gets the routes-only lease.
 - **Errors**, each a sentence in the Network menu with Retry (web/local-net.ts): the helper not reached
@@ -97,7 +97,7 @@ move the pin to the tag's commit.
 
 ## Tests
 
-[testing.md](testing.md)'s row for the local network helper lists them all. In short:
+[testing.md](../testing.md)'s row for the local network helper lists them all. In short:
 - `tests/local-net.test.ts` and `tests/local-release.test.ts` (`npm test`): the framing, the batches under the limit,
   the pairing link, the lease read from the helper's DHCP, and the install lines.
 - `tests/page-local.test.ts` (`npm test`, ~30 s): the page with the real helper, from the pairing link through the

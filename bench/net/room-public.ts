@@ -1,4 +1,4 @@
-// R4 (docs/plans/networking-p2p.md §7): rooms on public servers, from this machine, with Node members
+// R4 (docs/networking/rooms.md "Numbers"): rooms on public servers, from this machine, with Node members
 // (bench/net/room-member.ts: the Rust client, relay only). Two parts:
 // - `nostr`: each public Nostr relay against §7's "What a room needs from a Nostr relay", a fresh private room on it
 //   alone with its DERP the public tailcat region `--derp`: whether a lookup gets through at all (the kind forwarded

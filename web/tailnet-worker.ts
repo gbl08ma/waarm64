@@ -1,4 +1,4 @@
-// The Tailscale backend's worker (docs/tailnet.md "Tailscale"): the tailnet client (net/ts,
+// The Tailscale backend's worker (docs/networking/tailnet.md "Tailscale"): the tailnet client (net/ts,
 // target/net/ts.wasm) logged in to a control server, its packets on the gateway's IP port
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`). With `persist`, the node is kept in the Go
 // client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node. While an exit
@@ -21,7 +21,7 @@ let lease: Lease | null = null;
 let subnets = subnetsOf(undefined);
 /** The lease last posted (JSON): a netmap that changes nothing of it (a peer coming online) posts none, so no router advertisement either. */
 let posted = '';
-/** This adapter is the guest's default way out (docs/network-adapters.md §4): otherwise its lease carries only the network's routes. */
+/** This adapter is the guest's default way out (docs/networking/adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
 /** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
 let rank = 0;

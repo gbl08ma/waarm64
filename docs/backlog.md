@@ -1458,17 +1458,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   throughput), and whether being synchronous matters there (a sync inflate in virtio-blk's request path would drop the
   async step and maybe the pool; elsewhere it may not). Nothing implemented.
 
-## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [tailnet.md](tailnet.md), [frontend.md](frontend.md) "Network")
+## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [networking/tailnet.md](networking/tailnet.md), [frontend.md](frontend.md) "Network")
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
-- **A room without direct paths, the rest** ([tailnet.md](tailnet.md) "Rooms": the cause of the user's tries of
+- **A room without direct paths, the rest** ([networking/rooms.md](networking/rooms.md): the cause of the user's tries of
   2026-11-11 was ungoogled-chromium using no UDP for WebRTC, which the status line now says): a blocked browser still
   makes a connection for each offer, and its peers keep offering, every 30 s doubling to 5 min (it could go relay only
   and say so in its `hello`, so the others stop too); the menu could say how many active connections are direct (the
   peers' `path` is there), for the cases gathering does work but ICE doesn't (a router that doesn't hairpin, mDNS
   dropped between two machines of one LAN).
-- **Rooms' loose ends** ([tailnet.md](tailnet.md) "Rooms"; from the out-of-context review of R2–R3, 2026-11-10):
+- **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md); from the out-of-context review of R2–R3, 2026-11-10):
   `peer_of_rtc` scans every peer for each data-channel message, and `tick` counts the open channels for each peer
   (~1,000 lookups a packet at the 1,024-peer cap with 64 channels; unmeasured: a map from rtc to peer would end it). A
   failed offer's backoff is skipped when the peer goes idle (the next packet offers at once). A public room's name
@@ -1495,12 +1495,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   tab from another tab's ephemeral connection isn't found as that one's (`holderOf`), so it gets an entry of its own
   (the key's lock still holds between them, named by the key). A shared registry of ephemeral connections' entries
   (a BroadcastChannel census, or the entries' users counted in `webpc-room`) would close both.
-- **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): two tailnets both route
+- **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer
   would be an advertisement); routes of a client or connection that went aren't withdrawn (they lapse in 30 minutes,
   through a gateway that no longer answers).
-- **IPv6 out's loose ends** ([network-adapters.md](network-adapters.md) §4 "IPv6 out", web/reach6.ts):
+- **IPv6 out's loose ends** ([networking/adapters.md](networking/adapters.md) §4 "IPv6 out", web/reach6.ts):
   - **A primary per family**: with tailcat as the primary and its IPv6 out, a second adapter whose IPv6 reaches out
     (a tailnet's exit node) could carry IPv6's default; `primaryOf` picks one adapter for both.
   - The real probe targets answering is checked by hand only (an exit node on the Mac, testing.md): the dev VM has
@@ -1511,7 +1511,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The Network menu doesn't say a connection is IPv4-only.
   - `bench/gpu/firefox-load.ts`'s tailcat mode still drops the guest's IPv6 default and pins resolv.conf and
     gai.conf by hand; no longer needed, drop it at its next run.
-- **The local helper's loose ends** ([local-helper.md](local-helper.md), webpc-net's own repository):
+- **The local helper's loose ends** ([networking/local-helper.md](networking/local-helper.md), webpc-net's own repository):
   - **Never run on Windows** (nor its install lines in PowerShell): whether gvisor-tap-vsock's DNS forwarder follows the
     host's resolvers there (it asks Go's `net.Resolver` and forwards other types to `/etc/resolv.conf`'s servers,
     which Windows hasn't), and what Defender and SmartScreen make of an unsigned binary fetched by `Invoke-WebRequest`.
@@ -1529,9 +1529,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - Firefox's and Safari's handling of `ws://127.0.0.1` from an https page is unchecked (never a blocker).
   - (Low priority, the user's idea, 2026-11-03) One `local` connection on several machines at once over one WebSocket,
     rather than a socket per adapter. It needs connections modeled as exclusive or shared (a Web Lock holds each now,
-    docs/network-adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
+    docs/networking/adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
     several machines can already share its LAN, each with a connection of its own.
-- **tailcat serving's leftovers** ([tailnet.md](tailnet.md) "tailcat"): a handshake on trial takes a quiet client's place
+- **tailcat serving's leftovers** ([networking/tailnet.md](networking/tailnet.md) "tailcat"): a handshake on trial takes a quiet client's place
   before it has shown the pre-shared key (that client comes back by its own next handshake, but anyone on the relay who
   knows the machine's public key can push quiet clients out this way; a trial could wait for room instead); and the
   guest's packets to a client that made room are dropped until that client sends again (the module could keep the keys
@@ -1544,7 +1544,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
   `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,
   not fragmented (`nat46.rs`), unchecked with `tcpdump`.
-- **The Rust Tailscale client's loose ends** ([tailnet.md](tailnet.md) "Tailscale"):
+- **The Rust Tailscale client's loose ends** ([networking/tailnet.md](networking/tailnet.md) "Tailscale"):
   - Subnet routes (on by default, a menu toggle; 2026-10-24): checked by unit tests and `viewOf`'s only, no subnet
     router in the Podman tailnet; an adapter that isn't the default way out learns a new IPv4 subnet route only at
     the guest's next DHCP renewal (option 121; IPv6's router advertisement is at once).
@@ -1563,7 +1563,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - Disco answers pings only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet
     Lock is refused, not supported.
   - Headscale answers the first map ~2 s after registration for both clients, and a peer takes our new node
-    0.6–0.7 s after our first handshake (docs/tailnet.md "Findings"; not ours to fix). Tailscale's own servers
+    0.6–0.7 s after our first handshake (docs/networking/tailnet.md "Findings"; not ours to fix). Tailscale's own servers
     unmeasured: an auth key's ephemeral node there is where to look.
   - The module in the device worker instead of its own (one worker and one hop less): only if its cost there is
     small; the worker spends 3.1 core-ms per Mbit/s (bench/net/REPORT.md "T6"), unmeasured inside the device worker.

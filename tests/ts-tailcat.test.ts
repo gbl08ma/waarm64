@@ -1,5 +1,5 @@
 // The tailnet client in Node against the tailcat rig (tests/net/tailcat.sh), no guest: what a real relay and
-// server show that the native fakes don't (docs/tailnet.md "Tests"). Opt-in: WEBPC_TAILCAT=1 (Go builds tailcat and
+// server show that the native fakes don't (docs/networking/tailnet.md "Tests"). Opt-in: WEBPC_TAILCAT=1 (Go builds tailcat and
 // derper), target/net/ts.wasm (net/ts/build.sh); scripts/ci-net.sh runs it.
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawnSync } from 'node:child_process';

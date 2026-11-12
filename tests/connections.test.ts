@@ -1,4 +1,4 @@
-// The browser's network connections (docs/network-adapters.md §2): web/app/connections.ts's records, stored
+// The browser's network connections (docs/networking/adapters.md §2): web/app/connections.ts's records, stored
 // and ephemeral, their state forgotten with them, the Attach wizard's preselection, the migration of the single
 // connection the page kept before (planted: a kept node's prefix rewritten, so the node would log in again), and their
 // locks between two "tabs" (two Stores on one BroadcastChannel); in Chromium, the store's upgrade to `connections` over

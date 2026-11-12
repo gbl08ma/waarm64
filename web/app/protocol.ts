@@ -105,7 +105,7 @@ export type MachinePorts = {
   /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
   sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
   /**
-   * The network adapters in order (docs/network-adapters.md): each a virtio-net with its MAC on its own gateway, whose
+   * The network adapters in order (docs/networking/adapters.md): each a virtio-net with its MAC on its own gateway, whose
    * end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other end and gives it to a
    * client (web/app/network.ts). The machine gets its `network` credentials when it has any.
    */

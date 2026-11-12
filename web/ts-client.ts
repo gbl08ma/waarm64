@@ -1,4 +1,4 @@
-// The tailnet client's I/O (docs/tailnet.md): the module
+// The tailnet client's I/O (docs/networking/tailnet.md): the module
 // (net/ts, target/net/ts.wasm) holds the protocols' state and never waits;
 // this carries out what it asks (WebSockets to DERP relays, fetches, timers)
 // and feeds it what comes back, the guest's packets and the time. It runs in
@@ -33,7 +33,7 @@ type Exports = {
   ts_rtc_closed(h: number, rtc: number): void;
 };
 
-/** A room's member (net/ts/src/room.rs, docs/tailnet.md "Rooms"). */
+/** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
 /** The most messages a WebSocket holds before it opens (a room's lookups while a Nostr relay connects, say). */
 const SOCKET_QUEUE = 256;
 
@@ -60,7 +60,7 @@ export type RoomConfig = {
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
 export type TailcatConfig = {
   addr?: string;
-  /** The VM as a tailcat server (docs/tailnet.md "tailcat"): the address's pre-shared key (64 hex digits) and,
+  /** The VM as a tailcat server (docs/networking/tailnet.md "tailcat"): the address's pre-shared key (64 hex digits) and,
    * without `addr`, the relay: one's own derper (`host[:port]`), or a region of the DERP map by ID (0: its first). */
   serve?: { psk: string; relay?: string; region?: number; allow?: string[] };
   /** The DERP map for an address that names only a region (default: tailcat's public one). */
@@ -72,7 +72,7 @@ export type TailcatConfig = {
   dns6?: number[][];
 };
 
-/** A Tailscale node (docs/tailnet.md "Tailscale"): its control server and the kept node's store. */
+/** A Tailscale node (docs/networking/tailnet.md "Tailscale"): its control server and the kept node's store. */
 export type TailnetConfig = {
   control: { url: string; authKey?: string; hostname?: string; ephemeral?: boolean };
   /** The node's store as the Go client keeps it (web/tailscale-state.ts): `<StateKey>` → hex of the bytes. */
@@ -128,7 +128,7 @@ export type RtcHandlers = {
 };
 
 /**
- * The error a client's `Failed` state stands for (net/ts's codes, docs/tailnet.md "The ABI"): the words the page has
+ * The error a client's `Failed` state stands for (net/ts's codes, docs/networking/tailnet.md "The ABI"): the words the page has
  * for its code, or, for a code whose only words are technical, its detail (a developer's, shown as details).
  */
 export function failureOf(f: TsFailure): Error {

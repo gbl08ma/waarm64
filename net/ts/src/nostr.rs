@@ -1,7 +1,7 @@
 //! What a room's member says to Nostr relays (NIP-01), sans I/O: events signed with BIP-340
 //! Schnorr signatures on secp256k1 (`k256`), subscriptions by kind and `#x` tag, and the relay's
 //! messages read back. A room uses ephemeral events only (kinds 20000–29999), which relays forward
-//! to subscribers and keep nowhere (docs/plans/networking-p2p.md §3).
+//! to subscribers and keep nowhere (docs/networking/rooms.md "Finding a peer").
 
 use k256::schnorr::SigningKey;
 use serde_json::{Value, json};

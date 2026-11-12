@@ -291,7 +291,7 @@ function machineFrom(def: Definition, name: string, attachments: Attachment[], n
     ...(m.netConfig === false ? { netConfig: false as const } : {}),
     display: m.display,
     ...onOf(m, ['vulkan']),
-    // The adapters come without connections: those hold secrets, and are this browser's (network-adapters.md §5).
+    // The adapters come without connections: those hold secrets, and are this browser's (docs/networking/adapters.md §5).
     adapters: (m.macs ?? (m.network ? [DEFAULT_MAC] : [])).map((mac) => ({ id: newId(), mac })),
     usb: m.usb ?? false,
     mouse: m.mouse ?? false,

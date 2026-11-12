@@ -1,4 +1,4 @@
-//! A room's lookups (docs/plans/networking-p2p.md §3): a node's tag by the hour, and the sealed
+//! A room's lookups (docs/networking/rooms.md "Finding a peer"): a node's tag by the hour, and the sealed
 //! question a dialer publishes under its target's tag.
 //!
 //! A lookup carries the dialer's node key, its home region (an index into the link's DERP
@@ -7,7 +7,7 @@
 //! key (any member who knows the address could). Both keys mix in the room's lookup key, so only a
 //! member makes one, and the tag is the AEAD's associated data, so one can't be moved to another
 //! address or hour. It's a hint, not a proof: the WireGuard handshake decides. The seal uses the
-//! WireGuard node key itself, with a label of its own (plan §1: decided, no second key). Both kinds look
+//! WireGuard node key itself, with a label of its own (rooms.md "Decisions": no second key). Both kinds look
 //! alike to a relay: 32 bytes (the ephemeral key, or random bytes whose first 12 are the nonce),
 //! then the ciphertext; the target tries the seal first.
 

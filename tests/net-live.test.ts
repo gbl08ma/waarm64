@@ -1,4 +1,4 @@
-// The page's machine's network adapters live (web/app/net-live.ts, docs/network-adapters.md §3) with fake
+// The page's machine's network adapters live (web/app/net-live.ts, docs/networking/adapters.md §3) with fake
 // clients over a memory store: what a connection starts its client with (a stored node kept under its profile, an
 // ephemeral one not), connect at start, a connection one machine has at a time (two "tabs" on one channel: the holder
 // named, Use it here instead), a restart keeping the clients, another machine stopping them, an attachment whose

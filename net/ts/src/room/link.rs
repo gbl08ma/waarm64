@@ -1,4 +1,4 @@
-//! A room's link (docs/plans/networking-p2p.md §1): the room's ID and where its members meet, its
+//! A room's link (docs/networking/rooms.md "Decisions"): the room's ID and where its members meet, its
 //! Nostr relays and its DERP regions. Members with the same link find each other; a lookup's home
 //! region is an index into the link's list, so every member reads it the same way.
 //!

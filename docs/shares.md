@@ -7,7 +7,7 @@ reaches every attached folder through **one virtio-9p device** (our 9P2000.L ser
 "9p"), mounted for it by the page. Built 2026-10-31; numbers and the API's behaviours are in `bench/shares/REPORT.md`.
 
 What it builds on: `web/9p.ts`'s server; the device layer's asynchronous requests (`Backend.concurrent`, remote
-disks'); the connections' model, locks and wizard ([network-adapters.md](network-adapters.md)); the units the page gives
+disks'); the connections' model, locks and wizard ([networking/adapters.md](networking/adapters.md)); the units the page gives
 the guest ([frontend.md](frontend.md) "What the page sets in the guest").
 
 ## 1. The rules

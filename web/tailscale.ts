@@ -1,5 +1,5 @@
 // The Tailscale backend from the page's side (docs/plans/networking.md §4):
-// starts the tailnet client (net/ts, docs/tailnet.md) in its own worker (web/tailnet-worker.ts) and
+// starts the tailnet client (net/ts, docs/networking/tailnet.md) in its own worker (web/tailnet-worker.ts) and
 // hands back the end of an IP-packet port for virtio-net's gateway
 // (`{type: 'net', adapter: {ip: port}}`, web/gateway.ts `portBackend`). The
 // worker sends `{type: 'lease', lease}` on that port whenever the node's address
@@ -64,7 +64,7 @@ export type ToTailscale =
   | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; acceptRoutes?: boolean; ip: MessagePort; persist?: string; probe6?: Reach6Options }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
-  /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/network-adapters.md §4). */
+  /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/networking/adapters.md §4). */
   | { type: 'primary'; primary: boolean; rank?: number }
   /** Withdraw the lease and hand the gateway's port back (`detached`). */
   | { type: 'detach' }

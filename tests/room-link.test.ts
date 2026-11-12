@@ -1,4 +1,4 @@
-// A room's link as the page writes and reads it (web/room.ts, docs/tailnet.md "Rooms"): the same text net/ts's
+// A room's link as the page writes and reads it (web/room.ts, docs/networking/rooms.md): the same text net/ts's
 // room/link.rs writes (its own test's link, byte for byte), the defaults left to the module, a private room's ID, and
 // what a pasted link or the Create form's relays may not be.
 import assert from 'node:assert/strict';

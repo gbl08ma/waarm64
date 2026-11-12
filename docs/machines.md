@@ -6,7 +6,7 @@ what is stored where, how a disk is identified, the overlay's generation, the di
 snapshots checked by the machine's shape and restored without destroying a disk's state, and definitions in and out.
 What the Machines page shows and does is [frontend.md](frontend.md) "Machines in the browser", "The Machines page" and
 "A stored machine's snapshots"; the block device, the overlay's format and stored disks' code are
-[devices.md](devices.md) "blk"; network adapters and connections are [network-adapters.md](network-adapters.md), USB
+[devices.md](devices.md) "blk"; network adapters and connections are [networking/adapters.md](networking/adapters.md), USB
 [usb.md](usb.md) "The page", shared folders [shares.md](shares.md). Loose ends are in [backlog.md](backlog.md)
 "Machines as the unit, loose ends". The section numbers are the ones the code's comments cite.
 
@@ -71,7 +71,7 @@ Since decided (the user, 2026-10-17):
 
 | Thing | What it holds | Where |
 |---|---|---|
-| **Machine** | id, name, vCPUs, RAM MiB (and `ramSplit` when set by hand), display (2D/3D) and Vulkan beside 3D, the JIT cache budget (`jitMiB`), the keyboard layout, the network adapters and their connections (network-adapters.md), the USB controller (`usb`) and remembered USB devices (`usbDevices`), the mouse, touchscreen and clock switches, clipboard sharing (`clipboard`, off by default: plans/clipboard.md §5), shared folders (`shares`, the switch; `folders`, the attached folders with their own Read-only; `sharesMount` and `sharesPath`, how the page mounts them in the guest: shares.md §1), the attachments in slot order with the overlay chosen per read-write one | IndexedDB `machines` |
+| **Machine** | id, name, vCPUs, RAM MiB (and `ramSplit` when set by hand), display (2D/3D) and Vulkan beside 3D, the JIT cache budget (`jitMiB`), the keyboard layout, the network adapters and their connections (networking/adapters.md), the USB controller (`usb`) and remembered USB devices (`usbDevices`), the mouse, touchscreen and clock switches, clipboard sharing (`clipboard`, off by default: plans/clipboard.md §5), shared folders (`shares`, the switch; `folders`, the attached folders with their own Read-only; `sharesMount` and `sharesPath`, how the page mounts them in the guest: shares.md §1), the attachments in slot order with the overlay chosen per read-write one | IndexedDB `machines` |
 | **Disk** (a base) | id, kind (`url`, `file`, `stored`, `blank`, `ramdisk`), name, size, the identity (§3.1), the kind's data: a URL; a `FileSystemFileHandle` (IndexedDB can hold one, JSON can't); the hash where something computed it | IndexedDB `disks` |
 | **Attachment** | the disk, read-only or not, written in place or not, the overlay chosen, the virtio serial (`webpc-<attachment id>`, answered to `GET_ID`) | in the machine |
 | **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes; its `data`, `map`, `meta` and `base` files | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |
@@ -79,7 +79,7 @@ Since decided (the user, 2026-10-17):
 | **Snapshot** | id, name, created, size, the shape and its hash, the pins (§5.1); the `WEBPCSNP` file | OPFS `machines/<id>/snapshots/<id>`, its record in IndexedDB `snapshots` |
 | **Suspended copy** | a snapshot without the overlays' blocks (§5.3) | OPFS `machines/<id>/suspend` |
 | **Stored disk** | an imported image in the overlay's sparse block format (§4.4), with a generation | OPFS `disks/<id>/` |
-| **Connection** | a tailnet or tailcat, the browser's (network-adapters.md) | IndexedDB `connections` |
+| **Connection** | a tailnet or tailcat, the browser's (networking/adapters.md) | IndexedDB `connections` |
 | **Folder** | a shared folder, the browser's: a folder on this computer (its directory handle) or a folder in the browser, a name, Read-only (shares.md §2.1) | IndexedDB `folders`; a folder in the browser's files in OPFS `folders/<id>/` |
 
 - **IndexedDB for records, OPFS for bytes** (`web/app/store.ts`, IndexedDB `webpc`, ids of 12 hex digits). A record

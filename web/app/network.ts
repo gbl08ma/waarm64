@@ -149,7 +149,7 @@ const LOGOUT_MS = 15_000;
 
 /**
  * Logs a kept node out with no machine: a client of its own on a port no guest has, which reaches the control server
- * with the node's keys, expires them there and forgets them (docs/network-adapters.md §2.1). False when the control
+ * with the node's keys, expires them there and forgets them (docs/networking/adapters.md §2.1). False when the control
  * server didn't answer in `ms`, with the node left as it was: a client logging out unconnected would only forget it here.
  */
 export function logOutNode(

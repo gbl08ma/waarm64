@@ -1,4 +1,4 @@
-// A room's members (web/room.ts, net/ts's room.rs) in headless Chromium with no guest (docs/tailnet.md "Rooms"): pages
+// A room's members (web/room.ts, net/ts's room.rs) in headless Chromium with no guest (docs/networking/rooms.md): pages
 // join one room by its link, which names the tailcat rig's relay (tests/net/tailcat.sh: only its derper is used) and
 // the tests' Nostr relay (tests/net/nostr-relay.ts). One dials another's address (or its name, through the room's
 // resolver): its lookup goes out on the Nostr relay, the other calls back through DERP, and UDP echoes go through the
