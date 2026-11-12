@@ -1476,6 +1476,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   could NFC-normalize what it writes into a link). `isPrivateRoom` labels any ID ending in a hyphen and 26 base32
   letters as private, a public name typed that way too (cosmetic). The tests' Nostr relay waits forever on a frame
   whose declared length never comes, and keeps every event with `keep` on (fine for its tests).
+  From the review of 2026-11-12: an outsider who sees lookups to a node (a subscription to kind 26354 with no tag
+  filter, on the link's public relays) can flood its tag through **every** relay of the link with distinct junk past
+  each relay's 128-a-second budget, and keep members' lookups to it out for the rest of that hour (copies and a flood
+  through some relays are handled). A cheap check before the X25519 would end it: a MAC under the room's lookup key
+  over the content (a change of the lookup's form), or NIP-13 proof of work on lookups; relays' own rate limits help
+  meanwhile.
 - **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

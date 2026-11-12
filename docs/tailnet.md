@@ -214,8 +214,12 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   drops lookups more than an hour off its clock, a nonce it has seen (remembered for three hours, 8,192 at most, the
   oldest let go first; a reloaded target forgets them, so a relay may replay a recent lookup to it, which costs one
   unwanted call back that the dialer refuses unless it takes incoming connections), a region outside the link, its
-  own key, and 1,024 peers at most. Events under our tags are opened (an X25519 and up to two decryptions) at most 256
-  a second, the rest dropped unread: anyone with a node's name, or the relay, can publish junk under its tag. Call backs are 16 a second; past that they wait their turn (first come first
+  own key, and 1,024 peers at most. An event's copies (the same tag and content, one through each relay) are opened
+  once: one remembered for 10 s (8,192 at most) is dropped before anything else. Events under our tags are opened (an
+  X25519 and up to two decryptions) at most 128 a second through each relay, the rest dropped unread: anyone who sees a
+  lookup to the node (a subscription to the kind with no tag filter gets every room's) can publish junk under its tag
+  for the rest of that hour, so junk through some of the link's relays doesn't keep out a lookup through the others
+  (one flooding every relay of the link still can: [backlog.md](backlog.md) "Rooms' loose ends"). Call backs are 16 a second; past that they wait their turn (first come first
   served, a key's later lookup only updating its region; 64 at most, so served within 4 s, before the dialer gives
   up; more are dropped), so a crowd of dialers gets in at that rate. When each dials the other at once, only the lower
   key calls back (crossed handshakes each abandon their own for the other's in `ts_tunnel`, and neither completes). A
@@ -300,11 +304,11 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   so none names a region before the choice. A failed client closes
   its DERP and Nostr connections and keeps nothing scheduled (no reconnects while the page shows the error).
 - **Tests:** `cargo test -p webpc_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
-  to a key on the same region, a fake Nostr relay and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
+  to a key on the same region, fake Nostr relays and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
   and misdirected lookups, the trial rate, incoming off and its flows, two regions, the hour's turn and a clock 40
   minutes off, a forged lookup that doesn't move a live peer and one that names another region, a reloaded peer
-  called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a guest sweeping
-  the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
+  called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a lookup's
+  copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
   cases; BIP-340's first vector); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
   NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
   RFC 6455 server, no dependency); `tests/room-browser.test.ts` (Chromium, `WEBPC_TAILCAT=1`: pages joining one room

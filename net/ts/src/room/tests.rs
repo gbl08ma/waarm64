@@ -17,8 +17,12 @@ const T0: u64 = 1_764_000_000 / 3600 * 3600 + 600;
 const NOSTR: &str = "wss://nostr.test";
 
 enum Conn {
-    Derp { url: String, server: DerpServer },
-    Nostr,
+    Derp {
+        url: String,
+        server: DerpServer,
+    },
+    /// A Nostr relay, by its URL (any that starts with `wss://nostr`).
+    Nostr(String),
 }
 
 struct Node {
@@ -61,6 +65,8 @@ struct Faults {
 struct Sub {
     node: usize,
     conn: u32,
+    /// The relay's URL.
+    url: String,
     id: String,
     kinds: Vec<u64>,
     xs: Vec<String>,
@@ -192,8 +198,8 @@ impl Net {
             .rtc_signal(rtc, v.to_string().as_bytes(), now);
     }
 
-    /// What node `i` sends the Nostr relay.
-    fn nostr_in(&mut self, i: usize, conn: u32, text: &[u8]) {
+    /// What node `i` sends Nostr relay `url`.
+    fn nostr_in(&mut self, i: usize, conn: u32, url: String, text: &[u8]) {
         if self.faults.silent_nostr {
             return;
         }
@@ -207,6 +213,7 @@ impl Net {
                 self.subs.push(Sub {
                     node: i,
                     conn,
+                    url,
                     id: m[1].as_str().unwrap().into(),
                     kinds: f["kinds"]
                         .as_array()
@@ -233,20 +240,26 @@ impl Net {
                 let ok = json!(["OK", e["id"], true, ""]).to_string();
                 let now = self.now;
                 self.nodes[i].c.ws_message(conn, ok.as_bytes(), now);
-                self.forward(&e);
+                self.forward_on(&e, Some(&url));
             }
             other => panic!("{other}"),
         }
     }
 
-    /// The relay forwards event `e` to every subscription it matches.
+    /// Event `e`, published on every relay: each forwards it to every subscription it matches.
     fn forward(&mut self, e: &Value) {
+        self.forward_on(e, None);
+    }
+
+    /// Event `e`, published on relay `url` (None: on every relay).
+    fn forward_on(&mut self, e: &Value, url: Option<&str>) {
         self.published.push(e.clone());
         let x = e["tags"][0][1].as_str().unwrap();
         let kind = e["kind"].as_u64().unwrap();
         let to: Vec<(usize, u32, String)> = self
             .subs
             .iter()
+            .filter(|s| url.is_none_or(|u| s.url == u))
             .filter(|s| s.kinds.contains(&kind) && s.xs.iter().any(|t| t == x))
             .map(|s| (s.node, s.conn, s.id.clone()))
             .collect();
@@ -283,9 +296,9 @@ impl Net {
                 url,
                 protocol,
             } => {
-                if url == NOSTR {
+                if url.starts_with("wss://nostr") {
                     assert_eq!(protocol, "");
-                    self.nodes[i].conns.insert(conn, Conn::Nostr);
+                    self.nodes[i].conns.insert(conn, Conn::Nostr(url));
                     return;
                 }
                 assert_eq!(protocol, "derp");
@@ -309,7 +322,10 @@ impl Net {
             Action::WsSend { conn, data } => {
                 let n = &mut self.nodes[i];
                 let url = match n.conns.get_mut(&conn) {
-                    Some(Conn::Nostr) => return self.nostr_in(i, conn, &data),
+                    Some(Conn::Nostr(url)) => {
+                        let url = url.clone();
+                        return self.nostr_in(i, conn, url, &data);
+                    }
                     Some(Conn::Derp { url, .. }) => url.clone(),
                     None => return,
                 };
@@ -540,7 +556,7 @@ impl Net {
             .iter()
             .find_map(|(c, x)| match x {
                 Conn::Derp { server, .. } => Some((*c, server.deliver(&src, p))),
-                Conn::Nostr => None,
+                Conn::Nostr(_) => None,
             })
             .unwrap();
         let now = self.now;
@@ -564,7 +580,7 @@ impl Net {
             .values()
             .filter_map(|c| match c {
                 Conn::Derp { url, .. } => Some(url.clone()),
-                Conn::Nostr => None,
+                Conn::Nostr(_) => None,
             })
             .collect()
     }
@@ -1553,11 +1569,13 @@ fn junk_under_our_tag_is_opened_only_within_a_budget() {
     let room = n.nodes[0].c.room.clone();
     let target = n.addr(0);
     let tag = room.tag_for(&target, T0 / 3600);
-    let junk = b64().encode([7u8; lookup::SIZE]);
-    for _ in 0..LOOKUP_EVENTS_PER_SECOND {
+    // Each different (copies of one are opened once).
+    for k in 0..LOOKUP_EVENTS_PER_SECOND as u32 {
+        let mut junk = [7u8; lookup::SIZE];
+        junk[..4].copy_from_slice(&k.to_le_bytes());
         let e = nostr::Author::random()
             .unwrap()
-            .event(KIND, &tag, &junk, T0);
+            .event(KIND, &tag, &b64().encode(junk), T0);
         n.forward(&e);
     }
     n.run();
@@ -1572,6 +1590,73 @@ fn junk_under_our_tag_is_opened_only_within_a_budget() {
     n.advance(Duration::from_millis(1001));
     n.inject(&good(2), &room, None, target, T0 / 3600);
     assert_eq!(n.nodes[0].c.peers.len(), 1, "the next second's");
+}
+
+/// A node on six relays (as the default link's), and a lookup to it of `key`'s.
+fn six_relays() -> (Net, impl Fn(u8, u8) -> Lookup) {
+    let mut cfg = config(2);
+    cfg.link.nostr = (0..6).map(|k| format!("wss://nostr{k}.test")).collect();
+    let n = Net::new(vec![cfg]);
+    let lookup = |key: u8, nonce: u8| Lookup {
+        key: public(key),
+        region: INLINE_REGION,
+        time: T0,
+        nonce: [nonce; 16],
+    };
+    (n, lookup)
+}
+
+#[test]
+fn a_lookups_copies_through_every_relay_cost_the_budget_once() {
+    let (mut n, lookup) = six_relays();
+    let room = n.nodes[0].c.room.clone();
+    let target = n.addr(0);
+    // Each lookup reaches the node through all six relays.
+    let dialers = TRIALS_PER_SECOND + MAX_CALLS_WAITING - 4;
+    for k in 0..dialers {
+        n.inject(
+            &lookup(30 + k as u8, k as u8),
+            &room,
+            None,
+            target,
+            T0 / 3600,
+        );
+    }
+    let c = &n.nodes[0].c;
+    assert_eq!(
+        c.peers.len() + c.calls_waiting.len(),
+        dialers,
+        "every dialer called back, or waiting its turn"
+    );
+    let charged: usize = c.lookups_in.iter().map(|w| w.len()).sum();
+    assert_eq!(charged, dialers, "each lookup charged once, not per copy");
+}
+
+#[test]
+fn junk_through_one_relay_doesnt_block_lookups_through_the_others() {
+    let (mut n, lookup) = six_relays();
+    let room = n.nodes[0].c.room.clone();
+    let target = n.addr(0);
+    let tag = room.tag_for(&target, T0 / 3600);
+    for k in 0..300u32 {
+        let mut junk = [7u8; lookup::SIZE];
+        junk[..4].copy_from_slice(&k.to_le_bytes());
+        let e = nostr::Author::random()
+            .unwrap()
+            .event(KIND, &tag, &b64().encode(junk), T0);
+        n.forward_on(&e, Some("wss://nostr0.test"));
+    }
+    n.run();
+    let l = lookup(1, 1);
+    let content = b64().encode(l.seal(&room, None, &tag));
+    let e = nostr::Author::random()
+        .unwrap()
+        .event(KIND, &tag, &content, T0);
+    for k in 1..6 {
+        n.forward_on(&e, Some(&format!("wss://nostr{k}.test")));
+    }
+    n.run();
+    assert_eq!(n.nodes[0].c.peers.len(), 1, "called back");
 }
 
 #[test]

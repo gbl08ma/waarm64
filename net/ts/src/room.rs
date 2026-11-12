@@ -86,9 +86,15 @@ const LOOKUP_GIVE_UP: Duration = Duration::from_secs(6);
 const UNREACHABLE_HOLD: Duration = Duration::from_secs(5);
 const LOOKUP_QUEUE: usize = 16;
 /// Events under our tags are opened (an X25519 and up to two decryptions each) at most this many
-/// a second, and dropped past it: anyone with a node's name, or the relay, can publish junk under
-/// its tag. Well above the call backs' budget, since a dialer sends each lookup up to three times.
-const LOOKUP_EVENTS_PER_SECOND: usize = 256;
+/// a second through each Nostr relay, and dropped past it: anyone who sees a lookup to a node (a
+/// subscription to [`KIND`] without a tag sees them all) can publish junk under its tag. A budget
+/// per relay, so junk through some of the link's relays doesn't keep out a lookup through the
+/// others; an event's copies (the same content, through each relay) are opened and charged once,
+/// remembered for [`OPENED_FOR`] (at most [`MAX_OPENED`]). Well above the call backs' budget, since
+/// a dialer sends each lookup up to three times.
+const LOOKUP_EVENTS_PER_SECOND: usize = 128;
+const OPENED_FOR: Duration = Duration::from_secs(10);
+const MAX_OPENED: usize = 8192;
 /// A target drops lookups this much older (or newer) than its clock: the tags' window, as a
 /// dialer's clock may be off by most of an hour (plan §3); a copy within it is dropped by its
 /// nonce, remembered for twice as long (at most [`MAX_NONCES`]).
@@ -529,8 +535,12 @@ pub struct Client {
     trials_in: VecDeque<Instant>,
     /// Call backs waiting for room in `trials_out`: the dialer's key and region.
     calls_waiting: VecDeque<([u8; 32], usize)>,
-    /// When the last events under our tags were opened, and the last WebRTC connections made.
-    lookups_in: VecDeque<Instant>,
+    /// When the last events under our tags were opened, through each Nostr relay, and the last
+    /// WebRTC connections made.
+    lookups_in: Vec<VecDeque<Instant>>,
+    /// The events opened lately (a hash of the tag and content), to drop their copies; oldest first.
+    opened: BTreeSet<[u8; 16]>,
+    opened_order: VecDeque<([u8; 16], Instant)>,
     rtc_new: VecDeque<Instant>,
     published: VecDeque<Instant>,
     /// The DERP map is awaited.
@@ -623,7 +633,9 @@ impl Client {
             trials_out: VecDeque::new(),
             trials_in: VecDeque::new(),
             calls_waiting: VecDeque::new(),
-            lookups_in: VecDeque::new(),
+            lookups_in: Vec::new(),
+            opened: BTreeSet::new(),
+            opened_order: VecDeque::new(),
             rtc_new: VecDeque::new(),
             published: VecDeque::new(),
             map_pending: false,
@@ -1085,7 +1097,7 @@ impl Client {
             match nostr::parse(data) {
                 nostr::FromRelay::Event {
                     kind, x, content, ..
-                } if kind == KIND => self.on_lookup(&x, &content, now),
+                } if kind == KIND => self.on_lookup(i, &x, &content, now),
                 nostr::FromRelay::Eose(sub) if self.nostr[i].sub.as_ref() == Some(&sub) => {
                     // It answers: alive, and the backoff starts afresh.
                     let n = &mut self.nostr[i];
@@ -1225,14 +1237,35 @@ impl Client {
         }
     }
 
-    /// An event under tag `x`: a lookup for us, if it opens, is called back.
-    fn on_lookup(&mut self, x: &str, content: &str, now: Instant) {
-        if self.state != State::Running
-            || !self.tags().iter().any(|t| t == x)
-            || !Self::take(&mut self.lookups_in, LOOKUP_EVENTS_PER_SECOND, now)
-        {
+    /// An event under tag `x` through Nostr relay `i`: a lookup for us, if it opens, is called back.
+    fn on_lookup(&mut self, i: usize, x: &str, content: &str, now: Instant) {
+        if self.state != State::Running || !self.tags().iter().any(|t| t == x) {
             return;
         }
+        // A copy of an event opened already (through another relay): dropped before the budget.
+        let mut h = Blake2s256::new();
+        h.update(x.as_bytes());
+        h.update([0]);
+        h.update(content.as_bytes());
+        let seen: [u8; 16] = h.finalize()[..16].try_into().unwrap();
+        while let Some(&(old, t)) = self.opened_order.front()
+            && (now.saturating_duration_since(t) >= OPENED_FOR
+                || self.opened_order.len() >= MAX_OPENED)
+        {
+            self.opened_order.pop_front();
+            self.opened.remove(&old);
+        }
+        if self.opened.contains(&seen) {
+            return;
+        }
+        if self.lookups_in.len() < self.nostr.len() {
+            self.lookups_in.resize_with(self.nostr.len(), VecDeque::new);
+        }
+        if !Self::take(&mut self.lookups_in[i], LOOKUP_EVENTS_PER_SECOND, now) {
+            return;
+        }
+        self.opened.insert(seen);
+        self.opened_order.push_back((seen, now));
         let Ok(b) = b64().decode(content) else { return };
         let Some(l) = Lookup::open(&self.room, &self.private, &self.public, x, &b) else {
             return;
