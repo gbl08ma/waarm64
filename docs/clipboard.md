@@ -151,13 +151,11 @@ don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts i
 ## The machine's state
 
 The agent's HELLO is a sign that the machine is up, beside its serial `ready` marker (web/app/machine.ts, agetty's
-`login: ` on Debian): whichever comes first moves the page from `booting` to `running` (the page posts `agent-up` to
-the machine worker, which says `running` once, as the marker does). So a guest that logs in automatically, prints after
-its prompt or has no serial getty still gets there when it has the setting. The marker stays the sign for every other
-machine: the agent isn't asked of a guest for its state alone. On Debian the HELLO usually comes after the prompt
-(the unit starts with `multi-user.target`, then reads the binary over fw_cfg, ~0.4 s), but nothing orders the two, so
-the tests that log in on the serial terminal wait for the prompt themselves. `?ready=agent` watches for no marker (the
-Buildroot clipboard test's check that HELLO alone does it).
+`login: ` on Debian) and systemd's READY=1 on the notify socket (devices.md "vsock"): whichever comes first moves the
+page from `booting` to `running` (the page posts `up` to the machine worker, which says `running` once). On Debian the
+HELLO usually comes after the prompt (the unit starts with `multi-user.target`, then reads the binary over fw_cfg,
+~0.4 s), but nothing orders the two, so the tests that log in on the serial terminal wait for the prompt themselves.
+`?ready=guest` watches for no marker (the Buildroot clipboard test's check that HELLO alone does it).
 
 ## What each browser does
 

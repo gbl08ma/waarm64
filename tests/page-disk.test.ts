@@ -231,6 +231,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page.reload();
   await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:problems.needsUser', { count: 1 }).source, { timeout: 30_000 });
   await choose();
+  await shows(page, /login: /, 240_000);
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   await onSerial(page, 'cat /root/own-mark\n');
@@ -276,6 +277,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page2.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 100 }); // stopped for the load
   await running(page2, 'off');
   assert.match(dialogs[0], words('disks:disk-changes.changes.confirm', { name: 'mydisk-changes.qcow2' }, { start: true })); // or its .running variant: the same start
+  await shows(page2, /login: /);
   await onSerial(page2, 'root\n');
   await shows(page2, /root@\S+:~# /);
   await onSerial(page2, 'cat /root/own-mark\n');

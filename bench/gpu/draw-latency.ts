@@ -32,6 +32,7 @@ if (chosen) {
 await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 250 });
 const shows = (re: RegExp) => page.waitForFunction((s) => new RegExp(s).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: 60_000, polling: 100 });
 const type = async (t: string) => { await page.locator('.xterm').click(); await page.keyboard.type(t, { delay: 10 }); };
+await shows(/login: /); // `running` may come from systemd's READY=1 before the getty's prompt
 await type('root\n');
 await shows(/root@\S+:~# /);
 const samples = async (ms: number) => {

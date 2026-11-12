@@ -187,6 +187,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
 
     // The machine has the card: its guest sees eth0.
     await running(page);
+    await shows(page, /login: /);
     await onSerial(page, 'root\n');
     await shows(page, /root@\S+:~# /);
     await onSerial(page, 'ls /sys/cla""ss/net | tr "\\n" " "; echo\n');
@@ -312,6 +313,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.match(await text(page, '#net-conn'), words('network:NetAdapter.noConnection'));
     assert.equal((await connections(page)).length, kept, 'the stored ones stay');
     await running(page);
+    await shows(page, /login: /);
     await onSerial(page, 'root\n');
     await shows(page, /root@\S+:~# /);
     await onSerial(page, 'ls /sys/cla""ss/net | tr "\\n" " "; echo\n');

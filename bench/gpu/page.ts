@@ -39,6 +39,7 @@ async function run(extra: string) {
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 100 });
   const runningMs = await page.evaluate(() => performance.now());
   const shows = (re: RegExp) => page.waitForFunction((s) => new RegExp(s).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: 60_000, polling: 100 });
+  await shows(/login: /); // `running` may come from systemd's READY=1 before the getty's prompt
   await page.locator('.xterm').click();
   await page.keyboard.type('root\n', { delay: 10 });
   await shows(/root@\S+:~# /);

@@ -96,6 +96,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
     const url = `${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`;
     await page.goto(url);
     await stateIs(page, 'running');
+    await shows(page, /login: /);
     await type(page, 'root\n');
     await shows(page, /root@\S+:~# /);
     // The whole disk read: every block of the image the cache may keep is fetched (and kept, up to its budget).

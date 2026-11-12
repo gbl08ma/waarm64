@@ -20,6 +20,7 @@ export const layout = (m: StartMessage, machine: Machine): Slot[] =>
     clock: m.config.devices.clock,
     shares: m.config.devices.shares,
     clipboard: m.config.devices.clipboard,
+    vsock: !!machine.firmware,
     attachments: m.disks,
   }).map((s) => ({
     kind: s.kind,
@@ -119,6 +120,7 @@ const MAKERS: Record<DeviceKind, Maker> = {
   rng: () => ({ type: 'rng' }),
   clock: () => ({ type: 'clock' }),
   agent: (_slot, m) => ({ type: 'agent', port: m.ports.agent }),
+  vsock: (_slot, m) => ({ type: 'vsock', port: m.ports.notify }),
   '9p': shares,
   blk: disk,
   keyboard: (_slot, m) => ({ type: 'input', kind: 'keyboard', port: m.ports.keyboard }),

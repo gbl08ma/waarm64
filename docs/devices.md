@@ -304,6 +304,36 @@ the guest's image is requested at the write to the host's clipboard (frontend.md
 request with its type's cap. Its hashes cover text and image together (`contentHash`: the text's cyrb53, the image's
 SHA-256), and the guest's image stands as the host's read-back of it.
 
+### vsock (ID 19): systemd's notify socket
+
+`{type: 'vsock', port}` (`web/vsock-device.ts`), on every `firmware` machine: a virtio-vsock with no optional features
+(stream sockets are implied), three queues (receive, transmit, event), the guest's CID **3** in its config. Its one
+service is systemd's **`vmm.notify_socket`**: the machine's fw_cfg credential (`web/app/firmware-files.ts`; a
+`?credential=` of that name replaces it) is `vsock-stream:2:8573`, the host's CID and `NOTIFY_PORT`, the form
+systemd-vmspawn hands its guests. systemd 254 and later reads it in PID 1 and sends its sd_notify messages there, each
+over a connection of its own: **`READY=1`** (with `STATUS=Ready.`) when the boot's jobs are done, `STATUS=…`,
+`X_SYSTEMD_UNIT_ACTIVE=<target>` as targets come up (256 and later; never from the initrd), `EXIT_STATUS=` at the end.
+Older systemd, or none, ignores it. The page's end (`onReady`, in `Runner`) turns READY=1 into the worker's `up`: the
+machine is `running` (frontend.md "Worker → page", `state`), whichever of it, the serial `ready` marker and the
+clipboard agent's HELLO comes first.
+
+The device answers every connection, whatever the page does, because the guest's PID 1 is the sender and waits:
+systemd 256 and later sends, `shutdown(SHUT_WR)`s, then `recv`s until EOF (254 and 255 `close`). A REQUEST to
+`NOTIFY_PORT` on CID 2 of type STREAM gets RESPONSE (`buf_alloc` 64 KiB, `fwd_cnt` the bytes taken); anything else, or
+a packet of no connection, gets RST. The message is posted (`{type: 'notify', lines}`) at the guest's SHUTDOWN with
+SEND: a half close is answered by the host's own SHUTDOWN of both ways (Linux then resets, and its `recv` gives EOF),
+a full close by RST. A message past 64 KiB is reset and dropped; CREDIT_REQUEST gets CREDIT_UPDATE (the device sends no
+data, so the guest's credit doesn't matter). Nothing is kept across a snapshot: a restored device sends
+TRANSPORT_RESET on the event queue, so a connection in flight fails in the guest rather than hanging its sender.
+
+It is the last slot, after the disks (machines.md §4.1), so it moved no machine's disks, and it is left out of the
+shape's hash (`shape.ts` `hashed`): a snapshot or suspended machine from before it restores without it
+(`worker-header.ts` `slotsOf`), as one from before the clock does. Linux's driver is `vmw_vsock_virtio_transport`
+(`CONFIG_VIRTIO_VSOCKETS`, a module in Debian's and Arch's kernels, loaded by its modalias). Tests: `tests/vsock.test.ts`
+(the device through hand-built queues, both closes, the refusals, the credit, a restore, the page's end, the
+credential); on Debian, `tests/page-debian.test.ts` boots with `?ready=guest`, so only READY=1 makes the page `running`,
+and checks the driver bound, the credential and PID 1's silence about it. READY=1 can come before the serial getty's prompt, so a test that logs in on the serial terminal waits for `login: ` itself, not for `running`.
+
 ### clock (ID 17): virtio-rtc
 
 `{type: 'clock'}` (`web/clock.ts`; Linux's `virtio_rtc`, 6.16 and later, with `CONFIG_VIRTIO_RTC`, which Debian's

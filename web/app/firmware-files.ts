@@ -1,5 +1,5 @@
 // What a `firmware` machine's fw_cfg holds at a start (docs/frontend.md "What the page sets in the guest"): the
-// systemd credentials (the machine's network card's, the page's `?credential=`), the units the page has the guest run
+// systemd credentials (the notify socket's, the machine's network card's, the page's `?credential=`), the units the page has the guest run
 // as OEM strings in SMBIOS (the keyboard layout, the network's settings, the shared folders' mount, swap ramdisks, the
 // clipboard agent; too long for fw_cfg's names: core/src/smbios.rs), and the agent's binary. Pure: the worker's start
 // (web/app/worker.ts) calls it with the agent's bytes once fetched; tests/firmware-files.test.ts pins its bytes.
@@ -11,6 +11,7 @@ import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
 import { credentialFiles, MACHINES, type Machine } from './machine.ts';
 import type { ToWorker } from './protocol.ts';
 import { sharesCredentials } from './shares-mount.ts';
+import { notifySocket } from '../vsock-device.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
 
@@ -28,7 +29,11 @@ export function firmwareFiles(
   const guest = config.guest;
   const network = machine.network;
   const net = !!config.devices.nets && !!network && guest.netConfig;
-  const credentials = [...(net ? network.credentials : []), ...guest.credentials];
+  // systemd's notify socket (web/vsock-device.ts): its READY=1 says the machine is up. A `?credential=` of the name
+  // replaces it (fw_cfg's names are unique).
+  const notify = { name: 'vmm.notify_socket', data: notifySocket() };
+  const own = guest.credentials.some((c) => c.name === notify.name) ? [] : [notify];
+  const credentials = [...own, ...(net ? network.credentials : []), ...guest.credentials];
   const keys = keyboardLayout(guest.keyLayout);
   const units = [
     ...(keys ? keyboardCredentials(keys, words.keyboard, words.layout) : []),

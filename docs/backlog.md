@@ -1315,11 +1315,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Chromium's codes, which the guest then sees swapped.
 - **The ready marker is a per-machine regexp** over the serial output (Debian: agetty's
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
-  has no serial getty would need its own. With clipboard sharing the agent's HELLO is a sign too (clipboard.md "The
-  machine's state"); without it, the agent isn't required for the state alone. Other signs a machine without the agent
-  could give, none built: systemd's `vmm.notify_socket` (READY=1 at the boot's end, sent by systemd 254+ to a
-  credential's address; needs a virtio-vsock device the platform doesn't have); a compositor's first cursor or 3D
-  context on the virtio-gpu (desktops only).
+  has no serial getty would need its own. systemd 254+ guests on firmware machines say READY=1 on the notify socket
+  (devices.md "vsock"), and the clipboard agent's HELLO is a sign too; a guest with neither (no systemd, an older one)
+  still depends on the marker. Not built: a compositor's first cursor or 3D context on the virtio-gpu (desktops only).
 - **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
   EDK2's terminal driver, and a fast run of arrow keys can lose bytes (the PL011's FIFO against a guest that polls;
   frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
@@ -1602,6 +1600,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Clipboard sharing ([clipboard.md](clipboard.md))
 
+- **The agent over virtio-vsock instead of its virtio-console** (the user's question, 2026-11-12: it makes sense; not
+  started). Every firmware machine now has a vsock for systemd's notify socket (devices.md "vsock"), so the agent could
+  connect to the host's CID 2 on a port of its own. What it would buy: **the clipboard setting stops changing the
+  machine's shape** (no `agent` transport: turning it on or off would no longer orphan snapshots, only add or drop the
+  fw_cfg binary and unit); a connection per purpose (control, each transfer) with vsock's own credit, instead of one
+  byte stream with the frames' length prefix, CREDIT/MORE and the SYNC nonce after a restore (a restore's
+  TRANSPORT_RESET drops the connections and the agent reconnects, which is what a restore means today too); no
+  `udevadm wait` for `/dev/virtio-ports/…`; and room for plans/agent.md's other jobs as other ports. What it costs:
+  the device then carries data to the guest (today it only answers), so it needs the guest's credit (`buf_alloc`,
+  `fwd_cnt`, CREDIT_REQUEST when it's short), connections the page can open and close, and a decision on what a
+  snapshot keeps (resetting is simplest and matches "a paste cut by a restore" below); the agent's transport in Rust
+  (`AF_VSOCK` sockets: musl has them, `rustix`'s support to check), its tests (`serve_test.rs` runs on a socketpair,
+  which stays), and the page's link (`AgentLink`: per connection instead of per port). The guest needs
+  `CONFIG_VIRTIO_VSOCKETS` (Debian's and Arch's kernels have it as a module); the console stays for spice-vdagent's port
+  (step 6 below), which needs virtio-serial. Measure the channel's rate against today's ~0.8 MB/s first.
 - **The agent's size past `no_std`:** 130,064 bytes, ~79 KB gzipped (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the

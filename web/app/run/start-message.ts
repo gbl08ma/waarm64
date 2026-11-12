@@ -6,6 +6,7 @@ import type { FolderSpec } from '../../9p-folders.ts';
 import { guestWords } from '../guest-words.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
 import type { MachineConfig, MachinePorts, StartDisk, ToWorker } from '../protocol.ts';
+import { MACHINES, type Machine } from '../machine.ts';
 import type { PageMachine } from './page-machine.svelte.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
@@ -28,6 +29,8 @@ export type Channels = {
   touch?: MessageChannel;
   /** Clipboard sharing's port to the guest's agent (docs/plans/clipboard.md). */
   agent?: MessageChannel;
+  /** systemd's notifications, a firmware machine's (web/vsock-device.ts): the page hears READY=1. */
+  notify?: MessageChannel;
 };
 
 /** A run's channels for what the configuration has. */
@@ -45,6 +48,7 @@ export function channels(c: MachineConfig, sound: Channels['sound'], nets: Chann
     mouse: optional(c.devices.mouse),
     touch: optional(c.devices.touch),
     agent: optional(c.devices.clipboard),
+    notify: optional(!!(MACHINES[c.machine] as Machine).firmware),
   };
 }
 
@@ -76,6 +80,7 @@ function ports(ch: Channels, w: StartWith): MachinePorts {
     touch: ch.touch?.port2,
     folders: ch.shares && w.folders && { list: w.folders, port: ch.shares.port2 },
     agent: ch.agent?.port2,
+    notify: ch.notify?.port2,
     sound: ch.sound,
     renderer: w.three?.renderer,
   };
@@ -103,7 +108,7 @@ export function startMessage(
     about: w.about,
     plan: w.plan,
   };
-  const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agent].flatMap((c) => (c ? [c.port2] : []));
+  const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agent, ch.notify].flatMap((c) => (c ? [c.port2] : []));
   const transfer: Transferable[] = [
     ch.keyboard.port2,
     ch.tablet.port2,

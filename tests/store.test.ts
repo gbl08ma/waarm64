@@ -27,7 +27,7 @@ const DISKS = new Map([disk('d00000000001'), disk('d00000000002', { kind: 'blank
 test("the shape: the other devices first, then the disks; its hash is stable and moves with what the guest sees, only", async () => {
   const m = machine();
   const s = shapeOf(m, (id) => DISKS.get(id));
-  assert.deepEqual(s.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'blk', 'blk']);
+  assert.deepEqual(s.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'blk', 'blk', 'vsock']);
   assert.deepEqual(s.disks.map((d) => [d.slot, d.serial]), [[6, 'webpc-a00000000001'], [7, 'webpc-a00000000002']]);
   assert.ok(serialOf('a00000000001').length <= 20);
   // Pinned: a hash that moved means every kept snapshot is orphaned by an upgrade of the page (ABI 59's, 60's and 62's CPU
@@ -109,7 +109,7 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.notEqual(await shapeHash(split), h, 'a split set by hand');
   assert.deepEqual(diffWords(s, split), [t('machines:shape-diff.split', { was: t('machines:shape-diff.split.automatic'), now: t('machines:shape-diff.split.sizes', { sizes: '512 + 512' }) })]);
   assert.throws(() => shapeOf(m, () => undefined), /isn't in this browser/); // i18n-ignore: the developer's Error
-  assert.equal(slots({ nets: 0, display: 'none', attachments: new Array(MAX_DISKS) }).length, 4 + MAX_DISKS);
+  assert.equal(slots({ nets: 0, display: 'none', attachments: new Array(MAX_DISKS) }).length, 5 + MAX_DISKS); // rng, keyboard, tablet, snd, the disks, vsock
 });
 
 test('shapes pinned: representative shapes\' hashes and what shapeDiff says of them both ways stay as they were', async () => {
@@ -152,7 +152,7 @@ test('network adapters in the shape: one at the default MAC is the card machines
   assert.equal('macs' in card, false);
   const mac2 = '52:54:00:ab:cd:ef';
   const two = of({ network: undefined, adapters: [{ id: 'f00000000001', mac: DEFAULT_MAC }, { id: 'f00000000002', mac: mac2 }] });
-  assert.deepEqual(two.devices, ['rng', 'keyboard', 'tablet', 'net', 'net', 'gpu', 'snd', 'blk', 'blk'], 'the adapters where the card was, in order');
+  assert.deepEqual(two.devices, ['rng', 'keyboard', 'tablet', 'net', 'net', 'gpu', 'snd', 'blk', 'blk', 'vsock'], 'the adapters where the card was, in order');
   assert.deepEqual(two.macs, [DEFAULT_MAC, mac2]);
   assert.deepEqual(two.disks.map((d) => d.slot), [7, 8]);
   assert.deepEqual(diffWords(card, two), [t('machines:shape-diff.adapters', { was: 1, now: 2 })]);
@@ -482,13 +482,23 @@ test("a machine's Vulkan setting: in its shape (with 3D only) and its definition
   assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, vulkan: 'yes' } })), /damaged/);
 });
 
+test('the shape: the notify socket (vsock) on every machine, after the disks, out of the hash: a shape without it is the same machine', async () => {
+  const s = shapeOf(machine(), (id) => DISKS.get(id));
+  assert.equal(s.devices.at(-1), 'vsock');
+  assert.deepEqual(s.disks.map((d) => d.slot), [6, 7], 'the disks where they were');
+  const before = { ...s, devices: s.devices.filter((k) => k !== 'vsock') };
+  assert.equal(await shapeHash(before), await shapeHash(s));
+  assert.deepEqual(diffWords(before, s), []);
+  assert.deepEqual(slots({ nets: 1, attachments: [0], vsock: false }).map((x) => x.kind), ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'blk']);
+});
+
 test('the shape: clipboard sharing\'s device joins only machines that have it, after the other devices, and is said', async () => {
   const s = shapeOf(machine(), (id) => DISKS.get(id));
   const h = await shapeHash(s);
   assert.equal(await shapeHash(shapeOf(machine({ clipboard: false }), (id) => DISKS.get(id))), h, 'off: the shape as it was');
   const on = shapeOf(machine({ clipboard: true }), (id) => DISKS.get(id));
-  assert.deepEqual(on.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'agent', 'blk', 'blk']);
-  assert.deepEqual(slots({ nets: 0, display: 'none', clock: true, shares: true, clipboard: true, attachments: [0] }).map((x) => x.kind), ['rng', 'keyboard', 'tablet', 'snd', 'clock', '9p', 'agent', 'blk']);
+  assert.deepEqual(on.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'agent', 'blk', 'blk', 'vsock']);
+  assert.deepEqual(slots({ nets: 0, display: 'none', clock: true, shares: true, clipboard: true, vsock: false, attachments: [0] }).map((x) => x.kind), ['rng', 'keyboard', 'tablet', 'snd', 'clock', '9p', 'agent', 'blk']);
   assert.notEqual(await shapeHash(on), h);
   assert.deepEqual(diffWords(s, on), [t('machines:shape-diff.clipboard.hadNo')]);
   assert.deepEqual(diffWords(on, s), [t('machines:shape-diff.clipboard.had')]);

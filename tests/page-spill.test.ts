@@ -64,6 +64,8 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), undefined, { timeout: 300_000, polling: 250 });
   const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')?.textContent ?? '']);
   assert.equal(state, 'running', message);
+  // `running` may come from systemd's READY=1 before the getty's prompt (docs/devices.md "vsock"): wait for the prompt.
+  await page.waitForFunction(() => /login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 120_000, polling: 250 });
   await page.locator('.xterm').click();
   await run(page, 'root', /root@\S+:~#\s/);
   const N = '/sys/devices/system/node';

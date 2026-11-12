@@ -1,6 +1,6 @@
 // What a firmware machine's fw_cfg holds (web/app/firmware-files.ts `firmwareFiles`): byte for byte what the machine
 // worker's start built before it was a function of its own (pinned here as it was), for the settings that change it.
-// The guest reads these: a byte that moved is a guest-visible change.
+// The guest reads these: a byte that moved is a guest-visible change (the notify socket's credential was one, added here).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { firmwareFiles } from '../web/app/firmware-files.ts';
@@ -22,7 +22,9 @@ function before(c: Case) {
   const machine: Machine = MACHINES[c.machine];
   const m = { nets: Array.from({ length: c.nets }), netConfig: c.netConfig, credentials: c.credentials, keyLayout: c.keyLayout, sharesPath: c.sharesPath, guest: guestWords(keyboardLayout(c.keyLayout)), disks: disks(c) };
   const net = !!m.nets.length && !!machine.network && m.netConfig;
-  const credentials = [...(net ? machine.network!.credentials : []), ...m.credentials];
+  // Since: systemd's notify socket first, unless a `?credential=` names it (docs/devices.md "vsock").
+  const notify = m.credentials.some((x) => x.name === 'vmm.notify_socket') ? [] : [{ name: 'vmm.notify_socket', data: 'vsock-stream:2:8573' }];
+  const credentials = [...notify, ...(net ? machine.network!.credentials : []), ...m.credentials];
   const keys = keyboardLayout(m.keyLayout);
   const agentBytes = c.agent;
   const units = [

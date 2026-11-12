@@ -84,6 +84,7 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
   await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
   await running(page);
+  await shows(page, /login: /);
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   await near(page, 'booted');

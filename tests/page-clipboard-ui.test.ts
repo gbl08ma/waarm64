@@ -6,7 +6,7 @@
 // button at once); sync with the permission (the host's copy offered on `clipboardchange`, which Chromium fires);
 // the switch saying PAUSE and RESUME, nothing offered while paused and nothing sent by the resume; Send the clipboard
 // to the guest and Type the clipboard; Copy the screen (the framebuffer the guest drew, as a PNG on the host's
-// clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=agent`). The PNG worker (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's
+// clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's
 // switch: off for a machine that hasn't it, its note, ticking it asks for the permission, the orphans' warning both
 // ways, saved into the record.
 import assert from 'node:assert/strict';
@@ -235,13 +235,13 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await context.close();
 });
 
-test("the agent's HELLO says the machine is up: with the serial marker off (`?ready=agent`), booting until the guest's agent says HELLO, then running", { skip, timeout: 120_000 }, async () => {
+test("the agent's HELLO says the machine is up: with the serial marker off (`?ready=guest`), booting until the guest's agent says HELLO, then running", { skip, timeout: 120_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&clipboard=1&ready=agent`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&clipboard=1&ready=guest`);
   // Buildroot's shell prompt (its marker) is up, but not watched for: the machine is still booting.
   await page.waitForFunction(() => /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
   await openPort(page);

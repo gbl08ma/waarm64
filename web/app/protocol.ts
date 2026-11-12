@@ -13,7 +13,7 @@ import type { DevKnobs } from './run/dev-knobs.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
- * yet (nor, with clipboard sharing, the guest's agent: `agent-up`); running: seen; off: powered off; rebooting: the guest asked for a reset (the page starts a
+ * yet (nor the guest's own sign: `up`); running: seen; off: powered off; rebooting: the guest asked for a reset (the page starts a
  * new machine); suspended: stopped with its memory kept beside its disk (docs/frontend.md
  * "Suspend"): the next start resumes it; crashed: the guest panicked or the emulator failed; failed: the machine couldn't
  * start (a missing file, the disk in use, no memory). crashed and failed come with an `error`
@@ -123,6 +123,8 @@ export type MachinePorts = {
   folders?: { list: FolderSpec[]; port: MessagePort };
   /** Clipboard sharing's agent (web/agent-device.ts; web/app/agent-link.ts has the page's end). */
   agent?: MessagePort;
+  /** systemd's notifications (web/vsock-device.ts `VsockFromDevice`), a `firmware` machine's: the page's end hears READY=1. */
+  notify?: MessagePort;
   /**
    * A 3D machine's (the page's default where WebGL2 is; `?gpu=2d` turns it off): the GPU worker's port (web/gpu-worker.ts,
    * which has the screen). The virtio-gpu gets virgl and renders there, with the start's `caps`.
@@ -197,10 +199,10 @@ export type ToWorker =
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /**
-   * The guest's agent said HELLO (a machine with clipboard sharing, docs/clipboard.md): the machine is up, as its
-   * `ready` marker would say. A machine still `booting` is `running`.
+   * The guest said it's up: systemd's READY=1 on its notify socket (web/vsock-device.ts, a `firmware` machine's), or the
+   * clipboard agent's HELLO (docs/clipboard.md). A machine still `booting` is `running`, as its `ready` marker would make it.
    */
-  | { type: 'agent-up' }
+  | { type: 'up' }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile` with its `id`. */

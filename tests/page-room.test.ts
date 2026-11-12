@@ -192,6 +192,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
 
     // The guests: each has its room address and the room's resolver, from the page's network configuration.
     for (const p of [a, b]) {
+      await shows(p, /login: /);
       await onSerial(p, 'root\n');
       await shows(p, /root@\S+:~# /);
     }

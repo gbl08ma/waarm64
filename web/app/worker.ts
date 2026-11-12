@@ -52,7 +52,7 @@ const stopped = () => stopping;
 let current: Machine | undefined;
 /** The OPFS directory of the machine's variable store and suspended copy (the start message's `home`). */
 let home: string | undefined;
-let up: (() => void) | undefined; // the run's: says `running` once (from the guest's agent: `agent-up`)
+let up: (() => void) | undefined; // the run's: says `running` once (from the guest's sign: `up`)
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
@@ -76,7 +76,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'wake':
       vm?.wake();
       break;
-    case 'agent-up':
+    case 'up':
       return up?.();
     case 'profile':
       void profile(vm, m.on, m.id);
@@ -253,7 +253,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   }
   if (stopped()) return; // `stop` closes it
   await booted(vm, m, { header, resume: !!resume, note });
-  const marker = m.config.dev.agentReadyOnly ? undefined : machine.ready; // `?ready=agent`: only the agent's sign
+  const marker = m.config.dev.guestReadyOnly ? undefined : machine.ready; // `?ready=guest`: only the guest's signs
   return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!restore);
 }
 
@@ -295,7 +295,7 @@ function limitJit(st: Status) {
 
 /**
  * Runs the booted machine until it stops: its serial output posted and watched for the guest's ready marker and a
- * panic (or the guest's agent's HELLO: `agent-up`), its status posted every second. `restore`: from a snapshot, where the machine was (running already).
+ * panic (or the guest's own sign: `up`), its status posted every second. `restore`: from a snapshot, where the machine was (running already).
  */
 async function run(machine: Machine, plan: Plan, io: Parameters<typeof status>[6], restore: boolean): Promise<void> {
   if (!vm) return;

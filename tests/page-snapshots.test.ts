@@ -100,6 +100,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const url = `${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`;
   await page.goto(url);
   await stateIs(page, 'running');
+  await shows(page, /login: /);
   await type(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   const ramdisk = '/dev/vdb';

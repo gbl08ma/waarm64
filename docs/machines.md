@@ -186,11 +186,12 @@ changes; the drop-before-run discipline of the page before machines is kept besi
 ### 4.1 Many disks
 
 - **16 disks at most** (`shape.ts` `MAX_DISKS`). The page's machine has other transports (rng, keyboard, tablet, up
-  to four network adapters, gpu, snd, the mouse, the touchscreen, the clock, 9p, clipboard sharing's agent) of the core's 32
+  to four network adapters, gpu, snd, the mouse, the touchscreen, the clock, 9p, clipboard sharing's agent, the notify socket) of the core's 32
   (`virtio::MAX_DEVICES`); 16 disks leaves room for devices to come without making a stored machine that used every
   slot one that a newer page can't make.
 - **Slots** (`shape.ts` `slots`): the other devices first, in a fixed order, then the disks; a new device kind joins
-  only on machines that have it, so older machines' shapes don't move. The tests' transient machines take the same
+  only on machines that have it, so older machines' shapes don't move. The notify socket (`vsock`, devices.md), on every
+  firmware machine, is the one after the disks, so it moved none of them, and outside the shape's hash. The tests' transient machines take the same
   order (their guests find their root by UUID or as `vda`, the first disk). A snapshot's header lists the kinds in
   that order (frontend.md "Snapshots", `devices`).
 - **Attaching, detaching, reordering or flipping read-only needs the machine off:** virtio-mmio has no hotplug and

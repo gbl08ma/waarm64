@@ -210,15 +210,17 @@ export const USB_CONNECTORS = 4;
 export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
+/** The device kinds only some machines have (their record's switches; the notify socket, a `firmware` machine's). */
+type OptionalKind = 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'vsock';
 /** The device kinds a machine's transports have, in slot order (`slots`). */
-export type DeviceKind =
-  'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
+export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | OptionalKind | 'blk';
 /** The vCPUs' optional features: web/cpu-features.ts's table (`CPU_DEFAULT` the ones a machine has unless turned off). */
 export { CPU_DEFAULT, CPU_FEATURES, type CpuFeature };
 /**
- * The features the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and suspended
- * machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's `cpu`),
- * whatever the machine's are now, so the hash needn't tell them apart.
+ * The features and devices the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and
+ * suspended machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's
+ * `cpu`) and devices (the notify socket, `vsock`, on every `firmware` machine since: a snapshot from before restores
+ * without it, web/app/worker-header.ts `slotsOf`), whatever the machine's are now, so the hash needn't tell them apart.
  */
 const UNHASHED_CPU: CpuFeature[] = ['sha3'];
 export const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));
@@ -227,7 +229,8 @@ export const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.
  * The machine's transports in slot order: the other devices first, in a fixed order, then the disks
  * (machines.md §4.1), so that a device kind added later is appended after them only on machines
  * that have it. The network adapters are where the one card was (docs/networking/adapters.md §4). `attachment` is the disk's
- * index in the machine's list, `adapter` the adapter's.
+ * index in the machine's list, `adapter` the adapter's. The notify socket (`vsock`, unless false: every `firmware`
+ * machine has it) is after the disks: it moved no machine's disks (their slots, the firmware's boot entries).
  */
 export function slots(m: {
   nets: number;
@@ -237,6 +240,7 @@ export function slots(m: {
   clock?: boolean;
   shares?: boolean;
   clipboard?: boolean;
+  vsock?: boolean;
   attachments: unknown[];
 }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
@@ -252,6 +256,7 @@ export function slots(m: {
     ...(m.shares ? [{ kind: '9p' as const }] : []),
     ...(m.clipboard ? [{ kind: 'agent' as const }] : []),
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
+    ...(m.vsock === false ? [] : [{ kind: 'vsock' as const }]),
   ];
 }
 
@@ -292,8 +297,13 @@ export type Shape = {
   jitMiB?: number;
 };
 
-/** The part of a shape its hash covers: what the guest sees (all but `jitMiB` and `UNHASHED_CPU`). */
-export const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined, cpu: hashedCpu(s.cpu) });
+/** The part of a shape its hash covers: what the guest sees (all but `jitMiB` and the features and devices above). */
+export const hashed = (s: Shape): Shape => ({
+  ...s,
+  jitMiB: undefined,
+  cpu: hashedCpu(s.cpu),
+  devices: s.devices.filter((k) => k !== 'vsock'),
+});
 
 /**
  * A machine's shape, from its record and its disks' (by id). `cpu`: the vCPUs' features (all,

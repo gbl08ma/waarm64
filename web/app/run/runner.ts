@@ -22,6 +22,7 @@ import type { Grab } from '../hooks.ts';
 import { resolveKeyboard } from '../keyboard.ts';
 import type { PageNetwork } from '../net-live.ts';
 import type { FromWorker, MachineConfig, Status, ToWorker } from '../protocol.ts';
+import { onReady } from '../../vsock-device.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
@@ -123,8 +124,10 @@ export class Runner {
   #newRun(canvas: HTMLCanvasElement, ch: Channels) {
     const { machine: m, screen, terminal } = this.d;
     const worker = new Worker(new URL('../worker.ts', import.meta.url), { type: 'module' });
-    // The agent's HELLO is a sign the machine is up, beside its ready marker (docs/clipboard.md "The machine's state").
-    const share = this.d.clipboard(ch.agent?.port1, () => worker.postMessage({ type: 'agent-up' } satisfies ToWorker));
+    // The guest's signs that it's up, beside its ready marker: the agent's HELLO, systemd's READY=1 (web/vsock-device.ts).
+    const up = () => worker.postMessage({ type: 'up' } satisfies ToWorker);
+    const share = this.d.clipboard(ch.agent?.port1, up);
+    if (ch.notify) onReady(ch.notify.port1, up);
     clipboard.follow(share);
     window.__clipboard = share; // the tests' hook
     const input = attachInput(canvas, {

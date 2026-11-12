@@ -136,8 +136,9 @@ async function onSerial(page: Page, text: string) {
   await page.keyboard.type(text, { delay: 10 });
 }
 
-/** Logs in as root on the serial terminal (the page is `running`: its `login: ` prompt is up). */
+/** Logs in as root on the serial terminal, once its `login: ` prompt is up (`running` may come from systemd's READY=1 first). */
 async function serialLogin(page: Page) {
+  await shows(page, /login: /);
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /); // not typed ahead: a key typed while login hands the tty over was lost (the first of the next line)
   await onSerial(page, 'echo lo""gged-in-$((6*7))\n');
@@ -246,7 +247,8 @@ const flashWritten = (page: Page) => page.waitForFunction(async () => {
 for (let run = 1; run <= RUNS; run++) {
   test(`the page runs Debian: a key on the screen stops GRUB; root logs in on the screen and on the serial terminal; the platform is the firmware's; the page's size reaches the guest; the disk persists over a reload; a snapshot loads in a fresh profile, suspends and resumes${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
     // The UK layout: the screen's typing below is the same on it (Debian's image has no console keymaps anyway).
-    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&keyboard=gb&mouse=1&touch=1&${unattendedQuery()}`;
+    // `ready=guest`: only systemd's READY=1 over the notify socket (docs/devices.md "vsock") says the machine is up.
+    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&keyboard=gb&mouse=1&touch=1&ready=guest&${unattendedQuery()}`;
     const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, hasTouch: true }); // a fresh profile: an empty OPFS
     const page = await context.newPage();
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
@@ -277,7 +279,7 @@ for (let run = 1; run <= RUNS; run++) {
     await page.waitForTimeout(2500);
     await page.keyboard.press('Enter');
     await running(page);
-    console.log(`# debian page ${run}: running at ${at()}`);
+    console.log(`# debian page ${run}: running (systemd's READY=1) at ${at()}`);
     // The screen shows the guest's console (fbcon), not the boot card.
     assert.equal(await page.locator('#boot').isHidden(), true);
 
@@ -297,6 +299,10 @@ for (let run = 1; run <= RUNS; run++) {
     // What the firmware gave Linux, and a credential read back from fw_cfg (the login above relied on them: a shifted directory can't pass).
     await onSerial(page, 'clear; echo ==be""gin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware; nproc; cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/firstboot.timezone/raw; echo; readlink /etc/localtime; echo ==e""nd\n');
     await shows(page, /==begin\s*rtc-efi[^]*?0 virtio_gpudrmfb[^]*?efi[^]*?qemu_fw_cfg\s*2\s*Etc\/UTC\s*\S*zoneinfo\/Etc\/UTC\s*==end/);
+    // The notify socket (docs/devices.md "vsock"): the virtio-vsock (ID 19) bound to Linux's transport, the guest's CID 3,
+    // and the credential systemd read (its READY=1 made the page `running` above), and no complaint from PID 1 about either.
+    await onSerial(page, 'clear; echo ==vs""ock $(for d in /sys/bus/virtio/devices/*; do [ $(cat $d/device) = 0x0013 ] && basename $(readlink $d/driver); done) $(cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/vmm.notify_socket/raw) $(journalctl -b -o cat _PID=1 | grep -c "readiness notification\\|notify_socket");\n');
+    await shows(page, /==vsock vmw_vsock_virtio_transport vsock-stream:2:8573 0(?!\d)/);
     // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
     await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
     await shows(page, /==dmi webpc webpc Virtual Machine webpc EDK II ArmVirtQemuKernel/);
@@ -524,6 +530,7 @@ for (let run = 1; run <= RUNS; run++) {
     await p2.reload();
     await running(p2);
     assert.doesNotMatch((await message(p2)) ?? '', words('machine:worker.resumed'));
+    await shows(p2, /login: /);
     await onSerial(p2, 'root\n');
     await shows(p2, /root@\S+:~# /);
     await onSerial(p2, 'cat /root/snapmark /root/after /root/third\n');
