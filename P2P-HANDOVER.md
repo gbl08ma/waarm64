@@ -97,8 +97,14 @@ regex; 26–34 M keys/s on 8 vCPUs; dev-dependencies `curve25519-dalek` and `reg
 settings' words speak of the connection, not the machine (docs/copy.md's Words: connection, member).
 The user waived the two-networks check ("it'll fall back to the relay just fine too").
 
-**Next:** the track's end: its out-of-context review (2026-11-12, a subagent, `review/p2p-rooms`), its fixes through
-subagents (the user's call), then `scripts/ci-debian.sh --platform`, `ci-graphics.sh`, `ci-machines.sh`, the outcome
-into docs/ and PLAN.md §3. A GPU (OpenCL) miner was discussed, not asked for.
+**The track-end review (2026-11-12):** a fresh agent's static review found nine defects, all real; seven fixed by
+a second agent, each with a test that failed first (the commits "Rooms review N"), and 3 (anyone with a node's name can
+fill its trial budget: WireGuard's) with the rest of 8 (other tabs' ephemeral connections) filed in docs/backlog.md
+"Rooms' loose ends", beside 1's remainder (a flood through every relay of a link). Reasoned, not measured: the data
+channel's 64 KiB cap and 128 lookups a second a relay. `scripts/ci.sh`, `ci-net.sh` and `ci-debian.sh` OK after them.
+
+**Next:** the rest of the track's end: `scripts/ci-debian.sh --platform`, `ci-graphics.sh`, `ci-machines.sh`, then the
+outcome into docs/ and PLAN.md §3 and this handover deleted. Open for the user: plan §9's default public room. A GPU
+(OpenCL) miner was discussed, not asked for.
 
 Open questions for the user stay in plan §9 (the default public room); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).
