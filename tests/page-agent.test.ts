@@ -90,6 +90,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
 
   // The agent: over fw_cfg, started by its unit, the port open, its HELLO (version 1, TYPE).
+  await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   const h = await hello(page).catch(async (e) => {

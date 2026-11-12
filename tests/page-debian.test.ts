@@ -29,7 +29,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
-import { MACHINES, readyWatcher } from '../web/app/machine.ts';
+import { MACHINES, readiness, readyWatcher } from '../web/app/machine.ts';
 import { SnapshotWriter } from '../web/snapshot-file.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
@@ -40,7 +40,7 @@ import { GAP_FRAMES } from '../web/audio-ring.ts';
 import { levelToValue } from '../web/snd.ts';
 import { answerAsks } from './page-ask.ts';
 
-// The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
+// The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts, machine.ts `readiness`).
 // Debian's is agetty's prompt: it must be found wherever a drain puts it, also with a kernel line
 // right after it. (M8 loop 6: the marker was matched only at the end of a drain's output, and
 // one page sat in `booting` for 4 minutes; that's the likely cause, not caught in the act.)
@@ -56,6 +56,25 @@ test("the page's ready marker: Debian's login prompt in any chunk, not a service
   assert.deepEqual(uefi('\r\nlocalhost login: '), [true]);
   const buildroot = readyWatcher(MACHINES.buildroot.ready);
   assert.deepEqual(['Run /init as init process\r\n', '# '].map(buildroot), [false, true]);
+});
+
+// With clipboard sharing the guest's agent's HELLO is a sign too (docs/clipboard.md "The machine's state"): whichever
+// comes first says `running`, once; a restored machine says nothing; without a marker only the agent's sign counts.
+test("the page's readiness: the marker or the agent's HELLO, whichever first, once", () => {
+  const said = (ready: RegExp | undefined, running: boolean, ...signs: string[]) => {
+    let n = 0;
+    const r = readiness(ready, running, () => n++);
+    for (const s of signs) if (s === 'HELLO') r.up(); else r.serial(s);
+    return n;
+  };
+  const login = MACHINES.debian.ready;
+  assert.equal(said(login, false, 'localhost login: '), 1);
+  assert.equal(said(login, false, 'HELLO', 'localhost login: ', 'HELLO'), 1);
+  assert.equal(said(login, false, 'localhost login: ', 'HELLO'), 1);
+  assert.equal(said(login, false, 'Starting systemd-logind.service'), 0);
+  assert.equal(said(login, true, 'localhost login: ', 'HELLO'), 0, 'a restored machine is running already');
+  assert.equal(said(undefined, false, 'localhost login: '), 0, 'no marker: the serial output says nothing');
+  assert.equal(said(undefined, false, 'localhost login: ', 'HELLO'), 1);
 });
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');

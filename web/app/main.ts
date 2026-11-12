@@ -163,7 +163,7 @@ const runner = new Runner({
     syncKeyboard: (r) => usbRun.syncKeyboard(r),
     keyboardKey: usbRun.keyboardKey,
   },
-  clipboard: (port) => clipboardActions.begin(port),
+  clipboard: (port, up) => clipboardActions.begin(port, up),
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },
   later: {
     problems: () => problems,

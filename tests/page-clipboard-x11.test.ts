@@ -153,6 +153,7 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&clipboard=1&disk=/${IMAGE}&${credentialsQuery()}`);
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
+  await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   const h = await hello(page);

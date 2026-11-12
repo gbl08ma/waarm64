@@ -148,6 +148,17 @@ don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts i
 | Throughput | ~0.8 MB/s, the channel's rate under the credit: a 1.58 MB PNG from the host to `wl-paste` in 1.9–2.0 s, to xclip by INCR in 2.2 s |
 | Sandbox | `systemd-analyze security` 3.8, "OK" (3.7 before X11's socket directory was bound in) |
 
+## The machine's state
+
+The agent's HELLO is a sign that the machine is up, beside its serial `ready` marker (web/app/machine.ts, agetty's
+`login: ` on Debian): whichever comes first moves the page from `booting` to `running` (the page posts `agent-up` to
+the machine worker, which says `running` once, as the marker does). So a guest that logs in automatically, prints after
+its prompt or has no serial getty still gets there when it has the setting. The marker stays the sign for every other
+machine: the agent isn't asked of a guest for its state alone. On Debian the HELLO usually comes after the prompt
+(the unit starts with `multi-user.target`, then reads the binary over fw_cfg, ~0.4 s), but nothing orders the two, so
+the tests that log in on the serial terminal wait for the prompt themselves. `?ready=agent` watches for no marker (the
+Buildroot clipboard test's check that HELLO alone does it).
+
 ## What each browser does
 
 Measured on 2026-11-05 and 2026-11-06, headless on the dev VM (`bench/results/local/clip-ways.ts`,

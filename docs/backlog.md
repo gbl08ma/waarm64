@@ -1315,8 +1315,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Chromium's codes, which the guest then sees swapped.
 - **The ready marker is a per-machine regexp** over the serial output (Debian: agetty's
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
-  has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
-  systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
+  has no serial getty would need its own. With clipboard sharing the agent's HELLO is a sign too (clipboard.md "The
+  machine's state"); without it, the agent isn't required for the state alone. Other signs a machine without the agent
+  could give, none built: systemd's `vmm.notify_socket` (READY=1 at the boot's end, sent by systemd 254+ to a
+  credential's address; needs a virtio-vsock device the platform doesn't have); a compositor's first cursor or 3D
+  context on the virtio-gpu (desktops only).
 - **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
   EDK2's terminal driver, and a fast run of arrow keys can lose bytes (the PL011's FIFO against a guest that polls;
   frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every

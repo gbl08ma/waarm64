@@ -17,7 +17,7 @@ import { lzCodec } from '../lz.ts';
 import type { SnapshotHeader } from '../snapshot-file.ts';
 import type { DeviceSpec } from '../devices.ts';
 import { firmwareFiles } from './firmware-files.ts';
-import { MACHINES, readyWatcher, type Machine } from './machine.ts';
+import { MACHINES, readiness, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { Status, ToWorker } from './protocol.ts';
 import type { DeviceKind } from './shape.ts';
@@ -52,6 +52,7 @@ const stopped = () => stopping;
 let current: Machine | undefined;
 /** The OPFS directory of the machine's variable store and suspended copy (the start message's `home`). */
 let home: string | undefined;
+let up: (() => void) | undefined; // the run's: says `running` once (from the guest's agent: `agent-up`)
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
@@ -75,6 +76,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'wake':
       vm?.wake();
       break;
+    case 'agent-up':
+      return up?.();
     case 'profile':
       void profile(vm, m.on, m.id);
       break;
@@ -250,7 +253,8 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   }
   if (stopped()) return; // `stop` closes it
   await booted(vm, m, { header, resume: !!resume, note });
-  return run(machine, plan, ioOf(plan, m, machine, devices), !!restore);
+  const marker = m.config.dev.agentReadyOnly ? undefined : machine.ready; // `?ready=agent`: only the agent's sign
+  return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!restore);
 }
 
 /**
@@ -291,14 +295,14 @@ function limitJit(st: Status) {
 
 /**
  * Runs the booted machine until it stops: its serial output posted and watched for the guest's ready marker and a
- * panic, its status posted every second. `restore`: from a snapshot, where the machine was (running already).
+ * panic (or the guest's agent's HELLO: `agent-up`), its status posted every second. `restore`: from a snapshot, where the machine was (running already).
  */
 async function run(machine: Machine, plan: Plan, io: Parameters<typeof status>[6], restore: boolean): Promise<void> {
   if (!vm) return;
   const { ncpus } = plan;
   const t0 = performance.now();
-  const ready = readyWatcher(machine.ready);
-  let running = restore; // a restored machine is where it was: there's no marker to wait for
+  const ready = readiness(machine.ready, restore, () => state('running')); // restored: where it was, no marker to wait for
+  up = ready.up;
   let panicked = false;
   let tail = ''; // the last output, for markers split across drains
   let loopAt = performance.now(); // the run loop's last iteration
@@ -311,10 +315,7 @@ async function run(machine: Machine, plan: Plan, io: Parameters<typeof status>[6
     // cut to 256 characters: a loaded host drains the panic line and its whole stack trace at once, and a cut first lost it.
     const seen = tail + text;
     tail = seen.slice(-256);
-    if (!running && ready(text)) {
-      running = true;
-      state('running');
-    }
+    ready.serial(text);
     const at = seen.indexOf(PANIC);
     // The guest hangs (or resets, with panic=N: the page keeps the crash on show rather than restarting).
     if (!panicked && at >= 0 && seen.includes('\n', at)) {
@@ -369,6 +370,7 @@ async function run(machine: Machine, plan: Plan, io: Parameters<typeof status>[6
       return;
     }
   } finally {
+    up = undefined;
     clearInterval(timer);
     clearInterval(kbdTimer);
   }

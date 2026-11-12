@@ -55,10 +55,11 @@ export class ClipboardActions {
     [this.#m, this.#replies, this.#canvas] = [m, replies, canvas];
   }
 
-  /** A run's sharing over the agent's port `port` (none: the machine has no clipboard sharing). */
-  begin(port: MessagePort | undefined) {
+  /** A run's sharing over the agent's port `port` (none: the machine has no clipboard sharing); `up` at each agent's HELLO. */
+  begin(port: MessagePort | undefined, up: () => void) {
     this.#agent?.close();
     this.#agent = port && new AgentLink(port);
+    if (this.#agent) this.#agent.onHello = up;
     window.__agent = this.#agent; // the tests' hook
     return this.#agent && new ClipboardShare(this.#agent, clipboardHost());
   }

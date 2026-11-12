@@ -508,10 +508,11 @@ Page → worker:
   directory of its own files. `config.cpu` is the vCPUs' features as one list (web/cpu-features.ts: the page's
   `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
   worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
-  `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`), parsed by the
+  `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=agent`), parsed by the
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
   features, the kernel and the command line are then the file's.
+- `agent-up`: the guest's agent said HELLO (web/app/agent-link.ts `onHello`): a machine still `booting` is `running`.
 - `snapshot {id, handle?, keep?, whole?, sleep?}`: save a snapshot of the running machine to the file handle's
   stream, or, without one, back in `snapshot-chunk` messages, or with `keep` into that OPFS file (a kept snapshot,
   machines.md §5.2); `whole` puts a disk written in place in it whole; `sleep` gives the guest a while to suspend
@@ -539,7 +540,8 @@ Page → worker:
 Worker → page:
 - `state {state, error?, note?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
   (the VM runs), `running` (the machine's `ready` marker appeared on the serial console:
-  `readyWatcher` in machine.ts, over the output so far, across drains), `off`
+  `readyWatcher` in machine.ts, over the output so far, across drains; or, with clipboard sharing, the guest's agent
+  said HELLO: the page's `agent-up`, [clipboard.md](clipboard.md) "The machine's state"), `off`
   (PSCI SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine, once a save or a switch under way ends: `PowerActions.rebooted`), `crashed`
   (the guest's `Kernel panic - not syncing` line, an emulator error, an unimplemented exit),
   `failed` (the machine couldn't start). `crashed` and `failed` carry an `error` for the user and a

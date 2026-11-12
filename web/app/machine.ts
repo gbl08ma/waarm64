@@ -45,9 +45,10 @@ export type Machine = {
   /**
    * Serial output that means the machine is up (a login prompt, a shell's prompt), matched by
    * `readyWatcher` against the output so far: not only at its end, since the kernel may print a
-   * line right after the prompt.
+   * line right after the prompt. With clipboard sharing, the guest's agent saying HELLO is a sign too, whichever
+   * comes first (docs/clipboard.md "The machine's state"); absent, it's the only one.
    */
-  ready: RegExp;
+  ready?: RegExp;
 };
 
 /** A systemd credential (`systemd.import-credentials`): its name and contents. */
@@ -249,6 +250,26 @@ export function readyWatcher(ready: RegExp) {
     const s = tail + text;
     tail = s.slice(-256);
     return (seen = ready.test(s));
+  };
+}
+
+/**
+ * Whether the machine is up (`running`, at the start: a restored machine): its `ready` marker in the serial output
+ * (`serial`, none without a marker) or another sign (`up`: the guest's agent's HELLO, docs/clipboard.md "The machine's
+ * state"), whichever comes first; `onUp` once.
+ */
+export function readiness(ready: RegExp | undefined, running: boolean, onUp: () => void) {
+  const marker = ready && readyWatcher(ready);
+  const up = () => {
+    if (running) return;
+    running = true;
+    onUp();
+  };
+  return {
+    up,
+    serial: (text: string) => {
+      if (!running && marker?.(text)) up();
+    },
   };
 }
 

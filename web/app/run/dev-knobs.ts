@@ -42,6 +42,11 @@ export type DevKnobs = {
   noDiskCache: boolean;
   /** The display posts `flash` when a draw turns the screen's centre bright (`?avprobe`: bench/audio/avsync.ts). */
   avProbe: boolean;
+  /**
+   * Only the guest's agent says the machine is up, not its serial ready marker (`?ready=agent`: the tests' check of
+   * the agent's sign, docs/clipboard.md "The machine's state").
+   */
+  agentReadyOnly: boolean;
 };
 
 /** The machine worker's knobs from the page's query. */
@@ -68,5 +73,6 @@ export function parseDevKnobs(q: URLSearchParams): DevKnobs {
     ioStats: q.has('iostats'),
     noDiskCache: q.get('diskcache') === '0',
     avProbe: q.has('avprobe'),
+    agentReadyOnly: q.get('ready') === 'agent',
   };
 }

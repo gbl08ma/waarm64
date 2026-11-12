@@ -60,7 +60,8 @@ export type RunnerDeps = {
     keyboardKey(code: string, down: boolean): boolean;
   };
   /** Clipboard sharing over the agent's port (none: the machine has none). */
-  clipboard: (port: MessagePort | undefined) => ClipboardShare | undefined;
+  /** A run's clipboard sharing over the agent's port (none: the machine has no sharing); `up` at each agent's HELLO. */
+  clipboard: (port: MessagePort | undefined, up: () => void) => ClipboardShare | undefined;
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
@@ -122,7 +123,8 @@ export class Runner {
   #newRun(canvas: HTMLCanvasElement, ch: Channels) {
     const { machine: m, screen, terminal } = this.d;
     const worker = new Worker(new URL('../worker.ts', import.meta.url), { type: 'module' });
-    const share = this.d.clipboard(ch.agent?.port1);
+    // The agent's HELLO is a sign the machine is up, beside its ready marker (docs/clipboard.md "The machine's state").
+    const share = this.d.clipboard(ch.agent?.port1, () => worker.postMessage({ type: 'agent-up' } satisfies ToWorker));
     clipboard.follow(share);
     window.__clipboard = share; // the tests' hook
     const input = attachInput(canvas, {

@@ -13,7 +13,7 @@ import type { DevKnobs } from './run/dev-knobs.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
- * yet; running: seen; off: powered off; rebooting: the guest asked for a reset (the page starts a
+ * yet (nor, with clipboard sharing, the guest's agent: `agent-up`); running: seen; off: powered off; rebooting: the guest asked for a reset (the page starts a
  * new machine); suspended: stopped with its memory kept beside its disk (docs/frontend.md
  * "Suspend"): the next start resumes it; crashed: the guest panicked or the emulator failed; failed: the machine couldn't
  * start (a missing file, the disk in use, no memory). crashed and failed come with an `error`
@@ -196,6 +196,11 @@ export type ToWorker =
   | { type: 'snapshot-check'; id: number; what: 'snapshot' | 'suspend' }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
+  /**
+   * The guest's agent said HELLO (a machine with clipboard sharing, docs/clipboard.md): the machine is up, as its
+   * `ready` marker would say. A machine still `booting` is `running`.
+   */
+  | { type: 'agent-up' }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile` with its `id`. */
