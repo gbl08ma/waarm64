@@ -1,6 +1,6 @@
 <!--
   A state's light: a small dot in the tone of what it says (`ok`: on, connected; `busy`: on its way; `bad`: failed;
-  `off`). The network menu's, an adapter's. `class` and other attributes go on the dot.
+  `off`). The network menu's, an adapter's, the clipboard menu's. `class` and other attributes go on the dot.
 -->
 <script lang="ts">
   type Props = { tone: 'ok' | 'busy' | 'bad' | 'off'; class?: string; [attr: string]: unknown };

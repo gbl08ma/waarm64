@@ -557,7 +557,11 @@
   },
   "NetDetails.address": {
     "message": "The guest's IPv4 address",
-    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's IPv4 address on that adapter's network, while it is connected."
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's address on that adapter's network, while it is connected, when that address is an IPv4 one."
+  },
+  "NetDetails.address.v6": {
+    "message": "The guest's IPv6 address",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu): the label of the field (with a Copy icon in it) with the guest's address on that adapter's network, while it is connected, when that address is an IPv6 one (a peer-to-peer room's: rooms carry IPv6 alone)."
   },
   "NetDetails.tailnet.hostname": {
     "message": "Hostname",

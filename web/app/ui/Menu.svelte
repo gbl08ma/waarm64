@@ -1,7 +1,7 @@
 <!--
   A toolbar menu: a tool button (an icon, a label where it needs one) that opens a panel under it. It closes on a click
   elsewhere, and opens under its left edge where its right one would put it past the window's. `on` shows the button
-  pressed while what it controls is on (`data-on`: the mouse lock, the clipboard's sharing), `attention` frames it in
+  pressed while what it controls is on (`data-on`: the mouse lock), `attention` frames it in
   the accent (sound waiting for a click). The panel ends above the window's bottom and scrolls when its contents are
   taller (many adapters, many devices). The panel (`panel`: a form of controls; otherwise a list of commands) is a
   column of what it's given, a step apart: its content is the primitives (`Button variant="item"` for a command,

@@ -75,9 +75,11 @@
   <div class="net-head">
     {#if heading}
       <h3>
-        <StatusDot tone={phaseTone(v.phase)} aria-hidden="true" />{a.primary
-          ? t('network:NetAdapter.adapter.primary', { adapter: i + 1 })
-          : t('network:NetAdapter.adapter', { adapter: i + 1 })}
+        <span class="light"><StatusDot tone={phaseTone(v.phase)} aria-hidden="true" /></span><span
+          >{a.primary
+            ? t('network:NetAdapter.adapter.primary', { adapter: i + 1 })
+            : t('network:NetAdapter.adapter', { adapter: i + 1 })}</span
+        >
       </h3>
     {/if}
     <Note id={`net-conn${s}`}>{connection}</Note>
@@ -208,13 +210,18 @@
     align-items: baseline;
     gap: var(--space-1) var(--space-3);
   }
+  /* The heading's baseline is its words' (the connection's name lines up with them); the light is centered on them. */
   h3 {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: var(--space-3);
     margin: 0;
     font-size: var(--text-md);
     font-weight: var(--weight-bold);
+  }
+  .light {
+    display: flex;
+    align-self: center;
   }
   .net-status {
     margin: 0;

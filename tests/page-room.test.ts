@@ -157,6 +157,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     // Details…: the name, the link and who may connect, in a dialog of their own.
     await a.click('#net-details-open');
     assert.equal(await a.locator('#net-details-room-name').inputValue(), nameA);
+    assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:NetDetails.address.v6'), 'a room has IPv6 alone');
     assert.equal(await a.locator('#net-details-room-link').inputValue(), ra.room.link);
     assert.match(await text(a, '#net-details-room-note'), words('network:NetDetails.room.note'));
     await a.click('#net-details-close');

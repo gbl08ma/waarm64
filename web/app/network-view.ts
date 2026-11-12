@@ -36,7 +36,7 @@ export type NetworkView = {
   details?: string[];
   /** Where to log in (only http(s) URLs). */
   loginURL?: string;
-  /** The guest's IPv4 address, when connected. */
+  /** The guest's address, when connected: IPv4, or IPv6 for a room's (rooms carry IPv6 alone). */
   address?: string;
   /** The peers that offer to be the exit node (approved by the tailnet's admin), when connected; `use` marks the one in use. */
   exitNodes: { id: string; name: string; online: boolean; use: boolean }[];

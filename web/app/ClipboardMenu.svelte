@@ -1,7 +1,8 @@
 <!--
   The toolbar's clipboard menu (docs/plans/clipboard.md §5, docs/frontend.md "The toolbar"): shown while the running
-  machine shares the clipboard. The button says the state (sharing: pressed; paused: crossed out; waiting for the
-  guest's program) and carries a mark while the browser's read permission is missing or the focus reads stopped. The
+  machine shares the clipboard. The button says the state with its light (`tone`, as the network's) and its tooltip,
+  never pressed (it isn't a switch): green sharing, amber waiting for the guest's program or sharing with less (the
+  browser's read permission missing, or the focus reads stopped), grey paused (the icon crossed out too). The
   menu: the permission's item (Allow… while `prompt`, how to allow it while `denied`), the switch (paused for the run),
   Send the clipboard to the guest, Type the clipboard (and what became of it: the agent's TYPED), Copy the screen (a PNG
   of the display to the host's clipboard, with no agent: areas/clipboard-actions.ts `screenPng`). Logic is web/app/clipboard.ts's, through
@@ -16,6 +17,7 @@
   import { t } from '../i18n.ts';
   import { TYPED } from '../agent-frame.ts';
   import { clipboard } from './areas/clipboard.svelte.ts';
+  import type { ShareState } from './clipboard.ts';
   import { page } from './page.ts';
 
   let open = $state(false);
@@ -24,6 +26,9 @@
   const marked = $derived(
     c.state === 'sharing' && (c.permission === 'prompt' || c.permission === 'denied' || c.stopped),
   );
+  /** The button's light: each state's, and amber for sharing with less. */
+  const TONES: Record<ShareState, 'ok' | 'busy' | 'off'> = { sharing: 'ok', waiting: 'busy', paused: 'off' };
+  const tone = $derived(marked ? 'busy' : TONES[c.state]);
   const title = $derived(
     c.state === 'paused'
       ? t('clipboard:ClipboardMenu.title.paused')
@@ -66,12 +71,11 @@
   {title}
   bind:open
   panel
-  on={c.state === 'sharing'}
   data-state={c.state}
   data-permission={c.permission}
   data-stopped={c.stopped || undefined}
 >
-  {#snippet badge()}{#if marked}<StatusDot tone="busy" aria-hidden="true" />{/if}{/snippet}
+  {#snippet badge()}<StatusDot {tone} aria-hidden="true" data-tone={tone} />{/snippet}
   {#if c.permission === 'prompt'}
     <Button
       id="clipboard-allow"

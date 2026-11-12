@@ -1666,7 +1666,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **`baremetal_parallel_through_snapshots` failed once under `scripts/ci.sh`'s load** (2026-11-03, VK4 T16–T17's run;
   no core change): `smp: exit 5 (0x0) on vCPU 0 after 2016 steps`, the test past 60 s where alone it takes 2.4 s; it
-  passed alone 5 times and in the next full run. A timing assumption in the test or the SMP snapshot path, unknown.
+  passed alone 5 times and in the next full run. Again 2026-11-12 (a page-only change; `after 2740 steps`, while an
+  `npm start` built in the same checkout). A timing assumption in the test or the SMP snapshot path, unknown.
 - **`tests/page-clipboard-ui.test.ts`'s toolbar test times out under `scripts/ci.sh`'s load** (2026-11-08, VK4
   T49's run; again 2026-11-10, PERF loop 4's; no page change either time): `page.waitForFunction` past 30 s in
   `guestReads` (line 51: the terminal never showed the guest's read). It passed alone each time (27.6 s the second: at

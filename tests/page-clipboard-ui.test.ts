@@ -1,7 +1,7 @@
 // Clipboard sharing's page without the agent (docs/plans/clipboard.md §4–§5, docs/frontend.md "The toolbar"): on
 // Buildroot with `?clipboard=1` (seconds), the guest's shell plays the agent on the port (`exec 3<>` its node, HELLO
 // written with printf, the page's frames read back with dd and decoded here). The toolbar's clipboard button: absent
-// without the setting; waiting, sharing, paused; the browser's read permission (prompt: the mark and the item that
+// without the setting; waiting, sharing, paused; the browser's read permission (prompt: the amber light and the item that
 // asks, which headless Chromium answers with a denial; denied: how to allow it; granted, by the test, updating the
 // button at once); sync with the permission (the host's copy offered on `clipboardchange`, which Chromium fires);
 // the switch saying PAUSE and RESUME, nothing offered while paused and nothing sent by the resume; Send the clipboard
@@ -68,7 +68,7 @@ const offerSize = (text: string) => encodeFrame(FRAME.OFFER, encodeOffer({ seria
 const inline = (f: Frame) => new TextDecoder().decode(decodeOffer(f.payload)!.inline);
 const button = (page: Page) => page.evaluate(() => {
   const m = document.getElementById('clipboard-menu');
-  return m && { state: m.dataset.state, permission: m.dataset.permission, on: m.dataset.on !== undefined, mark: !!m.querySelector('summary .dot'), title: m.querySelector('summary')!.getAttribute('title') };
+  return m && { state: m.dataset.state, permission: m.dataset.permission, on: m.dataset.on !== undefined, dot: m.querySelector<HTMLElement>('summary .dot')?.dataset.tone, title: m.querySelector('summary')!.getAttribute('title') };
 });
 const waitButton = (page: Page, f: (b: NonNullable<Awaited<ReturnType<typeof button>>>) => boolean, what: string) =>
   (async () => {
@@ -101,36 +101,36 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await boot(page, 'clipboard=1');
   // No agent yet: waiting; the browser hasn't decided on reading the clipboard (headless Chromium: prompt).
   let b = await waitButton(page, (x) => x.state === 'waiting', 'before the agent');
-  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.waiting') }, { state: 'waiting', permission: 'prompt', on: false, mark: false, title: true });
+  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.waiting') }, { state: 'waiting', permission: 'prompt', on: false, dot: 'busy', title: true });
   await menu(page, true);
   assert.equal(await page.isDisabled('#clipboard-send'), true);
   assert.equal(await page.isDisabled('#clipboard-type'), true);
   assert.equal(await page.isVisible('#clipboard-waiting'), true);
   await menu(page, false);
 
-  // The guest's "agent" opens the port: the page's HELLO and the switch (RESUME); its HELLO back: sharing, with the
-  // permission's mark (no permission: the guest's menus don't get the host's copy).
+  // The guest's "agent" opens the port: the page's HELLO and the switch (RESUME); its HELLO back: sharing (never pressed), with the
+  // permission's amber light (no permission: the guest's menus don't get the host's copy).
   await openPort(page);
   const opening = await guestReads(page, encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: PAGE_CAPS })).length + 5);
   assert.deepEqual(opening.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
   await guestWrites(page, HELLO);
   b = await waitButton(page, (x) => x.state === 'sharing', 'after HELLO');
-  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.limited') }, { state: 'sharing', permission: 'prompt', on: true, mark: true, title: true });
+  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.limited') }, { state: 'sharing', permission: 'prompt', on: false, dot: 'busy', title: true });
 
   // Allow seeing the clipboard…: the click's read makes the browser ask (headless Chromium says no at once): denied,
   // told by the permission's change event, with how to allow it.
   await menu(page, true);
   await page.click('#clipboard-allow');
   b = await waitButton(page, (x) => x.permission === 'denied', 'after asking');
-  assert.equal(b.mark, true);
+  assert.equal(b.dot, 'busy');
   await menu(page, true);
   assert.equal(await page.textContent('#clipboard-denied'), t('clipboard:ClipboardMenu.denied'));
   assert.equal(await page.locator('#clipboard-allow').count(), 0);
   await menu(page, false);
-  // Allowed (in the site's settings): the button follows at once, no mark; and it syncs (the clipboard is empty: nothing).
+  // Allowed (in the site's settings): the button follows at once, green; and it syncs (the clipboard is empty: nothing).
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base });
   b = await waitButton(page, (x) => x.permission === 'granted', 'after the grant');
-  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.sharing') }, { state: 'sharing', permission: 'granted', on: true, mark: false, title: true });
+  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.sharing') }, { state: 'sharing', permission: 'granted', on: false, dot: 'ok', title: true });
 
   // Sync: a copy on the host reaches the guest (Chromium fires clipboardchange; the page reads on it) as an OFFER.
   const copied = 'copied on the host ✓';
@@ -143,7 +143,7 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await menu(page, true);
   await page.uncheck('#clipboard-on');
   b = await waitButton(page, (x) => x.state === 'paused', 'paused');
-  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.paused') }, { state: 'paused', permission: 'granted', on: false, mark: false, title: true });
+  assert.deepEqual({ ...b, title: b.title === t('clipboard:ClipboardMenu.title.paused') }, { state: 'paused', permission: 'granted', on: false, dot: 'off', title: true });
   assert.equal(await page.isDisabled('#clipboard-send'), true);
   assert.equal(await page.isDisabled('#clipboard-type'), true);
   assert.deepEqual((await guestReads(page, 5)).map((f) => f.type), [FRAME.PAUSE]);

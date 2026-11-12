@@ -276,10 +276,11 @@ window's bottom and its contents scroll (many adapters, many USB devices), never
 `web/app/clipboard.ts`'s `ClipboardShare`, with the guest-to-host way in `clipboard-guest.ts`, the transfers and ACKs in
 `clipboard-transfer.ts`, the held paste chord in `clipboard-chord.ts` and the browser's side, the hashes and the reads in
 `clipboard-host.ts`; wired in `areas/clipboard-actions.ts`): shown while the running machine has
-**[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (or `?clipboard=1`). The button's state (`data-state`): *sharing* (pressed), *paused*
+**[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (or `?clipboard=1`). The button's state (`data-state`; never pressed: the toolbar presses only what it switches itself): *sharing*, *paused*
 (the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its port closed), each with
-its tooltip; a mark (and its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is
-`prompt` or `denied`, or the focus reads stopped (below). The menu: **[Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow)** while the
+its tooltip, and a state's light as the Network buttons have: green sharing, grey paused, amber waiting, and amber
+too (its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is `prompt` or
+`denied`, or the focus reads stopped (below). The menu: **[Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow)** while the
 permission is `prompt` (its click's read is what makes Chromium ask), how to allow it in the site's settings while
 it is `denied`, a note while it is `granted`; **[Share the clipboard](ui:clipboard:ClipboardMenu.share)**, the switch, which pauses both ways for the run
 (PAUSE to the agent; the pending text dropped; the pause isn't in snapshots: the link says PAUSE or RESUME at every
@@ -1471,7 +1472,7 @@ copy are `ui/ValueField.svelte`s: Copy (a check for a moment once copied) and, f
 inside the field, after its text; where the clipboard refuses, the value is shown and selected. The wizard's pasted
 secrets (a tailcat address, the helper's link, a room's link or key, an auth key) are the same fields, with Show alone.
 [Details…](ui:network:NetAdapter.details) opens the adapter's details (`NetDetails.svelte`, a dialog that follows the adapter live), with what the
-menu leaves out to stay short: the guest's IPv4 address; a tailnet's hostname and control server; tailcat's address
+menu leaves out to stay short: the guest's address (IPv4, or a room's IPv6); a tailnet's hostname and control server; tailcat's address
 and the commands that use it, or the machine's key and the line that lets only it through the server
 (`tailcat serve --allow=<key> exit-node`, to copy); the local helper's install lines (`NetLocalInstall.svelte`, the
 wizard's too); a room's name, link and who may connect; and [Edit connection…](ui:network:NetDetails.edit), the

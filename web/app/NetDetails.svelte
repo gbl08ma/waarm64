@@ -67,7 +67,7 @@
       <ValueField
         id="net-details-address"
         copyId="net-details-address-copy"
-        label={t('network:NetDetails.address')}
+        label={v.address.includes(':') ? t('network:NetDetails.address.v6') : t('network:NetDetails.address')}
         value={v.address}
         readonly
         copy
