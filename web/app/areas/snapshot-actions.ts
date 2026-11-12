@@ -28,6 +28,8 @@ export type SnapshotDeps = Core & {
   plugBack(r: Run, was: Unplugged | undefined): Promise<void>;
   /** The bytes a snapshot would hold for the 3D resources (the GPU worker's count). */
   askBytes(r: Run, post: (gpu: Worker, id: number) => void): Promise<number>;
+  /** The error a snapshot or a suspend would end with now for a device's reason (the worker's `snapshot-check`), or none. */
+  refusal(r: Run, what: 'snapshot' | 'suspend'): Promise<unknown>;
 };
 
 export const SNAPSHOT_SUFFIX = '.webpcsnap';
@@ -75,6 +77,17 @@ export class SnapshotActions {
   /** A save's phase in the state's words: with how far it is while that's known. */
   readonly #progress = (phase: Msg, f: number) =>
     this.#d.messages.stateText(f > 0 && f < 1 ? progressText(phase, f) : phase);
+
+  /**
+   * Whether a device refuses the snapshot or the suspend (`what`) now (Vulkan in use, a video decoding): then it is
+   * said as the save's failure would be, before anything touches the machine (its USB ports, the guest's sleep key).
+   */
+  async #refused(r: Run, what: 'snapshot' | 'suspend', runsOn: string) {
+    const e = await this.#d.refusal(r, what);
+    if (!e) return false;
+    if (r.live()) this.#d.messages.notify(withNote(e, runsOn), 'error');
+    return true;
+  }
 
   /** Whether to take the snapshot: yes, unless the 3D state is large and the user says no. */
   async #graphicsOk(r: Run) {
@@ -133,6 +146,7 @@ export class SnapshotActions {
     // A stored machine's is kept at once, named by the time (Snapshot is the toolbar's panic button: renamed later, on the Machines page).
     if (s && !o.toFile) return this.keep(d.toLocaleString());
     const suggestedName = fileName(s ? s.record.name.replace(/[^\w.-]+/g, '-') : m.name, d);
+    if (await this.#refused(r, 'snapshot', t('snapshots:snapshot-actions.runsOn.noFile'))) return;
     const ready = await this.#toFile(r, suggestedName);
     if (ready) await this.#saveFile(r, o.whole, suggestedName, ready);
   }
@@ -186,6 +200,7 @@ export class SnapshotActions {
     const r = m.run;
     const s = m.stored;
     if (!r || !s || power.busy || !isLive(power.state)) return;
+    if (await this.#refused(r, 'snapshot', t('snapshots:snapshot-actions.runsOn.nothingKept'))) return;
     if (!(await this.#graphicsOk(r)) || !this.#ready(r)) return;
     const unplugged = await this.#d.emptyPorts(r, 'snapshot');
     if (!unplugged || !this.#ready(r)) return;
@@ -238,6 +253,7 @@ export class SnapshotActions {
     const { machine: m, messages } = this.#d;
     const r = m.run;
     if (!r || power.busy || !isLive(power.state)) return;
+    if (await this.#refused(r, 'suspend', t('machine:snapshot-actions.runsOn'))) return;
     // Its devices are unplugged first; the next start attaches the ones attached at start (docs/usb.md "The page").
     const unplugged = await this.#d.emptyPorts(r, 'suspend');
     if (!unplugged || !this.#ready(r)) return;

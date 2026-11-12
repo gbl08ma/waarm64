@@ -5,7 +5,7 @@
 // (web/virgl-screen.ts), and answers fences once everything before them has run. With video, what follows a
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withBits, withVideo, withoutFormats } from './virgl-caps.ts';
-import { CallQueue, clock, FenceGate, fenceLane, fenceSettled, queryScheduler, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type QueryPoll, type VenusCall, type WorkerCall } from './virgl-host.ts';
+import { CallQueue, clock, FenceGate, fenceLane, fenceSettled, queryScheduler, rendererRefusal, runCall, saveRenderer, snapshotBuffers, STUCK_MS, type QueryPoll, type VenusCall, type WorkerCall } from './virgl-host.ts';
 import { deviceRequest, l9Suspects, subgroupsRight, type VenusGpuStats } from './venus-gpu.ts';
 import { VenusRenderer, type VenusPoll, type VenusTimes, type VenusEmul } from './venus-host.ts';
 import { idbBackend, ShaderCache } from './venus-cache.ts';
@@ -217,6 +217,11 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     if (c.t === 'read') {
       const bytes = renderer.readResource(c.res);
       port.postMessage({ t: 'read', id: c.id, bytes }, bytes ? [bytes.buffer] : []);
+      return;
+    }
+    if (c.t === 'refusal') {
+      // A snapshot's check before the machine is paused: only whether `save` would refuse.
+      port.postMessage({ t: 'refusal', id: c.id, refused: rendererRefusal(renderer) });
       return;
     }
     if (c.t === 'save') {

@@ -1003,10 +1003,9 @@ export class Gpu {
    * (web/vm.ts), and a test's state read takes the rest all the same.
    */
   async save() {
-    const inUse = this.used.size > 0 || [...this.resources.values()].some((r) => r.three);
+    const inUse = this.inUse3d();
     let renderer: RendererSnapshot | undefined, unsaveable: WireError | undefined;
-    // A blob can outlive its context (a program's image the compositor still holds), its bytes and the window's with it.
-    if (this.venusContexts.size > 0 || [...this.resources.values()].some((r) => r.blob)) unsaveable = toWire(msg('display:gpu.unsaveable.venus'));
+    if (this.venusInUse()) unsaveable = toWire(msg('display:gpu.unsaveable.venus'));
     else if (inUse && this.host && !this.off3d) {
       const got = this.host.save ? await this.host.save() : { refused: toWire(msg('display:gpu.unsaveable.virgl')) };
       if ('refused' in got) unsaveable = got.refused;
@@ -1019,6 +1018,27 @@ export class Gpu {
       ...(renderer ? { renderer } : {}),
     } : {};
     return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...three, ...(unsaveable ? { unsaveable } : {}) };
+  }
+
+  /** 3D in use: a context's resources, or a 3D resource. */
+  private inUse3d() {
+    return this.used.size > 0 || [...this.resources.values()].some((r) => r.three);
+  }
+
+  /** Vulkan in use: a Venus context, or a blob (one can outlive its context: a program's image the compositor still holds, its bytes and the window's with it). */
+  private venusInUse() {
+    return this.venusContexts.size > 0 || [...this.resources.values()].some((r) => r.blob);
+  }
+
+  /**
+   * Why `save` would refuse now, or undefined, without reading anything back: a snapshot asks before it touches the
+   * machine (before the clock catch-up's sleep key and the pause; web/app/worker-snapshot.ts). `save` decides again.
+   */
+  async refusal(): Promise<WireError | undefined> {
+    if (this.venusInUse()) return toWire(msg('display:gpu.unsaveable.venus'));
+    if (!this.inUse3d() || !this.host || this.off3d) return undefined;
+    if (!this.host.save) return toWire(msg('display:gpu.unsaveable.virgl'));
+    return this.host.refusal?.();
   }
 
   /** `save`'s state back: the tables, then every resource with a backing read again from the (restored) RAM, and the scanout drawn. */
@@ -1331,6 +1351,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       gpu.reset();
     },
     save: () => gpu.save(),
+    refusal: () => gpu.refusal(),
     restore: (state: unknown) => gpu.restore(state),
   };
 }

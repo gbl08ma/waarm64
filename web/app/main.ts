@@ -45,12 +45,13 @@ import { lastMachine, loadStored, PageMachine } from './run/page-machine.svelte.
 import { PowerActions } from './run/power-actions.ts';
 import { Problems } from './run/problems.ts';
 import { Replies } from './run/replies.ts';
-import type { FromWorker } from './protocol.ts';
+import type { FromWorker, ToWorker } from './protocol.ts';
 import { Runner } from './run/runner.ts';
 import { SizeActions, sizeOf } from './run/size-actions.ts';
 import { remember } from './settings.ts';
 import { Store } from './store.ts';
 import { describe, text } from '../i18n.ts';
+import { fromWire } from '../msg.ts';
 
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="webpc-build"]')?.getAttribute('content');
@@ -216,6 +217,12 @@ const snapshots = new SnapshotActions({
   askBytes: (r, post) => {
     const gpu = r.gpu;
     return gpu ? replies.bytes.ask((id) => post(gpu, id), { ms: 1000, fallback: 0 }) : Promise.resolve(0);
+  },
+  // Unanswered in time: nothing refused, the save decides.
+  refusal: async (r, what) => {
+    const post = (id: number) => r.worker.postMessage({ type: 'snapshot-check', id, what } satisfies ToWorker);
+    const m = await replies.worker.ask(post, { ms: 3000, fallback: { type: 'snapshot-check', id: 0 } });
+    return m.type === 'snapshot-check' && m.refused ? fromWire(m.refused) : undefined;
   },
 });
 const sizes = new SizeActions({ machine, power: powerActions, runner, messages, terminal });

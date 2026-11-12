@@ -3,7 +3,7 @@
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
-import { msg, msgOf, type Msg } from './msg.ts';
+import { msg, msgOf, type Msg, type WireError } from './msg.ts';
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
 import { agentDevice, agentEntry, type AgentSpec } from './agent-device.ts';
 import { p9, type P9Files } from './9p.ts';
@@ -305,6 +305,8 @@ export type Backend = {
    * backends again, so one that only holds buffers has neither.
    */
   save?(): unknown | Promise<unknown>; restore?(state: unknown): void;
+  /** Why `save` would refuse now (`unsaveable` in its state), or undefined: asked before a snapshot touches the machine. */
+  refusal?(): Promise<WireError | undefined>;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
   written?(): { blocks: number[]; generation?: number }; blocks?(blocks: number[]): Uint8Array;
 };
@@ -1160,6 +1162,11 @@ export class Devices {
   async save(): Promise<unknown[]> {
     await this.drain(); // nothing may complete into the memory being saved
     return Promise.all(this.backends.map((b) => b.save?.() ?? null));
+  }
+
+  /** The first backend's reason a snapshot would be refused now (`Backend.refusal`), or undefined. */
+  async refusal(): Promise<WireError | undefined> {
+    return (await Promise.all(this.backends.map((b) => b.refusal?.()))).find((x) => x);
   }
 
   /** Resolves once no request of a `concurrent` backend runs (a snapshot's quiesce: their completions land first) and what the backends hold back landed. */

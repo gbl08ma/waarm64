@@ -515,6 +515,10 @@ Page → worker:
   machines.md §5.2); `whole` puts a disk written in place in it whole; `sleep` gives the guest a while to suspend
   itself first (the clock catch-up's Sleep key), woken once the file is written. Answered by `snapshot-done` or
   `snapshot-error`.
+- `snapshot-check {id, what}`: whether a device would refuse a snapshot or a suspend (`what`) now (Vulkan in use, a
+  video decoding: web/vm.ts `refusal`, each backend's `refusal`, the GPU worker's `snapshotRefusal` behind the calls
+  before it); answered by `snapshot-check {id, refused?}`, the error the save would end with. The page asks it first
+  ("Snapshots"); the save asks the devices again, paused.
 - `suspend {id, sleep?}`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered
   by `suspend-done` and the state `suspended`, or by `snapshot-error` (the machine runs on). A save's messages
   (`snapshot-progress`, `snapshot-chunk`, its end) echo its `id`: the page posts it through `Run.save`, which hands
@@ -655,7 +659,10 @@ stored machine's is kept: below, "A stored machine's snapshots"): the picker fir
 the machine isn't stopped. One exception, asked before the picker (its OK is the click the picker needs): a machine
 whose 3D state would add 64 MiB or more (the GPU worker's count of its resources' bytes, before compression:
 `VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md "Snapshots with 3D in use"); the
-same for a stored machine's kept snapshot. The worker pauses it (`vm.pause()`), writes the file with
+same for a stored machine's kept snapshot. **Before anything touches the machine** (that question, the picker, the USB
+ports emptied, the clock catch-up's sleep key), Snapshot, a kept snapshot and Suspend ask the worker whether a device
+would refuse it now (`snapshot-check`: Vulkan in use, a video decoding), and say the failure at once if so: a refusal
+found only at the pause had put the guest to sleep for a file that couldn't be written. The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for

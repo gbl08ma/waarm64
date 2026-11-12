@@ -1117,6 +1117,14 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       return out;
     },
     diskBlocks: (slot: number, blocks: number[]) => devices.blocks(slot, blocks),
+    /**
+     * Why a snapshot would be refused now, or undefined, asked of the devices while the machine runs: a snapshot checks
+     * it before it touches the machine (the clock catch-up's sleep key, the pause). `snapshot()` decides again.
+     */
+    async refusal(): Promise<MsgError | undefined> {
+      const why = await devices.refusal();
+      return why ? new MsgError('snapshots:vm.cantSave', {}, { cause: fromWire(why) }) : undefined;
+    },
     /** The backends' state (`Devices.save`: for a snapshot; a test reads the display's hashes from it), with the devices quiet. */
     /** Device `i`'s virtio status register (bit 2 is DRIVER_OK: a guest driver is using it). */
     deviceStatus: (i: number) => Atomics.load(new Uint32Array(memory.buffer), (shared[i] + 4) / 4),
@@ -1663,6 +1671,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       settle: async () => { if (failed) throw failed; },
       quiesce: () => ringAsync(bell, () => closed),
       save: async () => d.save(),
+      refusal: () => d.refusal(),
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
       output: () => text, flush: async () => { if (failed) throw failed; },
@@ -1687,6 +1696,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       settle: async () => { await pending; pending = undefined; },
       quiesce: async () => { await pending; pending = d.poll(); await pending; pending = undefined; },
       save: async () => d.save(),
+      refusal: () => d.refusal(),
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
       output: () => text, flush: async () => {}, close: async () => (d.close(), d.stats()),
@@ -1697,6 +1707,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   const drained: (() => void)[] = []; // one a `drain` message, answered in order
   let closed = (_stats?: unknown) => {};
   let saved = (_m: Extract<FromDeviceWorker, { type: 'saved' }>) => {};
+  const refusals: ((why: WireError | undefined) => void)[] = []; // one a `refusal` message, answered in order
   // Requests for a disk's changes (`written`, `blocks`), answered by id.
   type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
   const asked = new Map<number, (m: DiskAnswer) => void>();
@@ -1722,9 +1733,11 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'flushed') flushed();
       else if (e.data.type === 'drained') drained.shift()?.();
       else if (e.data.type === 'saved') saved(e.data);
+      else if (e.data.type === 'refusal') refusals.shift()?.(e.data.refused);
       else if (e.data.type === 'disk') asked.get(e.data.id)?.(e.data);
       else if (e.data.type === 'closed') {
         for (const d of drained.splice(0)) d(); // a closed worker answers no drain
+        for (const r of refusals.splice(0)) r(undefined);
         closed(e.data.stats);
       }
     };
@@ -1748,6 +1761,12 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     save: () => new Promise<unknown[]>((resolve, reject) => {
       saved = (m) => (m.state ? resolve(m.state) : reject(m.wire ? fromWire(m.wire) : new Error(m.error ?? 'the device worker has no state')));
       worker.postMessage({ type: 'save' });
+    }),
+    /** Why a snapshot would be refused now (web/devices.ts `Devices.refusal`), or undefined. */
+    refusal: () => new Promise<WireError | undefined>((resolve) => {
+      if (closing) return resolve(undefined);
+      refusals.push(resolve);
+      worker.postMessage({ type: 'refusal' });
     }),
     written: async (i: number) => (await ask({ type: 'written', device: i })).written,
     blocks: async (i: number, blocks: number[]) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,

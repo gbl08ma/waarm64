@@ -957,7 +957,7 @@ pub(super) fn snapshots_round_trip_with_empty_ports() {
     t.x.save(&mut w);
     let mut x2 = Xhci::new();
     let mut r = Reader(&w.0);
-    x2.restore(&mut r).unwrap();
+    x2.restore(&mut r, snapshot::VERSION).unwrap();
     r.end().unwrap();
     let mut w2 = Writer::default();
     x2.save(&mut w2);
@@ -965,7 +965,11 @@ pub(super) fn snapshots_round_trip_with_empty_ports() {
     assert_eq!((diff, w.0.len()), (None, w2.0.len()), "the states differ");
     // Truncated: an error, not a panic.
     for n in [0, 7, w.0.len() / 2, w.0.len() - 1] {
-        assert!(Xhci::new().restore(&mut Reader(&w.0[..n])).is_err());
+        assert!(
+            Xhci::new()
+                .restore(&mut Reader(&w.0[..n]), snapshot::VERSION)
+                .is_err()
+        );
     }
 }
 
@@ -1123,9 +1127,96 @@ pub(super) fn a_snapshot_keeps_a_walk_waiting_for_room() {
     let mut x = Xhci::new();
     x.latency = 0;
     let mut r = Reader(&w.0);
-    x.restore(&mut r).unwrap();
+    x.restore(&mut r, snapshot::VERSION).unwrap();
     r.end().unwrap();
     t.x = x;
     assert_eq!(t.x.due(), 0, "the restored walk waits too");
     assert_eq!(transfer_events(&mut t), 400, "restored");
+}
+
+/// Linux's `xhci_suspend` then `xhci_resume` (no power loss): halt, the command ring cleared, CSS; the registers written
+/// again (ERSTBA among them, which starts the event ring over), the command ring's dequeue,
+/// CRS; the caller sets R/S. `between` runs while the controller is saved (a snapshot of the machine asleep).
+fn suspend_and_resume(t: &mut T, between: impl FnOnce(&mut T)) {
+    let cmd = t.rd(USBCMD);
+    t.wr(USBCMD, cmd & !CMD_RS);
+    assert_ne!(t.rd(USBSTS) & STS_HCH, 0);
+    // `xhci_clear_command_ring`: the ring zeroed, its Link TRB's cycle cleared, at its start again.
+    for k in 0..CMD_TRBS - 1 {
+        t.put(CMD + 16 * k, &[0; 4]);
+    }
+    t.put(
+        CMD + 16 * (CMD_TRBS - 1),
+        &[CMD as u32, 0, 0, T_LINK << 10 | C_ENT_TC],
+    );
+    t.cmd = (0, true);
+    t.wr64(OP + 0x18, CMD | 1);
+    t.wr(USBCMD, cmd & !CMD_RS | CMD_CSS);
+    assert_eq!(t.rd(USBCMD) & (CMD_CSS | CMD_CRS), 0, "CSS reads as 0");
+    between(t);
+    t.wr(USBCMD, cmd & !CMD_RS);
+    t.wr(RTSOFF + 0x28, 1);
+    t.wr64(RTSOFF + 0x30, ERST_TBL);
+    let at = EVT + 16 * t.evt.0 as u64;
+    t.wr64(RTSOFF + 0x38, at | 8);
+    t.wr(RTSOFF + 0x20, 2);
+    t.wr64(OP + 0x18, CMD | 1);
+    t.wr(USBCMD, cmd & !CMD_RS | CMD_CRS);
+    assert_eq!(t.rd(USBCMD) & (CMD_CSS | CMD_CRS), 0, "CRS reads as 0");
+}
+
+#[test]
+pub(super) fn a_suspend_and_resume_keeps_the_event_ring_where_the_guest_reads() {
+    let mut t = T::new();
+    // Past the ring's first lap: the producer's cycle is 0 there, and its position mid-segment.
+    for _ in 0..EVT_TRBS + 5 {
+        assert_eq!(t.command([0, 0, 0, T_NOOP_CMD << 10]).0, CC_SUCCESS);
+    }
+    suspend_and_resume(&mut t, |_| {});
+    assert_eq!(t.rd(USBSTS) & STS_SRE, 0, "restored");
+    let cmd = t.rd(USBCMD);
+    t.wr(USBCMD, cmd | CMD_RS);
+    assert!(!t.x.irq(), "nothing unread: no interrupt");
+    // `command` finds its completion at the guest's dequeue, in its cycle.
+    assert_eq!(t.command([0, 0, 0, T_NOOP_CMD << 10]).0, CC_SUCCESS);
+    assert!(!t.x.irq(), "and no interrupt after it was read");
+}
+
+#[test]
+pub(super) fn a_snapshot_of_a_saved_controller_restores_its_ring_and_a_crs_without_one_is_sre() {
+    for version in [snapshot::VERSION, 4] {
+        let mut t = T::new();
+        for _ in 0..EVT_TRBS + 5 {
+            t.command([0, 0, 0, T_NOOP_CMD << 10]);
+        }
+        suspend_and_resume(&mut t, |t| {
+            let mut w = Writer::default();
+            t.x.save(&mut w);
+            if version == 4 {
+                // A format 4 state: the same without the CSS state at the end (its flag, one
+                // segment, the producer).
+                let tail = 1 + 4 + 12 + 4 + 4 + 1;
+                assert_eq!(w.0[w.0.len() - tail], 1, "a CSS state saved");
+                w.0.truncate(w.0.len() - tail);
+            }
+            let mut x = Xhci::new();
+            x.latency = 0;
+            let mut r = Reader(&w.0);
+            x.restore(&mut r, version).unwrap();
+            r.end().unwrap();
+            t.x = x;
+        });
+        if version == 4 {
+            // No state to restore: the driver is told, and initializes the controller again.
+            assert_ne!(t.rd(USBSTS) & STS_SRE, 0, "SRE");
+            t.wr(USBSTS, STS_SRE);
+            assert_eq!(t.rd(USBSTS) & STS_SRE, 0, "SRE is write-1-to-clear");
+            continue;
+        }
+        assert_eq!(t.rd(USBSTS) & STS_SRE, 0, "restored");
+        let cmd = t.rd(USBCMD);
+        t.wr(USBCMD, cmd | CMD_RS);
+        assert_eq!(t.command([0, 0, 0, T_NOOP_CMD << 10]).0, CC_SUCCESS);
+        assert!(!t.x.irq());
+    }
 }

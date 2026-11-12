@@ -189,6 +189,11 @@ export type ToWorker =
    * `snapshot-done` or `snapshot-error`, each message of it with its `id`. `sleep`: as `suspend`'s; the guest is woken once the file is written.
    */
   | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean; sleep?: boolean }
+  /**
+   * Whether a snapshot or a suspend (`what`) would be refused now by a device (Vulkan in use, a video decoding),
+   * asked before the page touches the machine (its USB ports, the guest's sleep key); answered by `snapshot-check`.
+   */
+  | { type: 'snapshot-check'; id: number; what: 'snapshot' | 'suspend' }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
@@ -281,6 +286,8 @@ export type FromWorker =
     }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
   | { type: 'snapshot-error'; id: number; error: WireError }
+  /** `snapshot-check`'s answer: the error the save would end with (`toWire`), or none. */
+  | { type: 'snapshot-check'; id: number; refused?: WireError }
   /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size. */
   | { type: 'suspend-done'; id: number; bytes: number }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */

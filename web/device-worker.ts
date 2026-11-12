@@ -20,6 +20,7 @@ export type ToDeviceWorker =
   | { type: 'flush' }
   | { type: 'drain' }
   | { type: 'save' }
+  | { type: 'refusal' }
   | { type: 'written'; id: number; device: number }
   | { type: 'blocks'; id: number; device: number; blocks: number[] }
   | { type: 'close' };
@@ -32,6 +33,7 @@ export type FromDeviceWorker =
   | { type: 'flushed' }
   | { type: 'drained' }
   | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
+  | { type: 'refusal'; refused?: WireError }
   | { type: 'disk'; id: number; written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; error?: string }
   | { type: 'closed'; stats?: unknown };
 
@@ -52,6 +54,13 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
     devices!.save().then(
       (state) => self.postMessage({ type: 'saved', state } satisfies FromDeviceWorker, stateBuffers(state)),
       (err) => self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err), wire: toWire(err) } satisfies FromDeviceWorker),
+    );
+  }
+  else if (e.data.type === 'refusal') {
+    // Why a snapshot would be refused now, asked before it touches the machine (a failed ask refuses nothing: `save` decides).
+    devices!.refusal().then(
+      (refused) => self.postMessage({ type: 'refusal', refused } satisfies FromDeviceWorker),
+      () => self.postMessage({ type: 'refusal' } satisfies FromDeviceWorker),
     );
   }
   else if (e.data.type === 'written' || e.data.type === 'blocks') {

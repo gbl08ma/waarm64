@@ -137,6 +137,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     profile: (m) => x.d.replies.worker.answer(m.id, m),
     timeline: (m) => x.d.replies.worker.answer(m.id, m),
     heap: (m) => x.d.replies.worker.answer(m.id, m),
+    'snapshot-check': (m) => x.d.replies.worker.answer(m.id, m),
     phase: (m) => {
       bootCard.line = text(m.text);
       bootCard.progress = undefined;

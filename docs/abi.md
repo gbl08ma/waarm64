@@ -472,7 +472,9 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
   `snapshot_version_min() -> u32` (ABI 54): the oldest version a restore still reads (`snapshot::VERSION_MIN`), when a
   newer layout only added something an older state can lack: version 3 added a suspended guest after the devices, so a
   version 2 state was a version 3 one without it; version 4 added fields inside the devices' (a transport's SHMSel, an
-  xHCI endpoint's walk waiting for room), so it reads only itself. The host accepts a file whose version is in that range.
+  xHCI endpoint's walk waiting for room), so it reads only itself; version 5 added what the xHCI's Controller Save State
+kept, at the end of the xHCI's (a version 4 controller has none, and a CRS after it reports a Save/Restore Error), so
+it reads 4 and 5. The host accepts a file whose version is in that range.
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,

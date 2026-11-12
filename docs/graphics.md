@@ -774,7 +774,8 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
   3D tables (devices.md "Snapshots"); the snapshot file carries the Uint8Arrays as BLOB frames (format version 2,
   platform.md "The snapshot file"); a restore hands the state to the new GPU worker (`load`) before it shows the scanout.
 - **Refused** only while a context has video codecs or buffers (WebCodecs keeps its reference pictures, so a decode
-  can't go on from a snapshot): "close the video player first".
+  can't go on from a snapshot): "close the video player first". The page asks first, before it touches the machine
+  (`Gpu.refusal`, the GPU worker's `refusal` call: `snapshotRefusal` alone, nothing read back; frontend.md "Snapshots").
 - **The size before saving:** every resource's bytes follow from its description (`snapshotBytes`), and from 64 MiB
   the page says how much the 3D state adds and asks first (frontend.md "Snapshots").
 - **What it costs** (the desktop guest with sway, Firefox on 400 WebGL 2 cubes and gtk4-demo's gears, 4 vCPUs,

@@ -72,12 +72,20 @@ export interface VirglHost {
   read?(res: number): Promise<Uint8Array | null>;
   /** The renderer's state for a snapshot, once every call before it has run and its queries have their results. */
   save?(): Promise<HostSave>;
+  /** Why `save` would refuse now, or undefined, once every call before it has run (cheap: nothing is read back). */
+  refusal?(): Promise<WireError | undefined>;
 }
 
 /** The renderer's answer to a snapshot (the queries settled first: `pollQueries`). */
 export function saveRenderer(r: VirglRenderer): HostSave {
   const refused = r.snapshotRefusal();
   return refused ? { refused: toWire(refused) } : { state: r.save() };
+}
+
+/** `saveRenderer`'s refusal alone, for a snapshot's check before it pauses the machine. */
+export function rendererRefusal(r: VirglRenderer): WireError | undefined {
+  const refused = r.snapshotRefusal();
+  return refused ? toWire(refused) : undefined;
 }
 
 /** The contents' buffers in a renderer's state (to transfer it across a port). */
@@ -234,7 +242,7 @@ export function fenceSettled(scope: FenceScope | undefined, host: { queries(): (
 }
 
 /** What the GPU worker takes from the device worker's port: the calls, fences and reads (`portHost`). */
-export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number; scope?: FenceScope } | { t: 'read'; id: number; res: number } | { t: 'save'; id: number };
+export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number; scope?: FenceScope } | { t: 'read'; id: number; res: number } | { t: 'save'; id: number } | { t: 'refusal'; id: number };
 
 /**
  * Whether a submit only decodes: video commands (CCMD 53–61: codecs, buffers, a picture's BEGIN/DECODE/END_FRAME)
@@ -445,7 +453,7 @@ export class CallQueue<M extends WorkerCall> {
           if (waits || p.res(m.res, n)) return ran;
           go = true;
           break;
-        case 'save':
+        case 'save': case 'refusal':
           if (waits) return ran;
           go = true;
           break;
@@ -486,7 +494,7 @@ export class CallQueue<M extends WorkerCall> {
 
 /** A host in this thread: calls run at once. */
 export function localHost(r: VirglRenderer, screen?: Screen): VirglHost {
-  return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)), save: () => Promise.resolve(saveRenderer(r)) };
+  return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)), save: () => Promise.resolve(saveRenderer(r)), refusal: () => Promise.resolve(rendererRefusal(r)) };
 }
 
 /** How long the device worker took to see the GPU worker's `fenced` answers (bench/gpu's stats): their count, total and longest ms. */
@@ -521,7 +529,13 @@ export function portHost(port: MessagePort): VirglHost {
   };
   const reads = new Map<number, (bytes: Uint8Array | null) => void>();
   const saves = new Map<number, (s: HostSave) => void>();
-  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null } | ({ t: 'saved'; id: number } & HostSave)>) => {
+  const refusals = new Map<number, (why: WireError | undefined) => void>();
+  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null } | ({ t: 'saved'; id: number } & HostSave) | { t: 'refusal'; id: number; refused?: WireError }>) => {
+    if (e.data?.t === 'refusal') {
+      refusals.get(e.data.id)?.(e.data.refused);
+      refusals.delete(e.data.id);
+      return;
+    }
     if (e.data?.t === 'read') {
       reads.get(e.data.id)?.(e.data.bytes);
       reads.delete(e.data.id);
@@ -570,6 +584,11 @@ export function portHost(port: MessagePort): VirglHost {
       const id = next++;
       port.postMessage({ t: 'save', id });
       return new Promise((resolve) => saves.set(id, resolve));
+    },
+    refusal() {
+      const id = next++;
+      port.postMessage({ t: 'refusal', id });
+      return new Promise((resolve) => refusals.set(id, resolve));
     },
   };
 }

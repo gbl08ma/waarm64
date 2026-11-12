@@ -1144,6 +1144,7 @@ test('virgl snapshots: contexts that never submitted are made again; one in use 
   assert.equal(type(a.g.control(ctxCmd(0x103, 0, 0, 0, 64, 32, 0, 1), 64)), 0x1100);
   const saved = JSON.parse(JSON.stringify(await a.g.save())) as { unsaveable?: string };
   assert.equal(saved.unsaveable, undefined, 'a context alone (a process that opened the render node) doesn\'t stop a snapshot');
+  assert.equal(await a.g.refusal(), undefined, 'nor its check before a snapshot');
   // Restored where the same caps are backed: the context is made again in the renderer.
   const b = make(capsA);
   b.g.restore(saved);
@@ -1161,6 +1162,7 @@ test('virgl snapshots: contexts that never submitted are made again; one in use 
   // A context that submitted has objects in the renderer: saved from the host's state, or refused by a host that can't.
   assert.equal(type(a.g.control(ctxCmd(0x207, 7, 4, 0, 0), 64)), 0x1100);
   assert.equal((await a.g.save() as { unsaveable?: WireError }).unsaveable?.msg?.key, 'display:gpu.unsaveable.virgl');
+  assert.equal((await a.g.refusal())?.msg?.key, 'display:gpu.unsaveable.virgl');
   const state: RendererSnapshot = { version: 1, resources: [], contexts: [{ id: 7, sub: 0, attached: [], subs: [] }] };
   a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ state }) };
   const inUse = await a.g.save() as unknown as { unsaveable?: WireError; renderer?: RendererSnapshot; used: number[] };
@@ -1169,10 +1171,12 @@ test('virgl snapshots: contexts that never submitted are made again; one in use 
   d.g.restore(inUse);
   assert.deepEqual(d.calls.filter((x) => x.t === 'ctx' || x.t === 'load'), [{ t: 'load', state }], 'the renderer makes the contexts');
   const video = toWire(msg('display:virgl-renderer.unsaveable.video'));
-  a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ refused: video }) };
+  a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ refused: video }), refusal: async () => video };
   assert.deepEqual((await a.g.save() as { unsaveable?: WireError }).unsaveable, video);
+  assert.deepEqual(await a.g.refusal(), video, 'the host\'s refusal, asked before a snapshot');
   a.g.control(ctxCmd(0x201, 7), 64);
   assert.equal((await a.g.save() as { unsaveable?: WireError }).unsaveable, undefined);
+  assert.equal(await a.g.refusal(), undefined);
 });
 
 test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {

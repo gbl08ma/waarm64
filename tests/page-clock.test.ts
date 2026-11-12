@@ -73,7 +73,9 @@ const near = async (page: Page, what: string) => {
 };
 
 test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and wakes with its clock on time; a guest asleep by itself wakes on a key', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  const query = `ncpus=2&view=both&clocksync=1&${unattendedQuery()}`;
+  // With the USB controller: Linux's xHCI suspend and resume (CSS, its registers written again, CRS) go through each
+  // sleep; a controller that started its event ring over left the guest stuck in an interrupt storm (docs/usb.md).
+  const query = `ncpus=2&view=both&usb=1&clocksync=1&${unattendedQuery()}`;
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });

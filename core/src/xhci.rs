@@ -146,11 +146,16 @@ const PORT_REGS: u64 = CAPLENGTH + 0x400;
 const CMD_RS: u32 = 1;
 const CMD_HCRST: u32 = 2;
 const CMD_INTE: u32 = 4;
-const CMD_MASK: u32 = 0x3f0f; // R/S, HCRST, INTE, HSEE, LHCRST, CSS, CRS, EWE, EU3S, CME…
+/// Controller Save State and Controller Restore State: commands, read as 0.
+const CMD_CSS: u32 = 1 << 8;
+const CMD_CRS: u32 = 1 << 9;
+const CMD_MASK: u32 = 0x3c0f; // R/S, HCRST, INTE, HSEE, LHCRST, EWE, EU3S, CME…
 const STS_HCH: u32 = 1;
 const STS_HSE: u32 = 1 << 2;
 const STS_EINT: u32 = 1 << 3;
 const STS_PCD: u32 = 1 << 4;
+/// Save/Restore Error: a CRS with no state to restore.
+const STS_SRE: u32 = 1 << 10;
 
 // PORTSC.
 const P_CCS: u32 = 1;
@@ -294,6 +299,9 @@ struct Record {
 /// An event waiting for the event ring, and whether it interrupts.
 type Event = ([u32; 4], bool);
 
+/// What CSS keeps (`Xhci::saved`): the segment table (base, TRBs) and the event ring's producer.
+type Saved = (Vec<(u64, u32)>, (usize, u32, bool));
+
 /// The controller: its registers, slots, rings and ports. The shared half is `XhciShared`.
 pub struct Xhci {
     usbcmd: u32,
@@ -321,6 +329,11 @@ pub struct Xhci {
     pending: VecDeque<Event>,
     /// An interrupting event was written while EHB was set.
     irq_pending: bool,
+    /// What Controller Save State kept for Controller Restore State: the segment table as read
+    /// then and the event ring's producer. A driver's resume writes ERSTBA again (Linux's
+    /// `xhci_restore_registers`), which starts the ring over; CRS puts the producer back where
+    /// the guest's ERDP expects it.
+    saved: Option<Saved>,
     next_tag: u32,
     /// Tag → (slot, DCI) of every TD in flight.
     tags: HashMap<u32, (usize, usize)>,
@@ -415,6 +428,7 @@ impl Xhci {
             enq: (0, 0, true),
             pending: VecDeque::new(),
             irq_pending: false,
+            saved: None,
             next_tag: 1,
             tags: HashMap::new(),
             outbox: VecDeque::new(),
@@ -550,7 +564,7 @@ impl Xhci {
             0x40 => self.set_usbcmd(v, mem, sh),
             0x44 => {
                 // EINT, PCD, HSE, SRE are write-1-to-clear.
-                self.usbsts &= !(v & (STS_EINT | STS_PCD | 1 << 2 | 1 << 10));
+                self.usbsts &= !(v & (STS_EINT | STS_PCD | STS_HSE | STS_SRE));
             }
             0x54 => self.dnctrl = v & 0xffff,
             0x58 => {
@@ -632,6 +646,22 @@ impl Xhci {
             return;
         }
         let was = self.running();
+        if !was && v & CMD_RS == 0 {
+            // Save and restore state, halted only (xHCI 4.23.2): both done at once (SSS, RSS stay 0).
+            if v & CMD_CSS != 0 {
+                self.saved = Some((self.erst.clone(), self.enq));
+                self.usbsts &= !STS_SRE;
+            }
+            if v & CMD_CRS != 0 {
+                match self.saved.take() {
+                    // The segment table the guest gave again: the producer goes on where it was.
+                    Some((erst, enq)) if erst == self.erst => self.enq = enq,
+                    // Nothing saved (a state from before CSS was kept), or another table: the
+                    // driver initializes the controller again (Linux's resume on SRE).
+                    _ => self.usbsts |= STS_SRE,
+                }
+            }
+        }
         self.usbcmd = v & CMD_MASK & !CMD_HCRST;
         if self.running() {
             self.usbsts &= !STS_HCH;
@@ -642,7 +672,8 @@ impl Xhci {
                         self.port_event(i);
                     }
                 }
-                self.write_events(mem);
+                // Events written now, and an interrupt for any left unread (`dequeued`).
+                self.dequeued(mem);
                 self.resume_commands(mem, sh);
             }
         } else {
@@ -852,9 +883,15 @@ impl Xhci {
     }
 
     /// The guest moved ERDP: room for waiting events, and an interrupt if it left any unread.
+    /// Halted, it only takes the position: a driver's resume writes ERDP before CRS puts the
+    /// producer back (`saved`), and the ring may be another's until then.
     fn dequeued(&mut self, mem: &Mem) {
         self.write_events(mem);
-        if !self.ehb && !self.erst.is_empty() && self.enq_addr() != self.erdp & !0xf {
+        if self.running()
+            && !self.ehb
+            && !self.erst.is_empty()
+            && self.enq_addr() != self.erdp & !0xf
+        {
             self.irq_pending = true;
             self.interrupt();
         }
@@ -2039,13 +2076,26 @@ impl Xhci {
         w.u32(self.lo[0]);
         w.u32(self.lo[1]);
         w.bool(self.cmd_wait);
+        // Format 5: what CSS kept (a guest asleep in SYSTEM_SUSPEND has its controller saved).
+        w.bool(self.saved.is_some());
+        if let Some((erst, enq)) = &self.saved {
+            w.u32(erst.len() as u32);
+            for &(b, n) in erst {
+                w.u64(b);
+                w.u32(n);
+            }
+            w.u32(enq.0 as u32);
+            w.u32(enq.1);
+            w.bool(enq.2);
+        }
     }
 
-    /// Restores what [`Xhci::save`] wrote into a new controller (its ports empty).
-    pub fn restore(&mut self, r: &mut Reader) -> snapshot::Result<()> {
+    /// Restores what [`Xhci::save`] wrote into a new controller (its ports empty), in the
+    /// state's format `version` (4 has no CSS state: a CRS after it reports SRE).
+    pub fn restore(&mut self, r: &mut Reader, version: u32) -> snapshot::Result<()> {
         const CORRUPT: snapshot::Error = snapshot::Error::Corrupt;
         self.usbcmd = r.u32()? & CMD_MASK;
-        self.usbsts = r.u32()? & (STS_HCH | STS_EINT | STS_PCD);
+        self.usbsts = r.u32()? & (STS_HCH | STS_EINT | STS_PCD | STS_SRE);
         self.dnctrl = r.u32()?;
         self.config = r.u32()?;
         if self.config & 0xff > MAX_SLOTS as u32 {
@@ -2120,6 +2170,20 @@ impl Xhci {
         self.lo[0] = r.u32()? & !0x3f;
         self.lo[1] = r.u32()? & !0xf;
         self.cmd_wait = r.bool()?;
+        if version >= 5 && r.bool()? {
+            let n = r.count(16)?;
+            let erst: Vec<(u64, u32)> = (0..n)
+                .map(|_| Ok((r.u64()?, r.u32()?)))
+                .collect::<snapshot::Result<_>>()?;
+            let enq = (r.u32()? as usize, r.u32()?, r.bool()?);
+            // Checked as the live ring's are, for the CRS that will use them.
+            if !erst.is_empty() && (enq.0 >= erst.len() || enq.1 >= erst[enq.0].1)
+                || erst.iter().any(|&(_, n)| n < 16)
+            {
+                return Err(CORRUPT);
+            }
+            self.saved = Some((erst, enq));
+        }
         Ok(())
     }
 }

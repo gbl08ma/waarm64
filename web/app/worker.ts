@@ -27,7 +27,7 @@ import { sessionOf, type Session } from './worker-header.ts';
 import { profile, timeline } from './worker-profile.ts';
 import { post, state } from './worker-post.ts';
 import { status } from './worker-status.ts';
-import { saveSnapshot, suspend, TAIL, wakeRestored, type Running } from './worker-snapshot.ts';
+import { checkSnapshot, saveSnapshot, suspend, TAIL, wakeRestored, type Running } from './worker-snapshot.ts';
 import {
   bootOptions,
   checkSplit,
@@ -68,6 +68,9 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'suspend':
       void suspend(running(), m.id, m.sleep);
+      break;
+    case 'snapshot-check':
+      void checkSnapshot(running(), m.id, m.what);
       break;
     case 'wake':
       vm?.wake();

@@ -744,7 +744,8 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   out (wasm can't remap pages, and Linux picks the offset). So a create, a map, an unmap, an unref and a Venus
   context's destruction hold their reply until the host has run them, fence flag or not.
 - Snapshots are refused while a Venus context exists ("the machine is using Vulkan (Venus), whose state can't be saved
-  yet"; docs/backlog.md).
+  yet"; docs/backlog.md), or a blob outlives one; the page asks first (`Gpu.refusal`), so a refused snapshot touches
+  nothing (frontend.md "Snapshots").
 - A virtio reset (a guest reboot) ends every Venus context, with its blobs, imports and objects
   (web/venus-host.ts `VenusRenderer.reset`; VK4 T2): vkr refuses a context id it has, so the rebooted guest's
   contexts weren't made, and the old rings would have been polled over memory the new guest reuses.

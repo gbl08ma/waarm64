@@ -61,6 +61,27 @@ export function wakeRestored(v: Vm, h: SnapshotHeader) {
   v.wake();
 }
 
+/**
+ * Answers `snapshot-check`: what a device would refuse a snapshot or a suspend (`what`) for now (Vulkan in use, a
+ * video decoding: `Vm.refusal`), as the save would say it, or nothing. The page asks before it touches the machine
+ * (the USB ports emptied, the clock catch-up's sleep key, the pause); the save asks the devices again, paused.
+ */
+export async function checkSnapshot(r: Running | undefined, id: number, what: 'snapshot' | 'suspend') {
+  let refused;
+  try {
+    const why = r && (await r.vm.refusal());
+    if (why)
+      refused = toWire(
+        what === 'snapshot'
+          ? new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: why })
+          : new MsgError('machine:worker-snapshot.suspend.failed', {}, { cause: why }),
+      );
+  } catch {
+    // Not answered: the save decides.
+  }
+  post({ type: 'snapshot-check', id, ...(refused ? { refused } : {}) });
+}
+
 /** The header's fields for the machine as it is now, `slept` if it went to sleep for the file. */
 function meta(r: Running, slept: boolean) {
   // The terminal's tail from a line start: a cut escape sequence would draw garbage in the restored terminal.

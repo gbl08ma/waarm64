@@ -282,6 +282,6 @@ fn a_snapshot_keeps_a_half_written_register() {
     let mut w = Writer::default();
     t.x.save(&mut w);
     let mut x2 = Xhci::new();
-    x2.restore(&mut Reader(&w.0)).unwrap();
+    x2.restore(&mut Reader(&w.0), snapshot::VERSION).unwrap();
     assert_eq!(x2.lo, t.x.lo);
 }

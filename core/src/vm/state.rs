@@ -300,7 +300,7 @@ impl Vm {
             t.restore(&mut r, &self.mem, sh)?;
         }
         if let Some(x) = &mut p.xhci {
-            x.restore(&mut r)?;
+            x.restore(&mut r, version)?;
         }
         if !r.0.is_empty() {
             let (c, entry, context) = (r.u32()? as usize, r.u64()?, r.u64()?);

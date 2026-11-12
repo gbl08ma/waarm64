@@ -226,6 +226,14 @@ transports do.
   - Every change bit that goes to 1 (CSC, PEC, WRC, PRC, PLC…) raises a Port Status Change event and
     USBSTS.PCD. Changes that come while the controller is halted are reported when it runs.
   - HCRST keeps the devices: their ports connect again, without counting as a new attach.
+- **Save and restore state** (USBCMD's CSS and CRS, halted only; both read as 0 and finish at once, so SSS and RSS
+  stay 0): CSS keeps the event ring's segment table and producer, and CRS puts the producer back when the guest gave
+  the same table again. A driver's resume writes ERSTBA again before CRS (Linux's `xhci_restore_registers`), which
+  starts the ring over; without CRS putting it back, the producer wrote at the ring's start while the guest read
+  mid-ring, and every ERDP write raised the interrupt again (a stuck guest at ~190k IRQ/s after its PSCI
+  SYSTEM_SUSPEND, the clock catch-up's). A CRS with nothing kept, or another table, sets USBSTS.SRE, and Linux
+  initializes the controller again. Halted, an ERDP write takes the position without interrupting; the unread
+  events interrupt once R/S is set.
 - **Hot-plug:** an attach or detach from the host is a connect status change. On a detach, the TDs in
   flight on the port complete with USB Transaction Error, its records leave the outbox, and the
   connector's generation moves on (`Records` below). TDs rung afterwards fail at once until the guest
@@ -250,8 +258,9 @@ deterministic mode), and testusb's run takes ~140M steps.
 
 `Xhci::save` keeps the registers, the ports' registers, each slot and endpoint's state with its rings'
 positions and whether its walk stopped for room (`Ep::more`: past `WALK_TDS` or with the events waiting
-for the guest; the restored controller walks on at its first boundary), the event ring's producer and segment table, the events waiting for room, and the low halves of
-ERSTBA and ERDP written without their high ones yet. It needs the
+for the guest; the restored controller walks on at its first boundary), the event ring's producer and segment table, the events waiting for room, the low halves of
+ERSTBA and ERDP written without their high ones yet, and what CSS kept (format 5: a guest asleep in SYSTEM_SUSPEND
+has its controller saved, and its resume's CRS needs it). It needs the
 ports empty and nothing in flight. A machine with a device plugged in can't be saved:
 `vm_snapshot_size` returns `u64::MAX` and `vm.snapshot()` says to detach it. The detach completes
 in-flight TDs with errors, so the state is consistent without waiting on the guest ("The page", "Snapshot and Suspend").

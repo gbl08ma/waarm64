@@ -1055,9 +1055,12 @@ test('venus: a blob left of a destroyed context refuses the snapshot, and caps r
   r.ok(blob(3, 10, 4096));
   r.ok(ctxCmd(3, V.CTX_DESTROY));
   assert.equal((await r.gpu.save()).unsaveable?.msg?.key, 'display:gpu.unsaveable.venus');
+  // The check a snapshot makes before it touches the machine says the same.
+  assert.equal((await r.gpu.refusal())?.msg?.key, 'display:gpu.unsaveable.venus');
   r.ok(cmd(T.UNREF, 10, 0));
   const saved = JSON.parse(JSON.stringify(await r.gpu.save()));
   assert.equal(saved.unsaveable, undefined);
+  assert.equal(await r.gpu.refusal(), undefined);
   const other = rig({ virgl: true, venus: true, window: 1 << 20 });
   saved.caps = btoa(String.fromCharCode(...virglCaps(2).map((b, i) => (i === 200 ? b ^ 1 : b))));
   other.gpu.restore(saved);
@@ -1110,10 +1113,12 @@ test('venus: blobs, their mapping in the window, uuids and submits reach the hos
   assert.deepEqual(calls[4], { t: 'blob-map', res: 10, offset: 0x8000, size: 65536 });
   assert.deepEqual(calls[7], { t: 'vsubmit', ctx: 3, bytes: [0x44, 0x33, 0x22, 0x11, 5, 0, 0, 0], fence: { flags: 3, ring: 2, id: '77n' } });
   assert.ok(fences >= 7, 'creates, maps and unmaps wait for the host');
-  // Not saved while a Venus context exists; a reset forgets them.
+  // Not saved while a Venus context exists (the check before a snapshot says so too); a reset forgets them.
   assert.equal((await r.gpu.save()).unsaveable?.msg?.key, 'display:gpu.unsaveable.venus');
+  assert.equal((await r.gpu.refusal())?.msg?.key, 'display:gpu.unsaveable.venus');
   r.gpu.reset();
   assert.equal((await r.gpu.save()).unsaveable, undefined);
+  assert.equal(await r.gpu.refusal(), undefined);
 });
 
 test('venus: a virgl resource attached to a Venus context is imported there with its size, not attached in virgl', () => {
