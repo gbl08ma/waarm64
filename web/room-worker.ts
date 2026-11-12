@@ -14,10 +14,11 @@ let ip: MessagePort | undefined;
 let send: ((packet: Uint8Array) => void) | undefined;
 let lease: (Lease & { prefix6?: Prefix }) | null = null;
 let primary = true;
+let primary6 = true;
 let rank = 0;
 let client: TsClient | undefined;
 /** On another adapter, the room offers its /48 only (docs/networking/adapters.md §4). */
-const offered = () => ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }), rank);
+const offered = () => ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank);
 
 function attach(port: MessagePort) {
   if (ip) { ip.onmessage = null; ip.close(); }
@@ -36,6 +37,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     case 'attach': return attach(m.ip);
     case 'primary':
       primary = m.primary;
+      primary6 = m.primary6 ?? m.primary;
       rank = m.rank ?? 0;
       return ip?.postMessage({ type: 'lease', lease: offered() });
     case 'rtc-channel': return client?.rtcChannel(m.rtc, m.channel);

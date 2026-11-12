@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createNetwork, parseControlURL, parseHostname } from '../web/app/network.ts';
-import { primaryOf, ranksOf, viewOf } from '../web/app/network-view.ts';
+import { adapterViews, defaultsOf, primary6Of, primaryOf, ranksOf, viewOf } from '../web/app/network-view.ts';
 import type { FromTailscale, NetMap, Tailscale, TailscaleConfig } from '../web/tailscale.ts';
 import { msg, t } from '../web/i18n.ts';
 import { msgOf, toWire } from '../web/msg.ts';
@@ -205,7 +205,7 @@ test('a tailcat connection: the address goes to the tailcat client, not the Tail
   assert.deepEqual(nm.addresses, ['192.0.0.2/32', 'fd7a:115c:a1e0:102:304:506:708:90a/128']);
   assert.deepEqual(nm.dns, ['1.1.1.1', '2606:4700:4700::1111']);
   cats[0].setState('Running', nm); // i18n-ignore
-  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: t('network:network-view.tailcat.address', { address: '192.0.0.2' }) });
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, internet6: false, text: t('network:network-view.tailcat.address', { address: '192.0.0.2' }) });
   cats[0].emit({ type: 'error', error: toWire(new Error('the tailcat server didn\'t answer')) });
   assert.equal(net.view().phase, 'error');
   await net.disconnect();
@@ -246,7 +246,7 @@ test('a served machine (tailcat T3): serving alone or beside a tailcat server; t
   net.connect({ controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatServe: { relay: '' } });
   assert.deepEqual(cats[1].config, { addr: 'tcEXIT', serve: { relay: '' } });
   cats[1].setState('Running', netmapOf(lease, 'tcSERVED')); // i18n-ignore
-  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: t('network:network-view.tailcat.address.serving', { address: '192.0.0.2' }), served: 'tcSERVED' });
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, internet6: false, text: t('network:network-view.tailcat.address.serving', { address: '192.0.0.2' }), served: 'tcSERVED' });
   // Its node key, for the server's `--allow` (the menu shows it through a server only).
   cats[1].setState('Running', netmapOf(lease, undefined, true, `nodekey:${'ab'.repeat(32)}`)); // i18n-ignore
   assert.equal(net.view().tailcatKey, `nodekey:${'ab'.repeat(32)}`);
@@ -288,18 +288,52 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   const told: (boolean | number)[][] = [];
   const fake = (): Tailscale => ({
     state: () => '', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
-    setPrimary: (p, r) => { told.push([p, r ?? 0]); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
+    setPrimary: (p, r, p6) => { told.push([p, r ?? 0, p6 ?? p]); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
   });
   const net = createNetwork(() => {}, fake, fake);
   net.port();
   net.setPrimary(false);
   net.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc' });
-  assert.deepEqual(told, [[false, 0]], 'a client started on a secondary adapter is told at once');
+  assert.deepEqual(told, [[false, 0, false]], 'a client started on a secondary adapter is told at once');
   net.setPrimary(false);
   net.setPrimary(true);
   net.setPrimary(true, 1);
   net.setPrimary(true, 1);
-  assert.deepEqual(told, [[false, 0], [true, 0], [true, 1]], 'and on every change (the rank too), once');
+  net.setPrimary(true, 1, false);
+  net.setPrimary(true, 1, false);
+  assert.deepEqual(told, [[false, 0, false], [true, 0, true], [true, 1, true], [true, 1, false]], 'and on every change (the rank, IPv6\'s primary too), once');
+  told.length = 0;
+  const other = createNetwork(() => {}, fake, fake);
+  other.port();
+  other.setPrimary(true, 0, false);
+  other.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc' });
+  assert.deepEqual(told, [[true, 0, false]], "a client started on IPv4's primary that isn't IPv6's is told at once");
+});
+
+test("IPv6's default way out: the primary when its IPv6 reaches the internet, else the first adapter whose does, else the primary", () => {
+  type V = { phase: 'off' | 'connected'; internet?: boolean; internet6?: boolean; local?: boolean };
+  const c = (phase: V['phase'], internet?: boolean, internet6?: boolean, local?: boolean): V => ({ phase, internet, internet6, local });
+  assert.equal(primary6Of([]), -1);
+  assert.equal(primary6Of([c('connected', false)]), 0, 'one adapter: its own');
+  assert.equal(primary6Of([c('connected', true, true), c('connected', true, true)]), 0, 'both reach it: the primary');
+  assert.equal(primary6Of([c('connected', true, false), c('connected', true, true)]), 1, "tailcat whose server has no IPv6, then a tailnet's exit node that has: the second");
+  assert.equal(primaryOf([c('connected', true, false), c('connected', true, true)]), 0, "IPv4's stays the first");
+  assert.equal(primary6Of([c('connected', true, false), c('connected', true, false)]), 0, 'none reaches it: the primary (whose lease has no IPv6 default)');
+  assert.equal(primary6Of([c('connected', false), c('connected', true, false), c('off', true, true), c('connected', true, true)]), 3, 'off adapters never; the first that does');
+  assert.equal(primary6Of([c('connected', true, true), c('connected', true, false, true)]), 1, "a local helper's is both families' (its own router advertisements)");
+  assert.equal(primary6Of([c('connected', false, false), c('connected', false, true)]), 0, 'internet6 without internet never counts');
+  // From the clients' reports: a tailnet's while its exit node's probe answers, tailcat's while its server's does.
+  const exit = { exitNode: 'nPEER', peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: true }] };
+  assert.equal(viewOf({ state: 'Running', netmap: netmap({ ...exit, reached6: true }) }).internet6, true); // i18n-ignore
+  assert.equal(viewOf({ state: 'Running', netmap: netmap({ ...exit, reached6: false }) }).internet6, false); // i18n-ignore
+  assert.equal(viewOf({ state: 'Running', netmap: netmap({ reached6: true }) }).internet6, false, 'no exit node: none'); // i18n-ignore
+  const cat = (over: Partial<NetMap>) => netmap({ via: 'tailcat', name: '', peers: [], tailcatExit: true, ...over });
+  assert.equal(viewOf({ state: 'Running', netmap: cat({ reached6: true }), tailcat: true }).internet6, true); // i18n-ignore
+  assert.equal(viewOf({ state: 'Running', netmap: cat({}), tailcat: true }).internet6, false); // i18n-ignore
+  // The menu's words follow: both families, or one each.
+  const views = adapterViews({ adapters: [{ id: 'a', mac: '52:54:00:00:00:01' }, { id: 'b', mac: '52:54:00:00:00:02' }, { id: 'c', mac: '52:54:00:00:00:03' }], nets: [], notes: [], connections: [], primary: 0, primary6: 1, on: true });
+  assert.deepEqual(views.map(defaultsOf), ['v4', 'v6', undefined]);
+  assert.deepEqual(adapterViews({ adapters: [{ id: 'a', mac: '52:54:00:00:00:01' }], nets: [], notes: [], connections: [], primary: 0, on: true }).map(defaultsOf), ['both'], 'no primary6: the primary\'s');
 });
 
 test("a port that comes while the client detaches stays, connected or not: the old one is closed", async () => {

@@ -29,7 +29,7 @@ export type StartRoom = RoomConfig & {
 export type ToRoom =
   | { type: 'start'; wasm: string; config: RoomConfig; identityKey?: string; identity?: RoomIdentity; ip: MessagePort }
   | { type: 'attach'; ip: MessagePort }
-  | { type: 'primary'; primary: boolean; rank?: number }
+  | { type: 'primary'; primary: boolean; rank?: number; primary6?: boolean }
   | { type: 'detach' }
   | { type: 'rtc-channel'; rtc: number; channel: RTCDataChannel }
   | { type: 'rtc-signal'; rtc: number; json: string }
@@ -59,7 +59,7 @@ export type Room = {
   running: Promise<void>;
   timings(): { loadMs?: number; runningMs?: number };
   attach(ip: MessagePort): void;
-  setPrimary(primary: boolean, rank?: number): void;
+  setPrimary(primary: boolean, rank?: number, primary6?: boolean): void;
   detach(): Promise<MessagePort | undefined>;
   /** Closes every WebRTC connection, as a failed path would (the tests' fallback to DERP). */
   dropDirect(): void;
@@ -196,7 +196,7 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
     ip: own?.port2, state: () => state, self: () => me, lease: () => lease, peers: () => [...peers.values()],
     running, timings: () => timings,
     attach: (ip) => post({ type: 'attach', ip }, [ip]),
-    setPrimary: (primary, rank) => post({ type: 'primary', primary, rank }),
+    setPrimary: (primary, rank, primary6) => post({ type: 'primary', primary, rank, primary6 }),
     detach: () => new Promise((resolve) => {
       const t = setTimeout(() => resolve(undefined), 3000);
       detached = (ip) => { clearTimeout(t); resolve(ip); };

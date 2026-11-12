@@ -140,8 +140,9 @@ export type Network = {
   view(): NetworkView;
   /** Whether a client runs. */
   active(): boolean;
-  /** Whether this adapter is the guest's default way out (`primaryOf`), and its `rank` (`ranksOf`; default 0), kept across clients; true and 0 until told otherwise. */
-  setPrimary(primary: boolean, rank?: number): void;
+  /** Whether this adapter is the guest's default way out (`primaryOf`), its `rank` (`ranksOf`; default 0) and whether it
+   * is IPv6's (`primary6Of`; default `primary`), kept across clients; true and 0 until told otherwise. */
+  setPrimary(primary: boolean, rank?: number, primary6?: boolean): void;
 };
 
 /** How long a kept node has to reach its control server to be logged out. */
@@ -246,6 +247,7 @@ type State = {
   /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
   onFrames: boolean;
   primary: boolean;
+  primary6: boolean;
   rank: number;
 };
 
@@ -279,7 +281,7 @@ function connect(s: State, c: Connect) {
   };
   const t = startClient(c, ip, s.kind.tailcat, onEvent, s.starters);
   s.client = t;
-  if (!s.primary || s.rank) t.setPrimary(s.primary, s.rank);
+  if (!s.primary || !s.primary6 || s.rank) t.setPrimary(s.primary, s.rank, s.primary6);
   t.running.catch((e: unknown) => {
     s.error = e ?? new Error('failed');
     s.onChange();
@@ -322,6 +324,7 @@ export function createNetwork(
     kind: { room: false, tailcat: false, local: false },
     onFrames: false,
     primary: true,
+    primary6: true,
     rank: 0,
   };
   return {
@@ -341,11 +344,12 @@ export function createNetwork(
     },
     view: () => viewOf(report(s)),
     active: () => !!s.client,
-    setPrimary(p, r = 0) {
-      if (p === s.primary && r === s.rank) return;
+    setPrimary(p, r = 0, p6 = p) {
+      if (p === s.primary && r === s.rank && p6 === s.primary6) return;
       s.primary = p;
+      s.primary6 = p6;
       s.rank = r;
-      s.client?.setPrimary(p, r);
+      s.client?.setPrimary(p, r, p6);
     },
   };
 }

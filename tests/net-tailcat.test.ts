@@ -232,6 +232,56 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
   });
 });
 
+// A primary per family (docs/networking/adapters.md §4): two adapters on tailcat through the server, the first's IPv6
+// probe asking a port nothing answers (its server's IPv6 out), the second's the stand-in resolver. IPv4's default goes
+// through the first (the first that reaches the internet), IPv6's through the second, and the guest reaches this
+// machine over IPv6 through it. Needs a non-link-local IPv6 address here, as the IPv6 default's case above.
+test("a primary per family: IPv4's default through the first adapter, IPv6's through the second whose probe answers", { skip: skip || (!lan('IPv6') && 'SKIPPED: this machine has no non-link-local IPv6 address'), timeout: 900_000 }, async () => {
+  await resolver!.on();
+  await withDebianLock(async () => {
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await ctx.newPage();
+    page.on('console', (m) => { if (/rror|panic/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
+    const context = async () => `; the adapters: ${JSON.stringify(await harness(page, 'views()'))}, primaries ${await harness(page, 'primary()')}/${await harness(page, 'primary6()')}`;
+    const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
+    try {
+      await page.goto(`${base}/tests/browser/core.html`);
+      await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
+      const probe = (p: number) => JSON.stringify({ to: [resolver!.to], port: p, everyMs: 5000 });
+      await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ split: '', tailcat: addr, overlay: OVERLAY, probe6a: probe(9), probe6b: probe(resolver!.port) })}`);
+      await page.waitForFunction('window.harness?.primary6() === 1', null, { timeout: 120_000, polling: 250 })
+        .catch(async (e) => { throw new Error(`${e}${await context()}`); });
+      assert.equal(await harness<number>(page, 'primary()'), 0, "IPv4's primary is the first that reaches the internet");
+      await loginRoot(page, 240_000, context);
+      const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {
+        const t0 = performance.now();
+        let out = await run(cmd);
+        while (!ok(out) && performance.now() - t0 < ms) {
+          await page.waitForTimeout(1000);
+          out = await run(cmd);
+        }
+        assert.ok(ok(out), `${what} after ${ms / 1000} s:\n${out}${await context()}`);
+      };
+      await until('two IPv6 leases', 'ip -6 -o addr show scope global', (s) => s.trim().split('\n').length >= 2, 90_000);
+      await until("IPv4's default through the first adapter only", 'ip -4 route', (s) => /^default via 169\.254\.0\.1 /m.test(s) && !/^default via 169\.254\.0\.2 /m.test(s), 90_000);
+      await until("IPv6's default through the second adapter only", 'ip -6 route', (s) => /^default (nhid \d+ )?via fe80::77:65ff:fe62:7064 /m.test(s) && !/via fe80::77:65ff:fe62:7063 .*proto ra/.test(s.split('\n').filter((l) => l.startsWith('default')).join('\n')), 60_000);
+      console.log(`# guest: ${(await run('ip -4 route; ip -6 route')).trim().replace(/\n/g, ' | ')}`);
+      const page6 = await run(`curl -s -m 20 "http://[${resolver!.to}]:${port}/"`, 60_000);
+      assert.match(page6, /hello-from-the-exit-nodes-lan/, `the guest reaches [${resolver!.to}]:${port} over IPv6 through the second adapter${await context()}`);
+      const page4 = await run(`curl -s -m 20 http://${lan('IPv4')}:${port}/`, 60_000);
+      assert.match(page4, /hello-from-the-exit-nodes-lan/, `and over IPv4 through the first${await context()}`);
+      // The second's server loses IPv6: IPv6's default comes back to the primary, whose lease has none, so there is none.
+      await resolver!.off();
+      await page.waitForFunction('window.harness.primary6() === 0', null, { timeout: 60_000, polling: 250 })
+        .catch(async (e) => { throw new Error(`${e}${await context()}`); });
+      await until('no IPv6 default (neither reaches it)', 'ip -6 route', (s) => !/^default /m.test(s), 60_000);
+    } finally {
+      await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
+      await ctx.close();
+    }
+  });
+});
+
 test('tailcat ssh logs in to the served guest\'s sshd; tailcat ping gets a pong; the allow list keeps other keys out', { skip: skip || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 900_000 }, async () => {
   const internet = process.env.WEBPC_TAILCAT_INTERNET === '1';
   const relay = internet ? '' : RIG_RELAY;

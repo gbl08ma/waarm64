@@ -320,6 +320,32 @@ test("an adapter that isn't the default way out: its network's routes only, over
   assert.equal(be16(v6(out.pop()!).body, 6), 1800);
 });
 
+test("a primary per family: IPv6's default from this adapter, IPv4 routed to its prefixes only, and the other way round", () => {
+  const six = routedLease(ECHO_LEASE, false, TAILNET_ROUTES, true)!;
+  assert.deepEqual(six.routes?.v4, TAILNET_ROUTES.v4);
+  assert.equal(six.routes?.v6, undefined);
+  const { g, out } = rig(ranked(six, 1));
+  g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));
+  const o = dhcpReply(out.pop()!).opts;
+  assert.equal(o.has(3), false, "no router option: IPv4's default is another adapter's");
+  assert.equal(hex(o.get(121)!), hex([32, ...GATEWAY_IP, 0, 0, 0, 0, 10, 100, 64, ...GATEWAY_IP]), 'the gateway on-link, 100.64.0.0/10 through it, no default');
+  g.send(rs());
+  const r = v6(out.pop()!);
+  assert.equal(be16(r.body, 6), 1800, "IPv6's default router");
+  const types: number[] = [];
+  for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) types.push(r.body[k]);
+  assert.ok(types.includes(25), `its IPv6 resolvers: ${types}`);
+  const four = routedLease(ECHO_LEASE, true, TAILNET_ROUTES, false)!;
+  assert.equal(four.routes?.v4, undefined);
+  assert.deepEqual(four.routes?.v6, TAILNET_ROUTES.v6);
+  const other = rig(four);
+  other.g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));
+  assert.equal(hex(dhcpReply(other.out.pop()!).opts.get(3)!), hex(GATEWAY_IP), "IPv4's default router");
+  other.g.send(rs());
+  assert.equal(be16(v6(other.out.pop()!).body, 6), 0, "not IPv6's default router");
+  assert.equal(routedLease(ECHO_LEASE, true, TAILNET_ROUTES, true)!.routes, undefined, 'both: a single card\'s lease');
+});
+
 test("routes for one family only: IPv4's default stays, IPv6 is routed to its prefixes (web/reach6.ts `unreached6`)", () => {
   const { g, out } = rig(unreached6(ECHO_LEASE, TAILNET_ROUTES.v6));
   g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));

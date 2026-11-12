@@ -49,8 +49,15 @@ const ROUTES_PER_ADVERT = 40;
 export const ranked = (lease: Lease | null, rank: number): Lease | null =>
   lease?.routes?.v6?.length ? { ...lease, routes: { ...lease.routes, pref6: (['high', 'medium', 'low'] as const)[Math.min(rank, 2)] } } : lease;
 
-/** `lease` for the adapter that is the guest's default way out (`primary`), or only for `routes`; null stays null. */
-export const routedLease = (lease: Lease | null, primary: boolean, routes: Routes): Lease | null => (!lease ? null : primary ? { ...lease, routes: undefined } : { ...lease, routes });
+/**
+ * `lease` for the adapter that is the guest's default way out (`primary`), or only for `routes`, per family: `primary6`
+ * (default `primary`) for IPv6, whose default can come from another adapter than IPv4's (docs/networking/adapters.md §4,
+ * "A primary per family"); null stays null.
+ */
+export const routedLease = (lease: Lease | null, primary: boolean, routes: Routes, primary6 = primary): Lease | null =>
+  !lease ? null
+  : primary && primary6 ? { ...lease, routes: undefined }
+  : { ...lease, routes: { ...routes, v4: primary ? undefined : routes.v4, v6: primary6 ? undefined : routes.v6 } };
 
 /** A layer-3 backend: IP packets out through `send`, in through the `deliver` it was made with. */
 export type IpBackend = { lease(): Lease | null; send(packet: Uint8Array): void; close?(): void };

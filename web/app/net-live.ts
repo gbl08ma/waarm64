@@ -1,7 +1,7 @@
 // The live side of the page's machine's network adapters (docs/networking/adapters.md §3): a `Network` per adapter
 // (web/app/network.ts), the connection each one has attached (a record of the browser's, web/app/connections.ts) and
 // its client (what it starts with: web/app/net-connect.ts), and the connections' locks (one running machine has a
-// connection at a time, in any tab: web/app/net-claims.ts) and kept nodes (web/app/net-nodes.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The
+// connection at a time, in any tab: web/app/net-claims.ts) and kept nodes (web/app/net-nodes.ts). It picks the guest's default way out (`primaryOf`, and IPv6's: `primary6Of`) whenever an adapter's state changes. The
 // toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/areas/network-actions.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { msg, MsgError } from '../i18n.ts';
@@ -12,7 +12,7 @@ import { NetClaims, type ClaimHere } from './net-claims.ts';
 import { connectOf } from './net-connect.ts';
 import { KeptNodes, notLoggedOut } from './net-nodes.ts';
 import { createNetwork, type Network } from './network.ts';
-import { adapterViews, primaryOf, ranksOf, type AdapterView } from './network-view.ts';
+import { adapterViews, primary6Of, primaryOf, ranksOf, type AdapterView } from './network-view.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 import { Changes } from './changes.ts';
@@ -56,7 +56,7 @@ export class PageNetwork {
   private running: (string | undefined)[] = [];
   /** What the page has to say about each adapter: a message, or an error its connecting met. */
   private notes: unknown[] = []; // a Msg, or an error
-  private primary = -1;
+  private primary = { v4: -1, v6: -1 }; // the guest's default ways out, per family
 
   /** The browser's connections (stored and this page's ephemeral ones), as last read (`refresh`). */
   get connections(): Connection[] {
@@ -385,9 +385,9 @@ export class PageNetwork {
   /** An adapter's state changed: the primary is chosen again, and the page redraws. */
   private changed() {
     const views = this.nets.map((n) => n.view());
-    this.primary = primaryOf(views);
+    const { v4, v6 } = (this.primary = { v4: primaryOf(views), v6: primary6Of(views) });
     const ranks = ranksOf(views);
-    for (const [k, n] of this.nets.entries()) n.setPrimary(this.primary < 0 || k === this.primary, ranks[k]);
+    for (const [k, n] of this.nets.entries()) n.setPrimary(v4 < 0 || k === v4, ranks[k], v6 < 0 || k === v6);
     this.#changes.notify();
     this.o.onChange?.();
   }
@@ -395,8 +395,8 @@ export class PageNetwork {
   /** The page's machine's adapters now. */
   views(): AdapterView[] {
     this.#changes.track();
-    const { adapters, nets, notes, primary, on } = this;
-    return adapterViews({ adapters, nets, notes, connections: this.connections, primary, on });
+    const { adapters, nets, notes, on, primary: p } = this;
+    return adapterViews({ adapters, nets, notes, connections: this.connections, primary: p.v4, primary6: p.v6, on });
   }
 
   /** The adapter whose client runs connection `id` here, or -1. */

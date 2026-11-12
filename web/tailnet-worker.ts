@@ -23,6 +23,8 @@ let subnets = subnetsOf(undefined);
 let posted = '';
 /** This adapter is the guest's default way out (docs/networking/adapters.md §4): otherwise its lease carries only the network's routes. */
 let primary = true;
+/** And IPv6's (docs/networking/adapters.md §4 "A primary per family"; default `primary`). */
+let primary6 = true;
 /** Its place among the machine's connected adapters: its IPv6 routes' preference (`ranked`). */
 let rank = 0;
 let client: TsClient | undefined;
@@ -32,7 +34,7 @@ let reachVia = '';
 let probe6: Reach6Options | undefined;
 const offered = () => {
   const routes = { v4: [...TAILNET_ROUTES.v4, ...subnets.v4], v6: [...TAILNET_ROUTES.v6, ...subnets.v6] };
-  const l = routedLease(lease, primary, routes);
+  const l = routedLease(lease, primary, routes, primary6);
   return ranked(reach && !reach.reached() ? unreached6(l, routes.v6) : l, rank);
 };
 /** Tells the gateway the lease, if it changed (`force`: a new port, which hasn't heard it). */
@@ -43,18 +45,23 @@ function postLease(force = false) {
   posted = json;
   ip?.postMessage({ type: 'lease', lease: l });
 }
+/** The last netmap, posted again with `reached6` when the probe's answer changes. */
+let netmap: NetMap | undefined;
+const postNetmap = () => netmap && post({ type: 'netmap', netmap: { ...netmap, reached6: !!reach?.reached() } });
 function takeNetmap(nm: NetMap) {
+  netmap = nm;
   lease = leaseFrom(nm);
   subnets = subnetsOf(nm);
   probeVia(nm.exitNode ?? '');
   postLease();
+  postNetmap();
 }
 
 /** The exit node in use (''); another one is probed from scratch (out until it answers). */
 function probeVia(id: string) {
   if (id !== reachVia) {
     reach?.stop();
-    reach = id ? reach6((p) => client?.guest(p), () => postLease(), probe6) : undefined;
+    reach = id ? reach6((p) => client?.guest(p), () => { postLease(); postNetmap(); }, probe6) : undefined;
     reachVia = id;
   }
   if (lease?.address6) reach?.start(lease.address6);
@@ -77,11 +84,13 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   if (m.type === 'attach') return attach(m.ip);
   if (m.type === 'primary') {
     primary = m.primary;
+    primary6 = m.primary6 ?? m.primary;
     rank = m.rank ?? 0;
     return postLease();
   }
   if (m.type === 'detach') {
     lease = null;
+    netmap = undefined;
     probeVia('');
     ip?.postMessage({ type: 'lease', lease: null });
     posted = 'null';
@@ -125,8 +134,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
           case 'exitnode': return post(ev.code ? { type: 'exitnode', error: toWire(exitNodeError(ev)) } : { type: 'exitnode' });
           case 'loggedout': return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
           case 'netmap':
-            takeNetmap(ev.netmap);
-            return post({ type: 'netmap', netmap: ev.netmap });
+            return takeNetmap(ev.netmap);
           case 'state':
             if (ev.state === 'Failed') return post({ type: 'error', error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailnet-worker.failed')) });
             return post({ type: 'state', state: ev.state });

@@ -1513,8 +1513,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   would be an advertisement); routes of a client or connection that went aren't withdrawn (they lapse in 30 minutes,
   through a gateway that no longer answers).
 - **IPv6 out's loose ends** ([networking/adapters.md](networking/adapters.md) §4 "IPv6 out", web/reach6.ts):
-  - **A primary per family**: with tailcat as the primary and its IPv6 out, a second adapter whose IPv6 reaches out
-    (a tailnet's exit node) could carry IPv6's default; `primaryOf` picks one adapter for both.
   - The real probe targets answering is checked by hand only (an exit node on the Mac, testing.md): the dev VM has
     no IPv6, so the tests' up case runs against `tests/net/resolver.ts` on a temporary address, and a Tailscale exit
     node reaching IPv6 out isn't tested at all (the Podman peer has none).

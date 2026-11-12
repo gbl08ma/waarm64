@@ -487,6 +487,14 @@
     "message": "Adapter {{adapter}} (default gateway)",
     "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through (its default gateway is on that adapter), when the machine has more than one; also the line under the title of an adapter's details (a dialog). {{adapter}} is its number."
   },
+  "NetAdapter.adapter.primary4": {
+    "message": "Adapter {{adapter}} (IPv4's default gateway)",
+    "note": "As NetAdapter.adapter.primary, when only IPv4's default route goes through this adapter: IPv6's goes through another (whose connection reaches the internet over IPv6, which this one's doesn't). {{adapter}} is its number."
+  },
+  "NetAdapter.adapter.primary6": {
+    "message": "Adapter {{adapter}} (IPv6's default gateway)",
+    "note": "As NetAdapter.adapter.primary, when only IPv6's default route goes through this adapter: IPv4's goes through another, whose connection doesn't reach the internet over IPv6 while this one's does. {{adapter}} is its number."
+  },
   "NetAdapter.connection.ephemeral": {
     "message": "{{name}} (ephemeral)",
     "note": "The toolbar's Network menu: the line that names an adapter's connection, when that connection is ephemeral (kept nowhere, gone when the tab closes). {{name}} is the connection's name."

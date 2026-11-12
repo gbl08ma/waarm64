@@ -18,7 +18,7 @@
   import { t } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
   import { ask } from './ask.svelte.ts';
-  import { phaseTone } from './network-view.ts';
+  import { defaultsOf, phaseTone } from './network-view.ts';
   import type { AdapterView } from './network-view.ts';
   import { page } from './page.ts';
 
@@ -27,6 +27,20 @@
   const v = $derived(a.view);
   const i = $derived(a.index);
   const s = $derived(i ? `-${i}` : '');
+  /** Its number, and which of the guest's default routes go through it (IPv4's and IPv6's can be two adapters'). */
+  const headingText = $derived.by(() => {
+    const adapter = i + 1;
+    switch (defaultsOf(a)) {
+      case 'both':
+        return t('network:NetAdapter.adapter.primary', { adapter });
+      case 'v4':
+        return t('network:NetAdapter.adapter.primary4', { adapter });
+      case 'v6':
+        return t('network:NetAdapter.adapter.primary6', { adapter });
+      default:
+        return t('network:NetAdapter.adapter', { adapter });
+    }
+  });
 
   const runner = new Actions();
   const act = (f: () => Promise<unknown>) => runner.run('', f);
@@ -75,11 +89,7 @@
   <div class="net-head">
     {#if heading}
       <h3>
-        <span class="light"><StatusDot tone={phaseTone(v.phase)} aria-hidden="true" /></span><span
-          >{a.primary
-            ? t('network:NetAdapter.adapter.primary', { adapter: i + 1 })
-            : t('network:NetAdapter.adapter', { adapter: i + 1 })}</span
-        >
+        <span class="light"><StatusDot tone={phaseTone(v.phase)} aria-hidden="true" /></span><span>{headingText}</span>
       </h3>
     {/if}
     <Note id={`net-conn${s}`}>{connection}</Note>

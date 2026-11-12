@@ -1355,6 +1355,14 @@
     "message": "the default route",
     "note": "Machines page, Network tab: after an adapter's connection (after a \" · \") when it is the one the guest's default route goes through."
   },
+  "AdapterCard.adapter.primary4": {
+    "message": "IPv4's default route",
+    "note": "As AdapterCard.adapter.primary, when only IPv4's default route goes through this adapter (IPv6's goes through another adapter, whose connection reaches the internet over IPv6)."
+  },
+  "AdapterCard.adapter.primary6": {
+    "message": "IPv6's default route",
+    "note": "As AdapterCard.adapter.primary, when only IPv6's default route goes through this adapter (IPv4's goes through another, whose connection doesn't reach the internet over IPv6)."
+  },
   "AdapterCard.adapter.atStart.title": {
     "message": "Connect the adapter when the machine starts. Disconnect turns this off.",
     "note": "Machines page, Network tab: tooltip of Connect at start."

@@ -48,6 +48,8 @@ export type NetworkView = {
   subnets?: { routes: string[]; on: boolean };
   /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server, the local helper): it can be the guest's default way out. */
   internet?: boolean;
+  /** And over IPv6, as its probe tells (web/reach6.ts; the local helper's isn't known): it can be IPv6's (`primary6Of`). */
+  internet6?: boolean;
   /** The local helper's: its lease always routes everything through it, so it is the primary first (`primaryOf`). */
   local?: boolean;
   /** A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect. */
@@ -66,6 +68,21 @@ export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local
   if (local >= 0) return local;
   const net = views.findIndex((v) => v.phase === 'connected' && v.internet);
   return net >= 0 ? net : views.findIndex((v) => v.phase === 'connected');
+}
+
+/**
+ * Which adapter is IPv6's default way out (docs/networking/adapters.md §4 "A primary per family"): the primary
+ * (`primary`, `primaryOf`'s) when it is a local helper's (whose own router advertisements the page can't change) or its
+ * IPv6 reaches the internet; else the first, in order, whose IPv6 does (a tailnet's exit node beside tailcat whose
+ * server has none); without one, the primary, whose lease then has no IPv6 default (web/reach6.ts `unreached6`).
+ */
+export function primary6Of(
+  views: Pick<NetworkView, 'phase' | 'internet' | 'internet6' | 'local'>[],
+  primary = primaryOf(views),
+): number {
+  if (primary < 0 || views[primary].local || views[primary].internet6) return primary;
+  const v6 = views.findIndex((v) => v.phase === 'connected' && v.internet && v.internet6);
+  return v6 >= 0 ? v6 : primary;
 }
 
 /**
@@ -167,7 +184,16 @@ function tailcatView(c: ClientReport): NetworkView {
     const address = netmap.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
     const key = netmap.tailcatKey ? { tailcatKey: netmap.tailcatKey } : {};
     const text = tailcatText(address, !!netmap.serving);
-    return { phase: 'connected', address, exitNodes: [], internet: true, text, ...served, ...key };
+    return {
+      phase: 'connected',
+      address,
+      exitNodes: [],
+      internet: true,
+      internet6: !!netmap.reached6,
+      text,
+      ...served,
+      ...key,
+    };
   }
   const doing: Record<string, string> = {
     FetchingMap: t('network:network-view.fetchingMap'),
@@ -208,7 +234,15 @@ function tailnetView(netmap: NetMap | undefined): NetworkView {
       ? t('network:network-view.connectedPeers.via', { connected, count: peers.length, via: via.name })
       : t('network:network-view.connectedPeers.viaOffline', { connected, count: peers.length, via: via.name })
     : t('network:network-view.connectedPeers', { connected, count: peers.length });
-  return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text };
+  return {
+    phase: 'connected',
+    address,
+    exitNodes,
+    internet: !!via,
+    internet6: !!via && !!netmap?.reached6,
+    ...subnets,
+    text,
+  };
 }
 
 /** A tailnet client's view, by its state. */
@@ -263,8 +297,10 @@ export type AdapterView = {
   active: boolean;
   /** Something the page has to say about it, in words: its connection was gone, another machine took it. */
   note?: string;
-  /** The guest's default way out goes through it. */
+  /** The guest's default way out goes through it (IPv4's, and IPv6's unless `primary6` is another's). */
   primary: boolean;
+  /** IPv6's default way out goes through it (`primary6Of`). */
+  primary6: boolean;
   /** The machine runs, so the adapter can connect. */
   on: boolean;
 };
@@ -281,8 +317,9 @@ export type AdaptersNow = {
   notes: unknown[];
   /** The browser's connections, as last read. */
   connections: Connection[];
-  /** The guest's default way out, or -1. */
+  /** The guest's default way out, or -1; IPv6's (`primary6Of`; default `primary`). */
   primary: number;
+  primary6?: number;
   /** The machine runs. */
   on: boolean;
 };
@@ -304,6 +341,11 @@ export function adapterViews(o: AdaptersNow): AdapterView[] {
         ? text(msg('network:network-view.twoHelpers', { adapter: o.primary + 1 }))
         : undefined),
     primary: i === o.primary,
+    primary6: i === (o.primary6 ?? o.primary),
     on: o.on,
   }));
 }
+
+/** Which defaults an adapter carries, for its words: both families', one family's (the other's is another adapter's), or none. */
+export const defaultsOf = (a: Pick<AdapterView, 'primary' | 'primary6'>): 'both' | 'v4' | 'v6' | undefined =>
+  a.primary && a.primary6 ? 'both' : a.primary ? 'v4' : a.primary6 ? 'v6' : undefined;

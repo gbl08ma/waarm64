@@ -18,6 +18,7 @@
   import { movedAdapter, withoutAdapter } from './machines.ts';
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, type Adapter } from './shape.ts';
+  import { defaultsOf } from './network-view.ts';
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
@@ -49,7 +50,10 @@
         : t('machines:AdapterCard.adapter.noConnection'),
     ];
     if (here?.active) parts.push(said(here.view.text).headline, ...(here.view.details ?? []));
-    if (here?.primary) parts.push(t('machines:AdapterCard.adapter.primary'));
+    const defaults = here && defaultsOf(here);
+    if (defaults === 'both') parts.push(t('machines:AdapterCard.adapter.primary'));
+    else if (defaults === 'v4') parts.push(t('machines:AdapterCard.adapter.primary4'));
+    else if (defaults === 'v6') parts.push(t('machines:AdapterCard.adapter.primary6'));
     return parts.join(' · ');
   });
 

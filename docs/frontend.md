@@ -1468,7 +1468,9 @@ page's machine has its own, with its state's light and its number (1–4), and i
 buttons as last measured, so the choice doesn't flip-flop), after each layout change (a `ResizeObserver` on it and its
 children). A section (`NetAdapter.svelte`; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): "Adapter
 n", or [Adapter {{adapter}} (default gateway)](ui:network:NetAdapter.adapter.primary) for the guest's default route's,
-when there are several,
+when there are several ([Adapter {{adapter}} (IPv4's default gateway)](ui:network:NetAdapter.adapter.primary4) and
+[Adapter {{adapter}} (IPv6's default gateway)](ui:network:NetAdapter.adapter.primary6) when the two families' are two
+adapters'),
 with the connection's name beside it (under it where it doesn't fit), the status,
 [Log in…](ui:network:NetAdapter.login), [Internet through](ui:network:NetAdapter.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
 peers route subnets), [This machine's tailcat address](ui:network:NetAdapter.served) (when it lets clients
@@ -1540,7 +1542,8 @@ and the guest's default way out (below).
   (`primaryOf`). Its lease has the default route; the others' have only their network's routes (DHCP option 121, a
   router advertisement with lifetime 0 and Route Information options). A machine with several adapters has its
   lease renewed every 10 s, so IPv4's default follows the primary within that (8–9 s measured, 10 at most; 49 s with the two-minute lease before); IPv6's moves with
-  the advertisement, at once.
+  the advertisement, at once. IPv6's default can be another adapter's, one whose IPv6 reaches the internet when the
+  primary's doesn't (`primary6Of`, docs/networking/adapters.md §4 "A primary per family").
 - [A tailnet](ui:network:NetKindStep.kind.pickTailnet) takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
   `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with Show).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens

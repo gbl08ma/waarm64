@@ -159,8 +159,19 @@ running in another tab takes effect there at once: that tab hears the record cha
   itself; through an exit node on the Mac, which has IPv6, the default came within a second of networkd starting and
   curl used IPv6 (by hand, 2026-10-23). A tailnet runs it while an exit node is in use, from scratch for each exit node
   (out until it answers; none in use, no probe): the Podman peer has no IPv6 out, so the guest's IPv6 default goes
-  when it becomes the exit node and comes back when it stops. The probe tells only whether the far end reaches the
-  internet over IPv6; it isn't per-family primaries (IPv6's default from another adapter).
+  when it becomes the exit node and comes back when it stops. The worker tells the page what the probe found (the
+  netmap's `reached6`, the view's `internet6`), for the next point.
+- **A primary per family** (`primary6Of`): IPv6's default way out is the primary when the primary's IPv6 reaches the
+  internet or it is a local helper's (whose router advertisements are the helper's, not the page's); else the first
+  adapter, in order, whose probe answers (tailcat through a server with no IPv6 first, a tailnet's exit node with IPv6
+  second); without one, the primary, whose lease then has no IPv6 default. Each client is told both (`setPrimary`'s
+  `primary6`), and `routedLease` gives each family's default or routes apart: IPv4's primary keeps its DHCP default and
+  offers only its IPv6 routes, IPv6's advertises itself as the default router and its resolvers and offers only its
+  IPv4 routes. The menu's adapter headings and the Network tab then say which family's default each carries.
+  **Measured** in `tests/net-tailcat.test.ts`'s primary per family (two tailcat adapters, the first's probe unanswered,
+  the second's answered by the stand-in; skipped without a non-link-local IPv6 address here: on the dev VM by hand,
+  with a ULA added to `eth0` for the run): IPv4's default through the first, IPv6's through the second, the guest
+  reaching this machine over both, and IPv6's default gone once the second's probe stops answering.
 - **DNS:** each lease carries its own connection's resolvers and domains, and systemd-resolved keeps them per link:
   a tailnet's MagicDNS domain sends its names to the tailnet's adapter (checked against headscale beside tailcat), and
   the rest go to the primary's resolvers. A guest without systemd-resolved gets every adapter's resolvers in one list.

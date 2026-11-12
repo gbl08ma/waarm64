@@ -5,18 +5,20 @@
   // tests/net-tailnet.test.ts's two adapters (docs/networking/adapters.md §4, L2): the page's Debian (its card's
   // credential, as web/app/machine.ts gives it) with two cards, each a Network (web/app/network.ts) as the page's
   // machine has them: adapter 1 on a tailnet (`control`, `authkey`, `hostname`) with no exit node, adapter 2 on tailcat
-  // through a server, letting clients in (with `local`: the local helper's beside a room, below) (`tailcat`; `probe6`: how it checks the server's IPv6 reach, web/reach6.ts, as JSON). As web/app/net-live.ts does, every change picks the primary again (primaryOf) and
+  // through a server, letting clients in (with `local`: the local helper's beside a room, below; with `split`: two tailcat adapters, below) (`tailcat`; `probe6`: how it checks the server's IPv6 reach, web/reach6.ts, as JSON). As web/app/net-live.ts does, every change picks the primary again (primaryOf, and IPv6's: primary6Of) and
   // tells each adapter whether it is, and its rank (ranksOf). The test drives the guest's serial console through window.harness.
   import { createNetwork } from '../../web/app/network.ts';
-  import { primaryOf, ranksOf } from '../../web/app/network-view.ts';
+  import { primary6Of, primaryOf, ranksOf } from '../../web/app/network-view.ts';
   const q = new URLSearchParams(location.search);
   let primary = -1;
+  let primary6 = -1;
   const nets = [];
   const changed = () => {
     const views = nets.map((n) => n.view());
     primary = primaryOf(views);
+    primary6 = primary6Of(views, primary);
     const ranks = ranksOf(views);
-    nets.forEach((n, k) => n.setPrimary(primary < 0 || k === primary, ranks[k]));
+    nets.forEach((n, k) => n.setPrimary(primary < 0 || k === primary, ranks[k], primary6 < 0 || k === primary6));
   };
   nets.push(createNetwork(changed), createNetwork(changed));
   const ports = nets.map((n) => n.port());
@@ -27,7 +29,12 @@
   worker.onmessage = (e) => { if (e.data.serial) output += e.data.serial; else if (e.data.error) error = e.data.error; };
   worker.onerror = (e) => { error = e.message; };
   worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay'), ports }, [serial.port2, ...ports]);
-  if (q.has('local')) {
+  if (q.has('split')) {
+    // tests/net-tailcat.test.ts's primary per family: both adapters on tailcat through the server (`tailcat`), each
+    // with its own IPv6 probe (`probe6a`, `probe6b`, as JSON): the first's unanswered, the second's answered.
+    nets[0].connect({ controlURL: '', hostname: '', tailcat: q.get('tailcat'), probe6: JSON.parse(q.get('probe6a')) });
+    nets[1].connect({ controlURL: '', hostname: '', tailcat: q.get('tailcat'), probe6: JSON.parse(q.get('probe6b')) });
+  } else if (q.has('local')) {
     // tests/net-local.test.ts's: adapter 1 on the local helper (`local`: its ws:// link), adapter 2 in a room (`room`: its link).
     nets[0].connect({ controlURL: '', hostname: '', local: q.get('local') });
     nets[1].connect({ controlURL: '', hostname: '', room: { link: q.get('room'), iceServers: [] } });
@@ -41,5 +48,6 @@
     error: () => error,
     views: () => nets.map((n) => n.view()),
     primary: () => primary,
+    primary6: () => primary6,
   };
 </script>

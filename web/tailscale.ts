@@ -21,6 +21,8 @@ export type NetMap = {
   domains: string[] | null;
   /** The stable ID of the peer in use as the exit node, or ''. */
   exitNode: string;
+  /** The worker's: whether the internet's IPv6 answers through the exit node or tailcat's server (web/reach6.ts), while one is in use. */
+  reached6?: boolean;
   /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts), the local helper (web/local-net.ts),
    * or a peer-to-peer room (web/room.ts, whose `peers` are the members reached). */
   via?: 'tailcat' | 'local' | 'room';
@@ -65,7 +67,7 @@ export type ToTailscale =
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
   /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/networking/adapters.md §4). */
-  | { type: 'primary'; primary: boolean; rank?: number }
+  | { type: 'primary'; primary: boolean; rank?: number; primary6?: boolean }
   /** Withdraw the lease and hand the gateway's port back (`detached`). */
   | { type: 'detach' }
   /** Use the peer with this stable ID as the exit node ('': none); answered by `exitnode`. */
@@ -149,8 +151,9 @@ export type Tailscale = {
   /** Hands the client a new gateway port (the machine restarted). */
   attach(ip: MessagePort): void;
   /** Makes the adapter the guest's default way out (the default), or only the way to its own network's addresses; `rank`: its
-   * place among the machine's connected adapters (default 0), its IPv6 routes' preference (web/gateway.ts `ranked`). */
-  setPrimary(primary: boolean, rank?: number): void;
+   * place among the machine's connected adapters (default 0), its IPv6 routes' preference (web/gateway.ts `ranked`);
+   * `primary6` (default `primary`): IPv6's default way out, which can be another adapter (web/app/network-view.ts `primary6Of`). */
+  setPrimary(primary: boolean, rank?: number, primary6?: boolean): void;
   /** Withdraws the lease and takes the gateway's port back, for the next client (or machine); undefined if the worker doesn't answer. */
   detach(): Promise<MessagePort | undefined>;
   /** Sends the internet traffic through the peer with this stable ID (a netmap peer with `exitNodeOption`), or with '' stops; rejects with the client's reason. */
@@ -205,7 +208,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   return {
     ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => loginURL, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailscale, [ip]),
-    setPrimary: (primary, rank) => worker.postMessage({ type: 'primary', primary, rank } satisfies ToTailscale),
+    setPrimary: (primary, rank, primary6) => worker.postMessage({ type: 'primary', primary, rank, primary6 } satisfies ToTailscale),
     detach: () => new Promise((resolve) => {
       const t = setTimeout(() => resolve(undefined), 3000);
       detached = (ip) => { clearTimeout(t); resolve(ip); };

@@ -17,6 +17,7 @@
   import { SOURCE } from '../local-release.ts';
   import type { PageNetwork } from './net-live.ts';
   import { network } from './areas/network.ts';
+  import { defaultsOf } from './network-view.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
@@ -41,8 +42,17 @@
 
   const adapterLine = $derived.by(() => {
     if (!ad) return '';
-    if (ad.primary) return t('network:NetAdapter.adapter.primary', { adapter: ad.index + 1 });
-    return t('network:NetAdapter.adapter', { adapter: ad.index + 1 });
+    const adapter = ad.index + 1;
+    switch (defaultsOf(ad)) {
+      case 'both':
+        return t('network:NetAdapter.adapter.primary', { adapter });
+      case 'v4':
+        return t('network:NetAdapter.adapter.primary4', { adapter });
+      case 'v6':
+        return t('network:NetAdapter.adapter.primary6', { adapter });
+      default:
+        return t('network:NetAdapter.adapter', { adapter });
+    }
   });
   function edit() {
     const id = c?.id;
