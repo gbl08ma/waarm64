@@ -26,4 +26,10 @@ cat > /usr/lib/firefox/distribution/policies.json <<'J'
   "UserMessaging": { "WhatsNew": false, "ExtensionRecommendations": false, "FeatureRecommendations": false, "SkipOnboarding": true }
 } }
 J
+# KDE (images/arch/desktop.sh --kde): Plasma's login manager on the screen at boot.
+if pacman -Q plasma-login-manager >/dev/null 2>&1; then
+  systemctl enable plasmalogin.service
+  systemctl set-default graphical.target
+  echo "desktop: plasma-login-manager enabled"
+fi
 echo "desktop: virtio_snd in $K, webpc-va, PipeWire, Firefox's policies"

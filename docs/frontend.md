@@ -793,7 +793,11 @@ default** since 2026-10-25, the user; `?clocksync=1` or `0` decides for the page
 does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
 keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 10 s for the
 guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; [Putting the guest to
-sleep](ui:snapshots:worker-snapshot.phase.sleep) in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
+sleep](ui:snapshots:worker-snapshot.phase.sleep) in the state line) before it pauses the machine. **The guest's input
+is held** from the key (from the write without the catch-up) until the save ends (web/input.ts `hold`: what was held
+released, the screen's keys, pointer, wheel and touches dropped, no `wake`): the mouse is over the screen once a
+question is answered, and KDE cancels its suspend on any input (its login screen dimmed and came back, and the save
+then waited the 10 s out); input during the pause would only complete into a guest that can't run. A file taken while the guest slept says so (`slept: true` in
 its header), and **loading it** (a snapshot, or a suspended machine resumed) moves the guest's clock on by the time
 since the header's `created` (`vm_clock_skip`) and wakes it: its resume counts that as sleep, so its wall clock is
 the browser's again and its monotonic clock hasn't jumped (nothing it times runs out). The running machine wakes once

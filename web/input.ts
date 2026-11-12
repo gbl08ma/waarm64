@@ -58,6 +58,14 @@ export type Input = {
   /** Releases every key, button and touch held (the guest's keyboard driver came or went: the keys go elsewhere now). */
   release(): void;
   /**
+   * Holds the guest's input (on) or lets it through again (off): while held, what's held is released and the element's
+   * keys, pointer, wheel and touches go nowhere, so a snapshot's sleep key isn't undone by a mouse moved over the screen
+   * (KDE cancels a suspend on any input) and nothing arrives while the machine is paused (docs/frontend.md "The guest's clock").
+   */
+  hold(on: boolean): void;
+  /** Whether the input is held (`hold`). */
+  held(): boolean;
+  /**
    * The mouse lock: on, a click on the element takes the mouse (Pointer Lock); off, it is let go (as it is when the
    * mode changes: the next click takes it in the new one).
    */
@@ -233,6 +241,12 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     if (screenKey(e, !!down)) e.preventDefault();
   };
   const released: (() => void)[] = [];
+  let held = false;
+  /** A listener that does nothing while the input is held (a key's browser action prevented). */
+  const unlessHeld = <E extends Event>(f: (e: E) => unknown) => (e: E) => {
+    if (!held) return void f(e);
+    if (e.type.startsWith('key')) e.preventDefault();
+  };
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
   /** Where the tablet is (0–32767): the pointer's last place, and while the mouse is locked in the `pointer` mode, the page's cursor. */
   const spot = { x: 16384, y: 16384 };
@@ -374,9 +388,9 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
     if (e.button === 3 || e.button === 4) e.preventDefault();
   };
   const off = [
-    on(el, 'keydown', key(1)),
-    on(el, 'keyup', key(0)),
-    on(el, 'pointerdown', (e: PointerEvent) => {
+    on(el, 'keydown', unlessHeld(key(1))),
+    on(el, 'keyup', unlessHeld(key(0))),
+    on(el, 'pointerdown', unlessHeld((e: PointerEvent) => {
       if (touched(e)) return finger(e, 'down');
       if (stray(e, 'down')) return;
       if (lockOn && !locked() && e.pointerType === 'mouse') {
@@ -388,15 +402,16 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       }
       if (!locked()) el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here (a locked pointer can't be captured)
       pointer(e);
-    }),
-    on(el, 'pointerup', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e))),
+    })),
+    on(el, 'pointerup', unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || pointer(e)))),
     // A cancelled pointer (the browser took a touch, a pen left) sends no up: what it held is released.
     on(el, 'pointercancel', (e: PointerEvent) => (touched(e) ? finger(e, 'up') : stray(e, 'up') || releaseButtons())),
-    on(el, 'pointermove', (e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e))),
+    on(el, 'pointermove', unlessHeld((e: PointerEvent) => (touched(e) ? finger(e, 'move') : stray(e, 'move') || pointer(e)))),
     on(el, 'mousedown', sideButton),
     on(el, 'mouseup', sideButton),
     on(el, 'auxclick', sideButton),
     on(el, 'wheel', (e: WheelEvent) => {
+      if (held) return void e.preventDefault();
       const port = raw() ? mouse : tablet;
       if (!port || (!e.deltaY && !e.deltaX)) return;
       e.preventDefault();
@@ -445,7 +460,7 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       [lockOn, lockMode] = [on, mode];
     },
     key(code: string, down: boolean, event: KeyLike, from: KeySource = 'osk') {
-      press(code, down, event, from);
+      if (!held || !down) press(code, down, event, from);
     },
     onRelease(f: () => void) {
       released.push(f);
@@ -454,6 +469,11 @@ export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
       typed.push(f);
     },
     release: releaseAll,
+    hold(on: boolean) {
+      if (on && !held) releaseAll();
+      held = on;
+    },
+    held: () => held,
     chord(...codes: string[]) {
       const has = (side: string) => codes.some((c) => c.startsWith(side));
       const e: KeyLike = { key: '', ctrlKey: has('Control'), altKey: has('Alt'), metaKey: has('Meta') };

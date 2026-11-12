@@ -38,6 +38,21 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   come for them. A reset also sets the shared block's negotiated features back to 0 (`Ctx.features()`
   is 0 until the next FEATURES_OK: net's link flap takes non-zero as a driver). (In realtime mode a backend can still write a buffer just after a reset, as
   DMA can on hardware; deterministic mode waits, so it can't happen there.)
+- **Across a suspend** (`Transport::suspending`, `carried`): Linux's resume resets every virtio-mmio device
+  (`virtio_device_restore`: reset, ACK, DRIVER, the features, the driver's `restore`, DRIVER_OK), and a driver without
+  `restore` never sets its queues up again: in Linux 6.18 virtio-gpu (a black screen after the first resume, and
+  whatever waits on a GPU fence hangs: a login manager's stuck task) and 9p. virtio-pci avoids it with PCI PM's
+  No_Soft_Reset (the device keeps its state, neither freeze nor restore runs; QEMU's `x-pcie-pm-no-soft-reset`);
+  virtio-mmio has no such bit, so the transport does the same: when the guest enters SYSTEM_SUSPEND
+  ([platform.md](platform.md) "System suspend") each device live then (DRIVER_OK) is marked, and its next reset is
+  **carried**: the guest sees status 0 and negotiates again (QueueReady reads 0), but the queues, the chains in flight,
+  the epoch and the backend go on. DRIVER_OK with the same features ends it: the device runs on, and the buffers made
+  available meanwhile are posted. A queue's register written first (QueueSel included: a driver with `restore`, which
+  sets its queues up) or other features at FEATURES_OK make it a reset there and then, at the status the guest has
+  written. Only a reset after a suspend is carried: Linux frees a queue's rings only after turning it off (`del_vqs`
+  writes QueueSel), but a kexec'd kernel would find a device still writing into the old one's memory. A suspend Linux
+  aborts after its devices' suspend (a wakeup event) resets them without a SYSTEM_SUSPEND: that one isn't carried.
+  Saved in snapshots (format 6; a format-5 state of a suspended guest has its live devices marked at the restore).
 - **Chains that don't fit the request ring** stay available and are posted at the next drain of the
   completions (`SIGNAL_DEVICE`: a completion, or stale records skipped).
 - **Chains in flight:** each queue keeps the heads of the chains posted and not completed, in

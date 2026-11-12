@@ -107,7 +107,7 @@ cp /usr/lib/systemd/boot/efi/systemd-bootaa64.efi /out/
 sed -i -e 's/^DisableSandbox/#DisableSandbox/' -e 's/^#DownloadUser/DownloadUser/' /etc/pacman.conf
 
 mkdir /tmp/root
-tar -C / --one-file-system --xattrs --numeric-owner --exclude='./boot/*' --exclude=./out --exclude=./inner.sh --exclude=./files --exclude=./setup.sh \
+tar -C / --one-file-system --xattrs --numeric-owner --exclude='./boot/*' --exclude='./tmp/*' --exclude=./out --exclude=./inner.sh --exclude=./files --exclude=./setup.sh \
   -cpf - . 2>/dev/null | tar -C /tmp/root --xattrs --numeric-owner -xpf -
 cd /tmp/root
 rm -rf tmp/* out inner.sh run/.containerenv

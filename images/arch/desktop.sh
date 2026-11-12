@@ -7,7 +7,10 @@
 # media of images/arch/media.sh in /home/arch/media. A 20 GiB root, mostly free (the qcow2 is compressed and keeps
 # none of it), for packages installed by hand. On demand only: not part of images/build.sh, CI or any test (~10 min,
 # mostly pacman and the container builds; the mirror's packages of the day).
-#   images/arch/desktop.sh [--out file.qcow2]     (default target/arch/desktop.qcow2; EXTRA_PACKAGES adds packages, e.g. gdb)
+#   images/arch/desktop.sh [--kde] [--out file.qcow2]     (default target/arch/desktop.qcow2; EXTRA_PACKAGES adds packages, e.g. gdb)
+# --kde (default target/arch/desktop-kde.qcow2): KDE Plasma too (plasma-meta, konsole) and plasma-login-manager, which
+# starts at boot on the screen (plasmalogin.service): for reproducing what KDE does (its login screen's sleep key, its
+# session); not in CI or any test (~20 min).
 # Login arch/arch (the screen) or root/root (the serial console); then `sway` (with 3D, WLR_RENDERER=gles2; see
 # docs/frontend.md), and e.g. `firefox file:///home/arch/media/avsync.html?v=sintel.webm`, `mpv ~/media/sintel.webm`,
 # `aplay -l`, `wpctl status`. bench/audio/avsync.ts measures A/V sync and the decode's cost on it; bench/gpu/sway-load.ts,
@@ -16,15 +19,19 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 W=$ROOT/target/arch
-OUT=$W/desktop.qcow2
+OUT=
+KDE=
 while [ $# -gt 0 ]; do
   case $1 in
     --out) OUT=$(realpath -m "$2"); shift 2 ;;
+    --kde) KDE=1; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
 PACKAGES="sway foot firefox htop ttf-dejavu pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils mpv libva-utils
   gtk4-demos mesa-utils chromium nano lsof vulkan-virtio vulkan-tools xorg-xwayland xorg-xdpyinfo ${EXTRA_PACKAGES:-}"
+[ -z "$KDE" ] || PACKAGES="$PACKAGES plasma-meta plasma-login-manager konsole"
+[ -n "$OUT" ] || OUT=$W/desktop${KDE:+-kde}.qcow2
 
 echo "==== webpc-va"
 rm -f "$W"/pkg/webpc-va-*

@@ -474,7 +474,9 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
   version 2 state was a version 3 one without it; version 4 added fields inside the devices' (a transport's SHMSel, an
   xHCI endpoint's walk waiting for room), so it reads only itself; version 5 added what the xHCI's Controller Save State
 kept, at the end of the xHCI's (a version 4 controller has none, and a CRS after it reports a Save/Restore Error), so
-it reads 4 and 5. The host accepts a file whose version is in that range.
+it reads 4 and 5; version 6 added a byte to each virtio transport's (its reset carried over a suspend: devices.md
+"Across a suspend"), absent from 4 and 5, whose suspended guest has its live devices marked at the restore, as the
+suspend marks them. The host accepts a file whose version is in that range.
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
@@ -497,7 +499,9 @@ fixed order):
   offset).
 - Per virtio transport: its registers (SHMSel among them: version 4) and queues (addresses, sizes, `last_avail`, `used`), the
   **in-flight chains of each queue in the order they were posted**, and its `DevShared` status,
-  features, epoch and config space. The rings are empty by the rules above and aren't saved.
+  features, epoch and config space; version 6: a byte of flags (1: live at a SYSTEM_SUSPEND, its next reset to carry;
+  2: a reset carried, then the features negotiated before it as a u64; devices.md "Across a suspend"). The rings are
+  empty by the rules above and aren't saved.
 - Version 3: last, and only when the guest is in PSCI SYSTEM_SUSPEND, the vCPU that suspended it (u32), its entry and
   context (u64s); every vCPU is then off with no CPU_ON pending, or the state is refused.
 

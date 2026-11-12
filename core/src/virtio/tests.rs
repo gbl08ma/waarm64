@@ -379,6 +379,145 @@ fn reset_drops_old_completions() {
     assert_eq!(t.used(0), (1, 0, 4));
 }
 
+impl T {
+    /// What Linux's virtio core does at a resume for a driver without `restore` (virtio-gpu, 9p): a reset, the
+    /// status and features again, DRIVER_OK; no queue's register. The events each write returned, or'd.
+    fn resume_without_restore(&mut self, features: u64) -> u32 {
+        let mut ev = self.wr(0x070, 0);
+        assert_eq!(self.status(), 0);
+        ev |= self.wr(0x070, 1);
+        ev |= self.wr(0x070, 1 | 2);
+        ev |= self.wr(0x024, 0);
+        ev |= self.wr(0x020, features & 0xffff_ffff);
+        ev |= self.wr(0x024, 1);
+        ev |= self.wr(0x020, features >> 32);
+        ev |= self.wr(0x070, 3 | FEATURES_OK as u64);
+        assert_eq!(self.status(), 3 | FEATURES_OK);
+        ev
+    }
+}
+
+#[test]
+fn a_reset_after_a_suspend_is_carried_for_a_driver_that_sets_no_queue_up() {
+    // Linux's virtio-gpu has no `restore`: at a resume the core resets the device and sets DRIVER_OK again, and the
+    // driver goes on with the queues it had. They must still be there, with what was in flight.
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    t.desc(DESC, 1, BUF + 0x100, 4, D_WRITE, 0);
+    t.offer(&[0]);
+    let w0 = t.sh.req.pop_request().unwrap().w0;
+    t.t.suspending();
+    assert_eq!(
+        t.resume_without_restore(F_VERSION_1),
+        0,
+        "the host isn't told of a carried reset"
+    );
+    assert_eq!(t.rd(0x044), 0, "the guest's view: its queues reset");
+    assert_eq!(t.sh.epoch.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        t.sh.status.load(Ordering::Relaxed),
+        1 | 2 | FEATURES_OK | DRIVER_OK,
+        "the backend's view: live"
+    );
+    // A buffer made available before DRIVER_OK is taken at it.
+    assert_eq!(t.offer(&[1]), 0);
+    assert_eq!(
+        t.wr(0x070, 3 | (FEATURES_OK | DRIVER_OK) as u64),
+        EV_REQUEST
+    );
+    assert_eq!(t.status(), 3 | FEATURES_OK | DRIVER_OK);
+    assert_eq!(t.rd(0x044), 1);
+    assert_eq!(t.sh.req.pop_request().unwrap().w0, 1);
+    // The chain in flight across the resume completes.
+    t.complete(w0, 4);
+    assert_eq!(t.used(0), (1, 0, 4));
+    // Carried once: a later reset is a reset.
+    assert_eq!(t.wr(0x070, 0), EV_STATUS);
+    assert_eq!(t.sh.epoch.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn a_carried_reset_happens_when_the_driver_sets_its_queues_up_again() {
+    // A driver with `restore` (virtio-blk, -net, -input...) sets its queues up after the resume's reset.
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    t.offer(&[0]);
+    let old = t.sh.req.pop_request().unwrap().w0;
+    t.t.suspending();
+    t.resume_without_restore(F_VERSION_1);
+    assert_eq!(t.wr(0x030, 0), EV_STATUS, "QueueSel: the reset, now");
+    assert_eq!(t.sh.epoch.load(Ordering::Relaxed), 1);
+    assert_eq!(t.status(), 3 | FEATURES_OK, "the status the guest wrote");
+    assert_eq!(t.sh.status.load(Ordering::Relaxed), 3 | FEATURES_OK);
+    assert_eq!(
+        t.sh.features[1].load(Ordering::Relaxed),
+        1,
+        "the features negotiated"
+    );
+    assert_eq!(t.rd(0x044), 0);
+    t.mem().write(AVAIL + 2, 2, 0).unwrap(); // the driver's new rings
+    t.wr(0x038, QSIZE);
+    for (off, pa) in [(0x080, DESC), (0x090, AVAIL), (0x0a0, USED)] {
+        t.wr(off, pa & 0xffff_ffff);
+        t.wr(off + 4, pa >> 32);
+    }
+    t.wr(0x044, 1);
+    t.wr(0x070, 3 | (FEATURES_OK | DRIVER_OK) as u64);
+    t.complete(old, 4);
+    assert_eq!(t.used(0).0, 0, "a completion from before the reset");
+    assert_eq!(t.offer(&[0]), EV_REQUEST);
+    assert_eq!(t.sh.req.pop_request().unwrap().w0, 1 << 24);
+}
+
+#[test]
+fn a_carried_reset_happens_when_the_driver_negotiates_other_features() {
+    let mut t = T::new();
+    t.up(F_VERSION_1 | 1 << 3);
+    t.t.suspending();
+    assert_eq!(t.resume_without_restore(F_VERSION_1), EV_STATUS);
+    assert_eq!(t.sh.epoch.load(Ordering::Relaxed), 1);
+    assert_eq!(t.sh.features[0].load(Ordering::Relaxed), 0);
+    assert_eq!(t.sh.status.load(Ordering::Relaxed), 3 | FEATURES_OK);
+}
+
+#[test]
+fn only_a_live_device_carries_its_reset() {
+    // A driver that froze its device for the suspend reset it then (virtio-blk): the resume's reset is a reset.
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    t.wr(0x070, 0);
+    t.t.suspending();
+    t.wr(0x070, 0);
+    assert_eq!(t.sh.epoch.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn a_carried_reset_is_saved_and_restored() {
+    for at in ["suspended", "carried"] {
+        let mut t = T::new();
+        t.up(F_VERSION_1);
+        t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+        t.offer(&[0]);
+        t.t.suspending();
+        if at == "carried" {
+            t.resume_without_restore(F_VERSION_1);
+        }
+        let (res, n, sh) = restored(&t, &saved(&t));
+        assert_eq!(res, Ok(()), "{at}");
+        (t.t, t.sh) = (n, sh);
+        let w0 = t.sh.req.pop_request().unwrap().w0; // posted again for the new backend
+        if at == "suspended" {
+            t.resume_without_restore(F_VERSION_1);
+        }
+        t.wr(0x070, 3 | (FEATURES_OK | DRIVER_OK) as u64);
+        assert_eq!(t.sh.epoch.load(Ordering::Relaxed), 0, "{at}");
+        t.complete(w0, 4);
+        assert_eq!(t.used(0), (1, 0, 4), "{at}");
+    }
+}
+
 #[test]
 fn a_queue_turned_off_drops_its_chains_in_flight() {
     // Linux's virtio-input freezes for a suspend by turning its queues off, without a reset.
@@ -531,7 +670,9 @@ fn queue_num_zero_is_the_maximum() {
 fn restored(t: &T, state: &[u8]) -> (snapshot::Result<()>, Transport, Box<DevShared>) {
     let (mut n, sh) = (Transport::new(entry()), Box::<DevShared>::default());
     let mut r = Reader(state);
-    let res = n.restore(&mut r, &t.mem, &sh).and_then(|()| r.end());
+    let res = n
+        .restore(&mut r, &t.mem, &sh, snapshot::VERSION)
+        .and_then(|()| r.end());
     (res, n, sh)
 }
 
@@ -711,7 +852,10 @@ fn held_chains_past_a_request_ring_cannot_be_saved() {
     t.complete(7, 0);
     assert!(t.t.repostable(&t.mem));
     let (mut n, sh) = (Transport::new(*t.t.entry()), Box::<DevShared>::default());
-    assert_eq!(n.restore(&mut Reader(&saved(&t)), &t.mem, &sh), Ok(()));
+    assert_eq!(
+        n.restore(&mut Reader(&saved(&t)), &t.mem, &sh, snapshot::VERSION),
+        Ok(())
+    );
     assert_eq!(core::iter::from_fn(|| sh.req.pop_request()).count(), 33);
 }
 
@@ -875,7 +1019,8 @@ fn the_selected_shared_memory_region_is_in_the_state() {
     let sh = Box::<DevShared>::default();
     let mut r = Reader(&state);
     assert_eq!(
-        n.restore(&mut r, &t.mem, &sh).and_then(|()| r.end()),
+        n.restore(&mut r, &t.mem, &sh, snapshot::VERSION)
+            .and_then(|()| r.end()),
         Ok(())
     );
     (t.t, t.sh) = (n, sh);

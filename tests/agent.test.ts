@@ -1089,6 +1089,58 @@ test("web/input.ts holds the paste chord's key: the keys after it wait behind it
   }
 });
 
+test("web/input.ts's hold: what's held is released and the screen's keys, pointer and wheel go nowhere until it ends; the Sleep chord still goes", async () => {
+  const g = globalThis as Record<string, unknown>;
+  const saved = { window: g.window, document: g.document };
+  g.window = new EventTarget();
+  g.document = Object.assign(new EventTarget(), { pointerLockElement: null, hidden: false });
+  try {
+    const { attachInput, codeOf } = await import('../web/input.ts');
+    const el = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }), setPointerCapture: () => {} }) as unknown as HTMLElement;
+    const keys: number[][][] = [];
+    const moves: number[][][] = [];
+    const port = (to: unknown[]) => ({ postMessage: (m: unknown) => to.push(m) }) as unknown as MessagePort;
+    const input = attachInput(el, { keyboard: port(keys), tablet: port(moves) });
+    const key = (type: 'keydown' | 'keyup', code: string) => {
+      const e = Object.assign(new Event(type, { cancelable: true }), { code, key: code, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, repeat: false });
+      el.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const move = (x: number, buttons = 0, type = 'pointermove') =>
+      el.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), { clientX: x, clientY: 10, buttons, pointerType: 'mouse', pointerId: 1, movementX: 0, movementY: 0 }));
+    const wheel = () => {
+      const e = Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 100, deltaX: 0, deltaMode: 0 });
+      el.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const a = codeOf('KeyA')!;
+    key('keydown', 'KeyA');
+    move(10, 1, 'pointerdown');
+    (keys.length = 0), (moves.length = 0);
+    input.chord('Sleep');
+    input.hold(true);
+    assert.equal(input.held(), true);
+    assert.deepEqual(keys.map((m) => m[0].slice(1)), [[codeOf('Sleep'), 1], [codeOf('Sleep'), 0], [a, 0]], 'the chord, then the held A released');
+    assert.equal(moves.length, 1, "the held button released");
+    (keys.length = 0), (moves.length = 0);
+    move(50);
+    move(60, 1, 'pointerdown');
+    assert.equal(wheel(), true, "the wheel's scroll prevented");
+    assert.equal(key('keydown', 'KeyB'), true, "a key's browser action prevented");
+    key('keyup', 'KeyB');
+    input.key('KeyC', true, { key: 'c', ctrlKey: false, altKey: false, metaKey: false });
+    assert.deepEqual([keys, moves], [[], []], 'nothing reaches the guest');
+    input.hold(false);
+    move(70);
+    key('keydown', 'KeyB');
+    assert.equal(moves.length, 1);
+    assert.deepEqual(keys.map((m) => m[0].slice(1)), [[codeOf('KeyB'), 1]]);
+    input.detach();
+  } finally {
+    Object.assign(g, saved);
+  }
+});
+
 test("echoes: the guest's text is offered back once the host's went to it since; an ACK refusing after ACK_WAIT is still taken", async () => {
   const { link, deliver, take } = fakeLink();
   const { host } = fakeHost();

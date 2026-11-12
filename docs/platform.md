@@ -518,7 +518,8 @@ its entry and context; `Shared::suspended` for the host to read from any thread)
 (`vm_wake`): the vCPU resumes at the entry as from CPU_ON. Nothing in the core wakes it (Linux masks every interrupt
 that isn't a wakeup source before it suspends); the page wakes it on a key or a click ([frontend.md](frontend.md)
 "The guest's clock"). Linux takes it as suspend-to-RAM (`/sys/power/mem_sleep` lists `deep`, its default), so
-`systemctl suspend` and logind's sleep key use it.
+`systemctl suspend` and logind's sleep key use it. Every virtio device live at the suspend has its next reset (the
+driver's resume) carried over it ([devices.md](devices.md) "Across a suspend"): virtio-gpu and 9p have no `restore`.
 
 **The clock across it.** The counter runs on while the guest is suspended, and Linux's resume counts its progress as
 sleep (the arch timer is a nonstop clocksource): CLOCK_REALTIME and CLOCK_BOOTTIME move on, CLOCK_MONOTONIC doesn't,

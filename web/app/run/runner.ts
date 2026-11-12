@@ -92,7 +92,8 @@ export class Runner {
   /** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
   wake() {
     const r = this.d.machine.run;
-    if (!r?.asleep) return;
+    // Not while a snapshot holds the input: the guest sleeps for it (web/input.ts `hold`).
+    if (!r?.asleep || r.input.held()) return;
     r.asleep = false;
     r.worker.postMessage({ type: 'wake' } satisfies ToWorker);
   }

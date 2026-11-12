@@ -31,6 +31,8 @@ const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
 const RING = 4096;
+/** How long a snapshot waits for the paused VM's devices to be quiet (`snapshot`) before it gives up (`vm.cantSave.notQuiet`). */
+const QUIET_MS = 10_000;
 
 /** Exit kinds (core/src/vm.rs `exit`). */
 export const Exit = { BUDGET: 0, PSCI: 1, IDLE: 2, TX_FULL: 3, UNIMPLEMENTED: 4, STOP: 5, DEVICE: 6 } as const;
@@ -1071,7 +1073,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * the snapshot's other half: copy it before the VM runs on. The VM is unchanged but for its realtime clock, held at the saved reading until a vCPU runs again.
      */
     async snapshot(): Promise<VmState> {
-      for (let tries = 0; tries < 1000; tries++) {
+      // Bounded by time, not tries: a paused guest's backlog (chains that didn't fit a request ring, a few posted each
+      // round trip: a desktop's queue of 3D commands) always ends, but may take more than 1000 round trips.
+      for (let tries = 0, until = performance.now() + QUIET_MS; tries < 1000 || performance.now() < until; tries++) {
         // Takes the completions the backends left, as the run loop would at its next boundary.
         const n = ex.vm_snapshot_size(vm);
         if (n === 0xffff_ffff_ffff_ffffn) throw new MsgError('snapshots:vm.cantSaveNow', {}, { cause: o.usb ? msg('snapshots:vm.cantSaveNow.usb') : msg('snapshots:vm.cantSaveNow.buffers') });

@@ -68,11 +68,16 @@ export class SnapshotActions {
   #ready(r: Run) {
     return r.live() && !power.busy && isLive(power.state);
   }
-  /** The clock catch-up (Preferences, `?clocksync=`; docs/frontend.md "The guest's clock"): the guest's sleep key is pressed first, so it suspends itself and its own resume counts the time the file sat. Whether it was. */
+  /**
+   * Right before a save: the guest's input is held until it ends (`#over`; web/input.ts `hold`), and with the clock
+   * catch-up (Preferences, `?clocksync=`; docs/frontend.md "The guest's clock") the guest's sleep key is pressed, so it
+   * suspends itself and its own resume counts the time the file sat. Whether it was.
+   */
   #sleepFirst(r: Run) {
-    if (!clockSync()) return false;
-    r.input.chord('Sleep');
-    return true;
+    const sleep = clockSync();
+    if (sleep) r.input.chord('Sleep');
+    r.input.hold(true);
+    return sleep;
   }
   /** A save's phase in the state's words: with how far it is while that's known. */
   readonly #progress = (phase: Msg, f: number) =>
@@ -116,6 +121,7 @@ export class SnapshotActions {
   /** The save is over (it worked or not): the devices go back on. */
   #over(r: Run, unplugged: Unplugged) {
     power.saving = false;
+    r.input.hold(false);
     void this.#d.plugBack(r, unplugged);
   }
   /** Says a snapshot was saved, if the machine runs on. */
@@ -268,6 +274,7 @@ export class SnapshotActions {
         // It runs on.
         error: (e) => {
           power.saving = false;
+          r.input.hold(false);
           if (r.live()) {
             messages.setState(power.state);
             messages.notify(withNote(e, t('machine:snapshot-actions.runsOn')), 'error');

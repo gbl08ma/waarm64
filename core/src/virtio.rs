@@ -355,6 +355,14 @@ pub struct Transport {
     shm: Option<(u64, u64)>,
     /// SHMSel.
     shm_sel: u32,
+    /// The guest went into SYSTEM_SUSPEND with the device live (DRIVER_OK): its next reset is carried (`carried`).
+    suspended_live: bool,
+    /// A reset carried over the guest's resume (docs/devices.md "Across a suspend"): the features the driver had
+    /// negotiated. The guest sees the reset (the status, the features to negotiate again) but the queues, the epoch and
+    /// the backend go on: once DRIVER_OK comes back with the same features the device runs on as it was (Linux's
+    /// virtio-gpu and 9p have no `restore`, so they never set their queues up again); a queue's register
+    /// written first (a driver that sets them up again) or other features make it a reset there and then.
+    carried: Option<u64>,
 }
 
 /// The shared memory region ID a transport with `DeviceEntry.shm` reports the window as.
@@ -378,7 +386,15 @@ impl Transport {
             scratch: Vec::new(),
             shm: None,
             shm_sel: 0,
+            suspended_live: false,
+            carried: None,
         }
+    }
+
+    /// The guest enters SYSTEM_SUSPEND (docs/platform.md "System suspend"): a live device's next reset, its driver's
+    /// resume, is carried over it (`carried`), as virtio-pci's devices with PCI PM's No_Soft_Reset are never reset.
+    pub fn suspending(&mut self) {
+        self.suspended_live = self.status & (DRIVER_OK | NEEDS_RESET) == DRIVER_OK;
     }
 
     /// The transport with the VM's window (PA, length) as its region 1, if its entry asks for it.
@@ -431,7 +447,7 @@ impl Transport {
                 _ => 0,
             },
             0x034 => q.map_or(0, |_| self.entry.queue_size as u32),
-            0x044 => q.is_some_and(|ready| ready) as u32,
+            0x044 => (q.is_some_and(|ready| ready) && self.carried.is_none()) as u32,
             0x060 => self.isr,
             0x070 => self.status,
             // SHMLen and SHMBase (low, high) of the selected region; all ones: none.
@@ -473,8 +489,12 @@ impl Transport {
             return None;
         }
         let v = v as u32;
-        let features_ok = self.status & FEATURES_OK != 0;
         let mut ev = 0;
+        // A queue's register: the driver sets its queues up again, so the reset carried over the resume happens now.
+        if matches!(off, 0x030 | 0x038 | 0x044 | 0x080..=0x0a4) && self.carried.is_some() {
+            ev = self.discharge(sh);
+        }
+        let features_ok = self.status & FEATURES_OK != 0;
         match off {
             0x014 => self.dev_features_sel = v,
             0x020 if !features_ok => {
@@ -491,7 +511,7 @@ impl Transport {
                     q.size = v as u64
                 }
             }),
-            0x044 => ev = self.set_ready(v & 1 != 0, mem, sh),
+            0x044 => ev |= self.set_ready(v & 1 != 0, mem, sh),
             0x050 => ev = self.notify(v as usize, mem, sh),
             0x064 => self.isr &= !v,
             0x070 => ev = self.set_status(v, mem, sh),
@@ -542,31 +562,38 @@ impl Transport {
     }
 
     fn set_status(&mut self, v: u32, mem: &Mem, sh: &DevShared) -> u32 {
+        if v == 0 && (self.suspended_live || self.carried.is_some()) {
+            // The driver's resume (or its reset again): carried. The guest's view starts over; the device doesn't.
+            self.carried = self.carried.or(Some(self.driver_features));
+            self.suspended_live = false;
+            (
+                self.status,
+                self.dev_features_sel,
+                self.drv_features_sel,
+                self.driver_features,
+            ) = (0, 0, 0, 0);
+            return 0;
+        }
+        if let Some(f) = self.carried {
+            let v = v & 0xff & !NEEDS_RESET;
+            let features = v & FEATURES_OK != 0 && self.status & FEATURES_OK == 0;
+            if features && (self.driver_features != f) {
+                // Other features: the device as negotiated before can't go on.
+                return self.discharge(sh) | self.set_status(v, mem, sh);
+            }
+            if v & DRIVER_OK == 0 {
+                self.status = v;
+                return 0;
+            }
+            // DRIVER_OK with the same features: the device goes on as it was, and the buffers made available meanwhile
+            // are taken.
+            self.carried = None;
+            self.status = v;
+            sh.status.store(self.status, Ordering::Release);
+            return (0..self.entry.queues as usize).fold(0, |ev, i| ev | self.notify(i, mem, sh));
+        }
         if v == 0 {
-            // Reset: everything but the configuration; completions still in
-            // the ring (and any posted later for older requests) are dropped,
-            // and the negotiated features are 0 again until FEATURES_OK.
-            let (entry, epoch, seen, scratch, shm) = (
-                self.entry,
-                self.epoch + 1,
-                self.config_seen,
-                core::mem::take(&mut self.scratch),
-                self.shm,
-            );
-            *self = Transport {
-                epoch,
-                config_seen: seen,
-                scratch,
-                shm,
-                ..Transport::new(entry)
-            };
-            sh.epoch.store(epoch, Ordering::Release);
-            sh.features
-                .iter()
-                .for_each(|f| f.store(0, Ordering::Relaxed));
-            sh.cpl.clear();
-            sh.status.store(0, Ordering::Release);
-            return EV_STATUS;
+            return self.set_status_reset(sh);
         }
         let mut v = v & 0xff & !NEEDS_RESET;
         if v & FEATURES_OK != 0 && self.status & FEATURES_OK == 0 {
@@ -588,6 +615,57 @@ impl Transport {
                 ev |= self.notify(i, mem, sh);
             }
         }
+        ev
+    }
+
+    /// A reset: everything but the configuration; completions still in the ring (and any posted later for older
+    /// requests) are dropped, and the negotiated features are 0 again until FEATURES_OK.
+    fn set_status_reset(&mut self, sh: &DevShared) -> u32 {
+        let (entry, epoch, seen, scratch, shm) = (
+            self.entry,
+            self.epoch + 1,
+            self.config_seen,
+            core::mem::take(&mut self.scratch),
+            self.shm,
+        );
+        *self = Transport {
+            epoch,
+            config_seen: seen,
+            scratch,
+            shm,
+            ..Transport::new(entry)
+        };
+        sh.epoch.store(epoch, Ordering::Release);
+        sh.features
+            .iter()
+            .for_each(|f| f.store(0, Ordering::Relaxed));
+        sh.cpl.clear();
+        sh.status.store(0, Ordering::Release);
+        EV_STATUS
+    }
+
+    /// The reset carried over the guest's resume happens now (`carried`): the device starts over, at the status and
+    /// with the features the guest has written since (the backend is told, as for any reset).
+    fn discharge(&mut self, sh: &DevShared) -> u32 {
+        self.carried = None;
+        let (status, dev_sel, drv_sel, features) = (
+            self.status,
+            self.dev_features_sel,
+            self.drv_features_sel,
+            self.driver_features,
+        );
+        let ev = self.set_status_reset(sh);
+        (
+            self.dev_features_sel,
+            self.drv_features_sel,
+            self.driver_features,
+        ) = (dev_sel, drv_sel, features);
+        if status & FEATURES_OK != 0 {
+            sh.features[0].store(features as u32, Ordering::Relaxed);
+            sh.features[1].store((features >> 32) as u32, Ordering::Relaxed);
+        }
+        self.status = status;
+        sh.status.store(status, Ordering::Release);
         ev
     }
 
@@ -790,6 +868,11 @@ impl Transport {
             .map(|b| b.load(Ordering::Relaxed))
             .collect();
         w.raw(&config);
+        // Format 6: the reset carried over a suspend (`suspending`, `carried`).
+        w.u8(self.suspended_live as u8 | (self.carried.is_some() as u8) << 1);
+        if let Some(f) = self.carried {
+            w.u64(f);
+        }
     }
 
     /// Restores what [`Transport::save`] wrote into a new transport of the
@@ -799,7 +882,14 @@ impl Transport {
     /// `Corrupt` for a queue outside RAM, a chain that doesn't walk, or
     /// chains that don't fit the ring at once (a save checks both:
     /// [`Transport::repostable`]).
-    pub fn restore(&mut self, r: &mut Reader, mem: &Mem, sh: &DevShared) -> snapshot::Result<()> {
+    /// A state of format 5 has no carried reset: the VM marks a suspended guest's live devices (`suspending`).
+    pub fn restore(
+        &mut self,
+        r: &mut Reader,
+        mem: &Mem,
+        sh: &DevShared,
+        version: u32,
+    ) -> snapshot::Result<()> {
         const CORRUPT: snapshot::Error = snapshot::Error::Corrupt;
         self.dev_features_sel = r.u32()?;
         self.drv_features_sel = r.u32()?;
@@ -840,6 +930,20 @@ impl Transport {
         sh.features[1].store(r.u32()?, Ordering::Relaxed);
         for (c, &b) in sh.config.iter().zip(r.raw(CONFIG_SIZE)?) {
             c.store(b, Ordering::Relaxed);
+        }
+        if version >= 6 {
+            let flags = r.u8()?;
+            if flags & !3 != 0 {
+                return Err(CORRUPT);
+            }
+            self.suspended_live = flags & 1 != 0;
+            if flags & 2 != 0 {
+                let f = r.u64()?;
+                if f & !self.offered() != 0 {
+                    return Err(CORRUPT);
+                }
+                self.carried = Some(f);
+            }
         }
         // The chains the old backend held (or hadn't answered), for the new one.
         let indirect = self.driver_features & F_INDIRECT_DESC != 0;

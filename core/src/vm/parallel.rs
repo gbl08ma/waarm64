@@ -945,6 +945,7 @@ impl Vm {
                     self.shared.cpus[c].par.state.store(OFF, Ordering::SeqCst);
                     let (entry, context) = suspend_args(&x, f == PSCI_SYSTEM_SUSPEND_64);
                     pl.suspended = Some((c, entry, context));
+                    pl.virtio.iter_mut().for_each(Transport::suspending);
                     self.shared.suspended.store(true, Ordering::Release);
                     return None;
                 }

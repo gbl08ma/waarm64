@@ -1380,6 +1380,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
+- **`vm.cantSave.notQuiet` on KDE's login screen** (the user, 2026-11-12): a snapshot whose sleep key the guest's
+  mouse undid failed so after the 10 s wait, and the machine seemed stuck afterwards. Not reproduced on the KDE image
+  (`images/arch/desktop.sh --kde`) with Playwright's mouse moving over the screen, the input hold taken out (the guest
+  slept anyway, later), nor on sway awake with the screen busy. Since then the page holds the guest's input through a
+  save, and `Vm.snapshot` waits 10 s (`QUIET_MS`) rather than 1000 round trips. If it comes back: which device wasn't
+  quiet (its rings, `config_gen`, `backlog`: core/src/virtio.rs `Transport::quiet`), said in the error's details.
+- **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND) resets every virtio
+  device in its resume without a SYSTEM_SUSPEND, so the reset isn't carried ([devices.md](devices.md) "Across a
+  suspend") and virtio-gpu stops as before. Not seen yet; marking the devices from the page's sleep key on would cover
+  it, at the cost of a reset carried for a guest that never suspended.
+
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
   processes beside the page's snd snapshot test, once in eight runs (before the last bound change; none in 51 runs
   since, 25 of them with the core instrumented), the restored guest never took the sound device's SPI again: CPU 0 took

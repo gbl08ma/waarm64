@@ -977,6 +977,7 @@ impl Vm {
     fn suspend(&self, c: usize, (entry, context): (u64, u64)) {
         let mut p = self.plat.lock();
         p.suspended = Some((c, entry, context));
+        p.virtio.iter_mut().for_each(Transport::suspending);
         self.shared.suspended.store(true, Ordering::Release);
     }
 

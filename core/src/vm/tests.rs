@@ -649,7 +649,7 @@ fn a_state_is_refused_by_another_version_or_machine() {
         b"XPCS\x01\0\0\0",
         b"WPCS\x01\0\0\0",
         b"WPCS\x03\0\0\0",
-        b"WPCS\x06\0\0\0",
+        b"WPCS\x07\0\0\0",
     ] {
         assert_eq!(restore(bad, cfg, &[DEV]), Err(Error::Format), "{bad:?}");
     }
@@ -760,10 +760,10 @@ fn the_saved_bytes_are_pinned_to_the_version() {
     t.vm.shared.console.rx.push(b'k');
     assert_eq!(t.vm.run(5), exit::BUDGET);
     let state = t.save();
-    assert_eq!(snapshot::VERSION, 5);
+    assert_eq!(snapshot::VERSION, 6);
     assert_eq!(
         (state.len(), hash(&state)),
-        (266_625, 16_898_860_806_977_539_348),
+        (266_627, 17_432_557_081_245_502_101),
         "the layout moved"
     );
 }
@@ -890,6 +890,86 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     assert_eq!(d.vm.run(1), exit::BUDGET);
     assert_eq!(d.cpu().x[0], u64::MAX);
     assert!(!d.vm.suspended() && !d.vm.clock_skip(HOUR));
+}
+
+#[test]
+fn system_suspend_carries_a_live_devices_next_reset_also_through_a_snapshot() {
+    // Linux's resume resets every virtio device; one live at the suspend goes on (docs/devices.md "Across a suspend").
+    const ENTRY: u64 = RAM_BASE + 0x100;
+    for smp in [0, 1] {
+        let cfg = VmConfig { smp, ..par(1) };
+        let mut a = T::with_devices(&[HVC, B_SELF], cfg, &[DEV]);
+        a.vm.mem.write(ENTRY, 4, B_SELF as u64).unwrap();
+        // The driver: VERSION_1, queue 0, DRIVER_OK.
+        a.dev(0x070, 3);
+        a.dev(0x024, 1);
+        a.dev(0x020, 1);
+        a.dev(0x070, 3 | 8);
+        for (off, pa) in [
+            (0x038, 8),
+            (0x080, DESC),
+            (0x090, AVAIL),
+            (0x0a0, USED),
+            (0x044, 1),
+        ] {
+            a.dev(off, pa);
+        }
+        a.dev(0x070, 3 | 8 | 4);
+        a.vm.shared.devices[0].events.store(0, Ordering::Relaxed); // the backend took them
+        let c = a.cpu();
+        (c.x[0], c.x[1], c.x[2]) = (0xc400_000e, ENTRY, 0);
+        if smp == 1 {
+            // SAFETY: this thread is the only one, and runs one vCPU at a time.
+            unsafe { a.vm.run_cpu(0, 10) };
+        } else {
+            a.vm.run(10);
+        }
+        assert!(a.vm.suspended(), "smp {smp}");
+        let state = a.save();
+        // The state as format 5 wrote it: no transport flags byte (before the suspended guest's 20 bytes).
+        let mut v5 = state.clone();
+        assert_eq!(v5[v5.len() - 21], 1, "marked at the suspend");
+        v5.remove(v5.len() - 21);
+        v5[4..8].copy_from_slice(&5u32.to_le_bytes());
+        let check = |b: &mut T, what: &str| {
+            assert!(b.vm.wake_suspended());
+            b.dev(0x070, 0);
+            let sh = &b.vm.shared.devices[0];
+            assert_eq!(
+                sh.epoch.load(Ordering::Relaxed),
+                0,
+                "{what}, smp {smp}: carried"
+            );
+            assert_eq!(sh.status.load(Ordering::Relaxed), 3 | 8 | 4, "{what}");
+            // Once: the next reset is one.
+            for (off, v) in [
+                (0x070, 3),
+                (0x024, 1),
+                (0x020, 1),
+                (0x070, 3 | 8),
+                (0x070, 3 | 8 | 4),
+            ] {
+                b.dev(off, v);
+            }
+            assert_eq!(
+                b.vm.shared.devices[0].epoch.load(Ordering::Relaxed),
+                0,
+                "{what}: the same features"
+            );
+            b.dev(0x070, 0);
+            assert_eq!(
+                b.vm.shared.devices[0].epoch.load(Ordering::Relaxed),
+                1,
+                "{what}"
+            );
+        };
+        for (what, s) in [("restored", &state), ("format 5", &v5)] {
+            let (mut b, r) = a.restore(s, cfg, &[DEV]);
+            assert_eq!(r, Ok(()), "{what}");
+            check(&mut b, what);
+        }
+        check(&mut a, "live");
+    }
 }
 
 #[test]
