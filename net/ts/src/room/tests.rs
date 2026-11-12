@@ -1564,6 +1564,37 @@ fn a_forgotten_peer_says_so() {
 }
 
 #[test]
+fn a_forged_lookup_makes_no_direct_connection_until_the_guests_speak() {
+    let mut n = Net::new(configs(&[1, 2, 3]));
+    // Node 2 tells node 0 that node 1 looks it up: node 0 calls node 1 back.
+    let room = n.nodes[0].c.room.clone();
+    let l = Lookup {
+        key: public(2),
+        region: INLINE_REGION,
+        time: T0,
+        nonce: [5; 16],
+    };
+    let to = n.addr(0);
+    n.inject(&l, &room, None, to, T0 / 3600);
+    n.advance(Duration::from_secs(2));
+    let confirmed = |n: &Net, i: usize| n.nodes[i].c.peers.values().any(|p| p.confirmed);
+    assert!(
+        confirmed(&n, 0) && confirmed(&n, 1),
+        "a session, as a call back makes"
+    );
+    assert!(
+        n.ends.is_empty(),
+        "no WebRTC connection: neither guest asked"
+    );
+    assert!(n.paths(0).is_empty() && n.paths(1).is_empty());
+    // The guests' first packet brings one.
+    n.send(0, 1, 9, b"now");
+    n.advance(Duration::from_millis(10));
+    assert_eq!(n.got(1), [b"now".to_vec()]);
+    assert_eq!(n.paths(0), ["direct"]);
+}
+
+#[test]
 fn a_forgotten_peers_channel_closes_before_it_says_gone() {
     let mut n = Net::new(configs(&[1, 2]));
     n.reach(0, 1, b"a");

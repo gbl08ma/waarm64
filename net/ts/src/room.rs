@@ -343,8 +343,12 @@ struct Peer {
     addr: [u8; 16],
     /// When its WireGuard last brought something (a handshake message, data).
     heard: Instant,
-    /// When the guests last exchanged a packet through it.
+    /// When the guests last exchanged a packet through it (or it was let in).
     active: Instant,
+    /// The guests exchanged a packet through it: only then is a direct path offered (a forged
+    /// lookup makes a session between two members, and neither should learn the other's IP
+    /// address unless a guest asked).
+    spoke: bool,
     /// When we first sent it the guest's packets since it last brought data.
     waiting: Option<Instant>,
     /// When it was let in.
@@ -1407,7 +1411,6 @@ impl Client {
             self.room.psk,
         ));
         let addr = self.room.addr(&key);
-        let offerer = self.public < key;
         self.peers.insert(
             id,
             Peer {
@@ -1415,6 +1418,7 @@ impl Client {
                 addr,
                 heard: now,
                 active: now,
+                spoke: false,
                 waiting: None,
                 added: now,
                 trial,
@@ -1429,10 +1433,10 @@ impl Client {
                 seen: BTreeSet::new(),
                 next_seq: 1,
                 outbox: VecDeque::new(),
-                rtc: match (self.cfg.relay_only, offerer) {
-                    (true, _) => Rtc::Off,
-                    (false, true) => Rtc::Idle { next: Some(now) },
-                    (false, false) => Rtc::Idle { next: None },
+                // The offerer offers at the guests' first packet (`touch`).
+                rtc: match self.cfg.relay_only {
+                    true => Rtc::Off,
+                    false => Rtc::Idle { next: None },
                 },
                 attempt: 0,
                 backoff: RTC_BACKOFF,
@@ -1675,6 +1679,7 @@ impl Client {
             return;
         };
         p.active = now;
+        p.spoke = true;
         if p.rtc == (Rtc::Idle { next: None }) && public < p.key {
             p.rtc = Rtc::Idle { next: Some(now) };
         }
@@ -1745,14 +1750,14 @@ impl Client {
                 p.attempt = 0;
                 self.close_rtc(id, None);
                 // A new instance has no failed attempts behind it (and may no longer be relay only):
-                // offer again at once.
+                // offer again at once, if the guests spoke.
                 let (public, relay_only) = (self.public, self.cfg.relay_only);
                 let p = self.peers.get_mut(&id).unwrap();
                 p.backoff = RTC_BACKOFF;
                 p.rtc = match relay_only {
                     true => Rtc::Off,
                     false => Rtc::Idle {
-                        next: (public < p.key).then_some(now),
+                        next: (public < p.key && p.spoke).then_some(now),
                     },
                 };
                 self.hello(id, now);

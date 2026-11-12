@@ -255,7 +255,9 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   answerer with too many), `refuse` (relay only), `ping` (the probe above). Each message carries the sender's
   epoch with us (random per peer it makes, so a restart, or a peer forgotten and made again on one side, resets what
   the other knew of its sequence numbers and attempts) and a sequence number, and is acknowledged and resent after 0.5, 1 and 2 s. Candidates go only to a member whose data decrypted.
-- **The direct path:** the member with the lower key offers once the session is confirmed. The module asks the host
+- **The direct path:** the member with the lower key offers once the session is confirmed and the guests exchanged a
+  packet through it (so a session that a member's forged lookup made between two others carries no offer, and neither
+  learns the other's IP address unless a guest asked). The module asks the host
   for a connection (`RtcOpen`, actions 7–10 and `ts_rtc_*` in `wasm.rs`); web/room.ts makes an `RTCPeerConnection`
   (STUN only: `STUN_SERVERS`, Cloudflare's and Google's) with a negotiated data channel (id 0, unordered, no
   retransmits) and transfers the channel to the worker before anything is sent on it (Chromium has no
