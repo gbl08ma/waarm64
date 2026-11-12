@@ -143,13 +143,19 @@ WireGuard peer, if `Serve.allow` (tailcat's `--allow`, the connection's `tailcat
 on it gets no answer, as with tailcat. Its packets reach the guest only from its own tunnel address; the guest's
 IPv6 to a client's address goes to that client and anything else to the exit node, or nowhere when
 serving alone (on the relay of one's choice). Both at once share the exit node's relay. A client's disco pings get
-pongs over the relay (`tailcat ping`; the disco key's private half is derived with it). **64 clients at once**: past
-that, the one heard from least recently makes room if it has been quiet for 190 s (`CLIENT_IDLE`, past WireGuard's
-180 s REJECT_AFTER_TIME, so its session is dead), and the page drops its route (`client-gone`); tailcat's clients take
-a fresh key each run, so most such are gone for good. One that is still there comes back by its next packet, a
-handshake initiation: a key with no peer that starts one is let in **on trial** (IKpsk2 mixes the pre-shared key in
-only at the response, so its initiation can't prove it), announced once its first data decrypts and forgotten 20 s
-without, so a key without the address gets nothing in.
+pongs over the relay (`tailcat ping`; the disco key's private half is derived with it). **64 clients at once**, counting those that have shown the address's pre-shared key: IKpsk2 mixes it in only at
+the handshake's response, so neither a meow nor an initiation proves it, and a client is proven once its first data
+decrypts. A key that meows is announced (`client`, the page adds its route) and one that starts a handshake without
+meowing is let in **on trial** (announced once proven, forgotten 20 s without), but neither takes anyone's place:
+up to 16 newcomers wait beside the 64 (`MAX_NEWCOMERS`; past them the stalest goes if it has been quiet 20 s, or
+else the next is refused). A newcomer proven when the 64 are full takes the place of the one heard from least
+recently if that one has been quiet for 190 s (`CLIENT_IDLE`, past WireGuard's 180 s REJECT_AFTER_TIME, so its
+session is dead), or else goes. One that made room is kept away, its key and its route (`MAX_AWAY`, 64; past them
+the first to go is forgotten and the page drops its route: `client-gone`): its own next handshake lets it in again,
+and so does the guest's next packet to it, the handshake starting from the VM (tailcat's clients take a fresh key
+each run, so most such are gone for good; the handshake to one gives up after WireGuard's 90 s). Since a meow has no
+secret in it, anyone on the relay who knows the machine's public key can keep the newcomers' places full and so
+delay a new client; it can't push out one that is in.
 
 ## Rooms
 

@@ -1531,11 +1531,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     rather than a socket per adapter. It needs connections modeled as exclusive or shared (a Web Lock holds each now,
     docs/networking/adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
     several machines can already share its LAN, each with a connection of its own.
-- **tailcat serving's leftovers** ([networking/tailnet.md](networking/tailnet.md) "tailcat"): a handshake on trial takes a quiet client's place
-  before it has shown the pre-shared key (that client comes back by its own next handshake, but anyone on the relay who
-  knows the machine's public key can push quiet clients out this way; a trial could wait for room instead); and the
-  guest's packets to a client that made room are dropped until that client sends again (the module could keep the keys
-  of the clients that made room and start the handshake itself).
 - **tailcat loose ends**: an address that names only a region (tailcat's public relays) fetches
   `https://tailcat.dev/derpmap.json`, run against the real map once by hand (2026-10-23: `tailcat serve exit-node`
   with no `--key` on the Mac, region 303 Frankfurt, the page's Debian through it), never in a test; the relay's loss while running is

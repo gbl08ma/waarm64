@@ -122,9 +122,19 @@ pub const DEFAULT_DERP_MAP: &str = "https://tailcat.dev/derpmap.json";
 pub const GUEST4: [u8; 4] = [192, 0, 0, 2];
 const TUNNEL_MTU: usize = 1280;
 const SERVER: PeerId = PeerId(1);
-/// How many tailcat clients a served VM takes at once (each is a WireGuard peer). Past it, the one
-/// heard from least recently makes room if it has been quiet for [`CLIENT_IDLE`].
+/// How many tailcat clients a served VM takes at once (each is a WireGuard peer), counting those
+/// that have shown the address's pre-shared key (their first data decrypted). Past it, the one
+/// heard from least recently makes room for another that has, if it has been quiet for
+/// [`CLIENT_IDLE`]; a newcomer that hasn't takes no one's place.
 const MAX_CLIENTS: usize = 64;
+/// Newcomers that haven't shown the pre-shared key yet, beside [`MAX_CLIENTS`]: past them, the one
+/// heard from least recently goes if it has been quiet for [`HANDSHAKE_TIMEOUT`], or else the next
+/// is refused.
+const MAX_NEWCOMERS: usize = 16;
+/// Clients that made room, kept (key and route) so the guest's next packet to one lets it in again
+/// and starts the handshake from here. Past it, the one that made room first is forgotten
+/// (`client-gone`).
+const MAX_AWAY: usize = 64;
 /// A client quiet this long can make room for a new one: past WireGuard's REJECT_AFTER_TIME (180 s)
 /// its session is dead, so if it's still there its next packet is a handshake initiation, which
 /// lets it in again (tailcat's clients take a fresh key each run, so most are gone for good).
@@ -156,10 +166,12 @@ struct Peer {
     addr: [u8; 16],
     /// When it was last heard from.
     heard: Instant,
-    /// Let in by a handshake alone: on trial until its first data decrypts, which proves it has
-    /// the address's pre-shared key (IKpsk2 mixes it in only at the response). Forgotten after
-    /// `HANDSHAKE_TIMEOUT` without.
-    trial: bool,
+    /// Its first data decrypted, which proves it has the address's pre-shared key (IKpsk2 mixes
+    /// it in only at the response, so neither a meow nor an initiation can).
+    proven: bool,
+    /// The page has heard of it (`client`). One let in by a handshake alone is on trial until
+    /// proven, and forgotten after `HANDSHAKE_TIMEOUT` without; one that meowed is announced at once.
+    announced: bool,
 }
 
 pub struct Client {
@@ -187,6 +199,8 @@ pub struct Client {
     /// The served VM's clients, by WireGuard peer and by tunnel address.
     peers: BTreeMap<PeerId, Peer>,
     by_addr: BTreeMap<[u8; 16], PeerId>,
+    /// The clients that made room (key, address), the first to go first.
+    away: VecDeque<([u8; 32], [u8; 16])>,
     next_peer: u32,
     derp: Option<(u32, derp::Conn)>,
     /// When the relay connection became ready.
@@ -289,6 +303,7 @@ impl Client {
             wg,
             peers: BTreeMap::new(),
             by_addr: BTreeMap::new(),
+            away: VecDeque::new(),
             next_peer: SERVER.0 + 1,
             derp: None,
             derp_ready: None,
@@ -569,6 +584,7 @@ impl Client {
                 let Some(id) = self.admit(src, now) else {
                     return;
                 };
+                self.peers.get_mut(&id).unwrap().announced = true;
                 self.announce_client(id);
             }
             if let Some((conn, d)) = self.derp.as_mut() {
@@ -587,28 +603,24 @@ impl Client {
             return;
         }
         let Some(id) = known.or_else(|| {
-            // A client that made room for another (quiet past `CLIENT_IDLE`) and came back: its
-            // handshake lets it in again if it still has the address's pre-shared key.
+            // A key that never meowed, or a client that made room for another (quiet past
+            // `CLIENT_IDLE`) and came back: its handshake lets it in, on trial unless it made room.
             (packet.first() == Some(&INITIATION.0) && packet.len() == INITIATION.1)
                 .then(|| self.admit(src, now))
                 .flatten()
         }) else {
             return; // not a client of ours: it never meowed
         };
-        if known.is_none() {
-            self.peers.get_mut(&id).unwrap().trial = true;
-        }
         let r = self.wg.recv(now, [PacketMut::from(packet)]);
         if known.is_none() && r.to_peers.is_empty() {
             // Not a handshake it could start: it isn't let in.
-            return self.forget(id, false);
-        }
-        if r.to_local.contains_key(&id) && self.peers.get(&id).is_some_and(|p| p.trial) {
-            self.peers.get_mut(&id).unwrap().trial = false;
-            self.announce_client(id);
+            return self.forget(id);
         }
         self.send_to_peers(r.to_peers, now);
         for (id, packets) in r.to_local {
+            if !self.prove(id, now) {
+                continue;
+            }
             for p in packets {
                 self.on_tunnel_packet(id, p.as_ref());
             }
@@ -619,9 +631,9 @@ impl Client {
         self.wg.peer_id(NodePublicKey::from_bytes(*key))
     }
 
-    /// Lets client `key` in as a WireGuard peer, if the allow list has it and there's room (made by
-    /// the client quiet longest, if that's past `CLIENT_IDLE`). A meow announces it at once; a
-    /// handshake, once it succeeds.
+    /// Lets client `key` in as a WireGuard peer, if the allow list has it and there's room: a
+    /// newcomer among the `MAX_NEWCOMERS`, one that made room among the clients (it was proven
+    /// before). A meow announces a newcomer at once; a handshake, once its data decrypts.
     fn admit(&mut self, key: [u8; 32], now: Instant) -> Option<PeerId> {
         if !self.allow.is_empty() && !self.allow.contains(&key) {
             if self.refused.replace(key) != Some(key) {
@@ -633,18 +645,25 @@ impl Client {
             return None;
         }
         let psk = self.serve_psk?;
-        if self.peers.len() >= MAX_CLIENTS {
-            let quiet = self
+        let back = self.away.iter().position(|(k, _)| *k == key);
+        if let Some(at) = back {
+            if !self.make_room(None, now) {
+                return None;
+            }
+            self.away.remove(at);
+        } else if self.peers.values().filter(|p| !p.proven).count() >= MAX_NEWCOMERS {
+            let stale = self
                 .peers
                 .iter()
+                .filter(|(_, p)| !p.proven)
                 .min_by_key(|(_, p)| p.heard)
-                .filter(|(_, p)| now.saturating_duration_since(p.heard) >= CLIENT_IDLE)
+                .filter(|(_, p)| now.saturating_duration_since(p.heard) >= HANDSHAKE_TIMEOUT)
                 .map(|(id, _)| *id);
-            match quiet {
-                Some(id) => self.forget(id, true),
+            match stale {
+                Some(id) => self.forget(id),
                 None => {
                     self.log(format!(
-                        "tailcat: {MAX_CLIENTS} clients already, one more refused"
+                        "tailcat: {MAX_NEWCOMERS} newcomers already, one more refused"
                     ));
                     return None;
                 }
@@ -661,11 +680,61 @@ impl Client {
                 key,
                 addr,
                 heard: now,
-                trial: false,
+                proven: back.is_some(),
+                announced: back.is_some(),
             },
         );
         self.by_addr.insert(addr, id);
         Some(id)
+    }
+
+    /// Whether there's room among the proven clients (but `except`), made by the one quiet
+    /// longest if that's past `CLIENT_IDLE`.
+    fn make_room(&mut self, except: Option<PeerId>, now: Instant) -> bool {
+        let proven = || {
+            self.peers
+                .iter()
+                .filter(|(id, p)| p.proven && Some(**id) != except)
+        };
+        if proven().count() < MAX_CLIENTS {
+            return true;
+        }
+        let quiet = proven()
+            .min_by_key(|(_, p)| p.heard)
+            .filter(|(_, p)| now.saturating_duration_since(p.heard) >= CLIENT_IDLE)
+            .map(|(id, _)| *id);
+        match quiet {
+            Some(id) => {
+                self.forget(id);
+                true
+            }
+            None => {
+                self.log(format!(
+                    "tailcat: {MAX_CLIENTS} clients already, one more refused"
+                ));
+                false
+            }
+        }
+    }
+
+    /// Client `id`'s data decrypted: it has the pre-shared key, so it is a client if there's room
+    /// (else it goes). Whether its packets go on to the guest.
+    fn prove(&mut self, id: PeerId, now: Instant) -> bool {
+        match self.peers.get(&id) {
+            None => return false,
+            Some(p) if p.proven => return true,
+            Some(_) => {}
+        }
+        if !self.make_room(Some(id), now) {
+            self.forget(id);
+            return false;
+        }
+        let p = self.peers.get_mut(&id).unwrap();
+        p.proven = true;
+        if !std::mem::replace(&mut p.announced, true) {
+            self.announce_client(id);
+        }
+        true
     }
 
     fn announce_client(&mut self, id: PeerId) {
@@ -676,14 +745,27 @@ impl Client {
         );
     }
 
-    /// Drops client `id` (`gone`: it was announced, so the page hears it went).
-    fn forget(&mut self, id: PeerId, gone: bool) {
+    /// Drops client `id`. A proven one is kept away (its key, and the page keeps its route), so
+    /// the guest's next packet to it lets it in again; else the page hears it went, if it heard
+    /// it came.
+    fn forget(&mut self, id: PeerId) {
         self.wg.remove_peer(id);
-        if let Some(p) = self.peers.remove(&id) {
-            self.by_addr.remove(&p.addr);
-            if gone && !p.trial {
-                self.event(json!({ "type": "client-gone", "key": format!("nodekey:{}", hex(&p.key)), "address6": p.addr }));
+        let Some(p) = self.peers.remove(&id) else {
+            return;
+        };
+        self.by_addr.remove(&p.addr);
+        let gone = if p.proven {
+            self.away.push_back((p.key, p.addr));
+            if self.away.len() > MAX_AWAY {
+                self.away.pop_front()
+            } else {
+                None
             }
+        } else {
+            p.announced.then_some((p.key, p.addr))
+        };
+        if let Some((key, addr)) = gone {
+            self.event(json!({ "type": "client-gone", "key": format!("nodekey:{}", hex(&key)), "address6": addr }));
         }
     }
 
@@ -842,10 +924,18 @@ impl Client {
             Some(6) if p.len() >= 40 && p.len() <= TUNNEL_MTU && p[8..24] == self.tc6 => {
                 // To a client of the served VM, or else out through the server, if any.
                 let dst: [u8; 16] = p[24..40].try_into().unwrap();
-                match self.by_addr.get(&dst) {
-                    Some(&id) => (id, p.to_vec()),
-                    None if self.exit.is_some() => (SERVER, p.to_vec()),
-                    None => return,
+                // One that made room is let in again, the handshake from here.
+                let back = || self.away.iter().find(|(_, a)| *a == dst).map(|(k, _)| *k);
+                match self.by_addr.get(&dst).copied() {
+                    Some(id) => (id, p.to_vec()),
+                    None => match back() {
+                        Some(key) => match self.admit(key, now) {
+                            Some(id) => (id, p.to_vec()),
+                            None => return,
+                        },
+                        None if self.exit.is_some() => (SERVER, p.to_vec()),
+                        None => return,
+                    },
                 }
             }
             _ => return,
@@ -862,11 +952,13 @@ impl Client {
         let failed: Vec<_> = self
             .peers
             .iter()
-            .filter(|(_, p)| p.trial && now.saturating_duration_since(p.heard) >= HANDSHAKE_TIMEOUT)
+            .filter(|(_, p)| {
+                !p.announced && now.saturating_duration_since(p.heard) >= HANDSHAKE_TIMEOUT
+            })
             .map(|(id, _)| *id)
             .collect();
         for id in failed {
-            self.forget(id, false);
+            self.forget(id);
         }
         // A relay that died quietly (or never answered) goes.
         if let Some((_, d)) = self.derp.as_mut() {
@@ -906,7 +998,7 @@ impl Client {
             self.phase_deadline,
             self.peers
                 .values()
-                .filter(|p| p.trial)
+                .filter(|p| !p.announced)
                 .map(|p| p.heard + HANDSHAKE_TIMEOUT)
                 .min(),
         ]
@@ -1745,55 +1837,115 @@ mod tests {
         let mut relay = Relay::new([43; 32]);
         let mut c = Client::new(serving(), t0).unwrap();
         shuttle(&mut c, &mut relay, &mut [], t0);
+        let tc6 = c.tc6;
+        let hi = |a: &TcClient, w: &[u8]| udp6(a.addr(), tc6, w);
         let mut first = TcClient::new(1, c.public, [7; 32]);
-        meow_in(&mut c, &mut relay, &mut first, t0);
+        let p = hi(&first, b"first");
+        assert_eq!(send_in(&mut c, &mut relay, &mut first, &p, t0).0, vec![p]);
         let t1 = t0 + Duration::from_secs(60);
         for seed in 2..=MAX_CLIENTS as u8 {
             let mut x = TcClient::new(seed, c.public, [7; 32]);
-            meow_in(&mut c, &mut relay, &mut x, t1);
-            assert!(x.meowed);
+            let p = hi(&x, b"x");
+            assert_eq!(send_in(&mut c, &mut relay, &mut x, &p, t1).0, vec![p]);
         }
         assert_eq!(c.peers.len(), MAX_CLIENTS);
-        // One more while every client was heard from lately: refused.
+        // One more while every client was heard from lately: refused once its data shows the key.
         let mut late = TcClient::new(200, c.public, [7; 32]);
-        meow_in(&mut c, &mut relay, &mut late, t1);
-        assert!(!late.meowed);
-        // Once the first has been quiet for CLIENT_IDLE, it makes room (and the page hears it went).
+        let p = hi(&late, b"late");
+        assert!(send_in(&mut c, &mut relay, &mut late, &p, t1).0.is_empty());
+        assert_eq!(c.peers.len(), MAX_CLIENTS);
+        // The first has been quiet for CLIENT_IDLE: a key without the address's pre-shared key
+        // doesn't push it out, by a meow or a handshake, nor do newcomers that never show it (they
+        // fill the newcomers' places at most: here they leave one).
         let t2 = t0 + CLIENT_IDLE;
-        let events = meow_in(&mut c, &mut relay, &mut late, t2);
-        assert!(late.meowed);
+        let mut stranger = TcClient::new(201, c.public, [8; 32]);
+        meow_in(&mut c, &mut relay, &mut stranger, t2);
+        assert!(stranger.meowed);
+        let x = hi(&stranger, b"x");
+        let (guest, _) = send_in(&mut c, &mut relay, &mut stranger, &x, t2);
+        assert!(guest.is_empty());
+        for seed in 202..202 + MAX_NEWCOMERS as u8 - 2 {
+            let mut x = TcClient::new(seed, c.public, [8; 32]);
+            meow_in(&mut c, &mut relay, &mut x, t2);
+        }
+        assert!(c.by_addr.contains_key(&first.addr()));
+        assert_eq!(c.peers.values().filter(|p| p.proven).count(), MAX_CLIENTS);
+        // One with the key takes the first's place; the page keeps the first's route (no
+        // `client-gone`).
+        let p = hi(&late, b"late");
+        let (guest, events) = send_in(&mut c, &mut relay, &mut late, &p, t2);
+        assert_eq!(guest, vec![p]);
+        assert!(!c.by_addr.contains_key(&first.addr()));
+        assert!(
+            !events
+                .iter()
+                .any(|e| e["type"] == "client-gone" && e["address6"] == json!(first.addr()))
+        );
+        // The guest's packet to the first lets it in again: the handshake starts here.
+        let t3 = t1 + CLIENT_IDLE;
+        c.guest_packet(&udp6(c.tc6, first.addr(), b"there?"), t3);
+        shuttle(&mut c, &mut relay, &mut [&mut first], t3);
+        assert_eq!(
+            first.got.pop().as_deref(),
+            Some(&udp6(c.tc6, first.addr(), b"there?")[..])
+        );
+        let p = hi(&first, b"back");
+        assert_eq!(send_in(&mut c, &mut relay, &mut first, &p, t3).0, vec![p]);
+        // A key without the pre-shared key on trial is forgotten when its handshake's time is up,
+        // quietly; one that meowed is announced, so the page hears it go when a newcomer needs
+        // its place.
+        let mut trial = TcClient::new(230, c.public, [8; 32]);
+        let x = hi(&trial, b"x");
+        let t4 = t3 + HANDSHAKE_TIMEOUT;
+        assert!(send_in(&mut c, &mut relay, &mut trial, &x, t4).0.is_empty());
+        assert!(c.by_addr.contains_key(&trial.addr()));
+        let t5 = t4 + HANDSHAKE_TIMEOUT;
+        c.tick(t5);
+        assert!(!c.by_addr.contains_key(&trial.addr()));
+        // The newcomers' places full again, one more takes the stalest's.
+        let mut fill = TcClient::new(232, c.public, [8; 32]);
+        meow_in(&mut c, &mut relay, &mut fill, t5);
+        assert_eq!(
+            c.peers.values().filter(|p| !p.proven).count(),
+            MAX_NEWCOMERS
+        );
+        let mut next = TcClient::new(231, c.public, [7; 32]);
+        let events = meow_in(&mut c, &mut relay, &mut next, t5);
+        assert!(next.meowed);
         let gone: Vec<_> = events
             .iter()
             .filter(|e| e["type"] == "client-gone")
             .collect();
         assert_eq!(gone.len(), 1);
-        assert_eq!(gone[0]["address6"], json!(first.addr()));
-        assert!(!c.by_addr.contains_key(&first.addr()));
-        assert_eq!(c.peers.len(), MAX_CLIENTS);
-        // A key without the address's pre-shared key gets nothing in by a handshake.
-        let t3 = t1 + CLIENT_IDLE;
-        let mut stranger = TcClient::new(201, c.public, [8; 32]);
-        let x = udp6(stranger.addr(), c.tc6, b"x");
-        let (guest, events) = send_in(&mut c, &mut relay, &mut stranger, &x, t3);
-        assert!(guest.is_empty() && !events.iter().any(|e| e["type"] == "client"));
-        // On trial until its handshake's time is up, then forgotten, quietly.
-        c.tick(t3 + HANDSHAKE_TIMEOUT);
-        assert!(!c.by_addr.contains_key(&stranger.addr()));
-        assert!(
-            !shuttle(&mut c, &mut relay, &mut [], t3)
-                .1
-                .iter()
-                .any(|e| e["type"] == "client-gone")
-        );
-        // The first comes back: its handshake lets it in again, and its packet reaches the guest.
-        let hello = udp6(first.addr(), c.tc6, b"back");
-        let (guest, events) = send_in(&mut c, &mut relay, &mut first, &hello, t3);
-        assert_eq!(guest, vec![hello]);
-        assert!(
-            events
-                .iter()
-                .any(|e| e["type"] == "client" && e["address6"] == json!(first.addr()))
-        );
-        assert!(c.peers.len() <= MAX_CLIENTS);
+        assert_ne!(gone[0]["address6"], json!(trial.addr()));
+        assert!(c.peers.values().filter(|p| !p.proven).count() <= MAX_NEWCOMERS);
+    }
+
+    #[test]
+    fn forgets_the_clients_that_made_room_first_past_max_away() {
+        let t0 = Instant::now();
+        let mut relay = Relay::new([43; 32]);
+        let mut c = Client::new(serving(), t0).unwrap();
+        shuttle(&mut c, &mut relay, &mut [], t0);
+        let mut events = Vec::new();
+        // Each round of clients makes room for the next, CLIENT_IDLE apart.
+        for round in 0..2u8 {
+            let at = t0 + CLIENT_IDLE * round as u32;
+            for k in 0..MAX_CLIENTS as u8 {
+                let mut x = TcClient::new(1 + round * MAX_CLIENTS as u8 + k, c.public, [7; 32]);
+                let p = udp6(x.addr(), c.tc6, b"x");
+                let (guest, e) = send_in(&mut c, &mut relay, &mut x, &p, at);
+                assert_eq!(guest, vec![p]);
+                events.extend(e);
+            }
+        }
+        assert_eq!(c.away.len(), MAX_AWAY);
+        assert!(!events.iter().any(|e| e["type"] == "client-gone"));
+        let mut x = TcClient::new(250, c.public, [7; 32]);
+        let p = udp6(x.addr(), c.tc6, b"x");
+        let (_, e) = send_in(&mut c, &mut relay, &mut x, &p, t0 + CLIENT_IDLE * 3);
+        let gone: Vec<_> = e.iter().filter(|e| e["type"] == "client-gone").collect();
+        assert_eq!(gone.len(), 1);
+        assert_eq!(c.away.len(), MAX_AWAY);
     }
 }

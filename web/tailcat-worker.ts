@@ -99,7 +99,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
           return;
         }
         if (ev.type === 'client' || ev.type === 'client-gone') {
-          console.log(ev.type === 'client' ? 'tailcat: a client came in,' : 'tailcat: a quiet client made room for another,', ev.key);
+          console.log(ev.type === 'client' ? 'tailcat: a client came in,' : 'tailcat: a client that made room is forgotten,', ev.key);
           const same = (p: Prefix) => p[0].every((b, k) => b === ev.address6[k]);
           clients = clients.filter((p) => !same(p));
           if (ev.type === 'client') clients.push([ev.address6, 128]);
