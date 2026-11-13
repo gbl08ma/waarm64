@@ -1041,6 +1041,7 @@ fn sets_sways_output_to_the_pages_size_without_the_clipboard() {
         clip: false,
         resize: true,
         desktop: false,
+        keymap: false,
     };
     let child = std::thread::spawn(move || session::serve_for(theirs, runtime, 0x0100_0000, jobs));
     let mut page = Page {
@@ -1108,6 +1109,7 @@ fn says_when_sways_session_is_up_and_when_it_goes() {
         clip: false,
         resize: false,
         desktop: true,
+        keymap: false,
     };
     let child = std::thread::spawn(move || session::serve_for(theirs, runtime, 0x0100_0000, jobs));
     let mut page = Page {
@@ -1129,6 +1131,84 @@ fn says_when_sways_session_is_up_and_when_it_goes() {
         "down when it goes"
     );
     assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+}
+
+impl Sway {
+    /// Whether sway takes `command` (`swaymsg`'s reply says success).
+    fn takes(&self, command: &str) -> bool {
+        let out = self
+            .wl("swaymsg")
+            .env("SWAYSOCK", self.ipc())
+            .arg(command)
+            .output()
+            .unwrap();
+        let json: String = String::from_utf8_lossy(&out.stdout)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        json.contains("\"success\":true")
+    }
+}
+
+#[test]
+fn sets_sways_keyboard_layout_to_the_pages() {
+    if !have("sway") {
+        return;
+    }
+    let sway = Sway::start("keymap");
+    // sway compiles the keymap at each command: `neo` is a variant of `de`'s, not of `us`'s, and `intl` of `us`'s, not
+    // of `de`'s; a failed command changes nothing. (With no layout set, sway takes any variant: US set first.)
+    assert!(sway.takes("input type:keyboard xkb_layout us"));
+    let probe = "input type:keyboard xkb_variant neo";
+    assert!(!sway.takes(probe), "us has no neo");
+    let (mine, theirs) = socketpair(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    let runtime = sway.dir.to_str().unwrap().to_owned();
+    let jobs = session::Jobs {
+        clip: false,
+        resize: false,
+        desktop: false,
+        keymap: true,
+    };
+    let child = std::thread::spawn(move || session::serve_for(theirs, runtime, 0x0100_0000, jobs));
+    let page = Page {
+        fd: mine,
+        reader: frame::Reader::default(),
+        frames: Vec::new(),
+    };
+    let km = |layout: &str, variant: &str| crate::keymap::Keymap {
+        layout: layout.into(),
+        model: "pc105".into(),
+        variant: variant.into(),
+        vc: String::new(),
+    };
+    let becomes = |probe: &str| {
+        let end = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < end {
+            if sway.takes(probe) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        false
+    };
+    // German's Neo: sway takes neo from then on.
+    page.send(frame::KEYMAP, &km("de", "neo").encode());
+    assert!(
+        becomes(probe),
+        "the layout set: {}",
+        std::fs::read_to_string(sway.dir.join("sway.log")).unwrap_or_default()
+    );
+    // US: its variants now, German's variant emptied first (us has no neo: the layout with it wouldn't compile).
+    page.send(frame::KEYMAP, &km("us", "").encode());
+    assert!(becomes("input type:keyboard xkb_variant intl"));
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
 }

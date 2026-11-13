@@ -16,6 +16,12 @@ export const TRIM_WAIT_MS = 120_000;
 /** How long the overlays' compaction may take (it copies the blocks above the free slots). */
 export const COMPACT_WAIT_MS = 120_000;
 
+/** The disks' overlays compacted by the run's worker (`compact`), for `TrimActions`. */
+export const compactor =
+  (machine: { readonly run?: { worker: Worker } }, replies: Replies<FromWorker>): Compact =>
+  (ms, measure) =>
+    askCompact(machine.run?.worker, replies, ms, measure);
+
 /** The disks' overlays compacted by the machine's worker (`compact`): their files' bytes before and after (none: no machine). */
 export async function askCompact(
   worker: Worker | undefined,
@@ -58,7 +64,7 @@ export class TrimActions {
   /** The trim running, which another ask joins. */
   #running: Promise<Trimmed> | undefined;
 
-  /** The run's agent (web/app/areas/agent-actions.ts), the message bar, the overlays' compaction (`askCompact`), where `canTrim` is shown. */
+  /** The run's agent (web/app/areas/agent-actions.ts), the message bar, the overlays' compaction (`compactor`), where `canTrim` is shown. */
   constructor(agent: Agent, messages: Notify, compact: Compact, shown: Shown) {
     [this.#agent, this.#messages, this.#compact, this.#shown] = [agent, messages, compact, shown];
   }

@@ -30,6 +30,7 @@ mod prelude {
 mod clip;
 mod console;
 mod frame;
+mod keymap;
 mod lease;
 mod logind;
 mod outputs;
@@ -66,7 +67,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::RENEW
     | frame::cap::LEASE
     | frame::cap::DESKTOP
-    | frame::cap::TRIM;
+    | frame::cap::TRIM
+    | frame::cap::KEYMAP;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -178,6 +180,12 @@ struct Agent {
     fitrim: trim::Fitrim,
     trimming: Option<lease::Job>,
     trimmed: Option<u8>,
+    /// KEYMAP: the layout the session has and the page's that differs (for the children); the boot's file of it
+    /// (the tests' is theirs); the consoles' `loadkeys`, running.
+    keymap: keymap::Current,
+    environment: String,
+    loadkeys_at: Vec<String>,
+    loadkeys: Option<lease::Job>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
     /// The tests': a function on a thread in place of the forked child.
@@ -228,6 +236,10 @@ impl Agent {
             fitrim: trim::fitrim,
             trimming: None,
             trimmed: None,
+            keymap: keymap::Current::default(),
+            environment: "/etc/environment".into(),
+            loadkeys_at: keymap::places("loadkeys"),
+            loadkeys: None,
             typist: console::Typist::new(console),
             #[cfg(test)]
             test_child: None,
@@ -434,6 +446,9 @@ impl Agent {
         if let Some(d) = &self.display {
             frame::encode(frame::DISPLAY, d, &mut c.out);
         }
+        if let Some(k) = &self.keymap.wanted {
+            frame::encode(frame::KEYMAP, k, &mut c.out);
+        }
         if self.paused {
             frame::encode(frame::PAUSE, &[], &mut c.out);
         }
@@ -441,6 +456,20 @@ impl Agent {
     }
 
     /// A frame for the child; false if there is none (the frame is the parent's to answer).
+    /// The text consoles' keymap (`loadkeys`, where kbd is there and the layout names one), in a forked child.
+    fn load_console(&mut self, k: &keymap::Keymap) {
+        if k.vc.is_empty() || self.loadkeys.is_some() {
+            return;
+        }
+        let Some(tool) = keymap::found(&self.loadkeys_at) else {
+            return;
+        };
+        match lease::spawn(&[vec![tool, "-q".into(), k.vc.clone()]]) {
+            Ok(j) => self.loadkeys = Some(j),
+            Err(e) => log("keymap: fork", Some(e)),
+        }
+    }
+
     fn for_child(&mut self, kind: u8, payload: &[u8]) -> bool {
         let Some(c) = &mut self.child else {
             return false;
@@ -523,6 +552,7 @@ enum Tag {
     Keygen,
     Lease,
     Trim,
+    Loadkeys,
 }
 
 fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
@@ -562,6 +592,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.trimming {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Trim);
+        }
+        if let Some(j) = &s.agent.loadkeys {
+            fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
+            tags.push(Tag::Loadkeys);
         }
         if let Some(c) = &s.agent.child {
             let f = if c.out.is_empty() {
@@ -611,6 +645,19 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                 Tag::Trim => {
                     if let Some(j) = s.agent.trimming.take() {
                         s.agent.trimmed = Some(trim::done(j));
+                    }
+                }
+                Tag::Loadkeys => {
+                    if let Some(j) = s.agent.loadkeys.take() {
+                        let ok = lease::reap(j);
+                        log(
+                            if ok {
+                                "keymap: the consoles' keymap loaded"
+                            } else {
+                                "keymap: loadkeys failed"
+                            },
+                            None,
+                        );
                     }
                 }
                 Tag::Keygen => {
@@ -729,6 +776,18 @@ impl Session<'_> {
                         log("trim: fork", Some(e));
                         self.agent.trimmed = Some(trim::status::FAILED);
                     }
+                }
+            }
+            // The machine's layout: the session's, where it hasn't it (src/keymap.rs): the child's to set in the
+            // compositor or the X server, the consoles' here.
+            frame::KEYMAP => {
+                if let Some(k) = self.agent.keymap.take(payload, &self.agent.environment) {
+                    log(
+                        &format!("keymap: {} {} {}", k.layout, k.model, k.variant),
+                        None,
+                    );
+                    self.agent.for_child(kind, payload);
+                    self.agent.load_console(&k);
                 }
             }
             frame::TIME => {

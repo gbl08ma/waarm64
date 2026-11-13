@@ -49,6 +49,9 @@ pub const DESKTOP: u8 = 19;
 pub const TRIM: u8 = 20;
 /// The agent's: a u8 status, what became of TRIM (`trim::status`).
 pub const TRIMMED: u8 = 21;
+/// The page's: the machine's keyboard layout (src/keymap.rs `Keymap`: XKB's layout, model and variant, the console's
+/// keymap), which the running session is to have.
+pub const KEYMAP: u8 = 22;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -84,6 +87,8 @@ pub mod cap {
     pub const DESKTOP: u32 = 1 << 10;
     /// TRIM and TRIMMED: the guest's filesystems trimmed on the page's request.
     pub const TRIM: u32 = 1 << 11;
+    /// KEYMAP: the running session's layout set (the agent), or a page that sends it.
+    pub const KEYMAP: u32 = 1 << 12;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 

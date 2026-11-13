@@ -68,7 +68,8 @@ exec /run/waarm64/agent
  * child connects to its display's socket there; `-`: a guest without it starts all the same). What RENEW renews after a
 template's restore (agent/src/renew.rs) is writable through `ProtectSystem=strict`: the machine id, the SSH host keys'
 directory (ssh-keygen's new keys are renamed in), systemd's random seed (`-`: each may be missing); `/dev/random`'s
-RNDADDENTROPY and RNDRESEEDCRNG take CAP_SYS_ADMIN, which it has.
+RNDADDENTROPY and RNDRESEEDCRNG take CAP_SYS_ADMIN, which it has. KEYMAP's `loadkeys` (the consoles' keymap,
+agent/src/keymap.rs) takes CAP_SYS_TTY_CONFIG (KDSKBENT).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/waarm64 is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -81,7 +82,7 @@ RestartSec=5s
 Nice=10
 MemoryMax=32M
 OOMScoreAdjust=500
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_TTY_CONFIG
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only

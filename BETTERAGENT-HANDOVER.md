@@ -1,13 +1,13 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–6 done (jobs 1–5 and the mid-track review's fixes); the next loop is job 6.
+Loops 1–7 done (jobs 1–6 and the mid-track review's fixes); the next loop is job 7.
 
 ## State
 
 The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEWED 16 (bit 6), LEASE 17 / LEASED 18
-(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11); free from 22 and bit 12 (bit 3 reserved for text/html, 8
-and 9 for session kinds). The binary is 168,320 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
+(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11), KEYMAP 22 (bit 12); free from 23 and bit 13 (bit 3 reserved
+for text/html, 8 and 9 for session kinds). The binary is 178,304 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
 
 - **Job 1, the screen's size:** the page sends the size it asks the guest's display for (DISPLAY, at each change and
   each agent HELLO). Wayland: `agent/src/outputs.rs` (wlr-output-management custom mode; sway, wlroots). X11 sessions:
@@ -32,16 +32,28 @@ and 9 for session kinds). The binary is 168,320 bytes (`images/build.sh agent`; 
   `Devices.compact`; a change compacts only past half free). Asked from the Machines page's storage bar (Free unused
   disk space), at the storage-full notice, and before a disk's Export stops the machine (`web/app/areas/trim-actions.ts`).
   The user's choices (when, `fstrim -a`'s scope, the storage bar). devices.md "Disk space handed back".
+- **Job 6, the keyboard layout in the running session (loop 7):** KEYMAP at each agent HELLO and when the setting is
+  saved mid-run (`web/app/areas/keyboard-follow.ts`); the root applies only a layout the session hasn't (the boot's
+  `/etc/environment`, then its last: `agent/src/keymap.rs`), the child through sway's IPC or `setxkbmap`, the root
+  `loadkeys` (the unit got CAP_SYS_TTY_CONFIG). The boot's disk write stays. devices.md "The keyboard layout in the
+  running session".
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real
   ssh-keygen and sshd run in the native test); NetworkManager (a fake nmcli); the trim before an Export and at the
-  storage-full notice (`TrimActions` with fakes; Debian runs only the storage bar's).
+  storage-full notice (`TrimActions` with fakes; Debian runs only the storage bar's); the layout's X11 and console
+  paths (no setxkbmap or kbd in Debian's images).
 
 ## Next
 
-1. Job 6 (the keyboard layout in the running session), then 7, 8 as the kickoff orders them; ask the user what a job
-   does to the guest where the kickoff leaves it open (job 6: whether the layout's disk write stays).
+1. Job 7 (copying from a text console), then 8 as the kickoff orders it; ask the user what a job does to the guest
+   where the kickoff leaves it open. Job 6's decision (the user, 2026-11-13): the layout's disk write at
+   boot stays, by today's non-agent path, so it applies where the agent doesn't run (and to the greeter); the agent
+   applies it in the running session on top: sway (its IPC), X11 (setxkbmap where installed), the consoles (loadkeys),
+   only when the page's layout differs from what the session has (the boot's `/etc/environment`, then the agent's last).
+   GNOME and KDE later, with a test image each (the user, 2026-11-13): no shared live D-Bus path (localed's is the
+   system default, read-only on Debian 13; GNOME's is the user's dconf `org.gnome.desktop.input-sources`, KDE's
+   `kxkbrc` and its reload signal, both kept in the user's settings).
 2. The track's end: an out-of-context review over the whole track, `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`,
    `ci-net.sh`, `ci-graphics.sh`; then PLAN.md's row, the kickoff and this handover deleted.
 
@@ -64,6 +76,9 @@ and 9 for session kinds). The binary is 168,320 bytes (`images/build.sh agent`; 
 - **OpenSSH ≥ 9.8's listener loads host keys only at its start and SIGHUP**; `sshd -D` writes no pid file.
 - **Xvfb can't grow its screen past its start size**: RandR tests run on Xorg's dummy driver (xf86-video-dummy and
   xrandr in the dev VM: docs/devenv.md).
+- **sway checks a layout as it takes it** (it compiles the keymap at each `input … xkb_*` command): a variant only
+  one layout has (`neo` German's, `intl` US's) reads the layout back without a keyboard; with no layout set, any
+  variant passes.
 - **Piped, swaymsg prints JSON** (`current_mode` there), not its human format.
 - A quick look at the page's error: a Playwright script in `bench/results/local/` printing `#message`'s text (the
   tests' assertion only has the headline); delete it after (tsc checks that directory).

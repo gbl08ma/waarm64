@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
@@ -192,7 +192,7 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP | CAP.KEYMAP });
   sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
@@ -249,6 +249,8 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   // The clock (TIME): CAP_SYS_TIME, no ProtectClock; the page over vsock: AF_VSOCK, no private network namespace (a
   // kernel with vsock namespaces would keep the host's CID from it).
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_TIME\b/m);
+  // KEYMAP's loadkeys (the consoles' keymap: KDSKBENT).
+  assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_TTY_CONFIG\b/m);
   assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_VSOCK$/m);
   assert.doesNotMatch(unit, /^(ProtectClock|PrivateNetwork)=/m);
   // X11 (step 5): the private /tmp keeps the X server's sockets (read-only; none there is no failure).
@@ -1072,7 +1074,7 @@ test("the link: TIME once the agent said it can; a machine without the clipboard
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   await settle();
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO], 'no clipboard: no switch');
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME | CAP.DESKTOP });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME | CAP.DESKTOP | CAP.KEYMAP });
   assert.equal(link.time(1000), false, "before the agent's HELLO");
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE })) });
   await settle();
@@ -1103,11 +1105,11 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([...encodeFrame(FRAME.TIME, encodeTime(0))], [9, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual([...encodeHello({ version: 1, caps: CAP.TIME })], [1, 0, 16, 0, 0, 0]);
   assert.deepEqual([FRAME.SESSION, FRAME.TIME, CAP.TIME], [11, 13, 16]);
-  assert.deepEqual(pageCaps(false), CAP.TIME | CAP.DESKTOP);
+  assert.deepEqual(pageCaps(false), CAP.TIME | CAP.DESKTOP | CAP.KEYMAP);
   // DISPLAY (agent/src/frame.rs `decode_display` pins the payload).
   assert.deepEqual([FRAME.DISPLAY, CAP.DISPLAY], [14, 32]);
   assert.deepEqual([...encodeDisplay(1280, 720)], [0, 5, 0, 0, 0xd0, 2, 0, 0]);
-  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DESKTOP | CAP.DISPLAY);
+  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.DISPLAY);
   // RENEW and RENEWED (agent/src/frame.rs, agent/src/renew.rs `what`).
   assert.deepEqual([FRAME.RENEW, FRAME.RENEWED, CAP.RENEW], [15, 16, 64]);
   assert.deepEqual([RENEWED.ENTROPY, RENEWED.MACHINE_ID, RENEWED.SEED, RENEWED.SSH], [1, 2, 4, 8]);
@@ -1117,6 +1119,9 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   // TRIM and TRIMMED (agent/src/trim.rs `status`).
   assert.deepEqual([FRAME.TRIM, FRAME.TRIMMED, CAP.TRIM], [20, 21, 2048]);
   assert.deepEqual([TRIMMED.TRIMMED, TRIMMED.NONE, TRIMMED.FAILED], [0, 1, 2]);
+  // KEYMAP (agent/src/keymap.rs pins the same bytes): four strings, a u8 length each; the model pc105 by default.
+  assert.deepEqual([FRAME.KEYMAP, CAP.KEYMAP], [22, 4096]);
+  assert.deepEqual([...encodeKeymap({ layout: 'de', variant: 'neo', vc: 'de-latin1' })], [2, 100, 101, 5, 112, 99, 49, 48, 53, 3, 110, 101, 111, 9, ...new TextEncoder().encode('de-latin1')]);
   // DESKTOP and its states (agent/src/frame.rs `desktop`).
   assert.deepEqual([FRAME.DESKTOP, CAP.DESKTOP, DESKTOP.NONE, DESKTOP.WAYLAND, DESKTOP.X11], [19, 1024, 0, 1, 2]);
 });
@@ -1829,9 +1834,9 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   Date.now = () => now() + jump;
   t.after(() => { Date.now = now; });
   t.mock.timers.enable({ apis: ['setInterval'] });
-  const actions = new AgentActions(() => undefined);
+  const actions = new AgentActions(() => undefined, () => undefined);
   const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => ups++)!;
-  assert.equal(link.caps, CAP.TIME | CAP.DESKTOP);
+  assert.equal(link.caps, CAP.TIME | CAP.DESKTOP | CAP.KEYMAP);
   assert.equal(body.dataset.desktop, 'none', "the guest's desktop: none yet");
   assert.equal(actions.syncClock(), false, 'no agent yet');
   port2.postMessage({ type: 'open', open: true, conn: 1 });
@@ -1871,4 +1876,60 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   await settle();
   assert.equal(times.length, 3);
   port2.close();
+});
+
+test("the keyboard layout (web/app/areas/agent-actions.ts): KEYMAP at each HELLO of an agent that says it, and when asked; none without a layout or the capability", async (t) => {
+  const { AgentActions } = await import('../web/app/areas/agent-actions.ts');
+  const { keyboardLayout } = await import('../web/app/keyboard.ts');
+  const g = globalThis as unknown as { location?: unknown; localStorage?: unknown; window?: unknown; document?: unknown };
+  const saved = { location: g.location, localStorage: g.localStorage, window: g.window, document: g.document };
+  g.document = { body: { dataset: {} } };
+  g.location = { search: '' };
+  g.localStorage = { getItem: () => null, setItem: () => undefined };
+  g.window = {};
+  t.after(() => Object.assign(g, saved));
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  let layout = keyboardLayout('de');
+  const run = (caps: number) => {
+    const { port1, port2 } = channel();
+    const got: Uint8Array[] = [];
+    const reader = new FrameReader();
+    port2.onmessage = (e) => {
+      if (e.data.type !== 'data') return;
+      got.push(...reader.push(e.data.bytes).filter((f) => f.type === FRAME.KEYMAP).map((f) => f.payload));
+      port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+    };
+    const actions = new AgentActions(() => undefined, () => layout);
+    actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => {});
+    const hello = (conn: number) => {
+      port2.postMessage({ type: 'open', open: true, conn });
+      port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+    };
+    return { actions, got, hello, close: () => { actions.end(); port2.close(); } };
+  };
+  const de = [...encodeKeymap(keyboardLayout('de')!)];
+  const a = run(CAP.TIME | CAP.KEYMAP);
+  assert.equal(a.actions.keymap(layout), false, 'no agent yet');
+  a.hello(1);
+  await settle();
+  assert.deepEqual(a.got.map((p) => [...p]), [de], 'at the HELLO');
+  a.hello(2); // the agent connects again (a restore): said again
+  await settle();
+  assert.equal(a.got.length, 2);
+  assert.equal(a.actions.keymap(keyboardLayout('pt')), true, 'the setting saved');
+  await settle();
+  assert.deepEqual([...a.got[2]], [...encodeKeymap(keyboardLayout('pt')!)]);
+  layout = undefined; // a setting of none: nothing
+  a.hello(3);
+  await settle();
+  assert.equal(a.got.length, 3);
+  assert.equal(a.actions.keymap(undefined), false);
+  a.close();
+  layout = keyboardLayout('de');
+  const old = run(CAP.TIME); // an agent without CAP.KEYMAP
+  old.hello(1);
+  await settle();
+  assert.equal(old.actions.keymap(layout), false);
+  assert.deepEqual(old.got, []);
+  old.close();
 });

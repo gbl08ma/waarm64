@@ -355,6 +355,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the blocks freed, so a trim of GBs can hold the guest's I/O for seconds; the full one after the agent's trim too).
   The page's Debian doesn't mount with `discard`: without the guest agent the user runs `fstrim`, or waits for
   `fstrim.timer` (with it: devices.md "Disk space handed back").
+- **The storage-full test hung once** (`tests/page-quota.test.ts`, `scripts/ci-machines.sh` 2026-11-13): Debian's ext4
+  aborted its journal at the full storage (as the test's header says it does at times), and the guest's `dd` then never
+  returned within 300 s, where it usually fails with I/O errors; the test alone passed right after. Since BETTERAGENT's
+  trim the storage-full notice also has the agent trim and the page compact the overlays (devices.md "Disk space handed
+  back"): not yet known whether that path plays a part. Next: the agent's journal and the device worker's at a repeat.
 - **A handle read back off the record:** in an off-the-record profile (Incognito; Playwright's `newContext`), Chromium 153
   dies reading a record that holds a `FileSystemHandle` from IndexedDB (storing it is fine; on a disk profile all is):
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
@@ -1310,7 +1315,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - `?display=simple` runs (the tests') are another shape than the same machine on the page, so their snapshots show
     as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, machines.md §1).
 - **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): GNOME and
-  KDE untested; the console keymaps (`vc`) other than `de-latin1` and `pt-latin1` were picked from kbd's files and
+  KDE untested, and the agent's live layout doesn't reach them (devices.md "The keyboard layout in the running
+  session": GNOME through the user's dconf `org.gnome.desktop.input-sources`, KDE through `kxkbrc` and its reload
+  signal, each with a test image of its own, the user's call); the agent's X11 path (`setxkbmap`) and the consoles'
+  (`loadkeys`) not run on a guest (Debian's images have neither tool); the console keymaps (`vc`) other than `de-latin1` and `pt-latin1` were picked from kbd's files and
   kbd-model-map, not typed on; non-Latin layouts (a
   second, toggled layout and its `XKBOPTIONS`) not offered; `detectLayout`'s signatures are from the layouts' charts,
   checked against Chromium on one (US) keyboard only; a Mac's ISO keyboard swaps `Backquote` and `IntlBackslash` in
@@ -1615,7 +1623,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 168,320 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 178,304 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the

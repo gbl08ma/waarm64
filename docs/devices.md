@@ -148,8 +148,8 @@ bound in read-only, `BindReadOnlyPaths=-`: an X session's socket, where a sessio
 `RestrictAddressFamilies=AF_UNIX AF_VSOCK` (no `PrivateNetwork`: a kernel with vsock namespaces would keep a private
 network namespace from the host's CID), the kernel's tunables, modules and logs protected (not the clock, which it
 sets), …) with the capabilities it needs: `CAP_SYS_TIME` for the clock, `CAP_SYS_ADMIN` for TIOCSTI, `CAP_SETUID` and
-`CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the user's process by then); no
-DAC override.
+`CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the user's process by then),
+`CAP_SYS_TTY_CONFIG` for the consoles' keymap (KEYMAP's `loadkeys`: KDSKBENT); no DAC override.
 
 **Its connection** (`agent/src/vsock.rs`: `struct sockaddr_vm` of its own, which rustix lacks): a stream to the host's
 CID 2 on `AGENT_PORT` (8574), blocking. When it ends (the page's reset, a restore's transport reset, the page gone) the
@@ -400,12 +400,33 @@ the root loop's (fake FITRIM: once per filesystem, a disk that doesn't discard, 
 compaction asked for (tests/overlay.test.ts, and on Buildroot `tests/trim.test.ts`: 4 MiB trimmed of 16, which a change
 leaves, given back), and Debian's end to end from the storage bar (`tests/page-agent.test.ts`).
 
+**The keyboard layout in the running session** (KEYMAP; `agent/src/keymap.rs`, `web/app/areas/keyboard-follow.ts`;
+the user's decisions, 2026-11-13): the machine's layout setting reaches the guest's disk at every boot without the agent
+(frontend.md "The keyboard layout"); the agent sets it in the running session too. The page says KEYMAP (XKB's layout,
+model and variant, the console's keymap; names of `[A-Za-z0-9_.,+-:()]` only, or the frame is dropped: they reach sway's
+command parser and tools' arguments) at each agent's HELLO and when the setting is saved while the machine runs. The
+root keeps the layout the session has: the boot's (`/etc/environment`'s `XKB_DEFAULT_*`, which the page's script writes),
+then what it applied (a restore brings back the snapshot's, the agent's memory being the snapshot's); a KEYMAP of that
+layout does nothing. Another goes to the session child, now and for each session's child to come: sway's through its
+IPC socket (`sway-ipc.<uid>.<pid>.sock` in the user's runtime directory; `input type:keyboard xkb_variant ""`, then the
+model, the layout and its variant: a layout with the old one's variant may not compile), spoken by the agent (no
+swaymsg); an X11 session's server (no compositor) through `setxkbmap` where the guest has it, with the session's
+`DISPLAY` and the cookie's file; any other compositor keeps its own (said in the journal). The root loads the consoles'
+keymap with `loadkeys -q <vc>` where kbd is there (CAP_SYS_TTY_CONFIG: the unit has it). Not GNOME or KDE: no shared
+live D-Bus path (localed's is the system's default, read-only on Debian 13; GNOME's is the user's dconf
+`org.gnome.desktop.input-sources`, KDE's `kxkbrc` and its reload signal, both kept in the user's settings): later, with
+a test image each (backlog). Tests: the payload, the boot's file and the root's rule (`agent/src/keymap.rs`,
+`serve_test.rs`: nothing for the boot's layout, the child and loadkeys for another, once, a new session's child told),
+against headless sway (`sway_test.rs`: sway compiles the keymap at each command, so `xkb_variant neo` takes only on
+German and `intl` only on US: the layout read back without a keyboard), the link and the actions (`tests/agent.test.ts`),
+and on Debian's sway (`tests/page-clipboard.test.ts`, the same probe).
+
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
@@ -414,6 +435,7 @@ to the side that offers, request ids to the side that requests:
 | DESKTOP (19) | u8 state: 0 none, 1 Wayland's, 2 X11's | the agent's, to a page whose HELLO has `CAP.DESKTOP`: the graphical session's state at each change, and at a connection once the page's HELLO came if it isn't none ("The desktop's state" above) |
 | TRIM (20) | none | the page's, to an agent whose HELLO has `CAP.TRIM`: the guest's filesystems trimmed ("Disk space handed back" above) |
 | TRIMMED (21) | u8 status: 0 trimmed, 1 no filesystem takes it, 2 one failed | the agent's, when the trim's child ended (`AgentLink.trim`'s answer) |
+| KEYMAP (22) | XKB's layout, model, variant, the console's keymap: a u8 length and the bytes each | the page's, to an agent whose HELLO has `CAP.KEYMAP`: at each agent's HELLO and when the setting is saved while the machine runs ("The keyboard layout in the running session" above) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

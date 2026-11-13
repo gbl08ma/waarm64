@@ -195,6 +195,7 @@ impl Xvfb {
                 clip: true,
                 resize: false,
                 desktop: false,
+                keymap: false,
             },
         }
     }
@@ -529,6 +530,7 @@ fn a_compositor_without_data_control_gives_way_to_x11() {
             clip: true,
             resize: false,
             desktop: false,
+            keymap: false,
         },
     };
     let child = std::thread::spawn(move || session::serve_at(theirs, w, 0x0300_0000));
@@ -942,6 +944,7 @@ fn sets_an_x_servers_screen_to_the_pages_size_without_the_clipboard() {
                 clip: false,
                 resize: true,
                 desktop: false,
+                keymap: false,
             },
             ..x.at(r)
         },
@@ -992,6 +995,7 @@ fn says_when_an_x11_session_is_up_and_when_it_goes() {
                 clip: false,
                 resize: false,
                 desktop: true,
+                keymap: false,
             },
             ..x.at(r)
         },

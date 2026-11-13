@@ -16,7 +16,8 @@ import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
 import { LeaseActions } from './areas/lease-actions.ts';
-import { askCompact, TrimActions } from './areas/trim-actions.ts';
+import { compactor, TrimActions } from './areas/trim-actions.ts';
+import { keyboardFollow, runLayout } from './areas/keyboard-follow.ts';
 import { ClipboardActions } from './areas/clipboard-actions.ts';
 import { DiskActions } from './areas/disk-actions.ts';
 import { changesHeader, DiskChanges } from './areas/disk-changes.ts';
@@ -141,18 +142,13 @@ const messages = new Messages(machine, () => {
   if (screen.cursor) screen.setCursor(undefined);
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
-const agentActions = new AgentActions(() => screen.sent);
+const agentActions = new AgentActions(() => screen.sent, runLayout);
 const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,
   flap: (i) => machine.run?.netLinks[i]?.postMessage({ type: 'flap' }),
 });
-const trimActions = new TrimActions(
-  agentActions,
-  messages,
-  (ms, measure) => askCompact(machine.run?.worker, replies.worker, ms, measure),
-  current,
-);
+const trimActions = new TrimActions(agentActions, messages, compactor(machine, replies.worker), current);
 screen.onSent = (size) => agentActions.display(size);
 const usbView = new UsbView(
   machine,
@@ -276,6 +272,7 @@ const page: Page = {
   powerOffAsked: () => powerActions.powerOffAsked(),
   saveDisk: (mode, compress, target) => diskExport.save(mode, compress, target),
   trimDisks: () => trimActions.asked(),
+  keyboardFollow: keyboardFollow(machine, agentActions),
   importChanges: (file, target) => changes.load(file, target),
   resetDisk: () => disks.reset(),
   saveSettings: (m) => sizes.saveSettings(m),

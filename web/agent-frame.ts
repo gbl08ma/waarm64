@@ -7,7 +7,7 @@
 // guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size); RENEW and RENEWED, `CAP.RENEW`
 // (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore);
 // DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down); TRIM and TRIMMED, `CAP.TRIM` (the guest's
-// filesystems trimmed on the page's request).
+// filesystems trimmed on the page's request); KEYMAP, `CAP.KEYMAP` (the machine's keyboard layout for the running session).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -54,6 +54,8 @@ export const FRAME = {
   TRIM: 20,
   /** The agent's: a u8 status (`TRIMMED`), what became of TRIM. */
   TRIMMED: 21,
+  /** The page's: the machine's keyboard layout (`encodeKeymap`), which the guest's running session is to have. */
+  KEYMAP: 22,
 } as const;
 
 /** DESKTOP's states (agent/src/frame.rs `desktop`). */
@@ -163,6 +165,8 @@ export const CAP = {
   DESKTOP: 1 << 10,
   /** TRIM and TRIMMED: the guest's filesystems trimmed on the page's request (the agent's). */
   TRIM: 1 << 11,
+  /** KEYMAP: the running session's layout set (the agent), or a page that sends it. */
+  KEYMAP: 1 << 12,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 
@@ -326,6 +330,19 @@ export function encodeTime(ms: number): Uint8Array {
 }
 
 /** DISPLAY's payload: u32 width, u32 height (the guest's pixels, as the display's size says them). */
+/** KEYMAP's payload (agent/src/keymap.rs `Keymap`): XKB's layout, model and variant, the console's keymap, each a u8 length and its bytes. */
+export function encodeKeymap(k: { layout: string; model?: string; variant?: string; vc: string }): Uint8Array {
+  const parts = [k.layout, k.model ?? 'pc105', k.variant ?? '', k.vc].map((s) => new TextEncoder().encode(s));
+  const out = new Uint8Array(parts.reduce((n, p) => n + 1 + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    out[at] = p.length;
+    out.set(p, at + 1);
+    at += 1 + p.length;
+  }
+  return out;
+}
+
 export function encodeDisplay(width: number, height: number): Uint8Array {
   const b = new Uint8Array(8);
   const v = new DataView(b.buffer);

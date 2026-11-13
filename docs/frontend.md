@@ -1202,6 +1202,13 @@ runs the third, a POSIX sh script:
   `_MODEL` and `_VARIANT` in `/etc/environment`, rewritten only when they differ. pam_env gives them to every login
   (Debian checked: a serial login and root's user manager have them); GNOME and KDE take the X11 layout above.
 
+**The running session** (the guest agent's KEYMAP, devices.md "The keyboard layout in the running session"; the user's
+decision, 2026-11-13: the disk write above stays, so the layout applies where the agent doesn't run and to the greeter):
+at each agent's HELLO the page sends the layout the run resolved (`keys.layout`), and when the setting is saved while
+the machine runs (Save, which takes no restart for it: `page.keyboardFollow`, which also moves the on-screen keyboard
+to it). The agent applies it only where the session hasn't it: a snapshot restored onto another setting, the setting
+changed mid-run; never over what the boot set (a user's own sway config keeps its layout).
+
 All of it stays on the guest's disk: turning the setting off leaves the last layout set, as the setting's note says.
 Guests without systemd 256 ignore the strings. `tests/keyboard.test.ts` runs the script under dash on files of its own
 (and a `localectl` that records its calls); `tests/page-debian.test.ts` boots with `?keyboard=gb`. On the desktop

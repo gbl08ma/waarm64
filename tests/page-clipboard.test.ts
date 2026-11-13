@@ -17,6 +17,7 @@
 //   the noise back to the host); an offer past the 64 MiB cap is refused before any bytes cross.
 // - The screen's size (DISPLAY): the page's window resized, sway's output follows (wlr-output-management, no swaymsg),
 //   and a new sway takes the page's size at its start.
+// - The keyboard layout (KEYMAP): sway's set through its IPC, German's then US's.
 // - What the agent and its session child cost while sway runs (plan §3.3's targets: no CPU time, no wakeups, VmRSS).
 // WAARM64_AGENT_IDLE=<s> sets the idle window (default 20 s).
 import assert from 'node:assert/strict';
@@ -254,6 +255,22 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
     await page.evaluate(() => { (window as unknown as { __sizes: Size[] }).__sizes = []; });
   }
   const last = (await outputSize(page)).size!;
+
+  // The keyboard layout (KEYMAP): one the session hasn't (a restore onto another setting, the setting saved while it
+  // runs) reaches sway through its IPC. sway compiles the keymap at each command: `neo` is a variant of German's and
+  // `intl` of US's, neither of the other's, so what it takes says the layout (a failed command changes nothing).
+  const takes = (c: string) =>
+    run(page, `runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 swaymsg -s "$(ls /run/user/1000/sway-ipc.*.sock | head -1)" 'input type:keyboard xkb_variant ${c}' >/dev/null 2>&1 && echo yes || echo no`);
+  const keymap = (l: { layout: string; variant?: string; vc: string }) =>
+    page.evaluate((l) => (window as unknown as { __agent: { keymap(l: unknown): boolean } }).__agent.keymap(l), l);
+  for (const [l, yes, no] of [[{ layout: 'de', variant: 'neo', vc: 'de-latin1' }, 'neo', 'intl'], [{ layout: 'us', vc: 'us' }, 'intl', 'neo']] as const) {
+    assert.equal(await keymap(l), true, 'the agent takes KEYMAP');
+    for (let i = 0; (await takes(yes)) !== 'yes'; i++) {
+      if (i > 20) assert.fail(`sway's layout isn't ${l.layout}; the agent says: ${await journal(page)}`);
+      await page.waitForTimeout(500);
+    }
+    assert.equal(await takes(no), 'no', `${l.layout} has no ${no}`);
+  }
 
   // Guest to host: short text inline, then 200 KiB requested in DATA frames.
   await run(page, 'wlc wl-copy "$(printf "from the guest \\342\\230\\203")" >/dev/null 2>&1; echo copied');

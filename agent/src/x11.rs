@@ -510,6 +510,15 @@ pub fn xauth_cookie(file: &[u8], n: u32, host: &str) -> Option<Vec<u8>> {
 /// Display `n`'s cookie, from the files the user's processes name (`procs`), then `home`'s `.Xauthority`; None: none
 /// found (a server without access control takes none).
 pub fn cookie(n: u32, procs: &[Named], home: Option<&str>) -> Option<Vec<u8>> {
+    cookie_and_file(n, procs, home).map(|(c, _)| c)
+}
+
+/// `cookie`'s file (a tool's `XAUTHORITY`: src/keymap.rs `setxkbmap`).
+pub fn cookie_file(n: u32, procs: &[Named], home: Option<&str>) -> Option<String> {
+    cookie_and_file(n, procs, home).map(|(_, f)| f)
+}
+
+fn cookie_and_file(n: u32, procs: &[Named], home: Option<&str>) -> Option<(Vec<u8>, String)> {
     let host = rt::read_text("/proc/sys/kernel/hostname").unwrap_or_default();
     let mut files: Vec<String> = procs
         .iter()
@@ -518,9 +527,10 @@ pub fn cookie(n: u32, procs: &[Named], home: Option<&str>) -> Option<Vec<u8>> {
         .collect();
     let homes = procs.iter().filter_map(|p| p.home.as_deref()).chain(home);
     files.extend(homes.map(|h| format!("{h}/.Xauthority")));
-    files
-        .iter()
-        .find_map(|f| xauth_cookie(&rt::read_file(f).ok()?, n, host.trim()))
+    files.into_iter().find_map(|f| {
+        let c = xauth_cookie(&rt::read_file(&f).ok()?, n, host.trim())?;
+        Some((c, f))
+    })
 }
 
 /// The home of `uid`, from /etc/passwd.
@@ -1933,6 +1943,7 @@ mod tests {
                 clip: true,
                 resize: false,
                 desktop: false,
+                keymap: false,
             },
         )
         .unwrap();

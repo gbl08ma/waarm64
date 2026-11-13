@@ -165,6 +165,7 @@ impl Harness {
             net: s("net"),
         };
         let trim_table = s("mountinfo");
+        let (environment, loadkeys) = (s("environment"), s("loadkeys"));
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
         let (mine, theirs) = socketpair(
@@ -185,6 +186,8 @@ impl Harness {
                 mountinfo: trim_table,
             };
             a.fitrim = record_trim;
+            a.environment = environment;
+            a.loadkeys_at = vec![loadkeys];
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -484,6 +487,72 @@ fn a_child_for_the_screens_size_hears_the_hello_and_the_size_first() {
     );
     assert!(h.echoed(frame::HELLO, 2000), "the new child's HELLO");
     assert!(!h.echoed(frame::DISPLAY, 300), "no size for it");
+}
+
+#[test]
+fn applies_the_pages_layout_where_the_session_hasnt_it() {
+    use crate::keymap::Keymap;
+    use std::os::unix::fs::PermissionsExt;
+    let mut h = Harness::start("keymap");
+    let root = h.root.clone();
+    let r = |p: &str| root.join(p);
+    let km = |layout: &str, variant: &str, vc: &str| {
+        Keymap {
+            layout: layout.into(),
+            model: "pc105".into(),
+            variant: variant.into(),
+            vc: vc.into(),
+        }
+        .encode()
+    };
+    // The boot set German (the page's credentials' script); kbd's loadkeys there, recording its calls.
+    std::fs::write(
+        r("environment"),
+        "XKB_DEFAULT_LAYOUT=de\nXKB_DEFAULT_MODEL=pc105\n",
+    )
+    .unwrap();
+    std::fs::write(
+        r("loadkeys"),
+        format!("#!/bin/sh\necho \"$*\" >> {}\n", r("loaded").display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(r("loadkeys"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let loaded = || std::fs::read_to_string(r("loaded")).unwrap_or_default();
+    let caps = frame::cap::TIME | frame::cap::DESKTOP | frame::cap::KEYMAP;
+    h.page.send(frame::HELLO, &hello_with(caps));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::KEYMAP, 0, "the agent sets the layout");
+    // The page's is the boot's: nothing done.
+    h.page.send(frame::KEYMAP, &km("de", "", "de-latin1"));
+    let uid = rustix::process::getuid().as_raw();
+    h.logind(
+        "sessions/3",
+        &format!("UID={uid}\nCLASS=user\nSTATE=active\n"),
+    );
+    h.logind("seats/seat0", "IS_SEAT0=1\nACTIVE=3\n");
+    assert!(h.echoed(frame::HELLO, 3000), "the child");
+    assert!(!h.echoed(frame::KEYMAP, 300), "the session has it");
+    // Portuguese (a snapshot of another setting restored): to the child, and the consoles' keymap loaded.
+    h.page.send(frame::KEYMAP, &km("pt", "", "pt-latin1"));
+    assert!(h.echoed(frame::KEYMAP, 1000), "to the child");
+    let end = Instant::now() + Duration::from_secs(5);
+    while loaded().is_empty() && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(loaded(), "-q pt-latin1\n");
+    // Again: the session has it now. A name that isn't plain: dropped.
+    h.page.send(frame::KEYMAP, &km("pt", "", "pt-latin1"));
+    h.page.send(frame::KEYMAP, &km("us;exec", "", ""));
+    assert!(!h.echoed(frame::KEYMAP, 300));
+    // A new session's child hears it first, after the HELLO.
+    h.logind(
+        "sessions/4",
+        &format!("UID={uid}\nCLASS=user\nSTATE=active\n"),
+    );
+    h.logind("seats/seat0", "IS_SEAT0=1\nACTIVE=4\n");
+    assert!(h.echoed(frame::HELLO, 3000), "the new child");
+    assert!(h.echoed(frame::KEYMAP, 1000), "and the layout");
+    assert_eq!(loaded(), "-q pt-latin1\n", "loaded once");
 }
 
 #[test]

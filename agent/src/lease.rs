@@ -192,6 +192,11 @@ fn reaped(pid: Option<Pid>) -> bool {
     }
 }
 
+/// A job's child ended (its pidfd readable): reaped; whether it exited with 0.
+pub fn reap(j: Job) -> bool {
+    reaped(Some(j.pid))
+}
+
 /// The tool's child ended (its pidfd readable): reaped; LEASED's status.
 pub fn done(j: Job) -> u8 {
     if reaped(Some(j.pid)) {

@@ -35,6 +35,7 @@
 
 use crate::clip::{self, Hash};
 use crate::frame::{self, ack};
+use crate::keymap;
 use crate::log;
 use crate::outputs::{self, Outputs};
 use crate::prelude::*;
@@ -264,6 +265,7 @@ pub struct Jobs {
     pub clip: bool,
     pub resize: bool,
     pub desktop: bool,
+    pub keymap: bool,
 }
 
 impl Jobs {
@@ -272,11 +274,12 @@ impl Jobs {
             clip: caps & (frame::cap::TEXT | frame::cap::IMAGE) != 0,
             resize: caps & frame::cap::DISPLAY != 0,
             desktop: caps & frame::cap::DESKTOP != 0,
+            keymap: caps & frame::cap::KEYMAP != 0,
         }
     }
 
     pub fn any(&self) -> bool {
-        self.clip || self.resize || self.desktop
+        self.clip || self.resize || self.desktop || self.keymap
     }
 }
 
@@ -321,6 +324,10 @@ struct Child {
     want: Option<(u32, u32)>,
     /// The graphical session's state last said (DESKTOP, `frame::desktop`).
     desktop: u8,
+    /// The page's layout (KEYMAP: the root sends it only where the session hasn't it), and whether this session's
+    /// compositor or X server was given it.
+    keymap: Option<keymap::Keymap>,
+    keyed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -379,6 +386,7 @@ pub fn serve(
             clip: true,
             resize: false,
             desktop: false,
+            keymap: false,
         },
     )
 }
@@ -457,6 +465,8 @@ pub fn serve_at(
         jobs: at.jobs,
         want: None,
         desktop: frame::desktop::NONE,
+        keymap: None,
+        keyed: false,
     };
     c.connect(true);
     c.x_try(true, false);
@@ -470,6 +480,7 @@ pub fn serve_at(
             c.x_events(evs);
         }
         c.say_desktop();
+        c.key_step();
         c.flush();
         if let Some(why) = c.stop.take() {
             return Ok(why);
@@ -734,7 +745,8 @@ impl Child {
                 .wl
                 .as_ref()
                 .is_none_or(|w| w.inited && w.device.is_none());
-        let session = (self.jobs.resize || self.jobs.desktop) && self.wl.is_none();
+        let session =
+            (self.jobs.resize || self.jobs.desktop || self.jobs.keymap) && self.wl.is_none();
         !self.x11.is_empty() && (clip || session)
     }
 
@@ -756,6 +768,59 @@ impl Child {
         if self.jobs.desktop && now != self.desktop {
             self.desktop = now;
             self.send(frame::DESKTOP, |o| o.push(now));
+        }
+    }
+
+    /// The page's layout, given once to each session's compositor (sway's IPC) or X server (`setxkbmap`) as it comes.
+    fn key_step(&mut self) {
+        let now = self.desktop_now();
+        if now == frame::desktop::NONE {
+            self.keyed = false;
+            return;
+        }
+        let Some(k) = self.keymap.clone() else {
+            return;
+        };
+        if self.keyed {
+            return;
+        }
+        self.keyed = true;
+        let done = if now == frame::desktop::WAYLAND {
+            match keymap::sway_socket(&self.runtime, self.uid) {
+                Some(sock) => keymap::sway_run(&sock, &k.sway_commands())
+                    .map_err(|e| log("keymap: sway's IPC", Some(e)))
+                    .ok(),
+                None => {
+                    log(
+                        "keymap: the compositor isn't sway: its layout is its own",
+                        None,
+                    );
+                    return;
+                }
+            }
+        } else {
+            let Some(n) = self.x.as_ref().map(|x| x.display) else {
+                return;
+            };
+            let procs = x11::processes("/proc", self.uid);
+            let home = x11::home_of(self.uid);
+            let auth = x11::cookie_file(n, &procs, home.as_deref());
+            let r = keymap::setxkbmap(&k, n, auth.as_deref());
+            if r.is_none() {
+                log(
+                    "keymap: no setxkbmap: the X server's layout is its own",
+                    None,
+                );
+            }
+            r
+        };
+        match done {
+            Some(true) => log(
+                &format!("keymap: the session's layout set ({})", k.layout),
+                None,
+            ),
+            Some(false) => log("keymap: the session refused the layout", None),
+            None => {}
         }
     }
 
@@ -978,6 +1043,10 @@ impl Child {
                 if let Some((id, n)) = frame::decode_more(p) {
                     self.page_more(id, n);
                 }
+            }
+            frame::KEYMAP => {
+                self.keymap = keymap::Keymap::decode(p);
+                self.keyed = false;
             }
             frame::DISPLAY if self.jobs.resize => {
                 if let Some(size) = frame::decode_display(p) {
@@ -1762,6 +1831,7 @@ pub fn x_jobs(jobs: Jobs, compositor: bool) -> Jobs {
         clip: jobs.clip,
         resize: jobs.resize && !compositor,
         desktop: jobs.desktop,
+        keymap: jobs.keymap && !compositor,
     }
 }
 
@@ -1787,6 +1857,7 @@ mod tests {
             clip: true,
             resize: true,
             desktop: true,
+            keymap: true,
         };
         assert_eq!(x_jobs(both, false), both, "an X11 session: both");
         assert_eq!(
@@ -1794,9 +1865,10 @@ mod tests {
             Jobs {
                 clip: true,
                 resize: false,
-                desktop: true
+                desktop: true,
+                keymap: false,
             },
-            "under a compositor (one without data-control): not the size"
+            "under a compositor (one without data-control): not the size, not the layout (the compositor's)"
         );
     }
 
@@ -1860,6 +1932,7 @@ mod tests {
                 clip: true,
                 resize: false,
                 desktop: false,
+                keymap: false,
             },
         };
         let child = std::thread::spawn(move || serve_at(theirs, at, 0));

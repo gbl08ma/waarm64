@@ -8,6 +8,7 @@
 // user sees: docs/devices.md "The desktop's state").
 import { DESKTOP } from '../../agent-frame.ts';
 import { AgentLink, pageCaps } from '../agent-link.ts';
+import type { KeyboardLayout } from '../keyboard.ts';
 import { clockSync } from '../settings.ts';
 import type { ClipboardShare } from '../clipboard.ts';
 import type { AgentChannels } from '../run/start-message.ts';
@@ -40,9 +41,12 @@ export class AgentActions {
   #timer: ReturnType<typeof setInterval> | undefined;
   /** The screen's size the guest was last asked for (web/app/areas/screen-view.ts `sent`; none: no virtio-gpu). */
   readonly #size: () => Size | undefined;
+  /** The keyboard layout the run gives its guest (web/app/areas/keys.svelte.ts `layout`; none: its own). */
+  readonly #layout: () => KeyboardLayout | undefined;
 
-  constructor(size: () => Size | undefined) {
+  constructor(size: () => Size | undefined, layout: () => KeyboardLayout | undefined) {
     this.#size = size;
+    this.#layout = layout;
   }
 
   /**
@@ -64,7 +68,11 @@ export class AgentActions {
     desktop(link.desktop);
     link.onDesktop = desktop;
     if (size) link.display(size);
-    link.onHello.push(up, () => this.syncClock());
+    link.onHello.push(
+      up,
+      () => this.syncClock(),
+      () => this.keymap(this.#layout()),
+    );
     let offset = Date.now() - performance.now();
     this.#timer = setInterval(() => {
       const now = Date.now() - performance.now();
@@ -87,6 +95,14 @@ export class AgentActions {
   /** The screen's size the guest is asked for now (a new window size, settled): the agent's session takes it too. */
   display(size: Size) {
     this.#link?.display(size);
+  }
+
+  /**
+   * The keyboard layout for the guest's running session (KEYMAP: the agent applies it where the session hasn't it), at
+   * each agent's HELLO and when the setting is saved while the machine runs; false: not sent (no layout, no agent).
+   */
+  keymap(l: KeyboardLayout | undefined): boolean {
+    return !!l && !!this.#link?.keymap(l);
   }
 
   /** The run's link, if it has one. */

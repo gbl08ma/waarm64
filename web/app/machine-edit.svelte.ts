@@ -140,6 +140,7 @@ export class MachineEdit {
       if (restartChanged(was, m) && this.running) throw new MsgError('machines:MachinesPage.otherTab');
       await updateMachine(this.#store, m);
       if (m.id === current.id) await page.netFollow();
+      if (m.id === current.id && m.keyboard !== was.keyboard) await page.keyboardFollow();
     });
     this.dirty = false;
   };

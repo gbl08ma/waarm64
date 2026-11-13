@@ -101,6 +101,8 @@ export type Page = {
   netLogoutConnection(c: Connection): Promise<void>;
   /** The page's machine's record was saved: its adapters take effect. */
   netFollow(): Promise<void>;
+  /** The page's machine's keyboard layout setting saved: its running session takes it (web/app/areas/keyboard-follow.ts). */
+  keyboardFollow(): Promise<void>;
   netExit(adapter: number, peer: string): Promise<void>;
   netRoutes(adapter: number, on: boolean): Promise<void>;
   /** A connection's edit (what changes without a new node), name, deletion (after asking), and tailcat's New address (after asking: false if not). */

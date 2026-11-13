@@ -24,6 +24,7 @@ import {
   encodeDisplay,
   encodeFrame,
   encodeHello,
+  encodeKeymap,
   encodeTime,
   FRAME,
   FrameReader,
@@ -33,17 +34,18 @@ import {
   type Hello,
 } from '../agent-frame.ts';
 import type { AgentFromDevice, AgentToDevice } from '../vsock-device.ts';
+import type { KeyboardLayout } from './keyboard.ts';
 
 /** The most bytes in flight to the guest (sent to the device, not yet in the guest's buffers). */
 export const WINDOW = 256 << 10;
 
 /**
- * What the page says it does (web/agent-frame.ts `CAP`): the clock and the desktop's state always (every machine has a
- * screen), the clipboard's frames where it is shared, the screen's size where the guest's screen follows the page's
+ * What the page says it does (web/agent-frame.ts `CAP`): the clock, the desktop's state and the layout always (every
+ * machine has a screen), the clipboard's frames where it is shared, the screen's size where the guest's screen follows the page's
  * (`display`: virtio-gpu's).
  */
 export const pageCaps = (clipboard: boolean, display = false) =>
-  CAP.TIME | CAP.DESKTOP | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0) | (display ? CAP.DISPLAY : 0);
+  CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0) | (display ? CAP.DISPLAY : 0);
 
 /** RENEW's random bytes. */
 export const RENEW_BYTES = 64;
@@ -185,6 +187,14 @@ export class AgentLink {
    */
   trim(ms: number): Promise<number | undefined> {
     return this.ask(FRAME.TRIM, CAP.TRIM, FRAME.TRIMMED, ms);
+  }
+
+  /**
+   * The machine's keyboard layout, which the agent gives the running session where it hasn't it (KEYMAP); false (not
+   * sent) before the agent said it can. The run's actions say it at each agent's HELLO (web/app/areas/agent-actions.ts).
+   */
+  keymap(k: KeyboardLayout): boolean {
+    return !!this.agent && (this.agent.caps & CAP.KEYMAP) !== 0 && this.send(FRAME.KEYMAP, encodeKeymap(k));
   }
 
   /** Sends `type` to an agent with `cap`, and waits up to `ms` for its answer (`answer`'s u8 status). */
