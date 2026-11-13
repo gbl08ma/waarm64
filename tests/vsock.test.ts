@@ -249,37 +249,42 @@ test("vsock: the agent's connection: opened, its bytes to the page, the page's t
   const d = agentDevice(g);
   d.dev.request(g.packet(2000, OP.REQUEST, { to: AGENT_PORT }));
   await d.settle(1);
-  assert.deepEqual(d.got, [{ type: 'open', open: true }]);
+  assert.deepEqual(d.got, [{ type: 'open', open: true, conn: 1 }]);
   const [response] = packets(g, d.buffers);
   assert.deepEqual([response.h.op, response.h.srcPort, response.h.dstPort, response.h.bufAlloc], [OP.RESPONSE, AGENT_PORT, 2000, AGENT_BUF]);
   d.dev.request(g.packet(2000, OP.RW, { to: AGENT_PORT, payload: text('hello') }));
   await d.settle(2);
-  assert.deepEqual(d.got[1], { type: 'data', bytes: text('hello') });
-  await d.page({ type: 'data', bytes: text('from the page') });
+  assert.deepEqual(d.got[1], { type: 'data', bytes: text('hello'), conn: 1 });
+  await d.page({ type: 'data', bytes: text('from the page'), conn: 1 });
   await d.settle(3);
-  assert.deepEqual(d.got[2], { type: 'taken', n: 13 });
+  assert.deepEqual(d.got[2], { type: 'taken', n: 13, conn: 1 });
   const rw = packets(g, d.buffers).at(-1)!;
   assert.deepEqual([rw.h.op, rw.h.len, rw.h.fwdCnt, new TextDecoder().decode(rw.payload)], [OP.RW, 13, 5, 'from the page'], "the page's bytes, and the agent's taken");
   // The agent closes: RST back, the page hears it, and its bytes go nowhere.
   d.dev.request(g.packet(2000, OP.SHUTDOWN, { to: AGENT_PORT, flags: SHUTDOWN_RCV | SHUTDOWN_SEND }));
   await d.settle(4);
-  assert.deepEqual(d.got[3], { type: 'open', open: false });
+  assert.deepEqual(d.got[3], { type: 'open', open: false, conn: 1 });
   assert.equal(packets(g, d.buffers).at(-1)!.h.op, OP.RST);
   const before = g.done.length;
-  await d.page({ type: 'data', bytes: text('lost') });
+  await d.page({ type: 'data', bytes: text('lost'), conn: 1 });
   assert.equal(g.done.length, before);
 });
 
-test("vsock: the agent's connection: the page's bytes as the guest's credit and buffers allow (a CREDIT_REQUEST when it runs out); the device's credit given back as it takes", async () => {
+test("vsock: the agent's connection: the page's bytes as the guest's credit and buffers allow (nothing asked when it runs out); the device's credit given back as it takes", async () => {
   const g = guest();
   const d = agentDevice(g, 4);
   d.dev.request(g.packet(2001, OP.REQUEST, { to: AGENT_PORT, bufAlloc: 6000, fwdCnt: 0 }));
   await d.settle(1);
   // 10,000 bytes; the guest has room for 6,000, and three buffers of 4 KiB (one took the RESPONSE).
-  await d.page({ type: 'data', bytes: new Uint8Array(10_000).fill(7) });
+  await d.page({ type: 'data', bytes: new Uint8Array(10_000).fill(7), conn: 1 });
   const sent = () => packets(g, d.buffers).filter((p) => p.h.op === OP.RW).reduce((n, p) => n + p.h.len, 0);
   assert.equal(sent(), 6000, 'the credit');
-  assert.equal(packets(g, d.buffers).at(-1)!.h.op, OP.CREDIT_REQUEST, 'out of credit: asked');
+  // Out of credit: the device waits for the guest's own CREDIT_UPDATE (Linux sends one as its reader frees room); an
+  // update that frees nothing gets no answer (asking again would bounce packets with the guest's kernel: review 1).
+  const quiet = g.done.length;
+  d.dev.request(g.packet(2001, OP.CREDIT_UPDATE, { to: AGENT_PORT, bufAlloc: 6000, fwdCnt: 0 }));
+  assert.equal(g.done.length, quiet, 'nothing for an update that freed nothing');
+  assert.ok(!packets(g, d.buffers).some((p) => p.h.op === OP.CREDIT_REQUEST), 'no CREDIT_REQUEST');
   // The guest read it all: its credit update lets the rest go into new buffers.
   const more = [g.rxBuffer(), g.rxBuffer(), g.rxBuffer()];
   for (const b of more) d.dev.request(b);
@@ -303,12 +308,22 @@ test("vsock: the agent's connection: one at a time (a new one takes the old one'
   d.dev.request(g.packet(2002, OP.REQUEST, { to: AGENT_PORT }));
   d.dev.request(g.packet(2003, OP.REQUEST, { to: AGENT_PORT }));
   await d.settle(3);
-  assert.deepEqual(d.got, [{ type: 'open', open: true }, { type: 'open', open: false }, { type: 'open', open: true }]);
+  assert.deepEqual(d.got, [{ type: 'open', open: true, conn: 1 }, { type: 'open', open: false, conn: 1 }, { type: 'open', open: true, conn: 2 }]);
   assert.deepEqual(packets(g, d.buffers).map((p) => [p.h.dstPort, p.h.op]), [[2002, OP.RESPONSE], [2002, OP.RST], [2003, OP.RESPONSE]]);
+  // The page's messages for the old connection are dropped (review 2): its bytes and its reset.
+  const before = g.done.length;
+  await d.page({ type: 'data', bytes: text('the rest of a paste'), conn: 1 });
+  await d.page({ type: 'reset', conn: 1 });
+  assert.equal(g.done.length, before, "the old connection's bytes and reset: nothing");
+  // A REQUEST again from the same port (the agent's socket closed and the port reused) is a new connection, which
+  // the page hears (review 3).
+  d.dev.request(g.packet(2003, OP.REQUEST, { to: AGENT_PORT }));
+  await d.settle(5);
+  assert.deepEqual(d.got.slice(3), [{ type: 'open', open: false, conn: 2 }, { type: 'open', open: true, conn: 3 }]);
   // The page resets it (a stream out of step): RST, and the page hears it closed.
-  await d.page({ type: 'reset' });
-  await d.settle(4);
-  assert.deepEqual(d.got[3], { type: 'open', open: false });
+  await d.page({ type: 'reset', conn: 3 });
+  await d.settle(6);
+  assert.deepEqual(d.got[5], { type: 'open', open: false, conn: 3 });
   assert.deepEqual(packets(g, d.buffers).at(-1)!.h.op, OP.RST);
   d.dev.request(g.packet(2003, OP.RW, { to: AGENT_PORT, payload: text('x') }));
   assert.deepEqual(packets(g, d.buffers).at(-1)!.h.op, OP.RST, 'its packets refused');
@@ -322,8 +337,8 @@ test("vsock: the agent's connection: one at a time (a new one takes the old one'
   // A device reset drops it: the page hears it closed.
   d.dev.request(g.packet(2005, OP.REQUEST, { to: AGENT_PORT }));
   d.dev.reset();
-  await d.settle(6);
-  assert.deepEqual(d.got.slice(4), [{ type: 'open', open: true }, { type: 'open', open: false }]);
+  await d.settle(8);
+  assert.deepEqual(d.got.slice(6), [{ type: 'open', open: true, conn: 4 }, { type: 'open', open: false, conn: 4 }]);
 });
 
 test("vsock: the page's end hears READY=1, not the rest", async () => {

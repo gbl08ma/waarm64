@@ -15,7 +15,8 @@
 // end for it (`agent`): a byte stream both ways under vsock's credit, the agent's frames (web/agent-frame.ts) in it.
 // The page hears the connection open and close (`open`), the agent's bytes (`data`), and how many of its own the guest
 // took (`taken`); a page that wants the stream begun afresh resets the connection (`reset`), and the agent connects
-// again.
+// again. Each connection has a number (`conn`) both ways: the page's messages for an earlier one are dropped, and the
+// page drops the device's (the agent connects again at once, so the two cross).
 
 import { bytes, type Ram, type Segment } from './ram.ts';
 import type { Backend, Ctx, Request } from './devices.ts';
@@ -72,11 +73,11 @@ export type VsockFromDevice = { type: 'notify'; lines: string[] };
  * took.
  */
 export type AgentFromDevice =
-  | { type: 'open'; open: boolean }
-  | { type: 'data'; bytes: Uint8Array }
-  | { type: 'taken'; n: number };
+  | { type: 'open'; open: boolean; conn: number }
+  | { type: 'data'; bytes: Uint8Array; conn: number }
+  | { type: 'taken'; n: number; conn: number };
 /** The page's agent end to the device: bytes for the agent, or the connection reset (the agent connects again). */
-export type AgentToDevice = { type: 'data'; bytes: Uint8Array } | { type: 'reset' };
+export type AgentToDevice = { type: 'data'; bytes: Uint8Array; conn: number } | { type: 'reset'; conn: number };
 
 /** `port`: systemd's notifications; `agent`: the guest agent's end (none: the agent's connections are refused). */
 export type VsockSpec = { type: 'vsock'; port?: MessagePort; agent?: MessagePort };
@@ -141,6 +142,8 @@ type Conn = { chunks: Uint8Array[]; size: number; fwdCnt: number };
  * the guest's receive space (`bufAlloc`, `peerFwd`) and the bytes sent it (`txCnt`); the page's bytes not sent yet.
  */
 type AgentConn = {
+  /** Its number, counted from 1 (the page's messages name it). */
+  id: number;
   port: number;
   fwdCnt: number;
   told: number;
@@ -149,13 +152,12 @@ type AgentConn = {
   txCnt: number;
   pending: Uint8Array[];
   held: number;
-  /** A CREDIT_REQUEST sent and not answered: not sent again. */
-  asked: boolean;
 };
 
 export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
   const conns = new Map<number, Conn>();
   let agent: AgentConn | undefined;
+  let lastConn = 0;
   const rx: Request[] = [];
   let out: Uint8Array[] = [];
   const events: Request[] = [];
@@ -177,15 +179,9 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
     let taken = 0;
     while (agent && rx.length && agent.held) {
       const room = Math.min(credit(agent), rx[0].write.reduce((n, s) => n + s.len, 0) - HDR);
-      if (room <= 0) {
-        // Out of credit: the guest's next packet says how much it has read (a CREDIT_REQUEST asks it to say).
-        if (!agent.asked && credit(agent) === 0) {
-          agent.asked = true;
-          out.push(agentHeader(agent, OP.CREDIT_REQUEST));
-          flushOut();
-        }
-        break;
-      }
+      // Out of credit: Linux's receiver sends CREDIT_UPDATE by itself as its reader frees room. (A CREDIT_REQUEST
+      // here is answered at once, freed room or not, and the two sides bounced packets until the agent read.)
+      if (room <= 0) break;
       const chunk = take(agent.pending, room);
       agent.held -= chunk.length;
       const packet = new Uint8Array(HDR + chunk.length);
@@ -196,7 +192,7 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
       ctx.complete(r.w0, scatter(ctx.ram(), r.write, packet));
       taken += chunk.length;
     }
-    if (taken) toPage({ type: 'taken', n: taken });
+    if (taken && agent) toPage({ type: 'taken', n: taken, conn: agent.id });
   };
   const flushEvents = () => {
     if (!resetPending || !events.length) return;
@@ -239,36 +235,37 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
   /** The agent's connection gone (the page hears it). */
   const dropAgent = () => {
     if (!agent) return;
+    const conn = agent.id;
     agent = undefined;
-    toPage({ type: 'open', open: false });
+    toPage({ type: 'open', open: false, conn });
   };
 
   const onAgent = (h: Header, payload: Uint8Array) => {
     const port = h.srcPort;
     if (h.op === OP.REQUEST) {
       if (!d.agent) return send(port, AGENT_PORT, OP.RST);
-      // One connection: a new one (the agent started again) takes the old one's place.
-      if (agent && agent.port !== port) {
-        send(agent.port, AGENT_PORT, OP.RST);
+      // One connection: a new one (the agent started again, or its port reused) takes the old one's place.
+      if (agent) {
+        if (agent.port !== port) send(agent.port, AGENT_PORT, OP.RST);
         dropAgent();
       }
-      const fresh = !agent;
-      agent = { port, fwdCnt: 0, told: 0, bufAlloc: h.bufAlloc, peerFwd: h.fwdCnt, txCnt: 0, pending: [], held: 0, asked: false };
+      const id = ++lastConn;
+      agent = { id, port, fwdCnt: 0, told: 0, bufAlloc: h.bufAlloc, peerFwd: h.fwdCnt, txCnt: 0, pending: [], held: 0 };
       send(port, AGENT_PORT, OP.RESPONSE);
-      if (fresh) toPage({ type: 'open', open: true });
+      toPage({ type: 'open', open: true, conn: id });
       return;
     }
     const a = agent;
     if (!a || a.port !== port) return h.op === OP.RST ? undefined : send(port, AGENT_PORT, OP.RST);
     if (h.op === OP.RST) return dropAgent();
     // Every packet says the guest's receive space.
-    [a.bufAlloc, a.peerFwd, a.asked] = [h.bufAlloc, h.fwdCnt, false];
+    [a.bufAlloc, a.peerFwd] = [h.bufAlloc, h.fwdCnt];
     switch (h.op) {
       case OP.RW:
         if (payload.length) {
           a.fwdCnt = (a.fwdCnt + payload.length) >>> 0;
           const bytes = payload.slice();
-          toPage({ type: 'data', bytes }, [bytes.buffer]);
+          toPage({ type: 'data', bytes, conn: a.id }, [bytes.buffer]);
           if (((a.fwdCnt - a.told) >>> 0) >= CREDIT_STEP) send(port, AGENT_PORT, OP.CREDIT_UPDATE);
         }
         break;
@@ -329,7 +326,8 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
   };
 
   const fromPage = (m: AgentToDevice | undefined) => {
-    if (!agent) return;
+    // An earlier connection's (the page hadn't heard it end yet): dropped.
+    if (!agent || m?.conn !== agent.id) return;
     if (m?.type === 'reset') {
       send(agent.port, AGENT_PORT, OP.RST);
       return dropAgent();

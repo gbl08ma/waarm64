@@ -342,11 +342,16 @@ again) resets the old, and the page hears it close and open. Both ways carry byt
 page as `data` at once, so the device's `buf_alloc` (`AGENT_BUF`, 256 KiB) is credit only, given back (CREDIT_UPDATE)
 each time a quarter of it has been taken since the guest was last told; the page's bytes (`data`, at most
 `MAX_PENDING`, 1 MiB, held) go into the guest's receive buffers as RW packets, each as large as the buffer and the
-guest's credit (its `buf_alloc` less what was sent past its `fwd_cnt`, from every packet's header) allow, with a
-CREDIT_REQUEST when the credit runs out, and the page hears how many were `taken` (`AgentLink`'s window). The agent's
+guest's credit (its `buf_alloc` less what was sent past its `fwd_cnt`, from every packet's header) allow; out of
+credit, it waits for the guest's own CREDIT_UPDATE, which Linux sends as its reader frees room (a CREDIT_REQUEST is
+answered at once, room or not, and the two sides bounced packets until the agent read: found by the track's review),
+and the page hears how many were `taken` (`AgentLink`'s window). The agent's
 SHUTDOWN or RST ends it (the device answers SHUTDOWN with RST), as does the page's `reset` (RST to the guest) and a
-device reset; the page hears `open` false. A restore resets the transport (below), so the restored agent connects
-again.
+device reset; the page hears `open` false. Each connection has a number (`conn`, from 1), in every message both ways:
+the agent connects again at once, so the page's messages for one (the rest of a paste, a reset) can reach the device
+after the next has opened, and the device's `data` and `taken` the page after; each side drops the other's for a
+connection that isn't the current one, and the link asks one reset a connection. A REQUEST again from the same guest
+port is a new connection too. A restore resets the transport (below), so the restored agent connects again.
 
 The device answers every connection, whatever the page does, because the guest's PID 1 is the sender and waits:
 systemd 256 and later sends, `shutdown(SHUT_WR)`s, then `recv`s until EOF (254 and 255 `close`). A REQUEST to

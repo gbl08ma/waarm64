@@ -67,17 +67,18 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   const link = new AgentLink(port1, pageCaps(true));
   const sent: Uint8Array[] = [];
   const dev = { bytes: 0 };
-  port2.onmessage = (e) => { sent.push(e.data.bytes); dev.bytes += e.data.bytes.length; };
+  const conns: number[] = [];
+  port2.onmessage = (e) => { sent.push(e.data.bytes); dev.bytes += e.data.bytes.length; conns.push(e.data.conn); };
   const settle = () => new Promise((r) => setTimeout(r, 30));
   assert.equal(link.send(FRAME.HELLO), false, 'closed: nothing sent');
   const opens: boolean[] = [];
   link.onOpen = (o) => opens.push(o);
-  port2.postMessage({ type: 'open', open: true });
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
   await settle();
   assert.deepEqual(opens, [true]);
   // The page's HELLO first, at each opening, and the switch: taken by the guest at once here.
   assert.deepEqual(sent.map((b) => b[4]), [FRAME.HELLO, FRAME.RESUME]);
-  port2.postMessage({ type: 'taken', n: dev.bytes });
+  port2.postMessage({ type: 'taken', n: dev.bytes, conn: 1 });
   sent.length = 0;
   dev.bytes = 0;
   // Six frames of 64 KiB (and 5 bytes of header each): sent until the bytes in flight reach WINDOW, the fourth past it.
@@ -87,27 +88,62 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   assert.equal(sent.length, Math.ceil(WINDOW / (65536 + 5)));
   assert.ok(link.backlog >= 6 * (65536 + 5) - 1);
   // The guest takes them: the rest go.
-  port2.postMessage({ type: 'taken', n: dev.bytes });
+  port2.postMessage({ type: 'taken', n: dev.bytes, conn: 1 });
   await settle();
   assert.equal(sent.length, 6);
   // Frames in, cut anywhere.
   const frames: number[] = [];
   link.onFrame = (f) => frames.push(f.type);
   const both = new Uint8Array([...encodeFrame(FRAME.OFFER, new Uint8Array(3)), ...encodeFrame(FRAME.REQUEST)]);
-  port2.postMessage({ type: 'data', bytes: both.subarray(0, 6) });
-  port2.postMessage({ type: 'data', bytes: both.subarray(6) });
+  port2.postMessage({ type: 'data', conn: 1, bytes: both.subarray(0, 6) });
+  port2.postMessage({ type: 'data', conn: 1, bytes: both.subarray(6) });
   await settle();
   assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST]);
   // A half frame, then the agent closes and reopens: the half is forgotten, and so is the queue.
-  port2.postMessage({ type: 'data', bytes: both.subarray(0, 3) });
+  port2.postMessage({ type: 'data', conn: 1, bytes: both.subarray(0, 3) });
   link.send(FRAME.DATA, payload);
-  port2.postMessage({ type: 'open', open: false });
-  port2.postMessage({ type: 'open', open: true });
-  port2.postMessage({ type: 'data', bytes: encodeFrame(FRAME.HELLO) });
+  port2.postMessage({ type: 'open', open: false, conn: 1 });
+  port2.postMessage({ type: 'open', open: true, conn: 2 });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.OFFER) });
+  port2.postMessage({ type: 'data', conn: 2, bytes: encodeFrame(FRAME.HELLO) });
   await settle();
   assert.deepEqual(opens, [true, false, true]);
-  assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST, FRAME.HELLO]);
+  assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST, FRAME.HELLO]); // the old connection's OFFER after the new one opened: dropped
   assert.equal(link.backlog, encodeFrame(FRAME.HELLO, encodeHello({ version: VERSION, caps: pageCaps(true) })).length + encodeFrame(FRAME.RESUME).length, 'only the new opening\'s HELLO and RESUME');
+  assert.deepEqual([...new Set(conns)], [1, 2], 'each frame for its connection');
+  link.close();
+  port2.close();
+});
+
+test("the link: TIME goes ahead of the frames queued, and takes the time as it goes to the device (review 4)", async () => {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1, pageCaps(true));
+  const sent: Frame[] = [];
+  const reader = new FrameReader();
+  port2.onmessage = (e) => { if (e.data.type === 'data') sent.push(...reader.push(e.data.bytes)); };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.TEXT })) });
+  await settle();
+  port2.postMessage({ type: 'taken', n: 1 << 20, conn: 1 });
+  // A backlog past the window, then TIME: it goes before the queued frames, stamped when it goes.
+  const payload = new Uint8Array(65536);
+  for (let i = 0; i < 8; i++) link.send(FRAME.DATA, payload);
+  const now = Date.now;
+  let clock = 1_000_000;
+  Date.now = () => clock;
+  try {
+    assert.equal(link.time(), true);
+    clock = 2_000_000; // the backlog drains later
+    port2.postMessage({ type: 'taken', n: WINDOW, conn: 1 });
+    await settle();
+  } finally {
+    Date.now = now;
+  }
+  const after = sent.filter((f) => f.type !== FRAME.HELLO && f.type !== FRAME.RESUME);
+  const t = after.findIndex((f) => f.type === FRAME.TIME);
+  assert.ok(t >= 0 && after.slice(t + 1).filter((f) => f.type === FRAME.DATA).length >= 3, 'ahead of the queued frames');
+  assert.equal(new DataView(after[t].payload.buffer, after[t].payload.byteOffset).getBigUint64(0, true), 2_000_000n * 1_000_000n);
   link.close();
   port2.close();
 });
@@ -145,11 +181,11 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   const reader = new FrameReader();
   port2.onmessage = (e) => {
     sent.push(...reader.push(e.data.bytes));
-    port2.postMessage({ type: 'taken', n: e.data.bytes.length });
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
   };
   const settle = () => new Promise((r) => setTimeout(r, 30));
   assert.equal(link.type('ls\n'), false, 'closed');
-  port2.postMessage({ type: 'open', open: true });
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
   await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
@@ -158,7 +194,7 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
   link.onHello.push((h) => hellos.push(h));
-  port2.postMessage({ type: 'data', bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | 0x100 })) });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | 0x100 })) });
   await settle();
   assert.deepEqual(hellos, [{ version: 1, caps: CAP.TYPE | 0x100 }]);
   assert.equal(link.canType, true);
@@ -172,8 +208,8 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   assert.equal(link.type('no'), false);
   await settle();
   assert.deepEqual(sent.slice(2).map((f) => f.type), [FRAME.PAUSE]);
-  port2.postMessage({ type: 'open', open: false });
-  port2.postMessage({ type: 'open', open: true });
+  port2.postMessage({ type: 'open', open: false, conn: 1 });
+  port2.postMessage({ type: 'open', open: true, conn: 2 });
   await settle();
   assert.equal(link.agent, undefined, "a new opening: the agent's HELLO is to come");
   assert.deepEqual(sent.slice(3).map((f) => f.type), [FRAME.HELLO, FRAME.PAUSE]);
@@ -1025,20 +1061,20 @@ test("the link: TIME once the agent said it can; a machine without the clipboard
     toDevice.push(e.data);
     if (e.data.type !== 'data') return;
     sent.push(...reader.push(e.data.bytes));
-    port2.postMessage({ type: 'taken', n: e.data.bytes.length });
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
   };
   const settle = () => new Promise((r) => setTimeout(r, 30));
-  port2.postMessage({ type: 'open', open: true });
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
   await settle();
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO], 'no clipboard: no switch');
   assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME });
   assert.equal(link.time(1000), false, "before the agent's HELLO");
-  port2.postMessage({ type: 'data', bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE })) });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE })) });
   await settle();
   assert.equal(link.time(1000), false, 'an agent without CAP.TIME');
-  port2.postMessage({ type: 'open', open: false });
-  port2.postMessage({ type: 'open', open: true });
-  port2.postMessage({ type: 'data', bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
+  port2.postMessage({ type: 'open', open: false, conn: 1 });
+  port2.postMessage({ type: 'open', open: true, conn: 2 });
+  port2.postMessage({ type: 'data', conn: 2, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
   await settle();
   assert.equal(link.time(1_763_000_000_123.5), true);
   await settle();
@@ -1046,9 +1082,13 @@ test("the link: TIME once the agent said it can; a machine without the clipboard
   assert.equal(t.length, 1);
   assert.equal(new DataView(t[0].payload.buffer, t[0].payload.byteOffset).getBigUint64(0, true), 1_763_000_000_123_500_000n);
   // Out of step (a length that can't be): the page resets the connection; the agent connects again.
-  port2.postMessage({ type: 'data', bytes: new Uint8Array([0, 0, 0, 0, 1, 2, 3]) });
+  port2.postMessage({ type: 'data', conn: 2, bytes: new Uint8Array([0, 0, 0, 0, 1, 2, 3]) });
   await settle();
-  assert.deepEqual(toDevice.at(-1), { type: 'reset' });
+  assert.deepEqual(toDevice.at(-1), { type: 'reset', conn: 2 });
+  // Its reader stays broken until the connection ends: one reset, not one a message (a later one could end the next connection).
+  port2.postMessage({ type: 'data', conn: 2, bytes: new Uint8Array([9, 9, 9, 9]) });
+  await settle();
+  assert.equal(toDevice.filter((m) => m.type === 'reset').length, 1);
   link.close();
   port2.close();
 });
@@ -1472,7 +1512,7 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   port2.onmessage = (e) => {
     if (e.data.type !== 'data') return;
     times.push(...reader.push(e.data.bytes).filter((f) => f.type === FRAME.TIME));
-    port2.postMessage({ type: 'taken', n: e.data.bytes.length });
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
   };
   const settle = () => new Promise((r) => setTimeout(r, 30));
   let ups = 0;
@@ -1486,8 +1526,8 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => ups++)!;
   assert.equal(link.caps, CAP.TIME);
   assert.equal(actions.syncClock(), false, 'no agent yet');
-  port2.postMessage({ type: 'open', open: true });
-  port2.postMessage({ type: 'data', bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
   await settle();
   assert.equal(ups, 1, 'the HELLO: the guest is up');
   assert.equal(times.length, 1, 'TIME at the HELLO');
@@ -1509,6 +1549,14 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   t.mock.timers.tick(SLEEP_CHECK_MS);
   await settle();
   assert.equal(times.length, 3);
-  actions.begin({ clipboard: false, agentStub: false }, () => undefined);
+  // The run ends (review 5): its link closed, the sleep check stopped, nothing to set.
+  search = '';
+  actions.end();
+  assert.equal(actions.syncClock(), false, 'after the run');
+  assert.equal((g.window as { __agent?: unknown }).__agent, undefined);
+  jump += SLEEP_GAP_MS + 1000;
+  t.mock.timers.tick(SLEEP_CHECK_MS);
+  await settle();
+  assert.equal(times.length, 3);
   port2.close();
 });

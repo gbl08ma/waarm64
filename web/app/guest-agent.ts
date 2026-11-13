@@ -9,8 +9,8 @@ import type { Credential } from './machine.ts';
 
 /**
  * The binary's fw_cfg file (Linux's qemu_fw_cfg shows it under /sys/firmware/qemu_fw_cfg/by_name/), gzipped: Linux reads
- * fw_cfg a byte at a time, an MMIO exit each (7–12 µs a byte under the JIT: 4.1 s for the 333 KiB binary, 1.3 s gzipped;
- * docs/plans/clipboard.md §3.1).
+ * fw_cfg a byte at a time, an MMIO exit each (3–12 µs a byte under the JIT: ~0.3 s for the ~83 KB gzipped binary of
+ * 133 KB; docs/clipboard.md "What it costs").
  */
 export const AGENT_FILE = 'opt/waarm64/agent';
 
@@ -107,7 +107,7 @@ export const agentCredentials = (description: string): Credential[] =>
     // The agent connects (and connects again) by itself; a failure that lasts (the binary unreadable, a crash) ends at
     // the start limit: 5 starts in 10 minutes, which starts RestartSec (5 s)
     // apart can reach (systemd's default, 5 in 10 s, they never do), rather than a restart every 5 s for the boot, each
-    // reading the binary out of fw_cfg again (1.3 s of a vCPU).
+    // reading the binary out of fw_cfg again (~0.3 s of a vCPU).
     unit: 'After=systemd-udev-trigger.service\nStartLimitIntervalSec=10min\nStartLimitBurst=5\n',
     wantedBy: 'multi-user.target',
     service: AGENT_SERVICE,

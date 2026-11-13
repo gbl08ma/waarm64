@@ -335,8 +335,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   every copy until reseeded; Linux reseeds on a VM generation ID change (`microsoft,vmgenid`, a device-tree binding
   the kernel supports), so the snapshot's restore should give a new generation ID, and virtio-rng should feed fresh
   entropy at once. The trigger: the script waits in the snapshot (on the serial console, a fw_cfg credential, or the
-  guest agent of [plans/agent.md](plans/agent.md), which also covers the clock's jump after a resume) and runs when the
-  page signals the resume. The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
+  guest agent, which already connects again at every restore and sets the clock: docs/devices.md "The guest's agent")
+  and runs when the page signals the resume. The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
   change under it (a chunked image's `id`, [remote-disks.md](remote-disks.md), makes that check exact; a whole file's
   URL doesn't). **How a visitor gets there** (the user's decision, 2026-10-23): an interstitial page first says what
   the project is, that it needs a host with enough memory and CPU, and that hundreds of MB will be downloaded; one
@@ -1316,8 +1316,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The ready marker is a per-machine regexp** over the serial output (Debian: agetty's
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
   has no serial getty would need its own. systemd 254+ guests on firmware machines say READY=1 on the notify socket
-  (devices.md "vsock"), and the clipboard agent's HELLO is a sign too; a guest with neither (no systemd, an older one)
-  still depends on the marker. Not built: a compositor's first cursor or 3D context on the virtio-gpu (desktops only).
+  (devices.md "vsock"), and the guest agent's HELLO is a sign too (on by default, systemd 256+); a guest with neither
+  (no systemd, an older one) still depends on the marker. Not built: a compositor's first cursor or 3D context on the virtio-gpu (desktops only).
 - **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
   EDK2's terminal driver, and a fast run of arrow keys can lose bytes (the PL011's FIFO against a guest that polls;
   frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
@@ -1380,16 +1380,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
-- **`vm.cantSave.notQuiet` on KDE's login screen** (the user, 2026-11-12): a snapshot whose sleep key (the clock
-  catch-up's, gone since 2026-11-13: no save puts the guest to sleep now) the guest's mouse undid failed so after the
-  10 s wait, and the machine seemed stuck afterwards. Not reproduced on the KDE image (`images/arch/desktop.sh --kde`)
-  nor on sway awake with the screen busy. The page holds the guest's input through a save, and `Vm.snapshot` waits
-  10 s (`QUIET_MS`) rather than 1000 round trips. If it comes back: which device wasn't quiet (its rings,
-  `config_gen`, `backlog`: core/src/virtio.rs `Transport::quiet`), said in the error's details.
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
-  carried ([devices.md](devices.md) "Across a suspend") and virtio-gpu stops as before. Not seen yet, and rarer since
-  snapshots no longer put the guest to sleep.
+  carried ([devices.md](devices.md) "Across a suspend") and virtio-gpu stops as before. Not seen yet; only a guest's own
+  suspend can hit it since snapshots no longer put the guest to sleep (2026-11-13).
 
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
   processes beside the page's snd snapshot test, once in eight runs (before the last bound change; none in 51 runs
@@ -1600,7 +1594,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   menu. A `Gamepad` has no identity past its `id` string and its index, and the browser lists it only after a button
   press, so an *attach at start* entry would wait for that press.
 - **Serial adapters the host's driver holds** (Linux's `ftdi_sio`, `cp210x`, `cdc_acm` without a udev rule): WebSerial
-  could feed a virtio-console port instead of the passthrough (the multiport console, plans/agent.md). Not built.
+  could feed a virtio-console port instead of the passthrough (a multiport console: the agent's was, until it moved to
+  vsock, plans/clipboard.md §2). Not built.
 - **A WebHID device across Suspend:** Snapshot and Suspend unplug every device first. The emulated HID device's
   state is small (idle rate, last reports), so it could be saved and its `HIDDevice` opened again at resume, keeping
   a game pad plugged in as far as the guest knows.

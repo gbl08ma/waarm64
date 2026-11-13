@@ -57,18 +57,19 @@ async function run(page: Page, cmd: string, ms = 30_000) {
  * collected (and taken at once), as a guest agent reading its vsock connection would.
  */
 const stub = (page: Page) => page.evaluate(() => {
-  const w = window as unknown as { __agentStub: MessagePort; __stubGot: number[] };
+  const w = window as unknown as { __agentStub: MessagePort; __stubGot: number[]; __stubConn: number };
   w.__stubGot = [];
-  w.__agentStub.onmessage = (e: MessageEvent<{ type: string; bytes?: Uint8Array }>) => {
-    if (e.data.type !== 'data' || !e.data.bytes) return;
+  w.__stubConn = 0;
+  w.__agentStub.onmessage = (e: MessageEvent<{ type: string; bytes?: Uint8Array; conn: number }>) => {
+    if (e.data.type !== 'data' || !e.data.bytes || e.data.conn !== w.__stubConn) return;
     w.__stubGot.push(...e.data.bytes);
-    w.__agentStub.postMessage({ type: 'taken', n: e.data.bytes.length });
+    w.__agentStub.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
   };
 });
 /** The "agent" connects (the page then sends HELLO and the switch), or its connection ends. */
-const openPort = (page: Page, open = true) => page.evaluate((open) => (window as unknown as { __agentStub: MessagePort }).__agentStub.postMessage({ type: 'open', open }), open);
+const openPort = (page: Page, open = true) => page.evaluate((open) => { const w = window as unknown as { __agentStub: MessagePort; __stubConn: number }; if (open) w.__stubConn++; w.__agentStub.postMessage({ type: 'open', open, conn: w.__stubConn }); }, open);
 /** The "agent" writes `bytes`. */
-const guestWrites = (page: Page, bytes: Uint8Array) => page.evaluate((b) => (window as unknown as { __agentStub: MessagePort }).__agentStub.postMessage({ type: 'data', bytes: new Uint8Array(b) }), [...bytes]);
+const guestWrites = (page: Page, bytes: Uint8Array) => page.evaluate((b) => { const w = window as unknown as { __agentStub: MessagePort; __stubConn: number }; w.__agentStub.postMessage({ type: 'data', bytes: new Uint8Array(b), conn: w.__stubConn }); }, [...bytes]);
 /** The "agent" reads `n` bytes: the frames in them. */
 async function guestReads(page: Page, n: number): Promise<Frame[]> {
   await page.waitForFunction((n) => (window as unknown as { __stubGot: number[] }).__stubGot.length >= n, n, { timeout: 10_000, polling: 50 })

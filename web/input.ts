@@ -28,7 +28,7 @@ const KEYS = new Map<string, number>([
   ['NumpadEqual', 117], ['NumpadComma', 121], ...ROW('F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24', 183),
   ['AudioVolumeMute', 113], ['AudioVolumeDown', 114], ['AudioVolumeUp', 115],
   ['MediaTrackNext', 163], ['MediaPlayPause', 164], ['MediaTrackPrevious', 165], ['MediaStop', 166],
-  // The power keys (systemd-logind powers off, suspends on them); the page's clock catch-up presses Sleep.
+  // The power keys (systemd-logind powers off, suspends on them); nothing of the page's presses them by itself.
   ['Power', 116], ['Sleep', 142], ['WakeUp', 143],
 ]);
 // `PointerEvent.buttons`' bits: left, right, middle, back, forward → BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA.

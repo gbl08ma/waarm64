@@ -12,6 +12,8 @@
 //
 // Each connection is a stream of its own, begun at a frame: a restore resets the guest's transport, so the agent
 // connects again. A stream that goes out of step (`broken`) is reset by the page, and the agent connects again too.
+// The device numbers the connections (`conn`): the link drops what comes of an earlier one and names its own in what
+// it sends, so nothing of one connection (the rest of a paste, a `taken` count, a reset) reaches the next.
 
 import {
   CAP,
@@ -48,8 +50,13 @@ export class AgentLink {
   /** Called with the agent's HELLO (each listener: the clipboard's, the clock's, the page's sign that the guest is up). */
   readonly onHello: ((h: Hello) => void)[] = [];
   private reader = new FrameReader();
-  private queue: Uint8Array[] = [];
+  /** Frames to send, and TIME's, made as it goes (its time then, not when queued). */
+  private queue: (Uint8Array | (() => Uint8Array))[] = [];
   private inflight = 0;
+  /** The device's number for the connection (0: none). */
+  private conn = 0;
+  /** The connection's reset is asked for: not again. */
+  private resetting = false;
   private port: MessagePort;
   /** What the page's HELLO says (`pageCaps`). */
   readonly caps: number;
@@ -73,12 +80,14 @@ export class AgentLink {
   }
 
   /**
-   * Sets the guest's clock to the host's (`ms`, `Date.now()`'s scale): TIME, after the agent's HELLO said it can;
-   * false (nothing sent) otherwise.
+   * Sets the guest's clock to the host's (`ms`, `Date.now()`'s scale; by default the time as the frame goes to the
+   * device): TIME, ahead of the frames queued, after the agent's HELLO said it can; false (nothing sent) otherwise.
    */
-  time(ms = Date.now()): boolean {
-    if (!this.agent || !(this.agent.caps & CAP.TIME) || !(this.caps & CAP.TIME)) return false;
-    return this.send(FRAME.TIME, encodeTime(ms));
+  time(ms?: number): boolean {
+    if (!this.open || !this.agent || !(this.agent.caps & CAP.TIME) || !(this.caps & CAP.TIME)) return false;
+    this.queue.unshift(() => encodeFrame(FRAME.TIME, encodeTime(ms ?? Date.now())));
+    this.pump();
+    return true;
   }
 
   /**
@@ -106,7 +115,7 @@ export class AgentLink {
 
   /** Bytes the page holds or has in flight, not yet in the guest. */
   get backlog() {
-    return this.inflight + this.queue.reduce((n, b) => n + b.length, 0);
+    return this.inflight + this.queue.reduce((n, b) => n + (typeof b === 'function' ? 13 : b.length), 0);
   }
 
   close() {
@@ -115,16 +124,21 @@ export class AgentLink {
 
   private pump() {
     while (this.inflight < WINDOW) {
-      const b = this.queue.shift();
-      if (!b) break;
+      const next = this.queue.shift();
+      if (!next) break;
+      const b = typeof next === 'function' ? next() : next;
       this.inflight += b.length;
-      this.port.postMessage({ type: 'data', bytes: b } satisfies AgentToDevice, [b.buffer]);
+      this.port.postMessage({ type: 'data', bytes: b, conn: this.conn } satisfies AgentToDevice, [b.buffer]);
     }
   }
 
   /** A message from the device: the agent connected or its connection ended, the page's bytes taken, the agent's bytes. */
   private fromDevice(m: AgentFromDevice | undefined) {
-    switch (m?.type) {
+    if (!m) return;
+    // A connection's opening makes it the link's; anything else of another one is an earlier connection's.
+    if (m.type === 'open' && m.open) this.conn = m.conn;
+    else if (m.conn !== this.conn) return;
+    switch (m.type) {
       case 'open':
         return this.opened(m.open);
       case 'taken':
@@ -144,6 +158,8 @@ export class AgentLink {
     this.reader.reset();
     this.queue = [];
     this.inflight = 0;
+    this.resetting = false;
+    if (!open) this.conn = 0;
     if (open) {
       this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: this.caps }));
       // The switch, said at each connection: an agent restored from a snapshot taken while paused is paused, and the
@@ -165,7 +181,10 @@ export class AgentLink {
       }
       this.onFrame?.(f);
     }
-    // Out of step (a frame's length that can't be): the connection reset, so the agent connects again.
-    if (this.reader.broken) this.port.postMessage({ type: 'reset' } satisfies AgentToDevice);
+    // Out of step (a frame's length that can't be): the connection reset, once, so the agent connects again.
+    if (this.reader.broken && !this.resetting) {
+      this.resetting = true;
+      this.port.postMessage({ type: 'reset', conn: this.conn } satisfies AgentToDevice);
+    }
   }
 }

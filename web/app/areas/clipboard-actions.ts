@@ -53,9 +53,12 @@ export class ClipboardActions {
     [this.#m, this.#replies, this.#canvas] = [m, replies, canvas];
   }
 
-  /** A run's sharing over its agent's link (none: no sharing, the machine has no agent or doesn't share). */
-  begin(link: AgentLink | undefined, share: boolean) {
-    return share && link ? new ClipboardShare(link, clipboardHost()) : undefined;
+  /** A run's sharing over its agent's link (none: no sharing, the machine has no agent or doesn't share), followed. */
+  begin(link: AgentLink | undefined, on: boolean) {
+    const share = on && link ? new ClipboardShare(link, clipboardHost()) : undefined;
+    clipboard.follow(share);
+    window.__clipboard = share; // the tests' hook
+    return share;
   }
 
   /** Follows what sharing follows: the focus, the paste chord, the clipboard's changes, the read permission. */

@@ -8,7 +8,6 @@ import { CLOSE_MS } from '../../devices.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../../gpu-worker.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
-import { clipboard } from '../areas/clipboard.svelte.ts';
 import { current } from '../areas/current.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';
 import { mouse } from '../areas/mouse.svelte.ts';
@@ -61,7 +60,7 @@ export type RunnerDeps = {
     keyboardKey(code: string, down: boolean): boolean;
   };
   /** A run's guest agent (web/app/areas/agent-actions.ts) and its clipboard sharing (none: not shared); `up` at each HELLO. */
-  agent: (ch: AgentChannels, up: () => void) => ClipboardShare | undefined;
+  agent: { begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined; end(): void };
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
@@ -126,10 +125,8 @@ export class Runner {
     const worker = new Worker(new URL('../worker.ts', import.meta.url), { type: 'module' });
     // The guest's signs that it's up, beside its ready marker: the agent's HELLO, systemd's READY=1 (web/vsock-device.ts).
     const up = () => worker.postMessage({ type: 'up' } satisfies ToWorker);
-    const share = this.d.agent(ch, up);
+    const share = this.d.agent.begin(ch, up);
     if (ch.notify) onReady(ch.notify.port1, up);
-    clipboard.follow(share);
-    window.__clipboard = share; // the tests' hook
     const input = attachInput(canvas, {
       keyboard: ch.keyboard.port1,
       tablet: ch.tablet.port1,
@@ -308,6 +305,7 @@ export class Runner {
     r.input.mouseLock(false);
     this.lock.drop();
     this.d.folders.end();
+    this.d.agent.end();
     void refreshRecords(this.d.machine);
   }
 
@@ -353,6 +351,7 @@ export class Runner {
     r.gpu?.terminate();
     this.lock.drop();
     this.d.folders.end();
+    this.d.agent.end();
     await refreshRecords(m);
   }
 }

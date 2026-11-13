@@ -22,9 +22,7 @@ export class AgentActions {
    * (web/app/run/dev-knobs.ts) the channel's device end is the tests' to play.
    */
   begin(ch: AgentChannels, up: () => void): AgentLink | undefined {
-    this.#link?.close();
-    clearInterval(this.#timer);
-    this.#timer = undefined;
+    this.end();
     const port = ch.agent?.port1;
     const link = (this.#link = port && new AgentLink(port, pageCaps(ch.clipboard)));
     window.__agent = link; // the tests' hooks
@@ -38,6 +36,15 @@ export class AgentActions {
       offset = now;
     }, SLEEP_CHECK_MS);
     return link;
+  }
+
+  /** The run ended (web/app/run/runner.ts `ended`): its link closed, the sleep check stopped. */
+  end() {
+    this.#link?.close();
+    this.#link = undefined;
+    clearInterval(this.#timer);
+    this.#timer = undefined;
+    window.__agent = undefined;
   }
 
   /** Sets the guest's clock to the browser's, under Preferences' switch; false: not sent (off, or no agent yet). */
