@@ -300,9 +300,11 @@ for (let run = 1; run <= RUNS; run++) {
     await onSerial(page, 'clear; echo ==be""gin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware; nproc; cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/firstboot.timezone/raw; echo; readlink /etc/localtime; echo ==e""nd\n');
     await shows(page, /==begin\s*rtc-efi[^]*?0 virtio_gpudrmfb[^]*?efi[^]*?qemu_fw_cfg\s*2\s*Etc\/UTC\s*\S*zoneinfo\/Etc\/UTC\s*==end/);
     // The notify socket (docs/devices.md "vsock"): the virtio-vsock (ID 19) bound to Linux's transport, the guest's CID 3,
-    // and the credential systemd read (its READY=1 made the page `running` above), and no complaint from PID 1 about either.
-    await onSerial(page, 'clear; echo ==vs""ock $(for d in /sys/bus/virtio/devices/*; do [ $(cat $d/device) = 0x0013 ] && basename $(readlink $d/driver); done) $(cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/vmm.notify_socket/raw) $(journalctl -b -o cat _PID=1 | grep -c "readiness notification\\|notify_socket");\n');
-    await shows(page, /==vsock vmw_vsock_virtio_transport vsock-stream:2:8573 0(?!\d)/);
+    // and the credential systemd read (its READY=1 made the page `running` above), and no complaint from PID 1 about either;
+    // the page's drop-in for systemd 258+'s generated sshd-vsock.socket, installed by the debug generator (this Debian has
+    // no sshd and systemd 257: no socket to apply it to; web/app/firmware-files.ts).
+    await onSerial(page, 'clear; echo ==vs""ock $(for d in /sys/bus/virtio/devices/*; do [ $(cat $d/device) = 0x0013 ] && basename $(readlink $d/driver); done) $(cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/vmm.notify_socket/raw) $(journalctl -b -o cat _PID=1 | grep -c "readiness notification\\|notify_socket") $(cat /run/systemd/generator.early/sshd-vsock.socket.d/waarm64-no-issue.conf).\n');
+    await shows(page, /==vsock vmw_vsock_virtio_transport vsock-stream:2:8573 0 \[Socket\] ExecStartPost= ExecStopPre=\./);
     // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
     await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
     await shows(page, /==dmi waarm64 waarm64 Virtual Machine waarm64 EDK II ArmVirtQemuKernel/);

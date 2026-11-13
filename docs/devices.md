@@ -341,6 +341,13 @@ a full close by RST. A message past 64 KiB is reset and dropped; CREDIT_REQUEST 
 data, so the guest's credit doesn't matter). Nothing is kept across a snapshot: a restored device sends
 TRANSPORT_RESET on the event queue, so a connection in flight fails in the guest rather than hanging its sender.
 
+With sshd installed, the device also has systemd 258+'s ssh-generator make `sshd-vsock.socket` (vsock port 22), whose
+`systemd-ssh-issue --make-vsock` would put "Try contacting this VM's SSH server via 'ssh vsock%3' from host." above the
+login prompt; no host side can connect (the device takes no host connections), so the page's SMBIOS strings carry a
+`systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue` that clears its `ExecStartPost=` and `ExecStopPre=`
+(`web/app/firmware-files.ts` `NO_SSH_VSOCK_ISSUE`; the generator's own switch, `systemd.ssh_auto=no`, is on the kernel's
+command line only, which a UEFI boot's loader owns).
+
 It is the last slot, after the disks (machines.md §4.1), so it moved no machine's disks, and it is left out of the
 shape's hash (`shape.ts` `hashed`): a snapshot or suspended machine from before it restores without it
 (`worker-header.ts` `slotsOf`), as one from before the clock does. Linux's driver is `vmw_vsock_virtio_transport`

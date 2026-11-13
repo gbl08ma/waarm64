@@ -1,6 +1,7 @@
 // What a firmware machine's fw_cfg holds (web/app/firmware-files.ts `firmwareFiles`): byte for byte what the machine
 // worker's start built before it was a function of its own (pinned here as it was), for the settings that change it.
-// The guest reads these: a byte that moved is a guest-visible change (the notify socket's credential was one, added here).
+// The guest reads these: a byte that moved is a guest-visible change (the notify socket's credential was one, added here,
+// and the drop-in that keeps systemd's vsock ssh hint off the login prompt another).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { firmwareFiles } from '../web/app/firmware-files.ts';
@@ -33,6 +34,8 @@ function before(c: Case) {
     ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []),
     ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : []))),
     ...(agentBytes ? agentCredentials(m.guest.agent) : []),
+    // Since: systemd-ssh-issue's lines cleared from the generator's sshd-vsock.socket (docs/devices.md "vsock").
+    { name: 'systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue', data: '[Socket]\nExecStartPost=\nExecStopPre=\n' },
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   return machine.firmware ? [...credentialFiles(credentials), ...oem, ...(agentBytes ? [{ name: AGENT_FILE, data: agentBytes }] : [])] : undefined;

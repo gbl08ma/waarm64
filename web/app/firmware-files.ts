@@ -1,19 +1,30 @@
 // What a `firmware` machine's fw_cfg holds at a start (docs/frontend.md "What the page sets in the guest"): the
 // systemd credentials (the notify socket's, the machine's network card's, the page's `?credential=`), the units the page has the guest run
 // as OEM strings in SMBIOS (the keyboard layout, the network's settings, the shared folders' mount, swap ramdisks, the
-// clipboard agent; too long for fw_cfg's names: core/src/smbios.rs), and the agent's binary. Pure: the worker's start
+// clipboard agent, the vsock ssh hint's drop-in; too long for fw_cfg's names: core/src/smbios.rs), and the agent's binary. Pure: the worker's start
 // (web/app/worker.ts) calls it with the agent's bytes once fetched; tests/firmware-files.test.ts pins its bytes.
 import { AGENT_FILE, agentCredentials } from './guest-agent.ts';
 import { netCredentials } from './guest-net.ts';
 import { swapCredentials } from './guest-swap.ts';
 import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
 import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
-import { credentialFiles, MACHINES, type Machine } from './machine.ts';
+import { type Credential, credentialFiles, MACHINES, type Machine } from './machine.ts';
 import type { ToWorker } from './protocol.ts';
 import { sharesCredentials } from './shares-mount.ts';
 import { notifySocket } from '../vsock-device.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
+
+/**
+ * The vsock device has systemd 258+'s ssh-generator (when sshd is installed) make `sshd-vsock.socket`, whose
+ * `systemd-ssh-issue --make-vsock` puts "Try contacting this VM's SSH server via 'ssh vsock%3' from host." above the
+ * login prompt: no host side can (the device takes no host connections: docs/devices.md "vsock"). This drop-in clears
+ * those lines and keeps the socket; the generator's own switch, `systemd.ssh_auto=`, is on the kernel's command line only.
+ */
+export const NO_SSH_VSOCK_ISSUE: Credential = {
+  name: 'systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue',
+  data: '[Socket]\nExecStartPost=\nExecStopPre=\n',
+};
 
 /**
  * The fw_cfg files of the machine `start` makes (none for a direct-boot machine): `agentBytes` is clipboard sharing's
@@ -41,6 +52,7 @@ export function firmwareFiles(
     ...(guest.sharesPath ? sharesCredentials(guest.sharesPath, words.shares) : []),
     ...swapCredentials(disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : []))),
     ...(agentBytes ? agentCredentials(words.agent) : []),
+    NO_SSH_VSOCK_ISSUE,
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   return [...credentialFiles(credentials), ...oem, ...(agentBytes ? [{ name: AGENT_FILE, data: agentBytes }] : [])];
