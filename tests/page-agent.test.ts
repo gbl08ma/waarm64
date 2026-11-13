@@ -119,8 +119,9 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
   assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/waarm64/agent');
   const size = Number(await run(page, `stat -L -c %s /proc/${pid}/exe`));
   assert.equal(size, (await import('node:fs')).statSync(AGENT).size, 'the binary the page served');
-  // The fw_cfg read's cost (plan §3.1: one MMIO exit a byte), measured in the guest.
-  const [gz, readUs, gunzipUs] = (await run(page, 'd=/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent; cat $d/size; s=$(date +%s%N); cat $d/raw >/tmp/agent.gz; m=$(date +%s%N); gzip -dc /tmp/agent.gz >/dev/null; e=$(date +%s%N); echo $(( (m - s) / 1000 )) $(( (e - m) / 1000 ))')).split(/\s+/).map(Number);
+  // The fw_cfg read's cost (plan §3.1: one MMIO read a byte; the gzip in pieces of a page, so none read twice), measured
+  // in the guest.
+  const [gz, readUs, gunzipUs] = (await run(page, 'd=/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64; cat $d/agent.[0-9][0-9][0-9]/size | awk "{ n += \\$1 } END { print n }"; s=$(date +%s%N); cat $d/agent.[0-9][0-9][0-9]/raw >/tmp/agent.gz; m=$(date +%s%N); gzip -dc /tmp/agent.gz >/dev/null; e=$(date +%s%N); echo $(( (m - s) / 1000 )) $(( (e - m) / 1000 ))')).split(/\s+/).map(Number);
   t.diagnostic(`agent: ${size} bytes, ${gz} gzipped; fw_cfg read in the guest ${(readUs / 1000).toFixed(1)} ms (${(readUs * 1000 / gz).toFixed(0)} ns a byte), gunzip ${(gunzipUs / 1000).toFixed(1)} ms`);
 
   // Idle (plan §3.3): no CPU time (utime + stime), no wakeups (voluntary context switches), VmRSS about 1 MiB or less.

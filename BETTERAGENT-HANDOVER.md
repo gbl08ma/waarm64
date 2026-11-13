@@ -1,7 +1,7 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–9 done (jobs 1–7, the agent's gzip and the mid-track review's fixes); the next loop is job 8.
+Loops 1–10 done (jobs 1–7, the agent's gzip and its fw_cfg pieces, the mid-track review's fixes); the next loop is job 8.
 
 ## State
 
@@ -45,7 +45,8 @@ The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEW
 - **The agent shipped as the build's zopfli gzip (loop 9, the user's ask):** `waarm64-agent.gz` (105,912 bytes,
   `images/build.sh agent`, in SHA256SUMS), handed to fw_cfg as it is; vite.config.ts `plainGzip` and .htaccess drop the
   `Content-Encoding` servers put on a `.gz`; an ELF that arrives decoded is gzipped by the page as before. Cloudflare's
-  headers on it: check at the next deploy.
+  headers on it: check at the next deploy. Loop 10: in fw_cfg as pieces of 4 KiB (`agent.000`…, `agentFiles`): Linux's
+  sysfs read of one file re-reads up to each page's offset (quadratic: 414 ms), the pieces take 74 ms.
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real

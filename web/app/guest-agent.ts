@@ -1,6 +1,6 @@
 // The guest agent (docs/devices.md "The guest's agent"; clipboard sharing: docs/plans/clipboard.md §3.1): the page hands
-// a `firmware` machine with the agent on the binary (agent/, `images/build.sh agent`) as the fw_cfg file
-// `opt/waarm64/agent`, and a unit (web/app/guest-unit.ts: SMBIOS credentials, systemd 256+) that copies it into /run and
+// a `firmware` machine with the agent on the binary (agent/, `images/build.sh agent`) as fw_cfg files
+// `opt/waarm64/agent.000`, `.001`, …, and a unit (web/app/guest-unit.ts: SMBIOS credentials, systemd 256+) that copies it into /run and
 // runs it as root; the agent connects to the page over the machine's vsock (web/vsock-device.ts `AGENT_PORT`). Nothing
 // is installed: a boot without the agent has no unit and no binary, and /run is gone at the next boot.
 
@@ -8,11 +8,24 @@ import { guestUnit } from './guest-unit.ts';
 import type { Credential } from './machine.ts';
 
 /**
- * The binary's fw_cfg file (Linux's qemu_fw_cfg shows it under /sys/firmware/qemu_fw_cfg/by_name/), gzipped: Linux reads
- * fw_cfg a byte at a time, an MMIO exit each (3–12 µs a byte under the JIT: ~0.3 s for the ~83 KB gzipped binary of
- * 133 KB; docs/clipboard.md "What it costs").
+ * The binary's fw_cfg files (Linux's qemu_fw_cfg shows them under /sys/firmware/qemu_fw_cfg/by_name/): its gzip in
+ * pieces of `AGENT_PIECE` bytes, `<AGENT_FILE>.000` upwards. Linux reads fw_cfg a byte at a time, an MMIO read each,
+ * and sysfs a page (4 KiB) per read call, for which the driver selects the file again and reads past the `pos` bytes
+ * before it: one file of n bytes costs ~n²/8 KiB reads (1.44 million for 106 KB: ~0.41 s), pieces of a page n (~0.03 s;
+ * docs/clipboard.md "What it costs").
  */
 export const AGENT_FILE = 'opt/waarm64/agent';
+export const AGENT_PIECE = 4096;
+
+/** The fw_cfg files of the binary's gzip `gz`: its pieces, in order (three digits: up to 4 MB). */
+export function agentFiles(gz: Uint8Array): { name: string; data: Uint8Array }[] {
+  const n = Math.ceil(gz.length / AGENT_PIECE);
+  if (n > 1000) throw new RangeError(`the agent's gzip is ${gz.length} bytes: past ${1000 * AGENT_PIECE}`);
+  return Array.from({ length: n }, (_, i) => ({
+    name: `${AGENT_FILE}.${String(i).padStart(3, '0')}`,
+    data: gz.subarray(i * AGENT_PIECE, (i + 1) * AGENT_PIECE),
+  }));
+}
 
 /**
  * Where the page fetches the binary from: the build's gzip of it (zopfli's, `images/build.sh agent`; Vite copies it into
@@ -50,16 +63,20 @@ export async function agentBinary(url = AGENT_BINARY): Promise<Uint8Array | unde
   return undefined;
 }
 
-/** The script the unit runs. POSIX sh: the binary out of fw_cfg (gunzipped) into the unit's own tmpfs, then run. */
+/**
+ * The script the unit runs. POSIX sh: the binary out of fw_cfg (its pieces in order, which the glob sorts; gunzipped)
+ * into the unit's own tmpfs, then run.
+ */
 export function agentScript(): string {
   return `# From waarm64: the machine's guest agent, run at every boot while it is on (docs/devices.md, "The guest's agent").
-# The page gives the agent's binary as an fw_cfg file; it runs from /run/waarm64, a tmpfs of this unit's own.
-f=/sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}/raw
-if [ ! -r "$f" ]; then
-  echo "waarm64-agent: no $f (this kernel has no qemu_fw_cfg?)" >&2
+# The page gives the agent's binary as fw_cfg files, its gzip in pieces of a page (fw_cfg reads a file again up to
+# where each read starts); it runs from /run/waarm64, a tmpfs of this unit's own.
+f=/sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}
+if [ ! -r "$f.000/raw" ]; then
+  echo "waarm64-agent: no $f.000 (this kernel has no qemu_fw_cfg?)" >&2
   exit 0
 fi
-gzip -dc "$f" >/run/waarm64/agent && chmod 0500 /run/waarm64/agent || exit 1
+cat "$f".[0-9][0-9][0-9]/raw | gzip -dc >/run/waarm64/agent && chmod 0500 /run/waarm64/agent || exit 1
 # It connects to the page over vsock, and again whenever the connection ends.
 exec /run/waarm64/agent
 `;

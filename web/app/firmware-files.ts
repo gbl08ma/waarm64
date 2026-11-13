@@ -3,7 +3,7 @@
 // as OEM strings in SMBIOS (the keyboard layout, the network's settings, the shared folders' mount, swap ramdisks, the
 // clipboard agent, the vsock ssh hint's drop-in; too long for fw_cfg's names: core/src/smbios.rs), and the agent's binary. Pure: the worker's start
 // (web/app/worker.ts) calls it with the agent's bytes once fetched; tests/firmware-files.test.ts pins its bytes.
-import { AGENT_FILE, agentCredentials } from './guest-agent.ts';
+import { agentCredentials, agentFiles } from './guest-agent.ts';
 import { netCredentials } from './guest-net.ts';
 import { swapCredentials } from './guest-swap.ts';
 import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
@@ -55,5 +55,5 @@ export function firmwareFiles(
     NO_SSH_VSOCK_ISSUE,
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
-  return [...credentialFiles(credentials), ...oem, ...(agentBytes ? [{ name: AGENT_FILE, data: agentBytes }] : [])];
+  return [...credentialFiles(credentials), ...oem, ...(agentBytes ? agentFiles(agentBytes) : [])];
 }

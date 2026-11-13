@@ -1252,7 +1252,7 @@ credentials, clipboard sharing's agent) are one pure function of its start messa
   `card.network` in /run), while the SMBIOS ones do.
 - **The guest agent** (`web/app/guest-agent.ts`, a machine with `agent`, on unless `false`): `waarm64-agent.service`, a
   long-running service (`guestUnit`'s `service` lines in place of `Type=oneshot`) wanted by `multi-user.target`,
-  whose script copies the agent's binary out of fw_cfg (`opt/waarm64/agent`, not a credential: too big for SMBIOS) into
+  whose script copies the agent's binary out of fw_cfg (`opt/waarm64/agent.000` upwards, its gzip in pieces of 4 KiB; not a credential: too big for SMBIOS) into
   `/run/waarm64` and runs it (docs/devices.md "The guest's agent"); it connects to the page over vsock. Its description
   is [The emulator's guest agent](ui:guest:guest-words.agent). The settings are the Settings tab's
   **[Run the guest agent](ui:machines:DeviceSwitches.agent)** (on by default) and, under it,

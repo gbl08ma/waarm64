@@ -1632,6 +1632,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   stays. The page now ships the build's zopfli gzip (105,912; `CompressionStream`'s level 6 was 113,872); `xz -9e`
   would be 90,148, but the guest's script would need xz. Cloudflare's static assets not yet checked for
   `Content-Encoding` on the `.gz` (at the next deploy: the page then gzips the ELF itself, ~8 KB more for the guest).
+  In fw_cfg it is in pieces of 4 KiB (one file's sysfs read is quadratic: clipboard.md "What it costs"), 74 ms.
 - **A text console's text, the rest of it** (devices.md "A text console's text"): only the screen, not the
   scrollback (fbcon keeps it in a buffer of its own, which no `/dev` node shows); and the path for a console not in
   UTF-8 mode (`/dev/vcs`'s bytes, ASCII only) not run on a guest (Debian's consoles are UTF-8); what was on a console

@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { firmwareFiles } from '../web/app/firmware-files.ts';
-import { AGENT_FILE, agentCredentials } from '../web/app/guest-agent.ts';
+import { agentCredentials, agentFiles } from '../web/app/guest-agent.ts';
 import { netCredentials } from '../web/app/guest-net.ts';
 import { swapCredentials } from '../web/app/guest-swap.ts';
 import { OEM_STRINGS_FILE, oemStrings } from '../web/app/guest-unit.ts';
@@ -38,7 +38,7 @@ function before(c: Case) {
     { name: 'systemd.unit-dropin.sshd-vsock.socket~waarm64-no-issue', data: '[Socket]\nExecStartPost=\nExecStopPre=\n' },
   ];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
-  return machine.firmware ? [...credentialFiles(credentials), ...oem, ...(agentBytes ? [{ name: AGENT_FILE, data: agentBytes }] : [])] : undefined;
+  return machine.firmware ? [...credentialFiles(credentials), ...oem, ...(agentBytes ? agentFiles(agentBytes) : [])] : undefined;
 }
 
 const disks = (c: Case): StartDisk[] => [

@@ -132,12 +132,13 @@ agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
 `images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 166 KB).
-A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
-nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
+A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: the build's gzip (an ELF file a server decoded is gzipped), or
+nothing) and hands it to the guest as the fw_cfg files **`opt/waarm64/agent.000`**, `.001`, … (its gzip in pieces of
+4 KiB: `agentFiles`), with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
 without the unit, and nothing connects. The unit, `waarm64-agent.service` (`Type=simple`, wanted by
 `multi-user.target`): `modprobe -q qemu_fw_cfg` outside the sandbox (`ExecStartPre=-+`), then its script copies
-`/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent/raw` into `/run/waarm64/agent` (a tmpfs of the unit's own,
+the pieces (`…/by_name/opt/waarm64/agent.[0-9][0-9][0-9]/raw`, in the glob's order) into `/run/waarm64/agent` (a tmpfs of the unit's own,
 `TemporaryFileSystem=` mode 0700 and `exec`: Debian 13 mounts /run `noexec`, so a `RuntimeDirectory` can't run it;
 gone with the unit) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
 `OOMScoreAdjust=500`, `Restart=on-failure` (`RestartSec=5s`) under a start limit it can reach, 5 starts in 10

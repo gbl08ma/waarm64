@@ -6,6 +6,7 @@
 // (web/app/clipboard.ts) on a faked link and browser: both ways, the paste chord, sync on focus with the read
 // permission, the pending text's rules, the placeholders, the pause, the toolbar's state.
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,7 @@ import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../w
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
 import { REQUEST_WAIT } from '../web/app/clipboard-transfer.ts';
-import { AGENT_FILE, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
+import { AGENT_FILE, AGENT_PIECE, agentBinary, agentCredentials, agentFiles, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
 import { words } from './words.ts';
@@ -264,7 +265,7 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
 
 const hasDash = process.env.PATH?.split(':').some((p) => existsSync(join(p, 'dash')));
 
-test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/waarm64, run in the script's place; without the file, nothing", { skip: !hasDash && 'no dash' }, () => {
+test("the guest agent's script: the binary out of fw_cfg (its pieces in order), gunzipped into /run/waarm64, run in the script's place; without the files, nothing", { skip: !hasDash && 'no dash' }, () => {
   const root = mkdtempSync(join(tmpdir(), 'waarm64-agent-'));
   try {
     const at = (p: string) => join(root, p);
@@ -277,11 +278,15 @@ test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/wa
     mkdirSync(at('run/waarm64'), { recursive: true });
     assert.equal(run(), '');
     assert.equal(existsSync(at('run/waarm64/agent')), false);
-    // The file: copied, made executable for root only, run with the script's place (exec).
-    const raw = at(`sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}/raw`);
-    mkdirSync(raw.replace(/\/raw$/, ''), { recursive: true });
-    const program = `#!/bin/sh\necho "agent ran as $$ with $#"\n`;
-    writeFileSync(raw, gzipSync(program));
+    // The files: the pieces joined in order, made executable for root only, run with the script's place (exec). A
+    // program whose gzip takes several pieces (random bytes don't compress), past ten of them.
+    const program = `#!/bin/sh\necho "agent ran as $$ with $#"\nexit 0\n# ${randomBytes(12 * AGENT_PIECE).toString('base64')}\n`;
+    for (const f of agentFiles(gzipSync(program))) {
+      const dir = at(`sys/firmware/qemu_fw_cfg/by_name/${f.name}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'raw'), f.data);
+    }
+    assert.ok(existsSync(at(`sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}.012`)), 'past ten pieces');
     assert.match(run(), /^agent ran as \d+ with 0\n$/);
     assert.equal(readFileSync(at('run/waarm64/agent'), 'utf8'), program, 'gunzipped');
     assert.equal(execFileSync('stat', ['-c', '%a', at('run/waarm64/agent')]).toString().trim(), '500');
@@ -289,6 +294,15 @@ test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/wa
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("the agent's fw_cfg files: its gzip in pieces of a page, named in order, the last shorter; none past a thousand", () => {
+  const gz = new Uint8Array(2 * AGENT_PIECE + 5).map((_, i) => i % 251);
+  const f = agentFiles(gz);
+  assert.deepEqual(f.map((x) => [x.name, x.data.length]), [[`${AGENT_FILE}.000`, AGENT_PIECE], [`${AGENT_FILE}.001`, AGENT_PIECE], [`${AGENT_FILE}.002`, 5]]);
+  assert.equal(Buffer.compare(Buffer.concat(f.map((x) => x.data)), gz), 0, 'the pieces joined are the gzip');
+  assert.equal(agentFiles(new Uint8Array(AGENT_PIECE)).length, 1);
+  assert.throws(() => agentFiles(new Uint8Array(1000 * AGENT_PIECE + 1)), RangeError);
 });
 
 test("the guest agent's binary: the build's gzip as it is; an ELF file (a server that decoded the gzip) gzipped; otherwise none (the machine starts without it)", async () => {
