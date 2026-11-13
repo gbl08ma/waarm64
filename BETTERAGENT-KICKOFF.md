@@ -16,7 +16,9 @@ docs/plans/agent.md (the plan these jobs come from), and CLAUDE.md.
 New jobs fit as frames under a capability bit each (`CAP` in `web/agent-frame.ts` and `agent/src/frame.rs`; bit 3 is
 reserved for text/html, 8 and 9 for session kinds), said in both HELLOs. A job that needs root runs in the root
 process; one that needs the user's session runs in the session child, as the user (the child runs today only where the
-clipboard is shared: a session job would need it started for its own sake too). Each job that changes the unit's
+clipboard is shared: a session job would need it started for its own sake too). The agent runs no guest program today
+(it speaks Wayland and X itself); a job that runs one (`swaymsg`, `networkctl`, `fstrim`, `setxkbmap`, …) first checks
+that it exists and offers its capability only then. Each job that changes the unit's
 needs (capabilities, `RestrictAddressFamilies`, writable paths) changes `AGENT_SERVICE` in `web/app/guest-agent.ts` and
 its test. Every one needs the user's OK on what it does to the guest (they are guest-visible), and is measured for the
 agent's size and idle cost (0 ticks, 0 wakeups: docs/clipboard.md "What it costs").
@@ -27,8 +29,11 @@ agent's size and idle cost (0 ticks, 0 wakeups: docs/clipboard.md "What it costs
    step 6"; docs/graphics.md "The console and the display size"). sway keeps its mode when the page's size changes,
    and Xorg sees the new mode but doesn't apply it. The page posts its size; the session child runs
    `swaymsg -- output <name> mode --custom WxH` (or speaks wlr-output-management, as `wlr-randr` does) and, under
-   X11, `xrandr --auto` (or RandR's requests by hand, as x11.rs speaks X). GNOME and KDE are expected to follow by
-   themselves (unmeasured). Start: the measurements in plans/agent.md's table, `GpuOptions.resize` (the display
+   X11, `xrandr --auto` (or RandR's requests by hand, as x11.rs speaks X). The agent runs a guest tool only if it's
+   there: it looks for `swaymsg` or `xrandr` (executable, on the session's `PATH`) before it offers the job, and a
+   guest without it gets no resize and no error (the capability bit stays off, the page keeps today's behaviour).
+   Speaking the protocol itself needs no tool at all, so prefer it where it's cheap. GNOME and KDE are expected to
+   follow by themselves (unmeasured). Start: the measurements in plans/agent.md's table, `GpuOptions.resize` (the display
    event's test hook).
 
 2. **Each visitor's copy of a preloaded snapshot** (backlog: the preloaded image and snapshot entry, "what must
