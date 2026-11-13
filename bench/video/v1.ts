@@ -1,12 +1,12 @@
 // The video track's V1 end check (docs/graphics.md "Video's findings"; dev-only, not in tests): the desktop guest
-// (images/arch/desktop.sh, with webpc-va) on the page, whose 3D machine decodes VA-API with WebCodecs. The guest's
+// (images/arch/desktop.sh, with waarm64-va) on the page, whose 3D machine decodes VA-API with WebCodecs. The guest's
 // FFmpeg decodes each clip twice, in software and through VA-API with the pictures downloaded (`vaDeriveImage`: a read
 // of the planes, which waits for the host's decode), and compares the frames' hashes (framemd5): equal where the
 // host's decoder is exact (VP9 everywhere; H.264 on FFmpeg's or a hardware decoder, not the dev VM's OpenH264). Also
 // the renderer's video totals (pictures decoded, dropped) and the longest a call waited for a picture.
 //   node bench/video/v1.ts <image.qcow2> [outdir]      (default bench/results/local/video/v1/)
 // FRAMES (default 120), CLIPS (default both trailers), HWDEC (default vaapi; FFmpeg's -hwaccel), VIRGL_GPU (the page's
-// `?gpu=`, default virgl; e.g. virgl,swvideo). SHIM=1: the media disk's webpc_drv_video.so as the guest's VA driver. SNAPSHOT=1 then tries Save snapshot while FFmpeg decodes a clip through
+// `?gpu=`, default virgl; e.g. virgl,swvideo). SHIM=1: the media disk's waarm64_drv_video.so as the guest's VA driver. SNAPSHOT=1 then tries Save snapshot while FFmpeg decodes a clip through
 // VA-API at its own pace (refused: its codec is 3D in use) and again once FFmpeg has exited (saved, the file dropped).
 // CAPTURE=1 saves the session's virgl capture as <outdir>/capture.vglt (bench/video/pictures.ts makes the host's
 // streams of it).
@@ -65,9 +65,9 @@ async function snapshots() {
 try {
   await rootShell();
   await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
-  // SHIM=1: the VA driver on the media disk (bench/video/media-disk.sh) instead of the image's webpc-va.
-  if (process.env.SHIM === '1') await run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/');
-  results.info = await run('uname -r; pacman -Q mesa libva ffmpeg webpc-va | tr "\\n" " "; echo; grep -h LIBVA /etc/environment.d/*');
+  // SHIM=1: the VA driver on the media disk (bench/video/media-disk.sh) instead of the image's waarm64-va.
+  if (process.env.SHIM === '1') await run('cp /mnt/media/waarm64_drv_video.so /usr/lib/dri/');
+  results.info = await run('uname -r; pacman -Q mesa libva ffmpeg waarm64-va | tr "\\n" " "; echo; grep -h LIBVA /etc/environment.d/*');
   log('info', results.info);
   results.vainfo = await run('vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -E "driver|VAProfile"', 120_000);
   log('vainfo\n' + results.vainfo);

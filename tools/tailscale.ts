@@ -5,7 +5,7 @@
 // kept as a test fixture: tests/ts-tailnet.test.ts hands a kept node between it and the Rust client
 // (the store format users' nodes are in). Each builds when its files are missing or their inputs
 // changed (a hash of the sources, in a stamp beside the module) and never throws. `node
-// tools/tailscale.ts` runs both (scripts/ci-net.sh); WEBPC_TAILSCALE=0 skips the Go one.
+// tools/tailscale.ts` runs both (scripts/ci-net.sh); WAARM64_TAILSCALE=0 skips the Go one.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -47,7 +47,7 @@ export type Prepared = 'current' | 'built' | 'skipped' | 'failed';
 
 /** Builds the client if it's missing or stale; says what it does; returns what happened (never throws for a missing Go or a failed build). */
 export function prepareTailscale(root = ROOT, env: NodeJS.ProcessEnv = process.env, log: (s: string) => void = console.log): Prepared {
-  if (env.WEBPC_TAILSCALE === '0' || !existsSync(join(root, 'net/tailscale/build.sh'))) return 'skipped';
+  if (env.WAARM64_TAILSCALE === '0' || !existsSync(join(root, 'net/tailscale/build.sh'))) return 'skipped';
   if (tailscaleCurrent(root)) return 'current';
   if (spawnSync('go', ['version'], { env, stdio: 'ignore' }).status !== 0) {
     return 'skipped'; // only the hand-over test needs it, and skips without it

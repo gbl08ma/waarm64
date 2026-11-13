@@ -8,7 +8,7 @@
 #                           page's second disk (?disk2=), which the guest mounts (bench/gpu/deqp-run.ts)
 #   target/deqp/guest.qcow2 the guest that runs them on the page: Arch Linux with mesa and libpng
 #                           (images/arch/build.sh --packages; ~4 min more), scripts/ci-deqp.sh's
-#   localhost/webpc-deqp    the build's image: the same binaries on Mesa's virpipe against the vtest oracle
+#   localhost/waarm64-deqp    the build's image: the same binaries on Mesa's virpipe against the vtest oracle
 #                           (tools/virgl-oracle/deqp.sh), for the expected results
 #   images/deqp/build.sh [--guest-only]
 # And with `vk`, dEQP-VK for VK2 (docs/testing.md "dEQP-VK"; scripts/ci-deqp-vk.sh): VK-GL-CTS vulkan-cts-1.4.7.0's
@@ -28,9 +28,9 @@ if [ "${1-}" = vk ]; then
   # "What maps, what's emulated, what isn't offered": the direct rows); the pass lists (tests/deqp/vk-*.txt) take their cases from these.
   VK_GROUPS="info api memory draw compute pipeline/monolithic/* renderpasses ubo ssbo texture glsl binding-model query-pool rasterization fragment-operations clipping dynamic-state"
   "$ROOT/images/arch/base.sh"
-  podman build -q -t localhost/webpc-deqp-vk -f "$ROOT/images/deqp/Containerfile.vk" "$ROOT/images/deqp" >/dev/null
+  podman build -q -t localhost/waarm64-deqp-vk -f "$ROOT/images/deqp/Containerfile.vk" "$ROOT/images/deqp" >/dev/null
   rm -rf "$W/tree-vk"; mkdir -p "$W/tree-vk"
-  podman run --rm -v "$W:/out:Z" -e VK_GROUPS="$VK_GROUPS" localhost/webpc-deqp-vk sh -euc '
+  podman run --rm -v "$W:/out:Z" -e VK_GROUPS="$VK_GROUPS" localhost/waarm64-deqp-vk sh -euc '
     d=/out/tree-vk/deqp/vk
     mkdir -p $d
     cp /build/external/vulkancts/modules/vulkan/deqp-vk $d/
@@ -50,9 +50,9 @@ fi
 guest() { "$ROOT/images/arch/build.sh" --packages "mesa libpng" --out "$W/guest.qcow2"; }
 if [ "${1-}" = --guest-only ]; then guest; exit; fi
 "$ROOT/images/arch/base.sh"
-podman build -q -t localhost/webpc-deqp "$ROOT/images/deqp" >/dev/null
+podman build -q -t localhost/waarm64-deqp "$ROOT/images/deqp" >/dev/null
 rm -rf "$W/tree"; mkdir -p "$W/tree"
-podman run --rm -v "$W:/out:Z" localhost/webpc-deqp sh -euc '
+podman run --rm -v "$W:/out:Z" localhost/waarm64-deqp sh -euc '
   d=/out/tree/deqp
   for m in gles2 gles3; do
     mkdir -p $d/$m

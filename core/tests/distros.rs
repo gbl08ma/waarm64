@@ -39,7 +39,7 @@ fn boot_mode(
     });
     eprintln!("\n[{}]", r.summary);
     assert!(r.powered_off(), "no SYSTEM_OFF");
-    assert!(r.console.contains("webpc: test ok\n"), "test failed");
+    assert!(r.console.contains("waarm64: test ok\n"), "test failed");
     r
 }
 
@@ -50,13 +50,13 @@ fn alpine_boots_and_runs_the_test_script() {
     let devices = common::test_devices(common::ALPINE.disk);
     let r = boot(&common::ALPINE, &devices, (640, 480), 50_000_000_000);
     let out = &r.console;
-    assert!(out.contains("webpc: alpine 3.24.2 6.18.52-0-virt\n"));
+    assert!(out.contains("waarm64: alpine 3.24.2 6.18.52-0-virt\n"));
     assert!(out.contains("/dev/vda / ext4 ro,"), "root filesystem");
-    assert!(out.contains("webpc: modules ext4 virtio_blk virtio_mmio \n"));
+    assert!(out.contains("waarm64: modules ext4 virtio_blk virtio_mmio \n"));
     assert!(out.contains("1 packets transmitted, 1 packets received"));
-    assert!(out.contains("webpc: 9p hello from the host\n"));
-    assert!(out.contains("N: Name=\"webpc keyboard\"\nN: Name=\"webpc tablet\"\n"));
-    assert!(out.contains("webpc: drm 640x480\n"));
+    assert!(out.contains("waarm64: 9p hello from the host\n"));
+    assert!(out.contains("N: Name=\"waarm64 keyboard\"\nN: Name=\"waarm64 tablet\"\n"));
+    assert!(out.contains("waarm64: drm 640x480\n"));
     assert_eq!(r.steps, common::steps("alpine"));
 }
 
@@ -78,17 +78,17 @@ fn alpine_boots_through_the_block_interpreter() {
         ..Boot::new(&kernel, d.cmdline)
     });
     eprintln!("\n[{}]", r.summary);
-    assert!(r.console.contains("webpc: test ok\n"), "test failed");
+    assert!(r.console.contains("waarm64: test ok\n"), "test failed");
     assert_eq!(r.steps, common::steps("alpine"));
 }
 
-/// Alpine on `WEBPC_NCPUS` vCPUs (default 2), deterministic round-robin
-/// (M7), or in parallel with `WEBPC_PARALLEL=1` (a thread per vCPU).
+/// Alpine on `WAARM64_NCPUS` vCPUs (default 2), deterministic round-robin
+/// (M7), or in parallel with `WAARM64_PARALLEL=1` (a thread per vCPU).
 #[test]
 #[ignore = "needs target/images/alpine (images/build.sh alpine) and --release"]
 fn alpine_smp() {
-    let n: u64 = std::env::var("WEBPC_NCPUS").map_or(2, |v| v.parse().unwrap());
-    let parallel = std::env::var("WEBPC_PARALLEL").is_ok_and(|v| v == "1");
+    let n: u64 = std::env::var("WAARM64_NCPUS").map_or(2, |v| v.parse().unwrap());
+    let parallel = std::env::var("WAARM64_PARALLEL").is_ok_and(|v| v == "1");
     let devices = common::test_devices(common::ALPINE.disk);
     let r = boot_mode(
         &common::ALPINE,
@@ -104,7 +104,7 @@ fn alpine_smp() {
         "not all CPUs up"
     );
     assert!(r.console.contains(
-        "webpc: alpine 3.24.2 6.18.52-0-virt
+        "waarm64: alpine 3.24.2 6.18.52-0-virt
 "
     ));
 }
@@ -136,9 +136,9 @@ fn alpine_boots_through_snapshots() {
     );
     assert!(r.powered_off(), "no SYSTEM_OFF");
     let out = &r.console;
-    assert!(out.contains("webpc: test ok\n"), "{out}");
+    assert!(out.contains("waarm64: test ok\n"), "{out}");
     assert!(out.contains("1 packets transmitted, 1 packets received"));
-    assert!(out.contains("webpc: 9p hello from the host\n"));
+    assert!(out.contains("waarm64: 9p hello from the host\n"));
     assert_eq!(r.snapshots.len(), at.len());
     assert_eq!(r.steps, total);
 }

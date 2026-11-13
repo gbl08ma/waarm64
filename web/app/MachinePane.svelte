@@ -81,7 +81,7 @@
       const def = await exportDefinition(store, m.id);
       const a = Object.assign(document.createElement('a'), {
         href: URL.createObjectURL(new Blob([JSON.stringify(def, null, 2)], { type: 'application/json' })),
-        download: `${m.name.replace(/[^\w.-]+/g, '-')}.webpc-machine.json`, // i18n-ignore: a file name
+        download: `${m.name.replace(/[^\w.-]+/g, '-')}.waarm64-machine.json`, // i18n-ignore: a file name
       });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);

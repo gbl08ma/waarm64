@@ -1,0 +1,10 @@
+# net/waarm64-net/build.sh v0.0.0-repro, 2026-11-13, aarch64 Linux (the dev VM), go1.27.3 from go.mod's toolchain, from b6d9c06's source (v0.3.0).
+# Check on another host from the same source: net/waarm64-net/build.sh --check <this file without these lines> v0.0.0-repro
+# Also on 2026-11-13 in the dev VM: build.sh --check of the published v0.3.0 SHA256SUMS against a build of tag v0.3.0: all seven match.
+ac68de1938cec12246b3913b38d007c7231e7ad9d6cba5bc09e5c2e8b597da0c  LICENSES.txt
+4310ff98da1c4586d25f87d937e6a8268b3acec0607e4bf4dcf2a4f7cab015b7  waarm64-net-v0.0.0-repro-darwin-amd64
+ab7f0222d2d88ee38c9cc6c4c72cf8260a788937f6b2d8096721762ce9642f27  waarm64-net-v0.0.0-repro-darwin-arm64
+5de25256369e78da1fc1e29d4e2184424e448ee8e7cbdc3a6527f8b46bab4fd3  waarm64-net-v0.0.0-repro-linux-amd64
+417a559ac876d498de4c77ea6c4c092a80cb373adf82b5473dfa69452f49ce48  waarm64-net-v0.0.0-repro-linux-arm64
+c30ece74b007c96ae38e1ca7cba250e932d14c56090acf824d70632e8e0e2df9  waarm64-net-v0.0.0-repro-windows-amd64.exe
+ed4e683f94cc430321b0b10d4fb73ea5e55862108c66e022271fad737dd08fa9  waarm64-net-v0.0.0-repro-windows-arm64.exe

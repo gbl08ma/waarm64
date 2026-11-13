@@ -2,7 +2,7 @@
 // it registers (or comes back as the kept node) and prints its netmap (tests/ts-tailnet.test.ts
 // compares it with the rig's peer's `tailscale status --json`). The node's store is a JSON file (`<StateKey>` → hex, as the page's IndexedDB keeps it).
 // Usage: node bench/net/tailnet.ts <control URL> <auth key> [store.json] [hostname]
-// (NODE_EXTRA_CA_CERTS for a test CA; WEBPC_TS_WASM for another module.)
+// (NODE_EXTRA_CA_CERTS for a test CA; WAARM64_TS_WASM for another module.)
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { failureOf, TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
 import type { NetMap } from '../../web/tailscale.ts';
@@ -11,7 +11,7 @@ const [control, authKey, storeFile, hostname = 'rust'] = process.argv.slice(2);
 if (!control) throw new Error('usage: node bench/net/tailnet.ts <control URL> <auth key> [store.json] [hostname]');
 const state: Record<string, string> = storeFile && existsSync(storeFile) ? JSON.parse(readFileSync(storeFile, 'utf8')) : {};
 const t0 = performance.now();
-const m = await TsModule.load(readFileSync(process.env.WEBPC_TS_WASM ?? 'target/net/ts.wasm'));
+const m = await TsModule.load(readFileSync(process.env.WAARM64_TS_WASM ?? 'target/net/ts.wasm'));
 const loaded = performance.now() - t0;
 const netmap = await new Promise<NetMap>((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('no netmap in 30 s')), 30_000);

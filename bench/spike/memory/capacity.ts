@@ -160,7 +160,7 @@ if (only.has('oom')) {
     results.oom = { skipped: 'needs Linux with systemd-run --user (cgroup memory limit)' };
   } else {
     log('oom under a 2 GiB cgroup limit');
-    const dir = mkdtempSync(join(os.tmpdir(), 'webpc-oom-'));
+    const dir = mkdtempSync(join(os.tmpdir(), 'waarm64-oom-'));
     const wrapper = join(dir, 'chromium-limited.sh');
     writeFileSync(wrapper, `#!/bin/sh\nexec systemd-run --user --scope -q -p MemoryMax=2G -p MemorySwapMax=0 -p OOMPolicy=continue ${CHROMIUM} "$@"\n`);
     chmodSync(wrapper, 0o755);

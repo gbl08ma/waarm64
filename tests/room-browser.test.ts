@@ -4,7 +4,7 @@
 // resolver): its lookup goes out on the Nostr relay, the other calls back through DERP, and UDP echoes go through the
 // relay at once, then over the WebRTC data channel the two set up with signalling inside the tunnel; a dropped channel
 // falls back to the relay, relay only never opens one, and a member with incoming connections off isn't reached.
-// Opt-in, with the rig: WEBPC_TAILCAT=1 (Go for derper, and target/net/ts.wasm, net/ts/build.sh).
+// Opt-in, with the rig: WAARM64_TAILCAT=1 (Go for derper, and target/net/ts.wasm, net/ts/build.sh).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,7 +17,7 @@ import { startNostrRelay, type NostrRelay } from './net/nostr-relay.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
-const skip = process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1'
+const skip = process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT=1'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : !has('go', 'version') && !existsSync(`${ROOT}target/net/tailcat-test/bin/derper`) ? 'SKIPPED: no Go to build derper'
   : undefined;

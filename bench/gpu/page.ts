@@ -89,8 +89,8 @@ const stat = (xs: number[]) => {
   return { n: s.length, median: +q(0.5).toFixed(1), q1: +q(0.25).toFixed(1), q3: +q(0.75).toFixed(1) };
 };
 const rounds = Number(process.argv[3] ?? 2);
-// WEBPC_PAGE_CONFIGS='name=query name=query': other configurations than the two (an experiment's).
-const CONFIGS: string[][] = process.env.WEBPC_PAGE_CONFIGS ? process.env.WEBPC_PAGE_CONFIGS.split(' ').map((c) => [c.slice(0, c.indexOf('=')), c.slice(c.indexOf('=') + 1)]) : [['gpu', ''], ['simple', 'display=simple']];
+// WAARM64_PAGE_CONFIGS='name=query name=query': other configurations than the two (an experiment's).
+const CONFIGS: string[][] = process.env.WAARM64_PAGE_CONFIGS ? process.env.WAARM64_PAGE_CONFIGS.split(' ').map((c) => [c.slice(0, c.indexOf('=')), c.slice(c.indexOf('=') + 1)]) : [['gpu', ''], ['simple', 'display=simple']];
 const runs: { config: string; firstLit: number | null; running: number; screen: number[]; terminal: number[] }[] = [];
 for (let r = 0; r < rounds; r++) {
   for (const [config, extra] of CONFIGS) {

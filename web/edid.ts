@@ -5,7 +5,7 @@
 // highest refresh rate that does.
 //
 // The physical size comes from `dpi` (the guest's DPI is what a desktop scales by), the name is
-// "webpc", and everything is deterministic: no date but a fixed week and year.
+// "waarm64", and everything is deterministic: no date but a fixed week and year.
 
 /** The largest side a detailed timing can describe (12 bits), and the smallest size whose pixel clock (10 MHz) a descriptor takes. */
 export const EDID_MAX = 4095;
@@ -87,8 +87,8 @@ export function edid(width: number, height: number, { dpi = 96, extra = [] }: Ed
   if (!(width >= EDID_MIN.width && width <= EDID_MAX && height >= EDID_MIN.height && height <= EDID_MAX)) throw new RangeError(`EDID size ${width}x${height}`);
   const e = new Uint8Array(128);
   e.set([0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00]);
-  // Manufacturer "WPC" (three letters, five bits each), product 1, no serial number.
-  const id = (87 - 64) << 10 | (80 - 64) << 5 | (67 - 64);
+  // Manufacturer "WAM" (three letters, five bits each), product 1, no serial number.
+  const id = (87 - 64) << 10 | (65 - 64) << 5 | (77 - 64);
   e[8] = id >> 8;
   e[9] = id & 0xff;
   e[10] = 1;
@@ -111,7 +111,7 @@ export function edid(width: number, height: number, { dpi = 96, extra = [] }: Ed
   const clock = Math.max(...modes.map((m) => m.clockKhz));
   const hMax = Math.max(...modes.map((m) => Math.ceil(m.clockKhz / (m.hActive + m.hBlank))));
   const range = descriptor(0xfd, [24, 75, 15, Math.min(255, Math.max(hMax, 15)), Math.min(255, Math.ceil(clock / 10_000)), 0x01, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20]);
-  const name = descriptor(0xfc, text('webpc'));
+  const name = descriptor(0xfc, text('waarm64'));
   // After the preferred timing: the extra ones, then the range limits and the name, then dummies.
   const order = [...more, range, name].slice(0, 3);
   while (order.length < 3) order.push(descriptor(0x10, []));

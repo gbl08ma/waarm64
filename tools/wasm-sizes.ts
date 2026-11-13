@@ -1,5 +1,5 @@
 // Lists the largest function bodies in a wasm module, named from its name section:
-//   node tools/wasm-sizes.ts target/wasm32-unknown-unknown/release/webpc_core.wasm [count]
+//   node tools/wasm-sizes.ts target/wasm32-unknown-unknown/release/waarm64_core.wasm [count]
 import { readFileSync } from 'node:fs';
 const b = readFileSync(process.argv[2]);
 let p = 8;

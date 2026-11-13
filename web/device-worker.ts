@@ -91,7 +91,7 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
 async function start(init: Init) {
   devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text } satisfies FromDeviceWorker), (message) => self.postMessage({ type: 'notice', message } satisfies FromDeviceWorker));
   // The page's `?iostats` (bench/remote-disk): the blk timers whenever the page asks, between requests.
-  if (init.specs.some((d) => d.type === 'blk' && d.stats)) new BroadcastChannel('webpc-iostats').onmessage = (e) => { if (e.data === 'ask') (e.target as BroadcastChannel).postMessage(devices!.stats()); };
+  if (init.specs.some((d) => d.type === 'blk' && d.stats)) new BroadcastChannel('waarm64-iostats').onmessage = (e) => { if (e.data === 'ask') (e.target as BroadcastChannel).postMessage(devices!.stats()); };
   self.postMessage({ type: 'ready' } satisfies FromDeviceWorker);
   await devices.serve(new Int32Array(init.memory.buffer, init.bell, 2));
 }

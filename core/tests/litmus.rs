@@ -4,7 +4,7 @@
 //! aarch64.cat forbids (images/litmus/check.awk), then the atomics stress
 //! (images/litmus/stress.c, LSE and LL/SC), whose totals must be exact. The
 //! round-robin run takes exactly tests/steps.txt's `litmus-4cpu` steps.
-//! `WEBPC_LITMUS` and `WEBPC_STRESS` override the options (commas for spaces).
+//! `WAARM64_LITMUS` and `WAARM64_STRESS` override the options (commas for spaces).
 //! Ignored by default (they need the image and a release build); scripts/ci.sh
 //! runs them.
 
@@ -15,9 +15,9 @@ fn litmus(parallel: bool, litmus: &str, stress: &str, snapshots: &[u64]) -> comm
     let initrd = common::image("litmus/initramfs.cpio");
     let opt = |var, default: &str| std::env::var(var).unwrap_or(default.into());
     let cmdline = format!(
-        "console=ttyAMA0 panic=-1 webpc.litmus={} webpc.stress={}",
-        opt("WEBPC_LITMUS", litmus),
-        opt("WEBPC_STRESS", stress)
+        "console=ttyAMA0 panic=-1 waarm64.litmus={} waarm64.stress={}",
+        opt("WAARM64_LITMUS", litmus),
+        opt("WAARM64_STRESS", stress)
     );
     let r = common::boot(&common::Boot {
         initrd: Some(&initrd),
@@ -33,10 +33,10 @@ fn litmus(parallel: bool, litmus: &str, stress: &str, snapshots: &[u64]) -> comm
     }
     assert!(r.powered_off(), "no SYSTEM_OFF:\n{}", r.console);
     assert!(
-        r.console.contains("webpc: litmus on 4 CPUs")
+        r.console.contains("waarm64: litmus on 4 CPUs")
             && r.console
-                .contains("litmus: all ok, 0 skipped\nwebpc: stress on 4 CPUs")
-            && r.console.contains("\nwebpc: test ok\n"),
+                .contains("litmus: all ok, 0 skipped\nwaarm64: stress on 4 CPUs")
+            && r.console.contains("\nwaarm64: test ok\n"),
         "{}",
         r.console
     );
@@ -47,7 +47,8 @@ fn litmus(parallel: bool, litmus: &str, stress: &str, snapshots: &[u64]) -> comm
 #[ignore = "needs target/images/litmus (images/build.sh linux litmus) and --release"]
 fn litmus_round_robin() {
     let r = litmus(false, "-s,100,-r,1", "-n,20000", &[]);
-    if std::env::var_os("WEBPC_LITMUS").is_none() && std::env::var_os("WEBPC_STRESS").is_none() {
+    if std::env::var_os("WAARM64_LITMUS").is_none() && std::env::var_os("WAARM64_STRESS").is_none()
+    {
         assert_eq!(r.steps, common::steps("litmus-4cpu"));
     }
 }
@@ -70,7 +71,8 @@ fn litmus_round_robin_through_snapshots() {
     let at: Vec<u64> = (1..=12).map(|k| k * total / 13 + k).collect();
     let r = litmus(false, "-s,100,-r,1", "-n,20000", &at);
     assert_eq!(r.snapshots.len(), at.len());
-    if std::env::var_os("WEBPC_LITMUS").is_none() && std::env::var_os("WEBPC_STRESS").is_none() {
+    if std::env::var_os("WAARM64_LITMUS").is_none() && std::env::var_os("WAARM64_STRESS").is_none()
+    {
         assert_eq!(r.steps, total);
     }
 }

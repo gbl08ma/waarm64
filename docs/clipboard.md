@@ -12,9 +12,9 @@ in [devices.md](devices.md) "agent" (the device), devices.md "The guest's agent"
 
 ```
  host clipboard ── Clipboard API / paste event ── page (main thread) ── worker ── virtio-console port
-                                                                                   "org.webpc.agent.0"
+                                                                                   "org.waarm64.agent.0"
                                                                                         │
- guest: webpc-agent.service (root; from fw_cfg into a tmpfs of its own, started by a credential unit)
+ guest: waarm64-agent.service (root; from fw_cfg into a tmpfs of its own, started by a credential unit)
         └─ a session child for the active session on seat0 (its uid): Wayland data-control, else X11's CLIPBOARD
         └─ text consoles: TYPE through TIOCSTI on the foreground VT
 ```
@@ -24,7 +24,7 @@ in [devices.md](devices.md) "agent" (the device), devices.md "The guest's agent"
 | The channel | `web/agent-device.ts` (the device), `web/app/agent-link.ts` (`AgentLink`), `web/agent-frame.ts` (the frames) | a virtio-console with MULTIPORT and one named port, transport kind `agent`, only on machines with the setting (so the other machines' shapes and step counts don't move) |
 | The page's side | `web/app/clipboard.ts` (`ClipboardShare`), `web/app/ClipboardMenu.svelte`, `web/input.ts` (the held paste chord), `web/app/png-worker.ts` (conversions to PNG) | the browser's clipboard, the permission, the rules below |
 | The agent | `agent/` (Rust, its own crate and stable toolchain, `rustix` its one dependency), `images/build.sh agent` | a static aarch64 musl binary: the root loop (`main.rs`, `logind.rs`, `console.rs`), the session child (`session.rs`), Wayland (`wire.rs`), X11 (`x11.rs`), the frames (`frame.rs`, the twin of `web/agent-frame.ts`) |
-| Its delivery | `web/app/guest-agent.ts` | the binary as the fw_cfg file `opt/webpc/agent` (gzipped by the page), the unit as SMBIOS credentials (systemd 256+) |
+| Its delivery | `web/app/guest-agent.ts` | the binary as the fw_cfg file `opt/waarm64/agent` (gzipped by the page), the unit as SMBIOS credentials (systemd 256+) |
 
 The frames are length-prefixed (`u32` length, `u8` type, a payload of at most 64 KiB). Offers are lazy: a side says
 what types it has, and the other side REQUESTs the bytes, which come as DATA in 64 KiB chunks under a credit (4
@@ -110,10 +110,10 @@ the pause drops it.
 
 ## The guest's agent
 
-**Delivery.** `webpc-agent.service` (`Type=simple`, wanted by `multi-user.target`) runs
+**Delivery.** `waarm64-agent.service` (`Type=simple`, wanted by `multi-user.target`) runs
 `modprobe -q qemu_fw_cfg` outside its sandbox, then its script gunzips
-`/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw` into `/run/webpc` (a `TemporaryFileSystem=` of its own,
-mode 0700, `exec`), waits for udev's `/dev/virtio-ports/org.webpc.agent.0` and `exec`s it. A boot without the setting
+`/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent/raw` into `/run/waarm64` (a `TemporaryFileSystem=` of its own,
+mode 0700, `exec`), waits for udev's `/dev/virtio-ports/org.waarm64.agent.0` and `exec`s it. A boot without the setting
 has no unit and no binary. Machines without firmware (direct kernel boots) have no fw_cfg file or credentials, and
 don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts in 10 minutes.
 
@@ -223,7 +223,7 @@ gives activation in Firefox's BiDi, so Firefox's activation rules were measured 
 | `tests/agent.test.ts` (Node, `npm test`) | the device on hand-built queues, the link, the unit's lines and script, `ClipboardShare` on a faked link and browser (every rule above), the held paste chord |
 | `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, `npm test`) | the button's states and menu, the permission (headless: denied), the Machines page's switch, the PNG worker, Copy the screen on the framebuffer; the guest's shell plays the agent on the port |
 | `tests/page-agent.test.ts` (Debian, `scripts/ci-debian.sh`) | the agent over fw_cfg, its HELLO and unit, the fw_cfg read's time, idle CPU and RSS, TYPE onto tty1 (fast and slow readers, graphics mode refused), PAUSE, the port echoed by `cat` |
-| `tests/page-clipboard.test.ts`, `tests/page-clipboard-x11.test.ts` (`images/debian-sway/build.sh`'s Debian, `scripts/ci-debian.sh --platform`; skipped without the image) | sway 1.10 through `zwlr`, and Xvfb from a tty login: text, images and HTML both ways, the paste chord, echoes, the pause, idle costs, the session's end and a new one; Copy the screen on the default 3D path, and on virtio-gpu 2D's scanout with `WEBPC_DISTROS=debian WEBPC_PAGE_QUERY=gpu=2d` (passes, ~150 s) |
+| `tests/page-clipboard.test.ts`, `tests/page-clipboard-x11.test.ts` (`images/debian-sway/build.sh`'s Debian, `scripts/ci-debian.sh --platform`; skipped without the image) | sway 1.10 through `zwlr`, and Xvfb from a tty login: text, images and HTML both ways, the paste chord, echoes, the pause, idle costs, the session's end and a new one; Copy the screen on the default 3D path, and on virtio-gpu 2D's scanout with `WAARM64_DISTROS=debian WAARM64_PAGE_QUERY=gpu=2d` (passes, ~150 s) |
 
 Each step's cases and planted bugs are in [testing.md](testing.md)'s clipboard rows.
 

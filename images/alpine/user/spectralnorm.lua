@@ -1,4 +1,4 @@
--- Spectral norm (floating point, nested loops): webpc's own, after the
+-- Spectral norm (floating point, nested loops): waarm64's own, after the
 -- Benchmarks Game's description.
 local n = 140
 local function a(i, j)

@@ -145,7 +145,7 @@ pub fn edid(width: u32, height: u32, dpi: u32, extra: &[(u32, u32)]) -> [u8; 128
     );
     let mut e = [0u8; 128];
     e[..8].copy_from_slice(&[0, 255, 255, 255, 255, 255, 255, 0]);
-    let id = (87 - 64) << 10 | (80 - 64) << 5 | (67 - 64);
+    let id = (87 - 64) << 10 | (65 - 64) << 5 | (77 - 64);
     e[8] = (id >> 8) as u8;
     e[9] = id as u8;
     e[10] = 1;
@@ -196,7 +196,7 @@ pub fn edid(width: u32, height: u32, dpi: u32, extra: &[(u32, u32)]) -> [u8; 128
             0x20,
         ],
     );
-    let mut name = b"webpc\n".to_vec();
+    let mut name = b"waarm64\n".to_vec();
     name.resize(13, 0x20);
     let mut order: Vec<[u8; 18]> = more;
     order.push(range);

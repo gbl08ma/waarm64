@@ -4,15 +4,15 @@
 // `npm test`, they loaded the host enough that realtime tests with 1 ms windows
 // (the parallel bare-metal timer.bin) failed (M8 loop 6). A directory in the temp
 // directory is the lock; its `pid` file lets a waiter take over from a dead holder.
-// WEBPC_DEBIAN_SLOTS lets that many boots run at once (scripts/ci-debian.sh, scripts/ci-graphics.sh and scripts/ci-machines.sh, where nothing else
+// WAARM64_DEBIAN_SLOTS lets that many boots run at once (scripts/ci-debian.sh, scripts/ci-graphics.sh and scripts/ci-machines.sh, where nothing else
 // runs beside them): a slot is a directory each.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const LOCK = join(tmpdir(), 'webpc-debian-page.lock');
-const SLOTS = Math.max(1, Number(process.env.WEBPC_DEBIAN_SLOTS ?? 1));
-/** WEBPC_DEBIAN_TIMES=1 prints each hold (where a suite's time goes); the start is the process's. */
+const LOCK = join(tmpdir(), 'waarm64-debian-page.lock');
+const SLOTS = Math.max(1, Number(process.env.WAARM64_DEBIAN_SLOTS ?? 1));
+/** WAARM64_DEBIAN_TIMES=1 prints each hold (where a suite's time goes); the start is the process's. */
 const START = Date.now() - performance.now();
 
 const alive = (pid: number) => {
@@ -57,6 +57,6 @@ export async function withDebianLock<T>(f: () => Promise<T>, ms = 15 * 60_000): 
     return await f();
   } finally {
     rmSync(held, { recursive: true, force: true });
-    if (process.env.WEBPC_DEBIAN_TIMES) console.log(`# debian slot ${held.slice(LOCK.length) || '.0'}: held ${((Date.now() - t) / 1000).toFixed(0)} s, from +${((t - START) / 1000).toFixed(0)} s (pid ${process.pid})`);
+    if (process.env.WAARM64_DEBIAN_TIMES) console.log(`# debian slot ${held.slice(LOCK.length) || '.0'}: held ${((Date.now() - t) / 1000).toFixed(0)} s, from +${((t - START) / 1000).toFixed(0)} s (pid ${process.pid})`);
   }
 }

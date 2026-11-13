@@ -1,6 +1,6 @@
 // Boot time of the Buildroot guest (target/images/linux, images/build.sh) on the
 // wasm core in a worker, deterministic mode, root filesystem on virtio-blk over
-// HTTP ranges: time to /init ("webpc: init" on the console) and to power-off
+// HTTP ranges: time to /init ("waarm64: init" on the console) and to power-off
 // after /test.sh.
 // Cold: a freshly compiled module per boot (V8 starts on Liftoff code).
 // Warm: one module, reused after warm-up boots.
@@ -12,7 +12,7 @@
 // `--query=growcore`: the core imports the memory growable (web/vm.ts `exactCore`), for an A/B.
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_user_spill_jit` the same with 192 MiB in memory 0 and the rest in a spill memory;
-// `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
+// `--only alpine_crypto_jit`: `openssl speed` in the same image (waarm64.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
 // `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7), SHA512 and
 // SHA3 too (since ABI 51); `--only alpine_crypto_nosha3_jit`: the v8.0 ones without SHA512 and SHA3;
 // `--only alpine_crypto_eor3_jit`: all of them, with OpenSSL told to use its SHA-3 and EOR3 AES-GCM code.
@@ -21,7 +21,7 @@
 // `--only gl_virgl_jit`, `gl_virgl_jit_4`: the same frames through virgl (images/alpine-virgl's Mesa) on the
 // device's null renderer (G2: the guest's cost alone); `gl_virgl_llvmpipe_jit[_4]`: llvmpipe from that same build.
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
-// guest script's "webpc: … start/end" markers unless fio times itself:
+// guest script's "waarm64: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
 // `--only fio`: /bench-fio.sh, fio random 4 KiB and sequential 1 MiB O_DIRECT reads;
 // `--only p9`: /bench-9p.sh, 9p file operations on the in-memory tree;
@@ -49,15 +49,15 @@ type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: str
 
 export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<ArrayBuffer> }> {
   const [wasm, kernel] = await Promise.all([
-    get('../../target/wasm32-unknown-unknown/release/webpc_core.wasm'),
+    get('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm'),
     get(`../../target/images/linux/${image}`),
   ]);
   return { wasm, kernel, disk: new URL('../../target/images/buildroot/rootfs.ext4', import.meta.url).href, cmdline: CMDLINE, ramSize: 256 << 20 };
 }
 
 /**
- * One boot to power-off: ms to each "webpc: …" console line (`marks`, keyed
- * by the text after "webpc: ") and to the end, and the counters. `test`: the
+ * One boot to power-off: ms to each "waarm64: …" console line (`marks`, keyed
+ * by the text after "waarm64: ") and to the end, and the counters. `test`: the
  * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
  */
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; sha3?: boolean; rng?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
@@ -76,7 +76,7 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     const now = performance.now() - t0;
     const end = console.lastIndexOf('\n') + 1; // whole lines only
     // Not in the kernel's echo of its command line.
-    for (const m of console.slice(scanned, end).replace(/^.*Kernel command line:.*$/gm, '').matchAll(/webpc: ([^\r\n]*)/g)) {
+    for (const m of console.slice(scanned, end).replace(/^.*Kernel command line:.*$/gm, '').matchAll(/waarm64: ([^\r\n]*)/g)) {
       if (m[1] in marks) continue;
       marks[m[1]] = now;
       o.onMark?.(m[1], vm);
@@ -88,7 +88,7 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     const closed = vm.close();
     // The guest's counter read 0 at boot (a vCPU worker's clock behind the VM's; web/vm.ts `clockOffset`).
     if (/Missing cycle counter/.test(console)) throw new Error(`the counter didn't run at boot:\n${console}`);
-    if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/webpc: test (exit 0|ok)/.test(console)) {
+    if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/waarm64: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }
     return { init: marks['init'], total, marks, closed, console, stats: vm.stats(), cpus: vm.cpuStats(), helpers: vm.helperReport().slice(0, 30) };
@@ -157,7 +157,7 @@ async function dd(o: Options): Promise<Sample[]> {
     const ms = r.marks['dd end'] - r.marks['dd start'];
     if (!(ms > 0)) throw new Error(`no dd markers:\n${r.console}`);
     mibs.push(size / 2 ** 20 / (ms / 1000));
-    o.log?.(`dd: ${ms.toFixed(0)} ms; guest: ${JSON.stringify(r.console.split('webpc: dd start')[1]?.split('webpc: dd end')[0].trim())}`);
+    o.log?.(`dd: ${ms.toFixed(0)} ms; guest: ${JSON.stringify(r.console.split('waarm64: dd start')[1]?.split('waarm64: dd end')[0].trim())}`);
   }
   return [{ name: 'blk_dd_read', unit: 'MiB/s', params: { cmdline, bytes: size, bs: '1M', realtime: true, backend: 'sync XHR, one request at a time' }, samples: mibs }];
 }
@@ -212,7 +212,7 @@ const USER_PHASES = ['compress', 'lua', 'churn', 'sqlite'];
  * Alpine's userspace benchmark: the boot image's kernel and initramfs with
  * rootfs-user.ext4, whose local.d script runs timed phases after booting
  * (images/alpine/user). Deterministic, the root disk only; ms per phase from
- * its "webpc: <phase> start/end" lines, and to power-off.
+ * its "waarm64: <phase> start/end" lines, and to power-off.
  */
 async function alpineUser(o: Options, spill = false): Promise<Sample[]> {
   const a = DISTROS.alpine;
@@ -239,10 +239,10 @@ async function alpineUser(o: Options, spill = false): Promise<Sample[]> {
 
 /**
  * `openssl speed` in Alpine's user image under the JIT (M6.5 loop 0): its
- * `webpc.phase=crypto` path (images/alpine/user) after the boot, in realtime
+ * `waarm64.phase=crypto` path (images/alpine/user) after the boot, in realtime
  * mode, since `openssl speed` times itself with the guest clock. MB/s (10^6
  * bytes) per algorithm and block size, and the helper calls made during the
- * phase. `extra` adds to Alpine's command line (`webpc.armcap=…` sets
+ * phase. `extra` adds to Alpine's command line (`waarm64.armcap=…` sets
  * OPENSSL_armcap); `crypto` gives the vCPU the crypto extensions (ABI 19),
  * `sha3` SHA512 and SHA3 with them (ABI 51).
  */
@@ -250,7 +250,7 @@ async function alpineCrypto(o: Options, extra = '', crypto = false, sha3 = true)
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
   const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
-  const cmdline = `${a.cmdline} webpc.phase=crypto${extra && ` ${extra}`}`;
+  const cmdline = `${a.cmdline} waarm64.phase=crypto${extra && ` ${extra}`}`;
   const module = await compileCore(img.wasm);
   const out = new Map<string, Sample>();
   const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1, crypto, sha3: crypto && sha3 };
@@ -262,7 +262,7 @@ async function alpineCrypto(o: Options, extra = '', crypto = false, sha3 = true)
     const r = await boot(module, img, undefined, { cmdline, realtime: true, crypto, sha3, onMark: (m, vm) => { if (m === 'crypto start') before = new Map(vm.helperReport().map((h) => [h.op, h.calls])); } });
     helpers = r.helpers.map((h) => ({ op: h.op, calls: h.calls - (before.get(h.op) ?? 0) })).filter((h) => h.calls > 0).sort((x, y) => y.calls - x.calls);
     check = r.console.match(/crypto: [0-9a-f]{16} [^\r\n]*/)?.[0] ?? '';
-    const phase = r.console.split('webpc: crypto start')[1]?.split('webpc: crypto end')[0] ?? '';
+    const phase = r.console.split('waarm64: crypto start')[1]?.split('waarm64: crypto end')[0] ?? '';
     let bytes = 0;
     for (const [, kind, rest] of phase.matchAll(/\+([HF]):([^\r\n]*)/g)) {
       const f = rest.split(':');
@@ -295,7 +295,7 @@ async function glLlvmpipe(o: Options, ncpus: number, renderer: 'llvmpipe' | 'vir
   const frames = ncpus === 1 ? 10 : 30;
   const virgl = renderer === 'virgl';
   // virgl's client is one thread; llvmpipe on 1 vCPU rasterizes on the calling thread.
-  const cmdline = `${a.cmdline} webpc.gl=${frames},3,1376,762${ncpus === 1 && !virgl ? ' webpc.lp=0' : ''}${virgl ? ' webpc.gpu=1' : ''}`;
+  const cmdline = `${a.cmdline} waarm64.gl=${frames},3,1376,762${ncpus === 1 && !virgl ? ' waarm64.lp=0' : ''}${virgl ? ' waarm64.gpu=1' : ''}`;
   const disk = renderer === 'llvmpipe' ? 'alpine-gl/rootfs-gl.ext4' : 'alpine-virgl/rootfs-virgl.ext4';
   const img = { ...base, kernel, initrd, disk: url(`../../target/images/${disk}`), cmdline, ramSize: 1 << 30, jit: 1 as const };
   // The display the page's machine has for the same size (G2: a virtio-gpu with virgl on the null renderer).
@@ -330,7 +330,7 @@ const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e
  * vCPU, realtime) under the JIT on N vCPUs, the Ns alternated within each
  * round so session drift hits them alike. `alpine`: Alpine's boot test to
  * power-off and to its local.d script; `user`: Alpine's userspace phases with
- * `webpc.threads=N` (N copies of each phase's work), ms per phase. One untimed
+ * `waarm64.threads=N` (N copies of each phase's work), ms per phase. One untimed
  * boot at each N first (the page's caches, V8's code for the core). Per-vCPU
  * counters of the last sample go into the params.
  */
@@ -343,7 +343,7 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
   // Boots: also to the distro's first marker (its local.d script), since realtime power-off includes busybox init's 2 s of sleeps.
   const phases = what === 'user' ? [...USER_PHASES, 'total'] : ['script', 'total'];
   const out = new Map<string, Sample>();
-  const one = (n: number) => boot(module, img, undefined, { cmdline: what === 'user' ? `${d.cmdline} webpc.threads=${n}` : d.cmdline, ncpus: n, parallel: true });
+  const one = (n: number) => boot(module, img, undefined, { cmdline: what === 'user' ? `${d.cmdline} waarm64.threads=${n}` : d.cmdline, ncpus: n, parallel: true });
   for (const n of ns) await one(n);
   for (let i = 0; i < (o.quick ? 1 : rounds); i++) {
     for (const n of ns) {
@@ -487,12 +487,12 @@ async function p9(o: Options): Promise<Sample[]> {
 async function net(o: Options): Promise<Sample[]> {
   const { runs, params } = await scriptBoots(o, '/bench-net.sh', 10);
   const rtt = (r: (typeof runs)[0], what: string) => {
-    const s = r.console.split(`webpc: net ${what} start`)[1];
+    const s = r.console.split(`waarm64: net ${what} start`)[1];
     const m = s?.match(/round-trip min\/avg\/max = [\d.]+\/([\d.]+)\//);
     if (!m) throw new Error(`no ping summary:\n${r.console}`);
     return Number(m[1]);
   };
-  o.log?.(`net: ${runs[0].console.match(/webpc: net big start[^]*/)?.[0]}`);
+  o.log?.(`net: ${runs[0].console.match(/waarm64: net big start[^]*/)?.[0]}`);
   const p = { ...params, pings: 1000, adapter: 'loopback (device worker)' };
   return [
     { name: 'net_big_pps', unit: 'round trips/s', params: { ...p, frame: 1514 }, samples: runs.map((r) => 1000 / (between(r, 'net big') / 1000)) },
@@ -520,7 +520,7 @@ export const suite = {
   alpine_crypto_nosha3_jit: (o: Options) => alpineCrypto(o, '', true, false), // with them, but not SHA512 and SHA3
   // OpenSSL's SHA-3 (Keccak) and EOR3 AES-GCM paths, which it picks only on CPUs it knows by MIDR (bit 15, bit 12):
   // its armcap on our vCPU (0x9fd) with those two bits.
-  alpine_crypto_eor3_jit: (o: Options) => alpineCrypto(o, 'webpc.armcap=0x99fd', true),
+  alpine_crypto_eor3_jit: (o: Options) => alpineCrypto(o, 'waarm64.armcap=0x99fd', true),
   // M7: parallel SMP at N = 1, 2, 4 vCPUs, alternated; `…_8` once as a check (N + 2 threads: more than the dev VM's 8).
   smp_alpine_jit: (o: Options) => smp(o, 'alpine', [1, 2, 4], 5),
   smp_user_jit: (o: Options) => smp(o, 'user', [1, 2, 4], 2),

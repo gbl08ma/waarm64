@@ -17,7 +17,7 @@ export type TailcatConfig = {
   /** Let tailcat clients in to the guest; `relay`, when there's no `addr`: one's own derper (`host[:port]`), or empty
    * for tailcat's public relays (the nearest region); `allow`: the clients' node keys let in (empty: any with the address). */
   serve?: TailcatServe;
-  /** The machine's identity (its node key, and its address when serving): kept in `webpc-tailcat` in IndexedDB under
+  /** The machine's identity (its node key, and its address when serving): kept in `waarm64-tailcat` in IndexedDB under
    * `identityKey` (default `served` when serving), or, given `identity`, that one (an ephemeral connection's, kept
    * nowhere). Neither, and not serving: a fresh key each connect. */
   identityKey?: string;
@@ -82,7 +82,7 @@ export function parseRelay(input: string): { relay: string } | { error: Msg } {
 
 /** The served machine's kept identity: its node key and the address's pre-shared key (hex), in this origin's IndexedDB. */
 export type TailcatIdentity = { key: string; psk: string };
-const IDB = 'webpc-tailcat';
+const IDB = 'waarm64-tailcat';
 
 function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {

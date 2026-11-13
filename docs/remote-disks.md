@@ -105,7 +105,7 @@ cp -al target/images/remote/<name> target/disks/<name> && deploy/disks/deploy.sh
 ## Where our images are
 
 - **`https://vmdisks.tny.im`** (the Desktop Demo: `?disk=https://vmdisks.tny.im/desktop/prefetch.json`): the Worker
-  `webpc-disks` on the user's Cloudflare account, static assets only, no script (`deploy/disks/`: `wrangler.jsonc`,
+  `waarm64-disks` on the user's Cloudflare account, static assets only, no script (`deploy/disks/`: `wrangler.jsonc`,
   `_headers`, `deploy.sh`), serving the dev VM's `target/disks/` (`<name>/manifest.json`, `prefetch.json`, `pieces/`).
   `_headers`: CORS `*` everywhere, pieces `Cache-Control: immutable` (named by their hash), manifests 5 minutes. A deploy
   replaces the whole site, so `target/disks/` holds every image that stays; wrangler uploads only pieces it hasn't

@@ -13,7 +13,7 @@
 //! regular expression, which a sample of random addresses estimates (the 80 bits are uniform). Every key is a fresh
 //! try, so the time to the next match is that average whenever it's asked.
 //!
-//! Usage: cargo run --release -p webpc_ts --example room-key-mine -- <room link or public room's name>
+//! Usage: cargo run --release -p waarm64_ts --example room-key-mine -- <room link or public room's name>
 //!          [--prefix HEX] [--suffix HEX] [--regex RE [--compressed]] [--count N] [--threads N]
 //! HEX: digits of the 80 bits after the room's /48 (the room's own 12 may lead a prefix), groups of 4 written whole
 //! (`cafe:0000:12` is a prefix, `1:0053` a suffix). The key printed is a secret: whoever has it can be that member.
@@ -27,8 +27,8 @@ use std::net::Ipv6Addr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use webpc_ts::room::Room;
-use webpc_ts::room::link::Link;
+use waarm64_ts::room::Room;
+use waarm64_ts::room::link::Link;
 
 /// Points converted to Montgomery form at once (one inversion between them).
 const BATCH: usize = 512;
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn a_key_s_address_and_name_are_the_module_s() {
-        // What the module said for this key in this room (a member's `self` event, 2026-11-11).
+        // What the module said for this key in this room (a member's `self` event, 2026-11-11; the room's prefix and tag since the rename's labels).
         let room = Room::derive("gbltest-3osfmkgjp2ipy24462wsg6vase");
         let public = public_of(unhex(
             "d63de5f704da4c84c7d36d7d8f9e37656639f759ae0b8c075000b4bd8d9203d6",
@@ -432,12 +432,12 @@ mod tests {
         let a = room.addr(&public);
         assert_eq!(
             Ipv6Addr::from(a).to_string(),
-            "fd1f:9d04:b403:a7eb:711b:9fde:d80e:a798"
+            "fdd1:dba0:3f3d:a7eb:711b:9fde:d80e:a798"
         );
-        assert_eq!(expanded(&a), "fd1f:9d04:b403:a7eb:711b:9fde:d80e:a798");
+        assert_eq!(expanded(&a), "fdd1:dba0:3f3d:a7eb:711b:9fde:d80e:a798");
         assert_eq!(
             room.name(&public),
-            "u7vxcg4733ma5j4y4bdn6opo5ncyk6nl7dof3ec42hkjdb42qzna.d6oqjnad.p2p.internal"
+            "u7vxcg4733ma5j4y4bdn6opo5ncyk6nl7dof3ec42hkjdb42qzna.2hn2apz5.p2p.internal"
         );
         assert_eq!(bits80(&public), 0xa7eb_711b_9fde_d80e_a798);
     }

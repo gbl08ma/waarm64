@@ -30,7 +30,7 @@ test('a chunk, its host work and a stall in progress', () => {
 
 test('parallel: every vCPU worker reports its chunks', async () => {
   let vm: Vm | undefined;
-  const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+  const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
   const kernel = readFileSync(new URL('baremetal/smp.bin', import.meta.url));
   await runToPowerOff(wasm, { ramSize: 16 << 20, kernel, kernelOffset: 0, cmdline: '', ncpus: 4, parallel: true, realtime: true, idleLimitMs: 30_000, jit: 1 }, 1e12, (v) => { vm = v; });
   const live = vm!.liveness();

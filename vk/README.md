@@ -81,7 +81,7 @@ gives the pump's own turns back, `?gpu=vktick=<ms>` another sleep (0.01–10 ms;
   and the ticker, every third of that period, takes the lock and sets each word's alive bit (web/venus-ticker.ts
   `setAlive`), stopped or running. A renderer stuck for good still meets Mesa's own abort (895 s), and one whose worker
   is gone takes its ticker with it. `?gpu=vkpoll=pump` and `timeout` have no ticker, so no monitor between polls.
-  tests/page-venus.test.ts runs vkcube across a 6 s stall of the GPU worker (`window.__webpcStallGpu`): without the
+  tests/page-venus.test.ts runs vkcube across a 6 s stall of the GPU worker (`window.__waarm64StallGpu`): without the
   ticker's bits Mesa logs "aborting on expired ring alive status" and vkcube dies (134); with them it finishes.
 
 ## The shader path
@@ -340,7 +340,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
-  listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Vulkan 1.4's `maintenance5` and
+  listed), as Venus on a native host passes its GPU's on, named `waarm64 WebGPU`. Vulkan 1.4's `maintenance5` and
 `maintenance6` and `maintenance8` (VK4 T24: mostly the runtime's and host-side; their A1B5G5R5 a packed format since
 VK4 T30, A8_UNORM an `r8unorm` texture since VK4 T38, "Formats a texture holds otherwise" below; `maintenance8` reaches
 a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB;
@@ -1204,7 +1204,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   indirect fans). The worker counts its own (web/venus-gpu.ts `VenusEmulStats`): blits, resolves WebGPU makes and
   those drawn, depth resolves, clears and those copied in, transform feedback's draws, storing vertex stages'
   pre-passes (the driver's `vsPrepasses` too: VK4 T33). The render stats' `venusEmul`
-  has both, a second's. `?gpu=vkskip=<path>` (repeatable; the bench hook `window.__webpcVkSkip` changes it in a run)
+  has both, a second's. `?gpu=vkskip=<path>` (repeatable; the bench hook `window.__waarm64VkSkip` changes it in a run)
   leaves a path's work out, for A/B only: `views`, `words` and `feedback` (the driver's copies: the place is taken as
   up to date) and `meta` (the worker's blits and resolves); what it leaves is wrong pixels, never a command WebGPU
   refuses, which is why the shadows, pulled vertices and keyed variants have no skip (WebGPU would refuse their draws).
@@ -1279,7 +1279,7 @@ and a hash of the device's caps, then the runtime's key. Both also make `pipelin
 a guest program's saved cache from another build or other caps (its WGSL made for those) is refused (its header), not
 misread.
 
-The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `webpc-shaders` when Vulkan starts.
+The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `waarm64-shaders` when Vulkan starts.
 It is the origin's, shared by every machine (an entry depends on the shader and the device, not the machine), and kept
 under a byte budget (least recently used out first), written back a second after a change. Entries are stored deflated
 (CompressionStream's deflate-raw at the write-back; one that doesn't shrink as it is, VK4 T17) and held so, inflated at
@@ -1289,7 +1289,7 @@ start's 499 lookups inflate in ~66 ms in all (Node; vkQuake's second replay's 75
 largest entry (0.86 MB) in ~3 ms. So the budget counts what is held too. LZ4 (the core's codec in JavaScript) held 60%
 more and inflated no faster; zstd through fzstd decoded 3× slower and has no encoder without a wasm build
 (bench/vulkan/REPORT.md "VK4 T49 follow-up"). The budget is the page's Preferences'
-("[Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget)", 8 to 64 MiB, 32 by default, `webpc.settings`
+("[Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget)", 8 to 64 MiB, 32 by default, `waarm64.settings`
 `shaderMiB`), taken at a machine's start; the Machines page's storage line shows the store and clears it
 (`shaderStoreSize`, `clearShaderStore`; a machine running with Vulkan keeps what it holds and stores it again as it
 changes). Entries carry the
@@ -1442,7 +1442,7 @@ the readback way ~0.7 ms and holds the compositor's submit up to 8 ms (bench/vul
 `tests/venus-share.test.ts` checks the bytes every way, R5G6B5's and A2R10G10B10's packed textures among them (the GPU ways only where the page doesn't render in software:
 on the Mac, not in the dev VM), the check's fallback with the GPU ways broken (everywhere) and its verdicts (Node);
 `tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim, the page's GPU ways broken so its check
-falls back to the readback way. `bench/vulkan/present.ts` compares the page's screen (`window.__webpcGrab`: the
+falls back to the readback way. `bench/vulkan/present.ts` compares the page's screen (`window.__waarm64Grab`: the
 screen canvas as drawn, read back in the GPU worker) with the guest's own frames in the desktop guest, way by way
 (vkcube's window; mpv's paused frame against its own screenshot), and runs in `bench/vulkan/nvidia.sh page`.
 
@@ -1458,7 +1458,7 @@ two images, a draw, and the images and memories freed again.
   kernel attaches the resource to the Venus context, and `vkAllocateMemory` names it (`VkImportMemoryResourceInfoMESA`).
   Mesa's virgl VA driver says an exported surface's objects are their dma-bufs' size, a page for a decoder's host-only
   resources, and libplacebo refuses an image larger than its object ("Imported object requires 16384 bytes, larger than
-  the provided size 4096"): our VA driver (webpc-va 3, images/arch/webpc-va/) says what the planes span instead.
+  the provided size 4096"): our VA driver (waarm64-va 3, images/arch/waarm64-va/) says what the planes span instead.
 - **The device and the renderer:** the device hands a virgl resource attached to a Venus context to Venus's renderer
   with its size (`blob-ctx` with `size`: its pages, or its texels at 4 bytes each, whichever is more) instead of to the
   virgl renderer; `venus_resource_import` makes it a dma-buf resource in vkr whose "fd" is its id (wasm has no fds:

@@ -1,7 +1,7 @@
 // VK4 T23: what the emulated paths cost a program's frame (dev-only; bench/vulkan/REPORT.md "VK4 T23"). Godot's Global
 // Illumination demo as it starts in SDFGI mode (bench/vulkan/godot-disk.sh's `gi-sdfgi`, `gi-sdfgi-ssil`: vsync off, a
 // line a second of its frames and its own CPU and GPU ms) in the desktop guest on Venus, as bench/vulkan/godot.ts runs
-// Godot; once it draws and has settled, arms alternated in the one run (`window.__webpcVkSkip`: the emulated work an
+// Godot; once it draws and has settled, arms alternated in the one run (`window.__waarm64VkSkip`: the emulated work an
 // arm leaves out, web/venus-host.ts `SKIPS`), each ARM_S seconds a round: Godot's frames a second, its CPU and GPU ms
 // a frame, its process's CPU (the guest's), the GPU worker's busy ms a second and its Venus submits' parts (with
 // `GPU_KNOBS=vkgputime` the GPU's own ms in their passes), and the emulated paths' counts a frame (the render stats'
@@ -36,7 +36,7 @@ let current = 'boot';
 page.on('console', (m) => appendFileSync(`${out}/console.txt`, `${current} ${m.type()} ${m.text().slice(0, 600)}\n`));
 type Stats = Record<string, unknown> & { busyMs?: number; shareRefreshes?: number; venus?: Record<string, number>; venusEmul?: Record<string, number> };
 const takeStats = async () => (await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0))) as Stats[];
-const setSkip = (paths: string[]) => page.evaluate((p) => (window as unknown as { __webpcVkSkip(p: string[]): void }).__webpcVkSkip(p), paths);
+const setSkip = (paths: string[]) => page.evaluate((p) => (window as unknown as { __waarm64VkSkip(p: string[]): void }).__waarm64VkSkip(p), paths);
 const results: Record<string, unknown> = { chromium: s.browser.version(), gl: s.gl, gpuKnobs: process.env.GPU_KNOBS ?? '', arms: ARMS, rounds: ROUNDS, armS: ARM_S };
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
 

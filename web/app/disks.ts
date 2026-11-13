@@ -42,7 +42,7 @@ export async function diskRef(d: DiskRecord, overlay?: string): Promise<DiskRef>
 /** Whether overlay or stored disk directory `path` is open now (a machine runs on it, in this tab or another). */
 export async function inUse(path: string) {
   const held = await navigator.locks.query();
-  return [...(held.held ?? []), ...(held.pending ?? [])].some((l) => l.name === `webpc-overlay:${path}`);
+  return [...(held.held ?? []), ...(held.pending ?? [])].some((l) => l.name === `waarm64-overlay:${path}`);
 }
 
 /** A new, empty overlay of disk `d` (its files are made when a machine first opens it). */

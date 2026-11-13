@@ -44,7 +44,7 @@
     "note": "The title of a confirmation dialog (OK/Cancel) that doesn't give a title of its own."
   },
   "ask.title": {
-    "message": "webpc",
+    "message": "waarm64",
     "note": "The title of a notice or a text prompt that doesn't give a title of its own: the product's name."
   },
   "ask.ok": {

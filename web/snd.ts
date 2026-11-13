@@ -588,7 +588,7 @@ export function fromF32(f32: Float32Array, p: SndParams) {
 }
 
 /**
- * The realtime source with the page's microphone (audio S4, docs/audio.md "How it fits together"): while the page's `webpc-mic` worklet
+ * The realtime source with the page's microphone (audio S4, docs/audio.md "How it fits together"): while the page's `waarm64-mic` worklet
  * fills the microphone's ring (its heartbeat moved in the last `LIVE_MS`), a message completes once the ring has its
  * frames, at most a buffer behind (older frames are skipped: latency, not a backlog, after a stall); otherwise (no
  * page, no permission yet or refused, the microphone turned off) silence at the stream's rate by the clock (paused

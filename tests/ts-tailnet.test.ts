@@ -5,7 +5,7 @@
 // same store, the page's IndexedDB entries as a map, against a headscale (tests/net/tailnet.sh).
 // Each starts on the store the other wrote and is the same node: headscale's node ID and the
 // node's addresses unchanged, no new node. Both ways, from a store either one made.
-// Opt-in: WEBPC_TAILNET=1 (needs Podman, or WEBPC_TAILNET_SCRIPT=tests/net/tailnet-native.sh;
+// Opt-in: WAARM64_TAILNET=1 (needs Podman, or WAARM64_TAILNET_SCRIPT=tests/net/tailnet-native.sh;
 // target/net/tailscale.wasm and target/net/ts.wasm). The rig's test CA is trusted once it's up
 // (`trust`), here and in the Go client's worker.
 // T5, the data plane: a stand-in guest (crafted IP packets, tests/net/packets.ts) pings the peer over
@@ -28,8 +28,8 @@ import { startRust } from './net/rust-client.ts';
 import type { NetMap } from '../web/tailscale.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
-const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
+const script = process.env.WAARM64_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
+const skip = process.env.WAARM64_TAILNET !== '1' ? 'SKIPPED: set WAARM64_TAILNET=1'
   : !existsSync(`${ROOT}target/net/tailscale.wasm`) ? 'SKIPPED: no target/net/tailscale.wasm (net/tailscale/build.sh)'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : undefined;
@@ -40,7 +40,7 @@ let env: Record<string, string>;
 before(() => {
   if (skip) return;
   env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 240_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2) as [string, string]));
-  control = env.WEBPC_TS_CONTROL;
+  control = env.WAARM64_TS_CONTROL;
   ca = env.NODE_EXTRA_CA_CERTS;
   trust(ca);
 });
@@ -96,10 +96,10 @@ test('the Rust client\'s netmap matches what the tailnet\'s peer sees', { skip, 
   const r = await startRust({ controlURL: control, authKey: execFileSync(script, ['key'], { encoding: 'utf8' }).trim(), hostname: 'netmap', state });
   try {
     const nm = await within(r.running, 'the Rust client');
-    const peer = nm.peers.find((p) => p.addresses.some((a) => a.startsWith(`${env.WEBPC_TS_PEER_IP}/`)));
+    const peer = nm.peers.find((p) => p.addresses.some((a) => a.startsWith(`${env.WAARM64_TS_PEER_IP}/`)));
     assert.ok(peer, `the peer is in the netmap: ${JSON.stringify(nm.peers)}`);
-    assert.equal(peer.name, env.WEBPC_TS_PEER_NAME);
-    assert.ok(peer.addresses.includes(`${env.WEBPC_TS_PEER_IP6}/128`));
+    assert.equal(peer.name, env.WAARM64_TS_PEER_NAME);
+    assert.ok(peer.addresses.includes(`${env.WAARM64_TS_PEER_IP6}/128`));
     assert.equal(peer.exitNodeOption, true, 'the peer offers itself as the exit node');
     assert.equal(peer.online, true);
     // The peer's view: our node with our addresses (headscale tells it within a few seconds).
@@ -128,8 +128,8 @@ test('the guest reaches the peer and is reached, through DERP, the filter and Ma
     const nm = await within(r.running, 'the Rust client');
     const self4 = nm.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, '');
     const self6 = nm.addresses.find((a) => a.includes(':'))!.replace(/\/\d+$/, '');
-    const peer4 = env.WEBPC_TS_PEER_IP;
-    const peer6 = env.WEBPC_TS_PEER_IP6;
+    const peer4 = env.WAARM64_TS_PEER_IP;
+    const peer6 = env.WAARM64_TS_PEER_IP6;
     /** Sends `p` every 500 ms until a packet `match`es (resolves with it and the time since the last send) or `ms` pass. */
     const exchange = async (what: string, send: () => Uint8Array, match: (q: ReturnType<typeof pk.parse>) => boolean, ms = 20_000) => {
       const t0 = performance.now();
@@ -157,7 +157,7 @@ test('the guest reaches the peer and is reached, through DERP, the filter and Ma
     await exchange('ping the peer over IPv6', () => pk.ping(self6, peer6, 0x78, ++seq), (q) => q.proto === 58 && q.icmpType === 129);
 
     // MagicDNS: the peer's name, and a name in the tailnet's domain that doesn't exist.
-    const peerName = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
+    const peerName = env.WAARM64_TS_PEER_NAME.replace(/\.$/, '');
     const a = await exchange('MagicDNS', () => pk.udp(self4, 40001, '100.100.100.100', 53, pk.dnsQuery(7, peerName, 1)), (q) => q.proto === 17 && q.src === '100.100.100.100' && q.dport === 40001);
     assert.deepEqual(pk.dnsAnswers4(a.hit.payload), { rcode: 0, addrs: [peer4] });
     const nx = await exchange('MagicDNS NXDOMAIN', () => pk.udp(self4, 40002, '100.100.100.100', 53, pk.dnsQuery(8, `nope.${peerName.split('.').slice(1).join('.')}`, 1)), (q) => q.proto === 17 && q.dport === 40002);

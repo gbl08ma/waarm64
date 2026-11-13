@@ -33,14 +33,14 @@ const save = () => writeFileSync(`${out}/results.json`, JSON.stringify(results, 
 
 type Shot = { w: number; h: number; grey: number; colours: number; mean: number; box: string; small: number[] };
 /**
- * The page's screen as it draws it (`window.__webpcGrab`, web/app/main.ts: a Playwright screenshot waits for a
+ * The page's screen as it draws it (`window.__waarm64Grab`, web/app/main.ts: a Playwright screenshot waits for a
  * compositor frame, which SwiftShader's busy GPU process may not give for minutes), written to `file` as a PNG: the
  * share of vkcube's clear grey, the colours (6 bits a channel), the mean, and the picture's box (what is brighter than
  * 24) at W×H (RGB).
  */
 async function grabScreen(page: import('playwright-core').Page, file: string): Promise<Shot> {
   const r = await page.evaluate(async ([w, h]) => {
-    const g = await (window as unknown as { __webpcGrab: () => Promise<{ width: number; height: number; pixels: Uint8Array }> }).__webpcGrab();
+    const g = await (window as unknown as { __waarm64Grab: () => Promise<{ width: number; height: number; pixels: Uint8Array }> }).__waarm64Grab();
     if (!g.width) throw new Error('the screen has no scanout');
     const d = g.pixels;
     let grey = 0, sum = 0;
@@ -95,7 +95,7 @@ for (const way of WAYS) {
     }
     await s.rootShell();
     await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media');
-    if (process.env.SHIM) await run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/');
+    if (process.env.SHIM) await run('cp /mnt/media/waarm64_drv_video.so /usr/lib/dri/');
     r.info = await run('pacman -Q mesa vulkan-virtio mpv libplacebo vulkan-tools sway | tr "\\n" " "');
     r.sway = await s.startSway('gles2');
     s.log(way, 'sway', r.sway);

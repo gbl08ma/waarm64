@@ -51,7 +51,7 @@ export class UhidDevice {
     const ev = Buffer.alloc(EVENT_SIZE);
     ev.writeUInt32LE(T.CREATE2, 0);
     ev.write(d.name, 4, 127, 'utf8');
-    ev.write(opts.phys ?? `webpc-uhid/${d.id}`, 4 + 128, 63, 'utf8');
+    ev.write(opts.phys ?? `waarm64-uhid/${d.id}`, 4 + 128, 63, 'utf8');
     ev.write(opts.uniq ?? '', 4 + 192, 63, 'utf8');
     ev.writeUInt16LE(d.rdesc.length, 4 + 256);
     ev.writeUInt16LE(BUS_USB, 4 + 258);
@@ -86,7 +86,7 @@ export class UhidDevice {
       const [bus, vid, pid] = dev.split(/[:.]/);
       if (Number.parseInt(bus, 16) !== BUS_USB || Number.parseInt(vid, 16) !== this.d.vendorId || Number.parseInt(pid, 16) !== this.d.productId) continue;
       try {
-        if (!readFileSync(`${base}/${dev}/uevent`, 'utf8').includes(`HID_PHYS=webpc-uhid/${this.d.id}`)) continue;
+        if (!readFileSync(`${base}/${dev}/uevent`, 'utf8').includes(`HID_PHYS=waarm64-uhid/${this.d.id}`)) continue;
         const nodes = readdirSync(`${base}/${dev}/hidraw`);
         if (nodes.length) return `/dev/${nodes[0]}`;
       } catch {

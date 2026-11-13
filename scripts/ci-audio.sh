@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 
 images/build.sh --check linux-snd > /dev/null || { echo 'ci-audio: the snd guest is missing or stale (images/build.sh linux-snd)'; exit 1; }
-export WEBPC_AUDIO_TESTS=1
+export WAARM64_AUDIO_TESTS=1
 step 'sound tests'
 node --disable-warning=ExperimentalWarning --test tests/audio-browser.test.ts
 printf '\nCI-AUDIO OK (%d s)\n' "$SECONDS"

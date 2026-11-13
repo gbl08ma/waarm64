@@ -438,14 +438,14 @@ What the crowds and the turn found, before and after the fixes in room.rs:
 net/ts/build.sh
 tests/net/tailcat.sh up && eval "$(tests/net/tailcat.sh env)"
 sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad    # only where the machine has no non-link-local IPv6
-WEBPC_TS_JSON=… NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA node bench/net/tailcat.ts $WEBPC_TAILCAT_ADDR 5
+WAARM64_TS_JSON=… NODE_EXTRA_CA_CERTS=$WAARM64_TAILCAT_CA node bench/net/tailcat.ts $WAARM64_TAILCAT_ADDR 5
 tests/net/tailcat.sh down
 # Batches: 8 MB down and up through tailcat (the batch histograms need the counters described above)
 node bench/net/transfer.ts <label> bench/results/local/<label>.json    # brings tests/net/tailcat.sh's rig up and down itself
 # T6: the Tailscale client in Chromium (brings the Podman tailnet up and down itself; the only Chromium running;
 # the Go column came from the same harness before the Go client left the page: git show 762cadc:bench/net/clients.ts)
 net/ts/build.sh
-WEBPC_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
+WAARM64_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
 # Rooms (R0): direct, relay only and a bare data channel, alternating (brings tests/net/tailcat.sh's rig up and down itself)
 node bench/net/room.ts 5 10000 bench/net/results/r0/room-<date>.json
 # Rooms at scale (R3): a thousand members in four processes on the tests' relay and the rig's derper (~10 min; brings the rig up and down itself)
@@ -455,7 +455,7 @@ node bench/net/local.ts bench/net/results/local-helper/arms.json local tailcat p
 node bench/net/local.ts bench/net/results/local-helper/variants.json local local::batch local::worker local::worker,batch local:9000 local:65520 --rounds 3 --mib 32
 node bench/net/lna.ts bench/net/results/local-helper/lna.json
 node bench/net/local-ipv6.ts mac bench/net/results/local-helper/ipv6-mac.json
-(cd net/webpc-net && go build -o ../../target/net/webpc-net .) && unshare -Urn node bench/net/local-ipv6.ts netns bench/net/results/local-helper/ipv6-reach.json
+(cd net/waarm64-net && go build -o ../../target/net/waarm64-net .) && unshare -Urn node bench/net/local-ipv6.ts netns bench/net/results/local-helper/ipv6-reach.json
 ```
 
 ## Rooms on public servers (R4, 2026-11-11)

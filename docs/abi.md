@@ -485,7 +485,7 @@ suspend marks them. The host accepts a file whose version is in that range.
 one form: power, WFI, a pending CPU_ON), `rtc`'s value and the fw_cfg files (the state's files
 replace the VM's: they are part of the machine).
 
-**The state** (little-endian; `WPCS`, the version, the configuration words above, then in a
+**The state** (little-endian; `WA64`, the version, the configuration words above, then in a
 fixed order):
 - Time: the steps of all vCPUs and the ticks WFI skipped, round-robin's current vCPU and the rest
   of its quantum, and in realtime mode the clock's nanoseconds, from which the restored clock
@@ -586,7 +586,7 @@ implemented by this step).
 | 46 | counter words 108–113: the JIT cache's lock and the time emission holds it |
 | 47 | the core's heap bounded: `vm_jit_gauge` words 5–7 (`jit::GAUGE_WORDS` 8), counter words 114–118; an allocation that fails records a `panic_message` |
 | 48 | counter word 119: jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
-| 49 | the host's type 11 strings: fw_cfg's `opt/webpc/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
+| 49 | the host's type 11 strings: fw_cfg's `opt/waarm64/oem-strings` (NUL-separated), which the core moves into SMBIOS type 11 (systemd credentials whose names don't fit fw_cfg's; the keyboard layout, [frontend.md](frontend.md)) |
 | 50 | counter word 120: the ns the block map's prunes took; `heap_probe(size)`: an infallible allocation of `size` bytes, freed at once, so a test can run the heap out through the allocation error hook (tests/heap.test.ts) |
 | 51 | FEAT_SHA512 and FEAT_SHA3: `VmConfig.features` bit 3 (`FEATURE_SHA3`, with bit 0); `ID_AA64ISAR0_EL1` SHA2 = 2, SHA3 = 1 |
 | 53 | the host-visible window: `VmConfig.window` (memory 0's bytes after RAM), `DeviceEntry.shm` (6 u64s an entry), the transport's SHM registers for region 1, `vm_window_watch` (VK1, docs/plans/graphics.md) |

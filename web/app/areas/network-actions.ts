@@ -51,7 +51,7 @@ export class NetworkActions {
   }
 
   /**
-   * The network as it was kept before connections (`webpc.settings` `net`, a kept node, the served tailcat identity)
+   * The network as it was kept before connections (`waarm64.settings` `net`, a kept node, the served tailcat identity)
    * made into connections (docs/networking/adapters.md §2.2), once: the transient machine's adapter and every stored
    * machine's first one get the one the settings were on.
    */
@@ -77,7 +77,7 @@ export class NetworkActions {
       remember({ net: undefined });
     };
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Web Locks are missing outside a secure context
-    if (navigator.locks) await navigator.locks.request('webpc-net-migrate', run);
+    if (navigator.locks) await navigator.locks.request('waarm64-net-migrate', run);
     else await run();
   }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The Arch base container, localhost/arch-base: Arch Linux for aarch64 from arch.bens.haus (an unofficial port of
 # Arch's own packages to ARMv8.0-A and later, listed on https://ports.archlinux.page/aarch64/; docs/images.md "Arch
-# Linux"), which images/arch/build.sh, webpc-va.sh and images/deqp's Containerfile start from. Made once and kept
+# Linux"), which images/arch/build.sh, waarm64-va.sh and images/deqp's Containerfile start from. Made once and kept
 # (--rebuild remakes it, e.g. for a newer bootstrap tarball).
 #
 #   images/arch/base.sh [--rebuild]

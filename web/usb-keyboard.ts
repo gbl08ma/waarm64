@@ -70,7 +70,7 @@ export class UsbKeyboard extends VirtualDevice {
   idle = 0;
 
   constructor() {
-    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['webpc', 'webpc keyboard'], extra: (type, index, s) => this.classDescriptor(type, index, s) });
+    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['waarm64', 'waarm64 keyboard'], extra: (type, index, s) => this.classDescriptor(type, index, s) });
   }
 
   /** The report now: modifiers, 0, six keys (or six ErrorRollOver with more held). */

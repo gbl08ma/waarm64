@@ -1,6 +1,6 @@
 // Shared folders on the page (docs/shares.md). Without a guest, on stored machines whose only disk is blank (the firmware
 // runs and finds nothing to boot, which is all a folder's lock needs): the Machines page's tab and pane, the wizard, the
-// lock's Use it here between two tabs, Delete. On Debian (opt-in with WEBPC_DISTROS=debian, scripts/ci-machines.sh): the
+// lock's Use it here between two tabs, Delete. On Debian (opt-in with WAARM64_DISTROS=debian, scripts/ci-machines.sh): the
 // guest's side, through the mount the page sets up: read and write under the mount point, whose files the page sees;
 // owners per attach; a workload (a tree of files, rm -r, a rename across folders; a C project built and a git repository
 // on images/debian-tools/build.sh's Debian, on demand); a folder attached while running; another mount point after a restart.
@@ -23,8 +23,8 @@ const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const TOOLS = new URL('../target/images/debian-tools/disk.qcow2', import.meta.url);
 const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : undefined;
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const skipGuest = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : !existsSync(IMAGE) ? 'SKIPPED: run images/build.sh debian' : skip;
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
+const skipGuest = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : !existsSync(IMAGE) ? 'SKIPPED: run images/build.sh debian' : skip;
 const BOOT_MS = 420_000;
 
 let browser: Browser;
@@ -226,7 +226,7 @@ async function debianMachine(page: Page, folders: { id: string; readOnly: boolea
 }
 
 test('the guest: the mount, owners, a workload, a folder attached while running, another mount point', { skip: skipGuest, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
   const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: docs/backlog.md "A handle read back off the record"
   const page = await context.newPage();
   const errors: string[] = [];
@@ -285,7 +285,7 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
   await ok(page, 'echo late > /mnt/shared/Late/f');
   // A real folder of this computer, dropped: writing it needs a click no headless browser can give, so it waits for one;
   // read-only (what a drop grants) it is served, through the host backend on the real thing.
-  const real = mkdtempSync(join(tmpdir(), 'webpc-real-'));
+  const real = mkdtempSync(join(tmpdir(), 'waarm64-real-'));
   try {
     const name = basename(real);
     writeFileSync(join(real, 'real.txt'), 'on the disk\n');
@@ -342,7 +342,7 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
 }));
 
 test('snapshots: restored with a file open for writing, and into a folder detached since', { skip: skipGuest, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
   const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: docs/backlog.md "A handle read back off the record"
   const page = await context.newPage();
   const errors: string[] = [];
@@ -388,7 +388,7 @@ test('snapshots: restored with a file open for writing, and into a folder detach
 }));
 
 test('a real workload: make, gcc and git in a share, both backends', { skip: skipGuest || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 15 * 60_000 }, () => withDebianLock(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
   const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   const page = await context.newPage();
   const errors: string[] = [];

@@ -35,4 +35,4 @@ w=$(cut -d, -f1 /sys/class/graphics/fb0/virtual_size)
   for i in $(seq $w); do printf '\000\000\377\000'; done
   for i in $(seq $w); do printf '\100\100\100\000'; done
 } > /dev/fb0
-echo "webpc: test ok"
+echo "waarm64: test ok"

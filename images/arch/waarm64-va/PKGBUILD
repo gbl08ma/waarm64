@@ -1,0 +1,29 @@
+# waarm64-va (docs/graphics.md "Video's design"): waarm64's VA-API driver, Mesa's virgl driver with only the surface formats real
+# decoders offer, so FFmpeg's VA-API decoders pick NV12 and Firefox decodes through VA-API on waarm64. Our own code (MIT),
+# built from the file beside this one. Built and checked by images/arch/waarm64-va.sh; images/arch/desktop.sh
+# installs it in the desktop image.
+#   makepkg -s && sudo pacman -U waarm64-va-*.pkg.tar.*
+pkgname=waarm64-va
+pkgver=3
+pkgrel=1
+pkgdesc='VA-API driver for waarm64 guests: Mesa virgl with NV12-only decode surfaces, AV1 film grain shown, exported surfaces sized by their planes'
+arch=('aarch64')
+url='https://github.com/gbl08ma/waarm64'
+license=('MIT')
+depends=('libva' 'mesa')
+makedepends=('gcc' 'libdrm')
+options=('!debug')
+source=(waarm64_drv_video.c)
+sha256sums=('SKIP')
+
+build() {
+  gcc ${CFLAGS} ${LDFLAGS} -Wall -shared -fPIC -o waarm64_drv_video.so waarm64_drv_video.c -ldl
+}
+
+package() {
+  install -Dm755 waarm64_drv_video.so "$pkgdir/usr/lib/dri/waarm64_drv_video.so"
+  # Every session's processes: login shells (sway started from one) and systemd's user services.
+  install -dm755 "$pkgdir/etc/profile.d" "$pkgdir/etc/environment.d"
+  echo 'export LIBVA_DRIVER_NAME=waarm64' > "$pkgdir/etc/profile.d/waarm64-va.sh"
+  echo 'LIBVA_DRIVER_NAME=waarm64' > "$pkgdir/etc/environment.d/50-waarm64-va.conf"
+}

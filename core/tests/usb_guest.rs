@@ -46,7 +46,7 @@ fn the_usb_guest_sees_two_root_hubs() {
     for want in [
         "usb: hub usb1 480 Mb/s 4 ports, USB 2.00, xHCI Host Controller\n",
         "usb: hub usb2 5000 Mb/s 4 ports, USB 3.00, xHCI Host Controller\n",
-        "webpc: usb test ok\n",
+        "waarm64: usb test ok\n",
     ] {
         assert!(r.console.contains(want), "missing {want:?}");
     }
@@ -59,11 +59,11 @@ fn testusb_passes_against_gadget_zero_with_a_hot_unplug() {
     let kernel = common::image("linux-usb/Image");
     let initrd = common::image("linux-usb/initramfs.cpio");
     let (unplug, replug) = (
-        steps_env("WEBPC_USB_UNPLUG", USB_UNPLUG),
-        steps_env("WEBPC_USB_REPLUG", USB_REPLUG),
+        steps_env("WAARM64_USB_UNPLUG", USB_UNPLUG),
+        steps_env("WAARM64_USB_REPLUG", USB_REPLUG),
     );
     let events = [(unplug, 0, None), (replug, 0, Some(HIGH))];
-    let cmdline = std::env::var("WEBPC_USB_CMDLINE").unwrap_or(USB_CMDLINE.into());
+    let cmdline = std::env::var("WAARM64_USB_CMDLINE").unwrap_or(USB_CMDLINE.into());
     let r = common::boot(&Boot {
         initrd: Some(&initrd),
         echo: true,
@@ -90,7 +90,7 @@ fn check_usb_guest(console: &str) {
         "usb: gadget 2-2: Gadget Zero, 5000 Mb/s, configuration 3, interface driver usbtest\n",
         "usb: pass 1: ",
         "usb: plugged in again\n",
-        "webpc: usb test ok\n",
+        "waarm64: usb test ok\n",
     ] {
         assert!(console.contains(want), "missing {want:?}");
     }
@@ -142,7 +142,7 @@ fn testusb_passes_in_parallel_smp() {
             "run {run}:\n{}",
             r.console
         );
-        assert!(c.contains("webpc: usb test ok\n"), "run {run}");
+        assert!(c.contains("waarm64: usb test ok\n"), "run {run}");
     }
 }
 
@@ -179,9 +179,9 @@ fn user_lines(console: &str) -> String {
 
 #[test]
 fn user_lines_drops_the_kernels_records() {
-    let c = "usb: pass 1: 46 lines, 0 failed[    1.102637] usbtest 1-1:3.0: unlink retry\n\n[    1.2] x\n[a] b\nwebpc: usb test ok\n";
+    let c = "usb: pass 1: 46 lines, 0 failed[    1.102637] usbtest 1-1:3.0: unlink retry\n\n[    1.2] x\n[a] b\nwaarm64: usb test ok\n";
     assert_eq!(
         user_lines(c),
-        "usb: pass 1: 46 lines, 0 failed\n[    1.2] x\n[a] b\nwebpc: usb test ok\n"
+        "usb: pass 1: 46 lines, 0 failed\n[    1.2] x\n[a] b\nwaarm64: usb test ok\n"
     );
 }

@@ -76,7 +76,7 @@ export type Alive = {
   t: number;
 };
 
-const KEY = 'webpc.alive.';
+const KEY = 'waarm64.alive.';
 /** How often a running machine renews its mark, and how old one is when no tab is renewing it. */
 export const ALIVE_EVERY_MS = 10_000;
 export const ALIVE_STALE_MS = 3 * ALIVE_EVERY_MS;

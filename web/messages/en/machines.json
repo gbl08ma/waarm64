@@ -768,7 +768,7 @@
     "note": "Machines page: button under the list of machines that opens a disk image file and starts a machine on it."
   },
   "MachinesNav.importDefinition.title": {
-    "message": "Create a machine from a definition file (.webpc-machine.json), which holds its settings and which disks it uses, not their contents.",
+    "message": "Create a machine from a definition file (.waarm64-machine.json), which holds its settings and which disks it uses, not their contents.",
     "note": "Machines page: tooltip of Import a definition…. The file extension stays as it is."
   },
   "MachinesNav.importDefinition": {

@@ -4,7 +4,7 @@
 // nothing of the core: CORE is opaque bytes, DEVS is JSON the caller makes, RAM and DISK are cut
 // here.
 //
-//   File  = "WEBPCSNP"  u32 version (1, or 2 with BLOB frames)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
+//   File  = "WAARMSNP"  u32 version (1, or 2 with BLOB frames)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
 //   Frame = u32 tag  u32 codec  u64 index  u32 rawLen  u32 storedLen  u32 crc  u32 reserved (0), then
 //           the stored bytes. Little-endian. The CRC covers the first 24 header bytes (tag to
 //           storedLen: so a flipped index or length is caught) and then the stored bytes. END's
@@ -26,7 +26,7 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
 /** A frame codec: id as in the frame header. Pluggable so another codec (an LZ in the core, id 2) can be added later. */
 export type Codec = { id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array> };
 
-const MAGIC = new TextEncoder().encode('WEBPCSNP');
+const MAGIC = new TextEncoder().encode('WAARMSNP');
 const VERSION = 2;
 /** A BLOB frame's index: the blob times this, plus the chunk. */
 export const BLOB_CHUNKS = 2 ** 24;

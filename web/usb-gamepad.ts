@@ -91,7 +91,7 @@ export class UsbGamepad extends VirtualDevice {
 
   /** `name`: the product string (the host's pad's name). */
   constructor(o: { name?: string; serial?: string } = {}) {
-    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['webpc', o.name?.trim() || 'webpc game pad', o.serial || 'webpc-pad'] });
+    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['waarm64', o.name?.trim() || 'waarm64 game pad', o.serial || 'waarm64-pad'] });
   }
 
   /** The current input report. */

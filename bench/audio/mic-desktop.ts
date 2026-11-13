@@ -18,7 +18,7 @@ const out = process.argv[3] ?? new URL('../results/local/mic-desktop/', import.m
 mkdirSync(out, { recursive: true });
 const MIC_HZ = Number(process.env.MIC_HZ ?? 500);
 const SECONDS = Number(process.env.SECONDS ?? 4);
-const wav = join(mkdtempSync(join(tmpdir(), 'webpc-mic-')), 'mic.wav');
+const wav = join(mkdtempSync(join(tmpdir(), 'waarm64-mic-')), 'mic.wav');
 writeFileSync(wav, toneWav(20, 48000, [MIC_HZ, MIC_HZ]));
 process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --use-fake-device-for-media-stream --use-fake-ui-for-media-stream --use-file-for-fake-audio-capture=${wav}`;
 

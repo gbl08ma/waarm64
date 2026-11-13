@@ -735,7 +735,7 @@ fn an_empty_block_is_remembered_until_its_page_goes() {
 
 /// What decoding costs (bench/interp/REPORT.md "The block interpreter on the Mac, loop 4"): every
 /// 16th word of the guest kernel's first 4 MiB decoded as a block start, ns a block.
-/// `cargo test --release -p webpc-core decode_speed -- --ignored --nocapture`
+/// `cargo test --release -p waarm64-core decode_speed -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn decode_speed() {

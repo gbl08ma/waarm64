@@ -3,9 +3,9 @@
 //! oracle's results. Format and seed expansion: tools/corpus/corpus.ts.
 
 use std::collections::HashMap;
-use webpc_core::cpu::Cpu;
-use webpc_core::interp::{Exit, run};
-use webpc_core::mem::{FaultKind, Mem};
+use waarm64_core::cpu::Cpu;
+use waarm64_core::interp::{Exit, run};
+use waarm64_core::mem::{FaultKind, Mem};
 
 const CODE: u64 = 0x100000;
 const DATA: u64 = 0x200000;
@@ -76,7 +76,7 @@ fn regs(words: &[&str]) -> Vec<(usize, u128)> {
 
 fn parse(text: &str) -> Vec<Test> {
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    assert_eq!(lines.next(), Some("webpc-corpus 1"));
+    assert_eq!(lines.next(), Some("waarm64-corpus 1"));
     let mut tests: Vec<Test> = Vec::new();
     for line in lines {
         let mut w = line.split(' ');

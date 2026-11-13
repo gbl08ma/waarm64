@@ -236,8 +236,8 @@ impl Room {
         let mut prefix = [0u8; 6];
         for n in 0.. {
             let label = match n {
-                0 => "webpc room prefix v1".to_string(),
-                n => format!("webpc room prefix v1 {n}"),
+                0 => "waarm64 room prefix v1".to_string(),
+                n => format!("waarm64 room prefix v1 {n}"),
             };
             prefix[0] = 0xfd;
             prefix[1..].copy_from_slice(&hash(&label, id)[..5]);
@@ -248,9 +248,9 @@ impl Room {
         Room {
             prefix,
             tag: base32(&prefix[1..]),
-            salt: hash("webpc room tag salt v1", id),
-            lookup: hash("webpc room lookup key v1", id),
-            psk: hash("webpc room psk v1", id),
+            salt: hash("waarm64 room tag salt v1", id),
+            lookup: hash("waarm64 room lookup key v1", id),
+            psk: hash("waarm64 room psk v1", id),
         }
     }
 
@@ -1197,7 +1197,7 @@ impl Client {
     /// The hour's tags are taken here, so a turned hour waits for a renewal.
     fn nostr_subscribe(&mut self, i: usize, now: Instant) {
         self.hour = self.unix(now) / 3600;
-        let sub = format!("webpc{}", self.hour);
+        let sub = format!("waarm64-{}", self.hour);
         if let Some(old) = self.nostr[i].sub.take()
             && old != sub
         {

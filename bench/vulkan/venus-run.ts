@@ -32,9 +32,9 @@ try {
   results.kernel = await s.run('uname -r; dmesg | grep -E "virtio_gpu|\\[drm\\]" | head -20');
   results.vulkaninfo = await s.run('VN_DEBUG=init vulkaninfo --summary 2>&1 | head -60', 120_000);
   for (const cmd of (process.env.CMDS ?? '').split('\n').filter(Boolean)) {
-    // `@stall <ms>`: the GPU worker's thread blocked that long (the page's `__webpcStallGpu`), while the guest runs on.
+    // `@stall <ms>`: the GPU worker's thread blocked that long (the page's `__waarm64StallGpu`), while the guest runs on.
     const stall = /^@stall (\d+)$/.exec(cmd);
-    if (stall) await s.page.evaluate((ms) => (window as unknown as { __webpcStallGpu(ms: number): void }).__webpcStallGpu(ms), Number(stall[1]));
+    if (stall) await s.page.evaluate((ms) => (window as unknown as { __waarm64StallGpu(ms: number): void }).__waarm64StallGpu(ms), Number(stall[1]));
     else results[cmd] = await s.run(cmd, 300_000);
   }
   if (process.env.PROFILE) {

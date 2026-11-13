@@ -15,12 +15,12 @@ const cat = (comm: string, sym: string) => {
   if (comm !== 'node-MainThread') return comm.startsWith('node-V8Worker') ? 'V8 background (TurboFan)' : 'other threads';
   let m;
   if ((m = /^JS:0x[0-9a-f]+_pa0x[0-9a-f]+-\d+-(\w+)/.exec(sym))) return `guest code: ${m[1]}`;
-  if (/webpc_core3jit(5steps|NtB\w+_5Cache(4miss|5enter)|3key)/.test(sym)) return 'core: dispatcher (jit::steps, Cache::miss)';
-  if (/webpc_core3jit5block|webpc_core3jit4emit|webpc_core3jit4wasm|Cache(4emit|7install|5flush|10invalidate|6module)|jit_hot/.test(sym)) return 'core: compiling (block, emit)';
-  if (/jit_exec_|webpc_core3jit5count|jit_(ldst|load|store|sys|msr|mrs)/.test(sym)) return 'core: helpers\' entry';
-  if (/webpc_core3mmu4walk|Mmu4miss/.test(sym)) return 'core: TLB miss and walk';
-  if (/webpc_core6interp|webpc_core3mmu|webpc_core3mem|webpc_core2fp|webpc_core6crypto|webpc_core3cpu|webpc_core6decode/.test(sym)) return 'core: interpreter and helper bodies';
-  if (/webpc_core2vm|webpc_core6virtio|webpc_core3gic|webpc_core5timer|webpc_core5pl011|vm_run/.test(sym)) return 'core: run loop and devices';
+  if (/waarm64_core3jit(5steps|NtB\w+_5Cache(4miss|5enter)|3key)/.test(sym)) return 'core: dispatcher (jit::steps, Cache::miss)';
+  if (/waarm64_core3jit5block|waarm64_core3jit4emit|waarm64_core3jit4wasm|Cache(4emit|7install|5flush|10invalidate|6module)|jit_hot/.test(sym)) return 'core: compiling (block, emit)';
+  if (/jit_exec_|waarm64_core3jit5count|jit_(ldst|load|store|sys|msr|mrs)/.test(sym)) return 'core: helpers\' entry';
+  if (/waarm64_core3mmu4walk|Mmu4miss/.test(sym)) return 'core: TLB miss and walk';
+  if (/waarm64_core6interp|waarm64_core3mmu|waarm64_core3mem|waarm64_core2fp|waarm64_core6crypto|waarm64_core3cpu|waarm64_core6decode/.test(sym)) return 'core: interpreter and helper bodies';
+  if (/waarm64_core2vm|waarm64_core6virtio|waarm64_core3gic|waarm64_core5timer|waarm64_core5pl011|vm_run/.test(sym)) return 'core: run loop and devices';
   if (/dlmalloc|hashbrown|alloc|core\d|std\d|memcpy|memset|memmove|compiler_builtins/.test(sym) && sym.startsWith('JS:')) return 'core: allocator, std';
   if (sym.startsWith('JS:')) return `core/JS other`;
   if (sym.startsWith('Builtin:')) return `V8 builtins (${/Liftoff|CallIndirect|Wasm/.test(sym) ? 'wasm' : 'other'})`;

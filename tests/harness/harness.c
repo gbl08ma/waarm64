@@ -2,9 +2,9 @@
 // or real hardware) and dumps the resulting state. Static and freestanding: no libc.
 //
 // Protocol (little-endian records on stdin/stdout; see docs/testing.md "The golden corpus"):
-//   in:  magic 'WPCI', ncode u32, x[31] u64, sp u64, nzcv u64, fpcr u64, fpsr u64,
+//   in:  magic 'WAMI', ncode u32, x[31] u64, sp u64, nzcv u64, fpcr u64, fpsr u64,
 //        v[32] (16 bytes each), mem[8192], code[ncode] u32
-//   out: magic 'WPCO', signo u32, si_code u32, pad u32, si_addr u64, pc u64,
+//   out: magic 'WAMO', signo u32, si_code u32, pad u32, si_addr u64, pc u64,
 //        x[31] u64, sp u64, pstate u64, fpcr u64, fpsr u64, v[32], mem[8192]
 // The code runs at CODE, followed by a BRK end marker; the data region is DATA.
 // Every test ends in a signal (SIGTRAP at the end marker when it completes). The
@@ -250,7 +250,7 @@ static void main_loop(void) {
     for (;;) {
         u32 hdr[2];
         if (!read_all(hdr, sizeof hdr)) sys(SYS_exit_group, 0, 0, 0, 0, 0, 0);
-        if (hdr[0] != 0x49435057 /* WPCI */ || hdr[1] > MAX_CODE) die("harness: bad record\n");
+        if (hdr[0] != 0x494d4157 /* WAMI */ || hdr[1] > MAX_CODE) die("harness: bad record\n");
         read_all(&st, sizeof st);
         read_all((void *)DATA, DATA_SIZE);
         read_all(code, hdr[1] * 4);
@@ -259,7 +259,7 @@ static void main_loop(void) {
         ((u32 *)CODE)[hdr[1]] = BRK_END;
         sync_icache(CODE, CODE_SIZE);
         run_test(&st);
-        out.magic = 0x4f435057; // WPCO
+        out.magic = 0x4f4d4157; // WAMO
         memcpy(out.mem, (void *)DATA, DATA_SIZE);
         write_all(&out, sizeof out);
     }

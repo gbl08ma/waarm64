@@ -9,7 +9,7 @@
 //   node bench/vulkan/mpv-frames.ts [image] [outdir]   (default target/arch/desktop.qcow2; SHIM=1 installs the media
 //   disk's VA driver; GPU_KNOBS adds to the page's `?gpu=` (e.g. `vkformats=held`: the advanced path off); MPV_ARMS and
 //   PAIRS replace the arms and comparisons; SHOT2=1 takes a second screenshot after turning debanding on (the frame
-//   rendered anew); GRAB=1 also reads the page's screen (`window.__webpcGrab`) once mpv's screenshot exists, mpv still
+//   rendered anew); GRAB=1 also reads the page's screen (`window.__waarm64Grab`) once mpv's screenshot exists, mpv still
 //   showing the frame, and compares the arms' grabs as PAIRS says (VK3 L4b: bench/vulkan/green.sh; each kept as <tag>-page.ppm;
 //   REGRAB=<s> grabs again that much later, <tag>-late; DIAG=1 keeps mpv's threads' kernel waits and its log's end then,
 //   <tag>-diag.txt, with gdb's stacks if the guest has gdb; DIAG=<n> its last n lines, DIAG_GREP=<re> those matching, DIAG_FROM=<re>
@@ -41,12 +41,12 @@ const ARMS: Record<string, string> = process.env.MPV_ARMS
 const PAIRS = process.env.PAIRS ? process.env.PAIRS.split(' ').map((p) => p.split('~'))
   : [['vkva', 'vkno'], ['glva', 'glno'], ['vkno', 'glno'], ['vkva', 'glva']].filter(([x, y]) => ARMS[x] && ARMS[y]);
 type Grab = { width: number; height: number; pixels: Uint8Array };
-type W = { __webpcGrab: () => Promise<Grab>; __mpvGrabs?: Record<string, Uint8Array> };
+type W = { __waarm64Grab: () => Promise<Grab>; __mpvGrabs?: Record<string, Uint8Array> };
 /** GRAB=1: the page's screen now (read back in the GPU worker, after mpv's screenshot: the frame already drawn), kept in
  * the page for comparePages, and its greenness (mean G less the mean of R and B). */
 const grabScreen = (tag: string) => s.page.evaluate(async (tag) => {
   const w = window as unknown as W;
-  const g = await w.__webpcGrab();
+  const g = await w.__waarm64Grab();
   if (!g.width) return { width: 0, height: 0 };
   (w.__mpvGrabs ??= {})[tag] = g.pixels;
   let r = 0, gg = 0, b = 0;
@@ -70,7 +70,7 @@ const comparePages = (x: string, y: string) => s.page.evaluate(([x, y]) => {
 try {
   await s.rootShell();
   await s.run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media');
-  if (process.env.SHIM) await s.run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/');
+  if (process.env.SHIM) await s.run('cp /mnt/media/waarm64_drv_video.so /usr/lib/dri/');
   // GUEST_ENV='VAR=x …' (VK3 L4e): lines added to the guest's /etc/environment before the arms, as an image would have
   // them (e.g. desktop-setup.sh's VN_PERF=no_async_present on an image built before it, or `VN_PERF=` to clear it on one
   // built after); PRE='cmd' runs as root before the arms (e.g. `pacman -U --noconfirm /mnt/media/gdb/*.zst` with DISK2 a
@@ -79,7 +79,7 @@ try {
   if (process.env.PRE) s.log('pre', (await s.run(process.env.PRE, 300_000)).trim().slice(-300));
   // shot.sh reads /etc/environment itself: `su` from root runs no pam_env (a login's session does).
   results.environment = (await s.run(`su arch -c 'set -a; . /etc/environment; env' | grep -E '^(VN_|MESA_|VK_)' | tr '\\n' ' '`)).trim();
-  results.info = await s.run('pacman -Q mpv libplacebo mesa vulkan-virtio webpc-va | tr "\\n" " "');
+  results.info = await s.run('pacman -Q mpv libplacebo mesa vulkan-virtio waarm64-va | tr "\\n" " "');
   results.sway = await s.startSway('gles2');
   // The screenshot 10 s after the start (the seek done, the frame shown), then quit; mpv on Vulkan may not exit (its
   // swapchain's last image waits for the compositor): killed.

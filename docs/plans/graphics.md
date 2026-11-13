@@ -1,4 +1,4 @@
-# webpc graphics plan: Vulkan
+# waarm64 graphics plan: Vulkan
 
 **Status: VK0 to VK3 done (2026-10-25 to 10-29); VK4 started 2026-10-29 as tasks the user starts
 ([VK4-KICKOFF.md](../../VK4-KICKOFF.md)).** What exists, how it fits together, what it backs and what it found are

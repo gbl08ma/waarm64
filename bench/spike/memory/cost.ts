@@ -198,7 +198,7 @@ type RustExports = { setup: (n: number | bigint) => number | bigint; run: Functi
 async function loadRust() {
   const M = mems();
   // (The path apart from `new URL`: Vite's dev server rewrites a template literal written in it.)
-  const fetchMod = async (target: string, rel = `../../../target/${target}/release/webpc_memspike.wasm`) =>
+  const fetchMod = async (target: string, rel = `../../../target/${target}/release/waarm64_memspike.wasm`) =>
     new WebAssembly.Module(await (await fetch(new URL(rel, import.meta.url))).arrayBuffer());
   const mem32 = newMemory({ min: 512, max: 65536, shared: true });
   const mem64 = newMemory({ min: 512, max: 262144, shared: true, memory64: true });

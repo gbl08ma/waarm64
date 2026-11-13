@@ -2,7 +2,7 @@
 // no script, at vmdisks.tny.im, serving target/disks/ (chunked images: <name>/manifest.json, prefetch.json, pieces/).
 // Requests to static assets aren't billed, a 404 included: nothing here can run up a bill. Deploy with deploy.sh.
 {
-  "name": "webpc-disks",
+  "name": "waarm64-disks",
   "compatibility_date": "2026-10-23",
   "assets": { "directory": "../../target/disks", "html_handling": "none", "not_found_handling": "none" },
   "routes": [{ "pattern": "vmdisks.tny.im", "custom_domain": true }],

@@ -14,7 +14,7 @@ import type { RoomConfig, TsEvent } from './ts-client.ts';
 export const STUN_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 
 export type StartRoom = RoomConfig & {
-  /** The node's kept identity: in `webpc-room` under `identityKey` (made the first time), or `identity` (an ephemeral
+  /** The node's kept identity: in `waarm64-room` under `identityKey` (made the first time), or `identity` (an ephemeral
    * connection's, kept nowhere). Neither, nor `key`: a fresh key each start. */
   identityKey?: string;
   identity?: RoomIdentity;
@@ -211,9 +211,9 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
   };
 }
 
-/** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `webpc-room` (docs/networking/adapters.md §2.1). */
+/** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `waarm64-room` (docs/networking/adapters.md §2.1). */
 export type RoomIdentity = { key: string };
-const IDB = 'webpc-room';
+const IDB = 'waarm64-room';
 
 function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -263,9 +263,9 @@ export const hasRoomIdentity = (key: string) => idb<number>('readonly', (s) => s
 /** Forgets the identity under `key`: the next start makes a new key, so a new address and name in every room that used it. */
 export const forgetRoomIdentity = (key: string) => idb('readwrite', (s) => s.delete(key)).then(() => {});
 
-// A room's link, as net/ts/src/room/link.rs reads it: `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part
+// A room's link, as net/ts/src/room/link.rs reads it: `waarm64-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part
 // percent-encoded. The page builds it (Create a room) and checks one pasted (Join a room); the module reads it again.
-export const ROOM_SCHEME = 'webpc-room:';
+export const ROOM_SCHEME = 'waarm64-room:';
 /** What link.rs allows: an ID of at most 256 bytes, at most 8 relays and 8 regions. */
 export const ROOM_MAX_ID = 256;
 export const ROOM_MAX_RELAYS = 8;

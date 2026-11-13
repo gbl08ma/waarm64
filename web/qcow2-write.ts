@@ -27,10 +27,10 @@ const ZEROS = new Uint8Array(CLUSTER);
 const HEADER_LENGTH = 112;
 /**
  * Header extension types: QEMU's backing file format name, and ours: the base image's hash (web/changes.ts
- * `hashSource`; hex, ASCII). "WPC1" was the SHA-256 of the whole file, which nothing reads any more.
+ * `hashSource`; hex, ASCII). "WAM1" was the SHA-256 of the whole file, which nothing reads any more.
  */
 const EXT_BACKING_FORMAT = 0xe2792aca;
-export const EXT_BASE_HASH = 0x57504332; // "WPC2"
+export const EXT_BASE_HASH = 0x57414d32; // "WAM2"
 
 /** Where the stream goes: appended in order, or (the header only) at `at`. */
 export type Sink = (chunk: Uint8Array, at?: number) => void | Promise<void>;

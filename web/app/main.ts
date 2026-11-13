@@ -54,8 +54,8 @@ import { describe, text } from '../i18n.ts';
 import { fromWire } from '../msg.ts';
 
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
-const build = document.querySelector('meta[name="webpc-build"]')?.getAttribute('content');
-if (build) console.info(`webpc: built from ${build}`);
+const build = document.querySelector('meta[name="waarm64-build"]')?.getAttribute('content');
+if (build) console.info(`waarm64: built from ${build}`);
 
 // A machine kept in this browser (docs/machines.md), by id: `?m=<id>`, else the one last opened on a page without a
 // query. Without one the machine is transient, made from the query (the tests' `?machine=`).

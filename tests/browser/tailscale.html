@@ -48,7 +48,7 @@
     close: () => ts.close(),
     logOutNode: async (c) => (await import('../../web/app/network.ts')).logOutNode(c),
     stored: () => new Promise((resolve) => {
-      const r = indexedDB.open('webpc-tailscale', 1);
+      const r = indexedDB.open('waarm64-tailscale', 1);
       r.onupgradeneeded = () => r.result.createObjectStore('state');
       r.onsuccess = () => { const g = r.result.transaction('state').objectStore('state').getAllKeys(); g.onsuccess = () => resolve(g.result); };
     }),

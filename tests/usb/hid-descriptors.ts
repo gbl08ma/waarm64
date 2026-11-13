@@ -386,7 +386,7 @@ export const DESCRIPTORS: HidDescriptor[] = [
   },
   {
     id: 'streamdeck',
-    name: 'webpc Stream Deck-like',
+    name: 'waarm64 Stream Deck-like',
     vendorId: 0x0fd9,
     productId: 0x0080,
     rdesc: streamdeck,
@@ -395,7 +395,7 @@ export const DESCRIPTORS: HidDescriptor[] = [
   },
   {
     id: 'vendor-noid',
-    name: 'webpc vendor HID without report IDs',
+    name: 'waarm64 vendor HID without report IDs',
     vendorId: 0x1209,
     productId: 0x0001,
     rdesc: vendorNoId,
@@ -404,7 +404,7 @@ export const DESCRIPTORS: HidDescriptor[] = [
   },
   {
     id: 'vendor-ids',
-    name: 'webpc vendor HID with report IDs',
+    name: 'waarm64 vendor HID with report IDs',
     vendorId: 0x1209,
     productId: 0x0002,
     rdesc: vendorIds,
@@ -413,7 +413,7 @@ export const DESCRIPTORS: HidDescriptor[] = [
   },
   {
     id: 'gamepad-noid',
-    name: 'webpc game pad without report IDs',
+    name: 'waarm64 game pad without report IDs',
     vendorId: 0x1209,
     productId: 0x0003,
     rdesc: gamepadNoId,
@@ -421,7 +421,7 @@ export const DESCRIPTORS: HidDescriptor[] = [
   },
   {
     id: 'keyboard',
-    name: 'webpc keyboard composite',
+    name: 'waarm64 keyboard composite',
     vendorId: 0x1209,
     productId: 0x0004,
     rdesc: keyboard,

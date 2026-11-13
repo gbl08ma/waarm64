@@ -66,7 +66,7 @@ test('the pane\'s data: the build\'s commit, the license files where the dev ser
   const dev = aboutData({ build: false });
   const copy = aboutData({ build: true });
   assert.equal(dev.build?.commit, head);
-  assert.equal(dev.repository, 'https://github.com/gbl08ma/webpc');
+  assert.equal(dev.repository, 'https://github.com/gbl08ma/waarm64');
   assert.equal(dev.licenseHref, '/LICENSE');
   assert.equal(copy.licenseHref, './LICENSE');
   const files = (a: typeof dev) => a.groups.flatMap((g) => g.bundled);

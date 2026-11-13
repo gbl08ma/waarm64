@@ -7,7 +7,7 @@
 // clamp and the 1,260-byte IPv4 path) and 2 MB up (virtio-net's TSO: the device cuts the guest's
 // large packets, web/offload.ts), then over IPv6 when this machine has a non-link-local IPv6
 // address. A tailcat exit node does forward private addresses, so no internet is needed; the
-// internet and DNS (the lease's 1.1.1.1 through the exit node) are opt-in, WEBPC_TAILCAT_INTERNET=1.
+// internet and DNS (the lease's 1.1.1.1 through the exit node) are opt-in, WAARM64_TAILCAT_INTERNET=1.
 // The client's IPv6 probe (web/reach6.ts): where this machine has no IPv6 address (the dev VM), the exit node's IPv6
 // doesn't reach out, so the probe is lost and the guest has no IPv6 default route: IPv6 to the internet is
 // unreachable at once, and tailcat clients still come in (each has a route of its own). With one, the probe asks
@@ -17,8 +17,8 @@
 // then fetches a page from a web server in the guest through it. And on images/debian-tools/build.sh's Debian (on demand),
 // which has an SSH server: serving alone with an allow list of the CLI's own key, `tailcat ssh` logs in to the guest,
 // `tailcat ping` gets a pong, and a client with another key gets nothing; over the rig's relay, or over tailcat's public
-// relays with WEBPC_TAILCAT_INTERNET=1.
-// Realtime: one boot, ~2 min alone. Opt-in: WEBPC_TAILCAT=1 (needs Go for tailcat.sh, the
+// relays with WAARM64_TAILCAT_INTERNET=1.
+// Realtime: one boot, ~2 min alone. Opt-in: WAARM64_TAILCAT=1 (needs Go for tailcat.sh, the
 // Debian image and target/net/ts.wasm).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -37,13 +37,13 @@ import { clientKey, RIG_RELAY, tailcat, tailcatRun } from './net/tailcat-cli.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
-const skip = process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1'
+const skip = process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT=1'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : !has('go', 'version') && !existsSync(`${ROOT}target/net/tailcat-test/bin/tailcat`) ? 'SKIPPED: no Go to build tailcat and derper'
   : undefined;
 const script = `${ROOT}tests/net/tailcat.sh`;
-const OVERLAY = 'webpc-tailcat-test';
+const OVERLAY = 'waarm64-tailcat-test';
 const TOOLS = `${ROOT}target/images/debian-tools/disk.qcow2`;
 const BIG = 2 << 20;
 
@@ -63,7 +63,7 @@ before(async () => {
   const v6 = lan('IPv6');
   resolver = v6 ? await probeResolver(v6) : undefined;
   const env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2)));
-  addr = env.WEBPC_TAILCAT_ADDR;
+  addr = env.WAARM64_TAILCAT_ADDR;
   const big = Buffer.alloc(BIG, 'x');
   http = createServer((req, res) => {
     if (req.url !== '/up') return res.end(req.url === '/big' ? big : 'hello-from-the-exit-nodes-lan\n');
@@ -209,7 +209,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
       console.log(`# tailcat client to the guest's web server: ${got.split('\n')[0].trim()} (${entered} events)`);
 
       // The internet and DNS through the exit node (the lease's resolver is 1.1.1.1): opt-in.
-      if (process.env.WEBPC_TAILCAT_INTERNET !== '1') console.log('# SKIPPED: the internet through the exit node (opt-in: WEBPC_TAILCAT_INTERNET=1)');
+      if (process.env.WAARM64_TAILCAT_INTERNET !== '1') console.log('# SKIPPED: the internet through the exit node (opt-in: WAARM64_TAILCAT_INTERNET=1)');
       else {
         let named = '';
         for (let k = 0; k < 6 && !named.includes(' '); k++) named = (await run('getent ahostsv4 example.com | head -1', 60_000)).split('\n')[0].trim();
@@ -283,13 +283,13 @@ test("a primary per family: IPv4's default through the first adapter, IPv6's thr
 });
 
 test('tailcat ssh logs in to the served guest\'s sshd; tailcat ping gets a pong; the allow list keeps other keys out', { skip: skip || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 900_000 }, async () => {
-  const internet = process.env.WEBPC_TAILCAT_INTERNET === '1';
+  const internet = process.env.WAARM64_TAILCAT_INTERNET === '1';
   const relay = internet ? '' : RIG_RELAY;
-  if (!internet) console.log("# SKIPPED: tailcat ssh through tailcat's public relays (opt-in: WEBPC_TAILCAT_INTERNET=1); over the rig's relay instead");
+  if (!internet) console.log("# SKIPPED: tailcat ssh through tailcat's public relays (opt-in: WAARM64_TAILCAT_INTERNET=1); over the rig's relay instead");
   const mine = await clientKey();
   // ssh as tailcat runs it, with a key of the test's own (never the user's).
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-tailcat-ssh-'));
-  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'webpc-test', '-f', `${tmp}/id`]);
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-tailcat-ssh-'));
+  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'waarm64-test', '-f', `${tmp}/id`]);
   writeFileSync(`${tmp}/ssh`, `#!/bin/sh\nexec /usr/bin/ssh -i ${tmp}/id -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=60 "$@"\n`);
   chmodSync(`${tmp}/ssh`, 0o755);
   const cli = { internet, env: { PATH: `${tmp}:${process.env.PATH}` }, timeoutMs: 120_000 };

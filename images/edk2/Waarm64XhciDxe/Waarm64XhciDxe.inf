@@ -1,20 +1,20 @@
 ## @file
-#  webpc's xHCI for the firmware: registers the DT's generic-xhci nodes as non-discoverable xHCI
-#  devices (WebpcXhciDxe.c). Written for webpc (images/build.sh edk2).
+#  waarm64's xHCI for the firmware: registers the DT's generic-xhci nodes as non-discoverable xHCI
+#  devices (Waarm64XhciDxe.c). Written for waarm64 (images/build.sh edk2).
 #
 #  SPDX-License-Identifier: MIT
 ##
 
 [Defines]
   INF_VERSION                    = 0x0001001B
-  BASE_NAME                      = WebpcXhciDxe
+  BASE_NAME                      = Waarm64XhciDxe
   FILE_GUID                      = 6b5f7a0e-3c1d-4f2a-9e8b-77e1c0a5d401
   MODULE_TYPE                    = DXE_DRIVER
   VERSION_STRING                 = 1.0
-  ENTRY_POINT                    = WebpcXhciDxeEntryPoint
+  ENTRY_POINT                    = Waarm64XhciDxeEntryPoint
 
 [Sources]
-  WebpcXhciDxe.c
+  Waarm64XhciDxe.c
 
 [Packages]
   EmbeddedPkg/EmbeddedPkg.dec

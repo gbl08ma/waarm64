@@ -12,11 +12,11 @@ import { crc32, SnapshotError } from '../web/snapshot-file.ts';
 import { STEPS } from './steps.ts';
 import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, compileCore, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
 
-const WASM = await compileCore(readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)));
+const WASM = await compileCore(readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)));
 const IMAGES = new URL('../target/images/', import.meta.url);
 const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const skip = !existsSync(new URL('linux/Image', IMAGES)) && 'SKIPPED: run images/build.sh';
-const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
+const DISTRO_TESTS = (process.env.WAARM64_DISTROS ?? '').split(',').filter(Boolean);
 const disk = new URL('buildroot/rootfs.ext4', IMAGES).href;
 const buildroot = (more: Partial<BootOptions> = {}): BootOptions => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk), jit: 1, ...more });
 const MiB = (n: number) => (n / 2 ** 20).toFixed(1);
@@ -48,7 +48,7 @@ test('Buildroot on 4 vCPUs (round-robin) through 6 snapshot files, the tier chan
   report('Buildroot on 4 vCPUs', r);
   poweredOff(r);
   assert.equal(r.steps, total);
-  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\r?\nwebpc: test exit 0\r?\n/);
+  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok\r?\nwaarm64: test exit 0\r?\n/);
 });
 
 test('console input waiting in the RX ring and in the host goes through a snapshot', { skip }, async () => {
@@ -85,11 +85,11 @@ test('the snd guest through 6 snapshot files while its tone plays and while it r
   assert.equal(r.files.length, 6);
   assert.equal(r.steps, STEPS.snd);
   assert.equal(r.console, whole.console);
-  assert.match(r.console, /snd: wrote 49152 frames fnv1a 5652c745\r?\n[^]*snd: recorded 16384 frames fnv1a [0-9a-f]{8} in \d+ ms, 999 Hz left, 1500 Hz right\r?\nwebpc: snd test ok/);
+  assert.match(r.console, /snd: wrote 49152 frames fnv1a 5652c745\r?\n[^]*snd: recorded 16384 frames fnv1a [0-9a-f]{8} in \d+ ms, 999 Hz left, 1500 Hz right\r?\nwaarm64: snd test ok/);
 });
 
 const user = 'alpine-user/rootfs-user.ext4';
-test('Alpine\'s userspace benchmark (1 GiB) through 3 snapshot files', { skip: !DISTRO_TESTS.includes('alpine-user') ? 'SKIPPED: set WEBPC_DISTROS=alpine-user' : !existsSync(new URL(user, IMAGES)) && 'SKIPPED: run images/build.sh alpine-user' }, async () => {
+test('Alpine\'s userspace benchmark (1 GiB) through 3 snapshot files', { skip: !DISTRO_TESTS.includes('alpine-user') ? 'SKIPPED: set WAARM64_DISTROS=alpine-user' : !existsSync(new URL(user, IMAGES)) && 'SKIPPED: run images/build.sh alpine-user' }, async () => {
   const a = DISTROS.alpine;
   const o: BootOptions = { ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: guestDevices(new URL(user, IMAGES).href), jit: 1 };
   const total = STEPS['alpine-user'];
@@ -101,8 +101,8 @@ test('Alpine\'s userspace benchmark (1 GiB) through 3 snapshot files', { skip: !
 });
 
 // Parallel SMP (a worker per vCPU, realtime): the VM is paused (web/vm.ts `pause`), saved, closed, and
-// a new one with new workers started from the file. Not reproducible: WEBPC_PARALLEL_RUNS repeats it.
-const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 2);
+// a new one with new workers started from the file. Not reproducible: WAARM64_PARALLEL_RUNS repeats it.
+const RUNS = Number(process.env.WAARM64_PARALLEL_RUNS ?? 2);
 test('parallel: Buildroot on 4 vCPUs (JIT) through snapshot files', { skip }, async () => {
   for (let i = 0; i < RUNS; i++) {
     const at = Array.from({ length: 8 }, (_, k) => (k + 1) * 5_000_000 + i * 1_234_567);
@@ -110,20 +110,20 @@ test('parallel: Buildroot on 4 vCPUs (JIT) through snapshot files', { skip }, as
     report(`parallel Buildroot on 4 vCPUs, run ${i + 1}`, r);
     poweredOff(r);
     assert.ok(r.files.length >= 6, `${r.files.length} snapshots`);
-    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\r?\nwebpc: test exit 0\r?\n/);
-    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok\r?\nwaarm64: test exit 0\r?\n/);
+    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'waarm64: hvc0 ok\n');
   }
 });
 
 const litmusImage = new URL('litmus/initramfs.cpio', IMAGES);
 test('parallel: litmus and the atomics stress on 4 vCPUs (JIT) through snapshot files', { skip: skip || (!existsSync(litmusImage) && 'SKIPPED: run images/build.sh linux litmus') }, async () => {
-  const o: BootOptions = { ramSize: 256 << 20, kernel: image('linux/Image'), initrd: readFileSync(litmusImage), cmdline: 'console=ttyAMA0 panic=-1 webpc.litmus=-s,100,-r,1 webpc.stress=-n,20000', ncpus: 4, parallel: true, idleLimitMs: 30_000, jit: 1 };
+  const o: BootOptions = { ramSize: 256 << 20, kernel: image('linux/Image'), initrd: readFileSync(litmusImage), cmdline: 'console=ttyAMA0 panic=-1 waarm64.litmus=-s,100,-r,1 waarm64.stress=-n,20000', ncpus: 4, parallel: true, idleLimitMs: 30_000, jit: 1 };
   const at = Array.from({ length: 10 }, (_, k) => (k + 1) * 60_000_000);
   const r = await runThroughSnapshots(WASM, o, at, 1e12);
   report('parallel litmus and stress', r);
   poweredOff(r);
   assert.ok(r.files.length >= 5, `${r.files.length} snapshots`);
-  assert.match(r.console, /litmus: all ok, 0 skipped\r?\nwebpc: stress on 4 CPUs[^]*\nwebpc: test ok\r?\n/);
+  assert.match(r.console, /litmus: all ok, 0 skipped\r?\nwaarm64: stress on 4 CPUs[^]*\nwaarm64: test ok\r?\n/);
 });
 
 test('a snapshot of another machine, another version or with a damaged state is refused', { skip }, async () => {
@@ -194,8 +194,8 @@ function reheaded(file: Uint8Array, f: (h: Record<string, unknown>) => void) {
 // to the core's state layout (`snapshot_version`) and the machine, not to the build that made it or the ABI it ran on,
 // so a core that differs only in its JIT loads it and the guest runs on exactly; another layout is refused.
 test('a snapshot loads into another build of the core (a JIT-only change), and not into another state layout', { skip }, async () => {
-  const bytes = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
-  const other = await compileCore(otherBuild(bytes, 'webpc-other-jit'));
+  const bytes = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
+  const other = await compileCore(otherBuild(bytes, 'waarm64-other-jit'));
   const [codec, otherCodec] = [await lzCodec(WASM), await lzCodec(other)];
   const o = buildroot();
   const whole = await runToPowerOff(WASM, o);
@@ -213,7 +213,7 @@ test('a snapshot loads into another build of the core (a JIT-only change), and n
   await vm.close();
   const saved = new Uint8Array(await new Blob(parts as BlobPart[]).arrayBuffer());
   // As another build saved it: another ABI in the header, a build name the reader doesn't know.
-  const file = new Blob([reheaded(saved, (h) => { h.abi = Number(h.abi) + 7; h.build = 'webpc-other-jit'; })]);
+  const file = new Blob([reheaded(saved, (h) => { h.abi = Number(h.abi) + 7; h.build = 'waarm64-other-jit'; })]);
   const { header, restore } = await readSnapshot(file, otherCodec, otherCodec.snapshotVersion, { devices: o.devices });
   assert.equal(header.abi, ABI + 7);
   const next = await bootVm(other, { ...o, restore });

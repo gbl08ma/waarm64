@@ -5,14 +5,14 @@ The page's Vulkan renderer (MIT, see LICENSE) is one WebAssembly module made by
 vk/build.sh from:
 
 - virglrenderer (commit e0a1caf3b147): its Venus renderer (src/venus/) and its copy of Mesa's util. MIT: its
-  COPYING, below. Patched by webpc (vk/patches/vkr-wasm.patch, MIT).
+  COPYING, below. Patched by waarm64 (vk/patches/vkr-wasm.patch, MIT).
 - Mesa (mesa-26.2.4): the Vulkan runtime, spirv_to_nir, NIR, the GLSL types, util and c11. MIT (docs/license.rst and
   the MIT text, below), with:
   - Berkeley SoftFloat 3e in src/util/softfloat.c: BSD-3-Clause, its notice below;
   - BLAKE3 in src/util/blake3/: dedicated to the public domain under CC0-1.0 (or Apache-2.0, or Apache-2.0 WITH
     LLVM-exception, at your choice);
   - src/c11/impl/threads_posix.c: BSL-1.0, below.
-- webpc's driver (vk/driver/), translator (vk/compiler/) and glue (vk/glue.c, vk/wasi/): MIT.
+- waarm64's driver (vk/driver/), translator (vk/compiler/) and glue (vk/glue.c, vk/wasi/): MIT.
 - wasi-sdk 34: wasi-libc (Apache-2.0 WITH LLVM-exception, Apache-2.0 or MIT; its musl parts MIT, "Copyright © 2005-2020
   Rich Felker, et al."; dlmalloc and its other parts public domain or CC0-1.0, cloudlibc BSD-2-Clause, musl-fts
   BSD-3-Clause) and compiler-rt and libc++ (Apache-2.0 WITH LLVM-exception): the Apache-2.0 text and the LLVM

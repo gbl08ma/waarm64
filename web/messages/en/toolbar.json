@@ -36,7 +36,7 @@
     "note": "Tooltip and screen-reader name of the toolbar's view button that shows the screen and the serial terminal side by side."
   },
   "Toolbar.name": {
-    "message": "webpc",
+    "message": "waarm64",
     "note": "The product's name, at the toolbar's left end (the page's heading)."
   },
   "Toolbar.machines.title": {

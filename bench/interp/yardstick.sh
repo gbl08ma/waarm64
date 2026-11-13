@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 out=$1 label=$2; shift 2
-CORE=target/wasm32-unknown-unknown/release/webpc_core.wasm
+CORE=target/wasm32-unknown-unknown/release/waarm64_core.wasm
 if [[ $# -gt 0 && $1 == *.wasm ]]; then
   cp "$1" "$CORE"; cmp "$1" "$CORE"; shift
 fi

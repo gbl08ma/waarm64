@@ -1,4 +1,4 @@
-//! webpc-agent: the guest's end of clipboard sharing (docs/plans/clipboard.md §3; docs/devices.md "The guest's
+//! waarm64-agent: the guest's end of clipboard sharing (docs/plans/clipboard.md §3; docs/devices.md "The guest's
 //! agent"). The page delivers it over fw_cfg and a credential unit starts it as root (web/app/guest-agent.ts). The root
 //! process holds the agent's port: it answers the page's HELLO, pastes TYPE's text on the foreground text console
 //! (src/console.rs), holds PAUSE until RESUME, and follows the active session on seat0 through logind's files
@@ -10,7 +10,7 @@
 //! the loop serves the rest meanwhile): an idle guest sees no CPU time from either (plan §3.3). The page hears what
 //! became of a paste (TYPED: typed, or why not: a console that shows a compositor's graphics gets none of it).
 //!
-//!   webpc-agent [port]    the port's device (default /dev/virtio-ports/org.webpc.agent.0)
+//!   waarm64-agent [port]    the port's device (default /dev/virtio-ports/org.waarm64.agent.0)
 
 #![cfg_attr(not(test), no_std, no_main)]
 
@@ -51,7 +51,7 @@ use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
 use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
 
 #[cfg_attr(test, allow(dead_code))]
-const PORT: &str = "/dev/virtio-ports/org.webpc.agent.0";
+const PORT: &str = "/dev/virtio-ports/org.waarm64.agent.0";
 
 /// What the agent says it can do (frame.rs `cap`).
 const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT | frame::cap::IMAGE;
@@ -73,7 +73,7 @@ enum Stop {
     Failed(&'static str, Errno),
 }
 
-/// The C library's entry point: `webpc-agent [port]`.
+/// The C library's entry point: `waarm64-agent [port]`.
 #[cfg(not(test))]
 #[unsafe(no_mangle)]
 extern "C" fn main(argc: i32, argv: *const *const core::ffi::c_char) -> i32 {
@@ -595,10 +595,10 @@ fn logind_change(events: ReadFlags, name: &str) -> bool {
         || logind::valid_id(name)
 }
 
-/// A line on stderr (the journal's): `webpc-agent: <what>[ (errno N)]`.
+/// A line on stderr (the journal's): `waarm64-agent: <what>[ (errno N)]`.
 fn log(what: &str, e: Option<Errno>) {
     let mut line = Vec::with_capacity(96);
-    line.extend_from_slice(b"webpc-agent: ");
+    line.extend_from_slice(b"waarm64-agent: ");
     line.extend_from_slice(what.as_bytes());
     if let Some(e) = e {
         line.extend_from_slice(b" (errno ");

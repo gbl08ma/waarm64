@@ -51,7 +51,7 @@ export function registerUsbOpener(api: 'usb' | 'hid', open: UsbOpener) {
 export function virtualDevice(d: UsbVirtual, connector = 0): UsbDevice {
   if (d.kind === 'gadget-zero') return new GadgetZero({ speed: d.speed, pattern: d.pattern, serial: d.serial });
   if (d.kind === 'keyboard') return new UsbKeyboard();
-  if (d.kind === 'gamepad') return new UsbGamepad({ name: d.name, serial: `webpc-pad-${connector}` });
+  if (d.kind === 'gamepad') return new UsbGamepad({ name: d.name, serial: `waarm64-pad-${connector}` });
   throw new Error(`no virtual USB device ${(d as { kind: string }).kind}`);
 }
 
@@ -240,7 +240,7 @@ export class Usb {
         try {
           f();
         } catch (e) {
-          console.error(`webpc: USB device on connector ${connector}: ${what} threw`, e);
+          console.error(`waarm64: USB device on connector ${connector}: ${what} threw`, e);
         }
       };
       switch (kind) {
@@ -250,7 +250,7 @@ export class Usb {
           try {
             this.transfer(p, connector, gen, tag, ep, words);
           } catch (e) {
-            console.error(`webpc: USB device on connector ${connector}: a transfer threw`, e);
+            console.error(`waarm64: USB device on connector ${connector}: a transfer threw`, e);
             if (this.inflight.has(tag)) this.done(tag, { code: 'error', actual: 0 });
             else this.completion([tag | gen << 24, CPL_DONE | CODES.error << 8, 0]);
           }

@@ -9,25 +9,25 @@ setup) is a separate problem, and one of the proxies, VPNs or Workers explored f
 Why: a browser has no UDP, so tailcat and a tailnet always go through DERP. The public relays are far from many
 users, rate-limited and best-effort: under 20 Mbit/s and a relay's round trip in the user's experience, and a
 friend's tailcat connection behaves worse still. A helper on the user's machine has the latency of loopback and
-the user's own uplink. Every name here (`webpc-net`, the subprotocol, the kind) is provisional: the project's
+the user's own uplink. Every name here (`waarm64-net`, the subprotocol, the kind) is provisional: the project's
 name may change. **How it works now:** [networking/local-helper.md](../networking/local-helper.md). **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper,
-with its README, THIRD_PARTY.md and CLAUDE.md, is its own repository, `github.com/gbl08ma/webpc-net` (private until the
+with its README, THIRD_PARTY.md and CLAUDE.md, is its own repository, `github.com/gbl08ma/waarm64-net` (private until the
 user makes it public).
 
 ## 1. Decisions (the user's, 2026-10-23)
 
-- **A helper of ours, in Go, in its own repository** (`gbl08ma/webpc-net`, provisional). Users who don't want to
+- **A helper of ours, in Go, in its own repository** (`gbl08ma/waarm64-net`, provisional). Users who don't want to
   trust us keep tailcat and Tailscale. **Until the bulk of it is done it lives in this repository**, in
-  `net/webpc-net/` (the user's, 2026-11-01: page and helper change together while they're young), already under its
-  final module path `github.com/gbl08ma/webpc-net` and with its own README, THIRD_PARTY.md, CLAUDE.md and
-  `build.sh`, importing nothing of webpc's, so the move is a `git filter-repo` of one directory. **Moved** on
+  `net/waarm64-net/` (the user's, 2026-11-01: page and helper change together while they're young), already under its
+  final module path `github.com/gbl08ma/waarm64-net` and with its own README, THIRD_PARTY.md, CLAUDE.md and
+  `build.sh`, importing nothing of waarm64's, so the move is a `git filter-repo` of one directory. **Moved** on
   2026-11-02, after L2 (the user's timing), its history kept. Its releases are GitHub's, built by its own Actions
   (`release.yml`: a `v*` tag built on an x86_64 and an arm64 Linux runner, published only when both builds are
-  identical), **separate from webpc's deploy** (the user's, 2026-11-02): the page offers a release once
+  identical), **separate from waarm64's deploy** (the user's, 2026-11-02): the page offers a release once
   `web/local-release.ts` takes its SHA256SUMS. **v0.1.0** (2026-11-02) is the first; its sums also matched a build in
   the dev VM. v0.1.1 (the same day) has a static review's fixes (§4 "L3"), and v0.1.2 prints a pairing link for each `--origin` again (the user's, after v0.1.0 had dropped them). v0.2.0
-  (2026-11-03) keeps each guest's address across a restart (three out-of-context reviews before its release). webpc's tests build the helper at a commit `tests/webpc-net.ts` pins (the user's choice over a sibling
-  checkout or a submodule), or a checkout named by `WEBPC_NET_SRC`. `go install` still waits on the IPv6 fork below.
+  (2026-11-03) keeps each guest's address across a restart (three out-of-context reviews before its release). waarm64's tests build the helper at a commit `tests/waarm64-net.ts` pins (the user's choice over a sibling
+  checkout or a submodule), or a checkout named by `WAARM64_NET_SRC`. `go install` still waits on the IPv6 fork below.
   Trust comes from:
   - **Little code of our own:** the helper is glue over libraries users already run (§2). The README says what is
     ours and what is imported, honestly: about 1,050 lines of ours (the 250 first guessed grew with IPv6's reach, the
@@ -82,7 +82,7 @@ user makes it public).
 
 What that pulls in: 19 modules linked on Linux and Windows, 16 on macOS (gVisor, miekg/dns, insomniacslk/dhcp,
 gopacket, inetaf/tcpproxy, logrus, golang.org/x/…; all permissive, listed with their licenses in
-webpc-net's THIRD_PARTY.md). The helper (with #745) built for all six targets: 12.5–13.8 MB stripped, 4.7–5.3 MB
+waarm64-net's THIRD_PARTY.md). The helper (with #745) built for all six targets: 12.5–13.8 MB stripped, 4.7–5.3 MB
 gzipped, byte-identical over two clean builds on one host (Go 1.27.3, its `build.sh`: `CGO_ENABLED=0
 -trimpath -buildvcs=false -ldflags='-s -w -buildid='`, 2026-11-01).
 
@@ -101,7 +101,7 @@ with tun2socks-style forwarders.
   `--origin` for a self-hosted copy (`npm run dist`) or the dev server. Without both, any site the user visits
   could use it as a way into their LAN. The token is random, kept in the user's config directory so a stored
   connection survives a restart of the helper (`--new-token` replaces it).
-- Checks a subprotocol with a version (`webpc-net.v1`, provisional) so page and helper can refuse each other
+- Checks a subprotocol with a version (`waarm64-net.v1`, provisional) so page and helper can refuse each other
   clearly.
 - Prints the pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`. The fragment never reaches the
   page's server or its logs.
@@ -162,7 +162,7 @@ with tun2socks-style forwarders.
 
 ## 4. Steps
 
-- **L0, the spike** (done 2026-11-01): the helper (`net/webpc-net`, with IPv6) and a throwaway adapter on the page
+- **L0, the spike** (done 2026-11-01): the helper (`net/waarm64-net`, with IPv6) and a throwaway adapter on the page
   (`?localnet=` or `#net=` at a machine's start puts its first adapter's frames on the helper: web/local-net.ts;
   `tests/browser/netguest.html?ws=` for the test).
   - **Done** (2026-11-01, a cloud session, then the dev VM: bench/net/REPORT.md "The local helper"): the helper and its Go tests; the spike
@@ -181,7 +181,7 @@ with tun2socks-style forwarders.
   `go.mod`; releases built here, checked by a second build elsewhere.
   - **Done** (2026-11-01, a cloud session): the flags as L0 made them, with a usage text, the MTU bounded (1280 to 65520,
     576 with `--no-ipv6`), no arguments, a taken port said as such (`main_test.go`); the README's install lines (one
-    block per target: `curl` or `Invoke-WebRequest` to `~/.local/bin` or `%LOCALAPPDATA%\Programs\webpc-net`, the
+    block per target: `curl` or `Invoke-WebRequest` to `~/.local/bin` or `%LOCALAPPDATA%\Programs\waarm64-net`, the
     SHA-256 checked before it's made executable), the flags' table, the logs and where the token is kept; `build.sh`
     writes the release: the six binaries at the baseline levels (`GOAMD64=v1`, `GOARM64=v8.0`, so a host's environment
     can't change the bytes), `LICENSES.txt` (`licenses.sh`: every linked module's own license, notice and patent files,
@@ -193,7 +193,7 @@ with tun2socks-style forwarders.
     (§1): v0.1.0 built identically on GitHub's x86_64 and arm64 runners and in the dev VM.
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
   - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/networking/adapters.md): the kind `local` (its
-    link in the record); the wizard's [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) step (the link, or the pairing link, pasted; the
+    link in the record); the wizard's [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal) step (the link, or the pairing link, pasted; the
     install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s: v0.1.0's since
     2026-11-02); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
     a worker, batched on `setTimeout(0)`; the card's frame path beside the gateway's (`FramePath`) with a **link flap**
@@ -211,7 +211,7 @@ with tun2socks-style forwarders.
     with the worker and the batching (bench/net/REPORT.md "The stalled uploads": 1.1 Gbit/s down, 1.5 up against 0.6
     and 0.95 at 1500, one boot each) and stays a flag (`--mtu`) for whoever wants it. That closed L2.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (the commit
-  `tests/webpc-net.ts` pins, fetched with git and built: `go install` refuses the module while it has a `replace`): Debian's lease, a TCP transfer to a server on this machine, a
+  `tests/waarm64-net.ts` pins, fetched with git and built: `go install` refuses the module while it has a `replace`): Debian's lease, a TCP transfer to a server on this machine, a
   wrong token and a wrong origin refused, and the IPv6 checks of §5 (`tests/net-local.test.ts` has most of these
   already, from L0). The framing's unit tests in Node. How it
   works goes into networking/tailnet.md's neighbor (a page of its own, or networking/adapters.md), frontend.md "Network" and

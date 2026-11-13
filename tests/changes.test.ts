@@ -20,7 +20,7 @@ import { changedClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
 const have = spawnSync('qemu-img', ['--version']).status === 0 && spawnSync('qemu-io', ['--version']).status === 0;
 
 let dir: string;
-before(() => { dir = mkdtempSync(join(tmpdir(), 'webpc-changes-')); });
+before(() => { dir = mkdtempSync(join(tmpdir(), 'waarm64-changes-')); });
 after(() => { if (dir) rmSync(dir, { recursive: true }); });
 
 const source = (b: Uint8Array): Source => ({ size: b.length, read: (off, len) => (off + len <= b.length ? b.slice(off, off + len) : undefined) });
@@ -125,11 +125,11 @@ test('a different base, a different size and a qcow2 without our checksum are re
   await assert.rejects(load('guarded', file, other), said('disks:changes.otherBase', { backing: 'base.img', hash: /^[0-9a-f]{12}$/, label: 'the page disk', baseHash: /^[0-9a-f]{12}$/ }));
   await assert.rejects(load('guarded', file, base.subarray(0, SIZE - 4096)), said('disks:changes.otherSize', { size: SIZE, label: 'the page disk', baseSize: SIZE - 4096 }));
   await assert.rejects(load('guarded', base, base), said('disks:changes.notChanges'));
-  // A changes file from before the hash was of slices ("WPC1": the whole file's SHA-256) has no hash we check.
+  // A changes file from before the hash was of slices ("WAM1": the whole file's SHA-256) has no hash we check.
   const old = Buffer.from(file);
-  const at = old.subarray(0, 4096).indexOf('WPC2');
+  const at = old.subarray(0, 4096).indexOf('WAM2');
   assert.ok(at > 0);
-  old.write('WPC1', at);
+  old.write('WAM1', at);
   await assert.rejects(load('guarded', old, base), said('disks:changes.notOurs'));
   assert.deepEqual(await mergedOf('guarded', base), before);
 });

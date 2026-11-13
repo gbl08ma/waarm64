@@ -2,7 +2,7 @@
 // and ephemeral, their state forgotten with them, the Attach wizard's preselection, the migration of the single
 // connection the page kept before (planted: a kept node's prefix rewritten, so the node would log in again), and their
 // locks between two "tabs" (two Stores on one BroadcastChannel); in Chromium, the store's upgrade to `connections` over
-// a database the page made before, and the kept profiles read from `webpc-tailscale`.
+// a database the page made before, and the kept profiles read from `waarm64-tailscale`.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
@@ -20,7 +20,7 @@ import { t } from '../web/i18n.ts';
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
   const forgot: string[] = [];
-  /** `webpc-room`'s entries: what a room connection's first start keeps, and pasted keys. */
+  /** `waarm64-room`'s entries: what a room connection's first start keeps, and pasted keys. */
   const rooms = new Map<string, { key: string }>();
   return {
     forgot, rooms,
@@ -37,7 +37,7 @@ test('connections: stored and ephemeral, their names and state keys, deleted wit
   const s = store();
   const { forgot, state } = fakeState();
   const conns = new Connections(s, state);
-  const ts = await conns.create({ kind: 'tailnet', tailnet: { controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc', exitNode: '' } });
+  const ts = await conns.create({ kind: 'tailnet', tailnet: { controlURL: 'https://controlplane.tailscale.com', hostname: 'waarm64', exitNode: '' } });
   const hs = await conns.create({ kind: 'tailnet', tailnet: { controlURL: 'https://hs.example.com', hostname: 'box', exitNode: '' } });
   const ts2 = await conns.create({ kind: 'tailnet' });
   const cat = await conns.create({ kind: 'tailcat', tailcat: { exit: 'tcAAAA', serve: true, relay: '' } });
@@ -80,13 +80,13 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
   const s = store();
   const { forgot, state } = fakeState();
   const conns = new Connections(s, state);
-  const link = 'webpc-room:gabriel-lan';
+  const link = 'waarm64-room:gabriel-lan';
   const pub = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
-  const priv = await conns.create({ kind: 'room', room: { link: 'webpc-room:work-abcdefghijklmnopqrstuvwxyz?derp=7', incoming: false, relayOnly: true } });
-  // The same key in another room: its entry in webpc-room is the first one's.
-  const shared = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, keyOf: pub.id } });
+  const priv = await conns.create({ kind: 'room', room: { link: 'waarm64-room:work-abcdefghijklmnopqrstuvwxyz?derp=7', incoming: false, relayOnly: true } });
+  // The same key in another room: its entry in waarm64-room is the first one's.
+  const shared = await conns.create({ kind: 'room', room: { link: 'waarm64-room:other', incoming: true, relayOnly: false, keyOf: pub.id } });
   const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false } });
-  const ephShared = await conns.create({ kind: 'room', ephemeral: true, room: { link: 'webpc-room:third', incoming: true, relayOnly: false, keyOf: pub.id } });
+  const ephShared = await conns.create({ kind: 'room', ephemeral: true, room: { link: 'waarm64-room:third', incoming: true, relayOnly: false, keyOf: pub.id } });
   assert.deepEqual([pub.name, priv.name, shared.name, eph.name], ['gabriel-lan', 'work', 'other', 'gabriel-lan (2)'], 'named by the room, a private one without its suffix');
   assert.equal(pub.room?.identityKey, pub.id);
   assert.equal(pub.room?.identity, undefined, 'a stored connection\'s key is the client\'s to keep');
@@ -111,18 +111,18 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
 test('rooms: a pasted key is kept as the new connection\'s, or is the connection\'s that has it', async () => {
   const { rooms, state } = fakeState();
   const conns = new Connections(store(), state);
-  const link = 'webpc-room:lobby';
+  const link = 'waarm64-room:lobby';
   const [k1, k2, k3] = ['1', '2', '3'].map((d) => d.repeat(64));
   const stored = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: k1 } });
   assert.equal(stored.room!.identityKey, stored.id);
-  assert.equal(stored.room!.identity, undefined, 'stored: in webpc-room, not the record');
+  assert.equal(stored.room!.identity, undefined, 'stored: in waarm64-room, not the record');
   assert.deepEqual(rooms.get(stored.id), { key: k1 });
   assert.equal(Object.hasOwn(stored.room!, 'key'), false, 'the key is not in the record');
   const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false, key: k2 } });
   assert.deepEqual(eph.room!.identity, { key: k2 }, 'ephemeral: in memory');
   assert.equal(rooms.has(eph.id), false);
   // The same key again is that connection's: one entry, so one lock (roomKeyLock) between them.
-  const again = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, key: k1 } });
+  const again = await conns.create({ kind: 'room', room: { link: 'waarm64-room:other', incoming: true, relayOnly: false, key: k1 } });
   assert.equal(again.room!.identityKey, stored.id);
   assert.equal(rooms.has(again.id), false);
   assert.equal(await conns.keyLock(again.room!), await conns.keyLock(stored.room!));
@@ -141,20 +141,20 @@ test('rooms: a pasted key is kept as the new connection\'s, or is the connection
   assert.equal(of.room!.identityKey, plain.id);
 });
 
-test("rooms: a stored connection made with an ephemeral one's key keeps it in webpc-room, never in its record, and New name changes it", async () => {
+test("rooms: a stored connection made with an ephemeral one's key keeps it in waarm64-room, never in its record, and New name changes it", async () => {
   const { state } = fakeState();
   const s = store();
   const conns = new Connections(s, state);
-  const link = 'webpc-room:lobby';
+  const link = 'waarm64-room:lobby';
   const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false } });
   const key = eph.room!.identity!.key;
   /** The key a start of connection `c` uses (web/room-worker.ts: `identity`, else the one under `identityKey`). */
   const used = async (c: Connection) => c.room!.identity?.key ?? (await state.roomIdentity(c.room!.identityKey)).key;
   for (const how of [{ key }, { keyOf: eph.id }]) {
-    const stored = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, ...how } });
+    const stored = await conns.create({ kind: 'room', room: { link: 'waarm64-room:other', incoming: true, relayOnly: false, ...how } });
     const record = (await s.get('connections', stored.id))!;
     assert.equal(record.room!.identity, undefined, `${JSON.stringify(Object.keys(how))}: no key in the stored record`);
-    assert.equal(await used(record), key, 'the same key, in webpc-room');
+    assert.equal(await used(record), key, 'the same key, in waarm64-room');
     await conns.newRoomKey({ ...record, room: record.room! });
     const renamed = (await conns.get(stored.id))!;
     assert.notEqual(await used(renamed), key, 'New name: a new key');
@@ -188,7 +188,7 @@ test("the page's single connection becomes stored ones: the kept nodes and the s
   assert.equal(hs.tailnet?.stateKey, 'https://hs.example.com');
   assert.equal(ts.tailnet?.stateKey, 'https://controlplane.tailscale.com');
   assert.deepEqual([hs.tailnet?.hostname, hs.tailnet?.exitNode, hs.connectAtStart], ['box', 'nEXIT', true], 'the settings were this one\'s');
-  assert.deepEqual([ts.tailnet?.hostname, ts.tailnet?.exitNode, ts.connectAtStart], ['webpc', '', false]);
+  assert.deepEqual([ts.tailnet?.hostname, ts.tailnet?.exitNode, ts.connectAtStart], ['waarm64', '', false]);
   assert.deepEqual([cat.tailcat?.identityKey, cat.tailcat?.serve, cat.tailcat?.relay, cat.tailcat?.exit, cat.connectAtStart], ['served', true, 'derp.example.com', undefined, false]);
   assert.deepEqual((await s.all('connections')).map((c) => c.tailnet?.stateKey ?? c.tailcat?.identityKey).sort(), ['https://controlplane.tailscale.com', 'https://hs.example.com', 'served']);
   // Again (another tab, a reload before the settings were dropped): nothing new.
@@ -213,7 +213,7 @@ test('the kept profiles: the prefixes that hold a node', () => {
 
 test('one running machine has a connection: its lock, who holds it, and asking for it between two tabs', async (t) => {
   if (!globalThis.navigator?.locks) return t.skip('no Web Locks in this Node');
-  const channel = `webpc-net-test-${process.pid}`;
+  const channel = `waarm64-net-test-${process.pid}`;
   const [a, b] = [store(channel), store(channel)];
   const released: string[] = [];
   const locksA = new Locks(a, 'net', () => 'Machine A', (lock) => { released.push(lock); locksA.drop(lock); });
@@ -221,7 +221,7 @@ test('one running machine has a connection: its lock, who holds it, and asking f
   const usb = new Locks(b, 'usb', () => 'Machine B (USB)', () => { throw new Error('a net note reached the USB locks'); });
   try {
     const lock = connectionLock('a00000000001');
-    assert.equal(lock, 'webpc-net:a00000000001');
+    assert.equal(lock, 'waarm64-net:a00000000001');
     assert.equal(await locksA.take(lock), true);
     assert.equal(await locksB.take(lock), false, 'another tab\'s machine has it');
     assert.equal(await locksB.holder(lock), 'Machine A');
@@ -255,7 +255,7 @@ test("in Chromium: the store upgrades a database made before connections, keepin
     const idb = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
     // Version 1, as the page made it before connections, with a machine in it.
     const old = await new Promise<IDBDatabase>((resolve, reject) => {
-      const o = indexedDB.open('webpc', 1);
+      const o = indexedDB.open('waarm64', 1);
       o.onupgradeneeded = () => { for (const k of ['machines', 'disks', 'overlays', 'snapshots']) o.result.createObjectStore(k, { keyPath: 'id' }); };
       o.onsuccess = () => resolve(o.result);
       o.onerror = () => reject(o.error);
@@ -263,7 +263,7 @@ test("in Chromium: the store upgrades a database made before connections, keepin
     await idb(old.transaction('machines', 'readwrite').objectStore('machines').put({ id: 'aaaaaaaaaaaa', name: 'Brisk Heron' }));
     // A kept node, as the page kept it before connections.
     const ts = await new Promise<IDBDatabase>((resolve, reject) => {
-      const o = indexedDB.open('webpc-tailscale', 1);
+      const o = indexedDB.open('waarm64-tailscale', 1);
       o.onupgradeneeded = () => o.result.createObjectStore('state');
       o.onsuccess = () => resolve(o.result);
       o.onerror = () => reject(o.error);

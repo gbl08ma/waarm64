@@ -456,9 +456,9 @@ const errorOf = (e: unknown) => JSON.stringify(toWire(e));
 
 test("a room's key runs in one connection at a time: another adapter's, then another tab's, named", async () => {
   const records = memoryRecords();
-  const state = memoryState(); // webpc-room, which the tabs share
+  const state = memoryState(); // waarm64-room, which the tabs share
   const p = pageOn('nl-roomkey', 'M', records, [], state);
-  const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'webpc-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
+  const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'waarm64-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
   const first = await room();
   const second = await room(first.id); // the same key in another room
   const own = await room();
@@ -485,7 +485,7 @@ test("a room's key runs in one connection at a time: another adapter's, then ano
 
 test("a room's key: two connects at once on one page run one of them", async () => {
   const p = pageOn('nl-roomrace', 'M');
-  const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'webpc-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
+  const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'waarm64-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
   const first = await room();
   const second = await room(first.id);
   p.net.ports('m1', adapters(first, second));
@@ -505,14 +505,14 @@ test("a room's key: two connects at once on one page run one of them", async () 
 
 test("a room's key: an ephemeral connection and a stored one on its key, in two tabs, take one lock", async () => {
   const records = memoryRecords();
-  const state = memoryState(); // webpc-room, which the tabs share as they share IndexedDB
+  const state = memoryState(); // waarm64-room, which the tabs share as they share IndexedDB
   const p = pageOn('nl-roomkinds', 'M', records, [], state);
-  const eph = await p.net.conns.create({ kind: 'room', ephemeral: true, room: { link: 'webpc-room:r', incoming: true, relayOnly: false } });
+  const eph = await p.net.conns.create({ kind: 'room', ephemeral: true, room: { link: 'waarm64-room:r', incoming: true, relayOnly: false } });
   p.net.ports('m1', adapters(eph));
   await p.net.connect(0, eph);
   // Another tab can't see the ephemeral one: its key, pasted, is kept as the new connection's own.
   const q = pageOn('nl-roomkinds', 'N', records, [], state);
-  const pasted = await q.net.conns.create({ kind: 'room', room: { link: 'webpc-room:s', incoming: true, relayOnly: false, key: eph.room!.identity!.key } });
+  const pasted = await q.net.conns.create({ kind: 'room', room: { link: 'waarm64-room:s', incoming: true, relayOnly: false, key: eph.room!.identity!.key } });
   q.net.ports('m2', adapters(pasted));
   await assert.rejects(q.net.connect(0, pasted), (e: Error) => errorOf(e).includes('network:net-claims.keyHeld'), 'refused: the key runs in the other tab');
   await p.net.disconnect(0);

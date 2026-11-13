@@ -20,4 +20,4 @@ class Onset extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor('webpc-onset', Onset);
+registerProcessor('waarm64-onset', Onset);

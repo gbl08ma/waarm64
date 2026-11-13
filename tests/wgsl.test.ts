@@ -270,7 +270,7 @@ function toHalf(x: number) {
 const missing = !existsSync(MODULE) ? 'SKIPPED: run vk/build.sh' : false;
 
 test('every stage translates to WGSL that Chromium compiles, or fails for a reason outside the direct set', { skip: missing, timeout: 10 * 60_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const all = stages(tmp);
     if (!all.length) return t.skip('SKIPPED: no stages (glslc for the scene\'s, or target/vk1/spirv)');
@@ -293,7 +293,7 @@ test('every stage translates to WGSL that Chromium compiles, or fails for a reas
 
 test('a storage image loaded and stored is read_write where WebGPU allows it, and refused where it doesn\'t (VK3 L4c-F)', { skip: missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc'), timeout: 120_000 }, async (t) => {
   // The review's "storage access WebGPU refuses": rg16float or rgba8unorm printed read_write made an invalid module.
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const stage = (format: string, features?: number) => {
@@ -339,7 +339,7 @@ test('a storage image loaded and stored is read_write where WebGPU allows it, an
 test('built-ins WGSL has translate to its own, and a compare-exchange is strong (the review of the translator)', { skip: missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc'), timeout: 120_000 }, async (t) => {
   // Findings 1 and 6: packHalf2x16 and unpackHalf2x16 went through 16-bit values (ldexp, which NIR lowers to bits,
   // translated already); atomicCompSwap was WGSL's weak exchange, which may fail spuriously.
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const spv = join(tmp, 'builtins.spv');
@@ -358,7 +358,7 @@ test('built-ins WGSL has translate to its own, and a compare-exchange is strong 
 });
 
 test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip: missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc'), timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const stage = (file: string, env = 'vulkan1.2') => {
@@ -429,7 +429,7 @@ function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: strin
 const noGlslc = missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc');
 
 test('subgroup operations are WGSL\'s where the device has subgroups of one size, of one invocation otherwise, and run right (VK3 L5, GD G1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // Every family the device advertises, each of WGSL's built-ins where WGSL has one.
@@ -497,7 +497,7 @@ test('subgroup operations are WGSL\'s where the device has subgroups of one size
 });
 
 test('anchored, a ballot, an election and a read of the first invocation take an add of the subgroup into their operands, and run right (VK4 backlog easy wins)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const stage = (features: number, subgroupSize = 4) => {
@@ -534,7 +534,7 @@ test('anchored, a ballot, an election and a read of the first invocation take an
 });
 
 test('values are lets where their uses allow, vars where they leave their scope or a loop carries them (GD G2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/g2/values.comp');
@@ -596,7 +596,7 @@ test('values are lets where their uses allow, vars where they leave their scope 
 });
 
 test('values read once are inlined into their use, not past a store to a register they read (VK4 T49)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t49/inline.comp');
@@ -634,7 +634,7 @@ test('values read once are inlined into their use, not past a store to a registe
 });
 
 test('a barycentric at a sample read by two loads with a register store between them: neither load reads the sample index past the store (the review of VK4 T47-T49, finding 1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const out: string[] = [];
@@ -660,7 +660,7 @@ test('a barycentric at a sample read by two loads with a register store between 
 });
 
 test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratch arrays (VK3 L5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // 16-bit storage: halves of words, a buffer with 16-bit stores atomic (two invocations store a word's halves),
@@ -723,7 +723,7 @@ test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratc
 });
 
 test('8-bit storage and 8- and 16-bit integer arithmetic at 32 bits, bytes of words (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t29/int8.comp');
@@ -766,7 +766,7 @@ test('8-bit storage and 8- and 16-bit integer arithmetic at 32 bits, bytes of wo
 });
 
 test('64-bit subgroup reductions and scans are shuffles of words, WGSL\'s built-ins taking none (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const run = async (size: number) => {
@@ -796,7 +796,7 @@ test('64-bit subgroup reductions and scans are shuffles of words, WGSL\'s built-
 });
 
 test('floats convert to 32-bit integers saturating exactly, a half\'s infinity too (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t29/fconvert.comp');
@@ -840,7 +840,7 @@ function f32OfBig(x: bigint) {
 }
 
 test('64-bit integers as pairs of words: arithmetic, comparisons, conversions, loads and stores (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t29/int64.comp');
@@ -889,7 +889,7 @@ test('64-bit integers as pairs of words: arithmetic, comparisons, conversions, l
 });
 
 test('16-bit inputs and outputs are 32-bit ones, converted where loaded and stored (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const vs = glslStage(translate, tmp, 'tests/venus/t29/io16.vert');
@@ -916,7 +916,7 @@ test('16-bit inputs and outputs are 32-bit ones, converted where loaded and stor
 test('shared memory of atomics filling the workgroup\'s storage, with a barrier under a uniform condition (VK3 L6c)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   // The out-of-context review of L5-L6a's finding 6: maxComputeSharedMemorySize is WebGPU's whole, and this stage
   // failed to translate (the condition's word had nowhere to go). It borrows shared memory's first word through atomics.
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/l6c/shared-atomic-full.comp', {});
     assert.equal(r.rc, 0, r.text);
@@ -935,7 +935,7 @@ test('shared memory of atomics filling the workgroup\'s storage, with a barrier 
 });
 
 test('the out-of-context review of L4f: a compute stage\'s readonly storage buffers read-only, the uniform conditions\' word in the workgroup\'s storage, terminate and demote run (VK3 L5b)', { skip: noGlslc, timeout: 180_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const ok = (file: string, env?: string) => {
@@ -997,7 +997,7 @@ test('the out-of-context review of L4f: a compute stage\'s readonly storage buff
 });
 
 test('arrays of uniform and storage buffers and of storage images indexed dynamically are chosen from, and run right (VK3 L7.1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const buf = glslStage(translate, tmp, 'tests/venus/l7/dyn-buffers.comp');
@@ -1039,7 +1039,7 @@ test('arrays of uniform and storage buffers and of storage images indexed dynami
 });
 
 test('a fragment stage at the sample rate reads its inputs at their sample and WGSL\'s sample_index (VK3 L7.1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const file = 'tests/venus/l7/sample-shading.frag';
@@ -1068,7 +1068,7 @@ test('a fragment stage at the sample rate reads its inputs at their sample and W
 test('interpolateAtOffset and interpolateAtSample move the input along its derivatives (VK3 L7b)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   // The review of L6b-L7.3 (finding 1): sampleRateShading is advertised, and with it SPIR-V's InterpolationFunction;
   // the translator refused both.
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const file = 'tests/venus/l7b/interpolate-at.frag';
@@ -1151,7 +1151,7 @@ async function runSampled(code: string, textures: { binding: number; format: str
 }
 
 test('a combined image-sampler with a YCbCr conversion samples each plane and converts (VK3 L7.2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // VK_FORMAT_G8_B8R8_2PLANE_420_UNORM (NV12), BT.709, narrow range; chroma at the midpoint, nearest, or cosited
@@ -1212,7 +1212,7 @@ test('a combined image-sampler with a YCbCr conversion samples each plane and co
 });
 
 test('a vertex stage captured by transform feedback copies each output into its record, a matrix\'s columns and an array\'s elements at their offsets (VK3 L7.4)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/l7/xfb-block.vert');
@@ -1228,7 +1228,7 @@ test('a vertex stage captured by transform feedback copies each output into its 
 });
 
 test('a vertex stage that writes storage is printed without its entry point, its body run as compute by the driver (VK4 T33)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // A buffer's stores and an atomic, an image's store: WebGPU refuses a vertex entry point that reaches either.
@@ -1249,7 +1249,7 @@ test('a vertex stage that writes storage is printed without its entry point, its
 });
 
 test('a vertex stage\'s draw parameters are read from the push buffer past the push constants, which go there with them (VK3 L7.5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/l7/draw-params.vert');
@@ -1268,7 +1268,7 @@ test('a vertex stage\'s draw parameters are read from the push buffer past the p
 });
 
 test('texture-sampler pairs past what the translator records fail the stage, saying so (VK3 L7a)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // 72 pairs are recorded (the cap was 64, the rest dropped without a word: their samplers never non-filtering).
@@ -1283,7 +1283,7 @@ test('texture-sampler pairs past what the translator records fail the stage, say
 });
 
 test('an integer texture sampled at an explicit LOD is fetched from the level Vulkan selects, within the image\'s levels (VK3 L9b)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/l9b/int-lod.comp');
@@ -1311,7 +1311,7 @@ const ADDRESS = { repeat: 0, mirror: 1, edge: 2, border: 3, once: 4 };
 const key = (u: number, o: Partial<NonNullable<Device['sampler']>> = {}): NonNullable<Device['sampler']> => ({ u, v: ADDRESS.edge, w: ADDRESS.edge, flags: 16, compare: 7, levels: 1, bias: 0, min: 0, max: 1000, border: [0, 0, 0, 0], ...o });
 
 test('an integer texture is fetched as its sampler\'s address modes say (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const word = (v: number) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
@@ -1341,7 +1341,7 @@ test('an integer texture is fetched as its sampler\'s address modes say (VK4 T8)
 });
 
 test('an integer texture\'s level comes from its sampler\'s bias and LOD clamps (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const word = (v: number) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
@@ -1367,7 +1367,7 @@ test('an integer texture\'s level comes from its sampler\'s bias and LOD clamps 
 });
 
 test('a float texture blends towards the border and mirrors once, as WebGPU\'s samplers can\'t (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // A 2×2 image: the first column's red 1, the second's 0.
@@ -1399,7 +1399,7 @@ test('a float texture blends towards the border and mirrors once, as WebGPU\'s s
 });
 
 test('an integer cube is fetched from its faces as a 2D array, its size and levels asked of them (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t8/int-cube.comp');
@@ -1421,7 +1421,7 @@ test('an integer cube is fetched from its faces as a 2D array, its size and leve
 });
 
 test('an integer texture only asked its size is declared integer, so that its view binds (VK4 T8)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/t8/size-only.frag');
     assert.equal(r.rc, 0, r.text);
@@ -1433,7 +1433,7 @@ test('an integer texture only asked its size is declared integer, so that its vi
 
 // VK4 T18: a padded image: a key's smaller size on a plain texture stands for a compressed one's blocks.
 test('an image that is a corner of its texture is wrapped and filtered at its own size (VK4 T18)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // 4×4, a row's reds 0, 80, 160, 240: only the first three are the image's.
@@ -1461,7 +1461,7 @@ test('an image that is a corner of its texture is wrapped and filtered at its ow
 });
 
 test('a min or max reduction takes the footprint\'s texels with non-zero weights, in a level and across two (VK4 T25)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // 4×4, red 60 a column and 10 a row; level 1 all 200.
@@ -1490,7 +1490,7 @@ test('a min or max reduction takes the footprint\'s texels with non-zero weights
 });
 
 test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t8/padded-cube.comp', { sampler: key(ADDRESS.edge, { flags: 16 | 32 | 64 | 1 | 2, size: [2, 2], levels: 1 }) });
@@ -1510,7 +1510,7 @@ test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeou
 });
 
 test('a non-seamless cube filters within the face, wrapped by its address modes (VK4 T28)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // Faces' reds 0, 40, 80, 120, 160, 200, 4×4 each; (1, 0, 0.99) is 0.02 of a texel from +X's edge with +Z: a linear filter reads 0.48 past it.
@@ -1590,7 +1590,7 @@ const IMAGE_FORMATS: [string, string, number, number[][], string, number[][]][] 
 ];
 
 test('an image loaded and stored by one stage holds each format\'s bytes in its words, and reads them back (VK4 T11)', { skip: noGlslc, timeout: 300_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     for (const [format, image, bytes, values, enc, dec] of IMAGE_FORMATS) {
@@ -1630,7 +1630,7 @@ test('an image loaded and stored by one stage holds each format\'s bytes in its 
 });
 
 test('atomics reach a storage image through its words, its loads, stores and sizes with them, and a texel buffer\'s words directly (VK4 T7)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t7/image-atomics.comp');
@@ -1674,7 +1674,7 @@ test('atomics reach a storage image through its words, its loads, stores and siz
 });
 
 test('gl_ViewIndex is an override, declared only by a stage that reads it (VK4 T7)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t7/view-index.vert');
@@ -1691,7 +1691,7 @@ test('gl_ViewIndex is an override, declared only by a stage that reads it (VK4 T
 });
 
 test('constant texture offsets are literals, whatever scalarizing made of them (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t9/offset.frag');
@@ -1712,7 +1712,7 @@ test('constant texture offsets are literals, whatever scalarizing made of them (
 });
 
 test('offsets that aren\'t constants move fetches, and samples come from fetches at the level read (VK4 T24: maintenance8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t24/offset.comp', { sampler: key(ADDRESS.edge, { levels: 3 }) });
@@ -1740,7 +1740,7 @@ test('offsets that aren\'t constants move fetches, and samples come from fetches
 });
 
 test('a shadow sample past level 0 compares each texel of its level and filters the results (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // depth16unorm 4×4: level 0 all 0.25; level 1 a column of 0.25, a column of 0.75. Against 0.5, LESS: 0, and 0, 1.
@@ -1778,7 +1778,7 @@ test('a shadow sample past level 0 compares each texel of its level and filters 
 });
 
 test('a depth texture sampled with and without comparison prints, from its first module to a key of a bias (VK4 R5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const texts = [glslStage(translate, tmp, 'tests/venus/r5/depth-and-compare.frag'), glslStage(translate, tmp, 'tests/venus/r5/depth-and-compare.frag', { sampler: key(ADDRESS.edge, { bias: 1 }) })];
@@ -1792,7 +1792,7 @@ test('a depth texture sampled with and without comparison prints, from its first
 });
 
 test('a gather of a texture the stage compares goes by its sampler (the review of VK4 R5 to R7)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/r5/gather-depth.comp', { sampler: key(ADDRESS.repeat, { v: ADDRESS.repeat }) });
@@ -1810,7 +1810,7 @@ test('a gather of a texture the stage compares goes by its sampler (the review o
 });
 
 test('a border across levels is each level\'s, whatever clamps WebGPU\'s sampler has (VK4 R5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/r5/border-levels.comp', { sampler: key(ADDRESS.border, { flags: 16 | 1 | 2 | 4, levels: 2, min: 0.5 }) });
     assert.equal(r.rc, 0, r.text);
@@ -1825,7 +1825,7 @@ test('a border across levels is each level\'s, whatever clamps WebGPU\'s sampler
 });
 
 test('inter-stage variables past WebGPU\'s with a clip distance fail the stage, saying so (VK4 R5)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/r5/clip-many.vert');
     assert.notEqual(r.rc, 0, r.text);
@@ -1836,7 +1836,7 @@ test('inter-stage variables past WebGPU\'s with a clip distance fail the stage, 
 });
 
 test('a shadow sample WGSL can do stays WGSL\'s, without a key or at one level (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     for (const sampler of [undefined, key(ADDRESS.edge, { levels: 1, compare: 1 })]) {
@@ -1851,7 +1851,7 @@ test('a shadow sample WGSL can do stays WGSL\'s, without a key or at one level (
 });
 
 test('textureQueryLod is worked out in the shader, an array\'s coordinate without its layer (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const text = (file: string, sampler?: Device['sampler']) => {
@@ -1874,7 +1874,7 @@ test('textureQueryLod is worked out in the shader, an array\'s coordinate withou
 });
 
 test('gl_HelperInvocation is an invocation that covers no sample, or demoted (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t9/helper.frag');
@@ -1891,7 +1891,7 @@ test('gl_HelperInvocation is an invocation that covers no sample, or demoted (VK
 });
 
 test('workgroup and global ids take a dispatch\'s base from overrides, declared only where read (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t9/base.comp');
@@ -1908,7 +1908,7 @@ test('workgroup and global ids take a dispatch\'s base from overrides, declared 
 });
 
 test('gl_ClipDistance read by a fragment stage comes in at a free location, by its vec4 slot (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/t9/clip-read.frag');
@@ -1924,7 +1924,7 @@ test('gl_ClipDistance read by a fragment stage comes in at a free location, by i
 });
 
 test('signed and unsigned atomic min and max on one array: the other kind a compare-exchange loop (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/t42/minmax-mixed.comp');
     assert.equal(r.rc, 0, r.text);
@@ -1993,7 +1993,7 @@ async function runAtomicFragment(code: string, init: number[], whole = false, ar
 }
 
 test('a fragment stage\'s unsigned atomic min and max on an array of atomic<i32>: its helper invocations\' compare-exchange loops end (VK4 T47)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/t47/minmax-helpers.frag');
     assert.equal(r.rc, 0, r.text);
@@ -2011,7 +2011,7 @@ test('a fragment stage\'s unsigned atomic min and max on an array of atomic<i32>
 });
 
 test('demoted invocations\' compare-exchange loops end where their atomics return zeros (Tint\'s DemoteToHelper), and the others\' results stay (the review of VK4 T47-T49, finding 2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/t47/minmax-demote.frag');
     assert.equal(r.rc, 0, r.text);
@@ -2032,7 +2032,7 @@ test('demoted invocations\' compare-exchange loops end where their atomics retur
 });
 
 test('a multisampled array is its first layer: its size one layer, its texels that layer\'s, a stage Tint compiles (VK4 T47)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const r = glslStage(await translator(), tmp, 'tests/venus/t47/ms-array-size.frag');
     assert.equal(r.rc, 0, r.text);
@@ -2049,7 +2049,7 @@ test('a multisampled array is its first layer: its size one layer, its texels th
 test('flat varyings of ints and floats at one location travel as words (VK4 T42)', { skip: noGlslc || (spawnSync('spirv-as', ['--version']).status !== 0 && 'SKIPPED: no spirv-as'), timeout: 120_000 }, async (t) => {
   // The location was the type of its last load or store (a float's bits through an f32 varying, which a backend may
   // canonicalize; an int's and a float's stores at one location gave the vertex stage an interpolated f32 output).
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const asm = (file: string, stage: number) => {
@@ -2074,7 +2074,7 @@ test('flat varyings of ints and floats at one location travel as words (VK4 T42)
 });
 
 test('a depth texture sampled plainly at an explicit LOD blends its levels through a linear mipmap (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     // depth16unorm 2×2, level 0 all 0.25, level 1 0.75: LOD 0, 0.5 and 1.
@@ -2092,7 +2092,7 @@ test('a depth texture sampled plainly at an explicit LOD blends its levels throu
 });
 
 test('a gather of a cube bound as its faces comes from its faces\' fetches, across edges and corners (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const FACES = 64, PADDED = 32;
@@ -2129,7 +2129,7 @@ test('a gather of a cube bound as its faces comes from its faces\' fetches, acro
 });
 
 test('a depth texture sampled through a linear sampler is filtered from fetches (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-wgsl-'));
   try {
     const translate = await translator();
     const FETCHED = 2048;

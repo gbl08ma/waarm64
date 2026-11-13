@@ -36,7 +36,7 @@
 #define PERIODS 4
 
 static void die(const char *what) {
-    printf("webpc: snd test failed: %s\n", what);
+    printf("waarm64: snd test failed: %s\n", what);
     fflush(stdout);
     reboot(RB_POWER_OFF);
     exit(1);
@@ -253,7 +253,7 @@ int main(void) {
     int periods = rec ? (int)(atof(rec) * RATE / PERIOD + 0.5) : 16;
     if (periods <= 0) die("snd_rec_seconds");
     record(periods);
-    printf("webpc: snd test ok\n");
+    printf("waarm64: snd test ok\n");
     reboot(RB_POWER_OFF);
     return 0;
 }

@@ -149,7 +149,7 @@ onmessage = async (e: MessageEvent<{ root: FileSystemDirectoryHandle | 'opfs'; k
   const opfs = e.data.root === 'opfs';
   const base = e.data.root === 'opfs' ? await navigator.storage.getDirectory() : e.data.root;
   try {
-    const work = await base.getDirectoryHandle('webpc-shares-bench', { create: true });
+    const work = await base.getDirectoryHandle('waarm64-shares-bench', { create: true });
     const sdir = await work.getDirectoryHandle('small', { create: true });
     await sdir.getDirectoryHandle('sub', { create: true });
     const result: Record<string, unknown> = { kind, cores: navigator.hardwareConcurrency };
@@ -159,10 +159,10 @@ onmessage = async (e: MessageEvent<{ root: FileSystemDirectoryHandle | 'opfs'; k
     result.small = await small(sdir);
     say('big files');
     result.big = await big(await work.getDirectoryHandle('bigs', { create: true }), opfs);
-    await base.removeEntry('webpc-shares-bench', { recursive: true });
+    await base.removeEntry('waarm64-shares-bench', { recursive: true });
     postMessage({ result });
   } catch (err) {
-    await base.removeEntry('webpc-shares-bench', { recursive: true }).catch(() => {});
+    await base.removeEntry('waarm64-shares-bench', { recursive: true }).catch(() => {});
     postMessage({ error: `${(err as Error).name}: ${(err as Error).message}\n${(err as Error).stack}` });
   }
 };

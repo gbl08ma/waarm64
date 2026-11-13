@@ -33,7 +33,7 @@ static void nap(int ms) {
 }
 
 static void die(const char *what) {
-    printf("webpc: gpu test failed: %s\n", what);
+    printf("waarm64: gpu test failed: %s\n", what);
     fflush(stdout);
     reboot(RB_POWER_OFF);
     exit(1);
@@ -115,7 +115,7 @@ static void setcrtc(struct buf *b, struct drm_mode_modeinfo *m) {
 
 int main(void) {
     mount("devtmpfs", "/dev", "devtmpfs", 0, 0);
-    printf("webpc: gpu-test\n");
+    printf("waarm64: gpu-test\n");
     for (int i = 0; i < 500; i++) {
         fd = open("/dev/dri/card0", O_RDWR);
         if (fd >= 0) break;
@@ -180,7 +180,7 @@ int main(void) {
     setcrtc(&b, &next);
     printf("gpu: mode set %dx%d\n", b.w, b.h);
 
-    printf("webpc: gpu test ok\n");
+    printf("waarm64: gpu test ok\n");
     fflush(stdout);
     reboot(RB_POWER_OFF);
     return 0;

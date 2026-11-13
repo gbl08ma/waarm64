@@ -644,12 +644,12 @@ fn a_state_is_refused_by_another_version_or_machine() {
     // Not a state, or another version's.
     for bad in [
         &b""[..],
-        b"WPC",
-        b"WPCS",
-        b"XPCS\x01\0\0\0",
-        b"WPCS\x01\0\0\0",
-        b"WPCS\x03\0\0\0",
-        b"WPCS\x07\0\0\0",
+        b"WA6",
+        b"WA64",
+        b"XA64\x01\0\0\0",
+        b"WA64\x01\0\0\0",
+        b"WA64\x03\0\0\0",
+        b"WA64\x07\0\0\0",
     ] {
         assert_eq!(restore(bad, cfg, &[DEV]), Err(Error::Format), "{bad:?}");
     }
@@ -763,7 +763,7 @@ fn the_saved_bytes_are_pinned_to_the_version() {
     assert_eq!(snapshot::VERSION, 6);
     assert_eq!(
         (state.len(), hash(&state)),
-        (266_627, 17_432_557_081_245_502_101),
+        (266_627, 2_643_723_702_611_200_680), // since the magic WA64
         "the layout moved"
     );
 }

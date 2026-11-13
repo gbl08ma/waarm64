@@ -165,7 +165,7 @@ export function gpuHandlers(
 ): Handlers<FromGpuWorker> {
   return {
     ready: (m) => {
-      console.info(`webpc: 3D on ${m.renderer}`);
+      console.info(`waarm64: 3D on ${m.renderer}`);
       ready(m.caps);
     },
     failed: (m) => failed(m.reason),

@@ -18,7 +18,7 @@ import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { withDebianLock } from '../../tests/debian-lock.ts';
 import { loginRoot, run as runIn } from '../../tests/serial-console.ts';
-import { buildHelper } from '../../tests/webpc-net.ts';
+import { buildHelper } from '../../tests/waarm64-net.ts';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const argv = process.argv.slice(2);
@@ -78,7 +78,7 @@ function threads() {
   for (const pid of readdirSync('/proc').filter((p) => /^\d+$/.test(p))) {
     let cmd: string;
     try { cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { continue; }
-    const comm = cmd.includes('network.mojom.NetworkService') ? 'network' : cmd.startsWith(`${ROOT}target/net/webpc-net`) ? 'helper' : undefined;
+    const comm = cmd.includes('network.mojom.NetworkService') ? 'network' : cmd.startsWith(`${ROOT}target/net/waarm64-net`) ? 'helper' : undefined;
     if (!comm) continue;
     try {
       const f = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ');
@@ -126,10 +126,10 @@ async function publicExit() {
 }
 
 async function helper(mtu: number) {
-  buildHelper(); // at the commit tests/webpc-net.ts pins, or WEBPC_NET_SRC
+  buildHelper(); // at the commit tests/waarm64-net.ts pins, or WAARM64_NET_SRC
   const token = randomBytes(32).toString('base64url');
   const listen = 18740;
-  const child = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${listen}`, '--origin', base, '--mtu', String(mtu)], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(`${ROOT}target/net/waarm64-net`, ['--listen', `127.0.0.1:${listen}`, '--origin', base, '--mtu', String(mtu)], { env: { ...process.env, WAARM64_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', (d) => { log += d; });
   child.stderr.on('data', (d) => { log += d; });
@@ -178,7 +178,7 @@ let failed = false;
 for (const spec of arms) {
   const [arm, mtuS] = spec.split(':');
   const mtu = Number(mtuS) || 1500;
-  const overlay = 'webpc-net-bench';
+  const overlay = 'waarm64-net-bench';
   let child: ChildProcess | undefined;
   let rig = false;
   helperLog = () => '';
@@ -201,7 +201,7 @@ for (const spec of arms) {
           child = e.child;
           addr = e.addr;
         } else {
-          addr = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2))).WEBPC_TAILCAT_ADDR;
+          addr = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2))).WAARM64_TAILCAT_ADDR;
           rig = true;
         }
         await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, overlay })}`);

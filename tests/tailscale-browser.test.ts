@@ -4,7 +4,7 @@
 // to the peer and back (its numbers); a kept node comes back after reloads as the same node (the
 // store in IndexedDB); logging out forgets it, also with no machine running it. The guest's side is tests/net-tailnet.test.ts's; the
 // hand-over of a node the Go client kept, tests/ts-tailnet.test.ts's.
-// Opt-in: WEBPC_TAILNET=1 (Podman, or WEBPC_TAILNET_SCRIPT=tests/net/tailnet-native.sh;
+// Opt-in: WAARM64_TAILNET=1 (Podman, or WAARM64_TAILNET_SCRIPT=tests/net/tailnet-native.sh;
 // target/net/ts.wasm).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -15,8 +15,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
-const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
+const script = process.env.WAARM64_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
+const skip = process.env.WAARM64_TAILNET !== '1' ? 'SKIPPED: set WAARM64_TAILNET=1'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : undefined;
 
@@ -48,7 +48,7 @@ const state = (page: Page) => page.evaluate('window.harness.tailscale()') as Pro
 
 /** Opens the page and waits for `Running` with a lease. */
 async function open(page: Page, o: { authkey?: string; persist?: string; hostname: string }) {
-  await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, peer: env.WEBPC_TS_PEER_IP, port: String(echo.address().port), authkey: o.authkey ?? '', persist: o.persist ?? '', hostname: o.hostname })}`);
+  await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ control: env.WAARM64_TS_CONTROL, peer: env.WAARM64_TS_PEER_IP, port: String(echo.address().port), authkey: o.authkey ?? '', persist: o.persist ?? '', hostname: o.hostname })}`);
   await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().lease', null, { timeout: 60_000, polling: 100 })
     .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await state(page))}; events ${JSON.stringify(await page.evaluate('window.harness?.events()'))}`); });
   return state(page);
@@ -81,7 +81,7 @@ test('a kept node comes back after a reload as the same node, until it logs out'
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
   try {
-    const persist = env.WEBPC_TS_CONTROL;
+    const persist = env.WAARM64_TS_CONTROL;
     const key = execFileSync(script, ['key', 'lasting'], { encoding: 'utf8' }).trim();
     const one = await open(page, { authkey: key, persist, hostname: 'kept' });
     const addr = one.netmap!.addresses.join(' ');

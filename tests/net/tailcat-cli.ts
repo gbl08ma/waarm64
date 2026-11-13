@@ -59,7 +59,7 @@ export async function clientKey(): Promise<string> {
 
 /** A second `tailcat serve exit-node` on the rig's relay with a fresh key and `args` (e.g. `--allow=…`); its address. */
 export async function exitNode(args: string[]): Promise<{ addr: string; stop: () => void }> {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-tailcat-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-tailcat-'));
   const key = `${tmp}/server.json`;
   const g = await tailcatRun(['genkey', `--key=${key}`, '--region=127.0.0.1']);
   if (g.code !== 0) throw new Error(`genkey: ${g.err.slice(-400)}`);

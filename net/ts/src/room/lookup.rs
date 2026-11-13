@@ -49,7 +49,7 @@ impl Room {
 
 fn seal_key(lookup: &[u8; 32], dh: &[u8; 32], eph: &[u8; 32], to: &[u8; 32]) -> [u8; 32] {
     let mut h = Blake2s256::new();
-    h.update(b"webpc room lookup seal v1\0");
+    h.update(b"waarm64 room lookup seal v1\0");
     h.update(lookup);
     h.update(dh);
     h.update(eph);

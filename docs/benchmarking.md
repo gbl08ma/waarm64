@@ -65,8 +65,8 @@ PCs and logs helper calls in a window.
   MiB corpus on tmpfs, then decompression), Lua (binary-trees, fannkuch-redux, n-body,
   spectral-norm), process churn (fork/exec loop and `find | xargs stat`), SQLite `speedtest1`.
   **Budget: ≤ ~30 s on one vCPU under the JIT** (benchmarks mustn't be slow to wait for). Every
-  phase takes a thread/process count so M7 can rerun them at N vCPUs. `webpc.phase=crypto` runs
-  `openssl speed` instead; `webpc.armcap=X` sets `OPENSSL_armcap`. `7z b` was left out (12 s
+  phase takes a thread/process count so M7 can rerun them at N vCPUs. `waarm64.phase=crypto` runs
+  `openssl speed` instead; `waarm64.armcap=X` sets `OPENSSL_armcap`. `7z b` was left out (12 s
   natively for one pass).
 - `gl_llvmpipe_jit`, `gl_llvmpipe_jit_4` (llvmpipe, `images/build.sh alpine-gl`): after Alpine's
   boot, `glcomp` (`images/alpine/gl`) composites like a Wayland compositor on Mesa's software
@@ -86,7 +86,7 @@ PCs and logs helper calls in a window.
   per vCPU, realtime, JIT) at N = 1, 2, 4 vCPUs, the Ns alternated within each round; `…_8` once
   as a check, `smp_user_jit_4` alone for A/B sessions. Boots report the time to the distro's
   local.d script and to power-off (realtime power-off includes busybox init's 2 s of sleeps after
-  SIGTERM and SIGKILL); `smp_user_jit` runs the userspace phases with `webpc.threads=N` (N copies
+  SIGTERM and SIGKILL); `smp_user_jit` runs the userspace phases with `waarm64.threads=N` (N copies
   of each phase's work, so perfect scaling keeps the time). Per-vCPU counters (`cpuStats()`) go
   into the params; a boot whose console says "Missing cycle counter" fails (the vCPU workers' clock,
   platform.md "Time").
@@ -108,11 +108,11 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
 (`bench/boot/REPORT.md` "M8: benchmarks started from a snapshot", data in `bench/boot/results/m8-snapbench/`).
 
 - **The snapshots:** `bench/gpu/warm-snapshots.sh firefox` (5.5 min; Arch Linux ARM's disk, sway up, then Firefox
-  started on a still page and saved as `target/snapbench/pages.webpcsnap`, then on the WebGL cubes as
-  `webgl.webpcsnap`, ~700 MB each, the pages disk attached); `bench/gpu/warm-snapshots.sh debian` (40 s: Debian
-  logged in with the Go tree as `/dev/vdb`, `debian-go.webpcsnap`, 176 MB). Each has a sidecar `<file>.json` (the
+  started on a still page and saved as `target/snapbench/pages.waarm64snap`, then on the WebGL cubes as
+  `webgl.waarm64snap`, ~700 MB each, the pages disk attached); `bench/gpu/warm-snapshots.sh debian` (40 s: Debian
+  logged in with the Go tree as `/dev/vdb`, `debian-go.waarm64snap`, 176 MB). Each has a sidecar `<file>.json` (the
   core's SHA-256, the commit). Keep them in `target/` (never /tmp, which is RAM): Playwright's downloads go through
-  `WEBPC_DOWNLOADS` (the browser's `downloadsPath`). Make them again when the guest-visible machine or the host's
+  `WAARM64_DOWNLOADS` (the browser's `downloadsPath`). Make them again when the guest-visible machine or the host's
   device state changes (the page refuses another state layout, see below; a host whose devices save other state
   isn't caught).
 - **Across core builds:** a snapshot is tied to the core's state layout (`snapshot_version`) and the machine (devices,
@@ -126,7 +126,7 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   `bench/stress/stress.ts` (the load starts at once). `CORE=<file.wasm>` (`--core`) serves another core build as the
   page's (a route in the browser: target/ is never written, nothing to copy back before CI). A session's
   `results.json` has `from` (the file, which core made it, which runs) and `times`.
-- **An A/B:** `FROM=target/snapbench/pages.webpcsnap bash bench/gpu/ab.sh <outdir> <rounds> a=<a.wasm> b=<b.wasm>
+- **An A/B:** `FROM=target/snapbench/pages.waarm64snap bash bench/gpu/ab.sh <outdir> <rounds> a=<a.wasm> b=<b.wasm>
   a2=<a copy>` (each round every arm in turn; under a 10 GiB scope and `timeout` each; in the background, alone), then
   `node bench/gpu/ab-summary.ts <outdir>`: per session and per arm (median, IQR) the counts (flushes, modules, wasm
   MB, compiled share, Gsteps interpreted, the first flush's time, flushes a minute, each flush's slow phase), then
@@ -153,7 +153,7 @@ decide within its first two pages (`m8-snapbench/cut.txt`: at 120 s from the sna
 at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 point). So:
 
 1. **Screen on counts, with the churn page, from the snapshot.** `PHASES=churn CHURN='rate=60&total=4000'
-   CHURN_S=300 FROM=target/snapbench/pages.webpcsnap bash bench/gpu/ab.sh <outdir> 1 <arms…> base2=<base copy>`:
+   CHURN_S=300 FROM=target/snapbench/pages.waarm64snap bash bench/gpu/ab.sh <outdir> 1 <arms…> base2=<base copy>`:
    `bench/gpu/firefox/churn.html` makes JavaScript functions from a template (operators, constants, branches and loops
    varied by their number) and calls each past SpiderMonkey's Baseline and Ion thresholds, so the guest writes new
    machine code all the time; `rate` (functions a second), `calls`, `n` (a call's loop trips) and `total` set the
@@ -173,7 +173,7 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
    tab, `DWELL_S` (20) each, `CYCLES` times; `results.sites` has the URLs and each visit's time. Real sites change
    daily: an A/A in the same run as each A/B, arms close in time. Six sites at 20 s each didn't flush at 320 MiB (264
    MB in 130 s, against the churn's 424 MB in 120 s): longer runs or more cycles to see a flush.
-4. **The `go build` loop** from `debian-go.webpcsnap`: `bench/stress/go-ab.sh <outdir> <rounds> <arm>=<core>…` (4
+4. **The `go build` loop** from `debian-go.waarm64snap`: `bench/stress/go-ab.sh <outdir> <rounds> <arm>=<core>…` (4
    vCPUs building `/work/hello` from goroot.ext4 over and over, 420 s a session, each build timed by the guest in
    ms), then `node bench/stress/gobuild.ts <outdir>/[!w]*.jsonl`: per session the median build after the first three
    (the cold ones), per arm the sessions' medians. Judge by the build times, never the MIPS samples (those spread
@@ -210,7 +210,7 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   benchmark: [v8.md](v8.md)). For what a macOS user gets, and before ranking work by a profile
   taken here, run the page on the Mac host's Chromium: `bench/run-mac.sh <name> --page
   bench/boot/index.html --only alpine_user_jit` (it copies the pages, the core and the Alpine and
-  Buildroot images to `~/webpc-bench` there; `WASM=` picks a core; results land in
+  Buildroot images to `~/waarm64-bench` there; `WASM=` picks a core; results land in
   `bench/results/local/mac/`). `--config bounds-checks` there shows the checks' cost on one machine.
 - Benchmarks run in the dev VM on the M4. Keep the `oracle` VM idle, check `ps` for leftover
   experiments first, and don't rebuild or edit served sources while a benchmark runs.
@@ -221,18 +221,18 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   Buildroot's own toolchain (gcc 15.3, glibc 2.44) instead of Bootlin's, their step counts moved
   (Buildroot's boot 40,054,752 → 40,543,331); compare their numbers only from then on.
 - **Peer comparisons are rare:** QEMU TCG, native and in-browser peers were measured once, for
-  M6's exit table; performance work compares webpc with itself. **qemu-wasm is dropped for good**
-  (it booted Buildroot 4.7× slower than webpc, computes CoreMark wrong, looks abandoned); x86 peers
+  M6's exit table; performance work compares waarm64 with itself. **qemu-wasm is dropped for good**
+  (it booted Buildroot 4.7× slower than waarm64, computes CoreMark wrong, looks abandoned); x86 peers
   (v86, JSLinux, WebVM) only as published context.
 
 ## Current numbers
 
-Chromium 153 on the M4 VM, JIT, crypto extensions on. webpc's boots, userspace and CoreMark are
+Chromium 153 on the M4 VM, JIT, crypto extensions on. waarm64's boots, userspace and CoreMark are
 from 2026-10-02 (`bench/boot/REPORT.md` "M8: regions across pages"; before that day's JIT changes:
 674 ms, 9.96 s, 24.1 s, 8602 it/s); the rest and the peers are M6's exit table and M6.5's exit
 (`bench/interp/REPORT.md`):
 
-| | webpc | QEMU TCG (same VM) | native (M4) |
+| | waarm64 | QEMU TCG (same VM) | native (M4) |
 |---|---|---|---|
 | Buildroot boot to power-off, cold | 802 ms | 0.30 s | 0.10 s (hvf) |
 | Alpine boot to power-off, cold | 9.9 s | 5.4–5.6 s | 2.4 s (hvf) |
@@ -283,7 +283,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   20 µs beside the vCPU worker; symbolized with `System.map` (user space as one bucket). The PC is
   published once per chunk, so its resolution is a chunk (32K steps): coarse under the JIT. A chunk also ends
   at an exit, so a sample names where the current chunk started (the instruction after the last exit: counter
-  reads, IRQ unmasks, syscall entries rank high). On the page (`?displaystats`): `window.__webpcProfile(on)`
+  reads, IRQ unmasks, syscall entries rank high). On the page (`?displaystats`): `window.__waarm64Profile(on)`
   samples every vCPU's block, the histogram lands in `window.__profile`, and `window.__status` holds the last
   status (the counters); while it runs the vCPUs publish their PC every 256 steps (`vm_set_chunk`, parallel
   mode only), so a sample is where the vCPU is, not the exit that started its chunk (the exit sites' share fell to a
@@ -297,10 +297,10 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   terminal holds a screenful), and the display's, renderer's and emulator's counters. `SYSCALLS=1` adds the syscalls
   by thread (a kprobe event on `do_el0_svc` into a 16 MiB-a-CPU ring buffer: Arch's kernel has no syscall
   tracepoints; each syscall then traps, so count drops and CPU from runs without it). `TIMELINE=1` records the **vCPU
-  timeline** (`web/timeline-worker.ts`, `window.__webpcTimeline(on)`: every vCPU's counters and liveness slot every 10
+  timeline** (`web/timeline-worker.ts`, `window.__waarm64Timeline(on)`: every vCPU's counters and liveness slot every 10
   ms, sleeping between reads; `summarizeTimeline`: MIPS, compile and out-of-call time, and **stalls**, 10 ms bins
   inside one `vm_run_cpu` call that retired nothing; a vCPU publishes at a chunk's end, so a stall's compile time shows
-  in the bin after it). An install of JIT code over 20 ms logs a `webpc-slow install` line (its compile,
+  in the bin after it). An install of JIT code over 20 ms logs a `waarm64-slow install` line (its compile,
   instantiation, GC and size), collected into results' `slow`. `sway-mac.sh` samples the Mac's `vm_stat` each second
   (`<name>.vmstat`): its memory is overcommitted by the Lima VMs (graphics.md "Video's measurements"), which shows in latency. Firefox's
   start-up work runs ~30 s past its window: measure steady state at least that long after a launch (`WARM_S`).
@@ -308,7 +308,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   where the JIT compiles most), and `QUERY` adds to the page's query (`jit=nocw`: the JIT without its compile
   worker, for A/B). `bench/gpu/stalls.ts` counts a timeline's stalls by length (`--json` for results).
 - **Firefox's pages session, the JIT's real workload** (M8; `bench/boot/REPORT.md` from "M8: warm members" on):
-  `PHASES=pages TIMELINE_ALL=1 WEBPC_GUEST_USER=alarm node bench/gpu/firefox-load.ts virgl
+  `PHASES=pages TIMELINE_ALL=1 WAARM64_GUEST_USER=alarm node bench/gpu/firefox-load.ts virgl
   target/archarm/desktop.qcow2 <outdir>`, Arch Linux ARM's disk, which every JIT number so far is on (the Arch images
   moved to arch.bens.haus's port, `target/arch/desktop.qcow2`, user `arch`: re-baseline there before comparing across
   disks). ~380 s of pages, ~750 s with the boot and Firefox's start: in the background, `timeout 900`, under
@@ -342,7 +342,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
     concurrent guests slow each other down on this host (4 P-cores, 6 E-cores: Lua 3–6%, compress 22%), so compare
     N-vCPU runs with N-vCPU runs; the Mac host shares its cores with the VM (run nothing there meanwhile; a failed
     page leaves `bench/run.ts` and Chrome for Testing idle there).
-  - Every install as a `webpc-slow` line: `SLOW_INSTALL_MS = 0` in `web/vm.ts` (57,000 a session, 8.8 MB of
+  - Every install as a `waarm64-slow` line: `SLOW_INSTALL_MS = 0` in `web/vm.ts` (57,000 a session, 8.8 MB of
     `results.json`, busy MIPS unchanged).
   - Diagnostic counters without new ABI: `<letter>:<n> <count>` lines appended to `Table::helper_report`
     (`bench/boot/userprof.ts` prints them per phase; patches in `bench/boot/results/m8-userprof/`, `m8-entries/`,
@@ -395,8 +395,8 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`
   for the small guests; `runToPowerOff` (`web/vm.ts`) for boots. `bench/run.ts --out` resolves
   against the repo root.
-- **A core panic's stack trace** (`webpc_core.wasm.<fn> (wasm-function[N]:0x4031a)`): the
-  release wasm carries DWARF, so `llvm-symbolizer --obj=target/wasm32-unknown-unknown/release/webpc_core.wasm
+- **A core panic's stack trace** (`waarm64_core.wasm.<fn> (wasm-function[N]:0x4031a)`): the
+  release wasm carries DWARF, so `llvm-symbolizer --obj=target/wasm32-unknown-unknown/release/waarm64_core.wasm
   -i -f 0x4031a` gives the source line, **with the offset as printed** (it's a file offset; don't
   subtract the code section's base). Only for the binary that crashed: keep it before rebuilding.
 - The wasm name section (`<va>_pa<pa>`) makes DevTools and `perf` profiles readable.

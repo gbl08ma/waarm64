@@ -68,7 +68,7 @@ export async function cacheRoot(use = false): Promise<FileSystemDirectoryHandle>
 }
 
 /** The channel on which the page's Clear asks this origin's workers to empty the stores they hold. */
-const CLEAR_CHANNEL = 'webpc-remote-cache';
+const CLEAR_CHANNEL = 'waarm64-remote-cache';
 let clearChannel: BroadcastChannel | undefined;
 /** This worker answers Clear (once it opened a store): its stores give up, and it names the images they were. */
 function answerClear() {
@@ -122,7 +122,7 @@ function tryLock(key: string, waitMs = 0): Promise<(() => void) | undefined> {
   return new Promise((resolve) => {
     let release!: () => void;
     const held = new Promise<void>((r) => { release = r; });
-    navigator.locks.request(`webpc-cache:${key}`, waitMs ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true }, (lock) => {
+    navigator.locks.request(`waarm64-cache:${key}`, waitMs ? { signal: AbortSignal.timeout(waitMs) } : { ifAvailable: true }, (lock) => {
       if (!lock) return void resolve(undefined);
       resolve(release);
       return held;

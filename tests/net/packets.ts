@@ -37,7 +37,7 @@ export function tcpSyn(src: string, sport: number, dst: string, dport: number) {
 
 export function ping(src: string, dst: string, id: number, seq: number) {
   const six = src.includes(':');
-  return ip(src, dst, six ? 58 : 1, [six ? 128 : 8, 0, 0, 0, id >> 8, id & 255, seq >> 8, seq & 255, ...new TextEncoder().encode('webpc ping')], 2);
+  return ip(src, dst, six ? 58 : 1, [six ? 128 : 8, 0, 0, 0, id >> 8, id & 255, seq >> 8, seq & 255, ...new TextEncoder().encode('waarm64 ping')], 2);
 }
 
 export function dnsQuery(id: number, name: string, type: number) {

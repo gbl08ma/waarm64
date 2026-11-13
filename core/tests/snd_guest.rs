@@ -28,7 +28,7 @@ fn the_snd_guest_plays_its_waveform() {
         "snd: card VirtIO SoundCard, driver virtio-snd\n",
         "snd: hw params 48000 Hz, 2 channels, period 1024 frames, buffer 4096 frames\n",
         "snd: 0 frames queued at the end, drop ok",
-        "webpc: snd test ok\n",
+        "waarm64: snd test ok\n",
     ] {
         assert!(r.console.contains(want), "missing {want:?}");
     }

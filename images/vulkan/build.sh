@@ -17,11 +17,11 @@ if [ "${1-}" = --guest-only ]; then guest; exit; fi
 [ -f "$W/aquarium.pack" ] || node --disable-warning=ExperimentalWarning "$ROOT/bench/vulkan/assets.ts"
 node --disable-warning=ExperimentalWarning "$ROOT/bench/vulkan/scene/gles-shaders.ts" "$W/gles-shaders"
 "$ROOT/images/arch/base.sh"
-podman build -q -t localhost/webpc-vk0 "$ROOT/images/vulkan" >/dev/null
+podman build -q -t localhost/waarm64-vk0 "$ROOT/images/vulkan" >/dev/null
 rm -rf "$W/tree"; mkdir -p "$W/tree/vk0"
 cp -r "$W/gles-shaders" "$W/tree/vk0/"
 cp "$W/aquarium.pack" "$ROOT/bench/vulkan/sweep.sh" "$W/tree/vk0/"
-podman run --rm -v "$ROOT/bench/vulkan/scene:/src:ro,Z" -v "$W:/out:Z" localhost/webpc-vk0 sh -euc '
+podman run --rm -v "$ROOT/bench/vulkan/scene:/src:ro,Z" -v "$W:/out:Z" localhost/waarm64-vk0 sh -euc '
   NO_GLES= /src/build.sh /out/tree/vk0 >/dev/null
   du -sm /out/tree | cut -f1 > /out/size
   truncate -s $(( $(cat /out/size) * 12 / 10 + 32 ))M /out/disk.ext4.new

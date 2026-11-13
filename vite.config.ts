@@ -16,19 +16,19 @@ export const ISOLATION = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-O
 
 /** The commit the page was built from, in a meta tag (tools/stamp.ts), on every load of the page. */
 const stamp = (): Plugin => ({
-  name: 'webpc-stamp',
+  name: 'waarm64-stamp',
   transformIndexHtml: (html, ctx) => (ctx.filename.endsWith('web/app/index.html') ? withStamp(html, buildStamp(ROOT)) : html),
 });
 
 /**
- * `virtual:webpc-about`: what the Machines page's About pane shows (tools/third-party.ts `aboutData`): the build's
+ * `virtual:waarm64-about`: what the Machines page's About pane shows (tools/third-party.ts `aboutData`): the build's
  * commit, and the third-party projects THIRD_PARTY.json marks for it, nothing else of that file.
  */
 const about = (): Plugin => {
-  const ID = 'virtual:webpc-about';
+  const ID = 'virtual:waarm64-about';
   let build = false;
   return {
-    name: 'webpc-about',
+    name: 'waarm64-about',
     configResolved: (config) => { build = config.command === 'build'; },
     resolveId: (id) => (id === ID ? `\0${ID}` : null),
     load(id) {
@@ -41,7 +41,7 @@ const about = (): Plugin => {
 
 /** Node's modules, which web/ imports (dynamically) only on its Node paths (the tests' boots in Node): left as they are. */
 const nodeModules = (): Plugin => ({
-  name: 'webpc-node-modules',
+  name: 'waarm64-node-modules',
   enforce: 'pre',
   resolveId: (id) => (id.startsWith('node:') ? { id, external: true } : null),
 });
@@ -52,7 +52,7 @@ const nodeModules = (): Plugin => ({
  * `Image`) for a module.
  */
 const rootPage = (): Plugin => ({
-  name: 'webpc-root-page',
+  name: 'waarm64-root-page',
   configureServer(server) {
     server.middlewares.use('/target', sirv(`${ROOT}target`, { dev: true, dotfiles: false, setHeaders: (res) => { for (const [k, v] of Object.entries(server.config.server.headers ?? {})) res.setHeader(k, v as string); } }));
     server.middlewares.use((req, res, next) => {
@@ -63,7 +63,7 @@ const rootPage = (): Plugin => ({
   },
 });
 
-/** Assets' names in the copy: Vite's, but a file without an extension (the guest agent, webpc-agent) keeps none (no trailing dot after its hash). */
+/** Assets' names in the copy: Vite's, but a file without an extension (the guest agent, waarm64-agent) keeps none (no trailing dot after its hash). */
 const assetFileNames = (a: { names?: string[] }) => (/\.[^./]+$/.test(a.names?.[0] ?? '') ? 'assets/[name]-[hash][extname]' : 'assets/[name]-[hash]');
 
 // Mode `test` (tools/serve.ts `startServer`, the tests' and benchmarks' dev server): no watching or hot reloading, and

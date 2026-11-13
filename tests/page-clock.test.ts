@@ -20,11 +20,11 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const CORE = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const CORE = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 /** The guest's clock may be this far from the host's (s): the reading's own latency, a terminal round trip. */
 const SLACK = 3;
 
@@ -37,7 +37,7 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  dir = mkdtempSync(join(tmpdir(), 'webpc-clock-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-clock-'));
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
 });
 after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
@@ -94,7 +94,7 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
 
   // Save snapshot: the guest sleeps for it (its sleep key, then systemd-logind), and the running machine wakes on time.
   const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
-  const file = join(dir, 'debian.webpcsnap');
+  const file = join(dir, 'debian.waarm64snap');
   await download.saveAs(file);
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
   assert.match(await message(page), words('snapshots:snapshot-actions.saved.slept', {}, { start: true }));

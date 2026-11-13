@@ -4700,14 +4700,14 @@
   }
  },
  "profiles": {
-  "VP_WEBPC_webgpu_mac": {
+  "VP_WAARM64_webgpu_mac": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct",
-   "description": "WebGPU mac, direct: the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct: the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4715,7 +4715,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4723,14 +4723,14 @@
     "mac_direct"
    ]
   },
-  "VP_WEBPC_webgpu_mac_gs": {
+  "VP_WAARM64_webgpu_mac_gs": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + geometry shaders (a compute pre-pass)",
-   "description": "WebGPU mac, direct + geometry shaders (a compute pre-pass): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + geometry shaders (a compute pre-pass): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4738,7 +4738,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4747,14 +4747,14 @@
     "mac_gs"
    ]
   },
-  "VP_WEBPC_webgpu_mac_tess": {
+  "VP_WAARM64_webgpu_mac_tess": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + tessellation (a compute pre-pass)",
-   "description": "WebGPU mac, direct + tessellation (a compute pre-pass): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + tessellation (a compute pre-pass): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4762,7 +4762,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4771,14 +4771,14 @@
     "mac_tess"
    ]
   },
-  "VP_WEBPC_webgpu_mac_xfb": {
+  "VP_WAARM64_webgpu_mac_xfb": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + transform feedback (the vertex shader run as compute)",
-   "description": "WebGPU mac, direct + transform feedback (the vertex shader run as compute): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + transform feedback (the vertex shader run as compute): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4786,7 +4786,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4795,14 +4795,14 @@
     "mac_xfb"
    ]
   },
-  "VP_WEBPC_webgpu_mac_largepoints": {
+  "VP_WAARM64_webgpu_mac_largepoints": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + large points (a quad per point)",
-   "description": "WebGPU mac, direct + large points (a quad per point): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + large points (a quad per point): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4810,7 +4810,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4819,14 +4819,14 @@
     "mac_largepoints"
    ]
   },
-  "VP_WEBPC_webgpu_mac_vpstores": {
+  "VP_WAARM64_webgpu_mac_vpstores": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + vertexPipelineStoresAndAtomics (the vertex shader as compute)",
-   "description": "WebGPU mac, direct + vertexPipelineStoresAndAtomics (the vertex shader as compute): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + vertexPipelineStoresAndAtomics (the vertex shader as compute): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4834,7 +4834,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4843,14 +4843,14 @@
     "mac_vpstores"
    ]
   },
-  "VP_WEBPC_webgpu_mac_mdi": {
+  "VP_WAARM64_webgpu_mac_mdi": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + multiDrawIndirect and drawIndirectCount (a pass writes the indirect buffer)",
-   "description": "WebGPU mac, direct + multiDrawIndirect and drawIndirectCount (a pass writes the indirect buffer): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + multiDrawIndirect and drawIndirectCount (a pass writes the indirect buffer): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4858,7 +4858,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4867,14 +4867,14 @@
     "mac_mdi"
    ]
   },
-  "VP_WEBPC_webgpu_mac_ycbcr": {
+  "VP_WAARM64_webgpu_mac_ycbcr": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + samplerYcbcrConversion (planes sampled and converted in the shader; GTK4 asserts it with dma-bufs)",
-   "description": "WebGPU mac, direct + samplerYcbcrConversion (planes sampled and converted in the shader; GTK4 asserts it with dma-bufs): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + samplerYcbcrConversion (planes sampled and converted in the shader; GTK4 asserts it with dma-bufs): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4882,7 +4882,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4891,14 +4891,14 @@
     "mac_ycbcr"
    ]
   },
-  "VP_WEBPC_webgpu_mac_provoking": {
+  "VP_WAARM64_webgpu_mac_provoking": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + last-vertex provoking (VK_EXT_provoking_vertex: indices rotated, or the flat value fetched in the shader)",
-   "description": "WebGPU mac, direct + last-vertex provoking (VK_EXT_provoking_vertex: indices rotated, or the flat value fetched in the shader): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + last-vertex provoking (VK_EXT_provoking_vertex: indices rotated, or the flat value fetched in the shader): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4906,7 +4906,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4915,14 +4915,14 @@
     "mac_provoking"
    ]
   },
-  "VP_WEBPC_webgpu_mac_ubo": {
+  "VP_WAARM64_webgpu_mac_ubo": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + uniform buffers past WebGPU's 12 a stage (the rest as read-only storage buffers)",
-   "description": "WebGPU mac, direct + uniform buffers past WebGPU's 12 a stage (the rest as read-only storage buffers): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + uniform buffers past WebGPU's 12 a stage (the rest as read-only storage buffers): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4930,7 +4930,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4939,14 +4939,14 @@
     "mac_ubo"
    ]
   },
-  "VP_WEBPC_webgpu_mac_arrays": {
+  "VP_WAARM64_webgpu_mac_arrays": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + dynamically indexed descriptor arrays (a switch over separate bindings)",
-   "description": "WebGPU mac, direct + dynamically indexed descriptor arrays (a switch over separate bindings): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + dynamically indexed descriptor arrays (a switch over separate bindings): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4954,7 +4954,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4963,14 +4963,14 @@
     "mac_arrays"
    ]
   },
-  "VP_WEBPC_webgpu_mac_samplerate": {
+  "VP_WAARM64_webgpu_mac_samplerate": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + sampleRateShading (WGSL per-sample interpolation; interpolateAt* from derivatives)",
-   "description": "WebGPU mac, direct + sampleRateShading (WGSL per-sample interpolation; interpolateAt* from derivatives): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + sampleRateShading (WGSL per-sample interpolation; interpolateAt* from derivatives): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4978,7 +4978,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4987,14 +4987,14 @@
     "mac_samplerate"
    ]
   },
-  "VP_WEBPC_webgpu_mac_drawparams": {
+  "VP_WAARM64_webgpu_mac_drawparams": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + shaderDrawParameters (base vertex, base instance, draw index from immediates; indirect draws patched by a pass)",
-   "description": "WebGPU mac, direct + shaderDrawParameters (base vertex, base instance, draw index from immediates; indirect draws patched by a pass): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + shaderDrawParameters (base vertex, base instance, draw index from immediates; indirect draws patched by a pass): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -5002,7 +5002,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -5011,14 +5011,14 @@
     "mac_drawparams"
    ]
   },
-  "VP_WEBPC_webgpu_mac_rgb": {
+  "VP_WAARM64_webgpu_mac_rgb": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + 3-component formats (converted when written, fetched by the shader)",
-   "description": "WebGPU mac, direct + 3-component formats (converted when written, fetched by the shader): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + 3-component formats (converted when written, fetched by the shader): the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -5026,7 +5026,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -5035,14 +5035,14 @@
     "mac_rgb"
    ]
   },
-  "VP_WEBPC_webgpu_mac_all": {
+  "VP_WAARM64_webgpu_mac_all": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU mac, direct + every emulated row",
-   "description": "WebGPU mac, direct + every emulated row: the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU mac, direct + every emulated row: the Vulkan the Mac's Metal adapter (Apple M4, Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -5050,7 +5050,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],

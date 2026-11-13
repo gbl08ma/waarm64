@@ -28,7 +28,7 @@ export class Stored {
 export { CPU_CHOICES } from './config.ts';
 const NO_WEBGL2 = 'this browser has no WebGL2';
 /** The machine last opened on this page (in this browser): opened again by a page without a query. */
-const LAST = 'webpc.machine';
+const LAST = 'waarm64.machine';
 
 const hasWebgl2 = () => {
   try {

@@ -1,5 +1,5 @@
 // Firefox on the page (G4, the kickoff's decision 1; dev-only, not in tests): the user's Arch image with sway and
-// Firefox (`target/arch/desktop.qcow2`, images/arch/desktop.sh: login arch/arch on the screen, WEBPC_GUEST_USER=alarm for an Arch Linux ARM disk, root/root on the serial console),
+// Firefox (`target/arch/desktop.qcow2`, images/arch/desktop.sh: login arch/arch on the screen, WAARM64_GUEST_USER=alarm for an Arch Linux ARM disk, root/root on the serial console),
 // headless Chromium, 4 vCPUs, 2.5 GiB, the screen fixed at 1376×762, as bench/gpu/sway-load.ts. sway starts on GLES
 // (on Mesa's virgl with 3D, on llvmpipe with `?gpu=2d`, or `WLR_RENDERER=pixman` in mode `pixman`), then Firefox in
 // kiosk mode on the pages in bench/gpu/firefox/ (copied into the guest), a profile of their own (user.js; FF_PREFS adds
@@ -18,11 +18,11 @@
 // QUERY adds to the page's query (e.g. `jit=nocw`: the JIT without its compile worker).
 // CORE=<file.wasm> serves that core build instead of target/'s (bench/snapshot-start.ts `routeCore`).
 // Started from a snapshot (docs/benchmarking.md "Starting from a snapshot"): SAVE_SNAPSHOTS=<dir> boots, sets the guest
-// up as above (sway, the pages and the profile), then saves <dir>/pages.webpcsnap (Firefox up on a still page, WARM_S
-// after it said ready) and <dir>/webgl.webpcsnap (Firefox on the WebGL cubes, WARM_S after ready), and ends; the disk
+// up as above (sway, the pages and the profile), then saves <dir>/pages.waarm64snap (Firefox up on a still page, WARM_S
+// after it said ready) and <dir>/webgl.waarm64snap (Firefox on the WebGL cubes, WARM_S after ready), and ends; the disk
 // is opened by its URL with bench/gpu/firefox-pages.sh's second disk, as `pages` needs. FROM_SNAPSHOT=<file> loads
 // one instead of booting and goes straight to the phases (no login, no files, no sway: they're in the file); `webgl`
-// from webgl.webpcsnap measures the Firefox already on it (WARM_S after the restore: the JIT starts cold).
+// from webgl.waarm64snap measures the Firefox already on it (WARM_S after the restore: the JIT starts cold).
 // PHASES=churn: code churn for the JIT's cache (firefox/churn.html; CHURN its query, CHURN_S its time).
 // TAILCAT=<address> (opt-in, benchmarks only: tests/net/tailcat.sh up prints it) puts the guest online through that
 // exit node: the adapter connected, then IPv4 only in the guest (the dev VM has no IPv6 out: no IPv6 default route,
@@ -100,7 +100,7 @@ async function setUp() {
   }
   await onSerial(`clear; chown -R ${GUEST_USER}:${GUEST_USER} ${HOME}/ffbench\n`);
   // The autoconfig that summarizes about:support's graphics section (FFBENCH_SUPPORT=<file>).
-  for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['webpc.cfg', '/usr/lib/firefox/webpc.cfg']]) {
+  for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['waarm64.cfg', '/usr/lib/firefox/waarm64.cfg']]) {
     await pasteSerial(`cat > ${to} <<'EOF'\n${readFileSync(new URL(from, dir), 'utf8')}EOF`);
   }
   // Firefox started by sway (as the user; `ffrun <url> <tag> [""]`: in kiosk mode unless a third argument replaces it),
@@ -138,7 +138,7 @@ if (SAVE) {
     log(scene, started);
     await page.waitForTimeout(WARM_S * 1000);
     await run('clear');
-    made[scene] = await saveSnapshotFile(page, `${SAVE}/${scene}.webpcsnap`, { scene, core: process.env.CORE, query: process.env.QUERY, started, warmS: WARM_S, sessionS: Math.round(performance.now() / 1000) });
+    made[scene] = await saveSnapshotFile(page, `${SAVE}/${scene}.waarm64snap`, { scene, core: process.env.CORE, query: process.env.QUERY, started, warmS: WARM_S, sessionS: Math.round(performance.now() / 1000) });
     log('saved', JSON.stringify(made[scene]));
     // The page keeps a download's Blob for 60 s: the next one beside it would double the renderer's share.
     await page.waitForTimeout(60_000);
@@ -151,7 +151,7 @@ if (SAVE) {
 
 /** Firefox on `url`, waited for (its page's `ready`, or 5 minutes), measured over a phase. */
 const firefox = async (tag: string, url: string) => {
-  // From a snapshot with Firefox on this page (webgl.webpcsnap): that Firefox, its t=0 put on the host's clock from its last second.
+  // From a snapshot with Firefox on this page (webgl.waarm64snap): that Firefox, its t=0 put on the host's clock from its last second.
   const lastT = FROM ? Number(/t=(\d+)/.exec(await run(`pgrep -x firefox >/dev/null && grep FFBENCH /tmp/ff-${tag}.log 2>/dev/null | grep frames= | tail -1`))?.[1] ?? NaN) : NaN;
   const reused = Number.isFinite(lastT);
   if (!reused) {

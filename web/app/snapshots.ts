@@ -269,7 +269,7 @@ export async function machineLike(
       disks.push(d);
     }
     attachments.push({
-      id: sd.serial.replace(/^webpc-/, ''),
+      id: sd.serial.replace(/^waarm64-/, ''),
       disk: d.id,
       readOnly: sd.readOnly,
       ...(sd.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}),
@@ -355,7 +355,7 @@ export async function importSnapshot(store: Store, machine: string, file: File) 
     const rec = {
       id,
       machine,
-      name: file.name.replace(/\.webpcsnap$/, ''),
+      name: file.name.replace(/\.waarm64snap$/, ''),
       created: Date.parse(header.created) || Date.now(),
       bytes: file.size,
       shape: header.shape as Shape,

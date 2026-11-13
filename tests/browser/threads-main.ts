@@ -17,7 +17,7 @@ const spawn: Spawn = () => {
 
 try {
   const get = async (p: string) => new Uint8Array(await (await fetch(p)).arrayBuffer());
-  const [wasm, guest] = await Promise.all([get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'), get('/bench/interp/guest.bin')]);
+  const [wasm, guest] = await Promise.all([get('/target/wasm32-unknown-unknown/release/waarm64_core.wasm'), get('/bench/interp/guest.bin')]);
   self.postMessage(await threadsRun(wasm, guest, spawn));
 } catch (e) {
   self.postMessage({ error: String((e as Error).stack ?? e) });

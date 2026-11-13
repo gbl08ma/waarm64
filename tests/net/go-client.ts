@@ -19,8 +19,8 @@ export type GoClient = { running: Promise<NetMap>; netmap(): NetMap | undefined;
 export function startGo(o: { controlURL: string; authKey?: string; hostname: string; state: Map<string, string>; ca?: string }): GoClient {
   const w = new Worker(new URL('./go-client-worker.ts', import.meta.url), {
     workerData: { wasm: `${ROOT}target/net/tailscale.wasm`, wasmExec: `${ROOT}target/net/wasm_exec.js`, controlURL: o.controlURL, authKey: o.authKey, hostname: o.hostname, state: Object.fromEntries(o.state), ca: o.ca },
-    // Its log (verbose) only with WEBPC_GO_LOG=1.
-    stdout: !process.env.WEBPC_GO_LOG, stderr: !process.env.WEBPC_GO_LOG,
+    // Its log (verbose) only with WAARM64_GO_LOG=1.
+    stdout: !process.env.WAARM64_GO_LOG, stderr: !process.env.WAARM64_GO_LOG,
   });
   let state = '';
   let netmap: NetMap | undefined;

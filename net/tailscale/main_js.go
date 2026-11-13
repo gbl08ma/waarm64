@@ -1,7 +1,7 @@
 // Copyright (c) Tailscale Inc & contributors (the engine setup follows cmd/tsconnect/wasm/wasm_js.go)
 // SPDX-License-Identifier: BSD-3-Clause
 
-// This program is webpc's Tailscale backend (docs/plans/networking.md §4): the
+// This program is waarm64's Tailscale backend (docs/plans/networking.md §4): the
 // Tailscale client built to wasm with a Tun device whose IP packets cross to
 // JavaScript, so the packets of a guest's virtual NIC go straight into the
 // engine. The engine's netstack stays for Tailscale's own services (MagicDNS
@@ -106,7 +106,7 @@ func (t *jsTun) Write(bufs [][]byte, offset int) (int, error) {
 
 func (t *jsTun) Flush() error             { return nil }
 func (t *jsTun) MTU() (int, error)        { return int(tstun.DefaultTUNMTU()), nil }
-func (t *jsTun) Name() (string, error)    { return "webpc0", nil }
+func (t *jsTun) Name() (string, error)    { return "waarm0", nil }
 func (t *jsTun) Events() <-chan tun.Event { return t.events }
 func (t *jsTun) BatchSize() int           { return 1 }
 
@@ -184,7 +184,7 @@ func newNode(cfg js.Value) map[string]any {
 	exitNode, _ := str(cfg, "exitNode")
 	hostname, ok := str(cfg, "hostname")
 	if !ok {
-		hostname = "webpc"
+		hostname = "waarm64"
 	}
 
 	// Log to the console only: the upstream client's logtail would send logs

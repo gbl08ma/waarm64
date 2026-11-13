@@ -126,7 +126,7 @@ test('tools/disk-trace.ts: a run\'s reads, up to a mark, as 1 MiB blocks in firs
 
 test('a malformed manifest or a missing piece is refused', () => {
   const h = host(join(tmp, 'out'), true);
-  writeFileSync(join(tmp, 'out/bad.json'), JSON.stringify({ format: 'webpc-chunked-1', size: 10, piece: MiB, pieces: 'x', hashes: [] }));
+  writeFileSync(join(tmp, 'out/bad.json'), JSON.stringify({ format: 'waarm64-chunked-1', size: 10, piece: MiB, pieces: 'x', hashes: [] }));
   assert.throws(() => chunkedSource('http://h/bad.json', h.get), (e) => msgOf(e)?.key === 'disks:chunked.malformed');
   writeFileSync(join(tmp, 'out/other.json'), JSON.stringify({ format: 'something' }));
   assert.throws(() => chunkedSource('http://h/other.json', h.get), (e) => msgOf(e)?.key === 'disks:chunked.notManifest');
@@ -163,7 +163,7 @@ test('Linux boots with its root on a chunked image, in the whole file\'s steps (
   await page.close();
   assert.equal(r.error, undefined);
   assert.deepEqual([r.kind, r.x0, r.steps], [1, '0x84000008', STEPS.buildroot], r.console);
-  assert.match(r.console.replaceAll('\r\n', '\n'), /vda magic: 53ef\nwebpc: test ok\n/);
+  assert.match(r.console.replaceAll('\r\n', '\n'), /vda magic: 53ef\nwaarm64: test ok\n/);
 });
 
 test('the URL check takes a chunked image\'s manifest, with its id as the identity', { skip: !existsSync(ROOTFS) && 'SKIPPED: run images/build.sh' }, async () => {

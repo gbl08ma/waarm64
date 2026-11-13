@@ -6,7 +6,7 @@ import { coreImports, MAX_MEMORY0_RAM, memoryLimits, panicMessage, POINTERS, spl
 import { VENUS_RESERVE } from '../web/ram.ts';
 import { callsIn, HOT } from '../tools/wasm-calls.ts';
 
-const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
+const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
 
 test('core instantiates on shared imported memory and uses atomics', () => {
   const mod = new WebAssembly.Module(readFileSync(WASM));

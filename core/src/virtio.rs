@@ -74,7 +74,7 @@ const INT_VRING: u32 = 1;
 const INT_CONFIG: u32 = 2;
 
 const MAGIC: u32 = 0x7472_6976; // "virt"
-const VENDOR: u32 = 0x4350_4257; // "WBPC"
+const VENDOR: u32 = 0x3436_4157; // "WA64"
 
 /// A device the host configures (`VmConfig.devices`): u64s so the host can
 /// fill it with a `BigUint64Array`. Array index = transport slot.

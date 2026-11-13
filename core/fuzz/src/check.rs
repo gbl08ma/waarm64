@@ -2,10 +2,10 @@
 //! Shared by the libFuzzer target and the sweep.
 
 use capstone::prelude::*;
-use webpc_core::cpu::Cpu;
-use webpc_core::decode::{Op, decode};
-use webpc_core::interp::{Exit, step};
-use webpc_core::mem::Mem;
+use waarm64_core::cpu::Cpu;
+use waarm64_core::decode::{Op, decode};
+use waarm64_core::interp::{Exit, step};
+use waarm64_core::mem::Mem;
 
 const RAM: usize = 0x10000;
 const PC: u64 = 0x1000;
@@ -94,7 +94,7 @@ impl Checker {
         let mut cpu = Cpu {
             pc: PC,
             cpacr_el1: 3 << 20,
-            features: webpc_core::cpu::FEATURES | webpc_core::cpu::FEATURE_GICV3,
+            features: waarm64_core::cpu::FEATURES | waarm64_core::cpu::FEATURE_GICV3,
             ..Cpu::reset()
         };
         cpu.x = [0x8000; 32];
@@ -295,10 +295,7 @@ fn not_ours(m: &str, ops: &str) -> bool {
     let dpb = m == "dc" && (ops.starts_with("cvap") || ops.starts_with("cvadp"));
     // FEAT_XS
     let xs = m == "dsb" && ops.ends_with("nxs");
-    sve || dpb
-        || xs
-        || NOT_OURS.contains(&m)
-        || NOT_OURS_PREFIX.iter().any(|p| m.starts_with(p))
+    sve || dpb || xs || NOT_OURS.contains(&m) || NOT_OURS_PREFIX.iter().any(|p| m.starts_with(p))
 }
 
 const NOT_OURS: &[&str] = &[
@@ -323,8 +320,7 @@ const NOT_OURS_PREFIX: &[&str] = &[
     "pac", "aut", "xpac", "braa", "brab", "blraa", "blrab", "retaa", "retab", "eretaa", "eretab",
     "ldraa", "ldrab", // FEAT_LOR (FEAT_LRCPC's LDAPR is ours since ABI 59, FEAT_LRCPC2's
     // LDAPUR and STLUR since 62)
-    "ldlar", "stllr",
-    // FEAT_HBC, FEAT_MOPS, SVE element counts
+    "ldlar", "stllr", // FEAT_HBC, FEAT_MOPS, SVE element counts
     "bc.", "cpy", "setp", "setm", "sete", "setg", "sqinc", "sqdec", "uqinc", "uqdec", "incb",
     "inch", "incw", "incd", "cterm", "setffr", "decb", "dech", "decw", "decd", "cntb", "cnth",
     "cntw", "cntd",

@@ -33,7 +33,7 @@ struct Sway {
 impl Sway {
     fn start(name: &str) -> Sway {
         let dir =
-            std::env::temp_dir().join(format!("webpc-agent-sway-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("waarm64-agent-sway-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         std::fs::write(dir.join("config"), "output * resolution 640x480\n").unwrap();

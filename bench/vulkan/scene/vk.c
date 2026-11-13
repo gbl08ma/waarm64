@@ -405,7 +405,7 @@ int main(int argc, char **argv) {
       instFlags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     }
   free(exts);
-  VkApplicationInfo app = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "webpc-vk0-aquarium",
+  VkApplicationInfo app = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "waarm64-vk0-aquarium",
                            .apiVersion = VK_API_VERSION_1_1};
   VkInstanceCreateInfo ici = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .flags = instFlags, .pApplicationInfo = &app,
                               .enabledExtensionCount = nInstExts, .ppEnabledExtensionNames = instExts};

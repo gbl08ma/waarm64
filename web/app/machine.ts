@@ -63,7 +63,7 @@ export const credentialFiles = (credentials: Credential[]) =>
 export type DiskChoice = { url?: string; file?: File; overlay: string; name?: string };
 
 /**
- * The overlay a chosen disk gets: `webpc-disk-` and a hash of the disk's identity (a file's name,
+ * The overlay a chosen disk gets: `waarm64-disk-` and a hash of the disk's identity (a file's name,
  * size and modification time; a URL), so the same disk, chosen again, finds its changes, and a
  * different one never shares them. The device worker checks the identity again when it opens the
  * overlay (web/overlay.ts `openOverlay`).
@@ -74,7 +74,7 @@ export async function diskOverlay(d: { url: string } | { file: File }) {
       ? `file:${d.file.name}:${d.file.size}:${d.file.lastModified}`
       : `url:${new URL(d.url, 'http://x').pathname}`;
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)));
-  return `webpc-disk-${[...hash.subarray(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  return `waarm64-disk-${[...hash.subarray(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 // The tests' guest images, served by the dev server (a concatenation: a template would have the bundler take in every
@@ -123,7 +123,7 @@ export const MACHINES = {
     kernel: FIRMWARE,
     firmware: true,
     disk: images('debian/disk.qcow2'),
-    overlay: 'webpc-debian',
+    overlay: 'waarm64-debian',
     cmdline: '',
     network: NETWORKD,
     ramMiB: 1024,
@@ -139,7 +139,7 @@ export const MACHINES = {
     prepare: '`images/build.sh` (docs/images.md)',
     kernel: images('linux/Image'),
     disk: images('buildroot/rootfs.ext4'),
-    overlay: 'webpc-buildroot',
+    overlay: 'waarm64-buildroot',
     cmdline: 'console=ttyAMA0 panic=-1 root=/dev/vda ro init=/init -- /bin/sh',
     ramMiB: 256,
     framebuffer: { width: 640, height: 480 },

@@ -128,7 +128,7 @@ async function seed(page: Page): Promise<Seed> {
     const tailnet = { id: 'c00000000001', name: 'Home tailnet', kind: 'tailnet', ephemeral: false, tailnet: { controlURL: 'https://controlplane.tailscale.com', hostname: 'workbench', exitNode: '', stateKey: '' }, connectAtStart: true, lastUsed: now, created: now };
     tailnet.tailnet.stateKey = tailnet.id;
     const tailcat = { id: 'c00000000002', name: 'tailcat', kind: 'tailcat', ephemeral: false, tailcat: { serve: true, relay: '', identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
-    const room = { id: 'c00000000003', name: 'Room', kind: 'room', ephemeral: false, room: { link: 'webpc-room:example?r=1', incoming: true, relayOnly: false, identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
+    const room = { id: 'c00000000003', name: 'Room', kind: 'room', ephemeral: false, room: { link: 'waarm64-room:example?r=1', incoming: true, relayOnly: false, identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
     for (const c of [tailnet, tailcat, room]) await store.put('connections', c);
     const folder = await createFolder(store, { kind: 'opfs', name: 'Shared' });
     const m = await createMachine(store, { name: 'Workbench', ncpus: 2, ramMiB: 2048 });

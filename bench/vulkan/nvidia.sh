@@ -2,8 +2,8 @@
 # The Vulkan track's runs on the user's NVIDIA desktop (bench/vulkan/REPORT.md "The NVIDIA desktop", "VK2: the gate
 # and the NVIDIA run"), by hand on x86_64 Linux (CachyOS: Chromium with WebGPU). Two modes:
 #
-#   bench/vulkan/nvidia.sh [dir]                    VK0's arms (default dir ~/webpc-vk0)
-#   bench/vulkan/nvidia.sh page <bundle.tar> [dir]  VK2: the page itself (default dir ~/webpc-vk2)
+#   bench/vulkan/nvidia.sh [dir]                    VK0's arms (default dir ~/waarm64-vk0)
+#   bench/vulkan/nvidia.sh page <bundle.tar> [dir]  VK2: the page itself (default dir ~/waarm64-vk2)
 #
 # Everything it downloads, builds or writes goes into that one directory, which can be deleted afterwards. No sudo, no
 # packages installed; caches and temporary files are pointed into the directory too.
@@ -82,7 +82,7 @@ set -euo pipefail
 # A step that fails says so, with its line, instead of ending the script silently.
 trap 'echo "nvidia.sh: stopped at line $LINENO (exit $?): $BASH_COMMAND" >&2' ERR
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-DIR=$(realpath -m "${1:-$HOME/webpc-vk0}")
+DIR=$(realpath -m "${1:-$HOME/waarm64-vk0}")
 SDK_VERSION=1.4.363.0
 NODE_VERSION=v26.7.0
 PLAYWRIGHT=$(grep -m1 -A3 '"node_modules/playwright-core"' "$REPO/package-lock.json" | sed -n 's/.*"version": "\(.*\)".*/\1/p')
@@ -91,7 +91,7 @@ say() { printf '\n== %s\n' "$*"; }
 if [ "${1:-}" = page ]; then
   BUNDLE=$(realpath -m "${2:?usage: bench/vulkan/nvidia.sh page <bundle.tar> [dir]}")
   DRY=${VK2_DRY:-}
-  DIR=$(realpath -m "${3:-$HOME/webpc-vk2}")
+  DIR=$(realpath -m "${3:-$HOME/waarm64-vk2}")
   for t in curl tar xz; do command -v "$t" >/dev/null || { echo "missing: $t" >&2; exit 1; }; done
   [ "$(uname -m)" = x86_64 ] || [ -n "${VK0_ANY_ARCH:-}" ] || { echo "this script is for x86_64 Linux" >&2; exit 1; }
   # A run's results only (the run of f55eacd7 carried an earlier run's arms along), unless VK2_KEEP=1: then the steps
@@ -147,7 +147,7 @@ if [ "${1:-}" = page ]; then
     echo "$r" > "$DIR/results/adapter.json"
     echo "  (a window opens for each run: leave it visible until the run ends)"
   fi
-  export CHROMIUM=$USE HEADED=$USE_HEADED CHROMIUM_ARGS="$USE_ARGS --mute-audio" WEBPC_TAILSCALE=0
+  export CHROMIUM=$USE HEADED=$USE_HEADED CHROMIUM_ARGS="$USE_ARGS --mute-audio" WAARM64_TAILSCALE=0
   [ -n "$HEADED" ] || unset HEADED
   R=$DIR/results
   fi
@@ -224,7 +224,7 @@ if [ "${1:-}" = page ]; then
     step pipelines-sync 900 env REPLAY=$rp GPU_KNOBS=vkpipelines=sync,vkcache=off node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/pipelines-sync"
     rm -rf "$DIR/t/profile"
     for s in cold warm; do
-      step "pipelines-$s" 900 env REPLAY=$rp WEBPC_PROFILE="$DIR/t/profile" node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/pipelines-$s"
+      step "pipelines-$s" 900 env REPLAY=$rp WAARM64_PROFILE="$DIR/t/profile" node bench/vulkan/venus-run.ts target/images/debian-vulkan/disk.qcow2 "$R/pipelines-$s"
     done
     rm -rf "$DIR/t/profile"
     # vkQuake's state load (GFXReconstruct's "Load time", its pipelines made) and the renderer's part, on the terminal too.

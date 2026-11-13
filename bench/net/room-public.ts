@@ -45,7 +45,7 @@ const wasm = await WebAssembly.compile(readFileSync(`${ROOT}target/net/ts.wasm`)
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? NaN;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const linkOf = (nostr: string, derp: string) =>
-  `webpc-room:${encodeURIComponent(`r4-${randomBytes(16).toString('hex')}`)}?nostr=${encodeURIComponent(nostr)}&derp=${encodeURIComponent(derp)}`;
+  `waarm64-room:${encodeURIComponent(`r4-${randomBytes(16).toString('hex')}`)}?nostr=${encodeURIComponent(nostr)}&derp=${encodeURIComponent(derp)}`;
 
 /** Members of one room, each Running within `ms` (or failed: the reason). */
 async function members(link: string, n: number, unixOffset = 0, ms = 20_000): Promise<Member[] | string> {

@@ -52,11 +52,11 @@ test("which setting a start uses: the query's, a stored machine's own, the brows
 test('credentials: a unit, its drop-in on systemd-user-sessions and its script, as base64 SMBIOS strings', () => {
   const c = keyboardCredentials(keyboardLayout('ch-fr')!, guestWords().keyboard);
   assert.match(c[1].data, new RegExp(`^Description=${words('guest:guest-words.keyboard').source}$`, 'm'));
-  assert.deepEqual(c.map((x) => x.name), ['webpc.keyboard.sh', 'systemd.extra-unit.webpc-keyboard.service', 'systemd.unit-dropin.systemd-user-sessions.service~webpc-keyboard']);
-  assert.match(c[1].data, /^ImportCredential=webpc\.keyboard\.sh$/m);
-  assert.match(c[1].data, /^ExecStart=\/bin\/sh %d\/webpc\.keyboard\.sh$/m);
+  assert.deepEqual(c.map((x) => x.name), ['waarm64.keyboard.sh', 'systemd.extra-unit.waarm64-keyboard.service', 'systemd.unit-dropin.systemd-user-sessions.service~waarm64-keyboard']);
+  assert.match(c[1].data, /^ImportCredential=waarm64\.keyboard\.sh$/m);
+  assert.match(c[1].data, /^ExecStart=\/bin\/sh %d\/waarm64\.keyboard\.sh$/m);
   assert.match(c[1].data, /^ConditionPathExists=!\/etc\/initrd-release$/m);
-  assert.equal(c[2].data, '[Unit]\nWants=webpc-keyboard.service\nAfter=webpc-keyboard.service\n');
+  assert.equal(c[2].data, '[Unit]\nWants=waarm64-keyboard.service\nAfter=waarm64-keyboard.service\n');
   const s = oemStrings(c);
   for (const [i, x] of s.entries()) {
     const [, name, b64] = x.match(/^io\.systemd\.credential\.binary:([^=]+)=(.*)$/)!;
@@ -77,7 +77,7 @@ function runScript(id: string, dir: string, debian: boolean) {
 }
 
 test("the script: Debian's /etc/default/keyboard and /etc/environment set, others' lines kept, the same again changes nothing", { skip: !process.env.PATH?.split(':').some((p) => { try { return readFileSync(join(p, 'dash')).length > 0; } catch { return false; } }) && 'no dash' }, () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-kbd-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-kbd-'));
   try {
     writeFileSync(join(dir, 'read-only.conf'), '');
     writeFileSync(join(dir, 'keyboard'), 'XKBMODEL="pc105"\nXKBLAYOUT="us"\nXKBVARIANT="intl"\nXKBOPTIONS="ctrl:nocaps"\nBACKSPACE="guess"\n');
@@ -102,7 +102,7 @@ test("the script: Debian's /etc/default/keyboard and /etc/environment set, other
 });
 
 test("the script elsewhere: localed's X11 keymap and the console's, each named; without that console keymap, the conversion", { skip: !process.env.PATH?.split(':').some((p) => { try { return readFileSync(join(p, 'dash')).length > 0; } catch { return false; } }) && 'no dash' }, () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-kbd-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-kbd-'));
   try {
     const run = (id: string, keymapFails: boolean) => {
       // localectl a shell function that records its arguments (and refuses set-keymap when the keymap is missing).

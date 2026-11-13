@@ -15,7 +15,7 @@ T=$W/dl/firefox-$VER.tar.xz
 rm -rf "$W/tree" && mkdir -p "$W/tree"
 tar -C "$W/tree" -xf "$T"
 cp bench/gpu/firefox/autoconfig.js "$W/tree/firefox/defaults/pref/"
-cat bench/gpu/firefox/webpc.cfg bench/imgdecode/profiler.cfg > "$W/tree/firefox/webpc.cfg"
+cat bench/gpu/firefox/waarm64.cfg bench/imgdecode/profiler.cfg > "$W/tree/firefox/waarm64.cfg"
 cp bench/imgdecode/desktop.html bench/gpu/firefox/user.js "$W/tree/"
 # Mozilla's build asks for its Terms of Use at the first start (the distribution's doesn't): skipped.
 echo '{"policies": {"SkipTermsOfUse": true, "DisableTelemetry": true, "DontCheckDefaultBrowser": true, "OverrideFirstRunPage": ""}}' > "$W/tree/firefox/distribution/policies.json"

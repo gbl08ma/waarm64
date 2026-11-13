@@ -73,16 +73,16 @@ Since decided (the user, 2026-10-17):
 |---|---|---|
 | **Machine** | id, name, vCPUs, RAM MiB (and `ramSplit` when set by hand), display (2D/3D) and Vulkan beside 3D, the JIT cache budget (`jitMiB`), the keyboard layout, the network adapters and their connections (networking/adapters.md), the USB controller (`usb`) and remembered USB devices (`usbDevices`), the mouse, touchscreen and clock switches, clipboard sharing (`clipboard`, off by default: plans/clipboard.md §5), shared folders (`shares`, the switch; `folders`, the attached folders with their own Read-only; `sharesMount` and `sharesPath`, how the page mounts them in the guest: shares.md §1), the attachments in slot order with the overlay chosen per read-write one | IndexedDB `machines` |
 | **Disk** (a base) | id, kind (`url`, `file`, `stored`, `blank`, `ramdisk`), name, size, the identity (§3.1), the kind's data: a URL; a `FileSystemFileHandle` (IndexedDB can hold one, JSON can't); the hash where something computed it | IndexedDB `disks` |
-| **Attachment** | the disk, read-only or not, written in place or not, the overlay chosen, the virtio serial (`webpc-<attachment id>`, answered to `GET_ID`) | in the machine |
+| **Attachment** | the disk, read-only or not, written in place or not, the overlay chosen, the virtio serial (`waarm64-<attachment id>`, answered to `GET_ID`) | in the machine |
 | **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes; its `data`, `map`, `meta` and `base` files | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |
 | **Variable store** | the EFI flash bank (1 MiB), **per machine** (its boot entries are the machine's, e.g. after an install from an ISO onto a blank disk) | OPFS `machines/<id>/flash` |
-| **Snapshot** | id, name, created, size, the shape and its hash, the pins (§5.1); the `WEBPCSNP` file | OPFS `machines/<id>/snapshots/<id>`, its record in IndexedDB `snapshots` |
+| **Snapshot** | id, name, created, size, the shape and its hash, the pins (§5.1); the `WAARMSNP` file | OPFS `machines/<id>/snapshots/<id>`, its record in IndexedDB `snapshots` |
 | **Suspended copy** | a snapshot without the overlays' blocks (§5.3) | OPFS `machines/<id>/suspend` |
 | **Stored disk** | an imported image in the overlay's sparse block format (§4.4), with a generation | OPFS `disks/<id>/` |
 | **Connection** | a tailnet or tailcat, the browser's (networking/adapters.md) | IndexedDB `connections` |
 | **Folder** | a shared folder, the browser's: a folder on this computer (its directory handle) or a folder in the browser, a name, Read-only (shares.md §2.1) | IndexedDB `folders`; a folder in the browser's files in OPFS `folders/<id>/` |
 
-- **IndexedDB for records, OPFS for bytes** (`web/app/store.ts`, IndexedDB `webpc`, ids of 12 hex digits). A record
+- **IndexedDB for records, OPFS for bytes** (`web/app/store.ts`, IndexedDB `waarm64`, ids of 12 hex digits). A record
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
   its files. `Store.sweep` removes, at start, id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
   `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock).
@@ -93,12 +93,12 @@ Since decided (the user, 2026-10-17):
   and the message bar says so ([This browser doesn't let the web app keep anything (in a private window, for example): what the machine writes to its disks, its snapshots and the machines you make last only until this tab is closed.](ui:machine:messages.noStorage)). What reads OPFS from the page directly (a kept
   snapshot's download, restore or move, the overlays' sizes, a folder in the browser) isn't adapted
   (`tests/no-opfs.test.ts`).
-- **Several tabs:** a running machine holds the Web Lock `webpc-machine:<id>` (beside its overlays' own), and a
+- **Several tabs:** a running machine holds the Web Lock `waarm64-machine:<id>` (beside its overlays' own), and a
   `BroadcastChannel` tells other tabs to read the records again (`onChange`). What needs the machine off (attaching,
   detaching or reordering disks, a change of shape) is refused while it runs, in this tab or another (`isRunning`),
   with a message to power it off. What isn't in the shape is changed at once, running or not: a network adapter's
   connection, a shared folder attached or detached (the 9p root is a listing the server makes), USB devices. Shared
-  folders have their own locks (`webpc-folder:<id>`: one writer, or several readers; shares.md §1). A start takes the
+  folders have their own locks (`waarm64-folder:<id>`: one writer, or several readers; shares.md §1). A start takes the
   machine's lock before it opens the disks, and only if it's free (`ifAvailable`): a second tab of a running machine
   (the page opens the last machine by default) says at once that it runs in another tab, with Retry, instead of
   waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts).
@@ -139,8 +139,8 @@ Since decided (the user, 2026-10-17):
   make a machine that is never stored. A stored machine's size and devices are its record's, unless the address
   says otherwise for the run (`?ncpus=`, `?ram=`, `?usb=1`, `?mouse=0`, …: docs/frontend.md "What a machine runs
   with"): the address is over the record, never written to it, and the run's snapshots carry the shape it ran with
-  (§5.1). Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
-  `webpc-disk-<hash>` for `?disk=`), which the sweep never touches; its suspended copy is beside its overlay.
+  (§5.1). Its overlays keep their single names (`waarm64-debian`, `waarm64-buildroot`,
+  `waarm64-disk-<hash>` for `?disk=`), which the sweep never touches; its suspended copy is beside its overlay.
 - **Opening a disk the old way stays:** a file dropped on the page or opened (From a disk image…, the first-run
   message's button) makes a stored machine for it, named after the file, or opens the machine that attaches it;
   `?disk=<url>` stays transient (the tests').
@@ -196,7 +196,7 @@ changes; the drop-before-run discipline of the page before machines is kept besi
   that order (frontend.md "Snapshots", `devices`).
 - **Attaching, detaching, reordering or flipping read-only needs the machine off:** virtio-mmio has no hotplug and
   the DT is fixed at boot. The guest names disks by slot (`vda`, `vdb`…); the serial gives it
-  `/dev/disk/by-id/virtio-webpc-…`, which survives a reorder.
+  `/dev/disk/by-id/virtio-waarm64-…`, which survives a reorder.
 - **Boot order** is the firmware's: EDK2 tries the disks in its variable store's order, then in slot order. The
   variable store being the machine's (§2) is what makes an installer work: an ISO read-only and a blank disk,
   install, detach the ISO, boot the installed disk. That flow has no test: Alpine's ISOs lack the UEFI bootloader's
@@ -249,11 +249,11 @@ changes; the drop-before-run discipline of the page before machines is kept besi
 shape, §5.1, and carried by definitions) makes it the guest's swap with nothing to do inside:
 - At every start the device worker writes a swap area's first page over the empty ramdisk (`BlkSpec.swap`, the label;
   `web/ramdisk.ts` `swapHeader`: `mkswap`'s version 1 page, byte for byte, with a fresh UUID, the label
-  `webpc-swap<n>` by the swap ramdisks' slot order, and `SWAPSPACE2` at 4 KiB). A restored ramdisk is the snapshot's
+  `waarm64-swap<n>` by the swap ramdisks' slot order, and `SWAPSPACE2` at 4 KiB). A restored ramdisk is the snapshot's
   chunks (`ramInit`), untouched: the restored guest has its swap in them.
 - The guest gets an `fstab.extra` systemd credential in SMBIOS type 11 (`web/app/guest-swap.ts`, through
-  `opt/webpc/oem-strings` as the units of [frontend.md](frontend.md) "What the page sets in the guest"):
-  `LABEL=webpc-swap<n> none swap sw,nofail,discard 0 0`, which `systemd-fstab-generator` reads with /etc/fstab
+  `opt/waarm64/oem-strings` as the units of [frontend.md](frontend.md) "What the page sets in the guest"):
+  `LABEL=waarm64-swap<n> none swap sw,nofail,discard 0 0`, which `systemd-fstab-generator` reads with /etc/fstab
   (systemd 254+: Debian 13 and Arch; Debian 12 ignores it and boots without the swap). `discard`: the kernel trims
   what it frees (and the whole area at `swapon`, past the first page), so the chunks go back to the host as the guest
   stops needing them. `nofail`: a guest with pages larger than 4 KiB doesn't find the signature and boots on.
@@ -362,7 +362,7 @@ copy stale.
 ## 6. Machine definitions in and out
 
 `web/app/definitions.ts`; the page's side is frontend.md "Machines in the browser".
-- **[Export the definition](ui:machines:MachinePane.exportDefinition):** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings (shared
+- **[Export the definition](ui:machines:MachinePane.exportDefinition):** `<name>.waarm64-machine.json` (`waarm64-machine`, a version): the machine's settings (shared
   folders as `shares`, `sharesMount` and `sharesPath`, never the folders), the adapters' MACs (no connections), the
   remembered USB devices as identities (no grant travels), and per attachment the disk's kind, name, size, identity, URL, hash where the
   record has one, read-only, in place and serial. No handles, overlays, snapshots or file contents.

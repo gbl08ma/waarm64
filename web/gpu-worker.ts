@@ -18,7 +18,7 @@ import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
 import { probeVideo, profileName, webCodecsDecoder, type VideoStats, type VideoStream } from './virgl-video.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'snapshotBytes'; id: number } | /** Test hook (`window.__webpcStallGpu`): the worker's thread blocked `ms`, as in a long GPU-process call. */ { type: 'stall'; ms: number } | /** Bench hook (`window.__webpcGrab`): the screen drawn now and read back, top row first, RGBA. */ { type: 'grab'; id: number } | /** Bench hook (`window.__webpcVkSkip`, VK4 T23): the Venus renderer's emulated work left out from now (web/venus-host.ts `skip`). */ { type: 'vkskip'; skip: string[] } | ({ type: 'init'; canvas: OffscreenCanvas; port: MessagePort } & GpuWorkerKnobs);
+export type ToGpuWorker = { type: 'snapshotBytes'; id: number } | /** Test hook (`window.__waarm64StallGpu`): the worker's thread blocked `ms`, as in a long GPU-process call. */ { type: 'stall'; ms: number } | /** Bench hook (`window.__waarm64Grab`): the screen drawn now and read back, top row first, RGBA. */ { type: 'grab'; id: number } | /** Bench hook (`window.__waarm64VkSkip`, VK4 T23): the Venus renderer's emulated work left out from now (web/venus-host.ts `skip`). */ { type: 'vkskip'; skip: string[] } | ({ type: 'init'; canvas: OffscreenCanvas; port: MessagePort } & GpuWorkerKnobs);
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }

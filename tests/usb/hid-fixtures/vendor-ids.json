@@ -1,6 +1,6 @@
 {
  "id": "vendor-ids",
- "name": "webpc vendor HID with report IDs",
+ "name": "waarm64 vendor HID with report IDs",
  "vendorId": 4617,
  "productId": 2,
  "note": "ours: a vendor collection with report IDs, signed 16-bit fields, usage ranges, constant padding",

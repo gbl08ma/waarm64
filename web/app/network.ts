@@ -94,17 +94,17 @@ export function parseControlURL(input: string): { url: string } | { error: Msg }
   return { url: u.origin + (u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '')) };
 }
 
-/** A node's hostname: one DNS label. Empty: `webpc`. */
+/** A node's hostname: one DNS label. Empty: `waarm64`. */
 export function parseHostname(input: string): { hostname: string } | { error: Msg } {
   const s = input.trim().toLowerCase();
-  if (!s) return { hostname: 'webpc' };
+  if (!s) return { hostname: 'waarm64' };
   if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(s)) return { error: msg('network:network.badHostname') };
   return { hostname: s };
 }
 
 /**
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
- * `tailcatServe`, as the node `tailcatIdentity` names (web/tailcat.ts `identityKey`, `identity`) (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
+ * `tailcatServe`, as the node `tailcatIdentity` names (web/tailcat.ts `identityKey`, `identity`) (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `waarm64-tailscale` (web/tailscale-state.ts), so it is kept and
  * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts). `local`: the
  * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it. `room`: a peer-to-peer
  * room (web/room.ts), its link, switches and kept identity.

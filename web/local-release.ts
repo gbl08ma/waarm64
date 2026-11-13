@@ -1,24 +1,24 @@
 // The local helper's release as the page shows it (docs/plans/networking-local.md §1 "Plain install lines"): its version,
 // the published SHA-256 of each binary, and the install lines for a platform, the same as the release's INSTALL.md
-// (webpc-net's build.sh `install`; tests/local-release.test.ts holds the two together). Each release replaces
-// `RELEASE` from its SHA256SUMS (a change of webpc's, separate from the release itself).
+// (waarm64-net's build.sh `install`; tests/local-release.test.ts holds the two together). Each release replaces
+// `RELEASE` from its SHA256SUMS (a change of waarm64's, separate from the release itself).
 
 export type Os = 'linux' | 'darwin' | 'windows';
 export type Arch = 'amd64' | 'arm64';
 export type Target = { os: Os; arch: Arch };
 export type Release = { version: string; /** SHA256SUMS: file name to hash. */ sums: Record<string, string> };
 
-/** The release the page offers: its SHA256SUMS, from github.com/gbl08ma/webpc-net/releases (built twice there, and matched). */
+/** The release the page offers: its SHA256SUMS, from github.com/gbl08ma/waarm64-net/releases (built twice there, and matched). */
 export const RELEASE: Release = {
-  version: 'v0.2.0',
+  version: 'v0.3.0',
   sums: {
-    'LICENSES.txt': '8e0fcdbe5ceb32432b0638ecadb696be807b0d9d5d4dcf17cc36d594d6fcc1ef',
-    'webpc-net-v0.2.0-darwin-amd64': '1c49312924770c5f77f3e7330edf6f8b11329f5e5a6b28b49d3a38a39b45640c',
-    'webpc-net-v0.2.0-darwin-arm64': '8510debe4684e3138d356c6764eba1a1588441462cf16b98107b538bea9cf8d8',
-    'webpc-net-v0.2.0-linux-amd64': '3430f8d6b3eb642dc9ac13c7cf8a2ab46f5aea2c2ee0449e4c07366cef093e5f',
-    'webpc-net-v0.2.0-linux-arm64': 'a5de8be0d3812838db98914a3bb57ee8968164c2954fddd3568a04748f84518a',
-    'webpc-net-v0.2.0-windows-amd64.exe': '4a879ac1423c98a6bedca317a77f66208436fa0aa637d8de84e211626d4e36af',
-    'webpc-net-v0.2.0-windows-arm64.exe': '4203307d3dd5563d92d6b4589276d9935204bf8380885a1eb9b5ebd6dee5965a',
+    'LICENSES.txt': '871505601d614f0107098be41f93f10ea69e9d29bfc1bce9eae659aa8a32993f',
+    'waarm64-net-v0.3.0-darwin-amd64': '4ac08fd59f906e6b4d526786a7e95f1727a2ba15349fb534bd68974365f0a0f7',
+    'waarm64-net-v0.3.0-darwin-arm64': '8d2e335d07f83282a2cce14ed58e6fc638d270c5713a156f9c5edc3dc4ceb69a',
+    'waarm64-net-v0.3.0-linux-amd64': '6a5aa7a9c6baedca8c555f12b8ef8b0cec4af3c2a0e5a5d3b7792580ff643908',
+    'waarm64-net-v0.3.0-linux-arm64': '439d3efd180aeb10762cc30d393b1aa8969f8e309624e929db1220a0df4d349f',
+    'waarm64-net-v0.3.0-windows-amd64.exe': 'b69e9032b81e50fff4ac3cedbee931308baf2ed086d710e0424de225d21476e1',
+    'waarm64-net-v0.3.0-windows-arm64.exe': 'b23a420e78f6865f30b58f522c91237fb643911ce60146c4ed89d4f45facdc8e',
   },
 };
 
@@ -27,11 +27,11 @@ export const TARGETS: Target[] = [
   { os: 'windows', arch: 'amd64' }, { os: 'windows', arch: 'arm64' },
 ];
 
-export const SOURCE = 'https://github.com/gbl08ma/webpc-net';
-const download = (version: string) => `https://github.com/gbl08ma/webpc-net/releases/download/${version}`;
+export const SOURCE = 'https://github.com/gbl08ma/waarm64-net';
+const download = (version: string) => `https://github.com/gbl08ma/waarm64-net/releases/download/${version}`;
 
 export const targetName = (t: Target) => `${{ linux: 'Linux', darwin: 'macOS', windows: 'Windows' }[t.os]}, ${t.arch === 'amd64' ? 'x86-64' : 'ARM'}`;
-const fileOf = (r: Release, t: Target) => `webpc-net-${r.version}-${t.os}-${t.arch}${t.os === 'windows' ? '.exe' : ''}`;
+const fileOf = (r: Release, t: Target) => `waarm64-net-${r.version}-${t.os}-${t.arch}${t.os === 'windows' ? '.exe' : ''}`;
 
 /** The install lines for `t` (a shell's, or PowerShell's on Windows): download, check the hash, mark it executable, run it. */
 export function installLines(r: Release, t: Target): string {
@@ -39,18 +39,18 @@ export function installLines(r: Release, t: Target): string {
   const sum = r.sums[file] ?? '';
   if (t.os === 'windows') {
     return [
-      `$d = "$env:LOCALAPPDATA\\Programs\\webpc-net"; New-Item -ItemType Directory -Force $d | Out-Null; $ProgressPreference = 'SilentlyContinue'`,
-      `Invoke-WebRequest ${download(r.version)}/${file} -OutFile "$d\\webpc-net.exe"`, // i18n-ignore: a PowerShell command
-      `if ((Get-FileHash "$d\\webpc-net.exe").Hash -ne '${sum}') { Remove-Item "$d\\webpc-net.exe"; throw 'not the published hash' }`,
-      `& "$d\\webpc-net.exe"`,
+      `$d = "$env:LOCALAPPDATA\\Programs\\waarm64-net"; New-Item -ItemType Directory -Force $d | Out-Null; $ProgressPreference = 'SilentlyContinue'`,
+      `Invoke-WebRequest ${download(r.version)}/${file} -OutFile "$d\\waarm64-net.exe"`, // i18n-ignore: a PowerShell command
+      `if ((Get-FileHash "$d\\waarm64-net.exe").Hash -ne '${sum}') { Remove-Item "$d\\waarm64-net.exe"; throw 'not the published hash' }`,
+      `& "$d\\waarm64-net.exe"`,
     ].join('\n');
   }
   return [
     'mkdir -p ~/.local/bin',
-    `curl -fLo ~/.local/bin/webpc-net ${download(r.version)}/${file}`,
-    `echo "${sum}  $HOME/.local/bin/webpc-net" | ${t.os === 'darwin' ? 'shasum -a 256 -c' : 'sha256sum -c'} || rm ~/.local/bin/webpc-net`,
-    'chmod +x ~/.local/bin/webpc-net',
-    '~/.local/bin/webpc-net',
+    `curl -fLo ~/.local/bin/waarm64-net ${download(r.version)}/${file}`,
+    `echo "${sum}  $HOME/.local/bin/waarm64-net" | ${t.os === 'darwin' ? 'shasum -a 256 -c' : 'sha256sum -c'} || rm ~/.local/bin/waarm64-net`,
+    'chmod +x ~/.local/bin/waarm64-net',
+    '~/.local/bin/waarm64-net',
   ].join('\n');
 }
 

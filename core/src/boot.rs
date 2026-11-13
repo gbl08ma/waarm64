@@ -61,8 +61,8 @@ pub fn dtb(
     f.begin("");
     f.cells("#address-cells", &[2]);
     f.cells("#size-cells", &[2]);
-    f.strs("compatible", &["webpc", "linux,dummy-virt"]);
-    f.strs("model", &["webpc"]);
+    f.strs("compatible", &["waarm64", "linux,dummy-virt"]);
+    f.strs("model", &["waarm64"]);
     f.cells("interrupt-parent", &[GIC_PHANDLE]);
 
     f.begin("chosen");
@@ -405,9 +405,9 @@ mod tests {
     }
 
     /// Our DTB, decompiled by `dtc`, must match the reviewed sources
-    /// tests/dtb/webpc.dts (two vCPUs, the RTC, the xHCI; a round trip through the reference
-    /// tool) and webpc-firmware.dts (the firmware configuration: one vCPU, the
-    /// flash bank, fw_cfg) and webpc-numa.dts (the firmware configuration with two
+    /// tests/dtb/waarm64.dts (two vCPUs, the RTC, the xHCI; a round trip through the reference
+    /// tool) and waarm64-firmware.dts (the firmware configuration: one vCPU, the
+    /// flash bank, fw_cfg) and waarm64-numa.dts (the firmware configuration with two
     /// spill memories, docs/spill-memories.md). Set UPDATE_DTS=1 to rewrite
     /// them after an intended change.
     #[test]
@@ -421,15 +421,15 @@ mod tests {
         assert_eq!(spill, [(0x8000_0000, 1 << 30), (0x1_0000_0000, 1 << 32)]);
         let cases = [
             (
-                "webpc.dts",
+                "waarm64.dts",
                 2,
                 "console=ttyAMA0 earlycon",
                 Some((0x4800_0000, 0x4810_0000)),
                 None,
                 &[][..],
             ),
-            ("webpc-firmware.dts", 1, "", None, Some(1 << 20), &[][..]),
-            ("webpc-numa.dts", 2, "", None, Some(1 << 20), &spill[..]),
+            ("waarm64-firmware.dts", 1, "", None, Some(1 << 20), &[][..]),
+            ("waarm64-numa.dts", 2, "", None, Some(1 << 20), &spill[..]),
         ];
         for (name, ncpus, cmdline, initrd, flash, spill) in cases {
             let blob = dtb(
@@ -442,12 +442,12 @@ mod tests {
                 ncpus,
                 true,
                 flash,
-                ncpus == 2 && spill.is_empty(), // the xHCI in webpc.dts
+                ncpus == 2 && spill.is_empty(), // the xHCI in waarm64.dts
             );
             let dir =
-                std::env::temp_dir().join(format!("webpc-dtb-{}-{ncpus}", std::process::id()));
+                std::env::temp_dir().join(format!("waarm64-dtb-{}-{ncpus}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
-            let path = dir.join("webpc.dtb");
+            let path = dir.join("waarm64.dtb");
             std::fs::write(&path, &blob).unwrap();
             let out = std::process::Command::new("dtc")
                 .args(["-q", "-I", "dtb", "-O", "dts"])

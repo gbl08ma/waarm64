@@ -21,7 +21,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-test('About: the build, webpc\'s license, the third-party projects and their license texts, links opened apart', async () => {
+test('About: the build, waarm64\'s license, the third-party projects and their license texts, links opened apart', async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -37,7 +37,7 @@ test('About: the build, webpc\'s license, the third-party projects and their lic
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.equal(await pane.locator(`[data-about-version] a[href$="/commit/${commit}"]`).count(), 1);
   assert.match(await pane.locator('[data-about-version]').textContent() ?? '', new RegExp(commit.slice(0, 12)));
-  assert.equal(await pane.locator('[data-about-link=repository]').getAttribute('href'), 'https://github.com/gbl08ma/webpc');
+  assert.equal(await pane.locator('[data-about-link=repository]').getAttribute('href'), 'https://github.com/gbl08ma/waarm64');
 
   // Each group of THIRD_PARTY.json's About rows, with its projects.
   const groups = aboutGroups(load());
@@ -58,7 +58,7 @@ test('About: the build, webpc\'s license, the third-party projects and their lic
     assert.equal(l.target, '_blank', l.href);
     for (const r of ['external', 'nofollow', 'noopener', 'noreferrer']) assert.ok(l.rel.split(' ').includes(r), `${l.href}: rel ${l.rel}`);
   }
-  // The license files beside the page (webpc's own, the firmware's when it's built) answer.
+  // The license files beside the page (waarm64's own, the firmware's when it's built) answer.
   const beside = links.filter((l) => new URL(l.href).origin === new URL(base).origin);
   assert.ok(beside.some((l) => l.href.endsWith('/LICENSE')));
   for (const l of beside) assert.equal((await fetch(l.href)).status, 200, l.href);

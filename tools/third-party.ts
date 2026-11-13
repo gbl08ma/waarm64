@@ -1,4 +1,4 @@
-// THIRD_PARTY.json, the authoritative list of webpc's third-party code, dependencies and references
+// THIRD_PARTY.json, the authoritative list of waarm64's third-party code, dependencies and references
 // (docs/third-party.md): its checks, the rows the page's About pane shows, and its rendering as Markdown.
 //   node tools/third-party.ts               checks it (scripts/ci.sh)
 //   node tools/third-party.ts --markdown    prints it as Markdown (the layout of THIRD_PARTY.md, which it replaced)
@@ -11,7 +11,7 @@ import { buildInfo, type BuildInfo } from './stamp.ts';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const FILE = `${ROOT}THIRD_PARTY.json`;
 
-/** The About pane's groups, in its order: where in webpc a project's code ends up (the catalog has their words). */
+/** The About pane's groups, in its order: where in waarm64 a project's code ends up (the catalog has their words). */
 export const GROUPS = ['page', 'core', 'graphics', 'vulkan', 'network', 'firmware', 'agent'] as const;
 export type Group = (typeof GROUPS)[number];
 
@@ -135,11 +135,11 @@ function joinLicenses(a: string, b: string) {
 
 /** A license file beside the page, and its address from the page. */
 export type BundledText = { name: string; href: string };
-/** What the page's About pane shows (`virtual:webpc-about`, vite.config.ts). */
+/** What the page's About pane shows (`virtual:waarm64-about`, vite.config.ts). */
 export type About = {
-  /** webpc's repository, from package.json. */
+  /** waarm64's repository, from package.json. */
   repository: string;
-  /** webpc's own license (SPDX) and its text beside the page. */
+  /** waarm64's own license (SPDX) and its text beside the page. */
   license: string;
   licenseHref: string;
   build: BuildInfo | undefined;
@@ -205,7 +205,7 @@ if (import.meta.main) {
         const pin = url.replace('/tree/', '/blob/').split('/').slice(0, 7).join('/') + '/';
         if (projects.some((p) => p.url === url && p.licenseTexts.some((t) => t.url.startsWith(pin)))) { skipped++; continue; }
       }
-      const r = await fetch(at ?? url, { redirect: 'follow', headers: { 'User-Agent': 'webpc third-party link check' }, signal: AbortSignal.timeout(30_000) })
+      const r = await fetch(at ?? url, { redirect: 'follow', headers: { 'User-Agent': 'waarm64 third-party link check' }, signal: AbortSignal.timeout(30_000) })
         .catch((e: Error) => ({ ok: false, status: e.message }));
       if (!r.ok) { failed++; console.error(`${r.status} ${url}`); }
     }

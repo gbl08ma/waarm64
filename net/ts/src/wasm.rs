@@ -219,7 +219,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                         url: ctl.url,
                         auth_key: ctl.auth_key,
                         hostname: if ctl.hostname.is_empty() {
-                            "webpc".into()
+                            "waarm64".into()
                         } else {
                             ctl.hostname
                         },

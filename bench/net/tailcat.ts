@@ -5,7 +5,7 @@
 // netstack drops packets to [::1], a loopback address arriving from outside), ICMP echo, RTT and
 // echo throughput.
 // Usage: node bench/net/tailcat.ts <tc… address> [seconds] (the echo servers
-// run here, so this must be the exit node's machine; WEBPC_TS_JSON=<file>
+// run here, so this must be the exit node's machine; WAARM64_TS_JSON=<file>
 // writes the numbers; NODE_EXTRA_CA_CERTS for a test relay's CA.)
 import { createSocket } from 'node:dgram';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { failureOf, TsClient, TsModule, type TsEvent } from '../../web/ts-client
 import { checksum } from '../../web/net.ts';
 
 const [addr, secs = '5'] = process.argv.slice(2);
-const wasm = process.env.WEBPC_TS_WASM ?? 'target/net/ts.wasm';
+const wasm = process.env.WAARM64_TS_WASM ?? 'target/net/ts.wasm';
 const PORT = 7777;
 const GUEST4 = [192, 0, 0, 2];
 
@@ -158,6 +158,6 @@ const result = {
   echoes: done, lost, echoBytes: size + 28, seconds: Number(secs), mbitPerSecEachWay: mbit,
   cpuPercent: (cpu.user + cpu.system) / 1e4 / Number(secs),
 };
-if (process.env.WEBPC_TS_JSON) writeFileSync(process.env.WEBPC_TS_JSON, JSON.stringify(result, null, 2) + '\n');
+if (process.env.WAARM64_TS_JSON) writeFileSync(process.env.WAARM64_TS_JSON, JSON.stringify(result, null, 2) + '\n');
 client.close();
 process.exit(0);

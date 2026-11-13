@@ -1,4 +1,4 @@
-webpc-corpus 1
+waarm64-corpus 1
 oracle m4 2026-09-25
 test simd_diff.vec.0000
 code 0eb863b9

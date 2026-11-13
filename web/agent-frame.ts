@@ -1,4 +1,4 @@
-// The agent's framing (docs/plans/clipboard.md §2): what the page and the guest's agent (webpc-agent) say to each other
+// The agent's framing (docs/plans/clipboard.md §2): what the page and the guest's agent (waarm64-agent) say to each other
 // over the agent's port (web/agent-device.ts), as frames: a u32 length (little-endian, the bytes after it: the type
 // and the payload), a u8 type, then the payload. This module cuts the byte stream into frames, both ways, and defines
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which

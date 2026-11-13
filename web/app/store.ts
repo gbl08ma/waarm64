@@ -1,5 +1,5 @@
 // The browser's machines, disks, overlays, snapshots and network connections (docs/machines.md §2,
-// docs/networking/adapters.md §2): records in IndexedDB (database `webpc`, a store per kind, keyed by `id`), bytes
+// docs/networking/adapters.md §2): records in IndexedDB (database `waarm64`, a store per kind, keyed by `id`), bytes
 // in OPFS (`overlays/<id>/`,
 // `disks/<id>/`, `machines/<id>/` with its `flash`, `suspend` and `snapshots/<id>`). **A record is
 // written after its bytes and deleted before them**, so a crash leaves files without a record,
@@ -41,7 +41,7 @@ export type OverlayRecord = {
  */
 export type Pin = { slot: number; overlay?: string; generation?: number; blocks: number; ram?: boolean };
 
-/** A snapshot kept in the browser (`machines/<machine>/snapshots/<id>`, the WEBPCSNP file). */
+/** A snapshot kept in the browser (`machines/<machine>/snapshots/<id>`, the WAARMSNP file). */
 export type SnapshotRecord = {
   id: string;
   machine: string;
@@ -101,8 +101,8 @@ export const flashPath = (machine: string) => `machines/${machine}/flash`;
 export const suspendPath = (machine: string) => `machines/${machine}/suspend`;
 
 /** The lock writers share and the sweep takes alone (machines.md §2). */
-const WRITE_LOCK = 'webpc-store';
-const CHANNEL = 'webpc-store';
+const WRITE_LOCK = 'waarm64-store';
+const CHANNEL = 'waarm64-store';
 
 /** Node's store (no IndexedDB or OPFS): one per process, as a browser's is one per origin. */
 let sharedMemory: { records: Records; files: Files } | undefined;

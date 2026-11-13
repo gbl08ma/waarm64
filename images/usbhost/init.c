@@ -12,7 +12,7 @@
 //             report usb_setf=<hex>, get feature report usb_getf=<id>:<length>
 //
 // It prints what it saw ("acm: round 1: 300 bytes echoed", "hid: rdesc <hex>", "hid: input <hex>", …)
-// and "webpc: usb test ok" when every step worked; then it powers off. The tests check the lines.
+// and "waarm64: usb test ok" when every step worked; then it powers off. The tests check the lines.
 #define main usb_test_main
 #include "../usb/init.c"
 #undef main
@@ -173,7 +173,7 @@ int main(void) {
         hid();
     else
         die("unknown usb_mode");
-    printf("webpc: usb test ok\n");
+    printf("waarm64: usb test ok\n");
     reboot(RB_POWER_OFF);
     return 0;
 }

@@ -9,9 +9,9 @@ hands back placeholder data (empty strings, in the user's experience) instead of
 
 ```
  host clipboard ── Clipboard API / paste event ── page (main thread) ── worker ── virtio-console port
-                                                                                   "org.webpc.agent.0"
+                                                                                   "org.waarm64.agent.0"
                                                                                         │
- guest: webpc-agent.service (root; loaded from fw_cfg into /run, started by a credential unit)
+ guest: waarm64-agent.service (root; loaded from fw_cfg into /run, started by a credential unit)
         └─ one child for each active graphical session (its uid): Wayland data-control, or X11 selections
         └─ text consoles: paste through TIOCSTI on the foreground VT
 ```
@@ -35,9 +35,9 @@ without the setting keep their shape hash, their snapshots and their step counts
 a change of shape. Like those other switches, it asks first when it orphans snapshots.
 
 - **`VIRTIO_CONSOLE_F_MULTIPORT`:** the control queues (c_ivq/c_ovq) and the port messages (DEVICE_READY,
-  PORT_ADD, PORT_NAME, PORT_OPEN). **Built with one port,** port 0, named `org.webpc.agent.0` (Linux makes a
+  PORT_ADD, PORT_NAME, PORT_OPEN). **Built with one port,** port 0, named `org.waarm64.agent.0` (Linux makes a
   port a console only on CONSOLE_PORT, so port 0 needn't be one: `max_nr_ports` 1, four queues), and udev links it
-  as `/dev/virtio-ports/org.webpc.agent.0` (`virtio_console`, in every distribution kernel). A second port (spice's,
+  as `/dev/virtio-ports/org.waarm64.agent.0` (`virtio_console`, in every distribution kernel). A second port (spice's,
   §3.4) would be port 1. A device of its own leaves the tests' `console_` alone, so their steps don't move.
 - **The receive path:** the backend fills held RX buffers from a queue of host bytes. The guest's PORT_OPEN
   tells the host that the agent is listening; the toolbar's state follows it (§5).
@@ -82,15 +82,15 @@ a change of shape. Like those other switches, it asks first when it orphans snap
 ### 3.1 Delivery: a credential unit and an fw_cfg file
 
 The route works like `web/app/guest-unit.ts` `guestUnit` (SMBIOS type 11 credentials, systemd 256+). The binary
-itself is too big for SMBIOS strings, so it goes in as an **fw_cfg file of its own**, `opt/webpc/agent`.
+itself is too big for SMBIOS strings, so it goes in as an **fw_cfg file of its own**, `opt/waarm64/agent`.
 `core/src/fw_cfg.rs` already serves named files from the host. The unit's script does this:
 
 ```sh
-f=/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw
+f=/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent/raw
 [ -r "$f" ] || exit 0
-gzip -dc "$f" >/run/webpc/agent && chmod 0500 /run/webpc/agent || exit 1
-udevadm wait --timeout=60 /dev/virtio-ports/org.webpc.agent.0
-exec /run/webpc/agent
+gzip -dc "$f" >/run/waarm64/agent && chmod 0500 /run/waarm64/agent || exit 1
+udevadm wait --timeout=60 /dev/virtio-ports/org.waarm64.agent.0
+exec /run/waarm64/agent
 ```
 
 (`modprobe -q qemu_fw_cfg` runs before it, outside the sandbox: `ExecStartPre=-+`.) A boot without the setting has no
@@ -110,7 +110,7 @@ because it changes uid on purpose; `systemd-analyze security` rates it 3.7, "OK"
   `qemu,fw-cfg-mmio` too (not checked: the dev VM has no desktop image; docs/clipboard.md "Not measured").
 - **`noexec` on `/run`.** **Debian 13 mounts `/run` `noexec`** (measured: `rw,nosuid,nodev,noexec`; `exec` of a
   binary in a `RuntimeDirectory` failed with EACCES). The unit gives the binary a tmpfs of its own instead,
-  `TemporaryFileSystem=/run/webpc:mode=0700,exec,nosuid` (in its mount namespace: gone when it stops, invisible to
+  `TemporaryFileSystem=/run/waarm64:mode=0700,exec,nosuid` (in its mount namespace: gone when it stops, invisible to
   other processes but through `/proc/<pid>/exe`). No `memfd_create` loader is needed.
 
 Machines without firmware (Buildroot, direct kernel boot) have no fw_cfg and no systemd 256. The setting isn't
@@ -514,7 +514,7 @@ Each step is one loop with its own tests at the cheapest layer:
 
 1. **The channel:** the `agent` transport (a multiport virtio-console with the named port), RX, the shape's
    `clipboard: true`, and the framing in a shared TypeScript module. Unit tests on hand-built rings, and a
-   Buildroot echo through `/dev/virtio-ports/org.webpc.agent.0` in every runner. No step counts move: the
+   Buildroot echo through `/dev/virtio-ports/org.waarm64.agent.0` in every runner. No step counts move: the
    device is only on machines that ask for it.
 2. **The agent, console only (built 2026-11-06):** the binary's build in Podman and its host-cargo fallback without Podman, delivery through fw_cfg and the credential unit,
    `HELLO`, `TYPE` through TIOCSTI, `PAUSE`. The Debian page test types a string through the menu item and reads

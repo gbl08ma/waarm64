@@ -51,7 +51,7 @@ index cc82c42d..221d4996 100644
     const size_t page_size = getpagesize();
     const uint64_t alloc_size = (blob_size + page_size - 1) & ~(page_size - 1);
 +#ifdef __wasi__
-+   /* webpc: the renderer's storage, which a map moves into the window. */
++   /* waarm64: the renderer's storage, which a map moves into the window. */
 +   uint8_t *storage = aligned_alloc(4096, align64(blob_size, 4096));
 +   if (!storage)
 +      return false;
@@ -101,7 +101,7 @@ index cc82c42d..221d4996 100644
     bool ok = true;
  
 +#ifdef __wasi__
-+   /* webpc: one thread, so the ring is run here until it gets there (the guest wrote those commands before it asked;
++   /* waarm64: one thread, so the ring is run here until it gets there (the guest wrote those commands before it asked;
 +    * a ring that runs dry first is the guest's fault, and fatal). */
 +   (void)ok;
 +   while (!vkr_context_get_fatal(ctx) && !vkr_seqno_ge(vkr_ring_load_head(ring), ring_seqno)) {
@@ -120,7 +120,7 @@ index cc82c42d..221d4996 100644
     ctx->ring_monitor.report_period_us = report_period_us;
     ctx->ring_monitor.started = true;
 +#ifdef __wasi__
-+   /* webpc: vkr_renderer_poll sets the alive bits at the period. */
++   /* waarm64: vkr_renderer_poll sets the alive bits at the period. */
 +   (void)ret;
 +   return true;
 +#endif
@@ -143,7 +143,7 @@ index cc82c42d..221d4996 100644
  
 -#ifdef ENABLE_RENDER_SERVER_WORKER_THREAD
 +#if defined(ENABLE_RENDER_SERVER_WORKER_THREAD) || defined(__wasi__)
-+   /* webpc: every context lives in the one module, as on the render server's worker thread: a context destroyed with
++   /* waarm64: every context lives in the one module, as on the render server's worker thread: a context destroyed with
 +    * objects (its program killed, a virtio reset) destroys them in the driver, else they would outlive it (a 17th
 +    * device fails to be made). */
     ctx->on_worker_thread = true;
@@ -158,7 +158,7 @@ index 3867f138..cf2f8b50 100644
  
     size_t size;
 +#ifdef __wasi__
-+   /* webpc (vk/README.md): no fds. A shm resource's bytes are in `storage` (owned), or a device memory's (`memory`),
++   /* waarm64 (vk/README.md): no fds. A shm resource's bytes are in `storage` (owned), or a device memory's (`memory`),
 +    * until vkr_renderer_map_resource moves them into the host-visible window (`u.data` then), and back at the unmap. */
 +   uint8_t *storage;
 +   struct vkr_device_memory *memory;
@@ -175,7 +175,7 @@ index 5e7d4b1d..ea7d2ade 100644
  }
  
 +#ifdef __wasi__
-+/* webpc (vk/README.md "Calls and rings"): the commands dispatched, by where they came from (0 a ring, 1 the virtqueue,
++/* waarm64 (vk/README.md "Calls and rings"): the commands dispatched, by where they came from (0 a ring, 1 the virtqueue,
 + * 2 a nested stream), whether they ask for a reply (the guest waits for those) and their type; vk/glue.c
 + * `venus_cmd_counts` hands them to the render stats, `venus_cmd_types` their bound. */
 +#define VKR_WASI_CMD_TYPES 384
@@ -212,7 +212,7 @@ index 603f45b8..fef03867 100644
  
     /* only wait if on workder thread to prepare for vk obj cleanup */
 +#ifdef __wasi__
-+   /* webpc: the driver can't block for the GPU (its wait would time out); its vkDestroyDevice drops pending work. */
++   /* waarm64: the driver can't block for the GPU (its wait would time out); its vkDestroyDevice drops pending work. */
 +   if (false) {
 +#else
     if (ctx->on_worker_thread) {
@@ -230,7 +230,7 @@ index 7d57c7ce..5d5b3bbb 100644
        break;
 +#ifdef __wasi__
 +   case VIRGL_RESOURCE_FD_SHM:
-+      /* webpc: a blob of this context's, exported from one of its memories (the guest imports what it exported: an
++      /* waarm64: a blob of this context's, exported from one of its memories (the guest imports what it exported: an
 +       * opaque fd or a dma-buf of its own): the driver takes that memory's handle as an opaque fd and aliases it
 +       * (wg_AllocateMemory). Its memory freed, there is nothing to alias: the caller makes a memory of its own. */
 +      if (!res->memory)
@@ -248,7 +248,7 @@ index 7d57c7ce..5d5b3bbb 100644
     }
  
 +#ifdef __wasi__
-+   /* webpc: no fds. An imported resource's "fd" is its resource id (venus_resource_import), which the driver takes as
++   /* waarm64: no fds. An imported resource's "fd" is its resource id (venus_resource_import), which the driver takes as
 +    * the dma-buf it imports: another renderer's resource (a virgl texture: web/venus-import.ts). */
 +   int fd = res->u.fd;
 +#else
@@ -262,7 +262,7 @@ index 7d57c7ce..5d5b3bbb 100644
     if (prev_of_res_info) {
        res_info = (VkImportMemoryResourceInfoMESA *)vkr_pnext_get_next(prev_of_res_info);
 +#ifdef __wasi__
-+      /* webpc: the guest allocates without waiting for the result, so a failed import would leave it a memory this
++      /* waarm64: the guest allocates without waiting for the result, so a failed import would leave it a memory this
 +       * context doesn't have, and its free a fatal error (the context lost): an import that can't be made is a memory
 +       * of its own instead (its bytes not shared), unless the resource doesn't exist (fatal already). */
 +      if (!vkr_get_fd_info_from_resource_info(ctx, res_info, &local_import_info)) {
@@ -293,7 +293,7 @@ index 7d57c7ce..5d5b3bbb 100644
     VkImportMemoryMetalHandleInfoEXT local_metal_import;
 -
 +#ifdef __wasi__
-+   /* webpc: as the Metal path, but the storage is ours and the driver imports a host pointer to it; it is exported as
++   /* waarm64: as the Metal path, but the storage is ours and the driver imports a host pointer to it; it is exported as
 +    * a shm resource (no fd), which a map moves into the window. Export infos are dropped: there are no fds. */
 +   uint8_t *wasi_storage = NULL;
 +   VkImportMemoryHostPointerInfoEXT wasi_import;
@@ -357,7 +357,7 @@ index 7d57c7ce..5d5b3bbb 100644
     }
  
 +#ifdef __wasi__
-+   /* webpc: a blob of this context's exported from one of its memories imports as that memory, in its type (above). */
++   /* waarm64: a blob of this context's exported from one of its memories imports as that memory, in its type (above). */
 +   if (res->fd_type == VIRGL_RESOURCE_FD_SHM && res->memory) {
 +      uint32_t bits = 1u << res->memory->memory_type_index;
 +      vkr_physical_device_mem_type_spoof(dev->physical_device, &bits);
@@ -446,7 +446,7 @@ index 32599664..0e947bea 100644
  
     bool exported;
 +#ifdef __wasi__
-+   /* webpc: a host-visible memory's bytes, which the driver imports as a host pointer (wg_device.c), and the resource
++   /* waarm64: a host-visible memory's bytes, which the driver imports as a host pointer (wg_device.c), and the resource
 +    * it is exported as: freed first, the memory hands that resource its storage (a mapped blob outlives its memory). */
 +   uint8_t *wasi_storage;
 +   struct vkr_resource *wasi_res;
@@ -485,7 +485,7 @@ index d75a2294..89e863f7 100644
  }
  
 +#ifdef __wasi__
-+/* The sync thread's work without waiting (webpc: the GPU worker polls): retires the syncs whose fence has signalled,
++/* The sync thread's work without waiting (waarm64: the GPU worker polls): retires the syncs whose fence has signalled,
 + * in order, up to the first that hasn't. */
 +void
 +vkr_queue_poll(struct vkr_queue *queue)
@@ -510,7 +510,7 @@ index d75a2294..89e863f7 100644
     list_inithead(&queue->sync_thread.syncs);
  
 +#ifdef __wasi__
-+   /* webpc: no thread; vkr_queue_poll retires the signalled syncs. */
++   /* waarm64: no thread; vkr_queue_poll retires the signalled syncs. */
 +   return 0;
 +#endif
     ret = thrd_create(&queue->sync_thread.thread, vkr_queue_thread, queue);
@@ -683,7 +683,7 @@ index be3ae046..ff7b79d7 100644
 +#ifdef __wasi__
 +#include <vulkan/vulkan_core.h>
 +
-+/* webpc (vk/README.md): one thread, polled; resources are bytes in the module's memory, which is the VM's memory 0. */
++/* waarm64 (vk/README.md): one thread, polled; resources are bytes in the module's memory, which is the VM's memory 0. */
 +
 +/* Runs every context's rings and retires the signalled fences; returns whether a ring is still active (poll again
 + * soon) or all are idle (a notify wakes them). */
@@ -747,7 +747,7 @@ index 0d4899ef..2b6904fe 100644
        vkr_context_on_ring_seqno_update(ring->dispatch.data, ring->id, cur_ring_head);
 +#ifdef __wasi__
 +      if (ring->stalled) {
-+         /* webpc: the rest waits for the virtqueue (vkr_ring_poll resumes it). */
++         /* waarm64: the rest waits for the virtqueue (vkr_ring_poll resumes it). */
 +         ring->pending_off = (uint32_t)(dec->cur - (const uint8_t *)ring->cmd);
 +         ring->pending_size = (uint32_t)(dec->end - (const uint8_t *)ring->cmd);
 +         ring->pending_head = cur_ring_head;
@@ -778,7 +778,7 @@ index 0d4899ef..2b6904fe 100644
 +   return VKR_WASI_CMD_TYPES;
 +}
 +
-+/* One pass of vkr_ring_thread's loop (webpc: the GPU worker polls instead of a thread): the commands the guest added
++/* One pass of vkr_ring_thread's loop (waarm64: the GPU worker polls instead of a thread): the commands the guest added
 + * since, or once idle_timeout passed without any, the idle status (the guest then notifies). Returns whether the ring
 + * is still active, so its poller stays awake across frames (VK0 B: a wake-up saved a submit). */
 +static bool
@@ -898,7 +898,7 @@ index 0d4899ef..2b6904fe 100644
     bool ok = true;
  
 +#ifdef __wasi__
-+   /* webpc: one thread, so no wait: the ring stalls after this command (vkr_ring_submit_cmd, vkr_ring_poll). */
++   /* waarm64: one thread, so no wait: the ring stalls after this command (vkr_ring_submit_cmd, vkr_ring_poll). */
 +   if (ring->virtqueue_seqno < seqno) {
 +      ring->stalled = true;
 +      ring->stall_seqno = seqno;
@@ -917,7 +917,7 @@ index 89d8159e..10a18759 100644
     atomic_bool monitor;
     uint64_t virtqueue_seqno;
 +#ifdef __wasi__
-+   /* webpc (vk/README.md): no thread; the GPU worker polls (vkr_ring_poll). */
++   /* waarm64 (vk/README.md): no thread; the GPU worker polls (vkr_ring_poll). */
 +   uint64_t last_submit;
 +   /* A ring command waiting for a virtqueue seqno not submitted yet stalls the ring (a wait would block the only
 +    * thread, and the seqno comes in a later submit): the rest of its batch, at ring->cmd + pending_off, runs once
@@ -931,7 +931,7 @@ index 89d8159e..10a18759 100644
  };
  
 +#ifdef __wasi__
-+/* webpc (GD G3): the monitored rings' status words, whose alive bit the GPU worker's ticker (web/venus-ticker.ts) sets
++/* waarm64 (GD G3): the monitored rings' status words, whose alive bit the GPU worker's ticker (web/venus-ticker.ts) sets
 + * from a thread of its own, as vkr's ring monitor thread does natively: a long call on the GPU worker's thread (Dawn's
 + * createShaderModule over seconds) then isn't taken by Venus's watchdog in the guest for a dead renderer. [0] a lock
 + * (1 while held: by the ticker while it reads the table and sets the bits, by vkr while it changes it), [1] the

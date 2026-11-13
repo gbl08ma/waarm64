@@ -17,9 +17,9 @@ import { isLive, power } from './power.svelte.ts';
 
 type Plan = Awaited<ReturnType<typeof planRestore>>;
 
-/** Whether `file` starts with the snapshot signature (`WEBPCSNP`): how a chosen or dropped file is told from a disk image. */
+/** Whether `file` starts with the snapshot signature (`WAARMSNP`): how a chosen or dropped file is told from a disk image. */
 export const isSnapshot = async (file: File) =>
-  new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';
+  new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WAARMSNP';
 
 /** The OPFS file at `path`. */
 async function opfsFile(path: string) {
@@ -116,7 +116,7 @@ export class SnapshotRestore {
         this.#c.machine.store,
         s.record,
         s.disks,
-        { name: name.replace(/\.webpcsnap$/, ''), key, pins },
+        { name: name.replace(/\.waarm64snap$/, ''), key, pins },
         now.shape,
       );
       if (!plan.refused) return plan;
@@ -173,7 +173,7 @@ export class SnapshotRestore {
     if (!s || rec?.machine !== s.record.id) return;
     const file = await (await opfsFile(snapshotPath(rec.machine, id))).getFile();
     const { header } = await openSnapshot(file);
-    await this.#restore(s, new File([file], `${rec.name}.webpcsnap`), header, id, rec.name);
+    await this.#restore(s, new File([file], `${rec.name}.waarm64snap`), header, id, rec.name);
   }
 
   /** Whether a transient machine can load `header`'s snapshot: its machine, and its disk by name (said if not). */

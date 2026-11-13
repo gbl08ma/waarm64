@@ -1,4 +1,4 @@
-// The local network helper (docs/plans/networking-local.md; github.com/gbl08ma/webpc-net): the page's Debian with one card on an IP
+// The local network helper (docs/plans/networking-local.md; github.com/gbl08ma/waarm64-net): the page's Debian with one card on an IP
 // port, as the page has it, first on the page's gateway with a lease of its own, then handed to the local helper's
 // client (web/local-net.ts `startLocal`, its worker) as the Network menu does: the card goes on a frame port, the
 // page's gateway bypassed, its frames over a WebSocket on loopback to the helper, whose DHCP, DNS and gateway serve the
@@ -7,7 +7,7 @@
 // machine's loopback (--host-loopback) and runs `apt-get update`; IPv6 is on-link always and routed out only when this
 // machine reaches the internet over IPv6 (the helper's probe), so dual-stack names connect without a wait either way;
 // the helper refuses a wrong token and a page from another origin, each with its own close code.
-// One Debian boot in realtime (~2 min); needs Go (the helper is built at the commit tests/webpc-net.ts pins). Opt-in like the other
+// One Debian boot in realtime (~2 min); needs Go (the helper is built at the commit tests/waarm64-net.ts pins). Opt-in like the other
 // network tests: scripts/ci-net.sh.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -19,19 +19,19 @@ import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { buildHelper, helperSkip } from './webpc-net.ts';
+import { buildHelper, helperSkip } from './waarm64-net.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { startNostrRelay } from './net/nostr-relay.ts';
 import { RIG_RELAY } from './net/tailcat-cli.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
-  : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
+const skip = process.env.WAARM64_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WAARM64_NET_TESTS=1)'
+  : !(process.env.WAARM64_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WAARM64_DISTROS=debian'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
   : helperSkip();
 
-const OVERLAY = 'webpc-net-local-test';
+const OVERLAY = 'waarm64-net-local-test';
 const BIG = 8 << 20;
 const big = randomBytes(BIG);
 const bigSum = createHash('sha256').update(big).digest('hex');
@@ -90,7 +90,7 @@ before(async () => {
   const port = await freePort();
   const token = randomBytes(32).toString('base64url');
   ws = `ws://127.0.0.1:${port}/${token}`;
-  helper = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${port}`, '--origin', base, '--host-loopback'], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+  helper = spawn(`${ROOT}target/net/waarm64-net`, ['--listen', `127.0.0.1:${port}`, '--origin', base, '--host-loopback'], { env: { ...process.env, WAARM64_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
   helper.stdout!.on('data', (d) => { helperLog += d; });
   helper.stderr!.on('data', (d) => { helperLog += d; });
   for (let k = 0; k < 100 && !helperLog.includes('listening on'); k++) await new Promise((r) => setTimeout(r, 100));
@@ -109,7 +109,7 @@ const local = (page: Page) => page.evaluate('window.harness.local()') as Promise
 
 /** The close code a WebSocket to `url` gets, from `page`'s origin. */
 const closeCode = (page: Page, url: string) => page.evaluate((u) => new Promise<number>((resolve) => {
-  const s = new WebSocket(u, 'webpc-net.v1');
+  const s = new WebSocket(u, 'waarm64-net.v1');
   s.onclose = (e) => resolve(e.code);
 }), url);
 
@@ -217,8 +217,8 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
 // Nostr relay, whose other member is tests/browser/room.html in another context. The helper's adapter is the primary
 // (`primaryOf`), so the defaults stay its own and the room's adds only its /48 and its names: the guest reaches the room's
 // member by name (UDP to its echo port, through the room's resolver) while names and TCP still go out through the helper.
-// Opt-in also with WEBPC_TAILCAT=1 (Go builds derper). One Debian boot, ~2 min.
-const roomSkip = skip ?? (process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1 too (the tailcat rig\'s derper)'
+// Opt-in also with WAARM64_TAILCAT=1 (Go builds derper). One Debian boot, ~2 min.
+const roomSkip = skip ?? (process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT=1 too (the tailcat rig\'s derper)'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)' : undefined);
 test('a room on a second adapter beside the local helper: the member by name, the internet through the helper', { skip: roomSkip, timeout: 900_000 }, async () => {
   const rig = `${ROOT}tests/net/tailcat.sh`;
@@ -226,7 +226,7 @@ test('a room on a second adapter beside the local helper: the member by name, th
   const nostr = await startNostrRelay();
   const overlay = `${OVERLAY}-room`;
   const id = `beside-${randomBytes(4).toString('hex')}`;
-  const link = `webpc-room:${encodeURIComponent(id)}?nostr=${encodeURIComponent(nostr.url)}&derp=${encodeURIComponent(RIG_RELAY)}`;
+  const link = `waarm64-room:${encodeURIComponent(id)}?nostr=${encodeURIComponent(nostr.url)}&derp=${encodeURIComponent(RIG_RELAY)}`;
   try {
     await withDebianLock(async () => {
       const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the rig's derper's self-signed certificate

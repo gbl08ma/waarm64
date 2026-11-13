@@ -1,4 +1,4 @@
-webpc-corpus 1
+waarm64-corpus 1
 oracle m4 2026-09-25
 test ldst.ldst_uimm.0000
 code 79fc9ee0

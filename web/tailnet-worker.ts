@@ -120,7 +120,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     if (!ip) return; // detached meanwhile
     probe6 = m.probe6;
     client = new TsClient(mod, {
-      control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'webpc', ephemeral: !m.persist },
+      control: { url: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'waarm64', ephemeral: !m.persist },
       state: state?.entries() ?? {},
       exitNode: m.exitNode ?? '',
       acceptRoutes: m.acceptRoutes ?? true,

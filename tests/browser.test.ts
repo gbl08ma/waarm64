@@ -102,8 +102,8 @@ for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], [
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     if (mode !== 'realtime') assert.equal(r.steps, mode.endsWith('4 vCPUs') ? STEPS['buildroot-4cpu'] : STEPS.buildroot);
     const out = r.console.replaceAll('\r\n', '\n');
-    assert.match(out, /answer: 42\n[^]*hwrng: [0-9a-f]{32}\n[^]*\/dev\/root \/ ext4 ro,[^]*vda magic: 53ef\nwebpc: test ok\nwebpc: test exit 0\n/);
-    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
+    assert.match(out, /answer: 42\n[^]*hwrng: [0-9a-f]{32}\n[^]*\/dev\/root \/ ext4 ro,[^]*vda magic: 53ef\nwaarm64: test ok\nwaarm64: test exit 0\n/);
+    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'waarm64: hvc0 ok\n');
   });
 }
 
@@ -121,15 +121,15 @@ for (const [mode, query] of [['deterministic JIT', 'jit=1'], ['parallel JIT, 2 v
 }
 
 // Parallel SMP (M7 loop 5): a worker per vCPU (nested in the boot worker),
-// realtime, so not reproducible: WEBPC_PARALLEL_RUNS boots (default 3), all must pass.
-const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
+// realtime, so not reproducible: WAARM64_PARALLEL_RUNS boots (default 3), all must pass.
+const RUNS = Number(process.env.WAARM64_PARALLEL_RUNS ?? 3);
 test('Linux boots on 4 vCPUs in parallel (a worker each), JIT', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
   for (let i = 1; i <= RUNS; i++) {
     const r = await bootPage('parallel&ncpus=4&jit=1', 10);
     assert.equal(r.error, undefined, `run ${i}`);
     console.log(`# chromium parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok\nwaarm64: test exit 0\n/);
   }
 });
 
@@ -158,8 +158,8 @@ test('Linux boots on 4 vCPUs in parallel through snapshot files, JIT', { skip: !
     console.log(`# chromium parallel snapshots ${i}: ${files.map((f) => `${(f.bytes / 2 ** 20).toFixed(1)} MiB, ${f.saveMs.toFixed(0)} + ${f.restoreMs.toFixed(0)} ms`).join('; ')}`);
     assert.ok(files.length >= 4, `${files.length} snapshots`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
-    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok\nwaarm64: test exit 0\n/);
+    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'waarm64: hvc0 ok\n');
   }
 });
 
@@ -175,7 +175,7 @@ test('Linux boots on 4 vCPUs in parallel through 10+ pauses and resumes, JIT', {
     const ms = [...p.ms].sort((a, b) => a - b);
     console.log(`# chromium pauses ${i}: ${p.n} in a ${(r.ms / 1000).toFixed(1)} s boot, latency median ${ms[ms.length >> 1].toFixed(1)} ms, worst ${ms.at(-1)!.toFixed(1)} ms`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok\nwaarm64: test exit 0\n/);
   }
 });
 
@@ -189,11 +189,11 @@ test('litmus and atomics stress on 4 vCPUs in parallel, JIT', { skip: !existsSyn
   assert.equal(r.error, undefined);
   console.log(`# chromium litmus and stress (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s; ${r.console.match(/stress: spin ok .*/g)?.join('; ')}`);
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-  assert.match(r.console, /litmus: all ok, 0 skipped\nwebpc: stress on 4 CPUs[^]*\nwebpc: test ok\n/, r.console);
+  assert.match(r.console, /litmus: all ok, 0 skipped\nwaarm64: stress on 4 CPUs[^]*\nwaarm64: test ok\n/, r.console);
 });
 
 test('the root filesystem is writable through an OPFS overlay, and it persists across boots', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
-  const name = 'webpc-test-rw';
+  const name = 'waarm64-test-rw';
   await removeOverlay(name);
   const hashes = [];
   for (const n of [1, 2]) {
@@ -203,7 +203,7 @@ test('the root filesystem is writable through an OPFS overlay, and it persists a
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, new RegExp(`rw: boot ${n}\n`));
     hashes.push(r.console.match(n === 1 ? /rw: wrote (.*)\n/ : /rw: kept (.*)\n/)?.[1]);
-    assert.match(r.console, /webpc: test ok\n/);
+    assert.match(r.console, /waarm64: test ok\n/);
   }
   assert.ok(hashes[0]);
   assert.equal(hashes[1], hashes[0]);
@@ -215,7 +215,7 @@ test('the root filesystem is writable through an OPFS overlay, and it persists a
 // (the old VM's device worker has closed it), takes the unbroken boot's steps and writes the same
 // file, which the next boot finds.
 test('a boot that writes its disk goes through snapshot files, and the overlay is the last file\'s plus what followed', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
-  const [plain, name] = ['webpc-test-snap-plain', 'webpc-test-snap-rw'];
+  const [plain, name] = ['waarm64-test-snap-plain', 'waarm64-test-snap-rw'];
   await removeOverlay(plain);
   await removeOverlay(name);
   const whole = await bootPage(`overlay=${plain}&script=/test-rw.sh&jit=1`, 10);
@@ -242,7 +242,7 @@ for (const jit of [0, 1]) test(`net (loopback adapter), 9p and the framebuffer w
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
   assert.equal(r.steps, STEPS.devices);
   for (const want of ['net: mac 52:54:00:12:34:56\n', '3 packets transmitted, 3 packets received, 0% packet loss\n', '9p: hello from the host\n',
-    '9p: b some text 10 -rw-r--r--\n', '9p: big 200000 ok\n', '9p: ls b big l \n', '9p: after rm b \n', '9p: top from-guest hello.txt \n', 'fb: 0 simple 640,480\n', 'webpc: test ok\n']) {
+    '9p: b some text 10 -rw-r--r--\n', '9p: big 200000 ok\n', '9p: ls b big l \n', '9p: after rm b \n', '9p: top from-guest hello.txt \n', 'fb: 0 simple 640,480\n', 'waarm64: test ok\n']) {
     assert.ok(r.console.includes(want), `missing ${JSON.stringify(want)}`);
   }
   // Read back from the page's canvas: row 0 red, row 1 grey, row 2 untouched.
@@ -257,7 +257,7 @@ for (const jit of [0, 1]) test(`the gpu guest draws, sends damage, sets a cursor
   assert.equal(r.error, undefined);
   console.log(`# chromium gpu boot${jit ? ' (JIT)' : ''}: ${r.steps} steps`);
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-  assert.ok(r.console.includes('webpc: gpu test ok\n'), r.console);
+  assert.ok(r.console.includes('waarm64: gpu test ok\n'), r.console);
   assert.equal(r.steps, STEPS.gpu);
   assert.deepEqual([r.gpu?.width, r.gpu?.screen, r.gpu?.cursor.hash], [800, want.screen, want.cursor]);
   assert.deepEqual(r.gpu?.trace, [want.trace1, want.trace2, want.trace3]);
@@ -302,7 +302,7 @@ test("the overlay's hand-over: a second opener waits for the holder to close it,
     type Answer = { type: string; at: number; message?: string };
     const spawn = () => new Worker('/tests/browser/overlay-worker.ts', { type: 'module' });
     const ask = (w: Worker, m: object) => new Promise<Answer>((resolve) => { w.onmessage = (e) => resolve(e.data); w.postMessage(m); });
-    const name = 'webpc-test-handover';
+    const name = 'waarm64-test-handover';
     const [a, b] = [spawn(), spawn()];
     const opened = await ask(a, { type: 'open', name });
     // At once: it waits for `a`, so it answers only after `a` was asked to close (the lock goes inside close()).
@@ -339,7 +339,7 @@ test("the overlay's hand-over: a second opener waits for the holder to close it,
     // difference fell under the 300 ms it held the overlay; CI, 2026-10-22.)
     return { opened: opened.type, second: second.type, waited: !early, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
   });
-  assert.deepEqual(r, { opened: 'opened', second: 'opened', waited: true, terminated: [], busy: 'Error: overlay webpc-test-handover is in use: another machine held it for 0.3 s' });
+  assert.deepEqual(r, { opened: 'opened', second: 'opened', waited: true, terminated: [], busy: 'Error: overlay waarm64-test-handover is in use: another machine held it for 0.3 s' });
   await page.close();
 });
 
@@ -347,25 +347,25 @@ test('input events from the page reach the guest (keyboard LED to the page, keys
   const r = await bootPage('devices&realtime&script=/test-input.sh', 10);
   assert.equal(r.error, undefined);
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-  for (const want of ['N: Name="webpc keyboard"\n', 'B: EV=120003\n', 'B: LED=7\n', 'N: Name="webpc tablet"\n', 'B: EV=f\n', 'B: REL=1940\n', 'B: ABS=3\n',
-    'input3: 1 30 1\n', 'input3: 1 30 0\n', 'input4: 3 0 16384\n', 'input4: 3 1 8192\n', 'input4: 1 272 1\n', 'input4: 1 272 0\n', 'webpc: test ok\n']) {
+  for (const want of ['N: Name="waarm64 keyboard"\n', 'B: EV=120003\n', 'B: LED=7\n', 'N: Name="waarm64 tablet"\n', 'B: EV=f\n', 'B: REL=1940\n', 'B: ABS=3\n',
+    'input3: 1 30 1\n', 'input3: 1 30 0\n', 'input4: 3 0 16384\n', 'input4: 3 1 8192\n', 'input4: 1 272 1\n', 'input4: 1 272 0\n', 'waarm64: test ok\n']) {
     assert.ok(r.console.includes(want), `missing ${JSON.stringify(want)}`);
   }
 });
 
 // The distros, under the JIT only (interpreted they take minutes: Alpine's
 // interpreter run is native, core/tests/distros.rs). Opt-in with
-// WEBPC_DISTROS=alpine (scripts/ci.sh sets it when the image is current). Debian boots through UEFI on the page (tests/page-debian.test.ts), not here.
-const alpine = (process.env.WEBPC_DISTROS ?? '').split(',').includes('alpine');
+// WAARM64_DISTROS=alpine (scripts/ci.sh sets it when the image is current). Debian boots through UEFI on the page (tests/page-debian.test.ts), not here.
+const alpine = (process.env.WAARM64_DISTROS ?? '').split(',').includes('alpine');
 {
   const img = new URL('../target/images/alpine/Image', import.meta.url);
-  const skip = !alpine ? 'SKIPPED: set WEBPC_DISTROS=alpine' : !existsSync(img) && 'SKIPPED: run images/build.sh alpine';
+  const skip = !alpine ? 'SKIPPED: set WAARM64_DISTROS=alpine' : !existsSync(img) && 'SKIPPED: run images/build.sh alpine';
   test('alpine boots from virtio-blk in a worker, deterministic mode, JIT', { skip }, async () => {
     const r = await bootPage('distro=alpine&jit=1', 10);
     assert.equal(r.error, undefined);
     console.log(`# chromium alpine boot (JIT): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    assert.match(r.console, /webpc: alpine 3\.24\.2 6\.18\.52-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/);
+    assert.match(r.console, /waarm64: alpine 3\.24\.2 6\.18\.52-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*waarm64: 9p hello from the host\n[^]*waarm64: drm 640x480\nwaarm64: test ok\n/);
     assert.equal(r.steps, STEPS.alpine);
   });
 
@@ -375,7 +375,7 @@ const alpine = (process.env.WEBPC_DISTROS ?? '').split(',').includes('alpine');
       assert.equal(r.error, undefined, `run ${i}`);
       console.log(`# chromium alpine parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
       assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-      assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\n/);
+      assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok\n/);
     }
   });
 }
@@ -432,8 +432,8 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
     return at(0, 0) === '255,255,255,255' && at(10, 100) === '255,0,0,255' && at(5, 5) === '0,0,0,255';
   }, null, { timeout: 5_000, polling: 100 });
   await page.locator('.xterm').click();
-  await page.keyboard.type('echo webpc-$((6*7)); echo re""ady; dd bs=24 count=1 </dev/input/event0 2>/dev/null | od -An -j16 -N4 -tu2\n');
-  await shows(/webpc-42.*ready/);
+  await page.keyboard.type('echo waarm64-$((6*7)); echo re""ady; dd bs=24 count=1 </dev/input/event0 2>/dev/null | od -An -j16 -N4 -tu2\n');
+  await shows(/waarm64-42.*ready/);
   await page.waitForTimeout(300); // dd opens the device
   await page.locator('#screen').click();
   await page.keyboard.press('KeyA');
@@ -501,7 +501,7 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
   await page.locator('#restart').click();
   await state('running');
-  assert.doesNotMatch(await terminal(), /webpc-42/); // a new machine, a cleared terminal
+  assert.doesNotMatch(await terminal(), /waarm64-42/); // a new machine, a cleared terminal
   // Restart while running (after a confirmation): the old machine releases its disk overlay for the new one.
   await answerAsks(page);
   await page.locator('#restart').click();
@@ -588,7 +588,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   await page.close();
   // The core, then an image: 404s from the machine worker's fetches; Retry once they're back.
   for (const [pattern, want, why] of [
-    ['**/webpc_core.wasm', words('machine:worker-fetch.noCore', {}, { start: true }), words('machine:worker-fetch.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/webpc_core.wasm', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
+    ['**/waarm64_core.wasm', words('machine:worker-fetch.noCore', {}, { start: true }), words('machine:worker-fetch.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/waarm64_core.wasm', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
     ['**/buildroot/rootfs.ext4', words('machine:worker-fetch.noImage', { machine: t('machines:machine.buildroot') }, { start: true }), words('machine:worker-fetch.noImage.cause', { path: 'target/images/buildroot/rootfs.ext4', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
   ] as const) {
     page = await open((p) => p.route(pattern, (r) => r.fulfill({ status: 404 })));
@@ -611,28 +611,28 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   await page.locator('#message-actions button').click();
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
   // Running, it keeps a mark of itself and what it costs (web/app/memory.ts); a clean stop clears it.
-  const mark = () => page.evaluate(() => JSON.parse(localStorage.getItem('webpc.alive.transient-buildroot') ?? 'null'));
-  await page.waitForFunction(() => !!localStorage.getItem('webpc.alive.transient-buildroot'), null, { timeout: 30_000 });
+  const mark = () => page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.alive.transient-buildroot') ?? 'null'));
+  await page.waitForFunction(() => !!localStorage.getItem('waarm64.alive.transient-buildroot'), null, { timeout: 30_000 });
   const m = await mark();
   assert.equal(m.ramMiB, 256);
   assert.ok(m.gib > 1 && m.gib < 3, `the estimate ${m.gib} GiB`);
   await page.close();
   // A machine whose tab went away while it ran (a mark no tab renews): the page says so and offers less first.
-  page = await open((p) => p.addInitScript(() => localStorage.setItem('webpc.alive.transient-buildroot', JSON.stringify({ name: 'Buildroot', ramMiB: 1024, ncpus: 1, jitMiB: 320, gib: 2.9, peakGiB: 3.1, t: Date.now() - 600_000 }))));
+  page = await open((p) => p.addInitScript(() => localStorage.setItem('waarm64.alive.transient-buildroot', JSON.stringify({ name: 'Buildroot', ramMiB: 1024, ncpus: 1, jitMiB: 320, gib: 2.9, peakGiB: 3.1, t: Date.now() - 600_000 }))));
   r = await settled(page);
   assert.equal(r.state, 'idle');
   assert.match(r.text!, words('machine:memory-signal.crashed', { name: 'Buildroot', gib: 2.9, peak: 3.1, ram: 1024, jit: 320 }, { start: true }));
   assert.deepEqual(r.actions, [t('machine:memory-signal.crashed.jit', { mib: 160 }), t('machine:memory-signal.crashed.ram', { mib: 512 }), t('machine:memory-signal.crashed.asIs')]);
   await page.locator('#message-actions button', { hasText: t('machine:memory-signal.crashed.jit', { mib: 160 }) }).click();
   assert.equal((await settled(page, 30_000, 'idle')).state, 'running');
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').jitMiB), 160);
-  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('webpc.settings') ?? '{}'); delete s.jitMiB; localStorage.setItem('webpc.settings', JSON.stringify(s)); });
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}').jitMiB), 160);
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}'); delete s.jitMiB; localStorage.setItem('waarm64.settings', JSON.stringify(s)); });
   await page.close();
   // A saved disk written over another image: the way out is a reset.
   const prep = await ctx.newPage();
   await prep.goto(`${base}/tests/browser/core.html`); // any page of the origin
   await prep.evaluate(async () => {
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-buildroot', { create: true });
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('waarm64-buildroot', { create: true });
     const w = await (await dir.getFileHandle('base', { create: true })).createWritable();
     await w.write('{"path":"/elsewhere.img","size":4096}');
     await w.close();
@@ -673,7 +673,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.match(copied, /Booting Linux on physical CPU[^]*Kernel panic - not syncing: Requested init/);
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByText(t('machine:serial-terminal.saveLog')).click()]);
-  assert.match(download.suggestedFilename(), /^webpc-buildroot-serial-.*\.log$/);
+  assert.match(download.suggestedFilename(), /^waarm64-buildroot-serial-.*\.log$/);
   assert.equal((await readFile((await download.path())!)).toString(), copied);
   await page.getByText(t('machine:serial-terminal.showLog')).click();
   assert.equal(await page.evaluate(() => document.body.dataset.view), 'both');
@@ -686,7 +686,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   assert.equal((await settled(page)).state, 'running');
   // The disk: a file written (the root remounted read-write for it), kept over a restart.
   await page.locator('.xterm').click();
-  await page.keyboard.type('mount -o remount,rw / && echo webpc-mark >/mark && mount -o remount,ro / && echo wr""itten\n');
+  await page.keyboard.type('mount -o remount,rw / && echo waarm64-mark >/mark && mount -o remount,ro / && echo wr""itten\n');
   await shows(page, /written/);
   const second = await ctx.newPage(); // another tab: the disk is the first one's
   await second.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
@@ -702,7 +702,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   assert.equal((await settled(page)).state, 'running');
   await page.locator('.xterm').click();
   await page.keyboard.type('echo "[$(cat /mark)]"\n');
-  await shows(page, /\[webpc-mark\]/);
+  await shows(page, /\[waarm64-mark\]/);
   // Reset (the Machines page, this page's machine's Disks tab): a confirmation (with what the overlay holds), a stop, the
   // overlay deleted, a boot from the image.
   await page.locator('#machines-open').click();

@@ -25,7 +25,7 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  dir = mkdtempSync(join(tmpdir(), 'webpc-usb-page-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-usb-page-'));
 });
 /** Every profile opened, closed at the end even when a test fails (a context left open keeps the process alive). */
 const contexts: BrowserContext[] = [];
@@ -170,7 +170,7 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   const b = await profile();
   const asked: Question[] = [];
   const { page: pb, errors: errorsB } = await open(b, asked);
-  const file = join(dir, 'Bench.webpc-machine.json');
+  const file = join(dir, 'Bench.waarm64-machine.json');
   writeFileSync(file, def);
   await pb.setInputFiles('.machines [data-field=import-definition]', file);
   await pb.locator('.machines [data-selected] [data-tab=usb]').click();

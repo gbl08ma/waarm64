@@ -5,7 +5,7 @@
    INF MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
    INF MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
 +  INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
-+  INF ArmVirtPkg/WebpcXhciDxe/WebpcXhciDxe.inf
++  INF ArmVirtPkg/Waarm64XhciDxe/Waarm64XhciDxe.inf
  
    #
    # Hash2 Protocol producer
@@ -15,10 +15,10 @@
    !include OvmfPkg/Include/Dsc/UsbComponents.dsc.inc
  
    #
-+  # webpc: the DT's generic-xhci controller, as a non-discoverable PCI device for XhciDxe
++  # waarm64: the DT's generic-xhci controller, as a non-discoverable PCI device for XhciDxe
 +  #
 +  MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
-+  ArmVirtPkg/WebpcXhciDxe/WebpcXhciDxe.inf {
++  ArmVirtPkg/Waarm64XhciDxe/Waarm64XhciDxe.inf {
 +    <LibraryClasses>
 +      NonDiscoverableDeviceRegistrationLib|MdeModulePkg/Library/NonDiscoverableDeviceRegistrationLib/NonDiscoverableDeviceRegistrationLib.inf
 +  }

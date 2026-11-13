@@ -40,7 +40,7 @@ async function bootOnce(file: string, n: number) {
   if (process.env.PING) await page.evaluate(() => {
     const w = window as unknown as { __pings: number[] };
     w.__pings = [];
-    const ch = new BroadcastChannel('webpc-iostats');
+    const ch = new BroadcastChannel('waarm64-iostats');
     let t = 0, ready = false; // asked again until the device worker first answers (it opens its channel as it starts)
     ch.onmessage = () => { if (t && ready) w.__pings.push(performance.now() - t); t = 0; ready = true; };
     setInterval(() => { if (!t || !ready) { t = performance.now(); ch.postMessage('ask'); } }, 250);
@@ -148,7 +148,7 @@ try {
       await page.goto(new URL('/tests/browser/core.html', s.url).href);
       if (!process.env.KEEP_OVERLAY) await page.evaluate(async () => {
         const root = await navigator.storage.getDirectory();
-        for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) if (name.startsWith('webpc-disk-')) await root.removeEntry(name, { recursive: true });
+        for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) if (name.startsWith('waarm64-disk-')) await root.removeEntry(name, { recursive: true });
       });
       await page.goto(s.url);
     }

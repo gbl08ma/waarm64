@@ -6,7 +6,7 @@
 // CPU features) match: a core that differs only in its JIT or its build loads it; one with another state layout is
 // refused. `sidecar` keeps what made the file beside it (<file>.json): the core's SHA-256, the commit, the scene.
 // Playwright saves a download in the browser's downloadsPath first (a temporary directory under /tmp, which is RAM on
-// the dev VM): the tools that save one launch with `downloadsPath: process.env.WEBPC_DOWNLOADS`, a directory on a disk.
+// the dev VM): the tools that save one launch with `downloadsPath: process.env.WAARM64_DOWNLOADS`, a directory on a disk.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { openAsBlob, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -14,19 +14,19 @@ import type { Page } from 'playwright-core';
 import { openSnapshot } from '../web/snapshot-file.ts';
 
 /** The core the page loads (bench/snapshot-start.ts `routeCore` can serve another). */
-export const CORE_PATH = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).pathname;
+export const CORE_PATH = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url).pathname;
 
 /** A file's SHA-256, hex, first 16 digits (enough to tell builds apart). */
 export const sha = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 16);
 
 /**
- * Serves `core` as the page's core (the machine worker's fetch of webpc_core.wasm) instead of target/'s, so arms
+ * Serves `core` as the page's core (the machine worker's fetch of waarm64_core.wasm) instead of target/'s, so arms
  * needn't copy builds over target/ (which leaves the last one copied there, newer than the sources). Returns a
  * counter of the requests served: 0 after `running` means the page never asked (it read target/'s).
  */
 export async function routeCore(page: Page, core: string) {
   const served = { n: 0, sha: sha(core) };
-  await page.context().route('**/webpc_core.wasm', (r) => { served.n++; return r.fulfill({ path: core, contentType: 'application/wasm' }); });
+  await page.context().route('**/waarm64_core.wasm', (r) => { served.n++; return r.fulfill({ path: core, contentType: 'application/wasm' }); });
   return served;
 }
 

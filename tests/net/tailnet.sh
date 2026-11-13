@@ -10,7 +10,7 @@
 #   tests/net/tailnet.sh key     print a new reusable, ephemeral auth key (`key lasting`: not ephemeral)
 #   tests/net/tailnet.sh nodes   headscale's nodes, JSON
 #   tests/net/tailnet.sh peer …  the peer's `tailscale …`
-#   tests/net/tailnet.sh routes [p,…]  approve the peer's subnet routes (WEBPC_TS_SUBNET's /32) besides its exit node's
+#   tests/net/tailnet.sh routes [p,…]  approve the peer's subnet routes (WAARM64_TS_SUBNET's /32) besides its exit node's
 #   tests/net/tailnet.sh register <id>   completes an interactive login (the login URL's last part), as user tailnet
 #   tests/net/tailnet.sh down    remove the containers and the state
 # The state lives in $TAILNET_DIR (default target/net/tailnet). The tailnet's
@@ -26,9 +26,9 @@ PORT=${TAILNET_PORT:-8443} # what clients use (TLS, the proxy)
 INNER=${TAILNET_INNER_PORT:-18080} # headscale's own, plain HTTP
 V4=${HEADSCALE_V4:-100.90.0.0/16}
 DOMAIN=${HEADSCALE_DOMAIN:-tail.test} # MagicDNS's domain
-HS=webpc-headscale
-PEER=webpc-peer
-PROXY=webpc-proxy
+HS=waarm64-headscale
+PEER=waarm64-peer
+PROXY=waarm64-proxy
 
 hs() { podman exec "$HS" headscale "$@"; }
 peerts() { podman exec "$PEER" tailscale --socket=/tmp/ts.sock "$@"; }
@@ -49,11 +49,11 @@ approve() {
 }
 
 env_() {
-	echo "WEBPC_TS_CONTROL=https://127.0.0.1:$PORT"
-	echo "WEBPC_TS_PEER_IP=$(peerts ip -4)"
-	echo "WEBPC_TS_PEER_IP6=$(peerts ip -6)"
-	echo "WEBPC_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
-	echo "WEBPC_TS_SUBNET=$LAN"
+	echo "WAARM64_TS_CONTROL=https://127.0.0.1:$PORT"
+	echo "WAARM64_TS_PEER_IP=$(peerts ip -4)"
+	echo "WAARM64_TS_PEER_IP6=$(peerts ip -6)"
+	echo "WAARM64_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
+	echo "WAARM64_TS_SUBNET=$LAN"
 	echo "NODE_EXTRA_CA_CERTS=$DIR/tls/ca.pem"
 }
 
@@ -62,7 +62,7 @@ up)
 	"$0" down >/dev/null 2>&1 || true
 	mkdir -p "$DIR/config/tls" "$DIR/lib"
 	cd "$DIR/config/tls"
-	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout ca.key -out ca.pem -subj "/CN=webpc test CA" -days 30 2>/dev/null
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout ca.key -out ca.pem -subj "/CN=waarm64 test CA" -days 30 2>/dev/null
 	openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout srv.key -out srv.csr -subj "/CN=127.0.0.1" 2>/dev/null
 	printf 'subjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\n' > ext
 	openssl x509 -req -in srv.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out srv.pem -days 30 -extfile ext 2>/dev/null

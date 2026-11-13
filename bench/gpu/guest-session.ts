@@ -14,9 +14,9 @@ import { answerAsks } from '../../tests/page-ask.ts';
 import { loadSnapshotFile, routeCore, sessionTag } from '../snapshot-start.ts';
 import { rendererPid, smapsClasses, uasm } from '../mem/probe.ts';
 
-const SETTINGS_KEY = 'webpc.settings';
+const SETTINGS_KEY = 'waarm64.settings';
 /** The guest's desktop user: images/arch/desktop.sh's `arch` (password the same); `alarm` for an Arch Linux ARM disk. */
-export const GUEST_USER = process.env.WEBPC_GUEST_USER ?? 'arch';
+export const GUEST_USER = process.env.WAARM64_GUEST_USER ?? 'arch';
 
 export type SessionOptions = {
   /** The page's `?gpu=` (`virgl`, `virgl-null`, `2d`, with `,capture`). */
@@ -41,7 +41,7 @@ export type SessionOptions = {
   noWait?: boolean;
   /** The disk's URL, any server's (`?disk=`, a machine that isn't stored; bench/remote-disk): `image` is then unused. */
   diskUrl?: string;
-  /** A tailcat exit node's address (tests/net/tailcat.sh's WEBPC_TAILCAT_ADDR): the machine's adapter connected to it
+  /** A tailcat exit node's address (tests/net/tailcat.sh's WAARM64_TAILCAT_ADDR): the machine's adapter connected to it
    * once it runs (the Network wizard, an ephemeral connection), so the guest reaches the internet. Benchmarks only. */
   tailcat?: string;
 };
@@ -68,13 +68,13 @@ const LOAD_SH = String.raw`snap() { grep -H '' /proc/[0-9]*/stat /proc/[0-9]*/ta
 k=="R"{print "R", p[5], $1, $2, $3; next}
 {c=$0; sub(/^[0-9]+ \(/,"",c); n=c; sub(/\) [^)]*$/,"",n); sub(/^.*\) /,"",c); split(c,f," "); gsub(/ /,"_",n); print k, k=="T"?p[5]:p[3], p[3], n, f[12], f[13]}'; }
 K=/sys/kernel/tracing
-[ "$3" = sys ] && { echo 'p:webpc/sc do_el0_svc nr=+64(%x0):u32' >> $K/kprobe_events; echo 16384 > $K/buffer_size_kb; echo > $K/trace; }
+[ "$3" = sys ] && { echo 'p:waarm64/sc do_el0_svc nr=+64(%x0):u32' >> $K/kprobe_events; echo 16384 > $K/buffer_size_kb; echo > $K/trace; }
 snap > /tmp/pa; cat /proc/stat > /tmp/a
-[ "$3" = sys ] && echo 1 > $K/events/webpc/sc/enable
+[ "$3" = sys ] && echo 1 > $K/events/waarm64/sc/enable
 sleep $1
-[ "$3" = sys ] && echo 0 > $K/events/webpc/sc/enable
+[ "$3" = sys ] && echo 0 > $K/events/waarm64/sc/enable
 cat /proc/stat > /tmp/b; snap > /tmp/pb
-[ "$3" = sys ] && { cat $K/per_cpu/cpu*/stats | awk '/^overrun/{o+=$2} END{print "O", o}' > /tmp/sc.out; awk '/ sc: /{t=$0; sub(/ +\[[0-9]+\].*/,"",t); sub(/^.*-/,"",t); n=$NF; sub(/^nr=/,"",n); print t, n}' $K/trace >> /tmp/sc.out; echo 1408 > $K/buffer_size_kb; echo '-:webpc/sc' >> $K/kprobe_events; }
+[ "$3" = sys ] && { cat $K/per_cpu/cpu*/stats | awk '/^overrun/{o+=$2} END{print "O", o}' > /tmp/sc.out; awk '/ sc: /{t=$0; sub(/ +\[[0-9]+\].*/,"",t); sub(/^.*-/,"",t); n=$NF; sub(/^nr=/,"",n); print t, n}' $K/trace >> /tmp/sc.out; echo 1408 > $K/buffer_size_kb; echo '-:waarm64/sc' >> $K/kprobe_events; }
 awk -v s=$1 '
 NR==FNR{ if($1=="R"){r0[$2]=$3; w0[$2]=$4; n0[$2]=$5} else {u0[$1,$2]=$5; k0[$1,$2]=$6}; next }
 $1=="P"{ if(($1,$2) in u0){pn[$2]=$4; pu[$2]=($5-u0["P",$2])*10/s; ps[$2]=($6-k0["P",$2])*10/s}; next }
@@ -97,20 +97,20 @@ echo $2-done
 `;
 
 export async function openSession(o: SessionOptions) {
-  // A kept profile (WEBPC_PROFILE, below) keeps its storage only for the same origin: a fixed port then (WEBPC_PORT).
-  const server = await startServer(process.env.WEBPC_PROFILE ? Number(process.env.WEBPC_PORT ?? 8197) : 0);
+  // A kept profile (WAARM64_PROFILE, below) keeps its storage only for the same origin: a fixed port then (WAARM64_PORT).
+  const server = await startServer(process.env.WAARM64_PROFILE ? Number(process.env.WAARM64_PORT ?? 8197) : 0);
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   // HEADED=1: a visible window (only on the Mac host, where the user allows it: never on the dev VM).
   // CHROMIUM_ARGS: extra flags (e.g. `--mute-audio` on the Mac host: its sound still renders and keeps time, unheard).
   // CHROMIUM_JS_FLAGS: V8's flags, spaces and all (`--js-flags`; e.g. `--perf-basic-prof --perf-basic-prof-path=<dir>`).
   // A 3D machine decodes its guest's video with WebCodecs: SME hidden where the CPU needs it (tools/nosme.ts).
-  const launch = { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, downloadsPath: process.env.WEBPC_DOWNLOADS, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() };
+  const launch = { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, downloadsPath: process.env.WAARM64_DOWNLOADS, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() };
   const contextOptions = { viewport: { width: 1400, height: 1300 }, ignoreHTTPSErrors: !!o.tailcat }; // the tailcat rig's relay has a self-signed certificate
   let browser: Browser, page: Page;
-  if (process.env.WEBPC_PROFILE) {
-    // WEBPC_PROFILE=<dir>: a profile kept across sessions (its storage, Chromium's GPU caches), as a user's browser
+  if (process.env.WAARM64_PROFILE) {
+    // WAARM64_PROFILE=<dir>: a profile kept across sessions (its storage, Chromium's GPU caches), as a user's browser
     // keeps them (VK3 L3's warm runs); the browser is the persistent context's.
-    const ctx = await chromium.launchPersistentContext(process.env.WEBPC_PROFILE, { ...launch, ...contextOptions });
+    const ctx = await chromium.launchPersistentContext(process.env.WAARM64_PROFILE, { ...launch, ...contextOptions });
     page = ctx.pages()[0] ?? await ctx.newPage();
     const ua = await page.evaluate(() => navigator.userAgent);
     browser = { version: () => ua.match(/Chrome\/([\d.]+)/)?.[1] ?? ua, close: () => ctx.close(), newPage: () => ctx.newPage() } as unknown as Browser;
@@ -126,12 +126,12 @@ export async function openSession(o: SessionOptions) {
   const warnings = new Map<string, number>();
   /** `?gpu=virgl,debug`'s trace (web/gpu-worker.ts). */
   const debugLines: string[] = [];
-  /** The host's slow events (`webpc-slow` lines: web/vm.ts's installs), with their epoch-ms times. */
+  /** The host's slow events (`waarm64-slow` lines: web/vm.ts's installs), with their epoch-ms times. */
   const slow: string[] = [];
   page.on('console', (m) => {
     const t = m.text();
     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
-    if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
+    if (t.startsWith('waarm64-slow ')) return void slow.push(t.slice(11));
     if (t.startsWith('virgl') || t.startsWith('venus')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
     if (m.type() === 'error' || t.startsWith('venus')) console.log(`[page ${m.type()}] ${t.slice(0, 400)}`);
     // CONSOLE_FILE=<path>: the renderers' lines whole (a shader that didn't compile comes with its code).
@@ -390,11 +390,11 @@ export async function openSession(o: SessionOptions) {
    * guest against /proc/kallsyms (the image has no System.map), by function: the top `top`, with the kernel's and
    * user space's shares.
    */
-  type Hooks = { __webpcProfile?: (on: boolean) => void; __profile?: [string, number][] };
+  type Hooks = { __waarm64Profile?: (on: boolean) => void; __profile?: [string, number][] };
   const sampler = {
-    start: async () => { await page.evaluate(() => { const w = window as unknown as Hooks; delete w.__profile; w.__webpcProfile!(true); }); },
+    start: async () => { await page.evaluate(() => { const w = window as unknown as Hooks; delete w.__profile; w.__waarm64Profile!(true); }); },
     stop: async () => {
-      await page.evaluate(() => (window as unknown as Hooks).__webpcProfile!(false));
+      await page.evaluate(() => (window as unknown as Hooks).__waarm64Profile!(false));
       await page.waitForFunction(() => (window as unknown as Hooks).__profile, null, { timeout: 30_000 });
     },
   };
@@ -402,11 +402,11 @@ export async function openSession(o: SessionOptions) {
    * The vCPU timeline (web/profiler.ts `startTimeline`: every vCPU's counters and liveness every 10 ms) as `load`'s
    * `during`; `timelineSummary(label)` then saves its rows as <out>/<label>.timeline.json and returns `summarizeTimeline`'s.
    */
-  type TimelineHooks = { __webpcTimeline?: (on: boolean) => void; __timeline?: Timeline };
+  type TimelineHooks = { __waarm64Timeline?: (on: boolean) => void; __timeline?: Timeline };
   const timeline = {
-    start: async () => { await page.evaluate(() => { const w = window as unknown as TimelineHooks; delete w.__timeline; w.__webpcTimeline!(true); }); },
+    start: async () => { await page.evaluate(() => { const w = window as unknown as TimelineHooks; delete w.__timeline; w.__waarm64Timeline!(true); }); },
     stop: async () => {
-      await page.evaluate(() => (window as unknown as TimelineHooks).__webpcTimeline!(false));
+      await page.evaluate(() => (window as unknown as TimelineHooks).__waarm64Timeline!(false));
       await page.waitForFunction(() => (window as unknown as TimelineHooks).__timeline, null, { timeout: 30_000 });
     },
   };

@@ -1,4 +1,4 @@
-//! webpc core: AArch64 CPU, MMU, JIT and platform devices.
+//! waarm64 core: AArch64 CPU, MMU, JIT and platform devices.
 //!
 //! The crate builds natively (for tests) and for wasm32 with shared imported
 //! memory and atomics.

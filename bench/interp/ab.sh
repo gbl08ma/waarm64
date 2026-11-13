@@ -16,4 +16,4 @@ for ((i = 1; i <= rounds; i++)); do
   done
 done
 first=${arms[0]}
-cp "${first#*=}" target/wasm32-unknown-unknown/release/webpc_core.wasm
+cp "${first#*=}" target/wasm32-unknown-unknown/release/waarm64_core.wasm

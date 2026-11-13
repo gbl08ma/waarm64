@@ -2,7 +2,7 @@
 // (`?split=2560,1024,512`): memory 0, then two spill memories, CPU-less NUMA nodes. The Machine menu's note for a size
 // past memory 0 first; then one boot: the guest sees three nodes at the distances the DT gives, NUMA balancing is off through the SMBIOS credential, a tmpfs bound to node 1 keeps its data, and
 // direct disk reads into node 1 and writes out of it are intact (the virtio records name the spill memory). Opt-in with
-// WEBPC_DISTROS=debian (scripts/ci-debian.sh).
+// WAARM64_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,10 +17,10 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 
 let browser: Browser;
 let base: string;
@@ -100,10 +100,10 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
   // A snapshot (the spill memories' RAM after memory 0's), loaded in a fresh profile: the shell's variable and node 1's
   // tmpfs are as they were.
   await run(page, 'export MARK=kept-$((6*7)); echo "R6 $MARK."', /R6\skept-42\./);
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-spill-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-spill-'));
   try {
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 300_000 }), page.locator('#save-snapshot').click()]);
-    const file = join(dir, 'spill.webpcsnap');
+    const file = join(dir, 'spill.waarm64snap');
     await download.saveAs(file);
     await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 120_000 });
     assert.deepEqual(errors, []);

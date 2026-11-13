@@ -35,7 +35,7 @@ runtime, `spirv_to_nir` and NIR's passes under virglrenderer's Venus decoder), c
 |---|---|---|
 | Machine | Lima `dev`, 8 vCPUs on the M4 mini | the same M4 mini (10 cores), macOS 26.6.2 |
 | Chromium | 153.0.8010.52 (zypper), SwiftShader WebGPU | 153.0.8010.12 (Playwright's Chrome for Testing, headless), Metal |
-| Native Vulkan | lavapipe (Mesa 26.2.3) | KosmicKrisp and MoltenVK 1.4.2 from LunarG's SDK 1.4.363.0, unpacked into `~/webpc-gpu-bench` (nothing installed) |
+| Native Vulkan | lavapipe (Mesa 26.2.3) | KosmicKrisp and MoltenVK 1.4.2 from LunarG's SDK 1.4.363.0, unpacked into `~/waarm64-gpu-bench` (nothing installed) |
 | Guest (arm 4) | — | Arch Linux aarch64 (Mesa 26.2.5, lavapipe), 4 vCPUs, 4 GiB, on the page's 3D machine |
 
 Frames are drawn offscreen at 1920×1080 (no swapchain, no present) with two in flight, so every arm measures the same
@@ -118,7 +118,7 @@ field encoder writes) caps one vCPU at ~11–12k simple draws a frame at 60 fram
 Khronos's Profiles layer (`profiles/`: `make.ts` writes the profiles from the committed WebGPU adapter lists,
 `run.sh` runs a program through them; a patched layer, `build-layer.sh`, also reports a GPU's type and identity,
 since lavapipe's CPU type alone turns GTK4, libplacebo, Dawn and wlroots away) restricts lavapipe in the dev VM to the
-Vulkan 1.3 a WebGPU adapter backs directly (plan §4's direct and adapter rows; `VP_WEBPC_webgpu_mac`,
+Vulkan 1.3 a WebGPU adapter backs directly (plan §4's direct and adapter rows; `VP_WAARM64_webgpu_mac`,
 `_swiftshader`), plus a row a profile for each emulation.
 
 | Program | on the direct profile (Mac and SwiftShader alike) | what decided it, and what brings it |
@@ -605,7 +605,7 @@ submit), `indirect-first-instance`, NaN clear values, and bind groups cached by 
 ## VK2 L6: the gate — mpv on Vulkan
 
 **2026-10-26.** mpv with `--vo=gpu-next --gpu-api=vulkan --hwdec=vaapi` on the desktop guest (Arch Linux, mpv with
-libplacebo 7.360, Mesa 26.2.5, webpc-va 3; sway 1.12 on GLES), Sintel's H.264 trailer (854×480, 24 frames/s) from the
+libplacebo 7.360, Mesa 26.2.5, waarm64-va 3; sway 1.12 on GLES), Sintel's H.264 trailer (854×480, 24 frames/s) from the
 media disk, 4 vCPUs, the screen at 1376×762, the video fullscreen. VA-API's surfaces reach libplacebo as dma-bufs
 imported into Venus (vk/README.md "Imports"). Against mpv on virgl's GL in the same boot (`--vo=gpu --gpu-api=opengl`:
 gpu-next needs GL 3, and virgl's EGL gives mpv GLES 2 here; the video track's runs were `vo=gpu` too), alternated
@@ -789,7 +789,7 @@ joined. On one machine of 1,536 MiB (CI's), two alternated rounds:
 At 4 the slowest block sets the time and two different `synchronization2.timeline_semaphore.device_host` cases hung
 past their watchdog (`write_copy_image_read_copy_image.image_128x128_r32g32b32a32_sfloat`,
 `write_blit_image_read_image_compute.image_64x64x8_r32_sfloat`): host waits on a timeline across contexts, VK4-KICKOFF.md
-T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` otherwise), for the sample and `--full`:
+T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WAARM64_DEQP_VK_JOBS` otherwise), for the sample and `--full`:
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
@@ -2262,7 +2262,7 @@ Chrome for Testing 157.0.8103.38) and the user's NVIDIA desktop (RTX 3070, drive
 **The method** (bench/vulkan/t23.ts). The driver and the worker count each emulated path's work (vk/README.md "What
 the emulated paths do"; the render stats' `venusEmul`), and `?gpu=vkskip=<path>` leaves out the work of those that
 can be left out without a command WebGPU refuses (the copies between view formats, to and from words, a feedback
-loop's; the worker's blits and resolves), switched in the run (`window.__webpcVkSkip`): one Godot, settled after its
+loop's; the worker's blits and resolves), switched in the run (`window.__waarm64VkSkip`): one Godot, settled after its
 first frame, arms alternated, 12 s each, medians of the rounds (2 on the M4, 3 on NVIDIA). Shadows, pulled vertices
 and keyed variants have no skip (WebGPU would refuse their draws): their counts say what they do. `done` is a submit's
 time from `queue.submit` to WebGPU's done: its GPU work.
@@ -2779,7 +2779,7 @@ view of every such image is gone. Next, by promise: blends with both constants (
 
 **2026-10-31.** JSON in `results/vk4/t11/`. `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52; `m4/`
 and `mpv-m4/` on the M4 (Metal, Chrome for Testing 153.0.8010.12). `image.*` isn't in `vk-main.txt`: case names from the mustpass
-files in the `webpc-deqp-vk` image. How it works: vk/README.md "Storage images as words".
+files in the `waarm64-deqp-vk` image. How it works: vk/README.md "Storage images as words".
 
 **No dEQP-VK case had the cause.** T1 counted none, and rightly: every 8th of the `image.*` groups that store (1,350 cases, `before/`) gave
 194 passes, 1,156 not supported and no failure. `load_store` loads one image and stores another, so no case asks for one image both ways
@@ -2864,7 +2864,7 @@ The list 18,943 -> 21,198.
 
 **2026-10-31.** JSON in `results/vk4/t7/`: `bench/gpu/deqp-run.ts vk`, SwiftShader on the dev VM, Chromium 153.0.8010.52;
 `list-new-m4` on the M4 (Metal, Chrome for Testing 153.0.8010.12). These groups aren't in `vk-main.txt`: their case names come from
-the mustpass files in the `webpc-deqp-vk` image.
+the mustpass files in the `waarm64-deqp-vk` image.
 
 | run | cases | pass | fail | not supported |
 |---|---|---|---|---|
@@ -3390,7 +3390,7 @@ done ~2 ms later on NVIDIA than at 4fdc69fb (docs/backlog.md "Venus's submits ~2
   0.74 MiB with brotli (VK2's: 11.9, 1.18, 0.69).
 
 **The final NVIDIA run** (VK3-HANDOVER.md "What the next NVIDIA run must answer", in git history): `bench/vulkan/nvidia.sh page
-<bundle> ~/webpc-vk2`, the bundle built by `bench/vulkan/nvidia-bundle.sh` at the track's last commit (now ~4.8 GB:
+<bundle> ~/waarm64-vk2`, the bundle built by `bench/vulkan/nvidia-bundle.sh` at the track's last commit (now ~4.8 GB:
 the dEQP-VK guest and vkd3d's disk joined it). Its steps: `present`, `replay`, `fence`, `scene`, `trace`,
 `pipelines` and `mpv` as in the run of 4fdc69fb, on L5–L7b's code; then, new in L8, `deqp` (both pass lists on the
 RTX 3070: dEQP-VK has never run on NVIDIA) and `rows` (ANGLE's ES3 probe and vkd3d's tests in the desktop guest);
@@ -3627,7 +3627,7 @@ by about one a frame (1.7 → 3.3 GB in 4 s at vkcube's 6.8 MB rgba16float frame
 the destroyed buffers aren't freed while the queue stays busy. Each resource now keeps its buffer (the GPU process
 steady at ~300 MB). VK2 didn't see it: its readback runs were short or small. And a Playwright screenshot of the page
 waits for a compositor frame that SwiftShader's busy GPU process may not give for minutes: `present.ts` reads the
-screen canvas as drawn instead (`window.__webpcGrab`).
+screen canvas as drawn instead (`window.__waarm64Grab`).
 
 **What Chromium does on the bitmap way** (read for the hypotheses the next run tests): `transferToImageBitmap` on a
 WebGPU canvas exports the swap buffer's shared image (`WebGPUSwapBufferProvider::ExportCurrentSharedImage`) as an
@@ -4513,7 +4513,7 @@ deqp-vk in the Arch guest, `bench/gpu/deqp-run.ts vk` with `CASES=`); the deskto
   offset (`nir_io_add_intrinsic_xfb_info` matches by location, before constant folding moved their slots there).
 - **The program** (`angle-es3.json`; `PAGE=bench/vulkan/angle/es3.html node bench/vulkan/dawn-frames.ts guest`): the
   guest's Chromium with `--use-angle=vulkan` now gives **WebGL 2.0 (OpenGL ES 3.0) on Venus** ("ANGLE (Google, Vulkan
-  1.3.296 (Virtio-GPU Venus (webpc WebGPU)))"; VK0 A had ES2 only). A flat varying from the last vertex, a transform
+  1.3.296 (Virtio-GPU Venus (waarm64 WebGPU)))"; VK0 A had ES2 only). A flat varying from the last vertex, a transform
   feedback capture of four points and 24 uniform blocks summed all match ANGLE on virgl's GL. With Chromium's own
   Vulkan device on too (`--enable-features=Vulkan`) it starts (no crash this time) and the first two match, the
   uniform blocks' sum doesn't (205 for 156: filed).

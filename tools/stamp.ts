@@ -1,4 +1,4 @@
-// What the page was built from, in its <meta name="webpc-build"> (vite.config.ts writes it into every load of the page,
+// What the page was built from, in its <meta name="waarm64-build"> (vite.config.ts writes it into every load of the page,
 // the dev server's and the build's), for its console: main.ts logs it at load. And the same, structured, for the
 // Machines page's About pane (tools/third-party.ts `aboutData`).
 import { execFileSync } from 'node:child_process';
@@ -31,9 +31,9 @@ export function buildInfo(root = ROOT): BuildInfo | undefined {
   }
 }
 
-/** The page with its build stamp (`buildStamp`) in a `<meta name="webpc-build">` after its charset. */
+/** The page with its build stamp (`buildStamp`) in a `<meta name="waarm64-build">` after its charset. */
 export const withStamp = (html: string, stamp: string | undefined) => {
   if (!stamp) return html;
   if (!html.includes('<meta charset="utf-8">')) throw new Error('web/app/index.html has no <meta charset="utf-8">: update withStamp');
-  return html.replace('<meta charset="utf-8">', `<meta charset="utf-8">\n<meta name="webpc-build" content="${stamp.replace(/[&"<>]/g, '')}">`);
+  return html.replace('<meta charset="utf-8">', `<meta charset="utf-8">\n<meta name="waarm64-build" content="${stamp.replace(/[&"<>]/g, '')}">`);
 };

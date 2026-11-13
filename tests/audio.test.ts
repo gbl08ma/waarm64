@@ -231,7 +231,7 @@ test('ring sink: a mono stream is written to both channels; FLOAT as it comes', 
 type Proc = new (o: unknown) => { process(i: Float32Array[][], o: Float32Array[][]): boolean };
 /** web/audio-worklet.ts's processor classes by name, under stubs of the AudioWorkletGlobalScope's names. */
 const processors = new Map<string, Proc>();
-async function processor(name = 'webpc-snd') {
+async function processor(name = 'waarm64-snd') {
   const g = globalThis as unknown as Record<string, unknown>;
   g.sampleRate = 48000;
   g.AudioWorkletProcessor ??= class {};
@@ -284,7 +284,7 @@ test("A/V sync's picture end (?avprobe): a flash is a draw that turns the screen
 });
 
 test('microphone worklet: writes its input into the ring while asked at its rate, mono to both channels; drops and counts what doesn\'t fit', async () => {
-  const Mic = await processor('webpc-mic');
+  const Mic = await processor('waarm64-mic');
   const ring = newRing();
   const { h, data } = ringViews(ring);
   const m = new Mic({ processorOptions: { ring } });

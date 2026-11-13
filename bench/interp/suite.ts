@@ -51,7 +51,7 @@ export const JIT_INTERP: JitConfig = [0xffff_ffff, 32, 16384, 0, 1000];
  * arguments), runs it through the JIT.
  */
 export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0, fma = new URLSearchParams((globalThis as { name?: string }).name).get('fma') !== 'emul') {
-  const wasm = await load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm');
+  const wasm = await load('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);
   const { instance } = await WebAssembly.instantiate(wasm, imports);
@@ -86,7 +86,7 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0, fma = n
 
 /** guest-vm.bin at EL1 in a whole VM, entered through vm-start.bin (at RAM + 2 MiB, as `bootVm` places a kernel). */
 export async function setupVm(mmu: boolean, jit: 0 | 1 | 2 | 4 = 0) {
-  const [wasm, start, guest] = await Promise.all([load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm'), load('vm-start.bin'), load('guest-vm.bin')]);
+  const [wasm, start, guest] = await Promise.all([load('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm'), load('vm-start.bin'), load('guest-vm.bin')]);
   const kernel = new Uint8Array(0x10000 + guest.length);
   kernel.set(start);
   kernel.set(guest, 0x10000);

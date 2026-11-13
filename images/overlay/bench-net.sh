@@ -7,5 +7,5 @@
 ip link set eth0 up
 ip addr add 10.0.2.15/24 dev eth0
 ping -c 1 10.0.2.2 > /dev/null # ARP
-echo "webpc: net big start"; ping -A -q -c 1000 -s 1472 10.0.2.2 | tail -2; echo "webpc: net big end"
-echo "webpc: net small start"; ping -A -q -c 1000 10.0.2.2 | tail -2; echo "webpc: net small end"
+echo "waarm64: net big start"; ping -A -q -c 1000 -s 1472 10.0.2.2 | tail -2; echo "waarm64: net big end"
+echo "waarm64: net small start"; ping -A -q -c 1000 10.0.2.2 | tail -2; echo "waarm64: net small end"

@@ -1,4 +1,4 @@
-# Buildroot 2026.08 for the webpc test guest: BusyBox and images/overlay
+# Buildroot 2026.08 for the waarm64 test guest: BusyBox and images/overlay
 # (/init, /test.sh) in an ext4 image, the root filesystem on virtio-blk
 # (M4 step 3). The kernel is built by build.sh (allnoconfig + linux.fragment),
 # not by Buildroot. The UUID and directory hash seed are fixed so the image
@@ -12,15 +12,15 @@ BR2_KERNEL_HEADERS_6_18=y
 BR2_BINUTILS_VERSION_2_45_X=y
 BR2_GCC_VERSION_15_X=y
 BR2_REPRODUCIBLE=y
-BR2_TARGET_GENERIC_HOSTNAME="webpc"
+BR2_TARGET_GENERIC_HOSTNAME="waarm64"
 BR2_INIT_NONE=y
 BR2_SYSTEM_BIN_SH_BUSYBOX=y
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y
-BR2_ROOTFS_OVERLAY="$(WEBPC_IMAGES)/overlay"
+BR2_ROOTFS_OVERLAY="$(WAARM64_IMAGES)/overlay"
 # BR2_TARGET_ROOTFS_TAR is not set
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_SIZE="32M"
-BR2_TARGET_ROOTFS_EXT2_MKFS_OPTIONS="-O ^64bit -U 77656270-6300-4000-8000-000000000001 -E hash_seed=77656270-6300-4000-8000-000000000002"
+BR2_TARGET_ROOTFS_EXT2_MKFS_OPTIONS="-O ^64bit -U 57413634-0000-4000-8000-000000000001 -E hash_seed=57413634-0000-4000-8000-000000000002"
 # fio for the virtio-blk benchmark (M4 step 7).
 BR2_PACKAGE_FIO=y

@@ -16,7 +16,7 @@ if (process.env.IN) {
   marks = JSON.parse(readFileSync(process.env.IN, 'utf8')).marks;
 } else {
   const IMAGES = new URL('../../target/images/', import.meta.url);
-  const wasm = readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+  const wasm = readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
   const a = DISTROS.alpine;
   const vm = await bootVm(wasm, { ramSize: 1 << 30, kernel: readFileSync(new URL(a.kernel, IMAGES)), initrd: readFileSync(new URL(a.initrd, IMAGES)), cmdline: a.cmdline, devices: guestDevices(new URL('alpine-user/rootfs-user.ext4', IMAGES).href), jit: 1 });
   let out = '', steps = 0, scanned = 0;
@@ -28,7 +28,7 @@ if (process.env.IN) {
     steps += r.steps;
     out += vm.drain();
     const end = out.lastIndexOf('\n') + 1;
-    for (const m of out.slice(scanned, end).matchAll(/webpc: ([^\r\n]*)/g)) mark(m[1]);
+    for (const m of out.slice(scanned, end).matchAll(/waarm64: ([^\r\n]*)/g)) mark(m[1]);
     scanned = end;
     if (r.kind === Exit.DEVICE) { await vm.settle(); continue; }
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;

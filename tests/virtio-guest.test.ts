@@ -15,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 import type { DeviceSpec } from '../web/devices.ts';
 import { Exit, PSCI_SYSTEM_OFF, runToPowerOff, type BootOptions } from '../web/vm.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 
 /** The images' bytes, as the guest's `pattern(0, offset)` has them. */
 const image = (n: number) => Uint8Array.from({ length: n }, (_, o) => ((o >> 9) * 31 + o * 7 + 3) & 0xff);
@@ -25,7 +25,7 @@ type Want = [name: string, s: number | '-', n: number | '-', ...checks: string[]
 
 /** What every disk answers: the ID, reads and their failures. `flush`: FLUSH's status (UNSUPP without the feature). */
 const reads = (flush: number): Want[] => [
-  ['id', 0, 21, 'webpc-blk'],
+  ['id', 0, 21, 'waarm64-blk'],
   ['id-short', 0, 9], // the serial cut to the room there is
   ['read', 0, 1025, 'data'],
   ['read-split', 0, 513, 'data'], // the header in two buffers, the data in 64

@@ -1,5 +1,5 @@
 // The calls a wasm module's functions make, for the functions whose name (from the name section) matches:
-//   node tools/wasm-calls.ts target/wasm32-unknown-unknown/release/webpc_core.wasm [regex]
+//   node tools/wasm-calls.ts target/wasm32-unknown-unknown/release/waarm64_core.wasm [regex]
 // The default regex is the block interpreter's `hot` (interp::block::hot), which must make none: V8 spills every
 // value live across a call at its definition, and that loop's state is live everywhere (docs/v8.md "Spills").
 // Walks each body's instructions (the MVP, sign extension, bulk memory, atomics, SIMD and tail calls: what

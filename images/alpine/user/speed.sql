@@ -1,4 +1,4 @@
--- webpc's SQLite phase: inserts, an index, joins, aggregates, updates and
+-- waarm64's SQLite phase: inserts, an index, joins, aggregates, updates and
 -- deletes on an in-memory database (in the spirit of speedtest1, our own).
 CREATE TABLE t1(a INTEGER PRIMARY KEY, b INTEGER, c TEXT);
 CREATE TABLE t2(a INTEGER PRIMARY KEY, b INTEGER, c TEXT);

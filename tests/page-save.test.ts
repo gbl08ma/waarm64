@@ -29,7 +29,7 @@ before(async () => {
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  dir = mkdtempSync(join(tmpdir(), 'webpc-save-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-save-'));
 });
 after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
@@ -76,7 +76,7 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   qemu('check', whole);
   assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', whole, image), /Images are identical/);
   assert.ok(packed < 0.8 * statSync(whole).size, `compressed ${packed} bytes, not compressed ${statSync(whole).size}`);
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings')!).compress), false);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings')!).compress), false);
   await page.locator('#save summary').click();
   await page.locator('#save-compress').check();
   await page.locator('#save summary').click();

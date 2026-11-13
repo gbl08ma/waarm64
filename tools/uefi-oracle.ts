@@ -82,7 +82,7 @@ async function deviceTree(dir: string) {
   drop('its@8080000', '\t\t'); // the GIC's ITS
   dts = dts.replace(/^\t\t(kaslr-seed|rng-seed) = .*\n/gm, ''); // our DT has no seeds (backlog)
   if (opt['no-fw-cfg']) drop('fw-cfg@9020000');
-  const out = join(dir, 'webpc.dtb');
+  const out = join(dir, 'waarm64.dtb');
   run('dtc', ['-q', '-I', 'dts', '-O', 'dtb', '-o', out], dts);
   return out;
 }
@@ -90,7 +90,7 @@ async function deviceTree(dir: string) {
 /** A 2 MiB FAT disk labelled CIDATA: tiny-cloud's (and cloud-init's) NoCloud seed. */
 async function seedDisk(dir: string) {
   const img = join(dir, 'seed.img');
-  await writeFile(join(dir, 'meta-data'), 'instance-id: webpc-oracle\nlocal-hostname: webpc\n');
+  await writeFile(join(dir, 'meta-data'), 'instance-id: waarm64-oracle\nlocal-hostname: waarm64\n');
   await writeFile(join(dir, 'user-data'), '#!/bin/sh\npasswd -d root\n');
   await writeFile(img, new Uint8Array(2 << 20));
   run('mkfs.vfat', ['-n', 'CIDATA', img]);

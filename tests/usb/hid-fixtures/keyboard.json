@@ -1,6 +1,6 @@
 {
  "id": "keyboard",
- "name": "webpc keyboard composite",
+ "name": "waarm64 keyboard composite",
  "vendorId": 4617,
  "productId": 4,
  "note": "ours: keyboard (LEDs, a vendor feature report), consumer, system control, mouse and a vendor collection, with report IDs",

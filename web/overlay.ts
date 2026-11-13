@@ -408,7 +408,7 @@ type LockMode = 'exclusive' | 'shared';
 export const OVERLAY_WAIT_MS = 10_000;
 
 /**
- * Takes the Web Lock `webpc-overlay:<name>` (exclusive, per origin: every tab
+ * Takes the Web Lock `waarm64-overlay:<name>` (exclusive, per origin: every tab
  * and worker), which whoever opens the overlay's files holds until they're
  * closed; resolves to its release. A context that ends (a terminated worker, a
  * closed tab) drops its locks with its files. Waits up to `ms` for the
@@ -420,7 +420,7 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: Lock
   const held = new Promise<void>((resolve) => { release = resolve; });
   try {
     await new Promise<void>((granted, reject) => {
-      navigator.locks.request(`webpc-overlay:${name}`, { mode, signal: AbortSignal.timeout(ms) }, () => {
+      navigator.locks.request(`waarm64-overlay:${name}`, { mode, signal: AbortSignal.timeout(ms) }, () => {
         granted();
         return held;
       }).catch(reject);

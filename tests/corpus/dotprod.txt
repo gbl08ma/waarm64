@@ -1,4 +1,4 @@
-webpc-corpus 1
+waarm64-corpus 1
 oracle m4 2026-11-01
 test dotprod.vec.0000
 code 4e859495

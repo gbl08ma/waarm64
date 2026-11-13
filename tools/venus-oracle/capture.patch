@@ -17,7 +17,7 @@ index 00000000..9f0cbace
 +++ b/src/venus/vkr_capture.c
 @@ -0,0 +1,344 @@
 +/*
-+ * webpc VK0 B capture: see vkr_capture.h.
++ * waarm64 VK0 B capture: see vkr_capture.h.
 + * SPDX-License-Identifier: MIT
 + */
 +
@@ -367,7 +367,7 @@ index 00000000..bbe613b0
 +++ b/src/venus/vkr_capture.h
 @@ -0,0 +1,64 @@
 +/*
-+ * webpc VK0 B capture (tools/venus-oracle/capture.patch): VENUS_DUMP=<file> appends one JSON line per queue
++ * waarm64 VK0 B capture (tools/venus-oracle/capture.patch): VENUS_DUMP=<file> appends one JSON line per queue
 + * submit with what the renderer decoded since the previous one (commands by name and bytes, by source: vtest
 + * submits, the ring, indirect streams), the replies written, ring and fence events, and the host-visible memory the
 + * guest has mapped and how many of its 4 KiB pages changed. Off (one branch per command) without VENUS_DUMP.

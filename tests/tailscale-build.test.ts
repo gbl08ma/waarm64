@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { prepareTailscale, tailscaleCurrent, tailscaleInputs } from '../tools/tailscale.ts';
 
 function tree(buildOk = true) {
-  const root = mkdtempSync(join(tmpdir(), 'webpc-ts-build-'));
+  const root = mkdtempSync(join(tmpdir(), 'waarm64-ts-build-'));
   mkdirSync(join(root, 'net/tailscale/overlay'), { recursive: true });
   writeFileSync(join(root, 'net/tailscale/main_js.go'), 'package main\n');
   writeFileSync(join(root, 'net/tailscale/overlay/x.go'), 'package x\n');
@@ -60,7 +60,7 @@ test('inputs are the contents of net/tailscale, including subdirectories', () =>
   }
 });
 
-test('without Go (quietly), with WEBPC_TAILSCALE=0, or without the sources: skipped, and the server goes on', () => {
+test('without Go (quietly), with WAARM64_TAILSCALE=0, or without the sources: skipped, and the server goes on', () => {
   const t = tree();
   try {
     const said: string[] = [];
@@ -68,7 +68,7 @@ test('without Go (quietly), with WEBPC_TAILSCALE=0, or without the sources: skip
     assert.equal(said.length, 0, `nothing said without Go: only the hand-over test needs this client (${said})`);
     assert.equal(existsSync(join(t.root, 'target/net/tailscale.wasm')), false);
     said.length = 0;
-    assert.equal(prepareTailscale(t.root, { ...t.env, WEBPC_TAILSCALE: '0' }, (s) => said.push(s)), 'skipped');
+    assert.equal(prepareTailscale(t.root, { ...t.env, WAARM64_TAILSCALE: '0' }, (s) => said.push(s)), 'skipped');
     rmSync(join(t.root, 'net/tailscale/build.sh'));
     assert.equal(prepareTailscale(t.root, t.env, (s) => said.push(s)), 'skipped');
     assert.deepEqual(said, []);

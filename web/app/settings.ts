@@ -48,7 +48,7 @@ export const clockSync = () => {
   const q = new URLSearchParams(location.search).getAll('clocksync').at(-1);
   return q !== undefined ? q !== '0' : settings().clockSync !== false;
 };
-const SETTINGS = 'webpc.settings';
+const SETTINGS = 'waarm64.settings';
 export const settings = (): Settings => {
   try {
     return JSON.parse(localStorage.getItem(SETTINGS) ?? '{}') as Settings;

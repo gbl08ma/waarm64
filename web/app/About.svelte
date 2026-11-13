@@ -1,11 +1,11 @@
 <!--
-  The Machines page's About pane (docs/frontend.md "About"): webpc's repository, the commit (and tag) the page was built
-  from and its date, webpc's license, and the third-party projects built into it or whose code ours is derived from,
-  each with its license and pinned links to its license texts. The data is `virtual:webpc-about` (vite.config.ts,
+  The Machines page's About pane (docs/frontend.md "About"): waarm64's repository, the commit (and tag) the page was built
+  from and its date, waarm64's license, and the third-party projects built into it or whose code ours is derived from,
+  each with its license and pinned links to its license texts. The data is `virtual:waarm64-about` (vite.config.ts,
   tools/third-party.ts `aboutData`): THIRD_PARTY.json's rows marked for this pane, nothing else of that file.
 -->
 <script lang="ts">
-  import about from 'virtual:webpc-about';
+  import about from 'virtual:waarm64-about';
   import Note from './ui/Note.svelte';
   import T from './T.svelte';
   import { t } from '../i18n.ts';

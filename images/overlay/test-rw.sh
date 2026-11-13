@@ -15,4 +15,4 @@ else
   echo "rw: wrote $(md5sum < /rw-data)"
 fi
 mount -o remount,ro /
-echo "webpc: test ok"
+echo "waarm64: test ok"

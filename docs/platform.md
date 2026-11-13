@@ -47,7 +47,7 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
   which allocates down from `/memory`'s top and ignores `/reserved-memory`, never lands on
   them, and Linux maps the framebuffer as non-RAM (simplefb or simpledrm bind to it); the DT
   gains the flash bank (`cfi-flash`, which EDK2 marks disabled for Linux), fw_cfg and the PL031.
-  `tests/dtb/webpc-firmware.dts` is its decompilation.
+  `tests/dtb/waarm64-firmware.dts` is its decompilation.
 - Runner conventions: the Image at RAM + 2 MiB and the initrd at + 128 MiB; raw binaries
   (bare-metal tests) with `kernelOffset: 0`. 256 MiB for Buildroot, 512 MiB for LTP, 1 GiB for the
   distros.
@@ -55,7 +55,7 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
   node per vCPU, the GIC (`arm,gic-v3`, one redistributor region), `arm,armv8-timer` (level-high
   PPIs), a 24 MHz fixed clock, the PL011, the PL031 (realtime mode only), one `virtio,mmio` node per device in slot
   order (`dma-coherent`, a **level-high** interrupt: QEMU says edge-rising, but our line follows
-  InterruptStatus), and the framebuffer ([devices.md](devices.md)). `tests/dtb/webpc.dts` is its
+  InterruptStatus), and the framebuffer ([devices.md](devices.md)). `tests/dtb/waarm64.dts` is its
   `dtc` decompilation (two vCPUs), checked by a unit test.
 - Guest RAM is sized against host RAM at VM start: Chromium gives no catchable error when host RAM
   runs out (the renderer is OOM-killed).
@@ -354,7 +354,7 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
 The user owns snapshots as files (the user's call, 2026-09-29): the page saves one for download and resumes one
 given to it, in a fresh browser profile too. A kept snapshot is the same file ([machines.md](machines.md) §5). The
 container is streamed both ways (RAM is up to GiBs) and knows nothing of the core:
-- `WEBPCSNP`, a u32 format version, the JSON header with its CRC-32, then frames, little-endian. A frame is `{tag,
+- `WAARMSNP`, a u32 format version, the JSON header with its CRC-32, then frames, little-endian. A frame is `{tag,
   codec, index, raw length, stored length, CRC-32, reserved}` (32 bytes; the CRC covers the frame header's first 24
   bytes, so a flipped index or length is caught, then the stored bytes) and the stored bytes.
 - **Tags:** `CORE` (the core's state) and `DEVS` (the backends' state as JSON), each cut into 1 MiB frames; `RAM `
@@ -488,10 +488,10 @@ from it at boot (`hctosys`).
   and the structures (`etc/smbios/smbios-tables`), which EDK2's SmbiosPlatformDxe installs and
   passes to Linux (`/sys/class/dmi/id`, `dmidecode`, `hostnamectl`). Built by the core from the
   configuration, so a deterministic run repeats: the firmware (type 0: EDK II, UEFI, a virtual
-  machine), the system and chassis (`webpc`, family `Virtual Machine`, no serial numbers, a null
+  machine), the system and chassis (`waarm64`, family `Virtual Machine`, no serial numbers, a null
   UUID: systemd takes no machine ID from it), one processor with every vCPU as a core (ARMv8, its
   ID MIDR_EL1), RAM as one memory device and where it's mapped, OEM strings (type 11: the spill memories' credential,
-  then the host's from fw_cfg's `opt/webpc/oem-strings`, which isn't served as a file), and a clean boot (type 32); EDK2's setup screen takes its RAM
+  then the host's from fw_cfg's `opt/waarm64/oem-strings`, which isn't served as a file), and a clean boot (type 32); EDK2's setup screen takes its RAM
   size from type 19. The page's Debian test reads them back, and the `edk2-shell` boots' step counts
   (native and Node) include installing them.
 

@@ -1,5 +1,5 @@
 // The browser's shared folders (docs/shares.md): a folder on the user's computer (a directory handle) or in the browser
-// (a directory in OPFS, `folders/<id>/`), kept as records in IndexedDB `webpc` `folders` (web/app/store.ts). A machine has
+// (a directory in OPFS, `folders/<id>/`), kept as records in IndexedDB `waarm64` `folders` (web/app/store.ts). A machine has
 // folders attached (`MachineRecord.folders`) and reaches them through one virtio-9p device (web/9p-folders.ts). One
 // writer at a time: a running machine holds the folder's Web Lock (`folderLock`, web/app/locks.ts), shared to read,
 // exclusive to write. DOM-free: Node's tests run it over a memory store.
@@ -29,7 +29,7 @@ export type Folder = {
 export type NewFolder = Pick<Folder, 'kind' | 'name'> & { readOnly?: boolean; handle?: FileSystemDirectoryHandle };
 
 /** The folder's Web Lock: held while a running machine has it, in any tab. */
-export const folderLock = (id: string) => `webpc-folder:${id}`;
+export const folderLock = (id: string) => `waarm64-folder:${id}`;
 
 /** A machine reads an attached folder only if its attachment or the folder itself says so. */
 export const readsOnly = (a: FolderAttachment, f: Folder) => a.readOnly || f.readOnly;

@@ -2,13 +2,13 @@
 //! Nostr relays and its DERP regions. Members with the same link find each other; a lookup's home
 //! region is an index into the link's list, so every member reads it the same way.
 //!
-//! `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded: a `derp` is a
+//! `waarm64-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded: a `derp` is a
 //! region ID of the DERP map (0: the map's first region) or a derper inline (`host[:port]`).
 //! Anything without the scheme is a bare ID, which gets the defaults.
 
 use crate::tailcat::{self, DerpNode};
 
-pub const SCHEME: &str = "webpc-room:";
+pub const SCHEME: &str = "waarm64-room:";
 /// The default Nostr relays: those that carried every case of R4's measurements (bench/net/REPORT.md
 /// "Rooms on public servers"; the user's choice, 2026-11-11).
 pub const DEFAULT_NOSTR: [&str; 6] = [
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn a_link_reads_back() {
         let l = Link::parse(
-            "webpc-room:gabriel%20lan?nostr=wss%3A%2F%2Frelay.example&derp=900&derp=derp.example%3A8443&x=later",
+            "waarm64-room:gabriel%20lan?nostr=wss%3A%2F%2Frelay.example&derp=900&derp=derp.example%3A8443&x=later",
         )
         .unwrap();
         assert_eq!(l.id, "gabriel lan");
@@ -193,7 +193,7 @@ mod tests {
             matches!(&l.derp[1], Region::Inline(n) if n.host_name == "derp.example" && n.derp_port == 8443)
         );
         assert_eq!(Link::parse(&l.encode()).unwrap(), l);
-        let v6 = Link::parse("webpc-room:a?derp=%5B%3A%3A1%5D%3A3340").unwrap();
+        let v6 = Link::parse("waarm64-room:a?derp=%5B%3A%3A1%5D%3A3340").unwrap();
         assert_eq!(Link::parse(&v6.encode()).unwrap(), v6);
         assert!(!v6.needs_map() && v6.nostr.len() == DEFAULT_NOSTR.len());
     }
@@ -209,25 +209,25 @@ mod tests {
 
     #[test]
     fn the_defaults_arent_written_into_a_link() {
-        for s in ["webpc-room:abc", "abc"] {
-            assert_eq!(Link::parse(s).unwrap().encode(), "webpc-room:abc", "{s}");
+        for s in ["waarm64-room:abc", "abc"] {
+            assert_eq!(Link::parse(s).unwrap().encode(), "waarm64-room:abc", "{s}");
         }
-        let only = Link::parse("webpc-room:abc?derp=900").unwrap();
+        let only = Link::parse("waarm64-room:abc?derp=900").unwrap();
         assert_eq!(only.nostr.len(), DEFAULT_NOSTR.len());
-        assert_eq!(only.encode(), "webpc-room:abc?derp=900");
+        assert_eq!(only.encode(), "waarm64-room:abc?derp=900");
     }
 
     #[test]
     fn bad_links() {
         for bad in [
             "",
-            "webpc-room:",
-            "webpc-room:a?nostr=https%3A%2F%2Fx",
-            "webpc-room:a?derp=-1",
-            "webpc-room:a?derp=a%2Fb",
-            "webpc-room:a%zz",
-            &format!("webpc-room:{}", "a".repeat(300)),
-            &format!("webpc-room:a?{}", "derp=1&".repeat(9)),
+            "waarm64-room:",
+            "waarm64-room:a?nostr=https%3A%2F%2Fx",
+            "waarm64-room:a?derp=-1",
+            "waarm64-room:a?derp=a%2Fb",
+            "waarm64-room:a%zz",
+            &format!("waarm64-room:{}", "a".repeat(300)),
+            &format!("waarm64-room:a?{}", "derp=1&".repeat(9)),
         ] {
             assert!(Link::parse(bad).is_err(), "{bad}");
         }

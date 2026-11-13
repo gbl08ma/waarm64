@@ -7,7 +7,7 @@
 // compare trivially. Then sequences (step 6): blocks of 2–16 such words on few
 // registers, mixed with flag readers and words that force helper calls, run
 // for their length, so stale register locals, missing write-backs and wrong
-// flag liveness show. `WEBPC_JIT_DIFF=<n>` sets the words per class (and a
+// flag liveness show. `WAARM64_JIT_DIFF=<n>` sets the words per class (and a
 // quarter as many sequences). Flat bus only (the MMU path is covered by
 // lockstep and the boots), but for the load and store classes on spill
 // memories at the end. Needs the wasm build (scripts/ci.sh).
@@ -17,8 +17,8 @@ import { test } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
 import { coreImports, helperReport } from '../web/vm.ts';
 
-const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
-const WORDS = Number(process.env.WEBPC_JIT_DIFF ?? 4096);
+const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
+const WORDS = Number(process.env.WAARM64_JIT_DIFF ?? 4096);
 const STATES = 8;
 const CPU_BYTES = 1168;
 const BRK = 0xd4200000;
@@ -345,7 +345,7 @@ function setup(code: number, fma = FUSED) {
     const st = new BigUint64Array(memory.buffer, ex.jit_stats(jit), 18);
     return `${st[8]} compiled inline, ${st[9]} as helper calls, ${st[16]} blocks in ${st[0]} regions, ${st[17]} back-edges`;
   };
-  /** WEBPC_JIT_DIFF_HELPERS=1: the helper calls by instruction since the last call, most first. */
+  /** WAARM64_JIT_DIFF_HELPERS=1: the helper calls by instruction since the last call, most first. */
   let lastHelpers = new Map<string, number>();
   const helpers = () => {
     const p = ex.jit_helper_report(jit), m8 = new Uint8Array(memory.buffer);
@@ -385,7 +385,7 @@ for (const [name, [mask, bits], mem] of [
   // With the helper report, allocated words only (the unallocated ones' helper calls hide the rest).
   const words = Array.from({ length: WORDS }, () => {
     let w = word();
-    for (let t = 0; process.env.WEBPC_JIT_DIFF_HELPERS && !allocated(w) && t < 64; t++) w = word();
+    for (let t = 0; process.env.WAARM64_JIT_DIFF_HELPERS && !allocated(w) && t < 64; t++) w = word();
     return w;
   });
   words.forEach((w, k) => {
@@ -464,7 +464,7 @@ for (const [name, [mask, bits], mem] of [
     }
   }
   console.log(`${name}: ${WORDS} words, ${counts()}`);
-  if (process.env.WEBPC_JIT_DIFF_HELPERS) console.log(`  helper calls: ${helpers()}`);
+  if (process.env.WAARM64_JIT_DIFF_HELPERS) console.log(`  helper calls: ${helpers()}`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${WORDS} words differ`);
 });
 

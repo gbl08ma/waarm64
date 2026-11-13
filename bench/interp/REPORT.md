@@ -628,13 +628,13 @@ On a quiet host (a stale experiment had held one vCPU busy through the earlier M
 
 **Alpine userspace, per phase** (the approved M6 phase, 3 boots): compress 2.78 s, Lua 5.14, churn 2.14, SQLite 3.93; 23.7 s to power-off.
 
-**The peers:** QEMU TCG runs 1.4–2.1× faster than webpc on the boots and 1.2–1.45× on CoreMark, from native code on the same host; hvf is 3.5–18× faster than TCG on boots dominated by kernel work. qemu-wasm (ktock/qemu-wasm, built in rootless Podman under x86_64 emulation, GPL, only run) boots Buildroot 4.7× slower than webpc and gets CoreMark wrong (its list and state CRCs mismatch, with either CPU model), so its CoreMark speed isn't a valid result. Details and every run: `../boot/results/m6-exit/peers.txt`.
+**The peers:** QEMU TCG runs 1.4–2.1× faster than waarm64 on the boots and 1.2–1.45× on CoreMark, from native code on the same host; hvf is 3.5–18× faster than TCG on boots dominated by kernel work. qemu-wasm (ktock/qemu-wasm, built in rootless Podman under x86_64 emulation, GPL, only run) boots Buildroot 4.7× slower than waarm64 and gets CoreMark wrong (its list and state CRCs mismatch, with either CPU model), so its CoreMark speed isn't a valid result. Details and every run: `../boot/results/m6-exit/peers.txt`.
 
 Raw data: `results/m6-exit/`, `../boot/results/m6-exit/`.
 
 ## M6.5 loop 0: the bar (`openssl speed` on the NEON-only paths)
 
-`--only alpine_crypto_jit` (new, `bench/boot/suite.ts`): Alpine's user image (`images/build.sh alpine-user`, now with `openssl=3.5.8-r0`) booted with `webpc.phase=crypto`, which runs only OpenSSL: a check line (SHA-1 and SHA-256 of a fixed MiB, AES-128-CBC encrypt and decrypt, AES-256-CTR, compared with arm64 hardware's) and `openssl speed -elapsed -mr -seconds 1 -bytes {256,16384} -evp <alg>`, one process per algorithm and size. **Realtime mode** (`openssl speed` times itself with the guest clock); the default `alpine_user_jit` run and the Alpine boot benchmark are unchanged apart from the image's new package (`ALPINE_USER_STEPS` 10,856,495,986 → 10,873,074,162; `churn: 1069 files`). `webpc.armcap=X` on the command line sets `OPENSSL_armcap` (for loop 7's on/off). Chromium 153, the M4 VM, 5 boots, medians (IQR), MB/s = 10⁶ bytes/s:
+`--only alpine_crypto_jit` (new, `bench/boot/suite.ts`): Alpine's user image (`images/build.sh alpine-user`, now with `openssl=3.5.8-r0`) booted with `waarm64.phase=crypto`, which runs only OpenSSL: a check line (SHA-1 and SHA-256 of a fixed MiB, AES-128-CBC encrypt and decrypt, AES-256-CTR, compared with arm64 hardware's) and `openssl speed -elapsed -mr -seconds 1 -bytes {256,16384} -evp <alg>`, one process per algorithm and size. **Realtime mode** (`openssl speed` times itself with the guest clock); the default `alpine_user_jit` run and the Alpine boot benchmark are unchanged apart from the image's new package (`ALPINE_USER_STEPS` 10,856,495,986 → 10,873,074,162; `churn: 1069 files`). `waarm64.armcap=X` on the command line sets `OPENSSL_armcap` (for loop 7's on/off). Chromium 153, the M4 VM, 5 boots, medians (IQR), MB/s = 10⁶ bytes/s:
 
 | | 256 B | 16 KiB |
 |---|---|---|
@@ -1182,7 +1182,7 @@ Firefox's pages session from the snapshot, two rounds alternating (`pages/`; no 
 
 Chromium in Debian, 4 vCPUs (`apps/`, one boot each, three renders of `chrome://newtab`): floor 50 32.1, 15.4,
 11.2 s (111.2 MiB of wasm in the first render); 500 29.3, 11.7, 10.8 s (70.4 MiB, −37%). The 4-vCPU `go build`
-loop from `debian-go.webpcsnap` (`go/`, 300 s, MIPS median of the 5 s samples): 50 1,431 and 1,243; 200 1,291
+loop from `debian-go.waarm64snap` (`go/`, 300 s, MIPS median of the 5 s samples): 50 1,431 and 1,243; 200 1,291
 (one session); 500 1,351 and 1,193: −4 to −6%, inside the loop's session-to-session spread (13% here) but behind
 both times. The gates (`gates/`, one round): `smp_alpine_jit` to the script 5,961 / 5,406 / 5,411 → 5,393 /
 4,861 / 4,859 ms at 1 / 2 / 4 vCPUs (−10%), to power-off −7.5%; `smp_user_jit_4` 17,484 → 16,749 ms (−4.2%), every
@@ -1388,7 +1388,7 @@ zeroing 56 bytes, STLR always 8 bytes, a failed STXR leaving the monitor armed.
 `results/m8-interp-l9/` (`mix/`, `fp/`, `pages-fp/`, `decode/`).
 
 **A browser's mix** (Next 3; `mix/`: `diag.patch`, loop 0's diagnostic ported to `hot`, with the generic classes
-that end their block counted too, through Firefox's pages session from `pages.webpcsnap`, 4 vCPUs): 3.36G
+that end their block counted too, through Firefox's pages session from `pages.waarm64snap`, 4 vCPUs): 3.36G
 interpreted instructions in 654M block runs; **the generic path is 1.89% of them** (Alpine's boot had 3.46% before
 loops 5-9), spread thin: MRS 8.9% of it (registers `sys::plain` doesn't know at the block's EL), FCMP 8.0%, FMOV
 (general) 7.3%, MOVI 6.8%, FMUL 5.7%, FADD 4.7%, ADD (vector) 3.1%, FCSEL 2.8%, BFM 2.6%, then a long tail of
@@ -1430,14 +1430,14 @@ compiles most of what the renders run, and decoding stopped being where their ti
 `results/m8-interp-l9/` (`go-aa/`, `churn/`, `pages-max/`, `gates/`, `go-max/`).
 
 **The `go build` loop as a gate** (Next 6): judged by its build times, not its MIPS samples. `bench/stress/go-ab.sh`
-alternates cores through 420 s sessions from `debian-go.webpcsnap`, the guest timing each build of `/work/hello` in
+alternates cores through 420 s sessions from `debian-go.waarm64snap`, the guest timing each build of `/work/hello` in
 ms; `bench/stress/gobuild.ts` takes each session's median build after the first three (the cold ones). The builds
 in round 2's earlier boot sessions, at 1 s resolution, already agreed: 38, 38, 38, 38, 36, 37, 39, 39 s, where the
 same sessions' MIPS samples had spread 1,094-1,489. An A/A of main (`go-aa/`, two copies, two rounds each): 33.81,
 31.80, 31.71, 31.81 s: the run's first session 6.6% slower, the three after it within 0.3%. The driver runs a
 warm-up session first and drops it (the next run's warm-up wasn't slower: 32.29 s against 31.94-32.51).
 
-**The floor and the maximum** (Next 5; floor/maximum, the churn page from `pages.webpcsnap`, one round):
+**The floor and the maximum** (Next 5; floor/maximum, the churn page from `pages.waarm64snap`, one round):
 
 | | 1000/1000 (main) | A/A | 1500/1500 | **1000/2000** | 1000/4000 | 1500/3000 |
 |---|---|---|---|---|---|---|
@@ -1465,7 +1465,7 @@ overlapping; the `go build` loop (`go-max/`, two rounds after a warm-up) 32.51, 
 ## M8-INTERP loop 12: 8-byte micro-ops, guest branches as host branches, conditions as masks
 
 2026-10-22, the dev VM, Chromium 153.0.8010.52, Node 26.7.0, on main at `b853a4e`; raw data `results/m8-interp-l12/`
-(`ab/` one round each on the yardstick, `pages/` one Firefox pages session each from `pages.webpcsnap`).
+(`ab/` one round each on the yardstick, `pages/` one Firefox pages session each from `pages.waarm64snap`).
 
 **The micro-op from 16 bytes to 8** (backlog "The core's heap": the decoded blocks were ~350-365 MiB of the 1 GiB on
 4 vCPUs): a kind, three register bytes and a `u32` with the kind's flags and immediate (`interp::block::pack`). What
@@ -1657,7 +1657,7 @@ the generic path only: the other generic forms, the regime's MSRs, ERET, ISB, ar
 `steps5` (a threshold of 1000 × 5 steps), `decay16` (a block's count halved every 16 ticks it wasn't reported),
 `f2000` (a flat 2000: the pressure rule removed) and `f2000mix9`.
 
-The churn page from `pages.webpcsnap` (one session each, an A/A: 262 against 259 MB, `doneS` 103.1 against 102.7):
+The churn page from `pages.waarm64snap` (one session each, an A/A: 262 against 259 MB, `doneS` 103.1 against 102.7):
 
 | | base | mix9 | decay16 | f2000 | f2000mix9 | steps5 |
 |---|---|---|---|---|---|---|
@@ -2070,7 +2070,7 @@ The Mac's profile (bench/boot/REPORT.md "Where a busy vCPU's time goes on the Ma
 puts the block interpreter at 18.4% of the pages session's busy ticks: `hot` 14.05%, then `Cache::miss` 1.23%,
 `Cache::count_out` 1.08%, `jit::interpret` 0.95%, `Cache::slot_in` 0.65%.
 
-**Why `hot` returns** (a counting core, `diag/diag.patch`, one pages session from `pages.webpcsnap`, sums over the four
+**Why `hot` returns** (a counting core, `diag/diag.patch`, one pages session from `pages.waarm64snap`, sums over the four
 tables): 3.50 G interpreted steps in 678 M block runs (5.2 steps a run); `jit::interpret` entered 149 M times (one per
 4.5 block runs: most of the interpreted code sits between compiled blocks), `hot` 266 M. `hot` chained 456 M blocks
 (375 M of them in the same page) and returned for: the next block compiled 126 M, **its slot holding another block
@@ -2191,7 +2191,7 @@ numbers even. Kept for what it is: no allocation a decode, no memory. A planted 
 in `pack_into`) failed three of the block interpreter's tests. What's left of decoding is compute: the decoder, `pack_into`
 and `uop_op`'s matches.
 
-Two A/A runs came first: a build in the side checkout `../webpc-base` (whose `target/` is this one's) left its core
+Two A/A runs came first: a build in the side checkout `../waarm64-base` (whose `target/` is this one's) left its core
 in the shared output, the main checkout's next build counted as fresh, and the "change" arm was the base (`cmp` didn't
 tell: the two checkouts' builds differ in their debug info's paths). Both arms agreed within ~0.2% on Alpine's boot,
 which is this screen's noise. An arm is now checked by a changed function's size (`tools/wasm-sizes.ts`).

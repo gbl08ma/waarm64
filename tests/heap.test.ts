@@ -3,13 +3,13 @@
 // guest is nothing but `b .+4`, so every word is a block that runs once (millions of keys, as a session's worth of
 // JavaScript engines' code), in a heap reserve of 320 MiB instead of 1 GiB. Before the bound the block map's doubling
 // to 2^23 buckets (328 MiB) ran it out at ~3.7M keys; the decoded blocks' map, with a key per micro-op, did too.
-// WEBPC_WASM runs another core (the repro: a build from before the fix).
+// WAARM64_WASM runs another core (the repro: a build from before the fix).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { bootVm, Exit, PSCI_SYSTEM_OFF, runToPowerOff, type Vm } from '../web/vm.ts';
 
-const WASM = readFileSync(process.env.WEBPC_WASM ?? new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(process.env.WAARM64_WASM ?? new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const MiB = 1 << 20;
 
 /** `n` words of `b .+4`, then PSCI SYSTEM_OFF (movz x0, #8; movk x0, #0x8400, lsl #16; hvc #0). */

@@ -11,14 +11,14 @@ cd "$(dirname "$0")/.."
 export RUSTFLAGS=-Zsanitizer=thread TSAN_OPTIONS=halt_on_error=1
 host=$(rustc -vV | sed -n 's/^host: //p')
 t() { cargo test -q --config 'profile.release.panic="unwind"' -Zbuild-std --target "$host" --release --target-dir target/tsan "$@"; }
-WEBPC_PARALLEL_RUNS=3 t --test baremetal baremetal_parallel
+WAARM64_PARALLEL_RUNS=3 t --test baremetal baremetal_parallel
 if images/build.sh --check linux > /dev/null && images/build.sh --check buildroot > /dev/null; then
-  WEBPC_PARALLEL_RUNS=1 t --test boot -- --ignored linux_boots_in_parallel
+  WAARM64_PARALLEL_RUNS=1 t --test boot -- --ignored linux_boots_in_parallel
 else
   echo 'tsan: Buildroot SKIPPED (images not current)'
 fi
 if images/build.sh --check linux > /dev/null && images/build.sh --check litmus > /dev/null; then
-  WEBPC_LITMUS=-s,100,-r,1 WEBPC_STRESS=-n,10000 t --test litmus -- --ignored litmus_parallel
+  WAARM64_LITMUS=-s,100,-r,1 WAARM64_STRESS=-n,10000 t --test litmus -- --ignored litmus_parallel
 else
   echo 'tsan: litmus SKIPPED (images not current)'
 fi

@@ -497,7 +497,7 @@ export const ECHO_LEASE: Lease = {
   mtu: 1280,
   dns: [[198, 18, 0, 53]],
   dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]],
-  domains: ['test.webpc'],
+  domains: ['test.waarm64'],
 };
 
 /** `echoBackend`'s lease for adapter `n`: `ECHO_LEASE` with the guest's addresses moved up by `n`, so a machine's adapters have their own. */

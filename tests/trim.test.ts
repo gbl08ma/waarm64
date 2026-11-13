@@ -12,7 +12,7 @@ import { openOverlay, overlay } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { Exit, GUEST_CMDLINE, bootVm, type BootOptions } from '../web/vm.ts';
 
-const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
+const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
 const IMAGES = new URL('../target/images/', import.meta.url);
 const DISK = new URL('buildroot/rootfs.ext4', IMAGES);
 const skip = (!existsSync(WASM) || !existsSync(new URL('linux/Image', IMAGES)) || !existsSync(DISK)) && 'SKIPPED: run scripts/build-wasm.sh and images/build.sh linux buildroot';

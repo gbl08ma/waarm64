@@ -1,7 +1,7 @@
 # The disk I/O benchmark's guest side (bench/io/suite.ts): run by `init=/bin/sh -- -c ". /mnt/guest.sh"` after the
 # host's 9p share (this file) is mounted. /dev/vda is the read-only root; /dev/vdb is the disk under test (256 MiB,
-# a chosen file with a fresh overlay). Each job's JSON sits between "webpc: <name> start" and "webpc: <name> end".
-mark() { echo "webpc: $1"; }
+# a chosen file with a fresh overlay). Each job's JSON sits between "waarm64: <name> start" and "waarm64: <name> end".
+mark() { echo "waarm64: $1"; }
 want() { [ -z "$ONLY" ] || case " $ONLY " in *" $1 "*) return 0;; *) return 1;; esac; }
 job() { # name, then fio options
   n=$1; shift

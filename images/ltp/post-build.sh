@@ -4,7 +4,7 @@
 # testcases/bin, and drops the rest of LTP's install but its library data.
 set -e
 t=$1/usr/lib/ltp-testsuite
-list=$WEBPC_IMAGES/ltp/tests
+list=$WAARM64_IMAGES/ltp/tests
 cd "$t/testcases/bin"
 for f in *; do
   base=${f%%_*}

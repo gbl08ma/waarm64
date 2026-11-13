@@ -1,4 +1,4 @@
--- N-body (floating point): webpc's own, after the Benchmarks Game's description.
+-- N-body (floating point): waarm64's own, after the Benchmarks Game's description.
 local pi = math.pi
 local sm = 4 * pi * pi
 local dp = 365.24

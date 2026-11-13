@@ -22,7 +22,7 @@ let base: string;
 let close: () => void;
 let dir: string;
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'webpc-open-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-open-'));
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -48,7 +48,7 @@ test('a machine running in another tab: a second tab says so at once, and starts
     });
     // The lock a page running the machine holds, held until told.
     await holder.evaluate((id) => {
-      navigator.locks.request(`webpc-machine:${id}`, () => new Promise<void>((resolve) => { (window as unknown as { release: () => void }).release = resolve; }));
+      navigator.locks.request(`waarm64-machine:${id}`, () => new Promise<void>((resolve) => { (window as unknown as { release: () => void }).release = resolve; }));
     }, id);
 
     const page = await context.newPage();
@@ -62,7 +62,7 @@ test('a machine running in another tab: a second tab says so at once, and starts
     // The page didn't queue for the lock behind the other tab: only the holder has it, and no one waits.
     const locks = await holder.evaluate(async (id) => {
       const q = await navigator.locks.query();
-      const name = `webpc-machine:${id}`;
+      const name = `waarm64-machine:${id}`;
       return { held: (q.held ?? []).filter((l) => l.name === name).length, pending: (q.pending ?? []).filter((l) => l.name === name).length };
     }, id);
     assert.deepEqual(locks, { held: 1, pending: 0 });

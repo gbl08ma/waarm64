@@ -32,6 +32,6 @@
     connectLocal: (ws) => { local = startLocal({ url: ws, ip: ip.port1 }, (m) => { if (m.type === 'error') localState = { error: m.error }; else if (m.type === 'state') localState = undefined; }); },
     local: () => local && { state: local.state(), error: localState?.error, addresses: local.netmap()?.addresses },
     primary: (k) => ports.forEach((c, n) => c.port1.postMessage({ type: 'lease', lease: routedLease(echoLease(n), n === k, TAILNET_ROUTES) })),
-    lease: () => ip.port1.postMessage({ type: 'lease', lease: { address: [198, 18, 0, 15], address6: [0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f], mtu: 1280, dns: [[198, 18, 0, 53]], dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]], domains: ['test.webpc'] } }),
+    lease: () => ip.port1.postMessage({ type: 'lease', lease: { address: [198, 18, 0, 15], address6: [0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f], mtu: 1280, dns: [[198, 18, 0, 53]], dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]], domains: ['test.waarm64'] } }),
   };
 </script>

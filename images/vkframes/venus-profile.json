@@ -318,7 +318,7 @@
 				"VkPhysicalDeviceProperties": {
 					"apiVersion": 4206861,
 					"deviceID": 0,
-					"deviceName": "Virtio-GPU Venus (webpc WebGPU)",
+					"deviceName": "Virtio-GPU Venus (waarm64 WebGPU)",
 					"deviceType": "VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU",
 					"driverVersion": 104857607,
 					"limits": {
@@ -3343,10 +3343,10 @@
 		}
 	},
 	"profiles": {
-		"VP_VULKANINFO_Virtio-GPU_Venus_(webpc_WebGPU)_25_0_7": {
+		"VP_VULKANINFO_Virtio-GPU_Venus_(waarm64_WebGPU)_25_0_7": {
 			"version": 1,
 			"api-version": "1.3.269",
-			"label": "Virtio-GPU Venus (webpc WebGPU) driver 25.0.7",
+			"label": "Virtio-GPU Venus (waarm64 WebGPU) driver 25.0.7",
 			"description": "Exported from vulkaninfo",
 			"contributors": {
 

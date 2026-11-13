@@ -22,8 +22,8 @@ test('control server URLs: Tailscale by default, https, http only for this compu
   for (const bad of ['http://hs.example.com', 'ftp://hs.example.com', 'javascript:alert(1)', 'https://', 'http://']) assert.ok('error' in parseControlURL(bad), bad);
 });
 
-test('hostnames: one DNS label, webpc when empty', () => {
-  assert.deepEqual(parseHostname(''), { hostname: 'webpc' });
+test('hostnames: one DNS label, waarm64 when empty', () => {
+  assert.deepEqual(parseHostname(''), { hostname: 'waarm64' });
   assert.deepEqual(parseHostname(' My-Box1 '), { hostname: 'my-box1' });
   for (const bad of ['-a', 'a-', 'a b', 'a.b', 'a_b', 'x'.repeat(64), 'é']) assert.ok('error' in parseHostname(bad), bad);
   assert.deepEqual(parseHostname('x'.repeat(63)), { hostname: 'x'.repeat(63) });
@@ -293,7 +293,7 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   const net = createNetwork(() => {}, fake, fake);
   net.port();
   net.setPrimary(false);
-  net.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc' });
+  net.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'waarm64' });
   assert.deepEqual(told, [[false, 0, false]], 'a client started on a secondary adapter is told at once');
   net.setPrimary(false);
   net.setPrimary(true);
@@ -306,7 +306,7 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   const other = createNetwork(() => {}, fake, fake);
   other.port();
   other.setPrimary(true, 0, false);
-  other.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc' });
+  other.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'waarm64' });
   assert.deepEqual(told, [[true, 0, false]], "a client started on IPv4's primary that isn't IPv6's is told at once");
 });
 
@@ -418,7 +418,7 @@ test('a room connection: its link and switches go to the room client; the view s
   };
   const net = createNetwork(() => {}, ts.start, undefined, undefined, startRoom);
   net.port();
-  const room = { link: 'webpc-room:gabriel-lan', incoming: false, relayOnly: true, identityKey: 'c1' };
+  const room = { link: 'waarm64-room:gabriel-lan', incoming: false, relayOnly: true, identityKey: 'c1' };
   net.connect({ controlURL: '', hostname: '', room });
   assert.deepEqual(ts.log, []);
   assert.deepEqual(rooms.map((r) => ({ link: r.config.link, incoming: r.config.incoming, relayOnly: r.config.relayOnly, identityKey: r.config.identityKey })), [room]);

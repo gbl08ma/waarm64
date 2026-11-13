@@ -1,4 +1,4 @@
-// CoreMark's port layer for the webpc benchmark guest (M5 step 10); see
+// CoreMark's port layer for the waarm64 benchmark guest (M5 step 10); see
 // core_portme.h. The guest runs CoreMark's main() (ITERATIONS iterations,
 // set by build.sh) forever and counts completed runs at ROUNDS, as
 // guest.c counts its rounds; the first run's report goes to OUT (a
@@ -17,7 +17,7 @@ volatile ee_s32 seed5_volatile = 0;
 
 ee_u32 default_num_contexts = 1;
 
-#ifdef WEBPC_LINUX
+#ifdef WAARM64_LINUX
 // The reference build (build-coremark.sh): a static Linux program on raw
 // syscalls, for CoreMark natively and under qemu-aarch64 (TCG); CoreMark
 // times itself (milliseconds) and picks its iterations for a valid run.
@@ -71,7 +71,7 @@ void *memcpy(void *d, const void *s, unsigned long n) {
 static unsigned out_len;
 static int first = 1;
 
-#ifdef WEBPC_LINUX
+#ifdef WAARM64_LINUX
 static char out[OUT_SIZE];
 static void put(char c) {
     if (out_len < OUT_SIZE) out[out_len++] = c;
@@ -131,7 +131,7 @@ int ee_printf(const char *fmt, ...) {
 
 int main(void);
 
-#ifdef WEBPC_LINUX
+#ifdef WAARM64_LINUX
 __attribute__((noreturn)) void _start(void) {
     (void)first;
     main();

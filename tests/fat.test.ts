@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { fatImage } from '../web/fat.ts';
 
 const big = Uint8Array.from({ length: 5000 }, (_, i) => i & 0xff);
-const files = [{ name: 'meta-data', data: 'instance-id: webpc\n' }, { name: 'user-data', data: '#!/bin/sh\npasswd -d root\n' }, { name: 'BIG.BIN', data: big }];
+const files = [{ name: 'meta-data', data: 'instance-id: waarm64\n' }, { name: 'user-data', data: '#!/bin/sh\npasswd -d root\n' }, { name: 'BIG.BIN', data: big }];
 
 test('fatImage lays out a FAT12 volume', () => {
   const img = fatImage('CIDATA', files);
@@ -42,7 +42,7 @@ const tools = (() => {
   }
 })();
 test('fsck.fat and mtools read it back', { skip: !tools && 'SKIPPED: no fsck.fat or mtools' }, () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-fat-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-fat-'));
   try {
     const path = join(dir, 'seed.img');
     writeFileSync(path, fatImage('CIDATA', files));

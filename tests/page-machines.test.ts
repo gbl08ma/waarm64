@@ -1,7 +1,7 @@
 // Machines as the unit on the page (docs/machines.md), on Debian: a machine kept in this browser
 // (IndexedDB and OPFS, web/app/store.ts) opened by `?m=<id>`, with several disks from several sources.
 // Each test makes its machine's records in a fresh profile, as the modal would, then drives the guest
-// on the serial terminal. Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh); a Debian page
+// on the serial terminal. Opt-in with WAARM64_DISTROS=debian (scripts/ci-machines.sh); a Debian page
 // boot is ~40 s in the dev VM, ~2.5 min in a cloud session. The stored disk's tests are tests/page-stored.test.ts.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -14,10 +14,10 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 
 let browser: Browser;
@@ -91,7 +91,7 @@ async function makeMachine(page: Page, m: { ncpus: number; ramMiB: number; disks
     const id = newId();
     await store.put('machines', { id, name: 'Test machine', ncpus: m.ncpus, ramMiB: m.ramMiB, display: '2d', network: true, attachments, created: now, modified: now });
     store.close();
-    return { id, serials: attachments.map((a) => `webpc-${a.id}`) };
+    return { id, serials: attachments.map((a) => `waarm64-${a.id}`) };
   }, m);
 }
 
@@ -132,8 +132,8 @@ test('a machine with five disks: Debian from a URL, a blank disk formatted and k
   assert.equal(await ok(page, `cmp -n ${256 * MiB} ${blank} /dev/zero && echo zeros`), 'zeros');
   await ok(page, `mkfs.ext4 -q ${blank} && mkdir -p /mnt/b && mount ${blank} /mnt/b && echo kept-$((6*7)) > /mnt/b/file && sync`, 180_000);
   // The swap ramdisk (web/app/guest-swap.ts): on with nothing done in the guest, by its label, trimmed as it frees.
-  const swapOn = `swapon --noheadings --show=LABEL,TYPE,SIZE; readlink -f /dev/disk/by-label/webpc-swap0 ${swap}; systemctl show -P Options 'dev-disk-by\\x2dlabel-webpc\\x2dswap0.swap'`;
-  const swapWant = (out: string) => assert.match(out, /^webpc-swap0 partition 64M (\/dev\/vd\w) \1 sw,nofail,discard$/, out);
+  const swapOn = `swapon --noheadings --show=LABEL,TYPE,SIZE; readlink -f /dev/disk/by-label/waarm64-swap0 ${swap}; systemctl show -P Options 'dev-disk-by\\x2dlabel-waarm64\\x2dswap0.swap'`;
+  const swapWant = (out: string) => assert.match(out, /^waarm64-swap0 partition 64M (\/dev\/vd\w) \1 sw,nofail,discard$/, out);
   swapWant(await ok(page, swapOn));
   // The ramdisk: empty, then written.
   assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');

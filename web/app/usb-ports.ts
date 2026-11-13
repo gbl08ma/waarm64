@@ -40,7 +40,7 @@ export function identityKey(i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId
 
 /** The Web Lock a page holds while the device is attached to its machine (one machine at a time per device). */
 export const usbLock = (i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId' | 'serialNumber' | 'index'>) =>
-  `webpc-usb:${identityKey(i)}`;
+  `waarm64-usb:${identityKey(i)}`;
 
 /** A device's name on the page: its product name, or its IDs. */
 export function deviceName(d: {

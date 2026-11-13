@@ -17,8 +17,8 @@ MAC=macmini.lan
 qemu_args=(-m 128 -display none -monitor none -serial stdio -no-reboot)
 hvf=$([ "${1:-}" = --hvf ] && echo 1 || true)
 if [ -n "$hvf" ]; then
-  ssh "$MAC" 'mkdir -p /tmp/webpc-baremetal'
-  scp -q "$out"/*-hvf.elf "$MAC":/tmp/webpc-baremetal/
+  ssh "$MAC" 'mkdir -p /tmp/waarm64-baremetal'
+  scp -q "$out"/*-hvf.elf "$MAC":/tmp/waarm64-baremetal/
 fi
 for src in *.c; do
   t=${src%.c}
@@ -29,8 +29,8 @@ for src in *.c; do
   flash=()
   if grep -qx '// flash' "$src"; then
     if [ -n "$hvf" ]; then
-      ssh "$MAC" "head -c 67108864 /dev/zero | LC_ALL=C tr '\\000' '\\377' > /tmp/webpc-baremetal/flash1.img"
-      flash=(-drive if=pflash,unit=1,format=raw,file=/tmp/webpc-baremetal/flash1.img)
+      ssh "$MAC" "head -c 67108864 /dev/zero | LC_ALL=C tr '\\000' '\\377' > /tmp/waarm64-baremetal/flash1.img"
+      flash=(-drive if=pflash,unit=1,format=raw,file=/tmp/waarm64-baremetal/flash1.img)
     else
       head -c 67108864 /dev/zero | LC_ALL=C tr '\000' '\377' > "$out/flash1.img"
       flash=(-drive "if=pflash,unit=1,format=raw,file=$out/flash1.img")
@@ -39,7 +39,7 @@ for src in *.c; do
   if [ -n "$hvf" ]; then
     # Bounded on the Mac too: timeout ends ssh, not the QEMU it started there (one spun for days, 2026-11-03).
     log=$(timeout 60 ssh "$MAC" perl -e "'alarm shift; exec @ARGV'" 50 /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host -smp "$smp" \
-      "${qemu_args[@]}" "${flash[@]}" -kernel "/tmp/webpc-baremetal/$t-hvf.elf" < <(stdin) || true)
+      "${qemu_args[@]}" "${flash[@]}" -kernel "/tmp/waarm64-baremetal/$t-hvf.elf" < <(stdin) || true)
   else
     log=$(timeout 30 qemu-system-aarch64 -M virt,gic-version=3 -accel tcg -cpu "$cpu" -smp "$smp" "${qemu_args[@]}" \
       "${flash[@]}" -kernel "$out/$t-oracle.elf" < <(stdin) || true)

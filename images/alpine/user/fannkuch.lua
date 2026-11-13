@@ -1,4 +1,4 @@
--- Fannkuch-redux (permutations, array shuffling): webpc's own, after the
+-- Fannkuch-redux (permutations, array shuffling): waarm64's own, after the
 -- Benchmarks Game's description.
 local n = 8
 local perm, perm1, count = {}, {}, {}

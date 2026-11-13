@@ -7,7 +7,7 @@
 // (`<key>.<tag>.p2p.internal`, which the room's resolver answers, through the guest's systemd-resolved; asked directly
 // too), the menu showing the name, the member reached and the
 // link to copy. Two Debian boots at once, ~4 min alone. Opt-in like the other network tests (scripts/ci-net.sh):
-// WEBPC_NET_TESTS=1, WEBPC_DISTROS=debian and WEBPC_TAILCAT=1 (Go for derper).
+// WAARM64_NET_TESTS=1, WAARM64_DISTROS=debian and WAARM64_TAILCAT=1 (Go for derper).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -27,9 +27,9 @@ import { words } from './words.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
-const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
-  : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
-  : process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1 (the tailcat rig\'s derper)'
+const skip = process.env.WAARM64_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WAARM64_NET_TESTS=1)'
+  : !(process.env.WAARM64_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WAARM64_DISTROS=debian'
+  : process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT=1 (the tailcat rig\'s derper)'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : !has('go', 'version') && !existsSync(`${ROOT}target/net/tailcat-test/bin/derper`) ? 'SKIPPED: no Go to build derper'
@@ -94,9 +94,9 @@ async function roomWizard(page: Page) {
 const menuSays = (page: Page, re: RegExp, ms: number) =>
   page.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-status')!.textContent!), re.source, { timeout: ms, polling: 100 })
     .catch(async (e) => { throw new Error(`${e}; the menu said ${await page.evaluate(() => [document.getElementById('network')!.dataset.phase, document.getElementById('net-status')!.textContent, document.getElementById('net-menu-error')!.textContent])}`); });
-/** The room connections IndexedDB `webpc` keeps. */
+/** The room connections IndexedDB `waarm64` keeps. */
 const rooms = (page: Page) => page.evaluate(() => new Promise<{ id: string; name: string; room: { link: string; incoming: boolean; relayOnly: boolean; identityKey: string } }[]>((resolve, reject) => {
-  const open = indexedDB.open('webpc');
+  const open = indexedDB.open('waarm64');
   open.onsuccess = () => {
     const req = open.result.transaction('connections').objectStore('connections').getAll();
     req.onsuccess = () => { open.result.close(); resolve(req.result.filter((c: { kind: string }) => c.kind === 'room')); };
@@ -149,7 +149,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     const [ra] = await rooms(a);
     assert.deepEqual([ra.room.incoming, ra.room.relayOnly], [true, false], 'the switches as they were left');
     assert.equal(ra.name, 'test lan', 'named by the room, without its private suffix');
-    assert.match(ra.room.link, /^webpc-room:test%20lan-[a-z2-7]{26}\?nostr=ws%3A%2F%2F127\.0\.0\.1%3A\d+&derp=127\.0\.0\.1%3A8444$/);
+    assert.match(ra.room.link, /^waarm64-room:test%20lan-[a-z2-7]{26}\?nostr=ws%3A%2F%2F127\.0\.0\.1%3A\d+&derp=127\.0\.0\.1%3A8444$/);
     const nameA = await a.locator('#net-room-name').inputValue();
     assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
     assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
@@ -166,7 +166,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     // Join: a damaged link is refused; the link the first one keeps joins the same room.
     await roomWizard(b);
     await b.click('#net-room-join');
-    await b.fill('#net-room-link', 'webpc-room:a%zz');
+    await b.fill('#net-room-link', 'waarm64-room:a%zz');
     await b.click('#net-connect');
     assert.match(await text(b, '#net-error'), words('network:room.badLink'));
     await b.fill('#net-room-link', ra.room.link);

@@ -13,7 +13,7 @@ function blake2s(label: string, id: string): Buffer {
 /** The room's /48, its first 6 bytes (room.rs `Room::derive`). */
 export function roomPrefix(id: string): Buffer {
   for (let n = 0; ; n++) {
-    const p = Buffer.concat([Buffer.of(0xfd), blake2s(n ? `webpc room prefix v1 ${n}` : 'webpc room prefix v1', id).subarray(0, 5)]);
+    const p = Buffer.concat([Buffer.of(0xfd), blake2s(n ? `waarm64 room prefix v1 ${n}` : 'waarm64 room prefix v1', id).subarray(0, 5)]);
     if (!p.equals(TAILCAT_PREFIX)) return p;
   }
 }

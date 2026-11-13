@@ -1,4 +1,4 @@
-# webpc
+# waarm64
 
 A whole-system AArch64 (arm64) emulator for the browser. It JIT-compiles guest code to
 WebAssembly and runs unmodified arm64 Linux from a disk image you open, with its screen in the page

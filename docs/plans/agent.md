@@ -58,10 +58,10 @@ power off. Worth a line in the host-integration track.
 ## An agent of ours, only for the gaps
 
 For what the stock ones leave (the console's clipboard, a ready signal on non-systemd guests,
-anything webpc-specific): a small static aarch64 binary (Rust, musl) on a port of its own
-(`org.webpc.agent.0` or similar) with a line protocol. Reaching arbitrary images:
+anything waarm64-specific): a small static aarch64 binary (Rust, musl) on a port of its own
+(`org.waarm64.agent.0` or similar) with a line protocol. Reaching arbitrary images:
 
-1. **The tools disk, first.** The page attaches a read-only `WEBPC-TOOLS` FAT disk (`web/fat.ts`
+1. **The tools disk, first.** The page attaches a read-only `WAARM64-TOOLS` FAT disk (`web/fat.ts`
    already writes FAT, for Alpine's CIDATA seed) with the binary, a systemd unit, an OpenRC script
    and `install.sh`; the user mounts it and runs the installer once, as with VirtualBox's Guest
    Additions. Works on any distro, and the result travels with the disk (export, snapshots).

@@ -297,7 +297,7 @@ async function inflateParts(parts: Uint8Array[], size: number) {
 /** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and hash (web/changes.ts `hashSource`). */
 export type ChangesHeader = { backingName: string; hash?: string };
 
-const EXT_BASE_HASH = 0x57504332; // "WPC2" (web/qcow2-write.ts)
+const EXT_BASE_HASH = 0x57414d32; // "WAM2" (web/qcow2-write.ts)
 
 /**
  * The backing file's name and our hash extension from a qcow2's first bytes (its first cluster:

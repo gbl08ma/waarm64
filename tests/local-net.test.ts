@@ -1,12 +1,12 @@
 // The local helper's framing on the page's side (web/local-net.ts): QEMU's stream framing, several whole frames per
-// message, as webpc-net speaks it (at the commit tests/webpc-net.ts pins); and the helper's link as the page takes it.
+// message, as waarm64-net speaks it (at the commit tests/waarm64-net.ts pins); and the helper's link as the page takes it.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { dhcpAck, frameMessage, framesOf, LOCAL_MAX_MESSAGE, LOCAL_SUBPROTOCOL, parseLocalURL, startLocalNet } from '../web/local-net.ts';
 import { MAX_PORT_FRAME } from '../web/offload.ts';
 import { MsgError } from '../web/msg.ts';
-import { helperSource } from './webpc-net.ts';
+import { helperSource } from './waarm64-net.ts';
 
 const frame = (n: number, fill: number) => new Uint8Array(n).fill(fill);
 

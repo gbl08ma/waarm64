@@ -1,6 +1,6 @@
 {
  "id": "gamepad-noid",
- "name": "webpc game pad without report IDs",
+ "name": "waarm64 game pad without report IDs",
  "vendorId": 4617,
  "productId": 3,
  "note": "ours: a generic game pad, no report IDs, a Pointer physical collection inside",

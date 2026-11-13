@@ -78,12 +78,12 @@ pub const NAMES: [&str; 22 + PROPS] = [
     "image/gif",
     "image/avif",
     "text/plain;charset=UTF-8",
-    "WEBPC_0",
-    "WEBPC_1",
-    "WEBPC_2",
-    "WEBPC_3",
-    "WEBPC_4",
-    "WEBPC_5",
+    "WAARM64_0",
+    "WAARM64_1",
+    "WAARM64_2",
+    "WAARM64_3",
+    "WAARM64_4",
+    "WAARM64_5",
 ];
 const CLIPBOARD: usize = 0;
 const TARGETS: usize = 1;
@@ -1277,7 +1277,7 @@ impl X {
             for w in c.buf.as_chunks::<4>().0 {
                 if let Some(n) = self.name(u32::from_le_bytes(*w))
                     && !types.iter().any(|t| t == n)
-                    && !n.starts_with("WEBPC_")
+                    && !n.starts_with("WAARM64_")
                 {
                     types.push(n.to_owned());
                 }
@@ -1855,7 +1855,7 @@ mod tests {
 
     /// A listening socket `X<n>` in a directory of the test's own, and the directory.
     fn listener(name: &str, n: u32) -> (std::os::unix::net::UnixListener, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("webpc-agent-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("waarm64-agent-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         let l = std::os::unix::net::UnixListener::bind(dir.join(format!("X{n}"))).unwrap();
@@ -1938,7 +1938,7 @@ mod tests {
 
     #[test]
     fn the_sessions_display_is_the_hinted_one_else_a_users_process_names_it() {
-        let dir = std::env::temp_dir().join(format!("webpc-agent-x11dir-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("waarm64-agent-x11dir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         for n in ["X0", "X3", "X10", "X1-lock"] {

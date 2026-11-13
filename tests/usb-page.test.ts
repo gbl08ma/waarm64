@@ -23,7 +23,7 @@ test('identities, lock names and connectors', () => {
   assert.equal(identityKey({ api: 'usb', vendorId: 0x2e8a, productId: 0xa, serialNumber: 'E6614' }), 'usb:2e8a:000a:s:E6614');
   assert.equal(identityKey({ api: 'hid', vendorId: 0x54c, productId: 0xce6 }), 'hid:054c:0ce6:n:0');
   assert.equal(identityKey({ api: 'hid', vendorId: 0x54c, productId: 0xce6, index: 1 }), 'hid:054c:0ce6:n:1');
-  assert.equal(usbLock({ api: 'usb', vendorId: 1, productId: 2 }), 'webpc-usb:usb:0001:0002:n:0');
+  assert.equal(usbLock({ api: 'usb', vendorId: 1, productId: 2 }), 'waarm64-usb:usb:0001:0002:n:0');
   assert.equal(deviceName({ api: 'usb', vendorId: 0x2e8a, productId: 0xa }), t('usb:usb-ports.usbDevice', { ids: '2e8a:000a' }));
   assert.equal(deviceName({ api: 'hid', vendorId: 1, productId: 2, productName: ' DualSense ' }), 'DualSense');
   assert.equal(deviceName({ api: 'virtual', kind: 'gadget-zero' }), t('usb:usb-ports.gadgetZero'));
@@ -110,7 +110,7 @@ function fakeWorker(port: MessagePort, seen: UsbToWorker[]) {
 }
 
 test('the ports: attach, refuse, detach all and attach again, a device unplugged; the locks between two tabs', async () => {
-  const channel = `webpc-usb-test-${process.pid}`;
+  const channel = `waarm64-usb-test-${process.pid}`;
   const [a, b] = [new Store(memoryRecords(), memoryFiles(), { channel }), new Store(memoryRecords(), memoryFiles(), { channel })];
   const released: string[] = [];
   const locksA = new UsbLocks(a, () => 'Machine A', (lock) => { released.push(lock); locksA.drop(lock); });

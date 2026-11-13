@@ -150,7 +150,7 @@ try {
     const ids = Array.from({ length: N }, (_, i) => i).filter((i) => i % P === w);
     tell(workers[w], {
       type: 'start', spacingMs: 1000 * P / RATE,
-      members: ids.map((id) => ({ id, unixOffset, link: `webpc-room:${encodeURIComponent(room)}?nostr=${encodeURIComponent(`${relayURL}/m${id}`)}&derp=${encodeURIComponent(DERP)}` })),
+      members: ids.map((id) => ({ id, unixOffset, link: `waarm64-room:${encodeURIComponent(room)}?nostr=${encodeURIComponent(`${relayURL}/m${id}`)}&derp=${encodeURIComponent(DERP)}` })),
     });
   }
   let s: RelayStats;

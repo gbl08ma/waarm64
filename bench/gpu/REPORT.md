@@ -22,7 +22,7 @@ bench/gpu/run-mac.sh
 | Samples | 20 after 3 warm-up frames, medians and IQR in ms | the same |
 
 The JSON's commit is the one the suite was committed on top of (`dirty`: the suite itself was new);
-the Mac run was made from a copy (`~/webpc-gpu-bench`: `bench/`, `tools/serve.ts`, a copy of
+the Mac run was made from a copy (`~/waarm64-gpu-bench`: `bench/`, `tools/serve.ts`, a copy of
 `playwright-core`; Node 26 and Playwright's Chromium were there already). Nothing else on the host
 was installed or changed.
 
@@ -209,7 +209,7 @@ longer on WebGL2 than canvas 2D's; that read waits for the GPU process, which a 
 falls at the larger sizes (4K full 6.77 → 4.22, 4K damage10 1.04 → 0.55; 1080p full even, 1.81 → 1.89), but every present draws the
 whole scanout on the CPU: 7 to 18 ms until the canvas has it, against 0.2 to 1 ms for canvas 2D. So `auto` keeps
 canvas 2D where the renderer is software (SwiftShader, llvmpipe, Windows' Basic Render Driver), and the page tests,
-which run on SwiftShader, keep testing that screen; `?gpu=gl2d` forces WebGL2 (`WEBPC_PAGE_QUERY=gpu=2d,gl2d` runs the
+which run on SwiftShader, keep testing that screen; `?gpu=gl2d` forces WebGL2 (`WAARM64_PAGE_QUERY=gpu=2d,gl2d` runs the
 page tests on it), `?gpu=canvas2d` canvas 2D.
 
 ## dEQP-GLES's census (2026-11-09)
@@ -255,7 +255,7 @@ old lists' every case among them), and `scripts/ci-deqp.sh` takes `ci-deqp-vk.sh
 case of a group from a drawn offset; `tests/deqp-lists.ts`, shared), both machines at once, `--full` the whole lists.
 
 **dEQP's processes a machine** (a 448-case GLES3 slice, `STRIDE=100 OFFSET=7`; `results/gles-census/jobs/`): dEQP's
-own time 48 s at one process, 30 s at two, 27 s at four, the same results. Four it is (`WEBPC_DEQP_JOBS`): the gain
+own time 48 s at one process, 30 s at two, 27 s at four, the same results. Four it is (`WAARM64_DEQP_JOBS`): the gain
 past two is small, and more contexts side by side is more of what one process never does. Contiguous quarters of a
 slice are uneven: in the slice holding GLES3's `builtin_functions.precision` group (1,245 cases, up to 32 s each)
 the processes took 121, 1,500 (the limit: 76 cases left, all passing when run alone), 397 and 150 s.
@@ -294,7 +294,7 @@ passed alone and in two runs of its group at four processes; GLES2's 1,826 all p
 
 The backlog's "virgl's occlusion-query poll waits 4 ms a turn": a GL program waiting on `GL_QUERY_RESULT` waits for the
 GPU worker's next look at its query. **The workload** is new: `glquery` (images/alpine/gl/glquery.c, in alpine-gl and
-alpine-virgl, `webpc.glq=`), GLES 3.0 on EGL surfaceless through Mesa 26.1.6's virgl: per frame a full-target quad,
+alpine-virgl, `waarm64.glq=`), GLES 3.0 on EGL surfaceless through Mesa 26.1.6's virgl: per frame a full-target quad,
 then 4 small quads each in an `ANY_SAMPLES_PASSED` query whose result is waited on at once (an occlusion culler testing
 a box), then a `glFinish`; 300 frames at 640×480, each wait and finish timed in the guest. It runs through
 tests/browser/virgl-boot.html (the page's GPU worker, alpine-virgl under the JIT in a worker, now in realtime when

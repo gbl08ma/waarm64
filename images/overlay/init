@@ -1,11 +1,11 @@
 #!/bin/sh
-# webpc test guest's init (root on /dev/vda, read-only; the kernel mounted
+# waarm64 test guest's init (root on /dev/vda, read-only; the kernel mounted
 # devtmpfs): mount the pseudo filesystems, run the test script (or the script
 # given after `--` on the kernel command line), report, power off (PSCI
 # SYSTEM_OFF).
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
-echo "webpc: init"
+echo "waarm64: init"
 ${1:-/test.sh}
-echo "webpc: test exit $?"
+echo "waarm64: test exit $?"
 poweroff -f

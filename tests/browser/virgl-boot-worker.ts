@@ -14,10 +14,10 @@ try {
   const { renderer, caps } = await new Promise<{ renderer: MessagePort; caps: Uint8Array }>((resolve) => { self.onmessage = (e) => resolve(e.data); });
   const params = new URLSearchParams(self.name); // the page's query (virgl-boot.html)
   const a = DISTROS.alpine;
-  const [wasm, kernel, initrd] = await Promise.all([get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'), get(`/target/images/${a.kernel}`), get(`/target/images/${a.initrd}`)]);
+  const [wasm, kernel, initrd] = await Promise.all([get('/target/wasm32-unknown-unknown/release/waarm64_core.wasm'), get(`/target/images/${a.kernel}`), get(`/target/images/${a.initrd}`)]);
   const disk = new URL('/target/images/alpine-virgl/rootfs-virgl.ext4', location.href).href;
   const gpu = { type: 'gpu' as const, width: 640, height: 480, virgl: true, caps, renderer };
-  const cmdline = `${a.cmdline} webpc.gl=${params.get('gl') ?? '3,3,128,96'} webpc.lp=0 webpc.gpu=1${params.has('dump') ? ' webpc.gldump=1' : ''}${params.has('glq') ? ` webpc.glq=${params.get('glq')}` : ''}`;
+  const cmdline = `${a.cmdline} waarm64.gl=${params.get('gl') ?? '3,3,128,96'} waarm64.lp=0 waarm64.gpu=1${params.has('dump') ? ' waarm64.gldump=1' : ''}${params.has('glq') ? ` waarm64.glq=${params.get('glq')}` : ''}`;
   const r = await runToPowerOff(wasm, { ramSize: 1 << 30, kernel, initrd, cmdline, devices: [...guestDevices(disk), gpu], jit: 1, realtime: params.has('glq') }, 1e12);
   self.postMessage({ kind: r.kind, steps: r.steps, ms: r.ms, console: r.console });
 } catch (e) {

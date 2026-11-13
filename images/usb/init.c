@@ -11,7 +11,7 @@
 //
 // It prints the root hubs ("usb: hub usb1 480 Mb/s 4 ports …"), each Gadget Zero with its speed and
 // driver, testusb's own lines, a summary per pass ("usb: pass 1: 26 lines, 0 failed"), and
-// "webpc: usb test ok" when every pass that had to be clean was; then it powers off. The runners check
+// "waarm64: usb test ok" when every pass that had to be clean was; then it powers off. The runners check
 // that and the step count (core/tests/usb_guest.rs, tests/boot-node-suite.ts, tests/browser.test.ts).
 #include <dirent.h>
 #include <errno.h>
@@ -26,7 +26,7 @@
 #include <unistd.h>
 
 static void die(const char *what) {
-    printf("webpc: usb test failed: %s\n", what);
+    printf("waarm64: usb test failed: %s\n", what);
     fflush(stdout);
     reboot(RB_POWER_OFF);
     exit(1);
@@ -168,7 +168,7 @@ int main(void) {
         nap(200);
         if (gadgets(1) != 0)
             die("a device on an empty bus");
-        printf("webpc: usb test ok\n");
+        printf("waarm64: usb test ok\n");
         reboot(RB_POWER_OFF);
         return 0;
     }
@@ -202,7 +202,7 @@ int main(void) {
         if (failed || lines == 0)
             die("testusb's pass after the replug");
     }
-    printf("webpc: usb test ok\n");
+    printf("waarm64: usb test ok\n");
     reboot(RB_POWER_OFF);
     return 0;
 }

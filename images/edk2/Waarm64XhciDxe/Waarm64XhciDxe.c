@@ -1,12 +1,12 @@
 /** @file
-  webpc's xHCI for the firmware (docs/usb.md "The keyboard"): the machine's controller is a DT
+  waarm64's xHCI for the firmware (docs/usb.md "The keyboard"): the machine's controller is a DT
   node, `generic-xhci`, not a PCI function. This driver finds those nodes through the DT client
   protocol and registers each as a non-discoverable xHCI device (coherent DMA, its one MMIO
   window). NonDiscoverablePciDeviceDxe then gives it a PCI I/O protocol, and EDK2's XhciDxe,
   UsbBusDxe and UsbKbDxe drive it as they do a PCI controller: the page's built-in USB keyboard
   becomes the firmware's console input.
 
-  Copyright (c) 2026, the webpc authors. Written for webpc (images/build.sh edk2).
+  Copyright (c) 2026, the waarm64 authors. Written for waarm64 (images/build.sh edk2).
   SPDX-License-Identifier: MIT
 **/
 
@@ -19,7 +19,7 @@
 
 EFI_STATUS
 EFIAPI
-WebpcXhciDxeEntryPoint (
+Waarm64XhciDxeEntryPoint (
   IN EFI_HANDLE        ImageHandle,
   IN EFI_SYSTEM_TABLE  *SystemTable
   )

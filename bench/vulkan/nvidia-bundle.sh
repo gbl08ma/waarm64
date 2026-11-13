@@ -15,7 +15,7 @@ GODOT_ONLY=
 [ "${1:-}" = --godot ] && { GODOT_ONLY=1; shift; }
 OUT=$(realpath -m "${1:-target/vk2-nvidia-bundle.tar}")
 FILES=(
-  target/wasm32-unknown-unknown/release/webpc_core.wasm target/vk/venus.wasm target/vk/LICENSES.txt
+  target/wasm32-unknown-unknown/release/waarm64_core.wasm target/vk/venus.wasm target/vk/LICENSES.txt
   target/images/edk2/QEMU_EFI.fd target/images/edk2/LICENSES.txt target/arch/desktop.qcow2
 )
 [ -n "$GODOT_ONLY" ] || FILES+=(
@@ -31,7 +31,7 @@ for f in "${FILES[@]}"; do [ -f "$f" ] || missing+=("$f"); done
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 {
-  echo "webpc VK2 NVIDIA bundle, made $(date -u +%Y-%m-%dT%H:%M:%SZ) from $(git rev-parse --short=12 HEAD)$(git diff --quiet HEAD || echo ' (with uncommitted changes)')"
+  echo "waarm64 VK2 NVIDIA bundle, made $(date -u +%Y-%m-%dT%H:%M:%SZ) from $(git rev-parse --short=12 HEAD)$(git diff --quiet HEAD || echo ' (with uncommitted changes)')"
   for f in "${FILES[@]}"; do printf '  %s %s\n' "$(du -h "$f" | cut -f1)" "$f"; done
 } > "$T/BUNDLE.txt"
 git ls-files -z | tar --null -cf "$OUT" -T -

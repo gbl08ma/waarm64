@@ -209,7 +209,7 @@ export class Screen {
     this.onPresent?.();
   }
 
-  /** The screen drawn now and read back (bench hooks: `window.__webpcGrab`): RGBA, top row first; 0×0 before a scanout. */
+  /** The screen drawn now and read back (bench hooks: `window.__waarm64Grab`): RGBA, top row first; 0×0 before a scanout. */
   grab(): { width: number; height: number; pixels: Uint8Array } {
     this.draw();
     const s = this.src, gl = this.gl;

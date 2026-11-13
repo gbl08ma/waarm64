@@ -2,7 +2,7 @@
 // Chromium, on a stored machine whose only disk is blank (the firmware runs and finds nothing to boot: all an adapter
 // needs to be live). The helper's pairing link opens the page: the fragment leaves the address, the Network wizard opens
 // on This computer with the link filled in, and Attach keeps a `local` connection on the machine's first adapter, which
-// connects at its start through the real helper (built at the commit tests/webpc-net.ts pins). Stopping the helper is said in the menu,
+// connects at its start through the real helper (built at the commit tests/waarm64-net.ts pins). Stopping the helper is said in the menu,
 // and Retry, once it runs again, connects again; a link to no helper says it isn't running. And from a public origin,
 // where Chromium's Local Network Access gates the socket: connected once allowed, the refusal said where to change it.
 // Needs the firmware (images/build.sh edk2) and Go.
@@ -15,7 +15,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { buildHelper, helperSkip } from './webpc-net.ts';
+import { buildHelper, helperSkip } from './waarm64-net.ts';
 import { t } from '../web/i18n.ts';
 import { RELEASE } from '../web/local-release.ts';
 import { words } from './words.ts';
@@ -42,7 +42,7 @@ const freePort = () => new Promise<number>((resolve) => {
 /** Starts the helper on `port` with the test's token, accepting the test server's origin; resolves once it listens. */
 async function startHelper() {
   let log = '';
-  helper = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${port}`, '--origin', base], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+  helper = spawn(`${ROOT}target/net/waarm64-net`, ['--listen', `127.0.0.1:${port}`, '--origin', base], { env: { ...process.env, WAARM64_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
   helper.stdout!.on('data', (d) => { log += d; });
   helper.stderr!.on('data', (d) => { log += d; });
   for (let k = 0; k < 100 && !log.includes('listening on'); k++) await new Promise((r) => setTimeout(r, 100));
@@ -78,7 +78,7 @@ const seed = (page: Page) => page.evaluate(async (modules) => {
   return m.id;
 }, ['/web/app/store.ts', '/web/app/machines.ts']);
 const connections = (page: Page) => page.evaluate(() => new Promise<{ id: string; kind: string; name: string; local?: { url: string } }[]>((resolve, reject) => {
-  const open = indexedDB.open('webpc');
+  const open = indexedDB.open('waarm64');
   open.onsuccess = () => {
     const req = open.result.transaction('connections').objectStore('connections').getAll();
     req.onsuccess = () => { open.result.close(); resolve(req.result); };

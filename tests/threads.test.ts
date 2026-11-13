@@ -9,7 +9,7 @@ import { clockOffset } from '../web/vm.ts';
 import { threadsRun, type Spawn } from './threads-run.ts';
 import type { Result } from './threads-worker.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const GUEST = readFileSync(new URL('../bench/interp/guest.bin', import.meta.url));
 const N = 30_000_000;
 

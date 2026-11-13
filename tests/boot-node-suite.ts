@@ -6,18 +6,18 @@
 // - Short guests (the bare-metal tests, kvm-unit-tests, Buildroot and its
 //   device test): the interpreter, then the JIT against it. JIT-stress only for
 //   the bare-metal tests and kvm-unit-tests `cache` (its IC maintenance), since
-//   a 4-block cache compiles on most dispatches; WEBPC_JIT_STRESS=1 runs the rest.
-//   JIT-stress and the parallel JIT-check runs only with WEBPC_JIT_VARIANTS=1
+//   a 4-block cache compiles on most dispatches; WAARM64_JIT_STRESS=1 runs the rest.
+//   JIT-stress and the parallel JIT-check runs only with WAARM64_JIT_VARIANTS=1
 //   (scripts/ci-jit.sh: tests/jit-variants.ts).
 // - Long guests (LTP and kselftests, the crypto test kernel, Alpine, Alpine's
 //   userspace benchmark): the JIT only, against tests/steps.txt. Their
 //   interpreter runs are native (core/tests: ltp.rs, distros.rs), or here with
-//   WEBPC_INTERP=1 (the crypto kernel has no native runner: ~100 s in Node).
-// - Alpine and its userspace benchmark only with WEBPC_DISTROS=alpine,alpine-user
+//   WAARM64_INTERP=1 (the crypto kernel has no native runner: ~100 s in Node).
+// - Alpine and its userspace benchmark only with WAARM64_DISTROS=alpine,alpine-user
 //   (scripts/ci.sh sets it when their images are current).
 // - Parallel SMP (a worker per vCPU, realtime: not reproducible): the
-//   bare-metal tests, Buildroot and (with WEBPC_DISTROS=alpine) Alpine, each
-//   WEBPC_PARALLEL_RUNS times (default 3), every run must pass.
+//   bare-metal tests, Buildroot and (with WAARM64_DISTROS=alpine) Alpine, each
+//   WAARM64_PARALLEL_RUNS times (default 3), every run must pass.
 // Needs the wasm build; the guests that need target/images skip without them.
 // Four files define these tests, each a part picked by name, so that they run side by side
 // (node --test runs files in parallel, a file's tests in sequence): boot-node.test.ts (bare metal,
@@ -38,15 +38,15 @@ const test = ((name: string, ...rest: unknown[]) => {
   if (part(name)) (nodeTest as (...a: unknown[]) => unknown)(name, ...rest);
 }) as typeof nodeTest;
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);
 const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));
-const STRESS = process.env.WEBPC_JIT_STRESS === '1';
-const INTERP = process.env.WEBPC_INTERP === '1';
-// The heaviest multi-vCPU runs need WEBPC_LONG_TESTS=1, which scripts/ci.sh sets (a plain npm test leaves them out).
-const longSkip = process.env.WEBPC_LONG_TESTS !== '1' && 'SKIPPED: scripts/ci.sh runs it (WEBPC_LONG_TESTS=1)';
-const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
+const STRESS = process.env.WAARM64_JIT_STRESS === '1';
+const INTERP = process.env.WAARM64_INTERP === '1';
+// The heaviest multi-vCPU runs need WAARM64_LONG_TESTS=1, which scripts/ci.sh sets (a plain npm test leaves them out).
+const longSkip = process.env.WAARM64_LONG_TESTS !== '1' && 'SKIPPED: scripts/ci.sh runs it (WAARM64_LONG_TESTS=1)';
+const DISTRO_TESTS = (process.env.WAARM64_DISTROS ?? '').split(',').filter(Boolean);
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
 const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9, input?: ConsoleInput) => runToPowerOff(WASM, { ...o, jit }, max, undefined, input);
@@ -55,18 +55,18 @@ const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.st
 /**
  * Boots `o` on the interpreter, checks it with `check`, then under the JIT and
  * JIT-stress (unless `stress` is false) and requires the same run. A long guest
- * (`interp: false`) skips the interpreter unless WEBPC_INTERP=1: its JIT runs
+ * (`interp: false`) skips the interpreter unless WAARM64_INTERP=1: its JIT runs
  * are checked with `check` and against `steps` alone.
  */
 function guest(name: string, o: () => BootOptions, check: (r: Run) => void, { skip = false as string | false, stress = true, max = 20e9, steps = 0, interp = true, input = undefined as ConsoleInput | undefined } = {}) {
   let want: Run | undefined;
-  test(`${name}: interpreter`, { skip: skip || (!interp && !INTERP && 'SKIPPED: set WEBPC_INTERP=1') }, async () => {
+  test(`${name}: interpreter`, { skip: skip || (!interp && !INTERP && 'SKIPPED: set WAARM64_INTERP=1') }, async () => {
     want = await boot(o(), 0, max, input);
     check(want);
     if (steps) assert.equal(want.steps, steps);
   });
   for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2]] as const) {
-    const off = skip || (jit === 2 && ((!stress && 'SKIPPED: set WEBPC_JIT_STRESS=1') || jitVariantSkip));
+    const off = skip || (jit === 2 && ((!stress && 'SKIPPED: set WAARM64_JIT_STRESS=1') || jitVariantSkip));
     test(`${name}: ${mode}`, { skip: off }, async () => {
       const r = await boot(o(), jit, max, input);
       const ref = want ? ` (interpreter ${(want.ms / 1000).toFixed(1)} s)` : '';
@@ -126,7 +126,7 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && round
 // block is dropped and counted, not a trap).
 // A run that doesn't power off within `maxMs` fails (a realtime guest stuck with its timers running
 // would otherwise hold the test file until CI's outer timeout).
-const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
+const RUNS = Number(process.env.WAARM64_PARALLEL_RUNS ?? 3);
 const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void, input?: ConsoleInput, maxMs = 300_000) => {
   for (let i = 0; i < RUNS; i++) {
     const t0 = performance.now();
@@ -275,14 +275,14 @@ const linux = (!has('linux/Image') || !has('buildroot/rootfs.ext4')) && 'SKIPPED
 const disk = () => new URL('buildroot/rootfs.ext4', IMAGES).href;
 guest('Buildroot', () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()) }), (r) => {
   poweredOff(r);
-  assert.match(r.console, /webpc: test ok/);
+  assert.match(r.console, /waarm64: test ok/);
 }, { skip: linux, stress: STRESS, steps: STEPS.buildroot });
 
 // On 2 and 4 vCPUs, deterministic round-robin (M7): the same steps interpreted and under the JIT.
 for (const n of [2, 4]) {
   guest(`Buildroot on ${n} vCPUs`, () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: n }), (r) => {
     poweredOff(r);
-    assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
+    assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*waarm64: test ok`));
   }, { skip: linux, stress: STRESS, steps: STEPS[`buildroot-${n}cpu`] });
 }
 
@@ -334,7 +334,7 @@ test('parallel: Buildroot console input through a port (2 vCPUs, JIT)', { skip: 
 for (const n of [2, 4]) {
   test(`parallel: Buildroot on ${n} vCPUs (JIT)`, { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: n }, 1, (r) => {
     poweredOff(r);
-    assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
+    assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*waarm64: test ok`));
     // The modules went through the compile worker (docs/jit.md "Sharing"), every table installing them from
     // there (a table may not have caught up with the last ones at power-off), none after waiting the backstop's second.
     const { workerInstalls, overdue, modules } = r.stats.jit;
@@ -345,7 +345,7 @@ for (const n of [2, 4]) {
 // default): idle sleeps through Atomics.waitAsync, busy chunks through a wait that times out, thousands a boot.
 test('parallel: Buildroot on 4 vCPUs, the workers yielding every 1 ms (JIT)', { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: 4, vcpuYieldMs: 1 }, 1, (r) => {
   poweredOff(r);
-  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/);
+  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok/);
 }));
 
 // The litmus image (images/build.sh litmus, M7): herdtools7's litmus tests,
@@ -358,10 +358,10 @@ test('parallel: Buildroot on 4 vCPUs, the workers yielding every 1 ms (JIT)', { 
 // Parallel JIT at -r 50 (100K outcomes a test): `eor x, x, x` folded by TurboFan (its address dependency
 // lost) failed MP+dmb.sy+addr in 5 of 5 such runs, in 1 of 3 at -r 10 (M8 loop 7; docs/jit.md "Atomics").
 const litmusSkip = !has('litmus/initramfs.cpio') && 'SKIPPED: run images/build.sh linux litmus';
-const litmus = (l: string, s: string): BootOptions => ({ ramSize: 256 << 20, kernel: image('linux/Image'), initrd: image('litmus/initramfs.cpio'), cmdline: `console=ttyAMA0 panic=-1 webpc.litmus=${l} webpc.stress=${s}`, ncpus: 4 });
+const litmus = (l: string, s: string): BootOptions => ({ ramSize: 256 << 20, kernel: image('linux/Image'), initrd: image('litmus/initramfs.cpio'), cmdline: `console=ttyAMA0 panic=-1 waarm64.litmus=${l} waarm64.stress=${s}`, ncpus: 4 });
 const litmusOk = (r: Run) => {
   poweredOff(r);
-  assert.match(r.console, /webpc: litmus on 4 CPUs[^]*litmus: all ok, 0 skipped\r?\nwebpc: stress on 4 CPUs[^]*\nwebpc: test ok\r?\n/, r.console);
+  assert.match(r.console, /waarm64: litmus on 4 CPUs[^]*litmus: all ok, 0 skipped\r?\nwaarm64: stress on 4 CPUs[^]*\nwaarm64: test ok\r?\n/, r.console);
 };
 guest('litmus and stress on 4 vCPUs', () => litmus('-s,100,-r,1', '-n,20000'), litmusOk, { skip: litmusSkip, stress: STRESS, steps: STEPS['litmus-4cpu'], interp: false, max: 5e9 });
 // The JIT's litmus at -r 50 caught V8 folding an address dependency (docs/jit.md "Atomics"; -r 10
@@ -378,7 +378,7 @@ guest('Buildroot device test', () => ({
   ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: `${GUEST_CMDLINE} -- /test-devices.sh`, devices: testDevices(disk()), framebuffer: { width: 640, height: 480 },
 }), (r) => {
   poweredOff(r);
-  for (const want of ['3 packets transmitted, 3 packets received, 0% packet loss', '9p: big 200000 ok', 'fb: 0 simple 640,480', 'webpc: test ok']) assert.ok(r.console.includes(want), `missing ${want}`);
+  for (const want of ['3 packets transmitted, 3 packets received, 0% packet loss', '9p: big 200000 ok', 'fb: 0 simple 640,480', 'waarm64: test ok']) assert.ok(r.console.includes(want), `missing ${want}`);
 }, { skip: linux, stress: STRESS, steps: STEPS.devices });
 
 // The LTP subset and the arm64 kselftests (images/build.sh ltp linux):
@@ -388,13 +388,13 @@ guest('LTP and kselftests', () => ({
   ramSize: 512 << 20, kernel: image('linux/Image-defconfig'), cmdline: `${GUEST_CMDLINE} -- /ltp.sh`, devices: guestDevices(new URL('ltp/rootfs.ext4', IMAGES).href),
 }), (r) => {
   poweredOff(r);
-  assert.match(r.console, /webpc: test ok\r?\n/);
+  assert.match(r.console, /waarm64: test ok\r?\n/);
   // Every test passes or skips (ltp.rs has which, and why).
-  const failed = [...r.console.matchAll(/^(ltp|kselftest|webpc): (\S+) (\d+)\r?$/gm)]
+  const failed = [...r.console.matchAll(/^(ltp|kselftest|waarm64): (\S+) (\d+)\r?$/gm)]
     .filter(([, suite, , code]) => !(code === '0' || code === (suite === 'ltp' ? '32' : '4')));
   assert.deepEqual(failed.map((m) => m[0].trim()), []);
   assert.ok(r.console.split('\n').filter((l) => /^(ltp|kselftest): /.test(l)).length > 100, 'too few results');
-  assert.match(r.console, /^webpc: debug 0\r?$/m);
+  assert.match(r.console, /^waarm64: debug 0\r?$/m);
 }, { skip: ltp, stress: STRESS, max: 200e9, steps: STEPS.ltp, interp: false });
 
 // The crypto extensions' test kernel (images/build.sh linux-crypto)
@@ -405,7 +405,7 @@ guest('crypto test kernel', () => ({
   ramSize: 256 << 20, kernel: image('linux-crypto/Image'), initrd: image('linux-crypto/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', crypto: true,
 }), (r) => {
   poweredOff(r);
-  assert.match(r.console, /webpc: test ok \(0 failed, 0 pending\)/);
+  assert.match(r.console, /waarm64: test ok \(0 failed, 0 pending\)/);
   assert.match(r.console, /cpuinfo: Features\t: fp asimd aes pmull sha1 sha2 .* jscvt .*sha3 .*sha512/);
   for (const d of CE_DRIVERS) assert.match(r.console, new RegExp(`^crypto: ${d} \\S+ passed\r?$`, 'm'), d);
   const totals = [...r.console.matchAll(/# Totals: pass:(\d+) fail:(\d+)/g)];
@@ -423,7 +423,7 @@ guest('gpu test kernel', () => ({
   devices: [{ type: 'gpu', width: 640, height: 480, trace: true, resize: { after: Number(GPU_GUEST.resizeAfter), width: 800, height: 600 } }],
 }), (r) => {
   poweredOff(r);
-  for (const want of ['gpu: 1 crtc 1 connector 1 encoder', 'gpu: connector connected, 1 mode, preferred 640x480@', 'gpu: mode set 640x480 pitch 2560\n', 'gpu: damage sent\n', 'gpu: cursor set and moved\n', 'gpu: preferred now 800x600,', 'gpu: mode set 800x600\n', 'webpc: gpu test ok\n']) {
+  for (const want of ['gpu: 1 crtc 1 connector 1 encoder', 'gpu: connector connected, 1 mode, preferred 640x480@', 'gpu: mode set 640x480 pitch 2560\n', 'gpu: damage sent\n', 'gpu: cursor set and moved\n', 'gpu: preferred now 800x600,', 'gpu: mode set 800x600\n', 'waarm64: gpu test ok\n']) {
     assert.ok(r.console.replaceAll('\r\n', '\n').includes(want), `missing ${JSON.stringify(want)}`);
   }
   assert.equal(r.gpu?.width, 800);
@@ -471,7 +471,7 @@ const edk2 = (flash?: Uint8Array): BootOptions => ({
 guest('EDK2 shell', () => edk2(), (r) => {
   poweredOff(r);
   // Without the Shell's colours.
-  assert.match(r.console.replace(/\x1b\[[0-9;=]*[A-Za-z]/g, ''), /UEFI Interactive Shell[^]*webpc: before\r?\nsetvar: Unable to get[^]*webpc: done/);
+  assert.match(r.console.replace(/\x1b\[[0-9;=]*[A-Za-z]/g, ''), /UEFI Interactive Shell[^]*waarm64: before\r?\nsetvar: Unable to get[^]*waarm64: done/);
 }, { skip: edk2Skip, stress: STRESS, steps: STEPS['edk2-shell'] });
 test('EDK2 shell: a variable set by one boot is there on the next (JIT)', { skip: edk2Skip }, async () => {
   const first = await boot(edk2(), 1);
@@ -479,34 +479,34 @@ test('EDK2 shell: a variable set by one boot is there on the next (JIT)', { skip
   const r = await boot(edk2(first.flash), 1);
   poweredOff(r);
   // "persisted" in UTF-16LE, as setvar dumps it.
-  assert.match(r.console, /webpc: before\r?\n5B5E1F2A-8C3D-4E6F-9A1B-2C3D4E5F6A7B - WebpcTest - 0012 Bytes\r?\n70 00 65 00 72 00 73 00 69 00 73 00 74 00 65 00 64 00/, r.console);
+  assert.match(r.console, /waarm64: before\r?\n5B5E1F2A-8C3D-4E6F-9A1B-2C3D4E5F6A7B - Waarm64Test - 0012 Bytes\r?\n70 00 65 00 72 00 73 00 69 00 73 00 74 00 65 00 64 00/, r.console);
   assert.equal(r.steps, STEPS['edk2-shell-again']);
 });
 
 const a = DISTROS.alpine;
-const alpineSkip = !DISTRO_TESTS.includes('alpine') ? 'SKIPPED: set WEBPC_DISTROS=alpine' : !has(a.kernel) && 'SKIPPED: run images/build.sh alpine';
+const alpineSkip = !DISTRO_TESTS.includes('alpine') ? 'SKIPPED: set WAARM64_DISTROS=alpine' : !has(a.kernel) && 'SKIPPED: run images/build.sh alpine';
 guest('Alpine', () => ({
   ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: testDevices(new URL(a.disk, IMAGES).href), framebuffer: { width: 640, height: 480 },
 }), (r) => {
   poweredOff(r);
-  assert.match(r.console, /webpc: alpine [^]*webpc: test ok\r?\n/);
+  assert.match(r.console, /waarm64: alpine [^]*waarm64: test ok\r?\n/);
 }, { skip: alpineSkip, stress: STRESS, steps: STEPS.alpine, interp: false });
 
 test('parallel: Alpine on 4 vCPUs (JIT)', { skip: alpineSkip || longSkip }, () => parallel({
   ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: testDevices(new URL(a.disk, IMAGES).href), framebuffer: { width: 640, height: 480 }, ncpus: 4,
 }, 1, (r) => {
   poweredOff(r);
-  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: alpine [^]*webpc: test ok\r?\n/);
+  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*waarm64: alpine [^]*waarm64: test ok\r?\n/);
 }));
 
 // Alpine's userspace benchmark (images/alpine/user): its image under the JIT
 // only (10.7G steps: minutes interpreted), with its phases' check lines.
-const userSkip = !DISTRO_TESTS.includes('alpine-user') ? 'SKIPPED: set WEBPC_DISTROS=alpine-user' : !has('alpine-user/rootfs-user.ext4') && 'SKIPPED: run images/build.sh alpine-user';
+const userSkip = !DISTRO_TESTS.includes('alpine-user') ? 'SKIPPED: set WAARM64_DISTROS=alpine-user' : !has('alpine-user/rootfs-user.ext4') && 'SKIPPED: run images/build.sh alpine-user';
 guest('Alpine userspace', () => ({
   ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: guestDevices(new URL('alpine-user/rootfs-user.ext4', IMAGES).href),
 }), (r) => {
   poweredOff(r);
-  for (const l of ['compress: ok 3', 'binarytrees: 649904 8191', 'fannkuch: 1616 22', 'nbody: -0.169075164 -0.169078071', 'spectralnorm: 1.274222587', 'churn: 1048 files', 'sqlite: 85715 2470168', 'webpc: test ok']) {
+  for (const l of ['compress: ok 2', 'binarytrees: 649904 8191', 'fannkuch: 1616 22', 'nbody: -0.169075164 -0.169078071', 'spectralnorm: 1.274222587', 'churn: 1048 files', 'sqlite: 85715 2470168', 'waarm64: test ok']) {
     assert.ok(r.console.includes(l), `no "${l}"`);
   }
 }, { skip: userSkip, stress: false, steps: STEPS['alpine-user'], interp: false, max: 50e9 });

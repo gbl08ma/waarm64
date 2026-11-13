@@ -3,13 +3,15 @@
 / {
 	#address-cells = <0x02>;
 	#size-cells = <0x02>;
-	compatible = "webpc", "linux,dummy-virt";
-	model = "webpc";
+	compatible = "waarm64", "linux,dummy-virt";
+	model = "waarm64";
 	interrupt-parent = <0x01>;
 
 	chosen {
-		bootargs = [00];
+		bootargs = "console=ttyAMA0 earlycon";
 		stdout-path = "/pl011@9000000";
+		linux,initrd-start = <0x00 0x48000000>;
+		linux,initrd-end = <0x00 0x48100000>;
 		#address-cells = <0x02>;
 		#size-cells = <0x02>;
 		ranges;
@@ -26,25 +28,18 @@
 
 	memory@40000000 {
 		device_type = "memory";
-		reg = <0x00 0x40000000 0x00 0xfc00000>;
-		numa-node-id = <0x00>;
+		reg = <0x00 0x40000000 0x00 0x10000000>;
 	};
 
-	memory@80000000 {
-		device_type = "memory";
-		reg = <0x00 0x80000000 0x00 0x40000000>;
-		numa-node-id = <0x01>;
-	};
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
 
-	memory@100000000 {
-		device_type = "memory";
-		reg = <0x01 0x00 0x01 0x00>;
-		numa-node-id = <0x02>;
-	};
-
-	distance-map {
-		compatible = "numa-distance-map-v1";
-		distance-matrix = <0x00 0x00 0x0a 0x00 0x01 0x14 0x00 0x02 0x14 0x01 0x00 0x14 0x01 0x01 0x0a 0x01 0x02 0x14 0x02 0x00 0x14 0x02 0x01 0x14 0x02 0x02 0x0a>;
+		framebuffer@4fc00000 {
+			reg = <0x00 0x4fc00000 0x00 0x200000>;
+			no-map;
+		};
 	};
 
 	cpus {
@@ -56,7 +51,6 @@
 			compatible = "arm,armv8";
 			reg = <0x00>;
 			enable-method = "psci";
-			numa-node-id = <0x00>;
 		};
 
 		cpu@1 {
@@ -64,19 +58,12 @@
 			compatible = "arm,armv8";
 			reg = <0x01>;
 			enable-method = "psci";
-			numa-node-id = <0x00>;
 		};
 	};
 
 	psci {
 		compatible = "arm,psci-1.0", "arm,psci-0.2";
 		method = "hvc";
-	};
-
-	flash@4000000 {
-		compatible = "cfi-flash";
-		reg = <0x00 0x4000000 0x00 0x100000>;
-		bank-width = <0x04>;
 	};
 
 	intc@8000000 {
@@ -117,12 +104,6 @@
 		clock-names = "apb_pclk";
 	};
 
-	fw-cfg@9020000 {
-		compatible = "qemu,fw-cfg-mmio";
-		reg = <0x00 0x9020000 0x00 0x18>;
-		dma-coherent;
-	};
-
 	virtio_mmio@a000000 {
 		compatible = "virtio,mmio";
 		reg = <0x00 0xa000000 0x00 0x200>;
@@ -134,6 +115,13 @@
 		compatible = "virtio,mmio";
 		reg = <0x00 0xa000200 0x00 0x200>;
 		interrupts = <0x00 0x11 0x04>;
+		dma-coherent;
+	};
+
+	usb@c000000 {
+		compatible = "generic-xhci";
+		reg = <0x00 0xc000000 0x00 0x10000>;
+		interrupts = <0x00 0x30 0x04>;
 		dma-coherent;
 	};
 };

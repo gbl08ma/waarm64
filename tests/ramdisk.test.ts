@@ -115,7 +115,7 @@ test('past its budget of SharedArrayBuffers the ramdisk takes slots in wasm memo
 test("a swap area's first page is mkswap's, byte for byte, and blkid reads it as swap with its label", () => {
   const size = 8 * RAM_CHUNK + 4096 * 3; // not a whole number of chunks
   const uuid = Uint8Array.from({ length: 16 }, (_, i) => i * 17);
-  const page = swapHeader(size, 'webpc-swap0', uuid);
+  const page = swapHeader(size, 'waarm64-swap0', uuid);
   assert.equal(page.length, 4096);
   const v = new DataView(page.buffer);
   assert.equal(v.getUint32(1024, true), 1, 'version 1');
@@ -126,13 +126,13 @@ test("a swap area's first page is mkswap's, byte for byte, and blkid reads it as
   // Against util-linux where it's installed (both machines the project runs on have it).
   const mkswap = ['/usr/sbin/mkswap', '/sbin/mkswap'].find((p) => existsSync(p));
   if (mkswap) {
-    const dir = mkdtempSync(join(tmpdir(), 'webpc-swap-'));
+    const dir = mkdtempSync(join(tmpdir(), 'waarm64-swap-'));
     try {
       const file = join(dir, 'swap.img');
       writeFileSync(file, new Uint8Array(0), { mode: 0o600 });
       truncateSync(file, size);
       const hex = Buffer.from(uuid).toString('hex');
-      execFileSync(mkswap, ['-q', '-p', '4096', '-L', 'webpc-swap0', '-U', `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`, file], { stdio: 'pipe' });
+      execFileSync(mkswap, ['-q', '-p', '4096', '-L', 'waarm64-swap0', '-U', `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`, file], { stdio: 'pipe' });
       const theirs = readFileSync(file).subarray(0, 4096);
       assert.equal(Buffer.compare(theirs, page), 0, "mkswap's first page differs");
       const blkid = ['/usr/sbin/blkid', '/sbin/blkid'].find((p) => existsSync(p));
@@ -141,7 +141,7 @@ test("a swap area's first page is mkswap's, byte for byte, and blkid reads it as
         truncateSync(file, size);
         const out = execFileSync(blkid, ['-p', '-o', 'export', file], { encoding: 'utf8' });
         assert.match(out, /^TYPE=swap$/m);
-        assert.match(out, /^LABEL=webpc-swap0$/m);
+        assert.match(out, /^LABEL=waarm64-swap0$/m);
         assert.match(out, /^UUID=00112233-4455-6677-8899-aabbccddeeff$/m);
       }
     } finally {
@@ -152,6 +152,6 @@ test("a swap area's first page is mkswap's, byte for byte, and blkid reads it as
 
 test("swap ramdisks' fstab.extra credential: one line per label, none without", () => {
   assert.deepEqual(swapCredentials([]), []);
-  assert.deepEqual(swapCredentials([swapLabel(0), swapLabel(1)]), [{ name: 'fstab.extra', data: `LABEL=webpc-swap0 none swap ${SWAP_OPTIONS} 0 0\nLABEL=webpc-swap1 none swap ${SWAP_OPTIONS} 0 0\n` }]);
+  assert.deepEqual(swapCredentials([swapLabel(0), swapLabel(1)]), [{ name: 'fstab.extra', data: `LABEL=waarm64-swap0 none swap ${SWAP_OPTIONS} 0 0\nLABEL=waarm64-swap1 none swap ${SWAP_OPTIONS} 0 0\n` }]);
   assert.ok(new TextEncoder().encode(swapLabel(15)).length <= 15, "mkswap's label size");
 });

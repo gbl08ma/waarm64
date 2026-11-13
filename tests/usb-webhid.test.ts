@@ -74,7 +74,7 @@ const getDesc = (type: number, index: number, length: number, requestType = 0x80
 
 async function configured(cs: HidCollectionInfo[]) {
   const fake = new FakeHid(cs);
-  const d = await openWebHid(fake, { serial: 'webpc-hid-2' });
+  const d = await openWebHid(fake, { serial: 'waarm64-hid-2' });
   assert.equal((await control(d, { requestType: 0, request: 9, value: 1, index: 0, length: 0 })).code, 'success');
   return { fake, d };
 }
@@ -97,7 +97,7 @@ test('the descriptors: IDs, one HID interface, the report descriptor, endpoints 
   assert.deepEqual([...cfg.subarray(34, 41)], [7, 5, 0x01, 3, 32, 0, 1], 'OUT: 31 bytes and the ID');
   const str = (r: UsbResult) => String.fromCharCode(...new Uint16Array(Uint8Array.from(data(r)).buffer.slice(2)));
   assert.equal(str(await control(d, getDesc(3, dev[15], 255, 0x80, 0x0409))), 'DualSense Wireless Controller');
-  assert.equal(str(await control(d, getDesc(3, dev[16], 255, 0x80, 0x0409))), 'webpc-hid-2');
+  assert.equal(str(await control(d, getDesc(3, dev[16], 255, 0x80, 0x0409))), 'waarm64-hid-2');
 });
 
 test('a large input report makes it high speed (bInterval 4 is 1 ms); no output reports, no OUT endpoint', async () => {

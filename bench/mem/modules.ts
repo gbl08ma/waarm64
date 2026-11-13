@@ -129,7 +129,7 @@ if (cmd === 'synth') {
   const { bootVm, DISTROS, Exit, guestDevices } = await import('../../web/vm.ts');
   const IMAGES = new URL('../../target/images/', import.meta.url);
   const a = DISTROS.alpine;
-  const vm = await bootVm(readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)),
+  const vm = await bootVm(readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)),
     { ramSize: 1 << 30, kernel: readFileSync(new URL(a.kernel, IMAGES)), initrd: readFileSync(new URL(a.initrd, IMAGES)), cmdline: a.cmdline, devices: guestDevices(new URL('alpine-user/rootfs-user.ext4', IMAGES).href), jit: 1 });
   for (;;) {
     const r = vm.run(1_000_000);

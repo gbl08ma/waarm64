@@ -12,7 +12,7 @@
 // - The toolbar's switch: PAUSE leaves the guest's clipboard without the host's text; RESUME brings sharing back.
 // - What the agent and its session child cost while X runs (plan §3.3's targets), and the X server's end (a new
 //   session, a new child, sharing again).
-// WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s).
+// WAARM64_AGENT_IDLE=<s> sets the idle window (default 20 s).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -24,14 +24,14 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = 'target/images/debian-sway/disk.qcow2';
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const AGENT = new URL('../target/images/agent/webpc-agent', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WEBPC_DISTROS=debian)'
+const AGENT = new URL('../target/images/agent/waarm64-agent', import.meta.url);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WAARM64_DISTROS=debian)'
   : !existsSync(new URL(`../${IMAGE}`, import.meta.url)) ? 'SKIPPED: run images/debian-sway/build.sh'
   : (!existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh edk2 agent';
-const IDLE_S = Number(process.env.WEBPC_AGENT_IDLE ?? 20);
+const IDLE_S = Number(process.env.WAARM64_AGENT_IDLE ?? 20);
 
 let browser: Browser;
 let base: string;
@@ -71,7 +71,7 @@ const sha = (s: string | Uint8Array) => createHash('sha256').update(s).digest('h
 const hostText = (page: Page) => page.evaluate(() => navigator.clipboard.readText());
 // The guest's side: xclip as the user on display 1; and what the agent says in the journal.
 const X = 'xc() { runuser -u user -- env DISPLAY=:1 XAUTHORITY=/home/user/.Xauthority "$@"; }';
-const journal = (page: Page) => run(page, 'journalctl -b -u webpc-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | tail -6');
+const journal = (page: Page) => run(page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | tail -6');
 /** Waits until the host's clipboard says `want` (by its SHA-256). */
 async function hostHas(page: Page, want: string, what: string, ms = 60_000) {
   const end = Date.now() + ms;
@@ -164,7 +164,7 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
   const up = await xUp(page);
   t.diagnostic(`X in session ${up.session}: ${up.journal}`);
   const props = await run(page, `loginctl show-session ${up.session} -p Type -p Seat -p Active -p Display`);
-  t.diagnostic(`session ${up.session}: ${props}; the unit: ${await run(page, 'systemd-analyze security webpc-agent --no-pager 2>/dev/null | tail -1')}`);
+  t.diagnostic(`session ${up.session}: ${props}; the unit: ${await run(page, 'systemd-analyze security waarm64-agent --no-pager 2>/dev/null | tail -1')}`);
   assert.ok(props.split(' ').includes('Type=tty') && props.split(' ').includes('Active=yes'), props);
   await page.evaluate(() => {
     const w = window as unknown as { __clipboard: Share; __writes: number; __images: number };
@@ -271,7 +271,7 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
   await hostHas(page, 'guest-after-resume', 'xclip after RESUME');
 
   // Idle while X runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
-  const pid = await run(page, 'systemctl show -p MainPID --value webpc-agent');
+  const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
   const child = await run(page, `ps -o pid= --ppid ${pid} | tr -d " "`);
   assert.match(child, /^\d+$/, `one session child: ${child}`);
   const cost = async () => {

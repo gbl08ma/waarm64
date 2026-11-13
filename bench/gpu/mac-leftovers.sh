@@ -23,7 +23,7 @@ leftovers=$(awk '
   { pid=$1; parent[pid]=$2; state[pid]=$3; age[pid]=$4; $1=$2=$3=$4=""; cmd[pid]=substr($0, 5) }
   END {
     for (p in cmd) {
-      chrome = cmd[p] ~ /\/(ms-playwright|webpc-chrome)\// || (cmd[p] ~ /^\(Google Chrome fo/ && state[p] ~ /E/)
+      chrome = cmd[p] ~ /\/(ms-playwright|waarm64-chrome)\// || (cmd[p] ~ /^\(Google Chrome fo/ && state[p] ~ /E/)
       if (!chrome) continue
       owned = 0
       for (a = parent[p]; a > 1 && (a in cmd); a = parent[a]) if (cmd[a] ~ /(^|\/)node( |$)/) { owned = 1; break }

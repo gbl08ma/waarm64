@@ -1,6 +1,6 @@
 {
  "id": "streamdeck",
- "name": "webpc Stream Deck-like",
+ "name": "waarm64 Stream Deck-like",
  "vendorId": 4057,
  "productId": 128,
  "note": "ours, shaped like an Elgato Stream Deck MK.2: keys in, images out, commands as feature reports",

@@ -1,13 +1,13 @@
 # The local network helper
 
-The third kind of connection, beside a tailnet and tailcat ([adapters.md](adapters.md) §1): **webpc-net**,
+The third kind of connection, beside a tailnet and tailcat ([adapters.md](adapters.md) §1): **waarm64-net**,
 a program the user runs on their own computer. The page reaches it over a WebSocket on loopback, and the guest's
 traffic goes out through that computer's sockets, at loopback's latency and the user's own uplink. tailcat and
 Tailscale always go through DERP, because a page has no UDP.
 
-The helper is its own repository, [`github.com/gbl08ma/webpc-net`](https://github.com/gbl08ma/webpc-net) (private
+The helper is its own repository, [`github.com/gbl08ma/waarm64-net`](https://github.com/gbl08ma/waarm64-net) (private
 until the user makes it public). Its README covers the flags, the network it serves, the protocol and the trust
-argument, its THIRD_PARTY.md what it links, and its CLAUDE.md its rules. This page covers webpc's side. The decisions
+argument, its THIRD_PARTY.md what it links, and its CLAUDE.md its rules. This page covers waarm64's side. The decisions
 and their history are in [plans/networking-local.md](../plans/networking-local.md).
 
 ## The helper, briefly
@@ -16,7 +16,7 @@ and their history are in [plans/networking-local.md](../plans/networking-local.m
   ours. Its IPv6 comes from the unmerged [#745](https://github.com/containers/gvisor-tap-vsock/pull/745), taken by a
   `replace` to its author's fork at one commit. Because of that `replace`, `go install` refuses the module.
 - **Listens on `127.0.0.1:8740`** (`--listen`). It accepts a WebSocket only on `/<token>`, only from an allowed origin
-  (`https://vm.tny.im`, plus each `--origin`, matched exactly), and only with the subprotocol `webpc-net.v1`. A refusal
+  (`https://vm.tny.im`, plus each `--origin`, matched exactly), and only with the subprotocol `waarm64-net.v1`. A refusal
   completes the handshake and closes with 4001 (another version), 4003 (the origin) or 4004 (the token), so the page
   can say which. The token is kept in the user's config directory, so a paired page keeps working across restarts.
 - **Prints the pairing link**, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`, and one for each `--origin`.
@@ -43,7 +43,7 @@ and their history are in [plans/networking-local.md](../plans/networking-local.m
 - **The kind `local`** (web/app/connections.ts). Its record holds the link, `local.url`, which carries the token: a
   secret, as tailcat's `exit` is ([adapters.md](adapters.md) §2.1).
 - **The pairing link** (web/app/areas/page-window.ts `takePairing`): `#net=ws://…` is taken out of the address at once and opens the Network
-  wizard on [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) with the link filled in. Pasting the
+  wizard on [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal) with the link filled in. Pasting the
   link, or just its `ws://` part, does the same (web/local-net.ts `parseLocalURL`). The wizard's steps are in
   [frontend.md](../frontend.md) "Network".
 - **The install lines** (web/local-release.ts): the release the page offers (`RELEASE`: its version and SHA256SUMS),
@@ -60,7 +60,7 @@ and their history are in [plans/networking-local.md](../plans/networking-local.m
 - **The primary:** a connected `local` adapter ranks first among the adapters that reach the internet (`primaryOf`).
   Its lease always carries a default route, so a tailcat or tailnet adapter beside it gets the routes-only lease.
 - **Errors**, each a sentence in the Network menu with Retry (web/local-net.ts): the helper not reached
-  ([Couldn't reach the helper. Check that webpc-net is running on your computer.](ui:network:local-net.unreached)), the close codes, the helper closing, and Chromium refusing
+  ([Couldn't reach the helper. Check that waarm64-net is running on your computer.](ui:network:local-net.unreached)), the close codes, the helper closing, and Chromium refusing
   this origin loopback.
 
 ## Local Network Access
@@ -79,19 +79,19 @@ measured.
 
 ## Releases and the pinned commit
 
-The helper's releases are built by its own GitHub Actions, separately from webpc's deploy (the user's, 2026-11-02).
+The helper's releases are built by its own GitHub Actions, separately from waarm64's deploy (the user's, 2026-11-02).
 A `v*` tag is built on an x86_64 and an arm64 Linux runner, and the release is published only when the two builds
 are byte-identical. **The page offers a release** once `web/local-release.ts` takes its version and SHA256SUMS, in a
-change of webpc's. v0.2.0 is the current one (v0.1.0's sums also matched a build in the dev VM). A release is cut only
+change of waarm64's. v0.3.0 is the current one (the rename; v0.1.0's and v0.3.0's sums also matched a build in the dev VM: `bench/net/results/local-helper/build-v0.3.0-aarch64.txt`). A release is cut only
 after an out-of-context review of what it adds (the user's, 2026-11-03: each one costs runner minutes).
 
-**webpc's tests build the helper at the commit `tests/webpc-net.ts` pins** (v0.2.0's code, with a later fix to its tests). The commit is fetched with git
-into `target/net/webpc-net-src`, over HTTPS or else SSH, and built into `target/net/webpc-net`. With
-`WEBPC_NET_SRC=../webpc-net` they build a checkout of yours instead, which is how to work on the page and the helper
+**waarm64's tests build the helper at the commit `tests/waarm64-net.ts` pins** (v0.3.0's). The commit is fetched with git
+into `target/net/waarm64-net-src`, over HTTPS or else SSH, and built into `target/net/waarm64-net`. With
+`WAARM64_NET_SRC=../waarm64-net` they build a checkout of yours instead, which is how to work on the page and the helper
 together. Where the commit can't be fetched (a cloud session, while the repository is private), those tests say
 SKIPPED. Move the pin when the page needs a change of the helper's, after the helper's CI has passed.
 
-**Taking a release:** tag it in webpc-net, wait for its release workflow, then put the version and the sums in
+**Taking a release:** tag it in waarm64-net, wait for its release workflow, then put the version and the sums in
 `RELEASE` (`tests/local-release.test.ts` checks the page's lines against `build.sh --install`'s for them), and usually
 move the pin to the tag's commit.
 

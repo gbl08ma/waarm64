@@ -22,8 +22,8 @@ const IMAGE = 'target/images/debian-vulkan/disk.qcow2';
 const FRAMES_DISK = 'target/vkframes/vkframes.ext4';
 const frames = existsSync(join(root, FRAMES_DISK));
 const missing = [IMAGE, 'target/vk/venus.wasm'].filter((f) => !existsSync(join(root, f)));
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const skip = !debian ? 'SKIPPED: scripts/ci-graphics.sh runs it (WEBPC_DISTROS=debian)' : missing.length ? `SKIPPED: ${missing.join(' and ')} not built (images/debian-vulkan/build.sh, vk/build.sh)` : false;
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
+const skip = !debian ? 'SKIPPED: scripts/ci-graphics.sh runs it (WAARM64_DISTROS=debian)' : missing.length ? `SKIPPED: ${missing.join(' and ')} not built (images/debian-vulkan/build.sh, vk/build.sh)` : false;
 
 // The frames of the short run and the long one: the rate is the difference's, past vkcube's start.
 const SHORT = 60, LONG = 360;
@@ -85,7 +85,7 @@ const OOPS = 'echo oopses $(dmesg | grep -c "Internal error")';
 // vkQuake's; vkcube's front face inverted, ~12%).
 
 test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 25 * 60_000 }, (t) => withDebianLock(async () => {
-  const out = mkdtempSync(join(tmpdir(), 'webpc-venus-'));
+  const out = mkdtempSync(join(tmpdir(), 'waarm64-venus-'));
   let passed = false;
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/vulkan/venus-run.ts', out], {
@@ -97,7 +97,7 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
       passed = true;
       return t.skip('SKIPPED: the page has no WebGPU adapter');
     }
-    assert.match(res.vulkaninfo, /deviceName\s*= Virtio-GPU Venus \(webpc WebGPU\)/, 'the guest\'s Vulkan device is the renderer\'s');
+    assert.match(res.vulkaninfo, /deviceName\s*= Virtio-GPU Venus \(waarm64 WebGPU\)/, 'the guest\'s Vulkan device is the renderer\'s');
     console.log(`host-visible memory mapped at once: ${res[VKMAP]}`);
     assert.match(res[VKMAP] ?? '', /vkmap mapped 6 of 6 x 128 MiB/, `host-visible memory mapped at once (the window too small?): ${res[VKMAP]}`);
     assert.match(res[SWAY], /sway 1/, `sway started: ${res[SWAY]}`);

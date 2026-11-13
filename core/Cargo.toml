@@ -1,5 +1,5 @@
 [package]
-name = "webpc-core"
+name = "waarm64-core"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true

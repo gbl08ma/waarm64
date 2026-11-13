@@ -6,7 +6,7 @@
 # The exit node's machine is this one: what the guest reaches through it is this machine's
 # network, 127.0.0.1 included.
 #
-#   tests/net/tailcat.sh up     # starts both; prints WEBPC_TAILCAT_ADDR=… and WEBPC_TAILCAT_CA=…
+#   tests/net/tailcat.sh up     # starts both; prints WAARM64_TAILCAT_ADDR=… and WAARM64_TAILCAT_CA=…
 #   tests/net/tailcat.sh env    # prints them again
 #   tests/net/tailcat.sh down
 #
@@ -14,7 +14,7 @@
 # only counts one more user and prints its environment, and `down` stops it when the last user
 # leaves (`down --force` at once). Both hold a lock.
 #
-# Clients trust the relay's certificate through NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA (Node) or
+# Clients trust the relay's certificate through NODE_EXTRA_CA_CERTS=$WAARM64_TAILCAT_CA (Node) or
 # ignoreHTTPSErrors (Chromium).
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -47,8 +47,8 @@ running() {
 }
 
 env_out() {
-	echo "WEBPC_TAILCAT_ADDR=$(cat "$DIR/addr")"
-	echo "WEBPC_TAILCAT_CA=$DIR/certs/127.0.0.1.crt"
+	echo "WAARM64_TAILCAT_ADDR=$(cat "$DIR/addr")"
+	echo "WAARM64_TAILCAT_CA=$DIR/certs/127.0.0.1.crt"
 }
 
 case ${1:-} in

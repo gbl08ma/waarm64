@@ -114,7 +114,7 @@ test('DHCP: discover, offer, request, ack with the backend\'s address and the op
   assert.equal(hex(o.get(1)!), 'ffffffff', 'mask: a /32 (systemd-networkd rejects 0.0.0.0), the routes come from option 121');
   assert.deepEqual(Array.from(o.get(3)!), GATEWAY_IP, 'router');
   assert.deepEqual(Array.from(o.get(6)!), ECHO_LEASE.dns[0], 'dns');
-  assert.equal(Buffer.from(o.get(15)!).toString(), 'test.webpc');
+  assert.equal(Buffer.from(o.get(15)!).toString(), 'test.waarm64');
   assert.equal(be16(o.get(26)!, 0), 1280, 'mtu');
   assert.equal(hex(o.get(51)!), '00000e10');
   assert.deepEqual([hex(o.get(58)!), hex(o.get(59)!)], ['00000708', '00000c4e'], 'renewal (T1) at half the lease, rebinding (T2) at 7/8');
@@ -501,7 +501,7 @@ test('DHCPv6: solicit, advertise, request, reply with the lease\'s address as on
   assert.deepEqual(Array.from(rep.opts.get(3)!.subarray(16, 32)), L6);
   assert.equal(Buffer.from(rep.opts.get(3)!.subarray(32, 36)).readUInt32BE(0), 3600, 'preferred');
   assert.deepEqual(Array.from(rep.opts.get(23)!), ECHO_LEASE.dns6!.flat());
-  assert.equal(hex(rep.opts.get(24)!), hex([4, ...Buffer.from('test'), 5, ...Buffer.from('webpc'), 0]));
+  assert.equal(hex(rep.opts.get(24)!), hex([4, ...Buffer.from('test'), 7, ...Buffer.from('waarm64'), 0]));
 });
 
 test('DHCPv6: renew keeps the address, another address has no binding, confirm and information-request', () => {

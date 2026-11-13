@@ -257,7 +257,7 @@ pub mod bare {
                 Ok(())
             }
         }
-        let _ = core::fmt::write(&mut Stderr, format_args!("webpc-agent: {info}\n"));
+        let _ = core::fmt::write(&mut Stderr, format_args!("waarm64-agent: {info}\n"));
         // SAFETY: `abort` takes nothing and doesn't return.
         unsafe { abort() }
     }

@@ -243,7 +243,7 @@ pub(crate) fn unpad(p: &[u8]) -> Option<&[u8]> {
 /// half only answers pings (a browser has no direct paths for disco to find).
 fn disco_for(private: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     let mut h = Blake2s256::new();
-    h.update(b"webpc tailcat disco key v1");
+    h.update(b"waarm64 tailcat disco key v1");
     h.update(private);
     let secret: [u8; 32] = h.finalize().into();
     (secret, *SecretKey::from(secret).public_key().as_bytes())

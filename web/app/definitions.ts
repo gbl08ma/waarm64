@@ -1,4 +1,4 @@
-// Machine definitions in and out (docs/machines.md §6): a machine's shape as a small JSON file (`webpc-machine`,
+// Machine definitions in and out (docs/machines.md §6): a machine's shape as a small JSON file (`waarm64-machine`,
 // version 1): its settings, and per attachment the disk's kind, name, size and identity (a URL as is; a file's name,
 // size, date and hash where known; a blank disk's or ramdisk's size), read-only, written in place, a ramdisk as swap, its serial. No
 // overlays, snapshots or file contents ("export a machine", the bundle, is later and named apart). An import makes a
@@ -31,7 +31,7 @@ import {
 import type { Store } from './store.ts';
 import { ramSplitError } from './machine.ts';
 
-export const DEFINITION_TYPE = 'webpc-machine';
+export const DEFINITION_TYPE = 'waarm64-machine';
 export const DEFINITION_VERSION = 1;
 
 export type DefinitionDisk = {

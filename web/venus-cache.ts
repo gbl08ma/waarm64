@@ -6,7 +6,7 @@
 // GPU's driver's).
 //
 // The renderer asks synchronously, so the entries are all in memory: loaded once when Vulkan starts, kept under a byte
-// budget (least recently used out first), and written back to IndexedDB (database `webpc-shaders`, store `entries`) a
+// budget (least recently used out first), and written back to IndexedDB (database `waarm64-shaders`, store `entries`) a
 // moment after they change. One store for the origin, shared by every machine: an entry is a translation, which depends
 // on the shader and the device, not on the machine. Entries carry the renderer's build ID (`venus_build_id`: a hash of
 // vk/'s sources, which is also in their keys): those of another build are dropped at the load, so a translator change
@@ -214,8 +214,8 @@ async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
 }
 
-/** The backend in the browser: IndexedDB `webpc-shaders`, store `entries` keyed by `key`. */
-export function idbBackend(name = 'webpc-shaders'): CacheBackend & { clear(): Promise<void>; close(): void } {
+/** The backend in the browser: IndexedDB `waarm64-shaders`, store `entries` keyed by `key`. */
+export function idbBackend(name = 'waarm64-shaders'): CacheBackend & { clear(): Promise<void>; close(): void } {
   const open = () => new Promise<IDBDatabase>((resolve, reject) => {
     const r = indexedDB.open(name, 1);
     r.onupgradeneeded = () => { r.result.createObjectStore('entries', { keyPath: 'key' }); };
@@ -264,7 +264,7 @@ async function exists(name: string) {
 }
 
 /** What the store takes in this browser (the Machines page's storage line): its entries' stored bytes. */
-export async function shaderStoreSize(name = 'webpc-shaders'): Promise<{ bytes: number; entries: number }> {
+export async function shaderStoreSize(name = 'waarm64-shaders'): Promise<{ bytes: number; entries: number }> {
   if (typeof indexedDB === 'undefined' || !(await exists(name))) return { bytes: 0, entries: 0 };
   const backend = idbBackend(name);
   const entries = await backend.load().finally(() => backend.close());
@@ -272,7 +272,7 @@ export async function shaderStoreSize(name = 'webpc-shaders'): Promise<{ bytes: 
 }
 
 /** Deletes every entry (the Machines page): a machine running with Vulkan keeps what it holds, and stores it again as it changes. */
-export async function clearShaderStore(name = 'webpc-shaders') {
+export async function clearShaderStore(name = 'waarm64-shaders') {
   if (typeof indexedDB === 'undefined' || !(await exists(name))) return;
   const backend = idbBackend(name);
   await backend.clear().finally(() => backend.close());

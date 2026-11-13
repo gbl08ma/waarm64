@@ -10,7 +10,7 @@
 # e2fsprogs, dosfstools, sudo and --packages from the port's mirror (the packages of the day); the system's settings
 # (below); --files copies dir's tree onto the root (as root; what's under home/<user> is then that user's); --setup
 # runs a bash script as root after that, with the files in place (images/arch/desktop-setup.sh). Then the initramfs
-# (no `autodetect`: virtio_mmio, virtio_blk, ext4 and vfat in it; /etc/mkinitcpio.conf.d/webpc.conf, so the guest's own
+# (no `autodetect`: virtio_mmio, virtio_blk, ext4 and vfat in it; /etc/mkinitcpio.conf.d/waarm64.conf, so the guest's own
 # kernel updates make the same), the rootfs copied into an ext4 image with its ownership and xattrs (mke2fs -d), and
 # the kernel and systemd-boot taken out. The host then lays out the GPT, ESP (mtools) and qcow2 (qemu-img, compressed;
 # the root's free space costs nothing in it).
@@ -85,8 +85,8 @@ echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/10-wheel
 chmod 440 /etc/sudoers.d/10-wheel
 echo "PARTUUID=$ESP_PARTUUID  /boot  vfat  rw,relatime,fmask=0077,dmask=0077,umask=0077,errors=remount-ro  0 2" >> /etc/fstab
 mkdir -p /etc/mkinitcpio.conf.d
-cat > /etc/mkinitcpio.conf.d/webpc.conf <<C
-# webpc's disks are virtio-mmio: no autodetect (images/arch/build.sh)
+cat > /etc/mkinitcpio.conf.d/waarm64.conf <<C
+# waarm64's disks are virtio-mmio: no autodetect (images/arch/build.sh)
 MODULES=(virtio_mmio virtio_blk ext4 vfat)
 HOOKS=(base systemd modconf keyboard sd-vconsole block filesystems fsck)
 C

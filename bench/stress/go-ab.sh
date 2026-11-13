@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The `go build` loop as an A/B gate (docs/benchmarking.md "Screening an A/B"): from target/snapbench/debian-go.webpcsnap
+# The `go build` loop as an A/B gate (docs/benchmarking.md "Screening an A/B"): from target/snapbench/debian-go.waarm64snap
 # (bench/gpu/warm-snapshots.sh debian), 4 vCPUs, the guest building /work/hello from goroot.ext4 over and over, each
 # build timed by the guest in ms; the arms alternate each round. Then `node bench/stress/gobuild.ts <outdir>/[!w]*.jsonl`.
 #   [SECONDS_=420] [WARMUP=0] bench/stress/go-ab.sh <outdir> <rounds> <arm>=<core.wasm>...
@@ -18,7 +18,7 @@ for r in $(seq 1 "$rounds"); do
     name=${arm%%=*} core=${arm#*=}
     [ -f "$core" ] || { echo "no core $core"; exit 1; }
     systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout $(( ${SECONDS_:-420} + 240 )) \
-      node --disable-warning=ExperimentalWarning bench/stress/stress.ts --from-snapshot target/snapbench/debian-go.webpcsnap \
+      node --disable-warning=ExperimentalWarning bench/stress/stress.ts --from-snapshot target/snapbench/debian-go.waarm64snap \
       --disk2 target/images/stress/goroot.ext4 --no-load --seconds "${SECONDS_:-420}" --ncpus 4 --core "$core" \
       --guest-cmd "$loop" --out "$out/$name-$r.jsonl" > "$out/$name-$r.log" 2>&1
     echo "$name-$r exit $? $(grep -c '"gobuild"' "$out/$name-$r.jsonl" 2>/dev/null) builds"

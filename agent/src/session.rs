@@ -1688,7 +1688,8 @@ mod tests {
 
     #[test]
     fn a_display_with_a_full_backlog_does_not_hold_the_child() {
-        let dir = std::env::temp_dir().join(format!("webpc-agent-backlog-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("waarm64-agent-backlog-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("x11")).unwrap();
         let wl = full_listener(&dir.join("wayland-1"));
@@ -1734,7 +1735,7 @@ mod tests {
     #[test]
     fn a_socket_that_refuses_for_good_is_given_up() {
         // A compositor killed: its socket file stays, and refuses.
-        let dir = std::env::temp_dir().join(format!("webpc-agent-dead-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("waarm64-agent-dead-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         drop(std::os::unix::net::UnixListener::bind(dir.join("wayland-1")).unwrap());

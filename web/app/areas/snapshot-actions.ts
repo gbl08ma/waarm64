@@ -32,7 +32,7 @@ export type SnapshotDeps = Core & {
   refusal(r: Run, what: 'snapshot' | 'suspend'): Promise<unknown>;
 };
 
-export const SNAPSHOT_SUFFIX = '.webpcsnap';
+export const SNAPSHOT_SUFFIX = '.waarm64snap';
 /** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/graphics.md "Snapshots with 3D in use"). */
 const GRAPHICS_WARN = 64 << 20;
 

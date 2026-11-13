@@ -3,10 +3,10 @@
 // vk makes (target/deqp/guest-vk.qcow2: Arch Linux with Venus's guest driver; deqp-vk on target/deqp/deqp-vk.ext4), a
 // machine with Vulkan on the page's WebGPU (SwiftShader's in the dev VM: `--enable-unsafe-webgpu`), on one machine or, with
 // the RAM for it, two at once (`SHARDS`); then tests/deqp/vk-ycbcr.txt (VK3 L7.2: YCbCr conversions, on by default since L7.3), another boot, ~1.5 min.
-// Opt-in with WEBPC_DEQP_VK=1 (scripts/ci-deqp-vk.sh); skipped where the page has no WebGPU adapter.
-// The direct list is sampled unless WEBPC_DEQP_VK_FULL=1 (`ci-deqp-vk.sh --full`): every STRIDE-th case of each group
+// Opt-in with WAARM64_DEQP_VK=1 (scripts/ci-deqp-vk.sh); skipped where the page has no WebGPU adapter.
+// The direct list is sampled unless WAARM64_DEQP_VK_FULL=1 (`ci-deqp-vk.sh --full`): every STRIDE-th case of each group
 // (the name's first three parts) from an offset of its own drawn from a seed, at least one a group, in the list's
-// order, so runs together cover the list; the seed is printed, and WEBPC_DEQP_VK_SEED=<n> runs that sample again. A
+// order, so runs together cover the list; the seed is printed, and WAARM64_DEQP_VK_SEED=<n> runs that sample again. A
 // case that fails in a sample is looked into at once, or filed in docs/backlog.md and taken out of the list.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -17,7 +17,7 @@ import { test } from 'node:test';
 import { cases as listCases, phase, sample, seedFrom } from './deqp-lists.ts';
 
 const root = new URL('..', import.meta.url).pathname;
-const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh runs it (WEBPC_DEQP_VK=1)' : false;
+const skip = process.env.WAARM64_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh runs it (WAARM64_DEQP_VK=1)' : false;
 
 // The seconds dEQP may run the list: ~2 times what it takes (a machine's half of the whole list: 2,113 s at 58,906 cases,
 // VK4 T34), so a hung device (every later fence held: the guest waits
@@ -26,13 +26,13 @@ const LIMIT_S = 4200;
 
 // The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes at ~40,000 cases (54 at 58,906, VK4 T34; 47 with JOBS 2), one machine ~38,
 // at 13.7 GiB (one machine: 8.9). The list's memory-heavy stretch reaches both at once, at ~16 minutes: under an 11 GiB
-// cap they were killed there. WEBPC_DEQP_VK_SHARDS says otherwise.
+// cap they were killed there. WAARM64_DEQP_VK_SHARDS says otherwise.
 // dEQP processes a machine runs at once, each a block of its cases (bench/gpu/deqp-run.ts JOBS): one waits on the device
 // for most of a case. On a machine of 1,536 MiB, a 2,032-case slice took 199/201 s at 1, 161/170 s at 2, 176 s at 4,
 // where a `synchronization2.timeline_semaphore.device_host` case hung each time (VK4-KICKOFF.md T36); the whole list 2,873 → 2,470 s at 2,
-// the browser's memory +0.3 GiB (bench/vulkan/REPORT.md "dEQP-VK's processes a machine"). WEBPC_DEQP_VK_JOBS says otherwise.
-const JOBS = Number(process.env.WEBPC_DEQP_VK_JOBS ?? 2);
-const SHARDS = Number(process.env.WEBPC_DEQP_VK_SHARDS ?? (availableParallelism() >= 8 && totalmem() >= 17 * 2 ** 30 ? 2 : 1));
+// the browser's memory +0.3 GiB (bench/vulkan/REPORT.md "dEQP-VK's processes a machine"). WAARM64_DEQP_VK_JOBS says otherwise.
+const JOBS = Number(process.env.WAARM64_DEQP_VK_JOBS ?? 2);
+const SHARDS = Number(process.env.WAARM64_DEQP_VK_SHARDS ?? (availableParallelism() >= 8 && totalmem() >= 17 * 2 ** 30 ? 2 : 1));
 // Cases go to the shards in blocks: alternate ones would have every case follow others than the list's, which some
 // failures depend on (docs/testing.md "dEQP-VK"), and a shard of the list's first half would have its slow groups.
 const BLOCK = 256;
@@ -40,14 +40,14 @@ const BLOCK = 256;
 // before they're killed), where one peaks at 8.9.
 const SHARD_RAM_MIB = 1536;
 
-const FULL = process.env.WEBPC_DEQP_VK_FULL === '1';
-// `ci-deqp-vk.sh --full --phases M` (docs/testing.md "dEQP-VK"): WEBPC_DEQP_VK_PHASE=N/M runs the Nth of M slices of the
+const FULL = process.env.WAARM64_DEQP_VK_FULL === '1';
+// `ci-deqp-vk.sh --full --phases M` (docs/testing.md "dEQP-VK"): WAARM64_DEQP_VK_PHASE=N/M runs the Nth of M slices of the
 // whole list, cut at whole rounds of the shards' blocks (so each case has the shard and neighbours of a whole run), and
-// WEBPC_DEQP_VK_CHECKPOINT=<file> takes its result (counts, the cases that didn't pass, their detail) before the check.
-const PHASE = process.env.WEBPC_DEQP_VK_PHASE?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
-const CHECKPOINT = process.env.WEBPC_DEQP_VK_CHECKPOINT;
+// WAARM64_DEQP_VK_CHECKPOINT=<file> takes its result (counts, the cases that didn't pass, their detail) before the check.
+const PHASE = process.env.WAARM64_DEQP_VK_PHASE?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
+const CHECKPOINT = process.env.WAARM64_DEQP_VK_CHECKPOINT;
 const STRIDE = 8;
-const SEED = seedFrom(process.env.WEBPC_DEQP_VK_SEED);
+const SEED = seedFrom(process.env.WAARM64_DEQP_VK_SEED);
 
 type Result = { adapter?: string | null; cases: number; counts: Record<string, number>; notPassed: string[]; stoppedAt?: string; detail?: string[] };
 
@@ -74,11 +74,11 @@ function runShard(file: string, out: string, gpu: string | undefined, ramMiB?: n
 async function passList(t: { skip(m: string): void; diagnostic(m: string): void }, list: string, shards: number, gpu?: string, sampled = false, slice?: number[]) {
   const all = listCases(readFileSync(list, 'utf8'));
   const cases = sampled ? sample(all, STRIDE, SEED) : slice ? phase(all, slice[0], slice[1], BLOCK * shards) : all;
-  const which = sampled ? `a sample of ${cases.length} of ${all.length} (WEBPC_DEQP_VK_SEED=${SEED})` : slice ? `phase ${slice[0]}/${slice[1]}: ${cases.length} of ${all.length}` : `all ${cases.length}`;
+  const which = sampled ? `a sample of ${cases.length} of ${all.length} (WAARM64_DEQP_VK_SEED=${SEED})` : slice ? `phase ${slice[0]}/${slice[1]}: ${cases.length} of ${all.length}` : `all ${cases.length}`;
   const start = Date.now();
   t.diagnostic(which);
   console.log(`dEQP-VK: ${list.split('/').pop()}: ${which}`);
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-deqp-vk-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-deqp-vk-'));
   let passed = false;
   try {
     const parts: string[][] = Array.from({ length: shards }, () => []);

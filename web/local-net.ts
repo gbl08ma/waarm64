@@ -1,5 +1,5 @@
 // The local network helper's client (docs/plans/networking-local.md, the connection kind `local`: docs/networking/adapters.md).
-// The helper (github.com/gbl08ma/webpc-net) runs on the user's computer and serves the guest DHCP, DNS and a gateway onto its own
+// The helper (github.com/gbl08ma/waarm64-net) runs on the user's computer and serves the guest DHCP, DNS and a gateway onto its own
 // sockets, so this only moves Ethernet frames: between a card's frame port (web/net.ts `portAdapter`: one frame per
 // message, the page's gateway bypassed: web/gateway.ts `FramePath`) and a WebSocket on loopback. On the socket each
 // binary message is one or more whole frames, each after its 4-byte big-endian length (QEMU's stream framing, what the
@@ -10,16 +10,16 @@
 import { fromWire, msg, MsgError, type Msg } from './msg.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
-/** The framing's name and version, checked by both ends (webpc-net `Subprotocol`). */
-export const LOCAL_SUBPROTOCOL = 'webpc-net.v1';
+/** The framing's name and version, checked by both ends (waarm64-net `Subprotocol`). */
+export const LOCAL_SUBPROTOCOL = 'waarm64-net.v1';
 
 /**
- * The most a message may hold (webpc-net `MaxMessage`): past it the helper closes the socket. A burst of the guest's
+ * The most a message may hold (waarm64-net `MaxMessage`): past it the helper closes the socket. A burst of the guest's
  * frames can pass it before the timer's turn, at any MTU, so a batch goes out early rather than growing past it.
  */
 export const LOCAL_MAX_MESSAGE = 1 << 20;
 
-/** Why the helper closed the socket (webpc-net's close codes), as the page says it; undefined for another code. */
+/** Why the helper closed the socket (waarm64-net's close codes), as the page says it; undefined for another code. */
 export function closeError(code: number): MsgError | undefined {
   switch (code) {
     case 4001: return new MsgError('network:local-net.versions');

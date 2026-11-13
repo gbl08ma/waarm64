@@ -19,17 +19,17 @@ declare global {
     __profile?: Extract<FromWorker, { type: 'profile' }>['samples'];
     __timeline?: Extract<FromWorker, { type: 'timeline' }>['timeline'];
     __heap?: Extract<FromWorker, { type: 'heap' }>['heap'];
-    __webpcProfile?: (on: boolean) => void;
-    __webpcTimeline?: (on: boolean) => void;
-    __webpcHeap?: () => void;
+    __waarm64Profile?: (on: boolean) => void;
+    __waarm64Timeline?: (on: boolean) => void;
+    __waarm64Heap?: () => void;
     /** The serial console's output so far. */
     __serialLog?: () => string;
     /** The GPU worker's thread blocked `ms` (tests/page-venus.test.ts). */
-    __webpcStallGpu?: (ms: number) => void;
+    __waarm64StallGpu?: (ms: number) => void;
     /** The Venus renderer's emulated work left out (bench/vulkan/t23.ts). */
-    __webpcVkSkip?: (paths: string[]) => void;
+    __waarm64VkSkip?: (paths: string[]) => void;
     /** The 3D screen as the page draws it (bench/vulkan/present.ts). */
-    __webpcGrab?: () => Promise<Grab>;
+    __waarm64Grab?: () => Promise<Grab>;
     /** `?iostats`: the disks' timers and base-read traces (web/iostats.ts). */
     __ioStats?: () => Promise<unknown>;
     /** `?avprobe`: when the screen's centre turned bright (ms on this page's clock; bench/audio/avsync.ts). */

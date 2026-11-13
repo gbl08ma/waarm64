@@ -625,7 +625,7 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   limit word, `G_LIMIT`: the cache flushes there and refills to it, never under 16 MiB). The flush comes at a
   dispatcher's emit, never at a tier-up: that runs inside JIT code (`jit_hot`), and checks for room and allocates its
   slots against one read of the limit, so a limit stored in between can't flush under the code on the stack. The page
-  keeps a mark per running machine in `localStorage` (`webpc.alive.<machine id>`: name, RAM, vCPUs, JIT budget, the
+  keeps a mark per running machine in `localStorage` (`waarm64.alive.<machine id>`: name, RAM, vCPUs, JIT budget, the
   estimate and its peak), renewed every 10 s and cleared at every clean stop (power off, restart, the guest's shutdown,
   a crash the page saw, the tab's `pagehide`). A mark no tab renewed for 30 s means the tab went away with the machine
   running, most likely killed for memory (Chromium gives a page no out-of-memory error): the next start says so and
@@ -1227,7 +1227,7 @@ system instructions, and why each stays a helper:
 
 Of the integer NEON (after the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
 URECPE/URSQRTE, and the FP forms the FP
-fast paths send there (`WEBPC_JIT_DIFF_HELPERS=1` on the differential test lists them per class).
+fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lists them per class).
 
 ## Tried and not kept
 

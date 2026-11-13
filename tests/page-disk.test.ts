@@ -9,7 +9,7 @@
 // and setup forms -> Continue -> the disk's loader again -> GRUB's editor (e, F2's command line,
 // Esc, arrows, typing) -> Ctrl-X boots the edited entry, and the kernel's command line has what
 // was typed. `?display=simple` keeps GRUB's menu on the serial console. Three Debian boots and two
-// firmware starts, ~4 min alone; opt-in with WEBPC_DISTROS=debian (scripts/ci-debian.sh).
+// firmware starts, ~4 min alone; opt-in with WAARM64_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -26,10 +26,10 @@ import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 240_000;
 
 let browser: Browser;
@@ -42,7 +42,7 @@ before(async () => {
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  dir = mkdtempSync(join(tmpdir(), 'webpc-disk-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-disk-'));
 });
 after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
@@ -148,8 +148,8 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   for (let i = 0; i < 40; i++) { await page.keyboard.press('Control+n'); await page.waitForTimeout(30); } // the last line (the editor's Emacs keys: plain bytes)
   await showsRows(page, /initrd\s+\/boot\/initrd\.img/, 10_000);
   await press(page, 'ArrowUp', 'ArrowUp', 'ArrowUp', 'Control+e'); // the `linux` line (`initrd`, `echo`, `linux`)
-  await page.keyboard.type(' webpc.keytest=1', { delay: 20 });
-  await showsRows(page, /webpc\.keytest=1/, 10_000);
+  await page.keyboard.type(' waarm64.keytest=1', { delay: 20 });
+  await showsRows(page, /waarm64\.keytest=1/, 10_000);
   // F2 opens GRUB's command line (it runs a command), Esc returns to the editor with the edit kept.
   await press(page, 'F2');
   await showsRows(page, /grub>/, 10_000);
@@ -158,17 +158,17 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await showsRows(page, /^f2-works\ngrub>/m, 10_000); // the prompt is back: an Esc before it would interrupt the command
   await press(page, 'Escape');
   await showsRows(page, /Minimum Emacs-like screen editing/, 10_000);
-  await showsRows(page, /webpc\.keytest=1/, 10_000);
+  await showsRows(page, /waarm64\.keytest=1/, 10_000);
   await press(page, 'Control+x');
 
   // The edited entry boots; its kernel has the typed parameter (Debian's GRUB passes `quiet`: the kernel's own echo of the line isn't on the console).
   await showsRows(page, /\S+ login:$/m, 240_000);
   await page.keyboard.type('root\n', { delay: 10 });
   await showsRows(page, /root@\S+:~#/, 60_000);
-  await page.keyboard.type('tr " " "\\n" </proc/cmdline | grep -x webpc.key""test=1\n', { delay: 10 }); // (the quotes keep the command's echo from matching)
-  await showsRows(page, /^webpc\.keytest=1$/m, 30_000);
+  await page.keyboard.type('tr " " "\\n" </proc/cmdline | grep -x waarm64.key""test=1\n', { delay: 10 }); // (the quotes keep the command's echo from matching)
+  await showsRows(page, /^waarm64\.keytest=1$/m, 30_000);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000, polling: 250 });
-  await onSerial(page, 'clear; echo webpc-own-$((6*7)) >/root/own-mark && sync && echo sy""nced\n');
+  await onSerial(page, 'clear; echo waarm64-own-$((6*7)) >/root/own-mark && sync && echo sy""nced\n');
   await shows(page, /synced/);
   // The page's disk takes DISCARD: Debian's ext4 trims its free space (what the guest frees leaves the overlay).
   await onSerial(page, 'fstrim -v / && echo tr""immed\n');
@@ -235,18 +235,18 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   await onSerial(page, 'cat /root/own-mark\n');
-  await shows(page, /cat \/root\/own-mark\s*webpc-own-42/);
+  await shows(page, /cat \/root\/own-mark\s*waarm64-own-42/);
 
   // Saving over the running disk: the suggested name is never the disk's own, and a dialog that emptied it (Chromium
   // truncates the file it hands over; here the symlink is pointed elsewhere, which changes the file the same way for the
   // page's File, and the image stays whole) is caught before anything is written or the machine is stopped.
   const stand = join(dir, 'other.bin');
   writeFileSync(stand, 'x');
-  await page.exposeFunction('webpcEmptyTheDisk', () => { unlinkSync(file); symlinkSync(stand, file); });
+  await page.exposeFunction('waarm64EmptyTheDisk', () => { unlinkSync(file); symlinkSync(stand, file); });
   await page.evaluate(() => {
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async (o: { suggestedName: string }) => {
       (window as unknown as { suggested: string }).suggested = o.suggestedName;
-      await (window as unknown as { webpcEmptyTheDisk(): Promise<void> }).webpcEmptyTheDisk();
+      await (window as unknown as { waarm64EmptyTheDisk(): Promise<void> }).waarm64EmptyTheDisk();
       return { name: 'mydisk.qcow2', createWritable: () => { throw new Error('wrote to the emptied disk'); } };
     };
   });
@@ -281,7 +281,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await onSerial(page2, 'root\n');
   await shows(page2, /root@\S+:~# /);
   await onSerial(page2, 'cat /root/own-mark\n');
-  await shows(page2, /cat \/root\/own-mark\s*webpc-own-42/);
+  await shows(page2, /cat \/root\/own-mark\s*waarm64-own-42/);
   assert.deepEqual(errors2, []);
   await fresh.close();
 }));

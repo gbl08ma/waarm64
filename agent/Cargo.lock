@@ -44,7 +44,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "webpc-agent"
+name = "waarm64-agent"
 version = "0.1.0"
 dependencies = [
  "rustix",

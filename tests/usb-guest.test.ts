@@ -4,7 +4,7 @@
 // guest's cdc_acm on the ACM gadget, echoed by the gadget's tty here, opened and closed three times (each close
 // cancels cdc_acm's reads: the carry-over); (iii) a uhid device through WebHID: the guest's report descriptor
 // parses to what the page can use, input reports arrive, output and feature reports reach the rig. Skips without
-// WEBPC_USB_TESTS=1, the rigs or the image.
+// WAARM64_USB_TESTS=1, the rigs or the image.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { accessSync, closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync, writeSync } from 'node:fs';
@@ -20,7 +20,7 @@ const PORT = 8193;
 const IMAGE = new URL('../target/images/linux-usbhost/Image', import.meta.url);
 const TTY = '/dev/ttyGS0';
 
-const why = !usbTests ? 'scripts/ci-usb.sh runs it (WEBPC_USB_TESTS=1)'
+const why = !usbTests ? 'scripts/ci-usb.sh runs it (WAARM64_USB_TESTS=1)'
   : !existsSync(IMAGE) ? 'no linux-usbhost image (images/build.sh linux-usbhost)'
     : undefined;
 const skip = why ? `SKIPPED: ${why}` : false;
@@ -69,7 +69,7 @@ test('testusb -a against the dummy_hcd Gadget Zero, through the WebUSB passthrou
   const other = await rig!.browser.newPage();
   await other.goto(`${rig!.base}/tests/browser/core.html`);
   const left = await other.evaluate(async () => {
-    const d = (await (navigator as any).usb.getDevices()).find((x: any) => x.serialNumber === 'webpc-zero');
+    const d = (await (navigator as any).usb.getDevices()).find((x: any) => x.serialNumber === 'waarm64-zero');
     await d.open();
     await d.selectConfiguration(2);
     const v = d.configuration?.configurationValue;
@@ -78,11 +78,11 @@ test('testusb -a against the dummy_hcd Gadget Zero, through the WebUSB passthrou
   });
   await other.close();
   assert.equal(left, 2);
-  const r = await boot({ api: 'usb', vendorId: 0x0525, productId: 0xa4a0, serialNumber: 'webpc-zero' }, 'usb_mode=testusb usbtest.pattern=1 usb_devices=1 usb_args=-a,-c,10,-s,1024,-v,512,-g,16');
+  const r = await boot({ api: 'usb', vendorId: 0x0525, productId: 0xa4a0, serialNumber: 'waarm64-zero' }, 'usb_mode=testusb usbtest.pattern=1 usb_devices=1 usb_args=-a,-c,10,-s,1024,-v,512,-g,16');
   assert.equal(attached(r).speed, 'high');
   assert.match(r.console, /^usb: gadget 1-1: Gadget Zero, 480 Mb\/s, configuration \d, interface driver usbtest$/m, r.console);
   assert.match(r.console, /^usb: pass 1: \d+ lines, 0 failed$/m, r.console);
-  assert.ok(r.console.includes('webpc: usb test ok\n'), r.console);
+  assert.ok(r.console.includes('waarm64: usb test ok\n'), r.console);
 });
 
 /**
@@ -131,10 +131,10 @@ function ttyEcho(path: string) {
 test("the guest's cdc_acm on the ACM gadget: write, the echo back, close and reopen (the IN carry-over)", { skip: ttySkip, timeout: 5 * 60_000 }, async () => {
   const echo = ttyEcho(TTY);
   try {
-    const r = await boot({ api: 'usb', vendorId: 0x0525, productId: 0xa4a7, serialNumber: 'webpc-acm' }, 'usb_mode=acm usb_rounds=3');
+    const r = await boot({ api: 'usb', vendorId: 0x0525, productId: 0xa4a7, serialNumber: 'waarm64-acm' }, 'usb_mode=acm usb_rounds=3');
     attached(r);
     for (const n of [1, 2, 3]) assert.ok(r.console.includes(`acm: round ${n}: 300 of 300 bytes echoed\n`), `round ${n} (the gadget got ${echo.bytes()} bytes): see target/tests/usb-guest-acm.log`);
-    assert.ok(r.console.includes('webpc: usb test ok\n'), r.console);
+    assert.ok(r.console.includes('waarm64: usb test ok\n'), r.console);
     assert.equal(echo.bytes(), 900, 'what the guest wrote reached the gadget, once');
   } finally {
     echo.stop();
@@ -143,7 +143,7 @@ test("the guest's cdc_acm on the ACM gadget: write, the echo back, close and reo
 
 test('a uhid device through WebHID: the rebuilt descriptor, input reports in, output and feature reports out', { skip: hidSkip, timeout: 5 * 60_000 }, async () => {
   const d = DESCRIPTORS.find((x) => x.id === 'vendor-ids')!;
-  const u = new UhidDevice(d, { phys: `webpc-uhid/${d.id}-guest` });
+  const u = new UhidDevice(d, { phys: `waarm64-uhid/${d.id}-guest` });
   let n = 0;
   const sent: string[] = [];
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -160,7 +160,7 @@ test('a uhid device through WebHID: the rebuilt descriptor, input reports in, ou
     const out = `03${'33'.repeat(16)}`;
     const r = await boot({ api: 'hid', vendorId: d.vendorId, productId: d.productId }, `usb_mode=hid usb_inputs=3 usb_out=${out} usb_setf=0409080706 usb_getf=5:64`);
     attached(r);
-    assert.ok(r.console.includes('webpc: usb test ok\n'), r.console);
+    assert.ok(r.console.includes('waarm64: usb test ok\n'), r.console);
     // The descriptor the guest got parses to what the page can use of Chromium's parse.
     const rdesc = r.console.match(/^hid: rdesc ([0-9a-f]+)$/m)?.[1];
     assert.ok(rdesc, r.console);

@@ -33,7 +33,7 @@ after(async () => {
 test('the folders tree, on OPFS through both backends', { timeout: 300_000 }, async () => {
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.log(String(e)));
-  if (process.env.WEBPC_FOLDERS_LOG) page.on('console', (m) => console.log(m.text()));
+  if (process.env.WAARM64_FOLDERS_LOG) page.on('console', (m) => console.log(m.text()));
   await page.goto(`${base}/tests/browser/folders.html`);
   const r = await page.evaluate(() => (window as unknown as { __result: Promise<{ passed: string[]; failed: string[] }> }).__result);
   await page.close();
@@ -106,8 +106,8 @@ test('the mount unit: names as systemd-escape makes them, paths refused', { skip
   for (const bad of ['/mnt/100%', '/mnt/x ', '/mnt/x\\', `/${'é/'.repeat(30)}x`, '', 'mnt', '/', '/mnt/', '/mnt//x', '/mnt/../x', '/mnt/./x', '/etc', '/usr', '/lib64', '/dev', '/dev/x', '/proc/x', '/sys/y', '/a\nb', `/${'x'.repeat(255)}`]) assert.ok(sharesPathError(bad), JSON.stringify(bad));
   const units = sharesCredentials('/mnt/shared', guestWords().shares);
   assert.match(units[0].data, new RegExp(`^Description=${words('guest:guest-words.shares').source}$`, 'm'));
-  assert.deepEqual(units.map((c) => c.name), ['systemd.extra-unit.mnt-shared.mount', 'systemd.extra-unit.mnt-shared.automount', 'systemd.unit-dropin.remote-fs.target~webpc-shares']);
-  assert.match(units[0].data, /What=webpc\nWhere=\/mnt\/shared\nType=9p\nOptions=trans=virtio,version=9p2000\.L,cache=none,msize=1048576,access=user,nofail\n/);
+  assert.deepEqual(units.map((c) => c.name), ['systemd.extra-unit.mnt-shared.mount', 'systemd.extra-unit.mnt-shared.automount', 'systemd.unit-dropin.remote-fs.target~waarm64-shares']);
+  assert.match(units[0].data, /What=waarm64\nWhere=\/mnt\/shared\nType=9p\nOptions=trans=virtio,version=9p2000\.L,cache=none,msize=1048576,access=user,nofail\n/);
   assert.match(units[2].data, /Wants=mnt-shared\.automount/);
 });
 
@@ -176,7 +176,7 @@ test('the live side: what a start serves, what waits, and what brings it in', as
   assert.deepEqual(device.told.at(-1), { type: 'detach', id: fifth.id });
   live.end();
   assert.equal(live.running, false);
-  assert.equal(folderLock('x'), 'webpc-folder:x');
+  assert.equal(folderLock('x'), 'waarm64-folder:x');
   live.close();
   store.close();
 });

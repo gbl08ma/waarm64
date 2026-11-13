@@ -6,14 +6,14 @@
 // 127.0.0.1:1, so the menu shows it's connecting or failed, never connected; the connection is
 // kept (docs/networking/adapters.md) but never the key; Disconnect stops the client, which
 // stays off over a reload. tailcat (docs/networking/tailnet.md "tailcat"): neither choice, or a malformed
-// address, is refused; with WEBPC_TAILCAT=1 (tests/net/tailcat.sh's relay) an address of a server
+// address, is refused; with WAARM64_TAILCAT=1 (tests/net/tailcat.sh's relay) an address of a server
 // that isn't there, on an ephemeral connection (never stored), is waited for, then fails, and the
 // machine lets tailcat clients in on that relay: the menu shows its address, the tailcat CLI
 // reaches a web server in the guest through it, the address is the same after a reload (which
 // reconnects by itself) and a new one after New address (the connection's Edit). An ephemeral
 // tailnet connection is gone after the last reload. What needs a control server (login, the
 // address, peers) is tests/net-tailnet.test.ts's. Two Debian boots, ~4 min alone. Opt-in with
-// WEBPC_DISTROS=debian, like Debian's other Chromium tests.
+// WAARM64_DISTROS=debian, like Debian's other Chromium tests.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -30,13 +30,13 @@ import { answerAsks } from './page-ask.ts';
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const WASM = new URL('../target/net/ts.wasm', import.meta.url);
-const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
-  : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
+const skip = process.env.WAARM64_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WAARM64_NET_TESTS=1)'
+  : !(process.env.WAARM64_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WAARM64_DISTROS=debian'
   : !existsSync(IMAGE) || !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh debian edk2'
   : !existsSync(WASM) ? 'SKIPPED: build the tailnet client (net/ts/build.sh)'
   : undefined;
 const TAILCAT = new URL('../tests/net/tailcat.sh', import.meta.url).pathname;
-const tailcatOn = !skip && process.env.WEBPC_TAILCAT === '1' && existsSync(new URL('../target/net/ts.wasm', import.meta.url));
+const tailcatOn = !skip && process.env.WAARM64_TAILCAT === '1' && existsSync(new URL('../target/net/ts.wasm', import.meta.url));
 
 /** The address with its server key changed: well-formed, on the same relay, but nobody answers it. */
 function otherServer(addr: string) {
@@ -57,7 +57,7 @@ before(async () => {
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  if (tailcatOn) tailcatRig = /WEBPC_TAILCAT_ADDR=(\S+)/.exec(execFileSync(TAILCAT, ['up'], { encoding: 'utf8', timeout: 300_000 }))![1];
+  if (tailcatOn) tailcatRig = /WAARM64_TAILCAT_ADDR=(\S+)/.exec(execFileSync(TAILCAT, ['up'], { encoding: 'utf8', timeout: 300_000 }))![1];
 });
 after(async () => { await browser?.close(); close?.(); if (tailcatOn) spawnSync(TAILCAT, ['down']); });
 
@@ -80,9 +80,9 @@ async function running(page: Page) {
   assert.equal(state, 'running', message ?? '');
 }
 const phase = (page: Page) => page.evaluate(() => document.getElementById('network')!.dataset.phase);
-/** The connections IndexedDB `webpc` keeps (the stored ones: an ephemeral one is in the page's memory only). */
+/** The connections IndexedDB `waarm64` keeps (the stored ones: an ephemeral one is in the page's memory only). */
 const connections = (page: Page) => page.evaluate(() => new Promise<{ id: string; name: string; ephemeral: boolean; connectAtStart: boolean; tailnet?: Record<string, string>; tailcat?: Record<string, unknown> }[]>((resolve, reject) => {
-  const open = indexedDB.open('webpc');
+  const open = indexedDB.open('waarm64');
   open.onsuccess = () => {
     const req = open.result.transaction('connections').objectStore('connections').getAll();
     req.onsuccess = () => { open.result.close(); resolve(req.result); };
@@ -183,7 +183,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.equal(saved.length, 1);
     assert.deepEqual(saved[0].tailnet, { controlURL: 'http://127.0.0.1:1', hostname: 'testbox', exitNode: '', stateKey: saved[0].id });
     assert.equal(saved[0].connectAtStart, true);
-    assert.ok(!(await page.evaluate(() => localStorage.getItem('webpc.settings') ?? '')).includes('127.0.0.1:1'), 'no network settings of old');
+    assert.ok(!(await page.evaluate(() => localStorage.getItem('waarm64.settings') ?? '')).includes('127.0.0.1:1'), 'no network settings of old');
 
     // The machine has the card: its guest sees eth0.
     await running(page);
@@ -220,7 +220,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.match(await text(page, '#net-error'), words('network:tailcat.notAddress'));
     assert.equal(await phase(page), 'off');
     if (!tailcatRig) {
-      console.log('# SKIPPED: the wizard against a tailcat relay, and serving (WEBPC_TAILCAT=1 and net/ts/build.sh)');
+      console.log('# SKIPPED: the wizard against a tailcat relay, and serving (WAARM64_TAILCAT=1 and net/ts/build.sh)');
       await page.click('#net-cancel');
     } else {
       // A well-formed address of a server that isn't there (the rig's relay, another server key), on an ephemeral

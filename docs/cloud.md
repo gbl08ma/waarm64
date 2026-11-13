@@ -30,7 +30,7 @@ with a per-environment egress policy (Network access in the environment's settin
 | The damaged-chunk video test writes 8–10 pictures before the error | Playwright's x86_64 Chromium writes 5 of VP9's 10 (2026-10-27, every run, on a commit that touched no `web/`) | `video on WebGL2: a damaged chunk …` (`tests/virgl-browser.test.ts`) skips when `CLAUDE_CODE_REMOTE` is set (2026-11-02); its bound is the dev VM's decoder's, and why this decoder stops earlier is not known |
 | The M4's SwiftShader | x86_64 SwiftShader (Vulkan) has 6 color attachments, not 8, and x86's default NaN is negative | nothing to handle: both found real bugs (the renderer's attachments loop, the JIT's FMA) the arm64 VM didn't show |
 | The agent's tests (`scripts/ci.sh`'s agent step) run as a user | the container runs as root | two fail as root and stop `scripts/ci.sh` (2026-11-07; unseen until then, when a `&&` hid the step's failures): `x11::…display_socket_gets_the_cookie` (a root-owned socket is trusted by design, so "another user's" isn't refused) and `serve_test::follows_the_session…` (its session's UID is 0; why that gets no child is not yet traced). Not handled yet: docs/backlog.md |
-| `perf`, `wasm-tools`, `../webpc-exp` worktrees | not installed | dev-only; install if needed |
+| `perf`, `wasm-tools`, `../waarm64-exp` worktrees | not installed | dev-only; install if needed |
 | Benchmarks | x86_64 runner of unknown, shared hardware: a run's samples spread ±20%, `bench/interp/ab.sh`'s A/A rounds up to 3% | absolute numbers are not comparable with the VM's; don't record any. An A/B of builds that the user asks for here (x86_64 is the point) goes through `bench/interp/paired.ts`: arms side by side in one process, paired samples, an A/A arm (docs/benchmarking.md); `bench/interp/yardstick.sh` drops its memory cap without a systemd bus |
 
 ## Venus (vk/)
@@ -61,20 +61,20 @@ repo. GitHub release downloads (`github.com/.../releases`) are refused by the pr
 Without a container daemon at all the tailnet runs natively: **`tests/net/tailnet-native.sh`**
 (`up|env|key [lasting]|nodes|peer …|register <id>|down`, like `tailnet.sh`; Go builds headscale and
 tailscale once into `target/net/tailnet-bin`, `tests/net/tls-proxy.ts` is its Caddy), and
-`WEBPC_TAILNET_SCRIPT=tests/net/tailnet-native.sh` points the tests at it (the Rust client's T4 and
+`WAARM64_TAILNET_SCRIPT=tests/net/tailnet-native.sh` points the tests at it (the Rust client's T4 and
 T5 were tested that way: `tests/ts-tailnet.test.ts`, `tests/tailscale-browser.test.ts`). The tests
-that call `podman exec webpc-peer` directly (`tests/net-tailnet.test.ts`) still need the shim below.
+that call `podman exec waarm64-peer` directly (`tests/net-tailnet.test.ts`) still need the shim below.
 Before that script existed the exit-node work was tested by hand the same way: `go install github.com/juanfont/headscale/cmd/headscale@v0.29.4` and, from an empty
 directory, `go install tailscale.com/cmd/tailscaled@v1.102.5 tailscale.com/cmd/tailscale@v1.102.5`
 (the versions `tests/net/tailnet.sh` pins), headscale with the config that script writes (paths
 changed) behind any TLS proxy that adds `Access-Control-Allow-Origin` on `/key` and passes
 WebSocket upgrades (a 20-line Node script will do; there is no Caddy), a userspace `tailscaled` with
 `--advertise-exit-node`, and `headscale nodes approve-routes -i 1 -r 0.0.0.0/0,::/0`. Point
-`WEBPC_TAILNET_SCRIPT` at a script that prints `tailnet.sh`'s `up` output, and put a `podman` shim
-first on `PATH` that answers `exec webpc-peer tailscale ...` with the native `tailscale`.
+`WAARM64_TAILNET_SCRIPT` at a script that prints `tailnet.sh`'s `up` output, and put a `podman` shim
+first on `PATH` that answers `exec waarm64-peer tailscale ...` with the native `tailscale`.
 
-**The local helper** (`github.com/gbl08ma/webpc-net`, docs/plans/networking-local.md) is a private repository for
-now: unless the session can fetch it, the tests that need it (tests/webpc-net.ts) say SKIPPED. It built and tested here (Go fetches its
+**The local helper** (`github.com/gbl08ma/waarm64-net`, docs/plans/networking-local.md) is a private repository for
+now: unless the session can fetch it, the tests that need it (tests/waarm64-net.ts) say SKIPPED. It built and tested here (Go fetches its
 pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` passed in Chromium (2026-11-01: DNS,
 `apt-get update` and TCP straight out, which the container allows). The container has **no IPv6 at all** (no
 `AF_INET6` sockets): the helper's probe and the guest's IPv6 out are tested only for being off here. It also hangs `tests/net-tailcat.test.ts`, whose server listens on `::` (`EAFNOSUPPORT`, unhandled, so its `before` never ends; 2026-11-01); the rest of `scripts/ci-net.sh`'s list passes here.
@@ -84,10 +84,10 @@ pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` 
 `images/build.sh` needs Podman and native arm64, so the cloud can't build Alpine, Buildroot, the
 Linux kernels, LTP, kvm-unit-tests or litmus. **Debian works**: `node tools/debian.ts` (Node only)
 downloads the pinned qcow2 (403 MB, ~10 s) and unpacks its kernel and initrd, and
-`WEBPC_DISTROS=debian` then selects the Debian tests. `images/build.sh debian` runs the same on the host (no Podman)
+`WAARM64_DISTROS=debian` then selects the Debian tests. `images/build.sh debian` runs the same on the host (no Podman)
 and also writes `.inputs`, which `scripts/ci-debian.sh` and `scripts/ci-machines.sh` check first: use it for those.
 `scripts/ci-debian.sh` also checks `linux-snd` (Podman, so not here) and stops; its test list runs without it
-(`WEBPC_DISTROS=debian WEBPC_DEBIAN_SLOTS=2 node --test` on the files it names), with `page-debian`, the main page
+(`WAARM64_DISTROS=debian WAARM64_DEBIAN_SLOTS=2 node --test` on the files it names), with `page-debian`, the main page
 test, skipped for want of `snd-play` (2026-11-02: the other nine passed). So in a cloud session `scripts/ci.sh` runs
 everything except the image-based native tests (`boot`, `kvm-unit-tests`, `litmus`, `ltp`, the
 Alpine boots), which it already skips with a message when `images/build.sh --check` fails. Work
@@ -102,7 +102,7 @@ its size isn't the shipped binary's (docs/images.md "agent"). The same fallback 
 given the same commands by hand. On x86_64 it works (2026-11-07): ~7 s from a clean `target/images/build/agent`, no
 cross gcc on the host (the binary's `.comment` names LLD; its `GCC` line is the musl target's own startup files), a
 static aarch64 ELF of 129,808 bytes (the Podman build's 130,064; so `images/SHA256SUMS` warns, as expected), and
-`tests/page-agent.test.ts` passes with it on Debian (`WEBPC_DISTROS=debian`, after `images/build.sh debian`). The
+`tests/page-agent.test.ts` passes with it on Debian (`WAARM64_DISTROS=debian`, after `images/build.sh debian`). The
 sway and X11 clipboard tests need `images/debian-sway/build.sh` (a QEMU install, not tried here).
 
 **The UEFI firmware** (`images/build.sh edk2`, Podman on arm64) can't be built here either, but its
@@ -119,7 +119,7 @@ firmware test's disk) isn't deployed: that test skips.
 Toolchain install (`rustup` fetching the pinned nightly): ~1 min. `scripts/build-wasm.sh` from
 scratch: 45 s. `cargo fmt`, `clippy`, `cargo test`: clean (138 unit tests, after dtc). TestFloat:
 53 s including the build. `tsc`: clean. `npm test` (4.7 min): 177 pass, 0 fail, 89 skipped (all
-for missing images or unselected distros). With `WEBPC_DISTROS=debian`, Debian boots in Chromium 141
+for missing images or unselected distros). With `WAARM64_DISTROS=debian`, Debian boots in Chromium 141
 under the JIT in ~147 s and the page test (login on screen and serial, disk persistence) passes in
 ~5 min: about 2.5x slower than the M4 VM's ~1 min, so budget for it under the 10-minute command cap.
 

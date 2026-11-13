@@ -2,7 +2,7 @@
 // configuration boots them (Limine, GRUB) to a root login on the serial console, which runs a
 // command and powers off, as tools/uefi-oracle.ts does on QEMU. A NoCloud seed disk (web/fat.ts)
 // unlocks root. The page's shape: 2 vCPU workers, realtime, the JIT, a framebuffer, a writable
-// overlay (in memory in Node). Opt-in with WEBPC_DISTROS=alpine-uefi (images/build.sh alpine-uefi).
+// overlay (in memory in Node). Opt-in with WAARM64_DISTROS=alpine-uefi (images/build.sh alpine-uefi).
 // Debian through the same firmware is the page tests' (tests/page-debian.test.ts: Chromium only);
 // the deterministic EDK2 shell test is `edk2-shell` (tests/boot-node*.test.ts).
 import assert from 'node:assert/strict';
@@ -15,10 +15,10 @@ import { fatImage } from '../web/fat.ts';
 import type { DeviceSpec } from '../web/devices.ts';
 import { Exit, bootVm, type BootOptions } from '../web/vm.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));
-const DISTROS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
+const DISTROS = (process.env.WAARM64_DISTROS ?? '').split(',').filter(Boolean);
 const noEdk2 = !has('edk2/QEMU_EFI.fd') && 'SKIPPED: run images/build.sh edk2';
 const CMD = (more = '') => `echo ==begin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware /sys/firmware/qemu_fw_cfg/by_name/opt; nproc; ${more}echo ==end; poweroff`;
 // What the card needs from Alpine: nothing. The image brings eth0 up with DHCP by itself, so the guest
@@ -82,12 +82,12 @@ const firmware = () => readFileSync(new URL('edk2/QEMU_EFI.fd', IMAGES));
 describe('Alpine through EDK2', { concurrency: 2 }, () => {
   for (const [name, loader] of [['alpine', 'Limine'], ['alpine-grub', 'GRUB']]) {
     test(`Alpine (${loader}) through EDK2 to a login, unlocked by a seed disk`, {
-      skip: noEdk2 || (!DISTROS.includes('alpine-uefi') ? 'SKIPPED: set WEBPC_DISTROS=alpine-uefi' : !has(`alpine-uefi/${name}.qcow2`) && 'SKIPPED: run images/build.sh alpine-uefi'),
+      skip: noEdk2 || (!DISTROS.includes('alpine-uefi') ? 'SKIPPED: set WAARM64_DISTROS=alpine-uefi' : !has(`alpine-uefi/${name}.qcow2`) && 'SKIPPED: run images/build.sh alpine-uefi'),
     }, async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'webpc-seed-'));
+      const dir = mkdtempSync(join(tmpdir(), 'waarm64-seed-'));
       try {
         const seed = join(dir, 'seed.img');
-        writeFileSync(seed, fatImage('CIDATA', [{ name: 'meta-data', data: 'instance-id: webpc\nlocal-hostname: webpc\n' }, { name: 'user-data', data: '#!/bin/sh\npasswd -d root\n' }]));
+        writeFileSync(seed, fatImage('CIDATA', [{ name: 'meta-data', data: 'instance-id: waarm64\nlocal-hostname: waarm64\n' }, { name: 'user-data', data: '#!/bin/sh\npasswd -d root\n' }]));
         const r = await drive({
           ramSize: 1 << 30, kernel: firmware(), cmdline: '', devices: [disk(`alpine-uefi/${name}.qcow2`, `uefi-test-${name}`), { type: 'blk', url: pathToFileURL(seed).href }, { type: 'rng' }, { type: 'net', adapter: 'echo' }], firmware: {},
         }, NET);

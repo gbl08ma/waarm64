@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { Exit, PSCI_SYSTEM_OFF, runToPowerOff, type Stall } from '../web/vm.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const FLAG = 0x40800000; // stall.c's FLAG (a guest PA)
 
 const boot = (name: string, stall: Stall | Stall[]) =>

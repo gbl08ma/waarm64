@@ -437,7 +437,7 @@ export function keyboardScript(l: KeyboardLayout, label: string = l.id): string 
     `XKB_DEFAULT_MODEL=${model}`,
     ...(variant ? [`XKB_DEFAULT_VARIANT=${variant}`] : []),
   ].join('\n');
-  return `# From webpc: the machine's keyboard layout setting (${label}), run at every boot while it is on.
+  return `# From waarm64: the machine's keyboard layout setting (${label}), run at every boot while it is on.
 # Sets KEY="VALUE" in a file, unless it says so already.
 set_kv() {
   grep -qx "$2=\\"$3\\"" "$1" 2>/dev/null && return
@@ -452,7 +452,7 @@ if [ -e /etc/default/keyboard ] || [ -e /usr/share/dbus-1/system.d/systemd-local
 elif command -v localectl >/dev/null 2>&1; then
   # Elsewhere localed's X11 keymap (Xorg, GNOME, KDE, display managers) and the console's, each named (its conversion
   # picks some consoles' wrongly); setting the console's reloads it. Without that keymap, the conversion's.
-  localectl set-x11-keymap --no-convert ${l.layout} ${model} '${variant}' || echo 'webpc-keyboard: localectl failed' >&2
+  localectl set-x11-keymap --no-convert ${l.layout} ${model} '${variant}' || echo 'waarm64-keyboard: localectl failed' >&2
   localectl set-keymap --no-convert ${l.vc} || localectl set-x11-keymap ${l.layout} ${model} '${variant}'
 fi
 # wlroots compositors (sway) and anything else on libxkbcommon's defaults: XKB_DEFAULT_* for every login (pam_env).
@@ -467,7 +467,7 @@ fi
 /** The systemd credentials (web/app/guest-unit.ts: SMBIOS, systemd 256+) that set `l` in the guest at every boot. */
 export const keyboardCredentials = (l: KeyboardLayout, description: string, label?: string): Credential[] =>
   guestUnit({
-    name: 'webpc-keyboard.service',
+    name: 'waarm64-keyboard.service',
     description,
     script: keyboardScript(l, label),
     // Before the logins' gate and the display manager, so every login sees what it set.

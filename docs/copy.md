@@ -118,5 +118,5 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 
 ## Open
 
-To settle as the user reviews more: the product's name where it's still written out (the toolbar's name, the default dialog title, the snapshot file type: "webpc" is provisional); how the emulator names itself inside the guest (its units' descriptions say "the emulator's machine settings"); how terse labels in dense places (the status bar, the Machines list) may be; the
+To settle as the user reviews more: the product's name where it's still written out (the toolbar's name, the default dialog title, the snapshot file type: "waarm64" is provisional); how the emulator names itself inside the guest (its units' descriptions say "the emulator's machine settings"); how terse labels in dense places (the status bar, the Machines list) may be; the
 words for the network's kinds (tailnet, tailcat, local helper); whether long notes become collapsible help.

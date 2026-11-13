@@ -1,6 +1,6 @@
 # Third-party code and its attribution
 
-Everything webpc takes from other projects is in one machine-readable file, **`THIRD_PARTY.json`** at the root: code
+Everything waarm64 takes from other projects is in one machine-readable file, **`THIRD_PARTY.json`** at the root: code
 ported or copied, ideas reimplemented, the dependencies (runtime and development), the workloads and media used, the
 firmware distributed, and the reference projects with their verified licenses. It is the authoritative list: there is
 no `THIRD_PARTY.md` (it was replaced, 2026-11-03; `node tools/third-party.ts --markdown` prints the file in that
@@ -36,7 +36,7 @@ on the Machines page's **[About](ui:machines:MachinesPage.about)** pane ([fronte
   (fetched at build time), `media` (fixtures), `firmware`, `references-permissive`, `references-copyleft`.
 - An **entry** has an `id` (unique, lower case), a `name` (the project's), and `md`: its cells, Markdown, by column
   key. That's all a row needs that the page doesn't show.
-- A row the page shows has **`about`**: the pane's group, where in webpc the code ends up: `page` (the interface's
+- A row the page shows has **`about`**: the pane's group, where in waarm64 the code ends up: `page` (the interface's
   npm packages), `core` (the emulator's wasm), `graphics` (virgl's renderer), `vulkan` (Venus's renderer module),
   `network` (the tailnet client), `firmware` (EDK2). Then it needs `url` (the project, pinned where the host allows),
   `version` (a release or a commit), `license` (an SPDX expression) and `licenseTexts` (each file's name and a link
@@ -56,7 +56,7 @@ the file only; all the same, they keep their rows. Rows of one project and versi
 license texts joined); one whose code ours derives from (the `derived` section) is tagged
 [Derived code](ui:machines:About.derived).
 
-Only those rows reach the page: Vite's `virtual:webpc-about` (`vite.config.ts`, `aboutData` in
+Only those rows reach the page: Vite's `virtual:waarm64-about` (`vite.config.ts`, `aboutData` in
 `tools/third-party.ts`) builds the pane's data from them at build time, with the build's commit (and the tag on it, if
 one was cut), the commit's date and whether the work tree had changes (`tools/stamp.ts` `buildInfo`, as the console's
 line has it), and the repository from `package.json`. The dev server links the license files where they're built

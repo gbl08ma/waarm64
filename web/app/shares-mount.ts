@@ -7,7 +7,7 @@ import { oneLine } from './guest-unit.ts';
 
 export const DEFAULT_SHARES_PATH = '/mnt/shared';
 /** The device's tag. */
-export const SHARES_TAG = 'webpc';
+export const SHARES_TAG = 'waarm64';
 /** The options: `cache=none`, so that a folder attached while the guest runs is in its next `ls`. */
 export const SHARES_OPTIONS = 'trans=virtio,version=9p2000.L,cache=none,msize=1048576,access=user,nofail';
 
@@ -59,6 +59,6 @@ export function sharesCredentials(path: string, description: string): Credential
       name: `systemd.extra-unit.${unit}.automount`,
       data: `[Unit]\nDescription=${oneLine(description)}\n\n[Automount]\nWhere=${path}\n`,
     },
-    { name: 'systemd.unit-dropin.remote-fs.target~webpc-shares', data: `[Unit]\nWants=${unit}.automount\n` },
+    { name: 'systemd.unit-dropin.remote-fs.target~waarm64-shares', data: `[Unit]\nWants=${unit}.automount\n` },
   ];
 }

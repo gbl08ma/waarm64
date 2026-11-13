@@ -43,7 +43,7 @@ export function gadgetZeroDescriptors(speed: UsbSpeed, serial: string) {
   const maxp = ss ? 1024 : speed === 'high' ? 512 : 64;
   const device = new Uint8Array([18, 1, ...u16(ss ? 0x0320 : 0x0200), 0xff, 0, 0, ss ? 9 : 64, ...u16(GZ_VENDOR), ...u16(GZ_PRODUCT), ...u16(0x0100), 1, 2, 3, 2]);
   const configs = [config(SOURCE_SINK, maxp, ss), config(LOOPBACK, maxp, ss)];
-  const strings = ['webpc', 'Gadget Zero', serial, 'source and sink data', 'loop input to output'];
+  const strings = ['waarm64', 'Gadget Zero', serial, 'source and sink data', 'loop input to output'];
   if (speed === 'high') {
     // High speed: the qualifier, and the full-speed configurations as the other speed's.
     const qualifier = new Uint8Array([10, 6, ...u16(0x0200), 0xff, 0, 0, 64, 2, 0]);

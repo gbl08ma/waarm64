@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bench/vulkan/costs.ts on the Mac host's GPU (as bench/gpu/sway-mac.sh runs the page there: a copy in
-# ~/webpc-gpu-bench, Playwright's Chrome for Testing, nothing installed): the renderer, the page's sources, the driver's
+# ~/waarm64-gpu-bench, Playwright's Chrome for Testing, nothing installed): the renderer, the page's sources, the driver's
 # test shaders compiled here.
 #   bench/vulkan/mac-costs.sh <name>     -> bench/results/local/<name>.json (N passed on)
 # SCRIPT=fence.ts runs VK3 L2's round trips (bench/vulkan/fence.ts) instead.
@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=webpc-gpu-bench
+DEST=waarm64-gpu-bench
 NAME=$1
 mkdir -p target/vk/test
 for s in tests/venus/driver.vert tests/venus/driver.frag tests/venus/driver.comp bench/vulkan/costs/costs.frag; do

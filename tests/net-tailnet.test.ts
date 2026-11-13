@@ -6,7 +6,7 @@
 // systemd-networkd, pings the peer, resolves it through MagicDNS, and the peer connects to a
 // server in the guest, and reaches this machine through the peer as a subnet router. Then two adapters: this tailnet beside tailcat through a server (below).
 // Realtime, so not exact: two boots, ~4 min alone.
-// Opt-in: WEBPC_TAILNET=1 (needs Podman, target/net/ts.wasm (net/ts/build.sh) and the Debian image,
+// Opt-in: WAARM64_TAILNET=1 (needs Podman, target/net/ts.wasm (net/ts/build.sh) and the Debian image,
 // `npm start` or tools/debian.ts).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -24,16 +24,16 @@ import { tailcat } from './net/tailcat-cli.ts';
 const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/ts.wasm`;
 const has = (cmd: string) => spawnSync(cmd, ['--version'], { stdio: 'ignore' }).status === 0;
-const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
+const skip = process.env.WAARM64_TAILNET !== '1' ? 'SKIPPED: set WAARM64_TAILNET=1'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
   : !has('podman') ? 'SKIPPED: no podman'
   : !existsSync(WASM) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : undefined;
 
-// WEBPC_TAILNET_SCRIPT: another implementation of up|key|env|down (for a machine without Podman); `podman` must then still answer the peer's `tailscale` calls.
-const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
+// WAARM64_TAILNET_SCRIPT: another implementation of up|key|env|down (for a machine without Podman); `podman` must then still answer the peer's `tailscale` calls.
+const script = process.env.WAARM64_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
 const podman = (...args: string[]) => execFileSync('podman', args, { encoding: 'utf8' });
-const peerTs = (...args: string[]) => podman('exec', 'webpc-peer', 'tailscale', '--socket=/tmp/ts.sock', ...args);
+const peerTs = (...args: string[]) => podman('exec', 'waarm64-peer', 'tailscale', '--socket=/tmp/ts.sock', ...args);
 
 let env: Record<string, string>;
 let authKey: string;
@@ -55,7 +55,7 @@ after(async () => {
   if (!skip) spawnSync(script, ['down']);
 });
 
-const OVERLAY = 'webpc-tailnet-test';
+const OVERLAY = 'waarm64-tailnet-test';
 const INTERNET_IP = '1.1.1.1';
 const INTERNET_HOST = 'example.com';
 const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
@@ -70,21 +70,21 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
     try {
       await page.goto(`${base}/tests/browser/core.html`); // any page of the origin: a fresh overlay
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WAARM64_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY })}`);
 
       // The client comes up first: the guest's address is what it reports.
       await page.waitForFunction(() => (window as never as { harness: { tailscale(): { state: string } } }).harness.tailscale().state === 'Running', null, { timeout: 120_000, polling: 250 }) // i18n-ignore
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
-      await page.waitForFunction((ip) => (window as never as { harness: { tailscale(): { netmap?: { peers: { addresses: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === ip)), env.WEBPC_TS_PEER_IP, { timeout: 30_000, polling: 250 });
+      await page.waitForFunction((ip) => (window as never as { harness: { tailscale(): { netmap?: { peers: { addresses: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === ip)), env.WAARM64_TS_PEER_IP, { timeout: 30_000, polling: 250 });
       const ts = await harness<{ netmap: { addresses: string[]; peers: { name: string; addresses: string[] }[]; dns: string[]; domains: string[]; mtu: number }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
       const self = ts.netmap.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, '');
       console.log(`# Tailscale in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
       assert.ok(ts.netmap.dns.includes('100.100.100.100'), 'MagicDNS is on');
       const self6 = ts.netmap.addresses.find((a) => a.includes(':'))?.replace(/\/\d+$/, '');
-      assert.ok(self6 && env.WEBPC_TS_PEER_IP6, `the tailnet has IPv6 addresses (${self6}, the peer's ${env.WEBPC_TS_PEER_IP6})`);
+      assert.ok(self6 && env.WAARM64_TS_PEER_IP6, `the tailnet has IPv6 addresses (${self6}, the peer's ${env.WAARM64_TS_PEER_IP6})`);
       assert.ok(ts.netmap.dns.includes('fd7a:115c:a1e0::53'), 'MagicDNS is on over IPv6 too');
-      const peer = ts.netmap.peers.find((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === env.WEBPC_TS_PEER_IP));
-      assert.ok(peer, `the peer ${env.WEBPC_TS_PEER_IP} is in the netmap`);
+      const peer = ts.netmap.peers.find((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === env.WAARM64_TS_PEER_IP));
+      assert.ok(peer, `the peer ${env.WAARM64_TS_PEER_IP} is in the netmap`);
 
       const context = () => clientState(page);
       const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
@@ -106,7 +106,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       // The lease's MTU on the link (UseMTU in the page's credential): 1280, the tunnel's, not virtio-net's 1500.
       assert.equal((await run("cat /sys/class/net/e*/mtu")).trim().split('\n')[0], '1280', 'the link takes the lease\'s MTU');
 
-      const ping = await run(`ping -c 3 -W 5 ${env.WEBPC_TS_PEER_IP}`, 90_000);
+      const ping = await run(`ping -c 3 -W 5 ${env.WAARM64_TS_PEER_IP}`, 90_000);
       assert.match(ping, /3 packets transmitted, 3 received, 0% packet loss/, ping);
 
       // IPv6 (N6): the same lease carries the node's IPv6 address (DHCPv6, after the gateway's router advertisement)
@@ -117,17 +117,17 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       }
       assert.equal(addr6.split('/')[0], self6, `the IPv6 lease is the address the client reports (${addr6})`);
       assert.match(await run('ip -6 route'), /default (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev e\S+ proto ra/);
-      const ping6 = await run(`ping -6 -c 3 -W 5 ${env.WEBPC_TS_PEER_IP6}`, 90_000);
+      const ping6 = await run(`ping -6 -c 3 -W 5 ${env.WAARM64_TS_PEER_IP6}`, 90_000);
       assert.match(ping6, /3 packets transmitted, 3 received, 0% packet loss/, ping6);
 
-      const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
+      const name = env.WAARM64_TS_PEER_NAME.replace(/\.$/, '');
       console.log(`# the guest's resolver: ${(await run('resolvectl status 2>&1 | grep -v "^ *$" | head -40')).replace(/\n/g, ' | ')}`);
       const resolved = await run(`getent hosts ${name}`);
-      assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved})`);
+      assert.ok(resolved.includes(env.WAARM64_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved})`);
       // (No AAAA check: the client's MagicDNS answers AAAA for peers only when the control server sends the
       // `magicdns-aaaa` node attribute, which this headscale doesn't. IPv6 reaches peers by address.)
       const short = await run('getent hosts peer');
-      assert.ok(short.includes(env.WEBPC_TS_PEER_IP), `the search domain: "peer" resolves (${short})`);
+      assert.ok(short.includes(env.WAARM64_TS_PEER_IP), `the search domain: "peer" resolves (${short})`);
       // What a user types: ping by the short name (the resolver's search domain, then whichever family it picks).
       const pingName = await run('ping -c 3 -W 5 peer', 90_000);
       assert.match(pingName, /3 packets transmitted, 3 received, 0% packet loss/, `ping peer: ${pingName}; resolv.conf: ${await run('cat /etc/resolv.conf; resolvectl status 2>&1 | head -30')}`);
@@ -141,7 +141,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         if (!local.includes('hello-from-the-guest')) await page.waitForTimeout(2000);
       }
       assert.match(local, /hello-from-the-guest/, `the guest's server didn't come up: ${await run('cat /tmp/http.log; ss -ltn')}`);
-      const nc = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`], { encoding: 'utf8' });
+      const nc = spawnSync('podman', ['exec', 'waarm64-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`], { encoding: 'utf8' });
       if (nc.status !== 0) {
         assert.fail(`the peer couldn't reach the guest's server (${nc.status}): ${nc.stderr}\nguest: ${await run('ip -s link show dev e*; nstat -az TcpInSegs TcpOutSegs TcpInErrs IpInDelivers IpInAddrErrors; ss -tan; cat /tmp/http.log')}`);
       }
@@ -153,7 +153,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         if (!local6.includes('hello-from-the-guest')) await page.waitForTimeout(2000);
       }
       assert.match(local6, /hello-from-the-guest/, `the guest's IPv6 server didn't come up: ${await run('cat /tmp/http6.log; ss -ltn')}`);
-      const nc6 = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self6} 8081`], { encoding: 'utf8' });
+      const nc6 = spawnSync('podman', ['exec', 'waarm64-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self6} 8081`], { encoding: 'utf8' });
       assert.equal(nc6.status, 0, `the peer couldn't reach the guest's IPv6 server: ${nc6.stderr}`);
       assert.match(nc6.stdout, /hello-from-the-guest/);
       const reply = nc.stdout; // (`tailscale nc` quits when its stdin ends, so the request is followed by a wait for the reply)
@@ -164,7 +164,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       // Subnet routes: the peer advertises this machine's address as a /32 subnet (tests/net/tailnet.sh), approved only
       // here (the next test's guest reaches that address through tailcat). Not approved, nothing reaches it; approved
       // while the client runs, the guest reaches a server on it through the peer; with the page's toggle off, not again.
-      const subnet = env.WEBPC_TS_SUBNET;
+      const subnet = env.WAARM64_TS_SUBNET;
       const lan = createServer((_req, res) => res.end('hello-from-the-subnet\n'));
       await new Promise<void>((resolve) => lan.listen(0, subnet, resolve));
       const get = `curl -s -m 5 http://${subnet}:${(lan.address() as { port: number }).port}/; echo " exit=$?"`;
@@ -187,12 +187,12 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       // The exit node: the peer offers to carry the guest's internet traffic. Tailscale's exit nodes
       // never forward RFC 1918 addresses, the exit node's own LAN included (ipn/ipnlocal's
       // removeFromDefaultRoute: the "guest wifi" rule), so a server on this host's LAN can't stand for the
-      // internet: the phase uses the real one, so it is opt-in (WEBPC_TAILNET_INTERNET=1) and is
+      // internet: the phase uses the real one, so it is opt-in (WAARM64_TAILNET_INTERNET=1) and is
       // skipped, loudly, when this host can't reach it.
       const reach = async (url: string) => fetch(url, { signal: AbortSignal.timeout(8000), redirect: 'manual' }).then((r) => r.status, () => 0);
-      const internet = process.env.WEBPC_TAILNET_INTERNET === '1' && (await reach(`http://${INTERNET_IP}/`)) !== 0 && (await reach(`http://${INTERNET_HOST}/`)) !== 0;
+      const internet = process.env.WAARM64_TAILNET_INTERNET === '1' && (await reach(`http://${INTERNET_IP}/`)) !== 0 && (await reach(`http://${INTERNET_HOST}/`)) !== 0;
       if (!internet) {
-        console.log(`# SKIPPED: the exit-node phase (opt-in: WEBPC_TAILNET_INTERNET=1, and this host must reach ${INTERNET_IP} and ${INTERNET_HOST})`);
+        console.log(`# SKIPPED: the exit-node phase (opt-in: WAARM64_TAILNET_INTERNET=1, and this host must reach ${INTERNET_IP} and ${INTERNET_HOST})`);
       } else {
         const offers = (await harness<{ netmap: { exitNode: string; peers: { id: string; name: string; exitNodeOption: boolean }[] } }>(page, 'tailscale()')).netmap;
         const exit = offers.peers.find((p) => p.exitNodeOption);
@@ -206,7 +206,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         // IPv6 through the exit node (web/reach6.ts): a new exit node counts as out until the probe answers, so the
         // default goes at once; it comes back only if the peer's machine reaches the internet over IPv6, which
         // rootless Podman's network doesn't give it.
-        const peer6 = /^default /m.test(podman('exec', 'webpc-peer', 'ip', '-6', 'route'));
+        const peer6 = /^default /m.test(podman('exec', 'waarm64-peer', 'ip', '-6', 'route'));
         let routes6 = '';
         const default6 = async () => /^default /m.test(routes6 = await run('ip -6 route'));
         let has6 = await default6();
@@ -218,7 +218,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         console.log(`# IPv6 through the exit node: the peer ${peer6 ? 'has' : 'has no'} IPv6 route out, the guest's default ${has6 ? 'is there' : 'is gone'}`);
         let via = '';
         for (let k = 0; k < 6 && !/status=[1-5]\d\d/.test(via); k++) via = await probe(INTERNET_IP);
-        assert.match(via, /status=[1-5]\d\d/, `through the exit node the guest reaches ${INTERNET_IP}${await context()}; the peer: ${podman('exec', 'webpc-peer', 'tailscale', '--socket=/tmp/ts.sock', 'metrics', 'print').split('\n').filter((l) => /dropped_packets_total\{/.test(l)).join(' ')}`);
+        assert.match(via, /status=[1-5]\d\d/, `through the exit node the guest reaches ${INTERNET_IP}${await context()}; the peer: ${podman('exec', 'waarm64-peer', 'tailscale', '--socket=/tmp/ts.sock', 'metrics', 'print').split('\n').filter((l) => /dropped_packets_total\{/.test(l)).join(' ')}`);
         // Names: the guest's resolver asks MagicDNS, which (the tailnet has no nameservers) can only
         // forward to the exit node's resolver (a DoH query to its peerapi); SERVFAIL means it couldn't.
         let named = '';
@@ -248,11 +248,11 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
 // the internet). The page's credential has the guest configure both cards itself. Only tailcat reaches the internet, so
 // it is the primary although it comes second: the default routes go through it, the tailnet's adapter gives its /10
 // and /48 only, and its lease's MagicDNS domain sends the peer's name to it. The guest reaches the tailnet's peer and
-// the internet at once. Opt-in also with WEBPC_TAILCAT=1 (Go builds tailcat and derper).
-const tailcatSkip = skip ?? (process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1 too' : undefined);
+// the internet at once. Opt-in also with WAARM64_TAILCAT=1 (Go builds tailcat and derper).
+const tailcatSkip = skip ?? (process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT=1 too' : undefined);
 test('two adapters: a tailnet without an exit node beside tailcat through a server, the peer and the internet at once', { skip: tailcatSkip, timeout: 900_000 }, async () => {
   const TAILCAT = `${ROOT}tests/net/tailcat.sh`;
-  const addr = /WEBPC_TAILCAT_ADDR=(\S+)/.exec(execFileSync(TAILCAT, ['up'], { encoding: 'utf8', timeout: 300_000 }))![1];
+  const addr = /WAARM64_TAILCAT_ADDR=(\S+)/.exec(execFileSync(TAILCAT, ['up'], { encoding: 'utf8', timeout: 300_000 }))![1];
   const lan = Object.values(networkInterfaces()).flat().find((a) => a && a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254'))?.address;
   assert.ok(lan, 'this machine has a LAN IPv4 address for the exit node to dial');
   const http = createServer((_req, res) => res.end('hello-from-the-internet\n'));
@@ -274,7 +274,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
       try {
         await page.goto(`${base}/tests/browser/core.html`);
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port } : {}) })}`);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WAARM64_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port } : {}) })}`);
         await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
           .catch(async (e) => { throw new Error(`${e}${await context()}`); });
         const [tn, tc] = await views();
@@ -313,15 +313,15 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
         console.log(`# guest: ${(await run('ip -4 route; ip -6 route')).trim().replace(/\n/g, ' | ')}`);
 
         // At once: the peer pinged through the tailnet while the internet's page comes through tailcat.
-        const both = await run(`ping -c 5 -W 5 ${env.WEBPC_TS_PEER_IP} > /tmp/ping.txt 2>&1 & curl -s -m 30 ${url}; wait; cat /tmp/ping.txt`, 90_000);
+        const both = await run(`ping -c 5 -W 5 ${env.WAARM64_TS_PEER_IP} > /tmp/ping.txt 2>&1 & curl -s -m 30 ${url}; wait; cat /tmp/ping.txt`, 90_000);
         assert.match(both, /hello-from-the-internet/, `the internet through tailcat: ${both}`);
         assert.match(both, /5 packets transmitted, 5 received, 0% packet loss/, `the peer through the tailnet: ${both}`);
-        const ping6 = await run(`ping -6 -c 3 -W 5 ${env.WEBPC_TS_PEER_IP6}`, 90_000);
+        const ping6 = await run(`ping -6 -c 3 -W 5 ${env.WAARM64_TS_PEER_IP6}`, 90_000);
         assert.match(ping6, /3 packets transmitted, 3 received, 0% packet loss/, `the peer over IPv6: ${ping6}`);
         // Names: the tailnet's lease's domain routes the peer's name to MagicDNS, on the tailnet's link.
-        const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
+        const name = env.WAARM64_TS_PEER_NAME.replace(/\.$/, '');
         const resolved = await run(`getent hosts ${name}`);
-        assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved}); ${await run('resolvectl status 2>&1 | grep -v "^ *$" | head -40')}`);
+        assert.ok(resolved.includes(env.WAARM64_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved}); ${await run('resolvectl status 2>&1 | grep -v "^ *$" | head -40')}`);
 
         // A tailcat client comes in over IPv6 from an address in the tailnet's /48: the guest answers it through
         // tailcat's adapter (its address's own route, the longest match), and the tailnet's peer stays reached.
@@ -332,7 +332,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
         assert.match(got, /hello-from-the-guest/, `a tailcat client beside the tailnet: ${got.slice(0, 300)}; ${await run('ip -6 route')}${await context()}`);
         const routed = await run('ip -6 route');
         assert.match(routed, new RegExp(`fd7a:\\S+ (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b} `), `the client's own route: ${routed}`);
-        assert.match(await run(`ping -6 -c 2 -W 5 ${env.WEBPC_TS_PEER_IP6}`, 90_000), /2 packets transmitted, 2 received/, "the tailnet's peer stays reached over IPv6");
+        assert.match(await run(`ping -6 -c 2 -W 5 ${env.WAARM64_TS_PEER_IP6}`, 90_000), /2 packets transmitted, 2 received/, "the tailnet's peer stays reached over IPv6");
       } finally {
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
         await ctx.close();

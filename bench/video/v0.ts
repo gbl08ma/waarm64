@@ -7,7 +7,7 @@
 // CAPTURE=1 also saves the session's virgl capture (web/virgl-trace.ts) as <outdir>/capture.vglt: V1's fixtures.
 // FIREFOX=0 skips Firefox, FFMPEG=0 FFmpeg; PREFS adds Firefox prefs (`name=value,…`, e.g.
 // media.hardware-video-decoding.force-enabled=true); about:support's graphics section goes to the results (G4's
-// autoconfig, bench/gpu/firefox/webpc.cfg); PHASE_S is the seconds measured while each clip plays (default 15).
+// autoconfig, bench/gpu/firefox/waarm64.cfg); PHASE_S is the seconds measured while each clip plays (default 15).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { encodeTrace } from '../../web/virgl-trace.ts';
 import { openSession } from '../gpu/guest-session.ts';
@@ -35,8 +35,8 @@ await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media
 results.info = await run('uname -r; pacman -Q mesa libva ffmpeg firefox | tr "\\n" " "');
 // SHIM=1: the VA driver on the media disk (bench/video/media-disk.sh) as the guest's, for every process.
 const shim = !!process.env.SHIM;
-if (shim) await run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/ && echo LIBVA_DRIVER_NAME=webpc >> /etc/environment');
-const vaEnv = shim ? 'LIBVA_DRIVER_NAME=webpc ' : '';
+if (shim) await run('cp /mnt/media/waarm64_drv_video.so /usr/lib/dri/ && echo LIBVA_DRIVER_NAME=waarm64 >> /etc/environment');
+const vaEnv = shim ? 'LIBVA_DRIVER_NAME=waarm64 ' : '';
 log('info', results.info);
 results.vainfo = await run(vaEnv + 'vainfo --display drm --device /dev/dri/renderD128 2>&1 | tail -20', 120_000);
 log('vainfo\n' + results.vainfo);
@@ -77,7 +77,7 @@ EOF
 # sway's exec splits commands at commas: MOZ_LOG's list goes through a script.
 printf '#!/bin/sh\n${vaEnv}FFBENCH_SUPPORT=/tmp/ff-$2.support MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5,Dmabuf:5 exec firefox --profile /home/arch/vprofile --kiosk "$1" > /tmp/ff-$2.log 2>&1\n' > /home/arch/ff-launch.sh
 chmod 755 /home/arch/ff-launch.sh`);
-  for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['webpc.cfg', '/usr/lib/firefox/webpc.cfg']]) {
+  for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['waarm64.cfg', '/usr/lib/firefox/waarm64.cfg']]) {
     await pasteSerial(`cat > ${to} <<'EOF'\n${readFileSync(new URL(`../gpu/firefox/${from}`, import.meta.url), 'utf8')}EOF`);
   }
   results.sway = await s.startSway('gles2');

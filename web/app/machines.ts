@@ -1,5 +1,5 @@
 // What the Machines page does to machines (docs/machines.md §1, §4, §7): make, copy, delete, edit, and attach,
-// detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `webpc-machine:<id>`
+// detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `waarm64-machine:<id>`
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
 import { t } from '../i18n.ts';
@@ -24,7 +24,7 @@ import {
 import type { Store } from './store.ts';
 
 /** The lock a page holds while it runs machine `id`. */
-export const machineLock = (id: string) => `webpc-machine:${id}`;
+export const machineLock = (id: string) => `waarm64-machine:${id}`;
 
 /** Whether machine `id` runs now (in this tab or another). */
 export async function isRunning(id: string) {

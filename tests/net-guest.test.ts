@@ -6,7 +6,7 @@
 // exists nowhere and its router. It also checks that the units the card needs don't make the
 // boot wait for a network that isn't coming (a login prompt inside the boot's usual time), and that three cards each
 // get their own lease and router (docs/networking/adapters.md §4).
-// Realtime, one Debian boot, ~2 min alone. Opt-in with WEBPC_DISTROS=debian, like Debian's
+// Realtime, one Debian boot, ~2 min alone. Opt-in with WAARM64_DISTROS=debian, like Debian's
 // other Chromium tests.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -17,12 +17,12 @@ import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
-  : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
+const skip = process.env.WAARM64_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WAARM64_NET_TESTS=1)'
+  : !(process.env.WAARM64_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WAARM64_DISTROS=debian'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
   : undefined;
 
-const OVERLAY = 'webpc-net-guest-test';
+const OVERLAY = 'waarm64-net-guest-test';
 let browser: Browser;
 let base: string;
 let closeServer: () => void;

@@ -4,7 +4,7 @@
 const want = 26;
 const major = Number(process.versions.node.split('.')[0]);
 if (major < want) {
-  console.error(`webpc needs Node ${want} or newer (package.json "engines"), and this is Node ${process.versions.node}.\n` +
+  console.error(`waarm64 needs Node ${want} or newer (package.json "engines"), and this is Node ${process.versions.node}.\n` +
     `Install it from https://nodejs.org/ (or with a version manager, e.g. \`nvm install ${want}\`), then run \`npm start\` again.`);
   process.exit(1);
 }

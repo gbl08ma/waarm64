@@ -67,7 +67,7 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
   from the worklet's last quantum when it takes over. When the ring runs dry that clock waits for the guest, and the
   wait counts as an underrun when sound comes again. Both move it by compare-and-exchange, so a hand-over can't move
   it backwards. Hence a guest never stalls on a suspended context.
-- **Worklet** (`web/audio-worklet.ts`, `webpc-snd`): copies up to 128 frames per render quantum out of the ring, silence
+- **Worklet** (`web/audio-worklet.ts`, `waarm64-snd`): copies up to 128 frames per render quantum out of the ring, silence
   for what's missing, counts a gap in a started stream's sound as an underrun when sound returns, plays only while RUN
   is set and its context runs at the stream's rate, and allocates nothing in `process`. It bumps and `Atomics.notify`s
   the wake word every 2 quanta (5.3 ms at 48 kHz); the sink's loop waits on it with `Atomics.waitAsync` (5 ms timeout).
@@ -75,7 +75,7 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 - **Latency the guest sees:** each completion's `latency_bytes` is the browser's output latency (`baseLatency +
   outputLatency`, refreshed once a second into the ring's header). Linux makes it ALSA's `runtime->delay`, which a
   player's A/V sync adds; what is in the ring is already counted, since those messages haven't completed.
-- **Microphone:** a second ring of the same layout, which the page's `webpc-mic` worklet fills from `getUserMedia`
+- **Microphone:** a second ring of the same layout, which the page's `waarm64-mic` worklet fills from `getUserMedia`
   (through a context at the input stream's rate) while the device asks (`capture-start`, `capture-stop` on the port),
   and the device worker's `micSource` reads, at most a buffer behind; without it, silence on the source's clock.
   Closed when the guest stops recording (the browser's indicator goes off).

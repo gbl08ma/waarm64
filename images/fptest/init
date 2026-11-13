@@ -1,13 +1,13 @@
 #!/bin/busybox sh
 # The fptest image's init: runs the FP suite (images/fptest/fptest.c), a part
-# of its forms on each CPU, and powers off. webpc.fptest=<options, commas for
-# spaces> passes options to it (e.g. webpc.fptest=-level,2,fadd,fmla).
+# of its forms on each CPU, and powers off. waarm64.fptest=<options, commas for
+# spaces> passes options to it (e.g. waarm64.fptest=-level,2,fadd,fmla).
 /bin/busybox --install -s
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/fptest
 mount -t proc proc /proc
-opts=$(sed -n 's/.*webpc\.fptest=\([^ ]*\).*/\1/p' /proc/cmdline | tr , ' ')
+opts=$(sed -n 's/.*waarm64\.fptest=\([^ ]*\).*/\1/p' /proc/cmdline | tr , ' ')
 n=$(nproc)
-echo "webpc: fptest on $n CPUs: $opts"
+echo "waarm64: fptest on $n CPUs: $opts"
 k=0
 while [ $k -lt $n ]; do
   # shellcheck disable=SC2086
@@ -22,5 +22,5 @@ while [ $k -lt $n ]; do
   [ "$(cat /tmp/status$k)" = 0 ] || ok=
   k=$((k + 1))
 done
-if [ -n "$ok" ]; then echo "webpc: test ok"; else echo "webpc: test FAILED"; fi
+if [ -n "$ok" ]; then echo "waarm64: test ok"; else echo "waarm64: test FAILED"; fi
 poweroff -f

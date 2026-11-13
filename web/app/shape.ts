@@ -261,7 +261,7 @@ export function slots(m: {
 }
 
 /** The serial a disk's guest sees (virtio-blk GET_ID, at most 20 bytes; Linux's /dev/disk/by-id/virtio-<serial>): the attachment's, so it survives a reorder. */
-export const serialOf = (attachment: string) => `webpc-${attachment}`.slice(0, 20);
+export const serialOf = (attachment: string) => `waarm64-${attachment}`.slice(0, 20);
 
 /** One disk of a shape: what the guest sees of it. `swap`: a ramdisk the guest uses as swap (only when on). */
 export type ShapeDisk = {

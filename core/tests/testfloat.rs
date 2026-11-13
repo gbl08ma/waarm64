@@ -1,4 +1,4 @@
-//! TestFloat 3e vectors against `webpc_core::fp` (docs/testing.md).
+//! TestFloat 3e vectors against `waarm64_core::fp` (docs/testing.md).
 //!
 //! Runs when TESTFLOAT_GEN points at a `testfloat_gen` binary; `scripts/testfloat.sh`
 //! builds it under target/ and runs this in release mode. Every function runs in
@@ -15,7 +15,7 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
-use webpc_core::fp::{self, D, Fmt, Fpu, H, Rounding, S};
+use waarm64_core::fp::{self, D, Fmt, Fpu, H, Rounding, S};
 
 /// A rounding mode, its testfloat_gen option and its FPCR.RMode value.
 type Mode = (Rounding, &'static str, u64);

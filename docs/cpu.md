@@ -306,7 +306,7 @@ Checked by kvm-unit-tests' `debug-bp`, `debug-wp`, `debug-sstep` and their migra
 (through snapshots), the bare-metal `debug` test (the step machine's edges, breakpoint and
 watchpoint matching, against QEMU's TCG; QEMU 11.1 steps and breaks with the OS lock set and has
 no unlinked context breakpoints, so the oracle build leaves those out), and the LTP guest's
-`breakpoint_test_arm64` and `webpc-debug` (ptrace single step through an SVC, perf breakpoint and
+`breakpoint_test_arm64` and `waarm64-debug` (ptrace single step through an SVC, perf breakpoint and
 watchpoint counts; its expectations checked on the M4: two stops after a stepped SVC, Linux's
 syscall-exit report and then the pending step).
 
@@ -652,7 +652,7 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
 - **Tests:** a native differential test of random blocks against `interp::steps`
   (`interp::block::tests`), the golden corpus in it on wasm (`tests/corpus-wasm.test.ts`), the
   native boots through it (`linux_boots_through_the_block_interpreter`,
-  `alpine_boots_through_the_block_interpreter`; `WEBPC_NATIVE_JIT=1` for every native guest test),
+  `alpine_boots_through_the_block_interpreter`; `WAARM64_NATIVE_JIT=1` for every native guest test),
   and every JIT run's cold code with exact steps. The differential test drives each block through
   `hot` too (`run_hot`, in the copy its kinds choose); `blocks_chain_into_the_copy_of_hot_that_runs_them` chains
   blocks of both copies and counts the switches.

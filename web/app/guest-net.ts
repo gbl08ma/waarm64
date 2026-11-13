@@ -26,13 +26,13 @@ export const DROPIN = '[DHCPv4]\nUseMTU=yes\nUseDomains=yes\n\n[DHCPv6]\nUseDoma
 
 /** The script the unit runs, before networkd. POSIX sh. */
 export function netScript(): string {
-  return `# From webpc: the machine's "Take the connection's settings" (its Network tab), run at every boot while it is on.
+  return `# From waarm64: the machine's "Take the connection's settings" (its Network tab), run at every boot while it is on.
 # Every .network file of systemd-networkd's takes the DHCP lease's MTU and search domain, by a drop-in in /run (gone at
-# the next boot). A drop-in of the guest's own that sorts after 50-webpc.conf wins.
+# the next boot). A drop-in of the guest's own that sorts after 50-waarm64.conf wins.
 for f in ${DIRS.map((d) => `${d}/*.network`).join(' ')}; do
   [ -e "$f" ] || continue
   d=/run/systemd/network/\${f##*/}.d
-  mkdir -p "$d" && printf '${DROPIN.replaceAll('\n', '\\n')}' >"$d/50-webpc.conf"
+  mkdir -p "$d" && printf '${DROPIN.replaceAll('\n', '\\n')}' >"$d/50-waarm64.conf"
 done
 `;
 }
@@ -40,7 +40,7 @@ done
 /** The systemd credentials (web/app/guest-unit.ts: SMBIOS, systemd 256+) that have the guest take the leases' settings. */
 export const netCredentials = (description: string): Credential[] =>
   guestUnit({
-    name: 'webpc-network.service',
+    name: 'waarm64-network.service',
     description,
     script: netScript(),
     // Before networkd reads its files; after the generator writes the page's .network credential into /run.

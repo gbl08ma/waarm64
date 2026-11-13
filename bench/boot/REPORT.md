@@ -6,7 +6,7 @@
 
 **Workload:** the M3 test guest (`images/`): Linux 6.18.54 from `allnoconfig` + `images/linux.fragment`, a 6.4 MB uncompressed BusyBox initramfs whose `/init` mounts proc/sys/dev, runs `/test.sh` and powers off through PSCI. 256 MiB of RAM, `console=ttyAMA0 earlycon panic=-1`, deterministic mode (62.5 MHz counter, one tick per step). Image and initramfs hashes are in `images/SHA256SUMS`.
 
-**Method:** `node bench/run.ts --page bench/boot/index.html` (default config, full run) in a worker. Metrics: wall time from `vm_boot` to the first `webpc: init` on the console (the initramfs's `/init` starts; the guest's "shell") and to the PSCI `SYSTEM_OFF` after `/test.sh`. **Cold:** each sample compiles a fresh `WebAssembly.Module` (V8 starts on Liftoff code), and the compile time is included; n = 5. **Warm:** one module, three warm-up boots, then n = 10. Every boot takes exactly **35,362,607 steps** (instructions retired plus exceptions taken), on both hosts and natively. Code at commit `1287f3e0c677`, the same wasm on both hosts (sha256 `e970eba0e18c…`); `dirty` is the untracked kickoff notes.
+**Method:** `node bench/run.ts --page bench/boot/index.html` (default config, full run) in a worker. Metrics: wall time from `vm_boot` to the first `waarm64: init` on the console (the initramfs's `/init` starts; the guest's "shell") and to the PSCI `SYSTEM_OFF` after `/test.sh`. **Cold:** each sample compiles a fresh `WebAssembly.Module` (V8 starts on Liftoff code), and the compile time is included; n = 5. **Warm:** one module, three warm-up boots, then n = 10. Every boot takes exactly **35,362,607 steps** (instructions retired plus exceptions taken), on both hosts and natively. Code at commit `1287f3e0c677`, the same wasm on both hosts (sha256 `e970eba0e18c…`); `dirty` is the untracked kickoff notes.
 
 | Host | Chromium | To /init cold | Power-off cold | To /init warm (IQR) | Power-off warm (IQR) | Warm MIPS |
 |---|---|---|---|---|---|---|
@@ -124,7 +124,7 @@ The rest is spread thinly (the next ones are each ~1%: `_parse_integer_limit`, `
 
 ## M7 loop 0: the single-vCPU reference for the scaling curve
 
-`--only alpine_user_jit`, the userspace phases at N = 1 (`webpc.threads` unset: one worker per
+`--only alpine_user_jit`, the userspace phases at N = 1 (`waarm64.threads` unset: one worker per
 phase) on today's single vCPU: the reference M7's scaling runs compare against. Chromium
 153.0.8010.52, the M4 VM (8 vCPUs), deterministic, JIT, 3 boots, medians (IQR):
 
@@ -247,7 +247,7 @@ M4 has 4 performance cores (docs/benchmarking.md "SMP"). No PMU in the VM to say
 | churn | 2,103 (±2) | 3,422 (1.2×) | 4,937 (1.7×) | 10,270 (1.6×) |
 | SQLite | 3,649 (±12) | 3,931 (1.9×) | 4,239 (3.4×) | 8,146 (3.6×) |
 
-The userspace phases run N copies of the work at N (`webpc.threads=N`): throughput = N × t₁ / t_N.
+The userspace phases run N copies of the work at N (`waarm64.threads=N`): throughput = N × t₁ / t_N.
 Alpine's boot is mostly serial and still loses 20% at N = 4; Debian's (systemd) gains 30%. N = 8
 exceeds the VM's cores (N + 2 threads). Raw: `results/m7-loop8/smp_*.json`.
 
@@ -256,7 +256,7 @@ exceeds the VM's cores (N + 2 threads). Raw: `results/m7-loop8/smp_*.json`.
 Raw: `results/m7-loop8/boot_alpine_jit-*.json`.
 
 The boot suite now ignores markers in the kernel's echo of its command line: Debian's contains
-`echo webpc: debian`, so `boot_debian_jit`'s first-marker time (`debian_jit_first`) had been ~1 s
+`echo waarm64: debian`, so `boot_debian_jit`'s first-marker time (`debian_jit_first`) had been ~1 s
 into the boot rather than its script.
 
 ## M8 loop 0: Debian for interaction
@@ -394,7 +394,7 @@ as a clone has it, run by `tests/start.test.ts`: with the core copied in, **the 
 1.2 s after `npm start`** (`npm ci` ~0.4 s, Debian's SHA512 over 403 MB and the kernel and initrd
 taken out of its `/boot` in Node, ~0.4 s of it, the disk hard-linked from the cache) and the page
 reaches `running` 28.7 and 30.7 s later (loop 4: 28.6–29.1 s from page load: unchanged). Building
-its own core (`WEBPC_START_COLD=1`): the URL at 11.6 s. A cold `scripts/build-wasm.sh` in a `git
+its own core (`WAARM64_START_COLD=1`): the URL at 11.6 s. A cold `scripts/build-wasm.sh` in a `git
 clone` takes 10–11 s (the pinned nightly already installed; installing it into an empty
 `RUSTUP_HOME` took 6 s and 722 MB). **With nothing to do, `npm start` serves in ~0.1 s** (0.2 s
 through npm). The real download from cloud.debian.org: 7.8 s (55 MB/s). `images/build.sh debian`
@@ -1451,7 +1451,7 @@ blocks until then. Firefox's pages session, the vCPU timeline over all of it (`T
 runs of 10 ms bins in which a vCPU inside `vm_run_cpu` retired nothing), two sessions each, alternating
 (`results/m8-compile-worker/firefox/`):
 
-| | MIPS | stalls ≥ 20 / 50 / 100 / 250 / 500 / 1000 ms | longest | stalled ms a second a vCPU | `webpc-slow` installs |
+| | MIPS | stalls ≥ 20 / 50 / 100 / 250 / 500 / 1000 ms | longest | stalled ms a second a vCPU | `waarm64-slow` installs |
 |---|---|---|---|---|---|
 | worker | 271, 263 | 8/3/3/0/0/0, 13/6/3/0/0/0 | 182, 224 ms | 0.39, 0.70 | 5, 5 |
 | none (`?jit=nocw`) | 270, 267 | 12/8/8/8/0/0, 14/5/5/5/2/1 | 489, 1054 ms | 2.0, 1.8 | 8, 14 |
@@ -2273,7 +2273,7 @@ guest (a curl to youtube.com: 200 in 1.0 s), six sites (a YouTube watch page, th
 Excalidraw, Google Maps) 20 s each in one tab: 264 MB compiled and no flush in 130 s at 320 MiB, against the churn's
 424 MB in its first 120 s. Too short a run to compare their flushes with the churn's.
 
-**Debian:** `debian-go.webpcsnap` (176 MB, saved 37 s after the start) loaded into the 160 MiB core ran the `go build`
+**Debian:** `debian-go.waarm64snap` (176 MB, saved 37 s after the start) loaded into the 160 MiB core ran the `go build`
 loop at once (`go/`: builds of 55 and 38 s in 120 s, 1,134 MIPS).
 
 **For the next lane:** screen variants with the churn page from the snapshot, an A/A arm in each run (five variants
@@ -2282,7 +2282,7 @@ loop at once (`go/`: builds of 55 and 38 s in 120 s, 1,134 MIPS).
 ## M8: a machine's JIT budget and the page's memory signal (2026-10-20)
 
 Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB); the desktop guest from
-`target/snapbench/pages.webpcsnap` (Arch Linux ARM, Firefox, 2.5 GiB of RAM, 4 vCPUs, 3D); sessions through
+`target/snapbench/pages.waarm64snap` (Arch Linux ARM, Firefox, 2.5 GiB of RAM, 4 vCPUs, 3D); sessions through
 `bench/gpu/ab.sh` with `MEMLOG=10` (`bench/gpu/guest-session.ts`: every 10 s the renderer's smaps by class,
 `bench/mem/probe.ts`, and the page's own accounting, `__status.memory`). Data in `bench/boot/results/m8-budget/`.
 
@@ -2388,7 +2388,7 @@ for one that runs short.
 ## M8: emitting outside the JIT cache's lock (2026-10-20)
 
 Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB); the desktop guest from
-`target/snapbench/pages.webpcsnap` (Arch Linux ARM, Firefox, 2.5 GiB of RAM, 4 vCPUs, the default 320 MiB budget);
+`target/snapbench/pages.waarm64snap` (Arch Linux ARM, Firefox, 2.5 GiB of RAM, 4 vCPUs, the default 320 MiB budget);
 sessions through `bench/gpu/ab.sh`, one per arm with an A/A copy of the base. Data in `bench/boot/results/m8-emit/`
 (`churn1/`, `pages1/`: each arm's `results.json`, `counts.json`, `stalls.json`, `rss.txt`, and `summary.json`, the
 `ab-summary` of the run). The patch is `outside-lock.patch` there.
@@ -2476,7 +2476,7 @@ against 132.6; 6,250 made 25,429. Kept 1,562.
 | pages: busy MIPS | 152 · 155 | 158 |
 | pages: wiki / bbc load | 17.8 · 17.7 / 16.6 · 16.0 s | 16.8 / 15.6 s |
 | pages: stalls ≥ 20 ms | 0 · 2 | 0 |
-| `go build` loop, 300 s from `debian-go.webpcsnap`: MIPS over the run | 1,110 | 1,141 |
+| `go build` loop, 300 s from `debian-go.waarm64snap`: MIPS over the run | 1,110 | 1,141 |
 | `go build` loop: the renderer (median of the 30 s samples) | 3,229 MiB | 2,876 MiB |
 
 The gates (`gates/`, three rounds alternating, ms, lower is better): `smp_alpine_jit` n1 9,432 · 9,403 · 9,514
@@ -2487,10 +2487,10 @@ everything timed even or a little faster.
 ## M8: fewer acquisitions of the JIT cache's lock (2026-10-21)
 
 Headless Chromium 153.0.8010.52 on the dev VM (Lima `vz`, 8 vCPUs, 14 GiB); the desktop guest from
-`target/snapbench/pages.webpcsnap` (made again for this lane: Arch Linux ARM, Firefox, 2.5 GiB, 4 vCPUs, 320 MiB);
+`target/snapbench/pages.waarm64snap` (made again for this lane: Arch Linux ARM, Firefox, 2.5 GiB, 4 vCPUs, 320 MiB);
 sessions through `bench/gpu/ab.sh`, one per arm. Data in `bench/boot/results/m8-lock/`: `count/` (the counting
 build on both workloads), `screen1/`–`screen4/` (the churn screen, `rate=60&total=4000`), `pages/` (the timed pages
-session), `go/` and `go2/` (the `go build` loop from `debian-go.webpcsnap`, 300 s, one session per arm each),
+session), `go/` and `go2/` (the `go build` loop from `debian-go.waarm64snap`, 300 s, one session per arm each),
 `gates/`; each run's `summary.json` from `ab-summary --json`. `screen.patch` is the screening build: the change
 behind switches (`KNOWN`, `KNOWN_Q0`, `RETAIN`, `EMPTY_KEPT`, `LONG`) and per-caller counters (`Stats::lk`, published
 as counter words 114 on by a host change not in the patch; `tools/lockby.ts` prints them from `results.json`).
@@ -2650,9 +2650,9 @@ bounded). Four cores, all ABI 48:
 - **imin:** lock2 with `CTR_EL0.IminLine` 9, 2 KiB lines. This one is guest-visible.
 
 Data in `bench/boot/results/m8-lock2/`; `tools/run.sh` ran them all:
-- `churn/` and `pages/`: `bench/gpu/ab.sh` from `target/snapbench/pages.webpcsnap`, one session per arm, with
+- `churn/` and `pages/`: `bench/gpu/ab.sh` from `target/snapbench/pages.waarm64snap`, one session per arm, with
   `summary.json` from `ab-summary --json`.
-- `go/`: the `go build` loop, 300 s from `debian-go.webpcsnap`, two sessions per arm, with `summary.jsonl` from
+- `go/`: the `go build` loop, 300 s from `debian-go.waarm64snap`, two sessions per arm, with `summary.jsonl` from
   `tools/gosum.ts`.
 - `boot/`: Debian's boot and login on 4 vCPUs from cold (`bench/stress/stress.ts`), the counts at the login.
 - `gates/`.
@@ -2828,7 +2828,7 @@ growable import, alternated in one session (the dev VM, Chromium 153.0.8010.52; 
 
 **Firefox's pages session**, with the block map's page index of 2 bytes a key (docs/jit.md "The core's heap") in the
 same change: old = the core with the index of whole keys (the previous `mod.rs` with the prune's clock added, ABI 50)
-on the growable import (`?growcore`), new = this commit's core; `bench/gpu/ab.sh` from `pages.webpcsnap`, `MEMLOG=5`,
+on the growable import (`?growcore`), new = this commit's core; `bench/gpu/ab.sh` from `pages.waarm64snap`, `MEMLOG=5`,
 three rounds alternating (`results/m8-exactcore/pages/`, `run.sh`). Each session's value:
 
 | | old | new |
@@ -2885,7 +2885,7 @@ already 64-bit integer code, which the JIT runs well; SHA512H's two rounds an in
 **OpenSSL 3.5 doesn't use the SHA-3 instructions on our vCPU**: `crypto/armcap.c` sets its "SHA3 and worth using"
 bit (1 << 15, its EOR3/RAX1/XAR/BCAX Keccak) only for Apple M1 and M2 MIDRs, and its EOR3 AES-GCM (1 << 12, 1 << 16)
 only for Neoverse V1, V2, N2, Cobalt 100 and Ampere; our MIDR's implementer is 0. Its armcap on our vCPU is 0x9fd
-(SHA512, SHA3 and RNG set). Told to use both (`webpc.armcap=0x99fd`, `alpine_crypto_eor3_jit`, against the default;
+(SHA512, SHA3 and RNG set). Told to use both (`waarm64.armcap=0x99fd`, `alpine_crypto_eor3_jit`, against the default;
 3 rounds alternated; `results/m9-sha3/openssl-forced/`):
 
 | | default (0x9fd) | forced (0x99fd) | |
@@ -3001,7 +3001,7 @@ cold arm running only the leader (check 36), the spill arm naming memory 0 (jit-
 The leftovers ranked on measurements instead of guesses. An instrumented core (`results/accstat/instrument.patch`,
 applied to 4271f7c6; not on main) logged every compiled block's words and execution count, each group's lowest page
 offset, cold arms and straddles, and each probe's page against the function's last two, over Firefox's pages session
-(5 sites, from `target/snapbench/pages.webpcsnap`). Its analyzer (`examples/accstat.rs`, in the patch) replays the plan's
+(5 sites, from `target/snapbench/pages.waarm64snap`). Its analyzer (`examples/accstat.rs`, in the patch) replays the plan's
 variants over those blocks. Output: `results/accstat/pages.txt`; 8.6e10 instructions, 227,119 blocks compiled.
 
 - **The mix:** 32.6% of instructions are loads and stores: immediate forms 92.8% (68% loads), register offset 5.6%,
@@ -3064,7 +3064,7 @@ into the categories of "Where a busy vCPU's time goes in Firefox, again" (2026-1
 sessions ran a core from before c49e4a16 (the FZ fast paths: a shared `target/` left it stale), which moves none of
 what follows; the threshold A/B's arms are fresh builds of `307b8d51`. Raw: `results/m9-macprof/` (README).
 
-**Firefox's pages session** (from `pages.webpcsnap`; loads ~10% slower under `--prof`), % of busy vCPU ticks, Mac
+**Firefox's pages session** (from `pages.waarm64snap`; loads ~10% slower under `--prof`), % of busy vCPU ticks, Mac
 (VM 11-04): TurboFan bodies 40.8 (30.8), **block interpreter 18.4 (13.0)**, entries at a function's first instruction
 14.1 (22.0), Liftoff bodies 5.4, dispatcher and `Jit::miss` 4.6, Chrome's framework 3.4, helper bodies 3.1, TLB miss
 and walk 1.9, helpers' entry 1.8, compile 1.3. Interpreted steps are 3.96% of 88.5 G, so an interpreted step costs
@@ -3177,7 +3177,7 @@ Alpine's userspace -0.03%, crypto -0.4%, USB -6%. EDK2 doesn't move.
 ## The wasm code GC today, and larger batches in a browser (2026-11-03)
 
 The backlog's "The wasm code GC stops every vCPU" and "Fewer, larger modules for a browser, what's left". The dev VM,
-headless Chromium 153.0.8010.52, core `0cacda0f`; every session from `target/snapbench/pages.webpcsnap` (the desktop
+headless Chromium 153.0.8010.52, core `0cacda0f`; every session from `target/snapbench/pages.waarm64snap` (the desktop
 guest, 4 vCPUs) through `bench/gpu/ab.sh`. Data in `results/m9-codegc/` (README).
 
 **What V8's code GC frees and when** (V8's `src/wasm/wasm-engine.cc` and `wasm-code-manager.cc`, read at their
@@ -3293,7 +3293,7 @@ since 2026-11-03, above).
 
 **How often** (a temporary build counting `flush_ng`'s calls and overflows in place of walks and flushes;
 `instr-*.json`): Alpine's boot and userspace phases, 12,429 nG drops, 7 of them overflows. Firefox's pages session
-(4 vCPUs, from `pages.webpcsnap`), each site's 12 s scroll window: 16 (hn) to 80 (wiki) overflows, ~7 a second.
+(4 vCPUs, from `pages.waarm64snap`), each site's 12 s scroll window: 16 (hn) to 80 (wiki) overflows, ~7 a second.
 
 **The fix:** each slot's byte in `Tlb::blk` (block class in bits 2:0) carries an nG mark (bit 7) set at the fill;
 past the list, `flush_ng` reads the 128 KiB of marks eight slots a word and drops only the marked slots.
@@ -3315,7 +3315,7 @@ Alpine userspace has too few overflows to show: not A/B'd. Kept.
 "M8: where a busy vCPU's time goes in Firefox" (2026-10-16) profiled the pages session at ~140 busy MIPS; the JIT,
 the MMU and the run loop have changed much since (~214 busy MIPS unprofiled today). The same profile again to check
 the backlog's CPU, interpreter, JIT and SMP items. The dev VM, Chromium 155.0.8059.84, core `672e9908`; one pages
-session from `target/snapbench/pages.webpcsnap` (4 vCPUs) with `--perf-prof` and `perf record -k mono
+session from `target/snapbench/pages.waarm64snap` (4 vCPUs) with `--perf-prof` and `perf record -k mono
 --user-regs=x16,x17,lr` (`results/m9-ffprof/tools/run.sh`); 352 s (336 unprofiled), 181 busy MIPS under the
 profiler. Data, scripts and the microbenchmark's runs in `results/m9-ffprof/` (README).
 
@@ -3387,7 +3387,7 @@ exit's cost, the cache's lock and the 320 MiB budget fell to under 1% each in th
 ## Relinking a region once its successors are compiled (2026-11-05)
 
 The backlog's "Tails into code that was cold when its predecessor was compiled", built and measured. The dev VM,
-Chromium 155.0.8059.84, core `6abf0919`; Firefox's pages session from `target/snapbench/pages.webpcsnap` (4 vCPUs)
+Chromium 155.0.8059.84, core `6abf0919`; Firefox's pages session from `target/snapbench/pages.waarm64snap` (4 vCPUs)
 through `bench/gpu/ab.sh`. Data, patches and summaries in `results/m9-relink/` (README).
 
 **What the indirect entries are** (a diagnostic core counting each `return_call_indirect` taken by kind, `count.patch`,
@@ -3443,7 +3443,7 @@ re-instantiation in every table.
 Whether shrinking the JIT's code (the backlog's "Where the JIT's wasm bytes go") can pay, measured from the other
 side: every JIT function made bigger by a known amount. The dev VM (Chromium 155.0.8059.84) and the Mac host (Chrome
 for Testing 157.0.8103.38, its GPU, `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts`), both from
-`pages.webpcsnap`, core `b7a813d0`; data in `results/m9-size/` (README).
+`pages.waarm64snap`, core `b7a813d0`; data in `results/m9-size/` (README).
 
 **The microbenchmark first** (`results/m9-relink/chain2.mjs`, Node 26.7.0, `--no-liftoff`): at a fixed number of
 functions, a `return_call_indirect` gets slower as each function's cold padding grows (32,000 functions: 24.6, 29.7,
@@ -3518,7 +3518,7 @@ to its counts (the sound kernel's boot 91 M steps against 36.5 M, the litmus 3.6
 read 755 busy MIPS). The depth is local 128 now (the encoder's placeholders go to 255 and compact under 128). Then
 every Linux boot test (exact steps), the parallel boots, the JIT tests, the differential test and lockstep pass.
 
-**Firefox's pages session on the Mac host** (Chrome for Testing 157, its GPU, from `pages.webpcsnap`; `a2272932`, two
+**Firefox's pages session on the Mac host** (Chrome for Testing 157, its GPU, from `pages.waarm64snap`; `a2272932`, two
 rounds alternated, `results/m9-hostcalls/mac/`):
 
 | | busy MIPS | wasm (MiB) | loads (ms: wiki / mdn / github / bbc / hn) |
@@ -3603,13 +3603,13 @@ instances. Built on branch `wip/rebind` (`results/m9-rebind/rebind.patch`, READM
 - **A limit found writing the tests:** an instance imports only instances that exist, so a loop through several
   modules keeps one indirect edge a lap.
 
-**Firefox's pages session on the Mac host** (Chrome for Testing 157, from `pages.webpcsnap`; arms built from the same
+**Firefox's pages session on the Mac host** (Chrome for Testing 157, from `pages.waarm64snap`; arms built from the same
 source, so the host and ABI are the same; `results/m9-rebind/mac/summary.txt`):
 
 | | busy MIPS | wasm (MiB) | rebindings logged / applied | their time (ms, 4 vCPUs) |
 |---|---|---|---|---|
-| no sites (`WEBPC_NO_REBIND`) | 330, 333, 335; 330, 330 | 131.7-132.5 | 0 | 0 |
-| sites, never bound (`WEBPC_NO_BIND`) | 327, 320 | 137.0 | 0 | 0 |
+| no sites (`WAARM64_NO_REBIND`) | 330, 333, 335; 330, 330 | 131.7-132.5 | 0 | 0 |
+| sites, never bound (`WAARM64_NO_BIND`) | 327, 320 | 137.0 | 0 | 0 |
 | rebinding | **316, 316, 316** | 137.0-137.1 | 14,200-14,400 / 56,800-57,600 | 3,840-4,000 |
 
 Rebinding ran 5% slower with every round apart, the pages' loads slower in 13 of 15 pairs (wiki 7.2-7.7 s against
@@ -4031,7 +4031,7 @@ rules kept (docs/cpu.md "Left out, unadvertised"); the backlog item is gone, its
 The backlog's "Where the JIT's wasm bytes go" sub-items, each built as its own arm behind a switch, sized, and screened
 on the Mac: the M4 Mac mini's host (macOS 26.6.2), Chrome for Testing 157.0.8103.50 headless; the gates through
 `bench/interp/ab-mac.sh` (`boot_alpine_jit alpine_user_jit`, arms alternated each round) and Firefox's pages session
-from `pages.webpcsnap` through `bench/gpu/sway-mac.sh` (`TIMELINE_ALL`, busy MIPS from `bench/gpu/stalls.ts`), base
+from `pages.waarm64snap` through `bench/gpu/sway-mac.sh` (`TIMELINE_ALL`, busy MIPS from `bench/gpu/stalls.ts`), base
 `272f7f13`. Raw: `results/perf13/` (README: the arms' patch, sizes, JSON).
 
 **The arms and their size** (wasm compiled over Alpine's boot and userspace benchmark in Node, deterministic: the
@@ -4097,7 +4097,7 @@ The backlog's "The shared cache's leftovers", each sub-item counted first. Gates
 26.6.2, Chrome for Testing 157.0.8103.50 headless) through `bench/interp/ab-mac.sh perf14 3 base=… L=… F=… LF=… --
 boot_alpine_jit alpine_user_jit`, arms alternated each round; counts in Node on the dev VM (`bench/boot/userprof.ts`,
 deterministic, the same 10,612,856,957 steps in every arm) and one churn screen on the dev VM's Chromium (`bench/gpu/ab.sh`
-from `pages.webpcsnap`, `PHASES=churn CHURN='rate=60&total=4000'`). Base `367757a9`. Raw: `results/perf14/` (README).
+from `pages.waarm64snap`, `PHASES=churn CHURN='rate=60&total=4000'`). Base `367757a9`. Raw: `results/perf14/` (README).
 
 **Where one vCPU's 1-2% went.** It was measured on 2026-10-03 against a cache per vCPU, whose code no longer exists, so
 each remaining cost of the sharing on one table got its own arm (`arms.patch`, build-time switches):
@@ -4137,7 +4137,7 @@ shedding each fail it.
   with 2 KiB lines on 2026-10-21. Not the few times fewer expected: what's left is ICs over code the guest wrote (a
   page each), not 64-byte steps. The lock's waiting 2.66 s over 4 vCPUs (0.16% contended, 3.93 M misses run
   interpreted instead), busy MIPS 288, no stall ≥ 20 ms.
-- **Allocations under the lock** (a diagnostic core counting the allocator's calls, `WEBPC_ALLOCS` in `arms.patch`):
+- **Allocations under the lock** (a diagnostic core counting the allocator's calls, `WAARM64_ALLOCS` in `arms.patch`):
   over the userspace run 2.79 M calls, of which **all but ~2,000 are under the cache's lock**, 1.66 M (60%) emitting
   modules (`block::module`, ~3,000 a module), the rest the misses' map and region work. So the allocator's own spin
   lock is hardly contended by them (the cache's lock serializes them already); what they cost is the lock's hold time,
@@ -4156,7 +4156,7 @@ pages session's counts, the A/B's JSON, and the exit loop with its profiles. **N
 leave the backlog as findings.
 
 **The counts.** They come from Firefox's pages session with a counting core (`diag.patch`), started from
-`pages.webpcsnap` on the Mac host (M4, macOS 26.6.2, Chrome for Testing 157.0.8103.50 headless). The guest had 4 vCPUs
+`pages.waarm64snap` on the Mac host (M4, macOS 26.6.2, Chrome for Testing 157.0.8103.50 headless). The guest had 4 vCPUs
 and ran 218 s, 98 G steps. The vCPUs spent 609 of their 872 s out of the core, which leaves ~263 busy vCPU-seconds.
 
 | over the session, 4 vCPUs | count |

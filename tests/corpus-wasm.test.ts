@@ -5,7 +5,7 @@
 // sight, one per module) and in stress (the same with a 4-block code cache,
 // so it flushes constantly, and the stale-code checker); and through the
 // dispatcher never compiling, so in the block interpreter (interp::block).
-// `WEBPC_CORPUS=dp_imm,dp_reg` runs only those groups (tests/corpus/<group>.txt).
+// `WAARM64_CORPUS=dp_imm,dp_reg` runs only those groups (tests/corpus/<group>.txt).
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -14,11 +14,11 @@ import { coreImports } from '../web/vm.ts';
 import { jitVariantSkip } from './jit-variants.ts';
 import { CODE, DATA, DATA_SIZE, REGS, initialState, parseFile } from '../tools/corpus/corpus.ts';
 
-const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
+const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
 const DIR = new URL('corpus/', import.meta.url);
 const RAM = Number(DATA) + DATA_SIZE;
 const BRK_END = 0xd4200000;
-const GROUPS = process.env.WEBPC_CORPUS?.split(',');
+const GROUPS = process.env.WAARM64_CORPUS?.split(',');
 
 type Exports = {
   vcpu_new(): number;

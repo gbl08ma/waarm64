@@ -1,4 +1,4 @@
-// The page's AudioWorklets (docs/audio.md "How it fits together"): `webpc-snd` plays the sound ring (web/audio-ring.ts) that the device
+// The page's AudioWorklets (docs/audio.md "How it fits together"): `waarm64-snd` plays the sound ring (web/audio-ring.ts) that the device
 // worker's virtio-snd writes. Each render quantum (128 frames) it copies what the ring has, up to a quantum, and
 // moves the read index (compare-and-exchange: the device worker's own clock may move it too, around a hand-over),
 // plays silence for what's missing, and counts a gap in a started stream's sound as an underrun when the sound
@@ -75,7 +75,7 @@ class SndProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('webpc-snd', SndProcessor);
+registerProcessor('waarm64-snd', SndProcessor);
 
 /**
  * The microphone's worklet (audio S4): writes its input (a MediaStreamAudioSourceNode's, mono to both channels) into the
@@ -114,4 +114,4 @@ class MicProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('webpc-mic', MicProcessor);
+registerProcessor('waarm64-mic', MicProcessor);

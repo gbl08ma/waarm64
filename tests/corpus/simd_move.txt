@@ -1,4 +1,4 @@
-webpc-corpus 1
+waarm64-corpus 1
 oracle m4 2026-09-25
 test simd_move.dup_elt_scalar.0000
 code 5e1606ca

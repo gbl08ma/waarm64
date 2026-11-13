@@ -25,7 +25,7 @@ let base: string;
 let close: () => void;
 before(async () => {
   if (skipCopy) return;
-  out = mkdtempSync(join(tmpdir(), 'webpc-dist-'));
+  out = mkdtempSync(join(tmpdir(), 'waarm64-dist-'));
   await writeDist(out, { vulkan: false, hostAgent: true });
   // The page's direct-boot machines find their images at target/images/ under the root (web/app/machine.ts).
   mkdirSync(join(out, 'target/images'), { recursive: true });
@@ -41,12 +41,12 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
   const files = readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile()).map((f) => f.split(sep).join('/'));
   assert.ok(!files.some((f) => /\.(?:ts|svelte)$/.test(f)), `source in the copy: ${files.filter((f) => /\.(?:ts|svelte)$/.test(f)).join(', ')}`);
   for (const f of ['index.html', 'web/app/index.html', '_headers', '.htaccess', '.nojekyll', 'LICENSE', 'THIRD-PARTY-LICENSES.md', 'EDK2-LICENSES.txt']) assert.ok(files.includes(f), `${f} is missing`);
-  for (const name of ['index', 'worker', 'vcpu-worker', 'device-worker', 'jit-compile-worker', 'gpu-worker', 'audio-worklet', 'webpc_core', 'ts', 'QEMU_EFI']) {
+  for (const name of ['index', 'worker', 'vcpu-worker', 'device-worker', 'jit-compile-worker', 'gpu-worker', 'audio-worklet', 'waarm64_core', 'ts', 'QEMU_EFI']) {
     assert.ok(files.some((f) => new RegExp(`^assets/${name}-[\\w-]{8}\\.(?:js|wasm|fd)$`).test(f)), `no assets/${name}-<hash>`);
   }
   // Clipboard sharing's guest agent, which the worker fetches by its hashed name (web/app/guest-agent.ts).
-  const agent = files.find((f) => /^assets\/webpc-agent-[\w-]{8}$/.test(f));
-  assert.ok(agent, 'no assets/webpc-agent-<hash>');
+  const agent = files.find((f) => /^assets\/waarm64-agent-[\w-]{8}$/.test(f));
+  assert.ok(agent, 'no assets/waarm64-agent-<hash>');
   assert.equal(Buffer.compare(readFileSync(join(out, agent)).subarray(0, 4), Buffer.from('\x7fELF', 'latin1')), 0, 'the agent is an ELF file');
   assert.ok(files.some((f) => /^assets\/worker-[\w-]{8}\.js$/.test(f) && readFileSync(join(out, f), 'utf8').includes(agent.slice('assets/'.length))), "the worker doesn't name the agent's asset");
   const scripts = files.filter((f) => f.endsWith('.js'));
@@ -64,7 +64,7 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
 });
 
 test("npm run dist refuses a guest agent the host's cargo built (its HOST-BUILD marker); npm start and the tests take it", () => {
-  const root = mkdtempSync(join(tmpdir(), 'webpc-dist-agent-'));
+  const root = mkdtempSync(join(tmpdir(), 'waarm64-dist-agent-'));
   try {
     assert.equal(hostAgentProblem(`${root}/`), undefined, 'no marker: the build in Podman');
     mkdirSync(join(root, 'target/images/agent'), { recursive: true });
@@ -86,7 +86,7 @@ test("the static copy's page logs its commit and opens the Machines modal", { sk
   await page.waitForFunction(() => document.body.dataset.state === 'idle', null, { timeout: 10_000 });
   // The commit the copy was built from, on the console (tools/stamp.ts `buildStamp`).
   const head = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim();
-  assert.ok(logs.some((l) => l.startsWith(`webpc: built from ${head} (`)), `no "webpc: built from ${head}" on the console`);
+  assert.ok(logs.some((l) => l.startsWith(`waarm64: built from ${head} (`)), `no "waarm64: built from ${head}" on the console`);
   await page.click('#machines-open');
   await page.locator('.machines [data-action=new-machine]').click();
   await page.locator('.machines section.machine[data-selected]').waitFor();

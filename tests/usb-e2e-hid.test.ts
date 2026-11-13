@@ -2,7 +2,7 @@
 // (tests/usb/hid-descriptors.ts) in the pinned Chromium, in a dedicated worker, with permission from Chromium's
 // managed policy. Chromium's parse still matches the recorded fixtures (tests/usb/hid-fixtures, which the WebHID
 // backend's encoder round-trips against), input reports reach the worker, and output and feature reports reach the
-// rig. Skips without WEBPC_USB_TESTS=1 or without the rig.
+// rig. Skips without WAARM64_USB_TESTS=1 or without the rig.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -11,7 +11,7 @@ import { UhidDevice } from './usb/uhid.ts';
 import { openRig, PORTS, uhidMissing, usbTests, type Rig } from './usb/rig.ts';
 
 const missing = usbTests ? uhidMissing() : undefined;
-const skip = !usbTests ? 'SKIPPED: scripts/ci-usb.sh runs it (WEBPC_USB_TESTS=1)' : missing ? `SKIPPED: ${missing}` : false;
+const skip = !usbTests ? 'SKIPPED: scripts/ci-usb.sh runs it (WAARM64_USB_TESTS=1)' : missing ? `SKIPPED: ${missing}` : false;
 
 let rig: Rig | undefined;
 const devs = new Map<string, UhidDevice>();

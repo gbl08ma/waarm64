@@ -2,7 +2,7 @@
 // GLES2 load on Mesa without a display (EGL surfaceless, an FBO). Per frame: a client buffer's
 // damage uploaded (glTexSubImage2D, 64 rows: a terminal scrolling), `quads` blended textured quads
 // over the whole W x H target (wlroots' texture shader, roughly), and a glReadPixels that waits
-// for the rasterizer as a flip would. "webpc: <phase> start/end" lines time the phases for the
+// for the rasterizer as a flip would. "waarm64: <phase> start/end" lines time the phases for the
 // host; the check line hashes pixels read back (the same on every llvmpipe thread count).
 //   glcomp [frames] [quads] [w] [h] [dump]  (30 3 1376 762: sway's frame on the page's display)
 // dump=1 prints the last frame's pixels too ("glcomp: px <row> <hex RGBA>", rows bottom-up as GL reads them): the
@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
   for (int pass = 0; pass < 2; pass++) {
     const char *name = pass ? "frames" : "warm";
     int n = pass ? frames : 3;
-    printf("webpc: %s start\n", name); fflush(stdout);
+    printf("waarm64: %s start\n", name); fflush(stdout);
     double t0 = now(), worst = 0;
     for (int f = 0; f < n; f++) {
       double t = now();
@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
       t = now() - t; if (t > worst) worst = t;
     }
     double ms = now() - t0;
-    printf("webpc: %s end\n", name);
+    printf("waarm64: %s end\n", name);
     printf("glcomp: %s: %d frames, %.1f ms a frame, worst %.1f, %.2f frames/s\n", name, n, ms / n, worst, 1e3 * n / ms);
   }
   printf("glcomp: check %08x\n", sum);

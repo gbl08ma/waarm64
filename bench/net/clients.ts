@@ -7,7 +7,7 @@
 // (`performance.measureUserAgentSpecificMemory`, eager) and the worker thread's CPU over the
 // throughput run (from /proc: the renderer's `DedicatedWorker` threads, so this must be the only
 // Chromium running). The module's size raw, gzip and Brotli.
-// Usage: node bench/net/clients.ts [runs per client] [echoes] (WEBPC_TS_JSON=<file> writes the numbers)
+// Usage: node bench/net/clients.ts [runs per client] [echoes] (WAARM64_TS_JSON=<file> writes the numbers)
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createSocket } from 'node:dgram';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,7 +18,7 @@ import { startServer } from '../../tools/serve.ts';
 const ROOT = new URL('../..', import.meta.url).pathname;
 const runs = Number(process.argv[2] ?? 5);
 const n = Number(process.argv[3] ?? 20000);
-const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
+const script = process.env.WAARM64_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
 const modules: Record<string, string> = { rust: `${ROOT}target/net/ts.wasm` };
 
 const size = Object.fromEntries(Object.entries(modules).map(([k, f]) => {
@@ -72,7 +72,7 @@ try {
       page.on('pageerror', (e) => console.log(`# page error: ${e}`));
       try {
         const key = execFileSync(script, ['key'], { encoding: 'utf8' }).trim();
-        await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, peer: env.WEBPC_TS_PEER_IP, port: String(echo.address().port), authkey: key, hostname: `${backend}-bench-${r}` })}`);
+        await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ control: env.WAARM64_TS_CONTROL, peer: env.WAARM64_TS_PEER_IP, port: String(echo.address().port), authkey: key, hostname: `${backend}-bench-${r}` })}`);
         await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().lease', null, { timeout: 60_000, polling: 50 });
         const s = await page.evaluate('window.harness.tailscale()') as { timings: { loadMs: number; runningMs: number } };
         const memRunning = await workerBytes(page);
@@ -100,4 +100,4 @@ try {
   spawnSync(script, ['down']);
 }
 const out = { date: new Date().toISOString(), chromium: version, runs, echoes: n, size, results };
-if (process.env.WEBPC_TS_JSON) writeFileSync(process.env.WEBPC_TS_JSON, JSON.stringify(out, null, 2) + '\n');
+if (process.env.WAARM64_TS_JSON) writeFileSync(process.env.WAARM64_TS_JSON, JSON.stringify(out, null, 2) + '\n');

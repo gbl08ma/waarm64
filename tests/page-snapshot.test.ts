@@ -34,7 +34,7 @@ before(async () => {
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  dir = mkdtempSync(join(tmpdir(), 'webpc-snap-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-snap-'));
 });
 after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
@@ -141,14 +141,14 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await shows(page, /saved-state/);
 
   // Save snapshot: the machine pauses and runs on.
-  const first = await save(page, 'first.webpcsnap');
+  const first = await save(page, 'first.waarm64snap');
   console.log(`# snapshot (buildroot, 2 vCPUs): ${(first.bytes / 1e6).toFixed(1)} MB, machine paused ${first.pausedMs.toFixed(0)} ms`);
-  assert.match(first.filename, /^buildroot-\d{4}-\d\d-\d\d-\d{4}\.webpcsnap$/);
+  assert.match(first.filename, /^buildroot-\d{4}-\d\d-\d\d-\d{4}\.waarm64snap$/);
   assert.equal(await stateOf(page), 'running');
   assert.equal(await page.locator('#save-snapshot').isEnabled(), true);
   assert.equal(await page.locator('#restart').isEnabled(), true);
   const bytes = readFileSync(first.path);
-  assert.equal(bytes.subarray(0, 8).toString('latin1'), 'WEBPCSNP');
+  assert.equal(bytes.subarray(0, 8).toString('latin1'), 'WAARMSNP');
   assert.ok(bytes.length > 100_000 && bytes.length < 120e6, `a plausible size: ${bytes.length}`);
   const header = (await openSnapshot(new Blob([bytes]))).header;
   assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', MACHINES.buildroot.label, 2, null, ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk']]);
@@ -160,15 +160,15 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
 
   // Once through a file picker's handle (a file in OPFS stands in for the user's pick).
   await page.evaluate(() => {
-    (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap', { create: true });
+    (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.waarm64snap', { create: true });
   });
   await page.locator('#save-snapshot').click();
-  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', { name: 'picked.webpcsnap' }, { start: true }).source, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', { name: 'picked.waarm64snap' }, { start: true }).source, { timeout: 60_000 });
   const picked = await page.evaluate(async () => {
-    const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap')).getFile();
+    const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.waarm64snap')).getFile();
     return { size: f.size, magic: new TextDecoder().decode(await f.slice(0, 8).arrayBuffer()) };
   });
-  assert.equal(picked.magic, 'WEBPCSNP');
+  assert.equal(picked.magic, 'WAARMSNP');
   assert.ok(Math.abs(picked.size - bytes.length) < 0.5 * bytes.length, `the picked file is as large as the downloaded one (${picked.size} against ${bytes.length})`);
   await onSerial(page, 'echo aga""in-$((6*7))\n');
   await shows(page, /again-42/);
@@ -206,7 +206,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await loadingSnapshot(p2);
   await running(p2);
   console.log(`# snapshot load (buildroot): ${((performance.now() - t0) / 1000).toFixed(2)} s from the choice to running`);
-  asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.webpcsnap', replaces: t('snapshots:snapshot-restore.load.replaces.running') }, { whole: true }));
+  asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.waarm64snap', replaces: t('snapshots:snapshot-restore.load.replaces.running') }, { whole: true }));
   assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.holds.when.cpus', { label: MACHINES.buildroot.label, count: 2 }));
   const disk = t('disks:disk-actions.machineDisk', { machine: t('machines:machine.buildroot') });
   assert.match(dialogs.at(-1)!, new RegExp(`${words('snapshots:snapshot-restore.load.written', { disk }).source}$|${words('snapshots:snapshot-restore.load.written.size', { disk }).source}$`));
@@ -221,38 +221,38 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.deepEqual(await p2.evaluate(() => (window as unknown as { escapes: string[] }).escapes), [], 'no reply to the replayed output reached the guest');
 
   // Refusals leave the machine and the disk as they are: a file that isn't a snapshot, ...
-  const junk = join(dir, 'junk.webpcsnap');
+  const junk = join(dir, 'junk.waarm64snap');
   writeFileSync(junk, Buffer.from('this is not a snapshot, only text'));
   await p2.setInputFiles('#load-snapshot-input', junk);
   await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:snapshot-restore.notSnapshot', { name: 'junk.webpcsnap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
+  asked('alert', words('snapshots:snapshot-restore.notSnapshot', { name: 'junk.waarm64snap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   // ... a snapshot of another machine, by the page (a real one on a Debian page, below, and a header-only one here) ...
-  const other = await headerOnly('debian-header.webpcsnap', { machine: 'debian', label: MACHINES.debian.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
+  const other = await headerOnly('debian-header.waarm64snap', { machine: 'debian', label: MACHINES.debian.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', other);
   await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:snapshot-restore.load.otherMachine', { name: 'debian-header.webpcsnap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
+  asked('alert', words('snapshots:snapshot-restore.load.otherMachine', { name: 'debian-header.waarm64snap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
   // ... one taken on another disk, by name ...
-  const elsewhere = await headerOnly('other-disk.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: 'mine.qcow2', devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
+  const elsewhere = await headerOnly('other-disk.waarm64snap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: 'mine.qcow2', devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', elsewhere);
   await p2.waitForTimeout(500);
-  asked('alert', words('snapshots:snapshot-restore.load.otherDisk', { name: 'other-disk.webpcsnap', taken: t('disks:disk-actions.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:snapshot-restore.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
+  asked('alert', words('snapshots:snapshot-restore.load.otherDisk', { name: 'other-disk.waarm64snap', taken: t('disks:disk-actions.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:snapshot-restore.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   await onSerial(p2, 'echo ali""ve-$((6*7))\n');
   await shows(p2, /alive-42/);
   const untouched = await opfs(p2);
 
   // ... a snapshot whose machine had a second disk this page wasn't opened with (the worker's refusal, after the confirmation) ...
-  const needsDisk2 = await headerOnly('disk2.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], disks: [] });
+  const needsDisk2 = await headerOnly('disk2.waarm64snap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', needsDisk2);
   await p2.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, words('snapshots:worker-header.otherDevices', { name: 'disk2.webpcsnap' }, { whole: true }));
+  assert.match((await message(p2))!, words('snapshots:worker-header.otherDevices', { name: 'disk2.waarm64snap' }, { whole: true }));
   assert.match(await details(p2), words('snapshots:worker-header.otherDevices.cause', { kinds: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], here: ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk'], machine: t('machines:machine.buildroot') }, { start: true }));
   assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), [t('snapshots:problems.startNormally'), t('snapshots:problems.loadAgain')]);
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
 
   // ... and a truncated snapshot: refused whole, before the disk is touched; Start boots the machine normally.
-  const cut = join(dir, 'cut.webpcsnap');
+  const cut = join(dir, 'cut.waarm64snap');
   writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length * 0.6)));
   await p2.setInputFiles('#load-snapshot-input', cut);
   await p2.waitForFunction((said) => document.body.dataset.state === 'failed' && (document.getElementById('message-details')?.textContent ?? '').includes(said), t('snapshots:snapshot-file.truncated'), { timeout: 30_000, polling: 50 });
@@ -272,7 +272,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await drop(p2, first.path);
   await loadingSnapshot(p2);
   await running(p2);
-  asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.webpcsnap' }, { start: true }));
+  asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.waarm64snap' }, { start: true }));
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile\n');
   await shows(p2, /var=\[kept-42\]\s*tmpfs-kept-42/);
   assert.deepEqual(errors2, []);
@@ -287,7 +287,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
-  const suspendFile = async () => (await opfs(page))['webpc-buildroot']?.suspend;
+  const suspendFile = async () => (await opfs(page))['waarm64-buildroot']?.suspend;
   /** The shell's `SUSVAR`, asked under a fresh marker. */
   let asks = 0;
   const susvar = async () => {

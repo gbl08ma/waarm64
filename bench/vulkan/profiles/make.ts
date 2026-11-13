@@ -7,7 +7,7 @@
 //                                             and prints where the direct profiles fall below Vulkan 1.3's minimums
 // Run a program through one:
 //   VK_LAYER_PATH=target/vulkan-tools/profiles/share/vulkan/explicit_layer.d VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_profiles
-//   VK_KHRONOS_PROFILES_PROFILE_FILE=bench/vulkan/profiles/webgpu-mac.json VK_KHRONOS_PROFILES_PROFILE_NAME=VP_WEBPC_webgpu_mac
+//   VK_KHRONOS_PROFILES_PROFILE_FILE=bench/vulkan/profiles/webgpu-mac.json VK_KHRONOS_PROFILES_PROFILE_NAME=VP_WAARM64_webgpu_mac
 //   VK_KHRONOS_PROFILES_SIMULATE_CAPABILITIES=SIMULATE_API_VERSION_BIT,SIMULATE_FEATURES_BIT,SIMULATE_PROPERTIES_BIT,SIMULATE_EXTENSIONS_BIT,SIMULATE_FORMATS_BIT
 //   VK_KHRONOS_PROFILES_DEFAULT_FEATURE_VALUES=DEFAULT_FEATURE_VALUES_FALSE <program>
 // (bench/vulkan/profiles/run.sh does that, with the layer that bench/vulkan/profiles/build-layer.sh builds.) The layer
@@ -404,12 +404,12 @@ const ROWS: Record<string, { label: string; cap: (a: Adapter) => Json }> = {
 };
 
 function profileFile(a: Adapter): Json {
-  const base = `VP_WEBPC_webgpu_${a.name}`;
+  const base = `VP_WAARM64_webgpu_${a.name}`;
   const capabilities: Record<string, Json> = { [`${a.name}_direct`]: direct(a) };
   for (const [k, r] of Object.entries(ROWS)) capabilities[`${a.name}_${k}`] = r.cap(a);
   const mk = (name: string, label: string, caps: string[]) => [name, {
-    version: 1, 'api-version': '1.3.296', label, description: `${label}: the Vulkan ${a.label} backs (webpc VK0, question A).`,
-    contributors: { webpc: { company: 'webpc', contact: false } }, history: [{ revision: 1, date: '2026-10-25', author: 'webpc', comment: 'VK0 A' }],
+    version: 1, 'api-version': '1.3.296', label, description: `${label}: the Vulkan ${a.label} backs (waarm64 VK0, question A).`,
+    contributors: { waarm64: { company: 'waarm64', contact: false } }, history: [{ revision: 1, date: '2026-10-25', author: 'waarm64', comment: 'VK0 A' }],
     capabilities: caps.map((c) => `${a.name}_${c}`),
   }];
   const profiles = Object.fromEntries([

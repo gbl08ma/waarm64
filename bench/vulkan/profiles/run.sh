@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs a program on the dev VM's lavapipe through one of VK0 A's profiles (bench/vulkan/profiles/make.ts) with the
 # Profiles layer (tools/vulkan-tools/build-profiles.sh). PROFILE is a file stem and a profile suffix:
-#   PROFILE=mac bench/vulkan/profiles/run.sh vulkaninfo --summary          (VP_WEBPC_webgpu_mac in webgpu-mac.json)
-#   PROFILE=swiftshader:gs bench/vulkan/profiles/run.sh <cmd>               (VP_WEBPC_webgpu_swiftshader_gs)
+#   PROFILE=mac bench/vulkan/profiles/run.sh vulkaninfo --summary          (VP_WAARM64_webgpu_mac in webgpu-mac.json)
+#   PROFILE=swiftshader:gs bench/vulkan/profiles/run.sh <cmd>               (VP_WAARM64_webgpu_swiftshader_gs)
 # PROFILE unset or "none" runs the program on lavapipe as it is. PROFILES_LOG=1 turns on the layer's debug output.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -24,19 +24,19 @@ if [ "$P" != none ]; then
 import json, sys
 src, name, rows, out, fix = sys.argv[1:]
 d = json.load(open(src))
-p = dict(d['profiles'][f'VP_WEBPC_webgpu_{name}'])
+p = dict(d['profiles'][f'VP_WAARM64_webgpu_{name}'])
 if rows == 'all':
-    p = dict(d['profiles'][f'VP_WEBPC_webgpu_{name}_all'])
+    p = dict(d['profiles'][f'VP_WAARM64_webgpu_{name}_all'])
 else:
     p['capabilities'] = [f'{name}_direct'] + [f'{name}_{r}' for r in rows.split('+') if r]
 if fix == '1':
     f = d['capabilities'][f'{name}_direct']['features']['VkPhysicalDeviceFeatures']
     f['textureCompressionETC2'] = False
     f['textureCompressionASTC_LDR'] = False
-d['profiles'] = {f'VP_WEBPC_webgpu_{name}_run': p}
+d['profiles'] = {f'VP_WAARM64_webgpu_{name}_run': p}
 json.dump(d, open(out, 'w'))
 PY
-  export VK_KHRONOS_PROFILES_PROFILE_FILE=$tmp VK_KHRONOS_PROFILES_PROFILE_NAME=VP_WEBPC_webgpu_${file}_run
+  export VK_KHRONOS_PROFILES_PROFILE_FILE=$tmp VK_KHRONOS_PROFILES_PROFILE_NAME=VP_WAARM64_webgpu_${file}_run
   export VK_KHRONOS_PROFILES_SIMULATE_CAPABILITIES=${PROFILES_SIMULATE:-SIMULATE_API_VERSION_BIT,SIMULATE_FEATURES_BIT,SIMULATE_PROPERTIES_BIT,SIMULATE_EXTENSIONS_BIT,SIMULATE_FORMATS_BIT}
   export VK_KHRONOS_PROFILES_DEFAULT_FEATURE_VALUES=DEFAULT_FEATURE_VALUES_FALSE
   export VK_KHRONOS_PROFILES_EMULATE_PORTABILITY=false

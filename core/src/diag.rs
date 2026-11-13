@@ -109,7 +109,7 @@ fn alloc_failed(l: std::alloc::Layout) {
     let m = alloc_message(l.size(), live, peak);
     record(m.as_str());
     #[cfg(not(target_arch = "wasm32"))]
-    eprintln!("webpc: {}", m.as_str());
+    eprintln!("waarm64: {}", m.as_str());
 }
 
 /// Installs the hook once (`vm_new` does; the state is in the shared memory,

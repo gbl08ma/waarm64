@@ -1,4 +1,4 @@
-# webpc
+# waarm64
 
 A whole-system AArch64 emulator for the browser. It JIT-compiles guest code to WebAssembly and
 runs unmodified arm64 Linux. Chromium is the primary target.
@@ -39,7 +39,7 @@ its doc, never here. Facts most sessions need:
 ## Development environment
 
 Development happens in the Lima VM **`dev`** (openSUSE Tumbleweed aarch64, 8 vCPUs, 18 GiB) on the M4 Mac mini
-(`macmini.lan`), not on the x86_64 desktop (which the user needs for other work). The repo is `~/Development/webpc`
+(`macmini.lan`), not on the x86_64 desktop (which the user needs for other work). The repo is `~/Development/waarm64`
 (remote `origin` on GitHub). Real hardware is the `oracle` VM on the same Mac
 (`ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`); real-GPU runs go to the Mac host through
 `bench/gpu/sway-mac.sh`. What's installed and why, the USB rigs, Go, deploying (the Cloudflare token: never print
@@ -65,7 +65,7 @@ scripts/ci-deqp-vk.sh          # a seeded sample of dEQP-VK's pass list on two m
 scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
 scripts/ci-jit.sh              # the JIT's JIT-stress and JIT-check variants (~2 min, alone): also when a change touches the JIT (its emitters, runtime, code cache, what compiled code reads), JIT track ends; ci.sh keeps the plain JIT's runs
 scripts/ci-fp.sh               # the FP suite in the guest (~8.5 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
-scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
+scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/waarm64_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
 npm start                      # what a user runs: builds everything and serves the page (docs/frontend.md)

@@ -17,14 +17,14 @@ test('without OPFS the store and the overlays are in memory', async () => {
   } finally {
     store.close();
   }
-  const o = await openOverlay('webpc-test', 'image');
+  const o = await openOverlay('waarm64-test', 'image');
   o.data.write(new Uint8Array([7]), { at: 0 });
   o.close();
-  const again = await openOverlay('webpc-test', 'image');
+  const again = await openOverlay('waarm64-test', 'image');
   const b = new Uint8Array(1);
   again.data.read(b, { at: 0 });
   again.close();
   assert.equal(b[0], 7);
-  await saveFlash('webpc-test', new Uint8Array([9]));
-  assert.deepEqual([...(await loadFlash('webpc-test'))!], [9]);
+  await saveFlash('waarm64-test', new Uint8Array([9]));
+  assert.deepEqual([...(await loadFlash('waarm64-test'))!], [9]);
 });

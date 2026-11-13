@@ -29,7 +29,7 @@ static int scan(int print) {
 
 int main(void) {
     mount("proc", "/proc", "proc", 0, 0);
-    printf("webpc: crypto-test\n");
+    printf("waarm64: crypto-test\n");
     for (int i = 0; i < 600 && scan(0) != 0; i++) usleep(100000);
     int failed = scan(1), pending = scan(0);
     char line[1024];
@@ -37,7 +37,7 @@ int main(void) {
     while (f && fgets(line, sizeof line, f))
         if (!strncmp(line, "Features", 8)) printf("cpuinfo: %s", line);
     if (f) fclose(f);
-    printf("webpc: test %s (%d failed, %d pending)\n", failed || pending ? "failed" : "ok", failed, pending);
+    printf("waarm64: test %s (%d failed, %d pending)\n", failed || pending ? "failed" : "ok", failed, pending);
     fflush(stdout);
     reboot(RB_POWER_OFF);
     return 0;

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # VK0's arm 1 on the Mac host's GPU (bench/vulkan/REPORT.md): the native scene on KosmicKrisp (Mesa's Vulkan on Metal,
 # from LunarG's macOS SDK) and, for context, MoltenVK. Nothing is installed on the Mac: the SDK's parts
-# (bench/vulkan/macsdk.ts), the scene's sources and the asset pack go to ~/webpc-gpu-bench/vulkan there, the scene is
+# (bench/vulkan/macsdk.ts), the scene's sources and the asset pack go to ~/waarm64-gpu-bench/vulkan there, the scene is
 # built there with the Mac's own clang (Command Line Tools), and the loader is pointed at the driver by VK_DRIVER_FILES.
 #   bench/vulkan/mac.sh [kosmickrisp|moltenvk] [name]   -> bench/results/local/vk0/<name>/ (one JSON a setting)
 #   bench/vulkan/mac.sh webgpu [name]                     arm 2: bench/vulkan/webgpu.ts in the Mac's headless Chrome for
 #                                                         Testing (bench/mac-chrome.sh's, the packages bench/mac-packages.sh
-#                                                         keeps in ~/webpc-gpu-bench); MODES and the rest pass through
+#                                                         keeps in ~/waarm64-gpu-bench); MODES and the rest pass through
 #   bench/vulkan/mac.sh micro [name]                      C, E, F: bench/vulkan/micro.ts (ONLY= one benchmark)
 #   bench/vulkan/mac.sh nir [name]                        VK1 step 1: bench/vulkan/nir/run.ts (Node, Chromium; WASM=, ARMS=)
 #   bench/vulkan/mac.sh arm3 [name]                       arm 3: bench/vulkan/arm3.ts over the converted captures
@@ -16,14 +16,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
-DEST=webpc-gpu-bench/vulkan
+DEST=waarm64-gpu-bench/vulkan
 DRIVER=${1:-kosmickrisp} NAME=${2:-mac-$DRIVER}
 if [ "$DRIVER" = micro ]; then
-  W=webpc-gpu-bench/vulkan-web
+  W=waarm64-gpu-bench/vulkan-web
   ssh "$HOST" "mkdir -p $W/bench/spike"
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   rsync -a bench/stats.ts "$HOST:$W/bench/" && rsync -a bench/spike/page.ts bench/spike/worker.ts bench/spike/benchmarks.ts "$HOST:$W/bench/spike/"
-  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-packages.sh && mac_packages "$HOST" waarm64-gpu-bench
   . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
     export CHROMIUM=\"$MAC_CHROME\" && \
@@ -35,13 +35,13 @@ fi
 if [ "$DRIVER" = nir ]; then
   # VK1 step 1: bench/vulkan/nir/run.ts's Node and Chromium arms over the stages (target/vk1/spirv) and the wasm
   # build(s) (WASM: target/vk1/<toolchain>/spike.wasm, default the wasi one) -> bench/results/local/vk1/<name>.json
-  W=webpc-gpu-bench/vulkan-web
+  W=waarm64-gpu-bench/vulkan-web
   WASM=${WASM:-target/vk1/wasi/spike.wasm}
   ssh "$HOST" "mkdir -p $W/bench $W/target/vk1 $W/$(dirname "$WASM")"
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   rsync -a --delete --exclude '*.log' target/vk1/spirv "$HOST:$W/target/vk1/"
   rsync -a "$WASM" "$HOST:$W/$WASM"
-  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-packages.sh && mac_packages "$HOST" waarm64-gpu-bench
   . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
     export CHROMIUM=\"$MAC_CHROME\" && \
@@ -52,12 +52,12 @@ if [ "$DRIVER" = nir ]; then
   exit 0
 fi
 if [ "$DRIVER" = arm3 ]; then
-  W=webpc-gpu-bench/vulkan-web
+  W=waarm64-gpu-bench/vulkan-web
   TRACES=${TRACES:-fish1 fish100 fish1000 fish10000 fish30000 toolkit2000 toolkit8000}
   ssh "$HOST" "mkdir -p $W/bench $W/target/vulkan/captures"
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   for t in $TRACES; do rsync -a --delete "target/vulkan/captures/$t-trace" "$HOST:$W/target/vulkan/captures/"; done
-  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-packages.sh && mac_packages "$HOST" waarm64-gpu-bench
   . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   list=; for t in $TRACES; do list="$list vulkan/captures/$t-trace"; done
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
@@ -70,12 +70,12 @@ if [ "$DRIVER" = arm3 ]; then
   exit 0
 fi
 if [ "$DRIVER" = webgpu ]; then
-  W=webpc-gpu-bench/vulkan-web
+  W=waarm64-gpu-bench/vulkan-web
   [ -f target/vulkan/scene.wasm ] || bench/vulkan/webgpu/build.sh
   ssh "$HOST" "mkdir -p $W/bench $W/target/vulkan"
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   rsync -a target/vulkan/aquarium.pack target/vulkan/scene.wasm "$HOST:$W/target/vulkan/"
-  . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-packages.sh && mac_packages "$HOST" waarm64-gpu-bench
   . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
     export CHROMIUM=\"$MAC_CHROME\" && \

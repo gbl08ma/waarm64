@@ -4,7 +4,7 @@
 # an approved exit node) as native processes. Go builds headscale and tailscale once, at the
 # versions tailnet.sh pins, into target/net/tailnet-bin. The proxy is tests/net/tls-proxy.ts.
 # Same usage and output: up | env | key [lasting] | nodes | peer <tailscale args> | routes [prefixes] | register <auth ID> | down. The peer's socket is /tmp/ts.sock, so a `podman`
-# shim that turns `podman exec webpc-peer tailscale …` into the native `tailscale …` serves the
+# shim that turns `podman exec waarm64-peer tailscale …` into the native `tailscale …` serves the
 # tests that talk to the peer (tests/net/podman-shim, put first on PATH).
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -42,11 +42,11 @@ approve() {
 }
 
 env_() {
-	echo "WEBPC_TS_CONTROL=https://127.0.0.1:$PORT"
-	echo "WEBPC_TS_PEER_IP=$(peerts ip -4)"
-	echo "WEBPC_TS_PEER_IP6=$(peerts ip -6)"
-	echo "WEBPC_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
-	echo "WEBPC_TS_SUBNET=$LAN"
+	echo "WAARM64_TS_CONTROL=https://127.0.0.1:$PORT"
+	echo "WAARM64_TS_PEER_IP=$(peerts ip -4)"
+	echo "WAARM64_TS_PEER_IP6=$(peerts ip -6)"
+	echo "WAARM64_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
+	echo "WAARM64_TS_SUBNET=$LAN"
 	echo "NODE_EXTRA_CA_CERTS=$DIR/tls/ca.pem"
 }
 
@@ -63,7 +63,7 @@ up)
 	"$0" down >/dev/null 2>&1 || true
 	mkdir -p "$DIR/config/tls" "$DIR/lib" "$DIR/run" "$DIR/peer"
 	cd "$DIR/config/tls"
-	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout ca.key -out ca.pem -subj "/CN=webpc test CA" -days 30 2>/dev/null
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout ca.key -out ca.pem -subj "/CN=waarm64 test CA" -days 30 2>/dev/null
 	openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout srv.key -out srv.csr -subj "/CN=127.0.0.1" 2>/dev/null
 	printf 'subjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\n' > ext
 	openssl x509 -req -in srv.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out srv.pem -days 30 -extfile ext 2>/dev/null

@@ -68,7 +68,7 @@ export async function identityOfDevice(api: Api, device: HostDevice): Promise<Us
 }
 
 // The grants this browser has given (identity keys): WebUSB and WebHID say only which granted devices are plugged in.
-const GRANTED = 'webpc.usbGranted';
+const GRANTED = 'waarm64.usbGranted';
 const grants = (): string[] => {
   try {
     return JSON.parse(localStorage.getItem(GRANTED) ?? '[]') as string[];

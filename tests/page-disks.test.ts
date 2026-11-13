@@ -22,7 +22,7 @@ before(async () => {
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  dir = mkdtempSync(join(tmpdir(), 'webpc-disks-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-disks-'));
 });
 after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
 

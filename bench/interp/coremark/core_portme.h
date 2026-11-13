@@ -1,4 +1,4 @@
-// CoreMark's port layer for the webpc benchmark guest (M5 step 10): bare
+// CoreMark's port layer for the waarm64 benchmark guest (M5 step 10): bare
 // metal on flat memory, as bench/interp/guest.c. Our own file (MIT), written
 // against CoreMark's porting interface (barebones/core_portme.h upstream);
 // CoreMark itself (Apache-2.0, EEMBC) is fetched unmodified by build.sh.

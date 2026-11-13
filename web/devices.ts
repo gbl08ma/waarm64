@@ -46,7 +46,7 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * §4.2, `size` given): `zero`, a blank disk that reads as zeros (writable through its overlay), or `ram`, a ramdisk
  * (web/ramdisk.ts: writable in itself, empty at every start, with DISCARD; with `swap`, a swap area labelled so at
  * every start: `swapHeader`). `serial` is what GET_ID answers (default
- * `webpc-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
+ * `waarm64-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
  * is a disk kept in the browser (web/stored.ts: its OPFS directory, `disks/<id>`, read under its overlay; `size` given);
  * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source). A `url` disk is
  * read through a block cache whose blocks are kept in OPFS (web/diskcache.ts) unless `keep` is false.
@@ -164,7 +164,7 @@ export type SndSpec = {
   type: 'snd';
   /** The page's sound ring (web/audio-ring.ts). */
   ring?: SharedArrayBuffer;
-  /** The page's microphone ring (the same layout, filled by web/audio.ts's `webpc-mic` worklet). */
+  /** The page's microphone ring (the same layout, filled by web/audio.ts's `waarm64-mic` worklet). */
   mic?: SharedArrayBuffer;
   /** The page's end: the streams' starts (their rates) and stops, and with `stats` the completions' timing once a second. */
   port?: MessagePort;
@@ -592,7 +592,7 @@ function bitmap(bits: number[]) {
 const absInfo = (min: number, max: number) => new Uint8Array(new Int32Array([min, max, 0, 0, 0]).buffer);
 
 /** What each kind is called and its product id (BUS_VIRTUAL, vendor 0). */
-const INPUT_IDS = { keyboard: ['webpc keyboard', 1], tablet: ['webpc tablet', 2], mouse: ['webpc mouse', 3], touch: ['webpc touchscreen', 4] } as const;
+const INPUT_IDS = { keyboard: ['waarm64 keyboard', 1], tablet: ['waarm64 tablet', 2], mouse: ['waarm64 mouse', 3], touch: ['waarm64 touchscreen', 4] } as const;
 
 /** The answer to a config query (select, subsel) about an input device of `kind`. */
 export function inputConfig(kind: InputSpec['kind'], select: number, subsel: number): Uint8Array {
@@ -843,7 +843,7 @@ export async function fileSource(url: string): Promise<Source> {
  * the browser's storage refused (a short write, `QuotaExceededError`) failed the guest's request, told once until a
  * write lands again (a ramdisk says so through its own `onFull`).
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk', concurrent = false, onFull?: () => void): Backend {
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
@@ -1118,7 +1118,7 @@ export class Devices {
             if (d.venus && window) host.call({ t: 'venus-init', memory: spill[0], core: memory, window: d.noWatch ? { ...window, watch: 0 } : window });
             b.gpu.host = host;
           }
-          if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
+          if (!d.renderer && d.canvas) console.info(`waarm64: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
           if (d.port) {
             const port = d.port;
             port.onmessage = (e: MessageEvent<DisplayFromPage>) => {

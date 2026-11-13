@@ -6,7 +6,7 @@
 import type { Credential } from './machine.ts';
 
 /** The label of the `n`th swap ramdisk of a machine (mkswap's at most 15 bytes). */
-export const swapLabel = (n: number) => `webpc-swap${n}`;
+export const swapLabel = (n: number) => `waarm64-swap${n}`;
 
 /** The fstab options: `nofail`, so a guest whose kernel refuses the area (pages past 4 KiB) boots on. */
 export const SWAP_OPTIONS = 'sw,nofail,discard';

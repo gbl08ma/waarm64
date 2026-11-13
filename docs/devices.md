@@ -7,7 +7,7 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
 ## The split between core and host
 
 - **In the core** (`core/src/virtio.rs`, on the vCPU thread): virtio-mmio v2 transports (magic,
-  version 2, device and vendor ID `WBPC`, feature select and negotiation with `FEATURES_OK`
+  version 2, device and vendor ID `WA64`, feature select and negotiation with `FEATURES_OK`
   refused unless `VERSION_1` is accepted and nothing unoffered is, queue select/size/ready/
   addresses, notify, InterruptStatus/ACK, status and reset, ConfigGeneration (the host's `config_gen`, with the config-change interrupt: abi.md), SHM regions
   (none, or with `DeviceEntry.shm` the VM's host-visible window as region 1: SHMSel, SHMLen, SHMBase), config space 8/16/32/64-bit), and **split virtqueues** with indirect descriptors and
@@ -119,8 +119,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
 `{type: 'agent', port}` (`web/agent-device.ts`), only on a machine with clipboard sharing (`MachineRecord.clipboard`,
 a transient machine's `?clipboard=1`: its own transport kind, `agent`, after `9p` in the slots, so other machines'
 shapes don't move): a virtio-console with **MULTIPORT** (feature 1), one port (`max_nr_ports` 1, so four queues:
-port 0's receive and transmit, the control receive and transmit) named **`org.webpc.agent.0`**. Linux's
-virtio_console makes `/dev/vport<N>p0` of it and udev links `/dev/virtio-ports/org.webpc.agent.0`; no port is a console
+port 0's receive and transmit, the control receive and transmit) named **`org.waarm64.agent.0`**. Linux's
+virtio_console makes `/dev/vport<N>p0` of it and udev links `/dev/virtio-ports/org.waarm64.agent.0`; no port is a console
 (no CONSOLE_PORT), so no hvc. The handshake is the driver's: control buffers and DEVICE_READY, then PORT_ADD from the
 device, PORT_READY from the driver, PORT_NAME and PORT_OPEN 1 (the host end is always open) from the device. The
 guest's PORT_OPEN (1 on its open, 0 on its last close) goes to the page as `open`; the page's bytes fill the port's
@@ -133,14 +133,14 @@ messages not yet sent; the guest's buffers come back with the core's held reques
 
 #### The guest's agent
 
-`webpc-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
+`waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
 `images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 130 KB).
 A machine with clipboard sharing that has firmware fetches it (`web/app/guest-agent.ts` `agentBinary`: an ELF file or
-nothing) and hands it to the guest as the fw_cfg file **`opt/webpc/agent`**, with a unit as SMBIOS credentials
+nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
-without the unit, its port never opened. The unit, `webpc-agent.service` (`Type=simple`, wanted by
+without the unit, its port never opened. The unit, `waarm64-agent.service` (`Type=simple`, wanted by
 `multi-user.target`): `modprobe -q qemu_fw_cfg` outside the sandbox (`ExecStartPre=-+`), then its script copies
-`/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw` into `/run/webpc/agent` (a tmpfs of the unit's own,
+`/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent/raw` into `/run/waarm64/agent` (a tmpfs of the unit's own,
 `TemporaryFileSystem=` mode 0700 and `exec`: Debian 13 mounts /run `noexec`, so a `RuntimeDirectory` can't run it;
 gone with the unit), waits for udev's link (`udevadm wait`) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
 `OOMScoreAdjust=500`, `Restart=on-failure` (`RestartSec=5s`) under a start limit it can reach, 5 starts in 10
@@ -294,7 +294,7 @@ A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's re
 which starts both directions afresh (the link resets at each opening; the session child stays). It breaks the page's
 reader too, which begins afresh at a SYNC (above). A child's stream that
 breaks, or more than 4 MiB queued for it, stops the child. The log lines of both go to the journal
-(`webpc-agent: …`, the child's `webpc-agent: session: …`).
+(`waarm64-agent: …`, the child's `waarm64-agent: session: …`).
 
 **The page's side** is `web/app/clipboard.ts` (`ClipboardShare`, the tests' `window.__clipboard`), over the link:
 the guest's OFFER is written with `writeText` while the document has focus (requested first if not inline; a MORE for
@@ -368,8 +368,8 @@ a device kind of their own (docs/frontend.md "The guest's clock").
 ### blk (ID 2)
 - Features `SEG_MAX` = 126, `RO` (or `FLUSH` when writable: an overlay, or a ramdisk); one queue of 128. `IN`, `GET_ID`,
   `OUT` and `FLUSH` when writable (`IOERR` without), the rest `UNSUPP`. `GET_ID` answers the spec's `serial` (a
-  machine's attachment: `webpc-<attachment id>`, so `/dev/disk/by-id/virtio-…` survives a reorder;
-  docs/machines.md §4.1), else `webpc-blk` (the tests' guests).
+  machine's attachment: `waarm64-<attachment id>`, so `/dev/disk/by-id/virtio-…` survives a reorder;
+  docs/machines.md §4.1), else `waarm64-blk` (the tests' guests).
 - **Sources** (`BlkSpec`): an image by `url` (HTTP ranges, or `file:` in Node) or `file` (a `File`), or
   `source` with a `size`: `zero`, a **blank disk** reading as zeros (writable through its overlay, as any image),
   or `ram`, a **ramdisk** (`web/ramdisk.ts`): writable in itself, with `DISCARD` and `WRITE_ZEROES`, its bytes in
@@ -426,7 +426,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   slot's old entry is cleared durably before its block is written, and the block before its entry, so a crash loses
   blocks but never maps one to other bytes (`tests/diskcache.test.ts`). Bounded at opening by what it holds plus a
   quarter of the free quota, at most 2 GiB: other images' caches go first (least recently used), then this image's
-  slots are reused in the order they were filled. The device worker holds the image's Web Lock (`webpc-cache:<key>`,
+  slots are reused in the order they were filled. The device worker holds the image's Web Lock (`waarm64-cache:<key>`,
   waiting 2 s for a restarting machine's old worker); another tab on the same image reads without it. **The guest's
   writes go first:** the store checks each write's count (Chromium's sync handles come back short or throw at the quota;
   off the record a refused write returns 4294967288, and a fresh incognito profile takes ~0.8 GB while `estimate()`
@@ -438,7 +438,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   up); `?diskcache=0` turns it off (benchmarks). A remote desktop boot's second
   boot: 109 → 63 s, no requests (bench/remote-disk/REPORT.md "R3").
 - **A chunked image** (`web/chunked.ts`, made by `tools/chunk-image.ts`; [remote-disks.md](remote-disks.md)): a disk URL
-  ending in `.json` is a manifest (`webpc-chunked-1`: the file's size, the piece size, each piece's SHA-256, an
+  ending in `.json` is a manifest (`waarm64-chunked-1`: the file's size, the piece size, each piece's SHA-256, an
   `id` hashed from them, and a `name` the page shows: `--name`, or the image's file name) of the image file cut into equal pieces, `pieces/<sha256>.bin` beside it. It reads as one
   file under the block cache: a piece by range, or whole where the host answers a range with the whole file (as
   a Cloudflare Worker's static assets and Pages do: the images' host, vmdisks.tny.im), and then `Source.span` has the cache take the whole piece. `bootVm` sizes it from the
@@ -636,7 +636,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   client applied its umask to that mode already, which a local file system wouldn't with a default ACL (QEMU's server
   has the same gap). Nothing enforces the ACLs but the client, and only with `posixacl`: the server checks no
   permissions at all.
-- **The page's shared folders** (`{type: '9p', tag: 'webpc', folders, port}`, `FolderTree`): [shares.md](shares.md).
+- **The page's shared folders** (`{type: '9p', tag: 'waarm64', folders, port}`, `FolderTree`): [shares.md](shares.md).
 
 ### input (ID 18)
 - `{type: 'input', kind: 'keyboard' | 'tablet' | 'mouse' | 'touch', port?}`; eventq and statusq of 64. The keyboard
@@ -737,7 +737,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   context init: virgl's resources are guest-backed.
 - **The capsets** are VIRGL (v1, 308 bytes) and VIRGL2 (v2, 1408 bytes) from one blob, `GpuOptions.caps` or else
   `virglCaps` (`web/virgl.ts`, the floor: graphics.md "The caps"); a page machine is given the caps its GPU worker
-  built from the browser (`capsFromGl`). The renderer string is `webpc`.
+  built from the browser (`capsFromGl`). The renderer string is `waarm64`.
 - **The device checks, the host runs** (`web/virgl-host.ts`): the device validates every command and keeps its tables
   (contexts, resources and their backings) as for the null renderer, and hands the work to `Gpu.host`: contexts,
   3D resources, backings, attachments, transfers and submits, and with a host every scanout too (a 2D resource's
@@ -837,7 +837,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   `?gpu=vkgputime`; `?gpu=vknudge=<ms>` sets the nudges' period, VK3 L2b). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
   Calls that come before the module is ready wait in a backlog, and so does the device's fence. The driver's
   pipelines are made asynchronously and a submit drawing with one not yet ready is held, in order (VK3 L3); the
-  translated shaders persist across runs in IndexedDB `webpc-shaders`, the origin's, deflated (`venusPipelines` in the
+  translated shaders persist across runs in IndexedDB `waarm64-shaders`, the origin's, deflated (`venusPipelines` in the
   render stats; vk/README.md "Pipelines made asynchronously", "The shader cache"). A render pipeline is made when its
   draw is recorded (`?gpu=vkpremake=on`: at `vkCreateGraphicsPipelines` too, a loss measured by VK4 T17).
 - **The driver** (vk/README.md "The driver"): Vulkan on the GPU worker's WebGPU device (web/venus-gpu.ts; with no
@@ -977,7 +977,7 @@ guest share without copies (Venus's ring, its command streams, its reply buffers
   period at most, with `pattern`: integer triangle waves, 1 kHz left and 1.5 kHz right at 48 kHz (48 and 32 frames a
   cycle, ±12000; S32 shifted, FLOAT over 32768, mono the left), counted in frames since the first, so every runner
   records the same bytes. In realtime mode the **microphone source** (`micSource`): the spec's `mic` is the page's
-  **microphone ring** (the sound ring's layout the other way round: the page's `webpc-mic` worklet writes, the source
+  **microphone ring** (the sound ring's layout the other way round: the page's `waarm64-mic` worklet writes, the source
   reads), and the source says on `port` when the input starts (`capture-start`, with its rate: the page opens the
   microphone) and stops (`capture-stop`). While the worklet's heartbeat moves, a message completes once the ring has
   its frames (converted from f32 stereo by `fromF32`; mono the mean), at most a buffer behind the newest (older frames

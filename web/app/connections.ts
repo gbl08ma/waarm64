@@ -1,8 +1,8 @@
 // The browser's network connections (docs/networking/adapters.md §2): tailnets, tailcat, the local helper and peer-to-peer
-// rooms, each with its own state, which a machine's adapters attach to. Stored ones are records in IndexedDB `webpc`
-// `connections` (web/app/store.ts); their state stays where the clients keep it: a tailnet's node in `webpc-tailscale`
-// under the profile `stateKey` (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under
-// `identityKey` (web/tailcat.ts), a room's node key in `webpc-room` under its `identityKey` (web/room.ts). Ephemeral
+// rooms, each with its own state, which a machine's adapters attach to. Stored ones are records in IndexedDB `waarm64`
+// `connections` (web/app/store.ts); their state stays where the clients keep it: a tailnet's node in `waarm64-tailscale`
+// under the profile `stateKey` (web/tailscale-state.ts), tailcat's served identity in `waarm64-tailcat` under
+// `identityKey` (web/tailcat.ts), a room's node key in `waarm64-room` under its `identityKey` (web/room.ts). Ephemeral
 // ones live only in this page's memory, state included. One running machine has a connection at a time: its Web
 // Lock (`connectionLock`, web/app/locks.ts). DOM-free: Node's tests run it over a memory store.
 import { t } from '../i18n.ts';
@@ -20,7 +20,7 @@ export type TailnetConnection = {
   exitNode: string;
   /** Install the peers' subnet routes (absent: yes, Tailscale's apps' default). */
   acceptRoutes?: boolean;
-  /** The node's profile prefix in `webpc-tailscale`: the connection's id, or, for the node kept before connections, its control URL. */
+  /** The node's profile prefix in `waarm64-tailscale`: the connection's id, or, for the node kept before connections, its control URL. */
   stateKey: string;
 };
 
@@ -32,7 +32,7 @@ export type TailcatConnection = {
   relay: string;
   /** The clients let in when serving, as `tailcat serve --allow` takes them (`nodekey:…`); none or empty: any with the address. */
   allow?: string[];
-  /** The served identity's key in `webpc-tailcat` (`served` for the one kept before connections). */
+  /** The served identity's key in `waarm64-tailcat` (`served` for the one kept before connections). */
   identityKey: string;
   /** An ephemeral connection's identity (never stored). */
   identity?: TailcatIdentity;
@@ -44,13 +44,13 @@ export type LocalConnection = {
 };
 
 export type RoomConnection = {
-  /** The room's link (`webpc-room:<id>?…`, web/room.ts `roomLink`): who has it can join (a secret, for a private room). */
+  /** The room's link (`waarm64-room:<id>?…`, web/room.ts `roomLink`): who has it can join (a secret, for a private room). */
   link: string;
   /** Members may open connections to the guest (off: only replies to the guest's own). */
   incoming: boolean;
   /** No WebRTC: everything through the room's DERP relays, so no member learns this computer's IP address. */
   relayOnly: boolean;
-  /** The node key's entry in `webpc-room`: the connection's id, or another room connection's (the same key in two rooms). */
+  /** The node key's entry in `waarm64-room`: the connection's id, or another room connection's (the same key in two rooms). */
   identityKey: string;
   /** An ephemeral connection's key (never stored: a stored connection made with one's key keeps a copy in its entry). */
   identity?: RoomIdentity;
@@ -65,7 +65,7 @@ export type Connection = {
   ephemeral: boolean;
   tailnet?: TailnetConnection;
   tailcat?: TailcatConnection;
-  /** The local helper on this computer (github.com/gbl08ma/webpc-net, docs/plans/networking-local.md). */
+  /** The local helper on this computer (github.com/gbl08ma/waarm64-net, docs/plans/networking-local.md). */
   local?: LocalConnection;
   /** A peer-to-peer room (docs/networking/rooms.md). */
   room?: RoomConnection;
@@ -110,7 +110,7 @@ export type ConnectionState = {
 };
 
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
-export const connectionLock = (id: string) => `webpc-net:${id}`;
+export const connectionLock = (id: string) => `waarm64-net:${id}`;
 
 /**
  * The lock on room node key `key`, which a running room connection holds beside its own: two connections on one key,
@@ -120,7 +120,7 @@ export const connectionLock = (id: string) => `webpc-net:${id}`;
  */
 async function roomKeyLock(key: string): Promise<string> {
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key)));
-  return `webpc-room-key:#${Array.from(h.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')}`;
+  return `waarm64-room-key:#${Array.from(h.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** A connection's default name: Tailscale, a Headscale's host, tailcat, This computer, or a room's name. */
@@ -143,7 +143,7 @@ export function preselect(all: Connection[], held: (id: string) => boolean): str
 
 /**
  * A new room connection's record, id `id`: a key of its own (`own`, an ephemeral one's in the record, a stored one's
- * kept in its entry first), or `shared`'s, through its entry in `webpc-room` (or its key itself, when both are
+ * kept in its entry first), or `shared`'s, through its entry in `waarm64-room` (or its key itself, when both are
  * ephemeral; a stored one sharing an ephemeral one's has it as `own`).
  */
 function roomOf(
@@ -161,7 +161,7 @@ function roomOf(
   return { ...rest, identityKey, ...(identity ? { identity } : {}) };
 }
 
-/** State kept in memory, `webpc-room`'s keys included (Node's tests). */
+/** State kept in memory, `waarm64-room`'s keys included (Node's tests). */
 export function memoryState(): ConnectionState {
   const rooms = new Map<string, RoomIdentity>();
   const none = () => Promise.resolve();
@@ -226,7 +226,7 @@ export class Connections {
       kind: o.kind,
       ephemeral,
       ...(o.kind === 'tailnet'
-        ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'webpc', exitNode: '', ...o.tailnet, stateKey: id } }
+        ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'waarm64', exitNode: '', ...o.tailnet, stateKey: id } }
         : {}),
       ...(o.kind === 'local' ? { local: { url: o.local?.url ?? '' } } : {}),
       ...(o.kind === 'tailcat'
@@ -338,11 +338,11 @@ export class Connections {
 
 /** What the page kept before connections (docs/networking/adapters.md §2.2). */
 export type Legacy = {
-  /** `webpc.settings` `net`. */
+  /** `waarm64.settings` `net`. */
   settings?: NetworkSettings;
-  /** The profiles in `webpc-tailscale` that hold a node (`keptProfiles`): control servers' URLs. */
+  /** The profiles in `waarm64-tailscale` that hold a node (`keptProfiles`): control servers' URLs. */
   profiles: string[];
-  /** Whether `webpc-tailcat` has the `served` identity. */
+  /** Whether `waarm64-tailcat` has the `served` identity. */
   served: boolean;
 };
 
@@ -377,7 +377,7 @@ async function legacyTailnet(conns: Connections, profile: string, s: NetworkSett
     tailnet: {
       controlURL: profile,
       // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- '' is unset
-      hostname: s?.hostname || 'webpc',
+      hostname: s?.hostname || 'waarm64',
       exitNode: s?.exitNode ?? '',
     },
   });

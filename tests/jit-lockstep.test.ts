@@ -1,7 +1,7 @@
 // JIT vs interpreter lockstep (docs/testing.md): the same guest on an
 // interpreter-only core and on a JIT core (two instances, two memories),
 // comparing the registers (`cpu::Cpu`) and a RAM checksum after every chunk.
-// CI-sized; `WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts`
+// CI-sized; `WAARM64_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts`
 // runs every guest that long (stress runs a tenth of it: it compiles on most dispatches).
 // Needs the wasm build (scripts/ci.sh).
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { JIT_DEFAULT, JIT_STRESS, setup, setupVm } from '../bench/interp/suite.ts';
 import { jitVariantSkip } from './jit-variants.ts';
 
-const STEPS = Number(process.env.WEBPC_LOCKSTEP_STEPS ?? 20_000_000);
+const STEPS = Number(process.env.WAARM64_LOCKSTEP_STEPS ?? 20_000_000);
 const RAM = 16 << 20; // bench/interp/suite.ts
 const CPU_BYTES = 1168; // size_of::<cpu::Cpu>()
 

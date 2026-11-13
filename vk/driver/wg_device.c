@@ -176,14 +176,14 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
       .conformanceVersion = { 0, 0, 0, 0 },
    };
    wg_caps_properties(&props);
-   snprintf(props.deviceName, sizeof(props.deviceName), "webpc WebGPU");
-   snprintf(props.driverName, sizeof(props.driverName), "webpc");
+   snprintf(props.deviceName, sizeof(props.deviceName), "waarm64 WebGPU");
+   snprintf(props.driverName, sizeof(props.driverName), "waarm64");
    snprintf(props.driverInfo, sizeof(props.driverInfo), "Vulkan on WebGPU");
    build_uuid(props.pipelineCacheUUID, "pipeline cache");
    build_uuid(props.shaderBinaryUUID, "shader binary");
    props.shaderBinaryVersion = 1;
-   memcpy(props.deviceUUID, "webpc-wg-device0", VK_UUID_SIZE);
-   memcpy(props.driverUUID, "webpc-wg-driver0", VK_UUID_SIZE);
+   memcpy(props.deviceUUID, "waarm64-wg-device0", VK_UUID_SIZE);
+   memcpy(props.driverUUID, "waarm64-wg-driver0", VK_UUID_SIZE);
    struct vk_device_extension_table exts;
    wg_caps_extensions(&exts);
 
@@ -194,7 +194,7 @@ wg_enumerate_physical_devices(struct vk_instance *vk)
       return result;
    }
    /* Shaders across runs: the runtime's caches look up what they miss in the worker's store (vk/wasi/disk_cache.c). */
-   pdev->vk.disk_cache = disk_cache_create("webpc WebGPU", WG_BUILD_ID, caps_hash());
+   pdev->vk.disk_cache = disk_cache_create("waarm64 WebGPU", WG_BUILD_ID, caps_hash());
    pdev->sync_types[0] = &wg_sync_type;
    pdev->sync_types[1] = NULL;
    pdev->vk.supported_sync_types = pdev->sync_types;

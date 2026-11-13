@@ -14,7 +14,7 @@ const llvmpipe = args[0] === '--llvmpipe';
 if (llvmpipe) args.shift();
 const [out, frames = '3', quads = '3', width = '256', height = '192'] = args;
 if (!out) throw new Error('usage: node tools/virgl-capture.ts <out.vglt> [frames] [quads] [width] [height]');
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);
 const a = DISTROS.alpine;
 const records: Uint8Array[] = [];
@@ -22,7 +22,7 @@ const port = new MessageChannel();
 port.port1.on('message', (m: { type: string; record: Uint8Array }) => { if (m.type === 'capture') records.push(new Uint8Array(m.record)); });
 const gpu = { type: 'gpu' as const, width: 1024, height: 768, virgl: true, capture: true, port: port.port2 as unknown as MessagePort };
 const devices = [...guestDevices(new URL('alpine-virgl/rootfs-virgl.ext4', IMAGES).href), ...(llvmpipe ? [] : [gpu])];
-const cmdline = `${a.cmdline} webpc.gl=${frames},${quads},${width},${height} webpc.lp=0${llvmpipe ? ' webpc.gldump=1' : ' webpc.gpu=1'}`;
+const cmdline = `${a.cmdline} waarm64.gl=${frames},${quads},${width},${height} waarm64.lp=0${llvmpipe ? ' waarm64.gldump=1' : ' waarm64.gpu=1'}`;
 const r = await runToPowerOff(WASM, { ramSize: 1 << 30, kernel: readFileSync(new URL(a.kernel, IMAGES)), initrd: readFileSync(new URL(a.initrd, IMAGES)), cmdline, devices, jit: 1 }, 60e9);
 await new Promise((res) => setTimeout(res, 200)); // the port's last messages
 port.port1.close();

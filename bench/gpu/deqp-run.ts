@@ -155,9 +155,9 @@ results.kernel = (await runLines('dmesg --level=emerg,alert,crit,err,warn | tail
 if ((results.kernel as string[]).length) log('kernel', (results.kernel as string[]).length, 'warnings or worse: dmesg.txt');
 // What the core's heap and (Venus) the renderer's arena touched by the end (web/vm.ts `heapUse`; MiB).
 results.memory = await s.page.evaluate(async () => {
-  const w = window as unknown as { __heap?: Record<string, number>; __webpcHeap?: () => void };
+  const w = window as unknown as { __heap?: Record<string, number>; __waarm64Heap?: () => void };
   w.__heap = undefined;
-  w.__webpcHeap?.();
+  w.__waarm64Heap?.();
   for (let i = 0; i < 100 && !w.__heap; i++) await new Promise((r) => setTimeout(r, 50));
   const h = w.__heap;
   return h && Object.fromEntries(['highBytes', 'touchedBytes', 'arenaBytes', 'arenaTouchedBytes', 'arenaHighBytes'].map((k) => [k.replace('Bytes', 'MiB'), Math.round(h[k] / 2 ** 20 * 10) / 10]));

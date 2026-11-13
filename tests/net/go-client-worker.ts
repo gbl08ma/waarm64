@@ -8,7 +8,7 @@ const { wasm, wasmExec, controlURL, authKey, hostname, state, ca } = workerData 
 if (ca) (await import('./go-client.ts')).trust(ca);
 // Go's net/http uses fetch except under Node (it checks process.argv0), where it dials sockets it can't have.
 const realProcess = process;
-globalThis.process = Object.create(realProcess, { argv0: { value: 'webpc-go-client' } });
+globalThis.process = Object.create(realProcess, { argv0: { value: 'waarm64-go-client' } });
 const mem = new Map(Object.entries(state));
 await import(wasmExec);
 const go = new (globalThis as never as { Go: new () => { importObject: WebAssembly.Imports; run(i: WebAssembly.Instance): Promise<void> } }).Go();

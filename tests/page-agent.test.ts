@@ -1,6 +1,6 @@
 // Clipboard sharing's guest agent on Debian (docs/plans/clipboard.md §2–§3, steps 1 and 2): a machine with
 // `?clipboard=1` has the agent's device (web/agent-device.ts), whose port Debian's virtio_console names and udev links
-// as /dev/virtio-ports/org.webpc.agent.0, and the agent (agent/, web/app/guest-agent.ts): over fw_cfg into /run, started
+// as /dev/virtio-ports/org.waarm64.agent.0, and the agent (agent/, web/app/guest-agent.ts): over fw_cfg into /run, started
 // by its credential unit, it opens the port and answers the page's HELLO (web/app/agent-link.ts, `window.__agent`).
 // Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
 // console (a reader on tty1 writes what it gets to a file; a long paste arrives whole; none of it while tty1 is in
@@ -9,7 +9,7 @@
 // page carrying on when the agent stops, and the port itself without the agent: `cat` echoing it into
 // itself (a small frame, and 320 KiB of 64 KiB frames past the link's window, so the guest's buffers and the window's
 // flow both turn over). The agent's start again at the end: its unit runs it anew.
-// WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s; the plan's measurement is 60).
+// WAARM64_AGENT_IDLE=<s> sets the idle window (default 20 s; the plan's measurement is 60).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -22,12 +22,12 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { FRAME, TYPED } from '../web/agent-frame.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const AGENT = new URL('../target/images/agent/webpc-agent', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh debian edk2 agent';
-const IDLE_S = Number(process.env.WEBPC_AGENT_IDLE ?? 20);
+const AGENT = new URL('../target/images/agent/waarm64-agent', import.meta.url);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh debian edk2 agent';
+const IDLE_S = Number(process.env.WAARM64_AGENT_IDLE ?? 20);
 
 let browser: Browser;
 let base: string;
@@ -94,20 +94,20 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
   const h = await hello(page).catch(async (e) => {
-    const why = await run(page, 'journalctl -b -u webpc-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | sort | uniq -c | tail -8');
+    const why = await run(page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | sort | uniq -c | tail -8');
     throw new Error(`${e}; the guest says: ${why}`);
   });
   assert.equal(h.version, 1);
   assert.ok(h.caps & 1, `the agent can TYPE (caps ${h.caps})`);
   await buttonIs(page, 'sharing');
-  assert.equal(await run(page, 'ls /dev/virtio-ports/; cat /sys/class/virtio-ports/*/name'), 'org.webpc.agent.0 org.webpc.agent.0');
-  assert.equal(await run(page, 'systemctl is-active webpc-agent'), 'active');
-  const pid = await run(page, 'systemctl show -p MainPID --value webpc-agent');
-  assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/webpc/agent');
+  assert.equal(await run(page, 'ls /dev/virtio-ports/; cat /sys/class/virtio-ports/*/name'), 'org.waarm64.agent.0 org.waarm64.agent.0');
+  assert.equal(await run(page, 'systemctl is-active waarm64-agent'), 'active');
+  const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
+  assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/waarm64/agent');
   const size = Number(await run(page, `stat -L -c %s /proc/${pid}/exe`));
   assert.equal(size, (await import('node:fs')).statSync(AGENT).size, 'the binary the page served');
   // The fw_cfg read's cost (plan §3.1: one MMIO exit a byte), measured in the guest.
-  const [gz, readUs, gunzipUs] = (await run(page, 'd=/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent; cat $d/size; s=$(date +%s%N); cat $d/raw >/tmp/agent.gz; m=$(date +%s%N); gzip -dc /tmp/agent.gz >/dev/null; e=$(date +%s%N); echo $(( (m - s) / 1000 )) $(( (e - m) / 1000 ))')).split(/\s+/).map(Number);
+  const [gz, readUs, gunzipUs] = (await run(page, 'd=/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent; cat $d/size; s=$(date +%s%N); cat $d/raw >/tmp/agent.gz; m=$(date +%s%N); gzip -dc /tmp/agent.gz >/dev/null; e=$(date +%s%N); echo $(( (m - s) / 1000 )) $(( (e - m) / 1000 ))')).split(/\s+/).map(Number);
   t.diagnostic(`agent: ${size} bytes, ${gz} gzipped; fw_cfg read in the guest ${(readUs / 1000).toFixed(1)} ms (${(readUs * 1000 / gz).toFixed(0)} ns a byte), gunzip ${(gunzipUs / 1000).toFixed(1)} ms`);
 
   // Idle (plan §3.3): no CPU time (utime + stime), no wakeups (voluntary context switches), VmRSS about 1 MiB or less.
@@ -150,7 +150,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
       t.diagnostic(`the long paste reached the slow reader whole in ${((performance.now() - t0) / 1000).toFixed(1)} s or less`);
       break;
     }
-    if (i > 120) assert.fail(`after the long paste tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantLong)}; the first line missing or out of order: ${await run(page, 'grep -o "^[0-9][0-9][0-9][0-9] " /tmp/typed | awk "NR - 1 != \\$1 + 0 { print NR - 1, \\$1; exit }"')}; the agent says: ${await run(page, 'journalctl -b -u webpc-agent -o cat --no-pager | tail -3')}; its start: ${await run(page, 'head -c 160 /tmp/typed | od -An -c | tr -s " "')}; tty1 held by ${await run(page, 'for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q "/dev/tty1$" && echo $(basename $p) $(cat $p/comm); done')}; the session: ${await run(page, 'loginctl list-sessions --no-legend; cat /run/systemd/seats/seat0 | grep ACTIVE')}`);
+    if (i > 120) assert.fail(`after the long paste tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantLong)}; the first line missing or out of order: ${await run(page, 'grep -o "^[0-9][0-9][0-9][0-9] " /tmp/typed | awk "NR - 1 != \\$1 + 0 { print NR - 1, \\$1; exit }"')}; the agent says: ${await run(page, 'journalctl -b -u waarm64-agent -o cat --no-pager | tail -3')}; its start: ${await run(page, 'head -c 160 /tmp/typed | od -An -c | tr -s " "')}; tty1 held by ${await run(page, 'for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q "/dev/tty1$" && echo $(basename $p) $(cat $p/comm); done')}; the session: ${await run(page, 'loginctl list-sessions --no-legend; cat /run/systemd/seats/seat0 | grep ACTIVE')}`);
     await page.waitForTimeout(1000);
   }
 
@@ -202,7 +202,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   }
 
   // The agent stopped: the page hears the port close, the link refuses, the machine runs on.
-  await run(page, 'systemctl stop webpc-agent; echo stopped');
+  await run(page, 'systemctl stop waarm64-agent; echo stopped');
   await isOpen(page, false);
   await buttonIs(page, 'waiting');
   assert.equal(await link(page, (l) => l.type('nobody\n')), false);
@@ -210,7 +210,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running');
 
   // The port without the agent: `cat` holds it open, echoing it into itself.
-  await onSerial(page, 'clear; exec 3<>/dev/virtio-ports/org.webpc.agent.0; cat <&3 >&3 & echo st""arted\n');
+  await onSerial(page, 'clear; exec 3<>/dev/virtio-ports/org.waarm64.agent.0; cat <&3 >&3 & echo st""arted\n');
   await shows(page, /started/);
   await isOpen(page, true);
   const echoed = await page.evaluate(async () => {
@@ -241,7 +241,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   await isOpen(page, false);
 
   // Started again (its unit reads fw_cfg anew): HELLO again, and it types.
-  await run(page, 'systemctl start webpc-agent; echo started');
+  await run(page, 'systemctl start waarm64-agent; echo started');
   await hello(page);
   assert.equal(await link(page, (l) => l.paused), false);
   assert.equal(await link(page, (l) => l.type('again\n')), true);

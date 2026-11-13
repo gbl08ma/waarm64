@@ -1,4 +1,4 @@
-# webpc networking plan
+# waarm64 networking plan
 
 **Status:** refined 2026-10-01. N1 to N5 are done: the IPv4 gateway, the Tailscale client, the
 Network menu on the page, a kept node, exit-node selection; a VM on the page reaches its tailnet and,
@@ -286,7 +286,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   the control server sends the `magicdns-aaaa` node attribute (the client's `magicDNSAddrs`), so
   headscale's default gives names IPv4 only; the test checks IPv6 by address. Not done: IPv6 to
   the internet through an exit node (needs a v6 route on the exit node; by hand, once, when one exists).
-- **N7 — The card for other guests (Alpine; done 2026-10-01: it needs nothing).** *Found:* Alpine's UEFI cloud images (Limine and GRUB) bring `eth0` up by themselves with DHCP, DHCPv6 and the router advertisement: with the echo gateway's card the guest has 198.18.0.15, `fd00:5eb0::f`, both default routes, and pings over IPv4 and IPv6, with no seed-disk file and nothing from the page's Debian `.network` credential (which Alpine ignores). `tests/uefi.test.ts` (opt-in, `WEBPC_DISTROS=alpine-uefi`) asserts it. The plan as written: The page offers a card to every machine with a
+- **N7 — The card for other guests (Alpine; done 2026-10-01: it needs nothing).** *Found:* Alpine's UEFI cloud images (Limine and GRUB) bring `eth0` up by themselves with DHCP, DHCPv6 and the router advertisement: with the echo gateway's card the guest has 198.18.0.15, `fd00:5eb0::f`, both default routes, and pings over IPv4 and IPv6, with no seed-disk file and nothing from the page's Debian `.network` credential (which Alpine ignores). `tests/uefi.test.ts` (opt-in, `WAARM64_DISTROS=alpine-uefi`) asserts it. The plan as written: The page offers a card to every machine with a
   `network` entry, and a disk chosen by the user (Alpine's UEFI cloud images are in scope since phase
   B) boots under that machine's configuration; but the `.network` credential only works for
   systemd guests. Find out what Alpine's images do by default with a virtio-net card (tiny-cloud
@@ -298,7 +298,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
 - **N8 — Tests and CI cleanup (done 2026-10-01).** The exit-node phase of `tests/net-tailnet.test.ts`
   needs the real internet (1.1.1.1, example.com); it guards three fixes found against a real exit
   node (`ipn.NewPrefs()`, `peerapiclient`, the netstack dialer). It is now opt-in
-  (`WEBPC_TAILNET_INTERNET=1`) and passed once. Exit nodes refuse private, CGNAT and link-local
+  (`WAARM64_TAILNET_INTERNET=1`) and passed once. Exit nodes refuse private, CGNAT and link-local
   destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
   login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
   `ci.sh` (the user, 2026-09-30: only when a change touches the network).

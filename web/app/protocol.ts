@@ -240,7 +240,7 @@ export type StartDisk = {
   overlay?: string;
   /** What the overlay belongs to (default: the source's, web/devices.ts `diskIdentity`). */
   identity?: string;
-  /** What the guest's GET_ID gets (default `webpc-blk`). */
+  /** What the guest's GET_ID gets (default `waarm64-blk`). */
   serial?: string;
   /** The machine's own image (`MachineSpec.disk`): a snapshot's header names no disk for it (`disk: null`). */
   own?: true;

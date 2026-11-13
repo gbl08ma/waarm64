@@ -1,4 +1,4 @@
-// Vulkan's shader store as the page left it (web/venus-cache.ts: IndexedDB `webpc-shaders`), written to a file for
+// Vulkan's shader store as the page left it (web/venus-cache.ts: IndexedDB `waarm64-shaders`), written to a file for
 // bench/vulkan/store-codecs.ts (VK4 T49's follow-up: the codecs measured on a real program's store). godot.ts and
 // venus-run.ts call it at their end with STORE_DUMP set: `<out>/shader-store.json`, each entry its key, build, last use,
 // whether packed and its stored bytes in base64.
@@ -11,7 +11,7 @@ export async function dumpStore(page: Page, file: string) {
   // The store writes back a second after a change.
   await page.waitForTimeout(2500);
   const entries = await page.evaluate(() => new Promise<unknown[]>((resolve, reject) => {
-    const r = indexedDB.open('webpc-shaders');
+    const r = indexedDB.open('waarm64-shaders');
     r.onerror = () => reject(r.error);
     r.onsuccess = () => {
       const g = r.result.transaction('entries', 'readonly').objectStore('entries').getAll();

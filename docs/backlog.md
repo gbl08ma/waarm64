@@ -108,7 +108,7 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   a session under JIT-check, and look at what Firefox waits for (the guest's `ps`, its console) when it hangs. First
   rerun such sessions on a build from 2026-11-03 on: until then a fast-completed ISB under the parallel JIT could run
   code another vCPU had just rewritten ([platform.md](platform.md) "Broadcast maintenance"), a candidate cause. Since
-  (2026-11-04/05, builds from `6abf0919` on, from `pages.webpcsnap`): 13 whole sessions in the dev VM and 6 on the Mac
+  (2026-11-04/05, builds from `6abf0919` on, from `pages.waarm64snap`): 13 whole sessions in the dev VM and 6 on the Mac
   host, none timing out at its first page. If none does in the next ~20, drop the item.
 - **A VM session that lost Firefox's process** (2026-11-05, with the first core of host calls: `bench/boot/REPORT.md`
   "Guest calls as host calls, again"): gone in both page windows, the guest's kernel and sway alive, the pages timed
@@ -1227,7 +1227,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
 - **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
-  N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.webpcsnap` is the
+  N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.waarm64snap` is the
   compile workload in use meanwhile.
 - **A default vCPU count for users:** the page uses `min(4, cores − 2)` (web/app/machine.ts);
   `bootVm`'s `ncpus` still defaults to 1. Telling the user that a host's efficiency cores make N
@@ -1501,12 +1501,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   on. Mitigations: charge the budget only once a trial confirms (its data decrypts, which takes the pre-shared key),
   and cap the trial peers not yet confirmed apart, dropping the oldest first.
   Another tab's ephemeral room connections are invisible to this one (they live in that page's memory): Delete or New
-  name of a stored connection whose `webpc-room` entry another tab's ephemeral connection shares (made with "another
+  name of a stored connection whose `waarm64-room` entry another tab's ephemeral connection shares (made with "another
   connection's key") forgets the entry, as `sharesKey` can't see that one, and its next start makes a new key under
   the orphaned entry, which nothing deletes later (the key changes without the user asking); and a key pasted in one
   tab from another tab's ephemeral connection isn't found as that one's (`holderOf`), so it gets an entry of its own
   (the key's lock still holds between them, named by the key). A shared registry of ephemeral connections' entries
-  (a BroadcastChannel census, or the entries' users counted in `webpc-room`) would close both.
+  (a BroadcastChannel census, or the entries' users counted in `waarm64-room`) would close both.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer
@@ -1521,7 +1521,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The Network menu doesn't say a connection is IPv4-only.
   - `bench/gpu/firefox-load.ts`'s tailcat mode still drops the guest's IPv6 default and pins resolv.conf and
     gai.conf by hand; no longer needed, drop it at its next run.
-- **The local helper's loose ends** ([networking/local-helper.md](networking/local-helper.md), webpc-net's own repository):
+- **The local helper's loose ends** ([networking/local-helper.md](networking/local-helper.md), waarm64-net's own repository):
   - **Never run on Windows** (nor its install lines in PowerShell): whether gvisor-tap-vsock's DNS forwarder follows the
     host's resolvers there (it asks Go's `net.Resolver` and forwards other types to `/etc/resolv.conf`'s servers,
     which Windows hasn't), and what Defender and SmartScreen make of an unsigned binary fetched by `Invoke-WebRequest`.
@@ -1680,7 +1680,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The About pane's crates are the ones THIRD_PARTY.md named**: the tailnet client's direct dependencies and a few of
   theirs (`rust-net-ts`), and Rust's standard library as one row. `cargo metadata` for `net/ts` on wasm32 resolves 165
   crates (proc macros and build-only ones among them, so fewer are linked); the core has none. A generated listing of
-  every crate linked into `ts.wasm` and `webpc_core.wasm`, with each one's license text (as `VENUS-LICENSES.txt` and
+  every crate linked into `ts.wasm` and `waarm64_core.wasm`, with each one's license text (as `VENUS-LICENSES.txt` and
   Vite's `THIRD-PARTY-LICENSES.md` do for theirs), would make the attribution complete.
 
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
@@ -1716,12 +1716,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - `performance.mark`/`measure` around compile, instantiate, device I/O and boot phases.
 - `core/fuzz`: `Mismatch::key` is dead code in the libFuzzer target build (a warning, not in CI).
 - Guest images: `images/build.sh alpine` can't run on the arm64 VM ([images.md](images.md)).
-- **Alpine's package pins drift:** the container is pinned by digest but `apk` reads the live repository,
-  so a pinned version that leaves it breaks the build (2026-10-02: `openssl-dev=3.5.8-r0` had gone, 3.5.9
-  needs the newer libcrypto; `KERNEL_TOOLS` is bumped, `USERLAND_PKGS`' `openssl=3.5.8-r0` for
-  `alpine-user` has the same problem when that image is next built). A mirror of the pinned packages
-  (or `apk` against a dated snapshot) would end it.
-- `images/Containerfile` and `images/alpine/user/webpc-user.start` still cite PLAN.md sections
+- **Alpine's package pins drift:** the container is pinned by digest but `apk` reads the live repository, which keeps
+  only each package's latest build, so a pinned version that leaves it breaks the build (2026-10-02 `openssl-dev`;
+  2026-11-13 `perl=5.42.2-r1` in `KERNEL_TOOLS`, bumped to 5.42.3-r0; the user: "we often have to update alpine
+  pins"). What still reads the live repositories: alpine-user's `xz`, `lua5.4`, `sqlite` and the build tools of
+  `linux*`, `litmus`, `alpine-gl`, `alpine-virgl` (docs/images.md "Gotchas"). Ways out, cheapest first: build those
+  tools in Debian's container on snapshot.debian.org as `edk2` and `buildroot` already do (dated, so pins never
+  vanish; the guest content stays Alpine's); or keep the pinned `.apk`s, checked by hash, in a store we host. A check
+  of every pin against the live index (`apk policy` in `alpine:3.24`) finds the next breakage before a build does.
+- `images/Containerfile` and `images/alpine/user/waarm64-user.start` still cite PLAN.md sections
   from before the docs moved; they're image inputs (editing them makes the images stale), so fix
   the comments with their next rebuild.
 - **`kvm-unit-tests` still builds under qemu-user** in the x86_64 `images/Containerfile`, the last
@@ -1758,7 +1761,7 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   `vaapi_decode_find_best_format` then takes I420 for H.264 and VP9 (yuv420p), and Firefox's VA-API path (NV12, YV12,
   P010, P016 only) falls back to software ("Unsupported VA-API surface format"). Real drivers offer NV12 (and P010/P016)
   alone for decoding. Fix: virgl answers decode entrypoints with NV12/P010/P016 only. Seen with Mesa 26.2.4, libva
-  2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `webpc-va` package (`images/arch/webpc-va/`), which goes
+  2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `waarm64-va` package (`images/arch/waarm64-va/`), which goes
   away with the fix.
 - **Mesa and virglrenderer disagree on virgl's video profile numbers** ([graphics.md](graphics.md) "Video"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped
   `MPEG4_SIMPLE`/`MPEG4_ADVANCED_SIMPLE` (and added HEVC 4:2:2/4:4:4 profiles) that virglrenderer's copy (`c8e3fc3b`)
@@ -1766,10 +1769,10 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   own fixed numbering.
 - **Mesa's virgl AV1 decode loses three things** ([graphics.md](graphics.md) "Video's findings"; Mesa 26.2.4,
   `src/gallium/frontends/va/picture_av1.c`, `picture.c`, `src/gallium/drivers/virgl/virgl_video.c`): the VA frontend
-  writes `refresh_frame_flags = 1` whatever the frame refreshes (a stateful host decoder needs it; webpc keeps its own
+  writes `refresh_frame_flags = 1` whatever the frame refreshes (a stateful host decoder needs it; waarm64 keeps its own
   slots instead); it sets `film_grain_target` in `vlVaEndPicture`, after `vaRenderPicture` has sent the frame's desc
   (virgl's `decode_bitstream`), so a host never learns the surface a grained frame is shown from (virglrenderer's
-  host VA-API path writes the target, the guest shows the other surface; webpc-va 2 works around it); virgl's
+  host VA-API path writes the target, the guest shows the other surface; waarm64-va 2 works around it); virgl's
   `fill_av1_picture_desc` doesn't copy `lr_unit_size` (the shifts are copied). Repro: the guest's `ffmpeg -hwaccel
   vaapi` on an SVT-AV1 clip with `-svtav1-params film-grain=8` against its software decode.
 - **Chromium (libyuv's SME kernels) SIGILLs on CPUs with SME but no SVE** (Apple M4 under Linux, e.g. a Lima VM;
@@ -1787,7 +1790,7 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   `drmSyncobjTimelineWait` under `pl_swapchain_destroy`. Seen with Mesa 26.2.5 (Arch's `vulkan-virtio`), unfixed on
   main as of 8598bb5c (2026-10-23); gdb stacks in `bench/vulkan/results/vk3/l4e/swiftshader-frozen-stacks.txt`.
   Repro: mpv 0.41 `--vo=gpu-next --gpu-api=vulkan` going fullscreen while its first pipelines compile (every first
-  session on SwiftShader; on a warm host with webpc's `?gpu=vkpipedelay=1500`). Fix: always hand the present to the
+  session on SwiftShader; on a warm host with waarm64's `?gpu=vkpipedelay=1500`). Fix: always hand the present to the
   thread, and report a deferred error only for the swapchain it came from. Our workaround: `VN_PERF=no_async_present`
   in the desktop image (images/arch/desktop-setup.sh), which goes away with the fix.
 

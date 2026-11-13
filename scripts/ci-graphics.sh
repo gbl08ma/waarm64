@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 
 for name in debian edk2; do images/build.sh --check "$name" > /dev/null || { echo "ci-graphics: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
-export WEBPC_DISTROS=debian WEBPC_DEBIAN_SLOTS=${WEBPC_DEBIAN_SLOTS-2}
+export WAARM64_DISTROS=debian WAARM64_DEBIAN_SLOTS=${WAARM64_DEBIAN_SLOTS-2}
 step 'Graphics on Debian on the page'
 node --disable-warning=ExperimentalWarning --test tests/page-machine.test.ts tests/page-venus.test.ts
 printf '\nCI-GRAPHICS OK (%d s)\n' "$SECONDS"

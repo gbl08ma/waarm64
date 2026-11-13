@@ -177,7 +177,7 @@ The local server's `/R<MB/s>` paces all responses together (one link shared by p
 | R4, static.gbl08ma.com (`r4-remote.json`; R1 and R2's runs there: 109.7, 112.4 s) | **100.6 s** | 405 |
 
 **The device worker's answer time** (`PING=1`: the page asks it every 250 ms over the `?iostats` channel; a worker
-inside a disk read answers after it), A the code before R4 (`../webpc-base` at 3c1614f), B R4, alternated, 47 ms and
+inside a disk read answers after it), A the code before R4 (`../waarm64-base` at 3c1614f), B R4, alternated, 47 ms and
 20 MB/s shared, two rounds (`r4ab-*.json`):
 
 | | painted | answer p50 / p99 / longest | answers over 100 ms |

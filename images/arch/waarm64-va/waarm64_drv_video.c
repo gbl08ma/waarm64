@@ -1,9 +1,9 @@
-// webpc's VA-API driver for the desktop guest (docs/graphics.md "Video's design"): Mesa's virgl driver (virtio_gpu_drv_video.so)
+// waarm64's VA-API driver for the desktop guest (docs/graphics.md "Video's design"): Mesa's virgl driver (virtio_gpu_drv_video.so)
 // with only the surface formats real decoders offer. Mesa's virgl lists every 4:2:0 format whose planes it can sample
 // and render (NV12, YV12, I420), FFmpeg's VA-API decoder then picks I420 for H.264 and VP9 (the codecs' own software
 // format), and Firefox's VA-API path takes NV12, YV12, P010 and P016 only, so it falls back to software. This driver
 // loads Mesa's, and drops I420 and YV12 from what vaQuerySurfaceAttributes says: decoders then use NV12. Selected with
-// LIBVA_DRIVER_NAME=webpc (the package sets it for every session).
+// LIBVA_DRIVER_NAME=waarm64 (the package sets it for every session).
 //
 // And AV1 with film grain decoded into the surface that's shown. A decoder applying grain decodes into a reference
 // surface (VA's current_frame) and shows another (current_display_picture), and Mesa's VA frontend sends the frame to
@@ -205,7 +205,7 @@ static VAStatus export_surface(VADriverContextP ctx, VASurfaceID surface, uint32
 VAStatus INIT(VA_MAJOR_VERSION, VA_MINOR_VERSION)(VADriverContextP ctx) {
   void *mesa = dlopen(MESA_DRIVER, RTLD_NOW | RTLD_LOCAL);
   if (!mesa) {
-    fprintf(stderr, "webpc_drv_video: %s\n", dlerror());
+    fprintf(stderr, "waarm64_drv_video: %s\n", dlerror());
     return VA_STATUS_ERROR_UNKNOWN;
   }
   // Mesa exports the entry point of the libva it was built against: the newest minor version it has.
@@ -216,7 +216,7 @@ VAStatus INIT(VA_MAJOR_VERSION, VA_MINOR_VERSION)(VADriverContextP ctx) {
     init = (VAStatus (*)(VADriverContextP))dlsym(mesa, name);
   }
   if (!init) {
-    fprintf(stderr, "webpc_drv_video: no __vaDriverInit_%d_* in %s\n", VA_MAJOR_VERSION, MESA_DRIVER);
+    fprintf(stderr, "waarm64_drv_video: no __vaDriverInit_%d_* in %s\n", VA_MAJOR_VERSION, MESA_DRIVER);
     return VA_STATUS_ERROR_UNKNOWN;
   }
   VAStatus s = init(ctx);

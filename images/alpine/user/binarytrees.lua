@@ -1,4 +1,4 @@
--- Binary trees (allocation and GC): webpc's own, after the Benchmarks Game's
+-- Binary trees (allocation and GC): waarm64's own, after the Benchmarks Game's
 -- description. Prints the check sums; depth fixed for the benchmark's budget.
 local function make(d)
   if d == 0 then return {} end

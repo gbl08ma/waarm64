@@ -2,7 +2,7 @@
 // checks, and a run on a copy of the repository as a fresh clone has it (tracked and
 // untracked files, nothing ignored: no node_modules, no target/), up to the page
 // waiting for a disk, then booting this checkout's Debian given as one, in Chromium (the firmware's output). The copy
-// gets the core, the tailnet client and the firmware built here unless WEBPC_START_COLD=1 (then it builds its own, the
+// gets the core, the tailnet client and the firmware built here unless WAARM64_START_COLD=1 (then it builds its own, the
 // firmware with Podman: minutes). tools/debian.ts's download is tested here too (the tests' Debian).
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -19,7 +19,7 @@ import { tsInputs } from '../tools/tailscale.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { t } from '../web/i18n.ts';
 
-const tmp = (what: string) => mkdtempSync(join(tmpdir(), `webpc-${what}-`));
+const tmp = (what: string) => mkdtempSync(join(tmpdir(), `waarm64-${what}-`));
 const write = (root: string, path: string, data: string | object) => {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), typeof data === 'string' ? data : JSON.stringify(data));
@@ -109,9 +109,9 @@ test("Vulkan's renderer: rebuilt when missing, unstamped or its key moved (vk/ b
 test('the download: streamed to a .part file, checked against the pin, then kept and checked again', async () => {
   const d = tmp('dl');
   const server = await startServer();
-  const saved = process.env.WEBPC_DL;
+  const saved = process.env.WAARM64_DL;
   try {
-    process.env.WEBPC_DL = d;
+    process.env.WAARM64_DL = d;
     const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
     const body = readFileSync(join(ROOT, 'tests/gpu/edid.json'));
     const sha512 = createHash('sha512').update(body).digest('hex');
@@ -127,7 +127,7 @@ test('the download: streamed to a .part file, checked against the pin, then kept
     assert.deepEqual(readdirSync(d), ['image.bin']);
     await assert.rejects(download({ ...pin, file: 'missing.bin', url: `${base}/nothing` }), /Couldn't download Debian from .*\/nothing: HTTP 404\.\nCheck the network, or put missing\.bin in /);
   } finally {
-    if (saved === undefined) delete process.env.WEBPC_DL; else process.env.WEBPC_DL = saved;
+    if (saved === undefined) delete process.env.WAARM64_DL; else process.env.WAARM64_DL = saved;
     server.close();
     rmSync(d, { recursive: true });
   }
@@ -138,7 +138,7 @@ const node = (args: string[], env: NodeJS.ProcessEnv) => spawnSync(process.execP
 test('the prerequisites: Node 26 and rustup, each said with how to get it', () => {
   const old = node(['--import', 'data:text/javascript,Object.defineProperty(process.versions, "node", { value: "22.12.0" })', 'tools/start.js'], process.env);
   assert.equal(old.status, 1);
-  assert.match(old.stderr, /webpc needs Node 26 or newer .* this is Node 22\.12\.0\.\nInstall it from https:\/\/nodejs\.org\//);
+  assert.match(old.stderr, /waarm64 needs Node 26 or newer .* this is Node 22\.12\.0\.\nInstall it from https:\/\/nodejs\.org\//);
   const home = tmp('home'); // a PATH with Node alone
   try {
     mkdirSync(join(home, 'bin'));
@@ -153,13 +153,13 @@ test('the prerequisites: Node 26 and rustup, each said with how to get it', () =
 
 // The run as a user makes it: the page waits for a disk; then, given this checkout's Debian as one (`?disk=`), up to the
 // machine's first output on the serial console (~5 s alone with npm's cache warm), gated like Debian's other page tests.
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const DEBIAN_DISK = 'target/images/debian/disk.qcow2';
 const cached = existsSync(join(ROOT, DEBIAN_DISK));
-const cold = process.env.WEBPC_START_COLD === '1';
+const cold = process.env.WAARM64_START_COLD === '1';
 test('npm start on a fresh copy of the repository: install, build, serve; the page waits for a disk, then boots one', {
-  skip: !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !cached ? 'SKIPPED: no Debian image to boot (run images/build.sh debian)'
-    : !cold && firmwareStale() && 'SKIPPED: no UEFI firmware (run images/build.sh edk2), or WEBPC_START_COLD=1 to build it in the copy',
+  skip: !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WAARM64_DISTROS=debian)' : !cached ? 'SKIPPED: no Debian image to boot (run images/build.sh debian)'
+    : !cold && firmwareStale() && 'SKIPPED: no UEFI firmware (run images/build.sh edk2), or WAARM64_START_COLD=1 to build it in the copy',
   timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for the other Debian page tests' boots (tests/debian-lock.ts)
 }, async () => {
   const d = tmp('clone');
@@ -188,7 +188,7 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
     mkdirSync(join(d, 'target/vk'), { recursive: true });
     for (const f of [VENUS, VENUS_LICENSES, VENUS + '.inputs']) copyFileSync(join(ROOT, f), join(d, f));
   }
-  const env = { ...process.env, PORT: '0', WEBPC_DL: downloads() };
+  const env = { ...process.env, PORT: '0', WAARM64_DL: downloads() };
   const start = performance.now();
   let served = 0;
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'tools/start.js'], { cwd: d, env, stdio: ['ignore', 'pipe', 'pipe'] });

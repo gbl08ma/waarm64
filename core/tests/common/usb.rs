@@ -4,8 +4,8 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
-use webpc_core::vm::{SIGNAL_DEVICE, Vm};
-use webpc_core::xhci::{
+use waarm64_core::vm::{SIGNAL_DEVICE, Vm};
+use waarm64_core::xhci::{
     CONNECTORS, CPL_ATTACH, CPL_DETACH, CPL_DONE, REQ_CANCEL, REQ_CLEAR_HALT, REQ_CONFIGURED,
     REQ_RESET, REQ_TRANSFER, SEG_IMMEDIATE, SEG_MEM_SHIFT, XhciShared,
 };
@@ -149,7 +149,7 @@ impl GadgetZero {
             b
         });
         let strings = [
-            "webpc",
+            "waarm64",
             "Gadget Zero",
             "0123456789",
             "source and sink data",
@@ -623,7 +623,7 @@ impl UsbHost {
 fn read(vm: &Vm, pa: u64, len: u32) -> Vec<u8> {
     let p = vm
         .mem
-        .host(pa, len as u64, webpc_core::mem::Access::Read)
+        .host(pa, len as u64, waarm64_core::mem::Access::Read)
         .map(|h| vm.mem.native_ptr(h))
         .unwrap();
     // SAFETY: host() checked the range is guest RAM.
@@ -633,7 +633,7 @@ fn read(vm: &Vm, pa: u64, len: u32) -> Vec<u8> {
 fn write(vm: &Vm, pa: u64, b: &[u8]) {
     let p = vm
         .mem
-        .host(pa, b.len() as u64, webpc_core::mem::Access::Write)
+        .host(pa, b.len() as u64, waarm64_core::mem::Access::Write)
         .map(|h| vm.mem.native_ptr(h))
         .unwrap();
     // SAFETY: host() checked the range is guest RAM.

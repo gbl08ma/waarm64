@@ -1,15 +1,15 @@
 # NET: the local network helper — handover
 
 The plan and its decisions: [docs/plans/networking-local.md](docs/plans/networking-local.md) (§1 binds). The helper's
-own docs: README.md, CLAUDE.md and THIRD_PARTY.md in its repository, `github.com/gbl08ma/webpc-net` (private for now;
-checked out at `../webpc-net` in the dev VM). There's no kickoff file: the user's brief is the plan, with the changes
+own docs: README.md, CLAUDE.md and THIRD_PARTY.md in its repository, `github.com/gbl08ma/waarm64-net` (private for now;
+checked out at `../waarm64-net` in the dev VM). There's no kickoff file: the user's brief is the plan, with the changes
 of 2026-11-01 below.
 
 ## The user's changes to the plan (2026-11-01)
 
-- The helper lived in `net/webpc-net/` here during early development; **it moved to `gbl08ma/webpc-net` on
-  2026-11-02** (history kept). Its releases are its own GitHub Actions', separate from webpc's deploy (the user's,
-  2026-11-02); webpc's tests build it at a pinned commit (`tests/webpc-net.ts`, the user's choice), and a release is
+- The helper lived in `net/waarm64-net/` here during early development; **it moved to `gbl08ma/waarm64-net` on
+  2026-11-02** (history kept). Its releases are its own GitHub Actions', separate from waarm64's deploy (the user's,
+  2026-11-02); waarm64's tests build it at a pinned commit (`tests/waarm64-net.ts`, the user's choice), and a release is
   published as soon as its two runners' builds match (no draft).
 - **IPv6** through gvisor-tap-vsock's unmerged [#745](https://github.com/containers/gvisor-tap-vsock/pull/745),
   taken by a `replace` to evidolob's fork at one commit (the user chose this over a fork of ours or vendoring).
@@ -24,7 +24,7 @@ check in the dev VM 2026-11-02). **L2 is done** (2026-11-02): the user kept the 
 protocol's sake (65520 stays a flag: about 1.7× down and 1.6× up, bench/net/REPORT.md "The stalled uploads"); L2's CI
 passed in the dev VM on 2026-11-02, and the helper's build matches the x86_64 sums on aarch64.
 
-**The move is done** (2026-11-02): `github.com/gbl08ma/webpc-net` with `ci.yml` (vet and `-race` tests, ~2 min, on
+**The move is done** (2026-11-02): `github.com/gbl08ma/waarm64-net` with `ci.yml` (vet and `-race` tests, ~2 min, on
 pushes touching code) and `release.yml` (~3 min on each of two runners). **v0.1.0 was released** (from commit
 `cf1c15b`) and the page's wizard offers its install
 lines (`web/local-release.ts`). Not deployed. The lines download from a private repository until the user makes it
@@ -55,7 +55,7 @@ machines (the user's idea, low priority).
 
 ## Next
 
-1. **L4, with the user:** the deploy (the wizard offers v0.1.0's install lines) and making `gbl08ma/webpc-net` public;
+1. **L4, with the user:** the deploy (the wizard offers v0.1.0's install lines) and making `gbl08ma/waarm64-net` public;
    then run the install lines against the real release on Linux, the Mac and, if one is at hand, Windows
    (backlog.md "The local helper's loose ends").
 2. At the track's end: the plan's outcome is docs/networking/local-helper.md already; delete this handover, mark the plan done.

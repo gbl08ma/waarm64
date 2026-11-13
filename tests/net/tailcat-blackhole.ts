@@ -2,7 +2,7 @@
 // path dying without a word: the WebSocket stays open, and nothing passes either way (a laptop that slept, a network
 // that changed). The guest keeps sending UDP echoes to this machine through the exit node; the client must notice
 // (derp.rs "Liveness") and reconnect. Prints one JSON line: how long the echoes stopped, the WebSockets opened.
-// Usage: NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA node tests/net/tailcat-blackhole.ts <tc… address>
+// Usage: NODE_EXTRA_CA_CERTS=$WAARM64_TAILCAT_CA node tests/net/tailcat-blackhole.ts <tc… address>
 // (tests/ts-tailcat.test.ts runs it).
 import { createSocket } from 'node:dgram';
 import { readFileSync } from 'node:fs';

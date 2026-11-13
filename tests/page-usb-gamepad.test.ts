@@ -4,7 +4,7 @@
 // pad, a wired Xbox 360 controller, and the guest's xpad makes it an evdev game pad with the codes of Linux's game pad
 // convention (BTN_A…BTN_THUMBR, the hat, the sticks and triggers) and force feedback; the fake pad's buttons, sticks,
 // trigger and D-pad reach /dev/input as those codes; a rumble effect played in the guest plays on the fake pad; the
-// pad going away unplugs it. Opt-in with WEBPC_DISTROS=debian (scripts/ci-debian.sh --platform); ~1 min.
+// pad going away unplugs it. Opt-in with WAARM64_DISTROS=debian (scripts/ci-debian.sh --platform); ~1 min.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -16,10 +16,10 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WEBPC_DISTROS=debian)'
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WAARM64_DISTROS=debian)'
   : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 
 let browser: Browser;

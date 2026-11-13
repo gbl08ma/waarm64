@@ -5,7 +5,7 @@
 // checked here: a refused write of its own (journald's) aborts ext4's journal at times, and the root filesystem then
 // fails everything not cached (EIO) until a restart; tests/devices.test.ts checks the telling again. `estimate()`
 // doesn't report the override (it still says the profile's quota), so only the words are checked, not the numbers. The remote
-// disk's block cache is off (`diskcache=0`): the quota is the overlay's. Opt-in with WEBPC_DISTROS=debian
+// disk's block cache is off (`diskcache=0`): the quota is the overlay's. Opt-in with WAARM64_DISTROS=debian
 // (scripts/ci-machines.sh); one Debian boot.
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -19,10 +19,10 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { words } from './words.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 /** The origin's quota: room for a boot's writes (and the variable store), not for the guest's 1 GiB file. */
 const QUOTA = 512 << 20;
@@ -35,7 +35,7 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  dir = mkdtempSync(join(tmpdir(), 'webpc-quota-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-quota-'));
 });
 after(() => { close?.(); if (dir) rmSync(dir, { recursive: true }); });
 

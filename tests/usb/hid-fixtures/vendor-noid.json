@@ -1,6 +1,6 @@
 {
  "id": "vendor-noid",
- "name": "webpc vendor HID without report IDs",
+ "name": "waarm64 vendor HID without report IDs",
  "vendorId": 4617,
  "productId": 1,
  "note": "ours: a QMK/VIA-style raw HID collection, no report IDs",

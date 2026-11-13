@@ -51,7 +51,7 @@ fn the_gpu_guest_draws_and_follows_a_display_event() {
         "gpu: cursor set and moved\n",
         "gpu: preferred now 800x600,",
         "gpu: mode set 800x600\n",
-        "webpc: gpu test ok\n",
+        "waarm64: gpu test ok\n",
     ] {
         assert!(r.console.contains(want), "missing {want:?}");
     }

@@ -11,8 +11,8 @@
 
 mod common;
 
-use webpc_core::mem::Mem;
-use webpc_core::vm::{RAM_BASE, Vm, VmConfig, exit};
+use waarm64_core::mem::Mem;
+use waarm64_core::vm::{RAM_BASE, Vm, VmConfig, exit};
 
 const RAM_SIZE: usize = 16 << 20;
 const BUDGET: u64 = 50_000_000;
@@ -65,14 +65,14 @@ fn boot_mode(
     // The crypto extensions, as the hosts give them by default (M6.5 loop 7); not FEAT_RNG and
     // FEAT_E0PD, which the hosts also give: `exceptions` checks the ID registers without them.
     let cfg = VmConfig {
-        features: webpc_core::cpu::FEATURE_CRYPTO,
+        features: waarm64_core::cpu::FEATURE_CRYPTO,
         ncpus,
         deterministic: !parallel as u64,
         smp: parallel as u64,
         firmware: flash as u64,
         flash_size: if flash { 1 << 20 } else { 0 },
         rtc: if flash { common::FIRMWARE_EPOCH_MS } else { 0 },
-        jit: std::env::var("WEBPC_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
+        jit: std::env::var("WAARM64_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
         ..VmConfig::default()
     };
     let mut vm = Vm::new(mem, cfg);
@@ -148,7 +148,7 @@ fn boot_mode(
                 for &b in input.take().unwrap() {
                     assert!(vm.shared.console.rx.push(b), "input over the RX ring");
                 }
-                vm.signal(webpc_core::vm::SIGNAL_RX);
+                vm.signal(waarm64_core::vm::SIGNAL_RX);
             }
             exit::PSCI if vm.exit.x[0] == 0x8400_0008 => return Ok((vm.exit.x[1], out())),
             _ => {
@@ -248,7 +248,7 @@ fn window_watch() {
         // SAFETY: both are 16-byte aligned, as long as RAM and memory 1, and outlive the Vm.
         let mem = unsafe {
             Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64).with_window(
-                webpc_core::mem::Spill {
+                waarm64_core::mem::Spill {
                     phys: RAM_BASE + RAM_SIZE as u64,
                     size: window,
                     off: window_at,
@@ -344,7 +344,7 @@ fn baremetal() {
 
 /// Every test again with the VM saved and restored into a new one every
 /// [`slice`] steps (M8 phase C): round-robin, where the guest can't tell, and
-/// in parallel (`WEBPC_PARALLEL_RUNS` times, default 2).
+/// in parallel (`WAARM64_PARALLEL_RUNS` times, default 2).
 #[test]
 fn baremetal_through_snapshots() {
     run_all(false, 1, true);
@@ -352,15 +352,15 @@ fn baremetal_through_snapshots() {
 
 #[test]
 fn baremetal_parallel_through_snapshots() {
-    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
+    let runs = std::env::var("WAARM64_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
     run_all(true, runs, true);
 }
 
-/// Every test in parallel SMP (a thread per vCPU), `WEBPC_PARALLEL_RUNS`
+/// Every test in parallel SMP (a thread per vCPU), `WAARM64_PARALLEL_RUNS`
 /// times (default 5).
 #[test]
 fn baremetal_parallel() {
-    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(5, |v| v.parse().unwrap());
+    let runs = std::env::var("WAARM64_PARALLEL_RUNS").map_or(5, |v| v.parse().unwrap());
     run_all(true, runs, false);
 }
 

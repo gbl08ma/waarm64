@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { bootVm, Counter, Exit } from '../web/vm.ts';
 
-const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const wasm = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const kernel = readFileSync(new URL('baremetal/watch.bin', import.meta.url));
 const range = (a: number, b: number) => Array.from({ length: b - a }, (_, k) => a + k);
 // Phase 6 overflows a vCPU's 64 records; phase 7 is wide, pair and vector stores across pages, DC ZVA and the rest.

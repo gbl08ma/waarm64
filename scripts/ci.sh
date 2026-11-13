@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # What every change runs (~6 min); works the same locally. CHROMIUM overrides the browser binary.
 # docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
-# alpine-uefi run when their images are current; WEBPC_DISTROS (a comma list) overrides which
+# alpine-uefi run when their images are current; WAARM64_DISTROS (a comma list) overrides which
 # ones. The Debian page boots are scripts/ci-debian.sh's, graphics' scripts/ci-graphics.sh's, the network
 # tests on Debian scripts/ci-net.sh's, the JIT's JIT-stress and JIT-check variants scripts/ci-jit.sh's. The heaviest
-# multi-vCPU runs (WEBPC_LONG_TESTS) are on.
+# multi-vCPU runs (WAARM64_LONG_TESTS) are on.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
@@ -28,8 +28,8 @@ step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
 step third-party; node --disable-warning=ExperimentalWarning tools/third-party.ts
 step harness imports; node --disable-warning=ExperimentalWarning tools/harness-imports.ts
 current() { images/build.sh --check "$1" > /dev/null; }
-export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current alpine-uefi && echo ,alpine-uefi)}
-export WEBPC_LONG_TESTS=${WEBPC_LONG_TESTS-1}
+export WAARM64_DISTROS=${WAARM64_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current alpine-uefi && echo ,alpine-uefi)}
+export WAARM64_LONG_TESTS=${WAARM64_LONG_TESTS-1}
 # Guest-image tests: run when target/images has the images (a space-separated
 # list) and they're current.
 image_test() {
@@ -53,7 +53,7 @@ native() {
   image_test 'gpu guest' linux-gpu gpu_guest
   image_test 'snd guest' linux-snd snd_guest
   image_test 'usb guest' linux-usb usb_guest
-  if [[ ",$WEBPC_DISTROS," == *",alpine,"* ]]; then image_test "alpine boot" alpine distros alpine; else step "alpine boot: SKIPPED (not in WEBPC_DISTROS)"; fi
+  if [[ ",$WAARM64_DISTROS," == *",alpine,"* ]]; then image_test "alpine boot" alpine distros alpine; else step "alpine boot: SKIPPED (not in WAARM64_DISTROS)"; fi
 }
 # The native guest-image tests (~130 s) run beside the JS tests, which spend much of their time
 # waiting on realtime guests and the Debian lock; their output follows the JS tests'.

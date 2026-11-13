@@ -72,7 +72,7 @@
     const file = await (await (await opfsDir(path.slice(0, slash))).getFileHandle(path.slice(slash + 1))).getFile();
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(file),
-      download: `${s.name.replace(/[^\w.-]+/g, '-')}.webpcsnap`,
+      download: `${s.name.replace(/[^\w.-]+/g, '-')}.waarm64snap`,
     });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
@@ -211,7 +211,7 @@
       >
       <input
         type="file"
-        accept=".webpcsnap"
+        accept=".waarm64snap"
         hidden
         bind:this={importInput}
         onchange={imported}

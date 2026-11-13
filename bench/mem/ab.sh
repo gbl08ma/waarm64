@@ -2,7 +2,7 @@
 # A/B of the byte budget: alternates two builds of the core (copies at $A and $B) over the same benchmark.
 # usage: bench/mem/ab.sh <bench> <pairs> <A.wasm> <B.wasm> <outprefix>
 set -e
-W=target/wasm32-unknown-unknown/release/webpc_core.wasm
+W=target/wasm32-unknown-unknown/release/waarm64_core.wasm
 for i in $(seq 1 "$2"); do
   for v in A B; do
     if [ $v = A ]; then cp "$3" $W; else cp "$4" $W; fi

@@ -14,10 +14,10 @@ pub const TABLES: &str = "etc/smbios/smbios-tables";
 /// credentials the page gives a machine (web/app/keyboard.ts). The core takes
 /// it out of fw_cfg and lists its strings in type 11; a credential's name and
 /// contents don't fit fw_cfg's 56-byte file names there.
-pub const OEM_STRINGS: &str = "opt/webpc/oem-strings";
+pub const OEM_STRINGS: &str = "opt/waarm64/oem-strings";
 
 /// What the tables call the machine and its maker.
-const VENDOR: &str = "webpc";
+const VENDOR: &str = "waarm64";
 
 /// Type 11's string with spill memories: `systemd-sysctl` reads the
 /// credential `sysctl.extra` (systemd 252+).
@@ -225,11 +225,11 @@ mod tests {
                 (127, 4)
             ]
         );
-        assert_eq!(w[1].2, ["webpc", "webpc", "Virtual Machine"]);
+        assert_eq!(w[1].2, ["waarm64", "waarm64", "Virtual Machine"]);
         // The processor: 4 cores, multi-core; the memory: 2 GiB at RAM_BASE.
         let p = w[3].3;
         assert_eq!(&t[p + 0x23..p + 0x28], &[4, 4, 4, 0x0c, 0]);
-        assert_eq!(w[5].2, ["DIMM 0", "webpc"]);
+        assert_eq!(w[5].2, ["DIMM 0", "waarm64"]);
         let d = w[5].3;
         assert_eq!(u16::from_le_bytes([t[d + 0xc], t[d + 0xd]]), 2048);
         let m = w[6].3;

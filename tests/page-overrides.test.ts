@@ -41,7 +41,7 @@ const inStore = <T>(page: Page, f: string, a: unknown) => page.evaluate(async ({
 }, { f, a }) as Promise<T>;
 
 test('the address over a stored machine: its snapshot has the shape it ran with, restores there, and is orphaned without it', { timeout: 180_000 }, async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-overrides-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-overrides-'));
   const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   profile = { dir, context };
   const page = context.pages()[0] ?? await context.newPage();

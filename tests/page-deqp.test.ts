@@ -1,10 +1,10 @@
 // dEQP on the page (docs/testing.md "dEQP"): GLES2's and GLES3's pass lists (tests/deqp/<api>.txt: cases that pass
 // on the page today, every one expected to pass) through bench/gpu/deqp-run.ts, on the guest images/deqp/build.sh makes
 // (target/deqp/guest.qcow2: Arch Linux with Mesa's virgl driver; dEQP on target/deqp/deqp.ext4). A machine per API,
-// both at once. Opt-in with WEBPC_DEQP=1 (scripts/ci-deqp.sh).
-// The lists are sampled unless WEBPC_DEQP_FULL=1 (`ci-deqp.sh --full`): every STRIDE-th case of each group (the name's
+// both at once. Opt-in with WAARM64_DEQP=1 (scripts/ci-deqp.sh).
+// The lists are sampled unless WAARM64_DEQP_FULL=1 (`ci-deqp.sh --full`): every STRIDE-th case of each group (the name's
 // second to fourth parts) from an offset of its own drawn from a seed, at least one a group, in the list's order, so
-// runs together cover the lists; the seed is printed, and WEBPC_DEQP_SEED=<n> runs that sample again. A case that
+// runs together cover the lists; the seed is printed, and WAARM64_DEQP_SEED=<n> runs that sample again. A case that
 // fails in a sample is looked into at once, or filed in docs/backlog.md and taken out of the list.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -15,16 +15,16 @@ import { suite, test } from 'node:test';
 import { cases as listCases, sample, seedFrom } from './deqp-lists.ts';
 
 const root = new URL('..', import.meta.url).pathname;
-const skip = process.env.WEBPC_DEQP !== '1' ? 'SKIPPED: scripts/ci-deqp.sh runs it (WEBPC_DEQP=1)' : false;
+const skip = process.env.WAARM64_DEQP !== '1' ? 'SKIPPED: scripts/ci-deqp.sh runs it (WAARM64_DEQP=1)' : false;
 
-const FULL = process.env.WEBPC_DEQP_FULL === '1';
+const FULL = process.env.WAARM64_DEQP_FULL === '1';
 const STRIDE = 8;
-const SEED = seedFrom(process.env.WEBPC_DEQP_SEED);
+const SEED = seedFrom(process.env.WAARM64_DEQP_SEED);
 // dEQP processes a machine runs at once, the list dealt to them in blocks of 16 cases (bench/gpu/deqp-run.ts JOBS,
 // JOBS_BLOCK: contiguous quarters left GLES3's slow precision group to one; the guest has 4 vCPUs): one waits on the device for much of a case. A 448-case GLES3 slice took 48 s at 1, 30 s at 2, 27 s at 4
 // (2026-11-09); more processes at once also put the renderer's contexts side by side, which one process never does.
-// WEBPC_DEQP_JOBS says otherwise.
-const JOBS = Number(process.env.WEBPC_DEQP_JOBS ?? 4);
+// WAARM64_DEQP_JOBS says otherwise.
+const JOBS = Number(process.env.WAARM64_DEQP_JOBS ?? 4);
 // The seconds dEQP may run a list: ~3 times what it takes at 4 processes (~0.06 s a case on the dev VM's SwiftShader)
 // and a minute, so a hung device (every later fence held: the guest waits for good) fails the test in minutes, with
 // the guest's serial log kept.
@@ -58,10 +58,10 @@ suite('dEQP on the page', { concurrency: 2 }, () => {
     const cases = FULL ? all : sample(all, STRIDE, SEED);
     const limitS = limit(cases.length);
     test(`dEQP-${api.toUpperCase()}'s pass list passes on the page`, { skip, timeout: (limitS + 360) * 1000 }, async (t) => {
-      const which = FULL ? `all ${cases.length}` : `a sample of ${cases.length} of ${all.length} (WEBPC_DEQP_SEED=${SEED})`;
+      const which = FULL ? `all ${cases.length}` : `a sample of ${cases.length} of ${all.length} (WAARM64_DEQP_SEED=${SEED})`;
       t.diagnostic(which);
       console.log(`dEQP-${api.toUpperCase()}: ${which}`);
-      const out = mkdtempSync(join(tmpdir(), `webpc-deqp-${api}-`));
+      const out = mkdtempSync(join(tmpdir(), `waarm64-deqp-${api}-`));
       let passed = false;
       try {
         const file = join(out, 'cases.txt');

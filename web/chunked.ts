@@ -7,7 +7,7 @@
 import type { Source } from './devices.ts';
 import { MsgError } from './msg.ts';
 
-export const CHUNKED_FORMAT = 'webpc-chunked-1';
+export const CHUNKED_FORMAT = 'waarm64-chunked-1';
 
 export type Manifest = {
   format: typeof CHUNKED_FORMAT;

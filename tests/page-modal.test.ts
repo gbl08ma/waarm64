@@ -10,7 +10,7 @@ import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
 import { words } from './words.ts';
 
-const DEMO = { format: 'webpc-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: 'demo' };
+const DEMO = { format: 'waarm64-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: 'demo' };
 let browser: Browser;
 let base: string;
 let close: () => void;
@@ -604,7 +604,7 @@ test("the storage footer shows Vulkan's shader store and clears it; Preferences 
   const budget = modal(page).locator('[data-field=shader-budget]');
   assert.equal(await budget.inputValue(), '32');
   await budget.selectOption('64');
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').shaderMiB), 64);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}').shaderMiB), 64);
   await context.close();
 });
 

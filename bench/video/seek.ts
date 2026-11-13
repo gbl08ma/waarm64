@@ -1,5 +1,5 @@
 // Seeking with the host decoding the guest's video (docs/graphics.md "Video's findings"; dev-only, not in tests): the desktop guest
-// (images/arch/desktop.sh, with webpc-va) on the page, the clips on bench/video/media-disk.sh's disk.
+// (images/arch/desktop.sh, with waarm64-va) on the page, the clips on bench/video/media-disk.sh's disk.
 //   1. The guest's FFmpeg jumps within one decoder: the concat demuxer's in and out points on the same file (each
 //      segment starts at the key picture before its in point, so the decoder gets a new key picture where the guest's
 //      stream jumps), the list looped once (the loop is a seek to its start, which flushes the decoder). Decoded in
@@ -59,7 +59,7 @@ const delta = (a: Awaited<ReturnType<typeof video>>, b: typeof a) => ({ frames: 
 // The page Firefox runs (paste-safe: no tabs, no `$` the shell's heredoc would expand).
 const SEEK_HTML = String.raw`<!doctype html>
 <meta charset="utf-8">
-<title>webpc seek</title>
+<title>waarm64 seek</title>
 <style>html, body { margin: 0; height: 100%; background: #000; overflow: hidden } video { width: 100%; height: 100%; object-fit: contain }</style>
 <video id="v" muted playsinline></video>
 <script src="seekref.js"></script>

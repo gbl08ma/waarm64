@@ -4,7 +4,7 @@
 # of the Cpu, TLB or memory) and at the end of a JIT track. JIT-stress (a code cache of 4 blocks: the bare-metal tests,
 # kvm-unit-tests' cache and debug, the golden corpus, lockstep) and JIT-check (every block compiled on sight with
 # the stale-code checker: the parallel bare-metal tests and the litmus and atomics stress on 4 vCPUs); scripts/ci.sh
-# keeps the plain JIT's runs, the default path. ~2 min, alone (the litmus run takes 4 vCPUs). WEBPC_JIT_STRESS=1 adds
+# keeps the plain JIT's runs, the default path. ~2 min, alone (the litmus run takes 4 vCPUs). WAARM64_JIT_STRESS=1 adds
 # JIT-stress for the guests that skip it (Buildroot's, litmus). Needs the images the tests name (they skip without);
 # builds the wasm core.
 set -euo pipefail
@@ -13,7 +13,7 @@ step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 
 step 'wasm core'
 scripts/build-wasm.sh -q
-export WEBPC_JIT_VARIANTS=1 WEBPC_LONG_TESTS=1
+export WAARM64_JIT_VARIANTS=1 WAARM64_LONG_TESTS=1
 step 'JIT-stress and JIT-check'
 # JIT-stress runs compare with their interpreter run: those of the short guests come too.
 node --disable-warning=ExperimentalWarning --test --test-name-pattern='JIT-stress|JIT-check|JIT stress' \

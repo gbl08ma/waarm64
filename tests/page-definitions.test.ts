@@ -20,7 +20,7 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  dir = mkdtempSync(join(tmpdir(), 'webpc-def-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-def-'));
 });
 after(async () => { close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
@@ -64,7 +64,7 @@ test('a definition exported from one profile and imported into another: the same
     return { def: JSON.stringify(def), hash: shape.hash };
   });
   await a.close();
-  const defFile = join(dir, 'Portable.webpc-machine.json');
+  const defFile = join(dir, 'Portable.waarm64-machine.json');
   writeFileSync(defFile, out.def);
   const def = JSON.parse(out.def);
   assert.deepEqual(def.disks.map((d: { kind: string }) => d.kind), ['url', 'file', 'blank', 'ramdisk']);

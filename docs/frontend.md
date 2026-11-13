@@ -98,7 +98,7 @@ worker failure (`no3d`, which a switch clears): as that machine would run once o
   booted through UEFI** (M8 phase B: EDK2's `QEMU_EFI.fd` as the machine's `firmware`, then shim
   and GRUB from the disk: docs/firmware.md; below, "Debian through UEFI"), under the JIT,
   realtime, a worker per vCPU; 1 GiB; a 1024×768 framebuffer; rng, the disk (virtio-blk over HTTP
-  ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet, the display, a sound card
+  ranges, writable through the OPFS overlay `waarm64-debian`), keyboard, tablet, the display, a sound card
   (virtio-snd, below "Sound"; every page machine has one). No virtio-console
   (it would only add an output-only `hvc0` getty) and, by default, no network card: the Network menu (below) adds one. Its command line is GRUB's
   (`root=PARTUUID=… ro`; the old direct boot's is in [images.md](images.md) "Debian for interaction"). vCPUs: `min(4, cores − 2)` (the page and the
@@ -113,7 +113,7 @@ worker failure (`no3d`, which a switch clears): as that machine would run once o
   where the questions are ([Show serial console](ui:common:BootCard.serial.show) opens the serial view). Tests pass them over fw_cfg
   (`tests/debian-unattended.ts`: `login.noauth`, `firstboot.*`, an empty root password).
 - **`buildroot`**, the test guest: `-- /bin/sh` on the serial console, 256 MiB, a 640×480
-  framebuffer that stays black (its kernel has no fbcon), the overlay `webpc-buildroot` (mounted
+  framebuffer that stays black (its kernel has no fbcon), the overlay `waarm64-buildroot` (mounted
   read-only; it's there so restarts hand an overlay over). Up in under a second.
 - **`snd`**, the sound test guest (`images/build.sh linux-snd`, audio S2): its init plays a 440/660 Hz tone through
   virtio-snd for `?params=snd_seconds=N` (1.024 s without) and powers off. No disk (a machine without `disk` has no
@@ -126,7 +126,7 @@ dev server (decision 7).
 ## Machines in the browser
 
 The model, its rules and why ([machines.md](machines.md)); here, what the page does with it.
-- **Records** (`web/app/store.ts`): IndexedDB `webpc` has `machines`, `disks`, `overlays`, `snapshots` and `connections` (version 2; the network's, below), keyed by
+- **Records** (`web/app/store.ts`): IndexedDB `waarm64` has `machines`, `disks`, `overlays`, `snapshots` and `connections` (version 2; the network's, below), keyed by
   a 12-hex-digit id; their bytes are in OPFS: `overlays/<id>/` (`data`, `map`, `meta`, `base`), `disks/<id>/` (a
   stored disk, the same block store), `machines/<id>/` (`flash`, the firmware's variable store: the machine's,
   so an install's boot entries stay with it; `suspend`; `snapshots/<id>`). A record is written after its bytes and
@@ -137,7 +137,7 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   to 16 attachments in slot order: a disk, read-only or not, the overlay chosen, written in place (a stored disk).
   Its transports are the other devices first (rng, keyboard, tablet, net, gpu, snd, then the mouse and the
   touchscreen where it has them), then the disks
-  (`shape.ts` `slots`); a disk's serial is its attachment's (`webpc-<id>`: `/dev/disk/by-id/virtio-webpc-…`).
+  (`shape.ts` `slots`); a disk's serial is its attachment's (`waarm64-<id>`: `/dev/disk/by-id/virtio-waarm64-…`).
 - **The shape** (`shapeOf`, `shapeHash`): what the guest sees (vCPUs, RAM, display, CPU features, devices, each
   disk's size, read-only flag, serial and base identity), canonical JSON hashed with SHA-256; names, the overlay
   chosen and writing in place aren't in it.
@@ -159,7 +159,7 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   rename, switch, delete (refused while a machine has it open: its Web Lock), export (changes only, or the whole
   disk), Import changes… into a new one. A stored disk can take one **in place** (merge: the disk's other overlays are
   deleted, the confirmation lists them first) and can be **written in place** (no overlay; its own generation moves).
-- **Definitions** (`web/app/definitions.ts`): Export the definition writes `<name>.webpc-machine.json` (`webpc-machine`,
+- **Definitions** (`web/app/definitions.ts`): Export the definition writes `<name>.waarm64-machine.json` (`waarm64-machine`,
   version 1: the settings, and per attachment the disk's kind, name, size, identity, URL, hash where known, read-only,
   in place, serial; no handles, overlays, snapshots or contents). Import a definition… makes a new machine (the name
   made unique, the same shape): a disk the browser has by identity is attached again, URL, blank and ramdisk disks
@@ -334,7 +334,7 @@ the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new 
 ### The status bar
 
 The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesNav.preferences)** (the Machines page),
-kept per browser as `webpc.settings` `statusBar` (absent: the defaults; `[]`: no bar). The model is DOM-free
+kept per browser as `waarm64.settings` `statusBar` (absent: the defaults; `[]`: no bar). The model is DOM-free
 (tests/statusbar.test.ts): `web/app/statusbar-kinds.ts` the kinds (`KINDS`: name, group, icon, default look),
 `statusbar.ts` the elements (the defaults: power state, a divider, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s;
 `normalize`, a kept list from another version: unknown kinds and fields dropped; names and the palette),
@@ -471,15 +471,15 @@ network from then on); while Vulkan's translated shaders are kept, **[Clear Vulk
 
 ### About
 
-**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is webpc's own: a link to its
+**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: a link to its
 repository (`package.json`'s `repository`), the version it was built from (the tag on the commit when one was cut, with
 the commit; otherwise the commit; "with local changes" when tracked files differed), that commit's date (the console's
-line has the same: below, "A static copy"), webpc's license, and **[Third-party software](ui:machines:About.thirdParty)**: a table per part
+line has the same: below, "A static copy"), waarm64's license, and **[Third-party software](ui:machines:About.thirdParty)**: a table per part
 of the web app (the interface, the emulator, OpenGL's and Vulkan's renderers, networking, the UEFI firmware) of the
 projects built into it or whose code ours is derived from, each with its version, its license (SPDX) and links to its
 license texts at that version, and under a table the license file served beside the page that holds them all
 (`EDK2-LICENSES.txt`, `VENUS-LICENSES.txt`, `THIRD-PARTY-LICENSES.md`). The rows are `THIRD_PARTY.json`'s marked
-`about`, which Vite gives the page as `virtual:webpc-about` at build time, nothing else of that file
+`about`, which Vite gives the page as `virtual:waarm64-about` at build time, nothing else of that file
 ([third-party.md](third-party.md)). A link to another site opens in a new tab with `rel="external nofollow noopener
 noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 
@@ -621,19 +621,19 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   (state `idle`, "[Not started](ui:machine:messages.state.idle)") and offers **[Start anyway](ui:machine:memory-signal.memory.start)**, naming a vCPU count that fits if one
   does. A device that reports 4 GB or more runs Debian's default on up to 4 vCPUs.
 - **A tab that went away with its machine running** (the memory signal, `web/app/memory.ts`; [jit.md](jit.md) "The
-  page's memory signal"): while a machine runs, the page keeps a mark of it in `localStorage` (`webpc.alive.<stored
-  machine's id>`, or `webpc.alive.transient-<machine>`) with its RAM, vCPUs, JIT budget and what it costs by the
+  page's memory signal"): while a machine runs, the page keeps a mark of it in `localStorage` (`waarm64.alive.<stored
+  machine's id>`, or `waarm64.alive.transient-<machine>`) with its RAM, vCPUs, JIT budget and what it costs by the
   emulator's own accounting (the estimate and its peak), renewed every 10 s and cleared at every clean stop. A mark
   that no tab has renewed for 30 s means the tab was closed for it, most likely out of memory: the next start of that
   machine (state `idle`; the page's first start, or the machine opened from the Machines page or by a disk file:
   `PowerActions.startOpened`, which also makes the memory check above) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
   or less), **Start with N MiB of RAM** (half or less; a stored machine's snapshots of the old size are orphaned, so
   it asks first) and **[Start as it is](ui:machine:memory-signal.crashed.asIs)**. The choice is saved in the stored machine's record, or for a transient
-  machine in `webpc.settings` (`jitMiB`, `ramMiB`), and the address's own size for it (`?ram=`, `?split=`,
+  machine in `waarm64.settings` (`jitMiB`, `ramMiB`), and the address's own size for it (`?ram=`, `?split=`,
   `?jitmb=`) goes, as it would win over the choice; the mark goes once the choice is made (a Cancel keeps it). While it runs, past what `navigator.deviceMemory` reports the
   machine worker caps the JIT cache at what it holds (it flushes there).
 - Another browser than Chromium (no `Chromium` brand in `navigator.userAgentData`): a standing
-  note that webpc is developed and tested in Chromium; nothing else changes.
+  note that waarm64 is developed and tested in Chromium; nothing else changes.
 
 From the machine worker, as `problem`:
 
@@ -651,7 +651,7 @@ From the machine worker, as `problem`:
 Retry and Restart start a new machine worker. The failed states (`failed`) make the toolbar's
 Start button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
 output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) and Save (a
-`webpc-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.
+`waarm64-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.
 
 ## Snapshots
 
@@ -661,7 +661,7 @@ machinery: [platform.md](platform.md) "Snapshots" and "The snapshot file").
 **[Snapshot](ui:toolbar:Toolbar.snapshot)** (the toolbar, enabled while the state is `running` or `booting`; a transient machine's goes to a file, a
 stored machine's is kept: below, "A stored machine's snapshots"): the picker first
 (`showSaveFilePicker`, which needs the click's user activation; suggested name
-`<machine>-<yyyy-mm-dd-hhmm>.webpcsnap`), else a Blob download, as a disk's Export does. No confirmation:
+`<machine>-<yyyy-mm-dd-hhmm>.waarm64snap`), else a Blob download, as a disk's Export does. No confirmation:
 the machine isn't stopped. One exception, asked before the picker (its OK is the click the picker needs): a machine
 whose 3D state would add 64 MiB or more (the GPU worker's count of its resources' bytes, before compression:
 `VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md "Snapshots with 3D in use"); the
@@ -679,7 +679,7 @@ disk and Import changes say to wait. The run loop is not disturbed by the pause
 (`runAsync` keeps returning `BUDGET`), the status timer and the flash keeper only read.
 
 **Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
-file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WEBPCSNP`). The page reads the
+file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the
 header (`openSnapshot` without a codec) before it asks anything, and refuses at once, with the
 machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another
 machine (`?machine=` differs), and one taken on another disk by name (the header's `disk`, for a
@@ -855,7 +855,7 @@ supported in this Worker"). **Where the browser has WebGL2 on a GPU** the rectan
 a texture and the scanout is drawn through the format's swizzle (the 3D machine's `Screen`, `web/virgl-screen.ts`; a
 lost context is drawn again when it comes back); elsewhere, software WebGL included (SwiftShader: every present on
 the CPU), it is an `ImageData` over the device's RGBA copy on a 2D context (bench/gpu/REPORT.md "A 2D machine on
-WebGL2"). The console says which (`webpc: the 2D screen on WebGL2`); `?gpu=gl2d` and `?gpu=canvas2d` choose.
+WebGL2"). The console says which (`waarm64: the 2D screen on WebGL2`); `?gpu=gl2d` and `?gpu=canvas2d` choose.
 The page's main thread still has no per-frame work. The canvas takes the scanout's size, and the page
 refits its box when the display port says `mode` (the boot card hides at the first one). GRUB's menu is on the screen only (`gfxterm` takes the firmware's graphics output); **the firmware's keys** come
 from the built-in USB keyboard on a machine with the USB controller, and from the serial terminal on one without
@@ -881,7 +881,7 @@ settings, applied by a restart) turns it off; the query is over the menu: `?gpu=
 One function says what a machine runs with (web/app/run/config.ts `effectiveDisplay`: `none`, `2d` or `3d`, and Vulkan
 only beside 3D), for the start, its snapshots' shape (`PageMachine.display()`, a call: the GPU worker's `failed` turns
 3D off for the next start) and the Snapshots lists' (`shapeNow`).
-A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `webpc-shaders` (the origin's, for every machine, deflated, under the Preferences' [Space for Vulkan's shaders](ui:machines:PreferencesPane.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
+A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `waarm64-shaders` (the origin's, for every machine, deflated, under the Preferences' [Space for Vulkan's shaders](ui:machines:PreferencesPane.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
 them ([graphics.md](graphics.md) "Video"): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);
@@ -951,7 +951,7 @@ page writes the context's output latency into the ring's header, and the guest g
   the sink's own clock plays the ring, so the guest's sound keeps time and nothing stalls, and the menu's summary
   reads [Sound: click to hear](ui:sound:Sound.summary.waiting) (with an accent border).
 - **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time), Volume
-  (0-100%: the gain is its cube, as PipeWire's and PulseAudio's sliders), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
+  (0-100%: the gain is its cube, as PipeWire's and PulseAudio's sliders), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `waarm64.settings`); the summary reads
   [Sound (muted)](ui:sound:Sound.summary.muted) when off. Not in the Machine menu, whose choices apply by a restart.
 - **The guest's mixer:** Volume and Sound on are the guest's `Master Playback Volume` and `Switch` (the sound
   device's controls, [devices.md](devices.md) "snd"), where its kernel has them (Linux 6.7 and later): a machine
@@ -961,7 +961,7 @@ page writes the context's output latency into the ring's header, and the guest g
   starts recording, the device says so on the port with the stream's rate; unless **[Microphone](ui:sound:Sound.mic)** is unchecked, the page
   asks for the microphone (`getUserMedia`: the browser's prompt the first time) with the browser's echo cancellation,
   noise suppression and gain control, or none with [Raw microphone](ui:sound:Sound.micRaw) (for music), makes a context at the stream's rate
-  with a `MediaStreamAudioSourceNode` into the `webpc-mic` worklet, which writes the ring, and the summary reads
+  with a `MediaStreamAudioSourceNode` into the `waarm64-mic` worklet, which writes the ring, and the summary reads
   [Sound · mic](ui:sound:Sound.summary.onMic). When recording stops the microphone and its context are closed (the browser's indicator goes off). Off,
   refused (the menu's hint says so) or until it's granted, the guest records silence in real time. Both choices apply
   live (the microphone is opened again) and are kept (`mic`, `micRaw`).
@@ -1023,7 +1023,7 @@ page writes the context's output latency into the ring's header, and the guest g
   over, and the plain axis gets its notch in the report where the high-resolution sum reaches 120 (Linux's rule for a
   device with both): a reader of the high-resolution axes (libinput) can scroll a touchpad's motion smoothly, a
   reader of the plain ones alone (X's evdev driver, kernels before 5.0) gets the notches as before. Turning back starts a wheel's sum over.
-- **[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)** (the toolbar's menu, `webpc.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
+- **[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)** (the toolbar's menu, `waarm64.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
   the mouse (Pointer Lock) and isn't the guest's; every button reaches the guest then, the back and forward ones too.
   Esc (the browser's) or the menu lets it go, and so does a change of mode (the next click takes it in the new one);
   the machine stopping (powered off from the page or by the guest, suspended, crashed) lets it go too, and a click on
@@ -1054,7 +1054,7 @@ page writes the context's output latency into the ring's header, and the guest g
   screen has `touch-action: none`, so the page doesn't pan or zoom under them.
 - **Leaving the page** while the machine runs (booting, running, rebooting) stops it like pulling the plug, so the
   page asks the browser to ask first (`beforeunload`; the browser words the question itself, the page's text isn't
-  shown). **[Preferences](ui:machines:MachinesNav.preferences)** on the Machines page turns it off (`webpc.settings` `leaveWarning`, on unless set). Under
+  shown). **[Preferences](ui:machines:MachinesNav.preferences)** on the Machines page turns it off (`waarm64.settings` `leaveWarning`, on unless set). Under
   automation (`navigator.webdriver`) it doesn't ask unless `?leavewarning=1`: the tests leave running machines.
 - Keys are mapped by `KeyboardEvent.code`: a key's position on a PC keyboard (the US one's keys, ISO's
   `IntlBackslash`, ABNT2's `IntlRo`, JIS's `IntlYen` and its conversion keys), whatever the host's layout prints on it.
@@ -1175,8 +1175,8 @@ connection's settings") are on for every transient machine, `?netconfig=0` off (
 
 What the guest gets: three systemd credentials (256+: `systemd.extra-unit.*`, `systemd.unit-dropin.*`) as SMBIOS
 type 11 strings (base64, `io.systemd.credential.binary:`), which PID 1 imports in a VM with nothing loaded first. The
-page passes them in fw_cfg's `opt/webpc/oem-strings` and the core moves them into type 11 (`core/src/smbios.rs`,
-ABI 49): their names are too long for fw_cfg's 56-byte file names. They add `webpc-keyboard.service`, wanted by
+page passes them in fw_cfg's `opt/waarm64/oem-strings` and the core moves them into type 11 (`core/src/smbios.rs`,
+ABI 49): their names are too long for fw_cfg's 56-byte file names. They add `waarm64-keyboard.service`, wanted by
 `systemd-user-sessions.service` and ordered before it and the display manager (so every login sees what it set), which
 runs the third, a POSIX sh script:
 
@@ -1205,8 +1205,8 @@ everywhere, and one without the setting keeps Portuguese (the unit isn't there).
 
 Two machine settings have the guest change something at boot: **[Keyboard layout](ui:machines:KeyboardField.keyboard)** (above) and the Network tab's
 **[Take the connection's settings in the guest](ui:machines:NetworkTab.netConfig)** (on unless the user turns it off: `MachineRecord.netConfig`). Both are
-units the page adds (`web/app/guest-unit.ts` `guestUnit`): `systemd.extra-unit.webpc-<what>.service`, a oneshot that
-runs a POSIX sh script given as a credential of its own (`webpc.<what>.sh`, `ImportCredential=`), and a
+units the page adds (`web/app/guest-unit.ts` `guestUnit`): `systemd.extra-unit.waarm64-<what>.service`, a oneshot that
+runs a POSIX sh script given as a credential of its own (`waarm64.<what>.sh`, `ImportCredential=`), and a
 `systemd.unit-dropin.*` that has the unit it serves want it (the generator reads no `[Install]`), all as SMBIOS type 11
 strings (systemd 256+; the keyboard's paragraph above says how they get there). Nothing is installed: a boot without
 the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)**
@@ -1215,26 +1215,26 @@ credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap"). T
 credentials, clipboard sharing's agent) are one pure function of its start message, `web/app/firmware-files.ts`
 `firmwareFiles` (tests/firmware-files.test.ts pins their bytes).
 
-- **The network's settings** (`web/app/guest-net.ts`): `webpc-network.service`, wanted by and ordered before
+- **The network's settings** (`web/app/guest-net.ts`): `waarm64-network.service`, wanted by and ordered before
   `systemd-networkd.service` (no default dependencies; after `local-fs.target` and `systemd-network-generator.service`,
   which writes the card's `.network` credential), gives every `.network` file in networkd's directories a drop-in,
-  `/run/systemd/network/<file>.network.d/50-webpc.conf`, with `UseMTU=yes` and `UseDomains=yes` under `[DHCPv4]` and
+  `/run/systemd/network/<file>.network.d/50-waarm64.conf`, with `UseMTU=yes` and `UseDomains=yes` under `[DHCPv4]` and
   `UseDomains=yes` under `[DHCPv6]`. So the guest takes each lease's MTU (a tailnet's 1280) and search domain
   (MagicDNS's) whichever file configures the adapter: the card's own `card.network` does only where no file of the
   guest's sorts before it, and Arch's `20-en*.network` and netplan's `10-netplan-all-en.network` (Debian's cloud
   image, Ubuntu) do. **It writes only to
   /run**: the guest's disk is untouched, and the next boot with the setting off has none of it. A drop-in of the
-  guest's that sorts after `50-webpc.conf` wins. NetworkManager asks for the MTU by default (`interface_mtu` is in
+  guest's that sorts after `50-waarm64.conf` wins. NetworkManager asks for the MTU by default (`interface_mtu` is in
   its DHCP request list, from its source) and applies it while the connection's MTU is automatic, as Debian's
   dhclient does: nothing is set for them. Without any of it the gateway's MSS clamp still keeps TCP working ("Network").
   `tests/guest-net.test.ts` runs the script under dash on directories of its own; `tests/page-debian.test.ts` checks
   that it ran and that networkd reads its drop-in for netplan's file. On the desktop guest (2026-10-23, by hand) networkd
   reads it for Arch's `/etc/systemd/network/20-en.network`; there the card's fw_cfg credential never arrives (no
   `card.network` in /run), while the SMBIOS ones do.
-- **Clipboard sharing's agent** (`web/app/guest-agent.ts`, a machine with `clipboard`): `webpc-agent.service`, a
+- **Clipboard sharing's agent** (`web/app/guest-agent.ts`, a machine with `clipboard`): `waarm64-agent.service`, a
   long-running service (`guestUnit`'s `service` lines in place of `Type=oneshot`) wanted by `multi-user.target`,
-  whose script copies the agent's binary out of fw_cfg (`opt/webpc/agent`, not a credential: too big for SMBIOS) into
-  `/run/webpc` and runs it (docs/devices.md "The guest's agent"). Its description is
+  whose script copies the agent's binary out of fw_cfg (`opt/waarm64/agent`, not a credential: too big for SMBIOS) into
+  `/run/waarm64` and runs it (docs/devices.md "The guest's agent"). Its description is
   [Clipboard sharing with the emulator](ui:guest:guest-words.agent). The setting is the Settings tab's
   **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default; a change of shape: the agent's device); ticking it is the click that asks
   for the browser's read permission ("The toolbar", Clipboard).
@@ -1288,7 +1288,7 @@ xterm.js and its stylesheet are imported as the package (`areas/serial-terminal.
 
 Screen (the default, decision 2; edge to edge between the toolbar and the status bar, no padding,
 black around the canvas), Serial terminal, or Both (side by side; stacked below 1100 px).
-The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
+The view chosen last is remembered per browser (`localStorage` `waarm64.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
 it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs; its **[JIT cache](ui:machines:SettingsTab.jit)**, beside the RAM, is
 the code cache's budget: Default (320 MiB) or 64 to 512 MiB, `MachineRecord.jitMiB`, in its definition and carried by
@@ -1333,7 +1333,7 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
   The page offers no way yet to skip them; a disk that has been through its first boot comes
   with loops 4–6 (a disk in, a changes file or whole disk out).
 - **The variable store** (the firmware's boot entries and settings, the flash bank, 1 MiB) is kept
-  per disk in the overlay's OPFS directory (`webpc-debian/flash`, `loadFlash` and `saveFlash` in
+  per disk in the overlay's OPFS directory (`waarm64-debian/flash`, `loadFlash` and `saveFlash` in
   web/overlay.ts): saved when it changes (checked every 5 s), at power-off, reset and Restart; it
   goes with Reset disk. It is what lets GRUB's "UEFI Firmware Settings" reach EDK2's setup.
 - **The network card's settings** (`machine.network.credentials`) go over fw_cfg as the
@@ -1356,7 +1356,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   device spec (`{type: 'blk', file}`), to the device worker, which reads slices with
   `FileReaderSync` (web/devices.ts `blobSource`); its capacity is the qcow2 header's virtual size or
   the file's size (web/vm.ts).
-- **Its changes are its own:** the overlay is `webpc-disk-<hash>` (`diskOverlay`, machine.ts: a hash
+- **Its changes are its own:** the overlay is `waarm64-disk-<hash>` (`diskOverlay`, machine.ts: a hash
   of the file's name, size and modification time, or of the URL's path), with the variable store
   (`flash`) beside it, and the overlay's `base` file records the same identity
   (`diskIdentity`, devices.ts), so a mismatch is `disk-mismatch`. Choosing the same file again,
@@ -1409,7 +1409,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   is still data to the export until the guest trims it (`fstrim -av`: the disk takes DISCARD,
   [devices.md](devices.md) "blk"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user
   keeps it beside the changes) and carries the base file's **hash** in an extension of ours
-  (type `WPC2`, ASCII hex: QEMU ignores unknown extensions; qcow2 itself has no checksum of a backing
+  (type `WAM2`, ASCII hex: QEMU ignores unknown extensions; qcow2 itself has no checksum of a backing
   file), `hashSource` in `web/changes.ts`: the SHA-256 of the SHA-256 digests, in order, of the
   file's 4 MiB slices, each from `crypto.subtle.digest`, four at once (Load changes checks it).
   Measured in Chromium 153 on the dev VM over a 2 GiB file: ~640 MiB/s, which is the synchronous
@@ -1417,7 +1417,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   ~2.5 GiB/s whatever the call's size. What lost: one SHA-256 of the whole file, which
   `crypto.subtle` can't do incrementally and a SHA-256 in JS did at 46 MiB/s in Chromium (233 MiB/s
   in Node: the number that hid it), minutes for a disk of GBs at every save and load; a hash of
-  sampled blocks (0.14 s) misses a base that differs elsewhere. `WPC1` was that whole-file SHA-256:
+  sampled blocks (0.14 s) misses a base that differs elsewhere. `WAM1` was that whole-file SHA-256:
   a file with only it is refused like any qcow2 that isn't ours. The whole
   disk is scanned through the overlay over the base (the cost is reading the base: a 3 GiB Debian
   disk is the long case). Names: `<disk>-changes.qcow2`, `<disk>.qcow2`, `<disk>.img`.
@@ -1427,7 +1427,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
   `web/app/import.ts`; the machine stops, as for the export): `readChanges` (web/qcow2.ts) parses
   the file (clusters of 4 KiB or more, zero clusters as zeros, compressed ones inflated), its virtual size
-  and **hash** (the `WPC2` extension) are checked against the base's (`hashSource`, under a second
+  and **hash** (the `WAM2` extension) are checked against the base's (`hashSource`, under a second
   for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
   changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
   by the fallback path) and the blocks are written into a fresh overlay. Refused before anything
@@ -1455,10 +1455,10 @@ A machine has up to four **network adapters** (machines with a `network` entry i
 are on its Network tab, above), and each adapter has a **connection** attached, or none (the cable out). A
 connection is the browser's, not the machine's (docs/networking/adapters.md): a tailnet (a Tailscale network,
 docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker), tailcat (below), **this
-computer** (the local helper, below) or a **peer-to-peer room** (below), with its state (a tailnet's node, tailcat's served address, the helper's link, a room's link and key), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
+computer** (the local helper, below) or a **peer-to-peer room** (below), with its state (a tailnet's node, tailcat's served address, the helper's link, a room's link and key), kept in IndexedDB `waarm64` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
 comes back detached, saying so. Any machine can use a kept connection; one running machine has it at a time (its Web
-Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:network-actions.useHere), takes it
+Lock, `waarm64-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:network-actions.useHere), takes it
 (the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
 
 The toolbar's **Network** buttons (`Network.svelte`): where the toolbar keeps to one row with them, each adapter of the
@@ -1490,7 +1490,7 @@ wizard on the connection. Change connection… opens the **Network wizard** (`Ne
 the submit; a component per step with its own form, `NetPickStep`, `NetKindStep`, `NetTailnetStep`, `NetTailcatStep`,
 `NetLocalStep`, `NetRoomPickStep`, `NetRoomStep` for a room's create, join and edit; `net-wizard.ts` the steps' API): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetPickStep.pick.new)
-(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
+(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetKindStep.kind.pickTailnet), **tailcat**, [Your computer (waarm64-net)](ui:network:NetKindStep.kind.pickLocal) or [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom), then that kind's
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
@@ -1499,13 +1499,13 @@ page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: renam
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
-- [Your computer](ui:network:connections.thisComputer) (the local helper, webpc-net: [networking/local-helper.md](networking/local-helper.md)): a
+- [Your computer](ui:network:connections.thisComputer) (the local helper, waarm64-net: [networking/local-helper.md](networking/local-helper.md)): a
   program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>` (and one for each `--origin`). Opening it
   takes the fragment out of the address at once (it holds the token) and opens the wizard on [Your computer](ui:network:connections.thisComputer), the
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
   the link (or its `ws://` part) into that step does the same. A new connection's step is numbered steps that end at
-  the link's field: run webpc-net, with the install lines for this browser's platform under it (`web/local-release.ts`:
-  client hints, a choice of the six; the release's version and SHA-256s, v0.2.0's now); then paste the link; a short note after (the link is a secret, allow local network access). Editing shows the
+  the link's field: run waarm64-net, with the install lines for this browser's platform under it (`web/local-release.ts`:
+  client hints, a choice of the six; the release's version and SHA-256s, v0.3.0's now); then paste the link; a short note after (the link is a secret, allow local network access). Editing shows the
   field alone. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
   which puts the card on a frame port, the page's gateway bypassed (web/gateway.ts `FramePath`: the link flaps, so
   the guest asks the helper for a lease at once), and moves its frames to the helper's WebSocket, those before a
@@ -1545,7 +1545,7 @@ and the guest's default way out (below).
   the advertisement, at once. IPv6's default can be another adapter's, one whose IPv6 reaches the internet when the
   primary's doesn't (`primary6Of`, docs/networking/adapters.md §4 "A primary per family").
 - [A tailnet](ui:network:NetKindStep.kind.pickTailnet) takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
-  `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with Show).
+  `http://` for this computer), a hostname (default `waarm64`) and an optional auth key (a password field with Show).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
   with a [Log in…](ui:network:NetAdapter.login) link (a new tab; only `http(s)` URLs are ever offered); the client comes up
   when the login completes. An admin-approval wait is shown as such. With an auth key (asked for only when the
@@ -1555,7 +1555,7 @@ and the guest's default way out (below).
   the page's since 2026-10-16 (until then Tailscale's Go client built to wasm). It keeps the node in
   the Go client's store format, so a node kept by the Go client is still the same node.
 - **The node is kept:** a kept connection's node (its keys, a secret) lives in this origin's IndexedDB
-  (`webpc-tailscale`, a profile per connection, its id: `stateKey`; the node kept before connections stays under its
+  (`waarm64-tailscale`, a profile per connection, its id: `stateKey`; the node kept before connections stays under its
   control server's URL; in the Go client's own format: `web/tailscale-state.ts`), so a reload is the same node with the same
   address and no new login: **a connection connects at start** (`connectAtStart`, the Network tab's Connect at start)
   until Disconnect.
@@ -1588,7 +1588,7 @@ and the guest's default way out (below).
     IPv6 address, untranslated, from their own (the client drops anything else); there's no filter beyond the guest's
     own.
     The address is **kept** with a kept connection: the node key and the address's pre-shared key live in this
-    origin's IndexedDB (`webpc-tailcat`, `identity`, under the connection's `identityKey`, its id; `served` for the
+    origin's IndexedDB (`waarm64-tailcat`, `identity`, under the connection's `identityKey`, its id; `served` for the
     one kept before connections), so it's the same after a reload, and the machine **reconnects by itself** on load
     (`connectAtStart`); an ephemeral connection's is in the page's memory. **[Advanced](ui:network:NetTailcatStep.advanced)**: the **relay for clients** when not going online through a
     computer (that computer's relay serves otherwise): empty for tailcat's public relays, the
@@ -1610,7 +1610,7 @@ and the guest's default way out (below).
   its [Advanced](ui:network:NetTailcatStep.advanced) has the room's [Nostr relays](ui:network:NetRoomStep.room.nostr) (`ws://` or
   `wss://`, one per line; empty: the module's defaults) and [DERP relays](ui:network:NetRoomStep.room.derp) (a region's
   number in tailcat's public map, or one's own derper's `host[:port]`; empty: all of the map's regions), from which
-  `roomLink` writes the link link.rs reads (`webpc-room:<id>?nostr=…&derp=…`, percent-encoded). Join takes a link (a
+  `roomLink` writes the link link.rs reads (`waarm64-room:<id>?nostr=…&derp=…`, percent-encoded). Join takes a link (a
   password field: a private room's link is a secret) or a public room's name (a bare ID, the defaults); `parseRoomLink`
   checks it as link.rs would. All three have [Allow direct connections between members](ui:network:NetRoomStep.room.direct)
   (on by default; off is relay only, `relayOnly`: no WebRTC, everything through the room's DERP relays), its note
@@ -1621,7 +1621,7 @@ and the guest's default way out (below).
   to the guest's own flows come in) and [The connection's key](ui:network:NetRoomStep.room.key): a new one, [A key to paste](ui:network:NetRoomStep.room.key.paste)
   (a hidden field for it; 64 hex digits, web/room.ts `parseRoomKey`; one another room connection has makes the new
   one share that connection's, as choosing it would; a stored one made with an ephemeral one's key keeps a copy in
-  `webpc-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
+  `waarm64-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
   same key in another room: docs/networking/adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New
@@ -1632,7 +1632,7 @@ and the guest's default way out (below).
   "Rooms").
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
-  `webpc-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
+  `waarm64-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
   then [Connected to the room](ui:network:network-view.room) with [1 active connection](ui:network:network-view.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). A browser that makes no direct connections (docs/networking/rooms.md) adds a line saying so, with the flag to change ([This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.](ui:network:network-view.room.directBlocked)); a relay-only connection doesn't. The
   menu then shows the machine's name in the room (`<key>.<tag>.p2p.internal`) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
@@ -1668,10 +1668,10 @@ and the guest's default way out (below).
   (Firefox and `curl -4` alike; IPv6 worked; the user's finding, 2026-10-17). networkd leaves it out by default, and without it resolved
   sends short names only to LLMNR and a `.local` MagicDNS domain only to mDNS ("Temporary failure in
   name resolution").
-- **Before connections** the page kept one connection in `webpc.settings` `net`; the first load with connections makes
+- **Before connections** the page kept one connection in `waarm64.settings` `net`; the first load with connections makes
   it (and its kept node, and the served tailcat identity) into kept connections, attaches the one in use to the
-  transient machine's adapter (`webpc.settings` `transientNet`) and every stored machine's first, and drops `net`
-  (`migrateLegacy`, under the Web Lock `webpc-net-migrate`). The state dot (the single button's: the default way
+  transient machine's adapter (`waarm64.settings` `transientNet`) and every stored machine's first, and drops `net`
+  (`migrateLegacy`, under the Web Lock `waarm64-net-migrate`). The state dot (the single button's: the default way
   out's, else adapter 1's; each adapter's button and each section's heading has its own): grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` call `tools/tailscale.ts`'s `prepareTailnetClient` first: it builds `net/ts` with `net/ts/build.sh` into `target/net/ts.wasm` when it's missing or a hash of `net/ts` and `Cargo.lock` (stamp `ts.wasm.inputs`) changed (cargo only, as the core). It never stops the server: if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `scripts/ci-net.sh` runs `tools/tailscale.ts` as a step (it also builds the Go client, the hand-over test's fixture).
@@ -1695,7 +1695,7 @@ shows (`from-/dev/tty1-42`); `/dev/vcs1` read on the serial side shows the scree
 command; the canvas isn't black. Then a file written and `sync`ed survives a reload (no shutdown:
 as a closed tab), and Reset disk (the dialog accepted) boots a disk without it. Three Debian boots:
 ~178 s alone (running at ~55 s, logged in on both at ~62 s, reloaded and running at ~112 s, reset
-and running at ~172 s); `WEBPC_PAGE_RUNS=N` repeats it. It and the `npm start` test take turns (`tests/debian-lock.ts`, a lock
+and running at ~172 s); `WAARM64_PAGE_RUNS=N` repeats it. It and the `npm start` test take turns (`tests/debian-lock.ts`, a lock
 directory in the temp directory): two Debian page boots at once beside the rest of `npm test`
 loaded the host enough to fail a realtime bare-metal test (docs/backlog.md). In CI it takes ~3 min
 (the host is shared with the other test files); `npm test` went from ~253 to ~290 s.
@@ -1723,11 +1723,11 @@ How it types, and why:
 `tests/page-snapshot.test.ts` is the same for snapshots ("Snapshots"): on Buildroot (`?machine=buildroot&ncpus=2`, always, ~10 s) a
 shell variable and a file in devtmpfs (the test kernel has no tmpfs) are RAM state; Save snapshot
 by a download and by a picker's handle (a file in OPFS); the machine answers afterwards; the file
-starts with `WEBPCSNP`, its header has the fields above and no hash; in a fresh profile Load
+starts with `WAARMSNP`, its header has the fields above and no hash; in a fresh profile Load
 snapshot restores the terminal's tail, 2 vCPUs (the page asked for 1), the variable and the file,
 with no terminal reply sent to the guest for the replayed output; refusals leave the machine running or the OPFS exactly as it was (a file that isn't a snapshot, a snapshot of
 another machine, one on another disk, one whose machine had a `?disk2=`, a truncated file, which Start
-then recovers from); a snapshot dropped on the page goes the same way. With `WEBPC_DISTROS=debian`, Debian: root logged in on the serial terminal, a
+then recovers from); a snapshot dropped on the page goes the same way. With `WAARM64_DISTROS=debian`, Debian: root logged in on the serial terminal, a
 file written and `sync`ed, a variable; Save snapshot (~175 MB, the machine paused ~1.3 s); in a
 fresh profile the page starts booting, Load snapshot replaces it, and the machine is running 2.1 s after the choice, still logged in with its variable, the
 file read past the page cache (`drop_caches`), the firmware's flash copy written beside the new
@@ -1738,7 +1738,7 @@ Buildroot snapshot on the Debian page is refused at once.
 
 A new machine opens the overlay the old one had open, and OPFS sync access handles are exclusive:
 the new one must open it only once the old one's handles are closed. `openOverlay`
-(web/overlay.ts) first takes the Web Lock `webpc-overlay:<name>` (exclusive, per origin: every
+(web/overlay.ts) first takes the Web Lock `waarm64-overlay:<name>` (exclusive, per origin: every
 tab and worker) and holds it until `close` has closed the handles; a context that ends (a
 terminated worker, a closed tab) drops its locks with its handles. So the ordering doesn't rest
 on timing: the old machine's device worker closes on `close` and answers `closed` (`vm.close()`
@@ -1819,7 +1819,7 @@ each step skipped when its output is current:
 4. **The wasm core**, when the hash of what decides it (`Cargo.toml`, `Cargo.lock`,
    `rust-toolchain.toml`, `.cargo/config.toml`, `scripts/build-wasm.sh`, `core/Cargo.toml`,
    `core/build.rs`, `core/src/**`: contents, not mtimes) differs from the stamp next to the wasm
-   (`webpc_core.wasm.inputs`, written after a build). Then: a C compiler (`cc --version`; Rust
+   (`waarm64_core.wasm.inputs`, written after a build). Then: a C compiler (`cc --version`; Rust
    links build scripts, std's under `-Zbuild-std` and the core's decoder generator, with the host
    linker: Xcode's command line tools on macOS, gcc or clang on Linux), `rustup toolchain install`
    (reads `rust-toolchain.toml`: the pinned nightly with `rust-src` and the wasm target; a no-op
@@ -1832,7 +1832,7 @@ each step skipped when its output is current:
    first time, which also pulls the build image and clones EDK2; the user's answer "for now"):
    skipped when `images/build.sh --check edk2` says it's current. Without Podman the start
    stops *before* the long steps, saying how to install it. `tests/start.test.ts` covers the
-   message and (with `WEBPC_START_COLD=1`) the build in the copy.
+   message and (with `WAARM64_START_COLD=1`) the build in the copy.
 5c. **Clipboard sharing's guest agent** (`images/build.sh agent`: Rust in Podman, ~1 min the first time; without
    Podman the host's cargo, a build `npm run dist` refuses: docs/images.md "agent"), when `images/build.sh --check
    agent` says it isn't current.
@@ -1859,7 +1859,7 @@ build (~1 s) to the URL; a fresh clone 6.4 s to the URL with the core copied in 
 build), plus the core's build cold (10–11 s; the toolchain's install, 722 MB, 6 s on this network).
 
 **Debian's preparation** (the tests' guest; `tools/debian.ts`, run by `images/build.sh debian`: it links
-the disk and takes nothing out of it; the pin is `images/debian.json`): the qcow2 from the download cache (`WEBPC_DL`, default
+the disk and takes nothing out of it; the pin is `images/debian.json`): the qcow2 from the download cache (`WAARM64_DL`, default
 `target/images/dl`), or downloaded there with progress (a line rewritten on a terminal, every 10%
 otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); the
 disk is hard-linked from the cache (a copy, reflinked where it can be, if the cache is on another
@@ -1873,14 +1873,14 @@ Debian through UEFI).
 web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
 stops if a binary is missing, Vulkan's renderer among them), then builds the page with Vite (below, "The build") and adds the licenses:
 
-- `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`), with a `<meta name="webpc-build">`
+- `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`), with a `<meta name="waarm64-build">`
   holding the commit it was built from, its date and "with local changes" when tracked files differed
   (`tools/stamp.ts`, written by `vite.config.ts` into every load of the page, the dev server's too); the page logs it
-  at load (`webpc: built from …`), so a user's console says which build they ran.
+  at load (`waarm64: built from …`), so a user's console says which build they ran.
 - `assets/`: the page's code bundled, minified, with source maps: the page (`index-<hash>.js`, its CSS), each worker
   (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
-  deflate) and the sound worklet; and the binaries the page fetches, the core (`webpc_core.wasm`), the tailnet client
-  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`), clipboard sharing's guest agent (`webpc-agent`, fetched only by a machine with
+  deflate) and the sound worklet; and the binaries the page fetches, the core (`waarm64_core.wasm`), the tailnet client
+  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`), clipboard sharing's guest agent (`waarm64-agent`, fetched only by a machine with
   the setting) and Vulkan's renderer (`venus.wasm`, 12 MiB, fetched only by a machine with
   Vulkan on: vk/README.md "On the page"). Every name is hashed, so a host's caches never serve a stale file with a new
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
@@ -1892,7 +1892,7 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
   firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh
   writes it), `LICENSE`: the About pane links them (above, "About"; `BUNDLED` in `tools/third-party.ts` names the
-  first two's sources), and a marker file (`.webpc-dist`, from `web/app/public/`, so a plain `vite build` has it
+  first two's sources), and a marker file (`.waarm64-dist`, from `web/app/public/`, so a plain `vite build` has it
   too): the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**
@@ -1907,12 +1907,12 @@ bundle (a few hashed files, no source), serves it so and boots Buildroot from it
 ### Deployed at vm.tny.im
 
 The user's public copy (since 2026-10-17): `https://vm.tny.im`, a **Worker with static assets only** (no script) named
-`webpc` on the user's account (`wrangler.jsonc` at the repo's root; also at `webpc.gbl08ma.workers.dev`), uploaded from
+`waarm64` on the user's account (`wrangler.jsonc` at the repo's root; also at `waarm64.gbl08ma.workers.dev`), uploaded from
 the dev VM. **Deploying is outward-facing: only when the user asks.** Redeploy (the copy is rebuilt first; a deploy is
 atomic and replaces the site):
 
 ```sh
-set -a; . ~/.config/cloudflare/webpc.env; set +a
+set -a; . ~/.config/cloudflare/waarm64.env; set +a
 npm run dist && wrangler deploy --message "$(git log -1 --format=%s | head -c 100)"
 ```
 
@@ -1921,7 +1921,7 @@ deployed page and screenshots it as `live.png` in `$CLAUDE_JOB_DIR/tmp`, else th
 
 - **wrangler** (Cloudflare's CLI) in the dev VM, outside the repo (not a dependency): `npm i -g --prefix ~/.local
   wrangler@4.151.1` (in `~/.local/bin`; npm skips `workerd`'s postinstall, which only `wrangler dev` needs).
-- **Credentials:** an account API token and the account ID in `~/.config/cloudflare/webpc.env`
+- **Credentials:** an account API token and the account ID in `~/.config/cloudflare/waarm64.env`
   (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written by the user on the VM. Source it; never print
   it. Its permissions (2026-10-23): Account → Workers Scripts, Workers KV Storage → Edit, Workers Tail and Account
   Settings → Read; Zone (`tny.im`) → DNS, Workers Routes → Edit. No Pages (the old project is deleted), R2, Cache
@@ -1932,15 +1932,15 @@ deployed page and screenshots it as `live.png` in `$CLAUDE_JOB_DIR/tmp`, else th
 - **The domain:** `routes` in `wrangler.jsonc` makes `vm.tny.im` the Worker's custom domain (Cloudflare adds its DNS
   record). **Every other record in the `tny.im` zone is the user's: leave them exactly as they are** (`tny.im` itself
   is a Pages project).
-- **From Pages (2026-10-23):** the site was a classic Pages project `webpc` (`wrangler pages deploy`) until then;
+- **From Pages (2026-10-23):** the site was a classic Pages project under the project's former name (`wrangler pages deploy`) until then;
   moved by Cloudflare's guide (workers/static-assets/migration-guides/migrate-from-pages): the Worker deployed and
-  checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm CNAME
-  webpc.pages.dev` deleted and the Worker deployed with the route (under a minute without the site); the user then
-  deleted the Pages project. In the dashboard (Workers & Pages) the Workers `webpc` and `webpc-disks` showed only after
+  checked on workers.dev, every file of `target/dist` compared, then the Pages project's domain and its `vm` CNAME
+  to `pages.dev` deleted and the Worker deployed with the route (under a minute without the site); the user then
+  deleted the Pages project. In the dashboard (Workers & Pages) the Workers `waarm64` and `waarm64-disks` showed only after
   a hard reload. One difference kept: an unknown path is a 404
   (`not_found_handling: none`), where Pages answered the root page (its single-page fallback, with no `404.html`).
 
-**Disk images** are a second assets-only Worker, `webpc-disks` at `https://vmdisks.tny.im` (`deploy/disks/deploy.sh`,
+**Disk images** are a second assets-only Worker, `waarm64-disks` at `https://vmdisks.tny.im` (`deploy/disks/deploy.sh`,
 the same credentials), never a bucket: [remote-disks.md](remote-disks.md).
 
 What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`

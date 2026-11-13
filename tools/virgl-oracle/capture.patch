@@ -7,7 +7,7 @@ index ce2b03d7..d81d5c2f 100644
  }
  
 +
-+/* webpc G2 capture: VTEST_DUMP=<file> appends records {u32 kind, u32 bytes, payload} */
++/* waarm64 G2 capture: VTEST_DUMP=<file> appends records {u32 kind, u32 bytes, payload} */
 +#include <stdio.h>
 +static FILE *wdump_f;
 +static void wdump(uint32_t kind, const void *a, uint32_t alen, const void *b, uint32_t blen)

@@ -245,7 +245,7 @@ test('the compact layout at a phone\'s width: pages by tabs, a latch and a held 
   assert.equal(await layout(), 'full', 'forced, remembered');
   await page.setViewportSize({ width: 1400, height: 900 });
   // The wide window seen: the forced layout is the automatic one there, so it's dropped.
-  await page.waitForFunction(() => !JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').osk?.layout);
+  await page.waitForFunction(() => !JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}').osk?.layout);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.querySelector('#osk')?.getAttribute('data-layout') === 'compact');
   // Forced compact in a wide window.

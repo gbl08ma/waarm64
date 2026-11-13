@@ -1,7 +1,7 @@
 // A disk stored in the browser (docs/machines.md §3), on Debian: imported into the block store, its
 // overlays as variants, merged into it, written in place, under an overlay again; each a boot of the stored
 // machine on the page. Its own file so that scripts/ci-machines.sh runs it beside tests/page-machines.test.ts
-// (whose helpers these are). Opt-in with WEBPC_DISTROS=debian; a Debian page boot is ~40 s in the dev VM,
+// (whose helpers these are). Opt-in with WAARM64_DISTROS=debian; a Debian page boot is ~40 s in the dev VM,
 // ~2.5 min in a cloud session.
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -16,10 +16,10 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 
 let browser: Browser;
@@ -115,7 +115,7 @@ after(async () => {
 });
 
 test("a disk stored in the browser (1): imported, its overlays as variants (changes loaded into a new one, switched)", { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  const profile = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const profile = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
   const context = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   const page = context.pages()[0] ?? await context.newPage();
   const errors: string[] = [];

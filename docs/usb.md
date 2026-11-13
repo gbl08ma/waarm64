@@ -398,7 +398,7 @@ Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest
   3. The host plugs it in again at step 150M, and the guest enumerates it again. Pass 2 must end while
      it's out (the guest counts the gadgets after each pass): on 2026-10-24 any replug from 130M to 170M
      did, and 115M, 125M didn't; a guest-visible change can move pass 2's end, so recheck the window then
-     (`WEBPC_USB_UNPLUG`, `WEBPC_USB_REPLUG` move them in the native twin).
+     (`WAARM64_USB_UNPLUG`, `WAARM64_USB_REPLUG` move them in the native twin).
   4. A clean pass, then it powers off.
 
   It runs in every runner with exact steps (tests/steps.txt):
@@ -408,7 +408,7 @@ Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest
 - **Parallel SMP**, natively and in Node: two vCPUs, one clean pass, three runs each. The checks drop
   the kernel's records from the console first (`userLines`): on two vCPUs the kernel writes one
   whenever its console lock comes free, in the middle of a line of init's too (usbtest's late
-  `unlink retry` flood once split `webpc: usb test ok` from its newline, about one run in seven). In
+  `unlink retry` flood once split `waarm64: usb test ok` from its newline, about one run in seven). In
   Node a run that hasn't powered off after a minute fails with the console's end.
 
 The unit tests (`core/src/xhci/tests.rs`) drive the controller as Linux does, on hand-built rings, and
@@ -438,8 +438,8 @@ set, on the dev VM's rigs, and writes each run's console to `target/tests/usb-gu
 
 | Mode | Device | What passes |
 |---|---|---|
-| `testusb` | the dummy_hcd Gadget Zero (`webpc-zero`) through the WebUSB passthrough, left in configuration 2 (loopback) first, as a real device may be | `testusb -a -c 10 -s 1024 -v 512 -g 16` with `usbtest.pattern=1` (configfs's source/sink default): all 23 tests, after the guest's reset and SET_CONFIGURATION 1 switched it |
-| `acm` | the ACM gadget (`webpc-acm`) through the WebUSB passthrough, the guest's `cdc_acm` on it | three rounds of open `/dev/ttyACM0`, write 300 bytes, read the gadget tty's echo, close. Each close cancels `cdc_acm`'s reads, so the next round's reads are served by the cancelled ones' transfers (the carry-over) |
+| `testusb` | the dummy_hcd Gadget Zero (`waarm64-zero`) through the WebUSB passthrough, left in configuration 2 (loopback) first, as a real device may be | `testusb -a -c 10 -s 1024 -v 512 -g 16` with `usbtest.pattern=1` (configfs's source/sink default): all 23 tests, after the guest's reset and SET_CONFIGURATION 1 switched it |
+| `acm` | the ACM gadget (`waarm64-acm`) through the WebUSB passthrough, the guest's `cdc_acm` on it | three rounds of open `/dev/ttyACM0`, write 300 bytes, read the gadget tty's echo, close. Each close cancels `cdc_acm`'s reads, so the next round's reads are served by the cancelled ones' transfers (the carry-over) |
 | `hid` | a uhid device (`vendor-ids`) through WebHID | the report descriptor the guest got parses to what the page can use of Chromium's parse; three input reports from the rig arrive in order; an output report (`write`) and a feature report (`HIDIOCSFEATURE`) reach the rig; `HIDIOCGFEATURE` gets the rig's |
 
 What the runs found:
@@ -567,7 +567,7 @@ interfaces a "host driver" holds, and leaves each IN pending until the test answ
 
 The device worker's opener, `webHidOpener(navigator.hid)`, finds the device by vendor and product, with
 `index` among identical ones, since WebHID gives no serial number. It gives the guest the serial
-`webpc-hid-<connector>`, and calls `gone` on WebHID's `disconnect`.
+`waarm64-hid-<connector>`, and calls `gone` on WebHID's `disconnect`.
 
 **Only what the page can use** reaches the guest (`visibleCollections`). Chromium hides a protected
 top-level collection's input and output reports (a keyboard's, a mouse's) at the top level, but its
@@ -674,7 +674,7 @@ by themselves.
   virtio-input (a US layout: a key is where it is on the keyboard, whatever the host's layout prints on it). They
   go to the device worker as `usb-key` messages on the controller's port (no answer; `code` '' releases them all,
   when the screen loses the focus).
-- **The firmware side** (`images/edk2/WebpcXhciDxe`, a driver of ours): it finds the DT's `generic-xhci` nodes
+- **The firmware side** (`images/edk2/Waarm64XhciDxe`, a driver of ours): it finds the DT's `generic-xhci` nodes
   through FdtClient and registers each as a non-discoverable xHCI, with coherent DMA and its MMIO window.
   NonDiscoverablePciDeviceDxe (added to the build by `images/edk2/usb-xhci.patch`) gives it a PCI I/O protocol, and
   EDK2's XhciDxe, UsbBusDxe and UsbKbDxe drive it as a PCI controller. The boot manager's ConIn already lists "any
@@ -733,8 +733,8 @@ controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes b
   - Device class ff/ff/ff, bcdDevice 0x0114; one interface, vendor class ff/5d/01 (what `xpad` matches, with the
     vendor). It has exactly two endpoints, as `xpad` requires: interrupt IN 0x81 (32 bytes, 4 ms) and interrupt
     OUT 0x02 (32 bytes, 8 ms).
-  - The strings are "webpc", the host pad's name, and the serial `webpc-pad-<connector>`. `xpad` names the input
-    device "Microsoft X-Box 360 pad"; guest Chromium's `Gamepad.id` takes the USB strings ("webpc *name* (STANDARD
+  - The strings are "waarm64", the host pad's name, and the serial `waarm64-pad-<connector>`. `xpad` names the input
+    device "Microsoft X-Box 360 pad"; guest Chromium's `Gamepad.id` takes the USB strings ("waarm64 *name* (STANDARD
     GAMEPAD Vendor: 045e Product: 028e)").
   - Only one control request isn't standard: the vendor IN request `xpad` sends as its input starts (c1/01, value
     0x100, 20 bytes). Some third-party pads need it; ours answers it with the report now.
@@ -831,7 +831,7 @@ device again with `getDevices()` and needs no click.
   those becomes its own entry, with its own index.
 - **Grants:** WebUSB and WebHID list only devices that are both granted and plugged in, so a missing grant looks the
   same as a device that is unplugged. The page keeps the identities it has seen granted in localStorage
-  (`webpc.usbGranted`) to tell the two apart. An entry that isn't listed there and isn't found has [no permission in
+  (`waarm64.usbGranted`) to tell the two apart. An entry that isn't listed there and isn't found has [no permission in
   this browser](ui:usb:Usb.state.ungranted). That happens to a definition's entries on another browser. [Allow…](ui:usb:Usb.allow) opens the browser's chooser
   filtered on the entry's IDs (and its serial number, for WebUSB), and so does the menu's offer at the first start.
 - **States** (`entryStates`):
@@ -849,7 +849,7 @@ device again with `getDevices()` and needs no click.
 
 ### Device locks
 
-A Web Lock `webpc-usb:<api>:<vid>:<pid>:s:<serial>|n:<index>` is held while the device is attached. Tabs talk over
+A Web Lock `waarm64-usb:<api>:<vid>:<pid>:s:<serial>|n:<index>` is held while the device is attached. Tabs talk over
 the store's `BroadcastChannel`, with notes (`Store.tell`, `onNote`):
 - `usb-who` asks who holds a lock, and the holder answers `usb-held` with its machine's name.
 - `usb-release` asks the holder to detach the device.

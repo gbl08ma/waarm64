@@ -1,7 +1,7 @@
 // `pause()` and `resume()` on a VM (docs/platform.md "Pausing", docs/platform.md "Snapshots"),
 // in Node: the Buildroot guest on parallel vCPUs paused while it boots, idles and powers off, and
 // round-robin, where a pause between runs must not move the deterministic step count. They are races
-// by nature: WEBPC_PARALLEL_RUNS repeats the parallel ones (default 1; the pass counts were taken at 10).
+// by nature: WAARM64_PARALLEL_RUNS repeats the parallel ones (default 1; the pass counts were taken at 10).
 // Chromium has one of its own (tests/browser.test.ts).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -12,11 +12,11 @@ import { STEPS } from './steps.ts';
 import { Devices } from '../web/devices.ts';
 import { Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, type BootOptions, type Vm } from '../web/vm.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));
 const skip = (!has('linux/Image') || !has('buildroot/rootfs.ext4')) && 'SKIPPED: run images/build.sh linux buildroot';
-const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 1);
+const RUNS = Number(process.env.WAARM64_PARALLEL_RUNS ?? 1);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildroot = (extra: Partial<BootOptions> = {}, shell = false): BootOptions => ({
@@ -87,9 +87,9 @@ async function checkedPause(vm: Vm, latencies: number[] = []) {
 const poweredOff = (r: Run) => {
   assert.equal(r.kind, Exit.PSCI, r.console);
   assert.equal(r.x0, PSCI_SYSTEM_OFF, r.console);
-  assert.match(r.console, /webpc: test ok\n/);
+  assert.match(r.console, /waarm64: test ok\n/);
 };
-const booted = /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/;
+const booted = /smp: Brought up 1 node, 4 CPUs[^]*waarm64: test ok/;
 
 // Each test well under a minute alone: a deadline names the one that hangs (this file's hangs under
 // scripts/ci.sh were its process kept up after the tests: docs/testing.md "A test file that never ends").
@@ -106,7 +106,7 @@ test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 10 ms
         await sleep(5);
         // At a marker (the guest is running: its disk and console traffic), or every 10 ms: the boot takes ~0.7 s
         // on an idle dev VM since the block interpreter's speed-up (every 30 ms left it 12 or 13 pauses).
-        const marker = ['Freeing unused kernel', 'Run /init', 'webpc: test'].find((m) => !markers.has(m) && console().includes(m));
+        const marker = ['Freeing unused kernel', 'Run /init', 'waarm64: test'].find((m) => !markers.has(m) && console().includes(m));
         if (!marker && performance.now() < next) continue;
         if (marker) markers.add(marker);
         if (!(await checkedPause(vm, latencies))) break;
@@ -213,7 +213,7 @@ test('parallel: a pause requested as the guest powers off never hangs and the en
     const delay = [0, 0, 2, 5, 10][i % 5];
     let result: string | Error = 'no pause';
     const r = await drive(parallel(2), async ({ vm, console, ended }) => {
-      while (!console().includes('webpc: test exit')) {
+      while (!console().includes('waarm64: test exit')) {
         if (ended()) return;
         await sleep(1);
       }
@@ -228,7 +228,7 @@ test('parallel: a pause requested as the guest powers off never hangs and the en
     assert.ok(result === 'pause true' || result === 'pause false' || result === 'no pause', String(result));
     assert.equal(r.kind, Exit.PSCI, r.console);
     assert.equal(r.x0, PSCI_SYSTEM_OFF, r.console);
-    assert.match(r.console, /webpc: test ok\n/);
+    assert.match(r.console, /waarm64: test ok\n/);
   }
   console.log(`# pause at the power-off: ${outcomes.join(', ')}`);
 });
@@ -310,6 +310,6 @@ for (const [name, n] of [['buildroot', 1], ['buildroot-4cpu', 4]] as const) {
     assert.equal(r.kind, Exit.PSCI, r.console);
     assert.ok(pauses > 5, `${pauses} pauses`);
     assert.equal(r.steps, STEPS[name]);
-    assert.match(r.console, /webpc: test ok\n/);
+    assert.match(r.console, /waarm64: test ok\n/);
   });
 }

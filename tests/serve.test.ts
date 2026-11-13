@@ -16,7 +16,7 @@ before(async () => {
 after(() => close?.());
 
 test('ranges over HTTP', async () => {
-  const path = '/tests/dtb/webpc.dts';
+  const path = '/tests/dtb/waarm64.dts';
   const whole = readFileSync(new URL('.' + path, new URL('..', import.meta.url)));
   const r = await fetch(base + path, { headers: { Range: 'bytes=10-19' } });
   assert.equal(r.status, 206);
@@ -38,7 +38,7 @@ test('the page, its modules compiled, `/` sending the browser to it', async () =
   assert.match(page.headers.get('content-type') ?? '', /^text\/html/);
   assert.equal(page.headers.get('cross-origin-opener-policy'), 'same-origin');
   assert.equal(page.headers.get('cross-origin-embedder-policy'), 'require-corp');
-  assert.match(await page.text(), /<meta name="webpc-build" content="[0-9a-f]{12} \(/);
+  assert.match(await page.text(), /<meta name="waarm64-build" content="[0-9a-f]{12} \(/);
   const ts = await fetch(base + '/web/app/protocol.ts');
   assert.match(ts.headers.get('content-type') ?? '', /javascript/);
   assert.doesNotMatch(await ts.text(), /export type ToWorker/);

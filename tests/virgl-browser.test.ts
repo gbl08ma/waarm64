@@ -111,7 +111,7 @@ test('video on WebGL2: AV1 frames through the device and WebCodecs into their pl
   // libaom (eight distinct references: frames stored nowhere and decoded again, hidden frames never shown), SVT-AV1
   // (hidden frames shown later), and libaom with more tools on (segmentation, 2x2 tiles, 128x128 superblocks,
   // quantizer matrices, rotzoom global motion, delta q and lf, loop restoration, film grain decoded into the shown
-  // surface by webpc-va): the temporal units rebuilt by web/video-av1.ts.
+  // surface by waarm64-va): the temporal units rebuilt by web/video-av1.ts.
   for (const name of ['av1-aom', 'av1-svt', 'av1-tools'] as const) {
     const r = await replayVideo(`video-${name}.vglt.gz`);
     assert.deepEqual(r.log, [], name);
@@ -279,7 +279,7 @@ test('virgl on WebGL2: glcomp in a guest, rendered in the GPU worker, reads back
   const r = await (await p.waitForFunction(() => (window as unknown as { result?: unknown }).result, null, { timeout: 240_000, polling: 250 })).jsonValue() as { error?: string; console: string };
   await p.close();
   assert.equal(r.error, undefined);
-  assert.match(r.console, /glcomp: virgl \(webpc\), OpenGL ES 3\.0/);
+  assert.match(r.console, /glcomp: virgl \(waarm64\), OpenGL ES 3\.0/);
   const rows = [...r.console.matchAll(/glcomp: px (\d+) ([0-9a-f]+)/g)];
   assert.equal(rows.length, 96);
   const c = compare(new Uint8Array(Buffer.concat(rows.map((m) => Buffer.from(m[2], 'hex')))), fixture('glcomp-128x96.llvmpipe.rgba'), 2);

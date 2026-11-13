@@ -188,7 +188,7 @@ export class PageWindow {
     })();
   }
 
-  // The local helper's pairing link (webpc-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
+  // The local helper's pairing link (waarm64-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
   // fragment never reached a server; it leaves the address at once (it holds the token) and opens the Network wizard
   // on it, attaching to the page's machine's first adapter when there's one. Also when the link is opened in a tab
   // that already shows the page: only the fragment changes, and the browser doesn't load the page again.

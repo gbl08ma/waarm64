@@ -44,7 +44,7 @@ export function memoryFiles(): Files & { write(path: string, bytes: number): voi
   /* eslint-enable @typescript-eslint/require-await */
 }
 
-const DB = 'webpc';
+const DB = 'waarm64';
 /** A request's or a transaction's error; none (a transaction aborted without one) is still an Error. */
 const failure = (e: DOMException | null) =>
   e ?? new DOMException('the IndexedDB transaction was aborted', 'UnknownError');
@@ -54,7 +54,7 @@ const idb = <T>(req: IDBRequest<T>) =>
     req.onerror = () => reject(failure(req.error));
   });
 
-/** Records in IndexedDB `webpc`: an object store per kind, keyed by `id` (version 2 added `connections`, 3 `folders`). */
+/** Records in IndexedDB `waarm64`: an object store per kind, keyed by `id` (version 2 added `connections`, 3 `folders`). */
 export async function idbRecords(name = DB): Promise<Records> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const r = indexedDB.open(name, 3);

@@ -5,7 +5,7 @@
 // page boots it unmodified through EDK2 (M8 phase B), so that is all there is: no
 // kernel or initrd is taken out of it (the direct boot of Debian was dropped).
 //   node tools/debian.ts [--force]
-// WEBPC_DL overrides the download cache (default target/images/dl), e.g. to
+// WAARM64_DL overrides the download cache (default target/images/dl), e.g. to
 // share one download between checkouts.
 import { createHash } from 'node:crypto';
 import { constants, createReadStream, existsSync } from 'node:fs';
@@ -19,7 +19,7 @@ export const PIN = JSON.parse(await readFile(join(ROOT, 'images/debian.json'), '
 export const OUT = join(ROOT, 'target/images/debian');
 /** What the page needs: the disk alone. */
 export const OUTPUTS = ['disk.qcow2'];
-export const downloads = () => process.env.WEBPC_DL || join(ROOT, 'target/images/dl');
+export const downloads = () => process.env.WAARM64_DL || join(ROOT, 'target/images/dl');
 const STAMP = '.prepared';
 
 const mb = (n: number) => `${(n / 1e6).toFixed(0)} MB`;
@@ -66,7 +66,7 @@ export async function download(pin: Pin = PIN, log = (s: string) => console.log(
     res = await fetch(pin.url);
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
-    throw new Error(`Couldn't download ${pin.label ?? 'Debian'} from ${pin.url}: ${(e as Error).message}${(e as Error).cause ? ` (${(e as Error & { cause: Error }).cause.message})` : ''}.\nCheck the network, or put ${pin.file} in ${dir} (WEBPC_DL sets that directory).`);
+    throw new Error(`Couldn't download ${pin.label ?? 'Debian'} from ${pin.url}: ${(e as Error).message}${(e as Error).cause ? ` (${(e as Error & { cause: Error }).cause.message})` : ''}.\nCheck the network, or put ${pin.file} in ${dir} (WAARM64_DL sets that directory).`);
   }
   const total = Number(res.headers.get('content-length') ?? 0);
   const show = progressLine(`Downloading ${pin.label ?? 'Debian 13'} (${pin.file})`);

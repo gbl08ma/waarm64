@@ -3,9 +3,9 @@
 // block cache (web/diskcache.ts) sizes its budget from that estimate. A machine on a URL disk (served by the test
 // server: no file handle in IndexedDB, which Chromium 153 crashes reading back off the record) reads its disk until
 // the cache holds what it may; then a kept snapshot, a Restore and a Suspend still find room: their writers give the
-// cache's room back and try again (docs/remote-disks.md "Off the record"). WEBPC_INCOGNITO_QUOTA=<MiB> lowers the
+// cache's room back and try again (docs/remote-disks.md "Off the record"). WAARM64_INCOGNITO_QUOTA=<MiB> lowers the
 // origin's quota on top (`Storage.overrideQuotaForOrigin`) to find the case on a profile with more room. Opt-in with
-// WEBPC_DISTROS=debian (scripts/ci-machines.sh); one Debian boot.
+// WAARM64_DISTROS=debian (scripts/ci-machines.sh); one Debian boot.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -18,10 +18,10 @@ import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 
 let browser: Browser;
@@ -74,7 +74,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page, () => true);
     await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
-    if (process.env.WEBPC_INCOGNITO_QUOTA) await (await context.newCDPSession(page)).send('Storage.overrideQuotaForOrigin', { origin: base, quotaSize: Number(process.env.WEBPC_INCOGNITO_QUOTA) << 20 });
+    if (process.env.WAARM64_INCOGNITO_QUOTA) await (await context.newCDPSession(page)).send('Storage.overrideQuotaForOrigin', { origin: base, quotaSize: Number(process.env.WAARM64_INCOGNITO_QUOTA) << 20 });
     const id = await page.evaluate(async () => {
       const { Store } = await import('/web/app/store.ts' as string);
       const { newId } = await import('/web/app/shape.ts' as string);

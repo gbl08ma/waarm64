@@ -33,7 +33,7 @@ These bind the graphics work; changing one is the user's call (PLAN.md).
   through Venus needs all three, and a machine with Vulkan has them since VK1: [devices.md](devices.md) "Venus" and
   "The host-visible window", [vk/README.md](../vk/README.md), "Vulkan through Venus" below.)
 - **3D is the page's default where WebGL2 is**, with the Machine menu's Graphics choice; the 2D path stays and stays
-  tested (`?gpu=2d`, `WEBPC_PAGE_QUERY=gpu=2d scripts/ci-debian.sh`).
+  tested (`?gpu=2d`, `WAARM64_PAGE_QUERY=gpu=2d scripts/ci-debian.sh`).
 - **Snapshots while 3D is in use save the renderer's state as data** (objects decoded, contents read back), never a
   replay of the commands; refused only while a video decodes.
 - **Tests:** 2D is byte-exact in deterministic mode (natively, in Node and in Chromium, with its own guest and kernel
@@ -212,7 +212,7 @@ screen than on the simple framebuffer (backlog).
   so `images/build.sh alpine-virgl` builds Mesa from source for the benchmarks (images.md). Linux 6.18 and 7.2 take the
   device as QEMU's (`features: +virgl +edid`), read both capsets at probe and **keep them for the session** (the caps
   a guest saw at boot are its Mesa's until it reboots), and make a context per DRM file (Alpine's initramfs's
-  `nlplug-findfs` opens the render node at boot and never closes it). Mesa 26 reports `virgl (webpc)` with **OpenGL
+  `nlplug-findfs` opens the render node at boot and never closes it). Mesa 26 reports `virgl (waarm64)` with **OpenGL
   ES 3.0** (GLSL ES 3.00) **and desktop GL 2.1** (compat, GLSL 1.20; no core profile). That covers wlroots, KWin and
   GTK4's GLES paths, Firefox's WebRender and the browsers' ANGLE.
 - **Texture data moves through staging buffers**: a `glTexSubImage2D` is a copy into a guest-backed
@@ -224,7 +224,7 @@ screen than on the simple framebuffer (backlog).
 - **sway on GLES**: 2 submits a frame; its buffers are 3D resources flipped with `SET_SCANOUT` and `RESOURCE_FLUSH`;
   its cursor is drawn with GL into a 3D resource (devices.md "A 3D cursor"); dumb buffers (fbcon, a console's cursor,
   pixman) stay 2D. A scrolling foot uploads its whole window every frame (3.7 MB at 1376×762).
-- **Firefox** (about:support): WebRender, accelerated, on "virgl (webpc)", GLES 3.0 for WebGL 1 and 2; WebGL reaches
+- **Firefox** (about:support): WebRender, accelerated, on "virgl (waarm64)", GLES 3.0 for WebGL 1 and 2; WebGL reaches
   WebRender through DMABUF (no read-backs); accelerated canvas 2D; only the parent process maps Mesa. Its gfxInfo
   blocks its native compositor (forcing it on presents no video frame) and DMABUF export; VA-API decoding needs no pref
   (graphics.md "Video"). One of its shaders fails to compile (`GL_EXT_shader_texture_lod`, which Mesa 26 has for no GLES driver): not ours. Scrolling
@@ -552,7 +552,7 @@ following vrend's conventions:
 On with 3D (`?gpu=novideo` off); the design, its findings and its measurements are below ("Video's design" …).
 - **The caps' `video_caps`** list the decoders the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main
   and High, VP9 profile 0, AV1 Main 8-bit; `probeVideo` in `web/virgl-video.ts`, in the GPU worker before it answers,
-  which also notes which are in hardware), so the guest's Mesa offers VA-API decoding. The guest needs our `webpc-va`
+  which also notes which are in hardware), so the guest's Mesa offers VA-API decoding. The guest needs our `waarm64-va`
   (NV12 surfaces only, "Video's design"), in the desktop image. `capsBacked` wants every decoder
   the guest was told of.
 - **The renderer keeps each context's codecs and video buffers** (CCMD 53–61: a buffer is its planes' resources, R8
@@ -591,7 +591,7 @@ On with 3D (`?gpu=novideo` off); the design, its findings and its measurements a
   frame's map (`nudge`d out after 30 ms of calls waiting: `CallQueue`'s `nudgeMs`, and before a destroyed codec's
   flush), and one sent stored nowhere is decoded again if a later frame references it; a hidden frame the guest shows
   later is written shown, and frames with no output go in the next temporal unit. Film grain reaches the shown surface
-  through webpc-va 2 (Mesa sends the film grain target too late).
+  through waarm64-va 2 (Mesa sends the film grain target too late).
 - `renderer.videoStats` (decoded, dropped, errors; each picture's END_FRAME to written and its write, in ms) and the
   queue's `ahead` and `maxWaitMs` go out in render-stats (`bench/gpu/guest-session.ts` sums them over a phase). Mesa's
   wire numbers its profiles by its own `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across
@@ -604,7 +604,7 @@ Decided 2026-10-14 (the user); the track ended 2026-10-15 with H.264, VP9 and AV
   over the virgl protocol we already render (`VIRGL_CCMD_CREATE_VIDEO_CODEC` … `END_FRAME`); Firefox's VA-API path,
   mpv, GStreamer's `va` plugins and FFmpeg use it unmodified. The pictures never touch guest RAM: Firefox exports the
   surface as a dmabuf and WebRender samples it as virgl textures (the R8 and GR88 planes, imported zero-copy).
-- **One piece of guest software of ours, `webpc-va`** (`webpc_drv_video.so`, `LIBVA_DRIVER_NAME=webpc`, ~60 lines on
+- **One piece of guest software of ours, `waarm64-va`** (`waarm64_drv_video.so`, `LIBVA_DRIVER_NAME=waarm64`, ~60 lines on
   libva's stable ABI; images.md): it loads Mesa's driver and drops I420 and YV12 from `vaQuerySurfaceAttributes`.
   Mesa's virgl offers them besides NV12 (real drivers offer NV12 alone for decoding), FFmpeg's
   `vaapi_decode_find_best_format` then picks I420 for 4:2:0, and Firefox's VA-API path takes NV12, YV12, P010 and P016
@@ -699,7 +699,7 @@ Worth not re-discovering:
   (the first version) decoded 55 of 65 libaom frames twice, the wait for the next frame's map none. The guest's FFmpeg
   reading each picture back waits 30 ms a frame for the nudge. Apple's hardware decoder fails a temporal unit without a
   shown frame, hence hidden frames in the next unit. With film grain FFmpeg decodes into a reference surface and shows
-  another (`current_display_picture`); webpc-va 2 has such a frame decoded into its display surface and names display
+  another (`current_display_picture`); waarm64-va 2 has such a frame decoded into its display surface and names display
   surfaces in the reference map, and the host's decoder applies the grain (dav1d's and VideoToolbox's equal FFmpeg's).
 - **The fixture replay can't find a stall:** it feeds every picture without waiting, as no guest does; a decoder that
   holds pictures shows only with the guest on the page (`bench/video/v1.ts`).
@@ -1117,7 +1117,7 @@ Worth not re-discovering:
 - Through virglrenderer on llvmpipe, glcomp's pixel hash equals llvmpipe's own, so reference images can come from the
   oracle natively. es2gears doesn't start under Xvfb (EGLUT wants DRI3); glmark2-es2 does.
 - The guests' Arch `pacman -Syu` rebuilds the initramfs with `autodetect`: keep `MODULES=(virtio_mmio virtio_blk ext4
-  vfat)` (images/arch/build.sh sets it in `/etc/mkinitcpio.conf.d/webpc.conf`).
+  vfat)` (images/arch/build.sh sets it in `/etc/mkinitcpio.conf.d/waarm64.conf`).
 - Firefox: a fresh profile's first minute is busy (WebExtensions, settings sync failing offline): warm up 30 s before
   measuring. The null renderer can't run Firefox's WebGL page (it never gets ready).
 - `Gpu.save()` is also the tests' state read (`vm.deviceState`): it never throws; it marks `unsaveable` (why, a message of
@@ -1130,7 +1130,7 @@ Worth not re-discovering:
 
 The test layers are in [testing.md](testing.md): the 2D device and the gpu guest (byte-exact, natively, in Node and in
 Chromium), virgl's device side, the renderer in Node on a recording WebGL2 and in Chromium on traces, 3D snapshots,
-the page's Debian tests on 3D (`WEBPC_PAGE_QUERY=gpu=2d scripts/ci-debian.sh` for the 2D path).
+the page's Debian tests on 3D (`WAARM64_PAGE_QUERY=gpu=2d scripts/ci-debian.sh` for the 2D path).
 
 **dEQP is the correctness gate** (VK-GL-CTS, Apache-2.0: built and run as a guest workload, nothing copied;
 `images/deqp/build.sh`, images.md). `bench/gpu/deqp-run.ts` runs a case list on the page under the JIT: dEQP's guest

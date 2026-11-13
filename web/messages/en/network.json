@@ -5,7 +5,7 @@
   },
   "NetPickStep.kind.local": {
     "message": "the helper on your computer",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection through the local helper (webpc-net), under the connection's name."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection through the local helper (waarm64-net), under the connection's name."
   },
   "NetPickStep.kind.tailcatExit": {
     "message": "tailcat through a server",
@@ -69,7 +69,7 @@
   },
   "NetWizard.title.local": {
     "message": "New connection through your computer",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a connection through the local helper (webpc-net)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a connection through the local helper (waarm64-net)."
   },
   "NetWizard.title.tailcat": {
     "message": "New tailcat connection",
@@ -140,12 +140,12 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “tailcat (no account)”."
   },
   "NetKindStep.kind.pickLocal": {
-    "message": "Your computer (webpc-net)",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the third choice, the local helper (webpc-net is its program's name)."
+    "message": "Your computer (waarm64-net)",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the third choice, the local helper (waarm64-net is its program's name)."
   },
   "NetKindStep.kind.pickLocal.note": {
     "message": "A small program you run on your computer gives the machine your computer's network, including your LAN and the internet. It runs at your computer's own speed, with no relay and no account.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “This computer (webpc-net)”."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “This computer (waarm64-net)”."
   },
   "NetKindStep.kind.pickRoom": {
     "message": "A peer-to-peer room",
@@ -313,22 +313,22 @@
   },
   "NetLocalStep.local.link": {
     "message": "The helper's link",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step while it edits a connection: the label of the field where the link webpc-net prints is pasted (a new connection has the numbered steps instead)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step while it edits a connection: the label of the field where the link waarm64-net prints is pasted (a new connection has the numbered steps instead)."
   },
   "NetLocalStep.local.run": {
-    "message": "Run <a>webpc-net</a> on your computer.",
+    "message": "Run <a>waarm64-net</a> on your computer.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its first numbered step; the install lines, or how to build it, follow inside it. <a>…</a> links to the helper's source and releases."
   },
   "NetLocalStep.local.paste": {
     "message": "Paste the link it prints, below:",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its second numbered step, the label of the field where the link webpc-net prints is pasted. “it” is webpc-net."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its second numbered step, the label of the field where the link waarm64-net prints is pasted. “it” is waarm64-net."
   },
   "NetLocalStep.local.note": {
     "message": "Opening the link does the same. Keep the link to yourself, as it lets any page the helper accepts use your network. When this browser asks whether this site may reach devices on your local network, allow it.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the note under its numbered steps (below the link's field), for consequences and warnings."
   },
   "NetLocalInstall.install": {
-    "message": "Install webpc-net {{version}}",
+    "message": "Install waarm64-net {{version}}",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog): the summary of the section with the install lines, when there's a release. {{version}} is the release's version (e.g. v1.0.0)."
   },
   "NetLocalInstall.install.for": {
@@ -336,11 +336,11 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog): the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
   },
   "NetLocalInstall.install.note": {
-    "message": "In a terminal, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
+    "message": "In a terminal, run these lines, which download waarm64-net, check it against its published SHA-256, and run it:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog), inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
   },
   "NetLocalInstall.install.note.windows": {
-    "message": "In PowerShell, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
+    "message": "In PowerShell, run these lines, which download waarm64-net, check it against its published SHA-256, and run it:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (and a local connection's details, a dialog), inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
   },
   "NetTailnetStep.control": {
@@ -357,7 +357,7 @@
   },
   "NetTailnetStep.hostname": {
     "message": "Hostname",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the label of the field with the machine's name on the tailnet (webpc by default)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the label of the field with the machine's name on the tailnet (waarm64 by default)."
   },
   "NetTailnetStep.authKey": {
     "message": "Auth key (optional, never saved)",
@@ -541,7 +541,7 @@
   },
   "NetAdapter.room.link": {
     "message": "The room's link",
-    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the room's link (webpc-room:…), which others need to join the room."
+    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the room's link (waarm64-room:…), which others need to join the room."
   },
   "NetAdapter.connect": {
     "message": "Connect",
@@ -616,7 +616,7 @@
     "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a tailcat connection that isn't connected: the text in place of the machine's tailcat address and key."
   },
   "NetDetails.local.note": {
-    "message": "The guest's network goes through <a>webpc-net</a>, a helper that runs on your computer. It has to be running for the machine to connect.",
+    "message": "The guest's network goes through <a>waarm64-net</a>, a helper that runs on your computer. It has to be running for the machine to connect.",
     "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a connection through the local helper: its first text. <a>…</a> links to the helper's source and releases; its install lines (network.NetLocalInstall.install) follow."
   },
   "NetDetails.local.link": {
@@ -645,7 +645,7 @@
   },
   "connections.thisComputer": {
     "message": "Your computer",
-    "note": "The default name of a new connection through the local helper (webpc-net), as the Network wizard, the Network menu and the Machines page's Connections show it. It is stored with the connection, which the user can rename."
+    "note": "The default name of a new connection through the local helper (waarm64-net), as the Network wizard, the Network menu and the Machines page's Connections show it. It is stored with the connection, which the user can rename."
   },
   "net-claims.keyInUse": {
     "message": "Its key is in use by the connection {{other}} on another adapter: a key runs in one room connection at a time.",
@@ -729,7 +729,7 @@
   },
   "network-view.connectingHelper": {
     "message": "Connecting to the helper on your computer…",
-    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connecting to the local helper (webpc-net)."
+    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connecting to the local helper (waarm64-net)."
   },
   "network-view.connectedLocal.address": {
     "message": "Connected through your computer ({{address}})",
@@ -913,26 +913,26 @@
   },
   "room.badLink": {
     "message": "The room's link is damaged. Copy it again from whoever gave it to you.",
-    "note": "The Network wizard, the room step (Join a room): the error when a pasted link (webpc-room:…) can't be read."
+    "note": "The Network wizard, the room step (Join a room): the error when a pasted link (waarm64-room:…) can't be read."
   },
   "local-net.versions": {
     "message": "This web app and the helper are different versions.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper closed the connection because its version and this web app's differ."
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the helper closed the connection because its version and this web app's differ."
   },
   "local-net.origin": {
     "message": "The helper doesn't accept this web app's address. Run it with --origin.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper refused this web app's origin. --origin is the helper's option, as it is."
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the helper refused this web app's origin. --origin is the helper's option, as it is."
   },
   "local-net.token": {
     "message": "The link isn't this helper's. Use the link it prints.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the link's token is wrong (an old link, another helper)."
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the link's token is wrong (an old link, another helper)."
   },
   "local-net.closed": {
     "message": "The helper closed the connection.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper closed the connection for another reason; what it said, if anything, is shown under it."
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the helper closed the connection for another reason; what it said, if anything, is shown under it."
   },
   "local-net.pasteLink": {
-    "message": "Paste the link that webpc-net prints. It looks like https://vm.tny.im/#net=ws://127.0.0.1:…",
+    "message": "Paste the link that waarm64-net prints. It looks like https://vm.tny.im/#net=ws://127.0.0.1:…",
     "note": "The Network wizard, the local helper's step: the error when the link's field is empty. The link is an example of the helper's, as it is."
   },
   "local-net.notLink": {
@@ -941,15 +941,15 @@
   },
   "local-net.notFrames": {
     "message": "The helper sent a malformed message.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper sent something that isn't its framing (this web app closed the connection)."
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the helper sent something that isn't its framing (this web app closed the connection)."
   },
   "local-net.unreached": {
-    "message": "Couldn't reach the helper. Check that webpc-net is running on your computer.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the connection never opened."
+    "message": "Couldn't reach the helper. Check that waarm64-net is running on your computer.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): the connection never opened."
   },
   "local-net.refused": {
     "message": "This browser doesn't let this site reach the helper on your computer. Click the icon left of the address, choose Site settings, allow “Local network access”, and connect again.",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): this browser refuses this site access to the local network (Chromium's Local Network Access permission). “Local network access” and “Site settings” are Chromium's own words."
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, waarm64-net): this browser refuses this site access to the local network (Chromium's Local Network Access permission). “Local network access” and “Site settings” are Chromium's own words."
   },
   "local-net.noExitNodes": {
     "message": "A connection through your computer has no exit nodes to choose from.",

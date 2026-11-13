@@ -53,7 +53,7 @@ fn edk2_boots_the_shell_and_keeps_a_variable() {
     let r = edk2(None);
     let con = plain(&r.console);
     assert!(
-        con.contains("webpc: before\nsetvar: Unable to get") && con.contains("webpc: done"),
+        con.contains("waarm64: before\nsetvar: Unable to get") && con.contains("waarm64: done"),
         "{con}"
     );
     assert_eq!(r.steps, common::steps("edk2-shell"));
@@ -61,7 +61,7 @@ fn edk2_boots_the_shell_and_keeps_a_variable() {
     let con = plain(&r2.console);
     assert!(
         con.contains(
-            "WebpcTest - 0012 Bytes\n70 00 65 00 72 00 73 00 69 00 73 00 74 00 65 00 64 00"
+            "Waarm64Test - 0012 Bytes\n70 00 65 00 72 00 73 00 69 00 73 00 74 00 65 00 64 00"
         ),
         "{con}"
     );

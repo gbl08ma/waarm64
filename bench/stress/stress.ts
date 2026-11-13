@@ -130,7 +130,7 @@ const installHook = () => {
 
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', downloadsPath: process.env.WEBPC_DOWNLOADS });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', downloadsPath: process.env.WAARM64_DOWNLOADS });
 process.on('SIGTERM', () => stop(finish(), 'SIGTERM'));
 const page = await browser.newPage();
 await page.addInitScript(installHook);

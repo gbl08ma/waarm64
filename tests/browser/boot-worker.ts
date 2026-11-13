@@ -49,10 +49,10 @@ try {
     : gpu !== null ? { kernel: 'linux-gpu/Image', initrd: 'linux-gpu/initramfs.cpio', disk: '', cmdline: 'console=ttyAMA0 panic=-1' }
     : snd ? { kernel: 'linux-snd/Image', initrd: 'linux-snd/initramfs.cpio', disk: '', cmdline: 'console=ttyAMA0 panic=-1' }
     : distro ? DISTROS[distro]
-    : litmus !== null ? { kernel: 'linux/Image', initrd: 'litmus/initramfs.cpio', disk: '', cmdline: `console=ttyAMA0 panic=-1 webpc.litmus=${litmus} webpc.stress=${params.get('stress') ?? ''}` }
+    : litmus !== null ? { kernel: 'linux/Image', initrd: 'litmus/initramfs.cpio', disk: '', cmdline: `console=ttyAMA0 panic=-1 waarm64.litmus=${litmus} waarm64.stress=${params.get('stress') ?? ''}` }
     : { kernel: 'linux/Image', initrd: undefined, disk: 'buildroot/rootfs.ext4', cmdline: GUEST_CMDLINE + (params.has('input') ? ' -- /bin/sh' : script ? ` -- ${script}` : '') };
   const [wasm, kernel, initrd] = await Promise.all([
-    get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'),
+    get('/target/wasm32-unknown-unknown/release/waarm64_core.wasm'),
     get(`/target/images/${img.kernel}`),
     img.initrd ? get(`/target/images/${img.initrd}`) : undefined,
   ]);

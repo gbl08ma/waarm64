@@ -67,7 +67,7 @@ our direct boot unchanged. Found on QEMU 11.1.1 (TCG, `virt`, GICv3) before anyt
   transfer, as unpaced. `Blt` and `SetMode` raise to the timer's TPL around their requests (the
   virtqueue is one, unlocked), a mode set flushes what waits first, and after ExitBootServices (the
   device reset) the timer sends nothing.
-- **`usb-xhci.patch`** and **`WebpcXhciDxe`** (ours, MIT, in `images/edk2/`): EDK2 finds xHCI controllers on
+- **`usb-xhci.patch`** and **`Waarm64XhciDxe`** (ours, MIT, in `images/edk2/`): EDK2 finds xHCI controllers on
   PCI, and ours is a DT node (`generic-xhci`). The driver reads the DT through ArmVirtPkg's FdtClient and
   registers each such node with `RegisterNonDiscoverableMmioDevice` (an xHCI, coherent DMA); the patch adds it and
   `NonDiscoverablePciDeviceDxe` to ArmVirtQemuKernel's build, so EDK2's own XhciDxe, UsbBusDxe and UsbKbDxe drive
@@ -143,7 +143,7 @@ oracle"). The DT gives `tty0` and `ttyAMA0` (fbcon and `stdout-path`); ACPI's SP
 
 ## Gotchas
 
-- `localhost/webpc-images` (images/Containerfile) is amd64 under qemu-user on the dev VM: never build
+- `localhost/waarm64-images` (images/Containerfile) is amd64 under qemu-user on the dev VM: never build
   EDK2 in it. `edksetup.sh` fails under `set -u` and eats the positional parameters (`set --` first);
   an apostrophe inside `images/build.sh`'s single-quoted container scripts ends the script.
 - QEMU: `-fw_cfg name=…,string=` rejects an empty value (use `file=`); with `-dtb` QEMU still rewrites

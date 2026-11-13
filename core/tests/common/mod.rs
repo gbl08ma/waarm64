@@ -15,10 +15,10 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use webpc_core::fw_cfg::FwCfg;
-use webpc_core::mem::{Access, Mem};
-use webpc_core::virtio::{DeviceEntry, EV_CONFIG, Request};
-use webpc_core::vm::{
+use waarm64_core::fw_cfg::FwCfg;
+use waarm64_core::mem::{Access, Mem};
+use waarm64_core::virtio::{DeviceEntry, EV_CONFIG, Request};
+use waarm64_core::vm::{
     ExitInfo, RAM_BASE, SIGNAL_DEVICE, SIGNAL_RX, SIGNAL_STOP, Vm, VmConfig, exit,
 };
 
@@ -124,7 +124,7 @@ pub enum Dev {
 /// (more than the 4 KiB RX ring) whose md5sum it prints before it exits.
 pub fn console_input() -> Vec<u8> {
     let mut s = String::from(
-        "stty -echo; read l; echo \"webpc: got [$l]\"; head -n 100 | md5sum; exit\nhello from the host\n",
+        "stty -echo; read l; echo \"waarm64: got [$l]\"; head -n 100 | md5sum; exit\nhello from the host\n",
     );
     for i in 0..100 {
         s += &format!("line {i:03}: the quick brown fox jumps over the lazy dog\n");
@@ -133,7 +133,7 @@ pub fn console_input() -> Vec<u8> {
 }
 pub const CONSOLE_INPUT_STEP: u64 = 30_000_000;
 pub const CONSOLE_INPUT_WANT: &str =
-    "webpc: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n";
+    "waarm64: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n";
 pub const KEY_EVENTS: &[[u32; 3]] = &[[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
 pub const TABLET_EVENTS: &[[u32; 3]] = &[
     [3, 0, 16384],
@@ -176,7 +176,7 @@ pub struct Distro {
     pub cmdline: &'static str,
 }
 
-/// Alpine: OpenRC's local service runs images/alpine/webpc.start, which powers off.
+/// Alpine: OpenRC's local service runs images/alpine/waarm64.start, which powers off.
 pub const ALPINE: Distro = Distro {
     kernel: "alpine/Image",
     initrd: "alpine/initramfs-virt",
@@ -298,9 +298,9 @@ fn input_config(kbd: bool, select: u8, subsel: u8) -> Vec<u8> {
     };
     match (select, subsel, kbd) {
         (1, _, _) => (if kbd {
-            "webpc keyboard"
+            "waarm64 keyboard"
         } else {
-            "webpc tablet"
+            "waarm64 tablet"
         })
         .into(),
         (3, _, _) => [6u16, 0, if kbd { 1 } else { 2 }, 1]
@@ -360,7 +360,7 @@ fn blk(disk: &Disk, overlay: Option<&Overlay>, read: &[&mut [u8]], write: &mut [
         }
         Some(8) => {
             let mut id = [0u8; 20];
-            id[..9].copy_from_slice(b"webpc-blk");
+            id[..11].copy_from_slice(b"waarm64-blk");
             fill(&mut data, &id[..room.min(20)]);
             (0, room.min(20))
         }
@@ -863,7 +863,7 @@ pub struct Boot<'a> {
     pub flush_only: bool,
     /// `VmConfig.jit`. Natively there's no wasm engine, so any JIT mode runs
     /// everything through the dispatcher and the block interpreter
-    /// (`interp::block`); 0, the interpreter alone. `WEBPC_NATIVE_JIT` sets
+    /// (`interp::block`); 0, the interpreter alone. `WAARM64_NATIVE_JIT` sets
     /// the default (0).
     pub jit: u64,
     /// An xHCI (`VmConfig.xhci`) with Gadget Zeros: plugged in at start (connector, options), and
@@ -889,7 +889,7 @@ pub struct Firmware<'a> {
 }
 
 /// Where the firmware goes: RAM + its `Image` header's text_offset (512 KiB), as QEMU puts it.
-pub const FIRMWARE: u64 = webpc_core::vm::RAM_BASE + (512 << 10);
+pub const FIRMWARE: u64 = waarm64_core::vm::RAM_BASE + (512 << 10);
 
 /// The PL031's start in deterministic firmware runs: 2026-09-01 00:00 UTC (web/vm.ts's too).
 pub const FIRMWARE_EPOCH_MS: u64 = 1_788_220_800_000;
@@ -898,7 +898,7 @@ pub const FIRMWARE_EPOCH_MS: u64 = 1_788_220_800_000;
 pub fn fw_cfg_buffer(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut b = vec![];
     for (name, data) in files {
-        let mut n = [0u8; webpc_core::fw_cfg::NAME];
+        let mut n = [0u8; waarm64_core::fw_cfg::NAME];
         n[..name.len()].copy_from_slice(name.as_bytes());
         b.extend(n);
         b.extend((data.len() as u32).to_le_bytes());
@@ -922,14 +922,14 @@ impl<'a> Boot<'a> {
             fb: (0, 0),
             // The default features (the crypto extensions, FEAT_RNG, FEAT_E0PD, SHA512/SHA3,
             // JSCVT, LRCPC, SB, FlagM, DIT, FRINTTS, DotProd; not I8MM), as `bootVm` gives them.
-            features: webpc_core::cpu::DEFAULT_FEATURES,
+            features: waarm64_core::cpu::DEFAULT_FEATURES,
             ncpus: 1,
             parallel: false,
             input: None,
             firmware: None,
             snapshots: &[],
             flush_only: false,
-            jit: std::env::var("WEBPC_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
+            jit: std::env::var("WAARM64_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
             usb: None,
         }
     }
@@ -988,7 +988,7 @@ pub fn boot(b: &Boot) -> Run {
         rtc: firmware.as_ref().map_or(0, |f| f.rtc),
         jit,
         xhci: if usb.is_some() {
-            webpc_core::xhci::CONFIG
+            waarm64_core::xhci::CONFIG
         } else {
             0
         },
@@ -998,7 +998,8 @@ pub fn boot(b: &Boot) -> Run {
     let mut vm = Vm::with_devices(mem, cfg, &entries);
     if let Some(f) = firmware {
         // As `vm_new` does with the host's buffer.
-        let files = webpc_core::smbios::with(&cfg, FwCfg::parse(&fw_cfg_buffer(f.fw_cfg)).unwrap());
+        let files =
+            waarm64_core::smbios::with(&cfg, FwCfg::parse(&fw_cfg_buffer(f.fw_cfg)).unwrap());
         let p = vm.plat.get_mut();
         p.fw_cfg = Some(FwCfg::new(files).unwrap());
         if let Some(saved) = f.flash {
@@ -1172,7 +1173,7 @@ pub fn boot(b: &Boot) -> Run {
         }
     };
     let secs = t.elapsed().as_secs_f64();
-    let fb = webpc_core::boot::framebuffer(&cfg).map_or(vec![], |(pa, len)| {
+    let fb = waarm64_core::boot::framebuffer(&cfg).map_or(vec![], |(pa, len)| {
         let p = vm
             .mem
             .host(pa, len, Access::Read)
@@ -1358,7 +1359,7 @@ pub fn run_parallel(
                         exit::BUDGET => {}
                         exit::IDLE => {
                             let wake = &vm.shared.cpus[c].wake;
-                            webpc_core::vm::wait(wake, e.wake as u32, e.value);
+                            waarm64_core::vm::wait(wake, e.wake as u32, e.value);
                         }
                         exit::TX_FULL => std::thread::sleep(Duration::from_micros(100)),
                         exit::DEVICE => device(vm),

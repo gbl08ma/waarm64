@@ -37,10 +37,10 @@ code's comments still cite; machines had first left several adapters for later: 
 
 ### 2.1 The record
 
-IndexedDB `webpc`, object store `connections` (web/app/store.ts), `Connection` in web/app/connections.ts: an id (also
+IndexedDB `waarm64`, object store `connections` (web/app/store.ts), `Connection` in web/app/connections.ts: an id (also
 the lock's name), the user's name, the kind, `ephemeral`, the kind's settings, `connectAtStart` (off after
 Disconnect) and `lastUsed` (what the wizard preselects). The state stays where the clients keep it:
-- **A tailnet's node** in `webpc-tailscale`, in the Go client's format ([tailnet.md](tailnet.md) "The kept node"),
+- **A tailnet's node** in `waarm64-tailscale`, in the Go client's format ([tailnet.md](tailnet.md) "The kept node"),
   under the profile prefix `stateKey` (the connection's id; for a node kept before connections, its control URL). An
   auth key is never kept: it enrolls the node once, and the node is then kept like a login's (ephemeral only when the
   key or the connection is).
@@ -54,15 +54,15 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   one another tab's machine has is taken from it first, after asking.
 - **The local helper's link** (`local.url`, `ws://127.0.0.1:<port>/<token>`) in the record: a secret, like tailcat's
   `exit`; the helper keeps its token, so the link stays good across its restarts. Nothing else to forget.
-- **tailcat's identity** in `webpc-tailcat` under `identityKey` (`served` for the one kept before
+- **tailcat's identity** in `waarm64-tailcat` under `identityKey` (`served` for the one kept before
   connections): the node key, the same whether the connection serves or only goes online through a server (which can
   then `--allow` it), and the served address's pre-shared key. The server address it goes online through (`exit`) is a secret and is kept only in a stored
   connection.
 - **An ephemeral connection** lives in a `Map` in the page, and its client's state goes to an in-memory store instead
   of IndexedDB.
-- **A room's link and key**: the link (`room.link`, `webpc-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
+- **A room's link and key**: the link (`room.link`, `waarm64-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
   private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
-  `webpc-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
+  `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
   machine's address and name in the room stay the same. A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
   own; named by a hash of the key, a stored connection's read from its entry and made there at its first claim, so
@@ -76,7 +76,7 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
 
 ### 2.2 From the single connection kept before
 
-The page used to have one connection per browser (`webpc.settings` `net`, one kept node per control server, one
+The page used to have one connection per browser (`waarm64.settings` `net`, one kept node per control server, one
 tailcat identity per origin). On the first load with connections, `migrateLegacy` makes them stored connections, so
 nobody logs in again: a tailnet connection per kept node, whose `stateKey` is the profile it was kept under (no bytes
 move), and a tailcat one for the `served` identity, so the machine's tailcat address stays. The transient machine's
@@ -85,7 +85,7 @@ settings. Idempotent.
 
 ### 2.3 Locks between tabs
 
-A Web Lock `webpc-net:<id>` is held while a running machine has the connection's client (web/app/locks.ts, as USB's
+A Web Lock `waarm64-net:<id>` is held while a running machine has the connection's client (web/app/locks.ts, as USB's
 devices: [usb.md](../usb.md) "Device locks"), over the store's `BroadcastChannel`: `net-who` asks which machine holds it,
 `net-held` answers, and `net-release` asks the holder to let go. The page offers [Use it here](ui:network:network-actions.useHere), and the other tab
 disconnects and says it was taken.

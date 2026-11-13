@@ -1,7 +1,7 @@
 // Snapshots of a machine kept in the browser (docs/machines.md §5), on Debian, through the page and its modal:
 // three kept; an older one restored forks the newer state into an overlay of its own (nothing lost), the ramdisk comes
 // back with the snapshot; Suspend resumes while its pins match and boots instead once the disk moved on; a change of
-// RAM orphans the snapshots, and one action deletes them. Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh).
+// RAM orphans the snapshots, and one action deletes them. Opt-in with WAARM64_DISTROS=debian (scripts/ci-machines.sh).
 //
 // A fresh profile on disk, as a user's: an off-the-record context keeps OPFS in memory, where Chromium's sync handles
 // come back short at ~0.8 GB while `estimate()` reports 3.2 GB. The URL disk's block cache (web/diskcache.ts), sized
@@ -21,9 +21,9 @@ import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : !existsSync(IMAGE) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : !existsSync(IMAGE) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 
 let base: string;
@@ -73,7 +73,7 @@ const record = <T>(page: Page, f: string, a: unknown) => page.evaluate(async ({ 
 }, { f, a }) as Promise<T>;
 
 test('kept snapshots: an older one restored forks the newer state, the ramdisk comes back, Suspend on its pins, a RAM change orphans them all', { skip, timeout: 40 * 60_000 }, () => withDebianLock(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
   const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   profile = { dir, context };
   const page = context.pages()[0] ?? await context.newPage();

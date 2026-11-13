@@ -95,7 +95,7 @@ if (mode === 'compare') {
       if (process.env.LOGBEFORE) run.logBefore = (await s.run(`grep -v -E 'CONSOLE|mailbox' /tmp/chromium${k}.log | grep -m1 -B40 -E '${process.env.LOGBEFORE}' | sed 's/^\\[[0-9:/.]*//' | cut -c1-200`)).trim();
       // The screen as the page draws it: each scene's 2D canvas (the readback in the guest), and the WebGPU canvas.
       const g = await s.page.evaluate(async () => {
-        const x = await (window as unknown as { __webpcGrab: () => Promise<{ width: number; height: number; pixels: Uint8Array }> }).__webpcGrab();
+        const x = await (window as unknown as { __waarm64Grab: () => Promise<{ width: number; height: number; pixels: Uint8Array }> }).__waarm64Grab();
         return { width: x.width, height: x.height, pixels: Array.from(x.pixels) };
       });
       const crop = (x0: number, y0: number) => {

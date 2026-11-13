@@ -9,7 +9,7 @@
 // The microphone (audio S4, decisions 13 and 14): each start also makes a microphone ring. When the guest starts
 // recording, the device says so (`capture-start`, with the stream's rate) and the page asks for the microphone
 // (`getUserMedia`: the browser's prompt the first time), with the browser's echo cancellation, noise suppression and
-// gain control unless `raw`; a context at that rate feeds it to the `webpc-mic` worklet, which fills the ring. When
+// gain control unless `raw`; a context at that rate feeds it to the `waarm64-mic` worklet, which fills the ring. When
 // recording stops the microphone is closed (the browser's indicator goes off). Turned off, refused, or until it's
 // granted, the guest records silence in real time (the device worker's clock).
 //
@@ -169,7 +169,7 @@ export class PageAudio {
   }
 
   private queue(f: () => Promise<void>) {
-    this.chain = this.chain.then(f).catch((e) => console.warn(`webpc: no sound: ${e}`));
+    this.chain = this.chain.then(f).catch((e) => console.warn(`waarm64: no sound: ${e}`));
   }
 
   /** Opens the microphone for the recording guest, into the current microphone ring, unless it's turned off. */
@@ -189,7 +189,7 @@ export class PageAudio {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: processing, noiseSuppression: processing, autoGainControl: processing } });
     } catch (e) {
-      console.warn(`webpc: no microphone: ${e}`);
+      console.warn(`waarm64: no microphone: ${e}`);
       this.micState = 'denied';
       this.onChange();
       return;
@@ -206,7 +206,7 @@ export class PageAudio {
     this.micCtx = ctx;
     await ctx.audioWorklet.addModule(WORKLET);
     if (this.micCtx !== ctx) return; // closed meanwhile
-    const node = new AudioWorkletNode(ctx, 'webpc-mic', { numberOfInputs: 1, numberOfOutputs: 0, processorOptions: { ring: mic } });
+    const node = new AudioWorkletNode(ctx, 'waarm64-mic', { numberOfInputs: 1, numberOfOutputs: 0, processorOptions: { ring: mic } });
     new MediaStreamAudioSourceNode(ctx, { mediaStream: stream }).connect(node);
     void ctx.resume().catch(() => {});
     this.micState = 'on';
@@ -242,7 +242,7 @@ export class PageAudio {
     }
     if (ring !== this.ring) return; // another machine started meanwhile
     if (!this.node) {
-      this.node = new AudioWorkletNode(this.ctx!, 'webpc-snd', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { ring } });
+      this.node = new AudioWorkletNode(this.ctx!, 'waarm64-snd', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { ring } });
       this.node.connect(this.gain!);
     }
     // Resumes at once if the page already had a gesture (the browser's sticky activation); else at the next one.

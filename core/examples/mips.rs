@@ -1,9 +1,9 @@
 //! Native interpreter MIPS on the benchmark guests, for profiling with perf.
 //! Not a reported number (those come from bench/run.ts in Chromium).
 //! cargo run --release --example mips -- [bench/interp/guest.bin] [instructions]
-use webpc_core::cpu::Cpu;
-use webpc_core::interp::run;
-use webpc_core::mem::Mem;
+use waarm64_core::cpu::Cpu;
+use waarm64_core::interp::run;
+use waarm64_core::mem::Mem;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

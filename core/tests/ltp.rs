@@ -10,7 +10,7 @@ mod common;
 /// LTP: 93 syscall tests, all passing (images/ltp/tests; two that need a
 /// loop device with every filesystem were left out). kselftests: arm64 abi,
 /// signal and tags (the SVE, SME and GCS ones skip), and breakpoints' arm64
-/// test; webpc: images/ltp/debug.c (self-hosted debug).
+/// test; waarm64: images/ltp/debug.c (self-hosted debug).
 const EXPECTED: &[(&str, &str)] = &[
     ("ltp: abort01", "pass"),
     ("ltp: access01", "pass"),
@@ -197,7 +197,7 @@ const EXPECTED: &[(&str, &str)] = &[
         "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     ("kselftest: breakpoint_test_arm64", "pass"),
-    ("webpc: debug", "pass"),
+    ("waarm64: debug", "pass"),
 ];
 
 #[test]
@@ -215,7 +215,7 @@ fn ltp_and_kselftests() {
     });
     eprintln!("\n[{}]", r.summary);
     assert!(
-        r.powered_off() && r.console.contains("webpc: test ok\n"),
+        r.powered_off() && r.console.contains("waarm64: test ok\n"),
         "the run didn't finish"
     );
     assert_eq!(r.steps, common::steps("ltp"));
@@ -225,13 +225,13 @@ fn ltp_and_kselftests() {
         .filter_map(|l| {
             let (suite, rest) = l.split_once(": ")?;
             let (test, code) = rest.split_once(' ')?;
-            if suite == "webpc" && test != "debug" {
-                return None; // the harness's own "webpc: test ok"
+            if suite == "waarm64" && test != "debug" {
+                return None; // the harness's own "waarm64: test ok"
             }
             let result = match (suite, code) {
-                ("ltp" | "kselftest" | "webpc", "0") => "pass",
+                ("ltp" | "kselftest" | "waarm64", "0") => "pass",
                 ("ltp", "32") | ("kselftest", "4") => "skip",
-                ("ltp" | "kselftest" | "webpc", _) => "fail",
+                ("ltp" | "kselftest" | "waarm64", _) => "fail",
                 _ => return None,
             };
             Some((format!("{suite}: {test}"), result.to_owned()))

@@ -58,9 +58,9 @@ async function seed(page: Page): Promise<{ a: string; b: string }> {
     return { a: ids[0], b: ids[1] };
   }, ['/web/app/store.ts', '/web/app/machines.ts']);
 }
-/** What IndexedDB `webpc` has of a kind (connections, machines). */
+/** What IndexedDB `waarm64` has of a kind (connections, machines). */
 const records = (page: Page, kind: string) => page.evaluate((k) => new Promise<{ id: string; [k: string]: unknown }[]>((resolve, reject) => {
-  const open = indexedDB.open('webpc');
+  const open = indexedDB.open('waarm64');
   open.onsuccess = () => {
     const req = open.result.transaction(k).objectStore(k).getAll();
     req.onsuccess = () => { open.result.close(); resolve(req.result); };
@@ -191,7 +191,7 @@ test('power off lets a connection go; a running machine follows what another tab
   await answerAsks(pageA, () => {});
   await pageA.goto(`${base}/web/app/`);
   const { a, b } = await seed(pageA);
-  const locks = () => pageA.evaluate(async () => ((await navigator.locks.query()).held ?? []).map((l) => l.name!).filter((n) => n.startsWith('webpc-net:')));
+  const locks = () => pageA.evaluate(async () => ((await navigator.locks.query()).held ?? []).map((l) => l.name!).filter((n) => n.startsWith('waarm64-net:')));
   /** The locks once they are `want` (or after 5 s): a lock is let go just after its client stops, and freed asynchronously. */
   const locksBecome = async (want: string[]) => {
     let got = await locks();
@@ -207,7 +207,7 @@ test('power off lets a connection go; a running machine follows what another tab
   await started(pageA);
   await newTailnet(pageA, { hostname: 'alpha', pick: false });
   const [t] = await records(pageA, 'connections');
-  assert.deepEqual(await locks(), [`webpc-net:${t.id}`]);
+  assert.deepEqual(await locks(), [`waarm64-net:${t.id}`]);
   await pageA.click('#power-off');
   await pageA.waitForFunction(() => document.getElementById('state')?.dataset.state === 'off', null, { timeout: 30_000 });
   await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
@@ -231,7 +231,7 @@ test('power off lets a connection go; a running machine follows what another tab
   assert.equal(await text(pageA, '#net-connect'), ATTACH);
   await pageA.click('#net-connect');
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 15_000 });
-  assert.deepEqual(await locksBecome([`webpc-net:${t.id}`]), [`webpc-net:${t.id}`], 'Bravo holds it');
+  assert.deepEqual(await locksBecome([`waarm64-net:${t.id}`]), [`waarm64-net:${t.id}`], 'Bravo holds it');
   await menu(pageB);
   assert.match(await text(pageB, '#net-conn'), /127\.0\.0\.1:1/);
   // Detached there, it stops here.
@@ -310,6 +310,6 @@ test('a room connection to the global public room: the room\'s first choice, str
   assert.equal(c?.kind, 'room');
   assert.equal(c.name, 'global');
   const room = c.room as { link: string; incoming: boolean; relayOnly: boolean };
-  assert.deepEqual([room.link, room.incoming, room.relayOnly], ['webpc-room:global', true, false]);
+  assert.deepEqual([room.link, room.incoming, room.relayOnly], ['waarm64-room:global', true, false]);
   assert.deepEqual(errors, []);
 });

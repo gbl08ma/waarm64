@@ -1,6 +1,6 @@
 // A video in the guest's Chromium (dev-only, not in tests): the desktop image, sway on 3D, Chromium in kiosk mode on a
 // page that plays a clip from the media disk (bench/video/media-disk.sh, /dev/vdb) decoded on the host through
-// webpc-va. Each second the page logs the video frames it presented (requestVideoFrameCallback), its own animation
+// waarm64-va. Each second the page logs the video frames it presented (requestVideoFrameCallback), its own animation
 // frames and getVideoPlaybackQuality's totals to Chromium's stderr; the host records the page's display and video
 // stats over the same phases.
 //   node bench/gpu/chromium-video.ts <image.qcow2> [outdir]
@@ -47,7 +47,7 @@ const results: Record<string, unknown> = { gpu, video, chromium: s.browser.versi
 await rootShell();
 await run('mount -o ro /dev/vdb /mnt; ls /mnt | head -3');
 await pasteSerial(`cat > ${HOME}/video.html <<'EOF'\n${PAGE}EOF`);
-results.info = await run(`chown ${GUEST_USER}: ${HOME}/video.html; uname -r; pacman -Q chromium mesa sway webpc-va 2>&1 | tr "\\n" " "`);
+results.info = await run(`chown ${GUEST_USER}: ${HOME}/video.html; uname -r; pacman -Q chromium mesa sway waarm64-va 2>&1 | tr "\\n" " "`);
 log('info', results.info);
 results.sway = await s.startSway('gles2');
 log('sway', results.sway);

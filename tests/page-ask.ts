@@ -8,7 +8,7 @@ let names = 0;
 
 /** Answers every question the page asks from now on (call it before `goto`; it also takes over a page already loaded). */
 export async function answerAsks(page: Page, answer: (q: Question) => boolean | string | void = () => true) {
-  const fn = `__webpcAnswer${names++}`;
+  const fn = `__waarm64Answer${names++}`;
   await page.exposeFunction(fn, (q: Question) => answer(q) ?? true);
   const watch = (fn: string) => {
     const tick = () => {

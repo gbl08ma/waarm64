@@ -10,7 +10,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { uhidUsable } from './uhid.ts';
 
-export const POLICY = '/etc/chromium/policies/managed/webpc-usb.json';
+export const POLICY = '/etc/chromium/policies/managed/waarm64-usb.json';
 /** The policy's origins; each test file takes its own port so files can run side by side. */
 export const PORTS = { webusb: 8190, hid: 8191, record: 8192 } as const;
 
@@ -29,7 +29,7 @@ export function uhidMissing(): string | undefined {
 }
 
 /** Set by scripts/ci-usb.sh: the USB tests run there, alone, and skip elsewhere (npm test) without it. */
-export const usbTests = process.env.WEBPC_USB_TESTS === '1';
+export const usbTests = process.env.WAARM64_USB_TESTS === '1';
 
 export type Rig = { browser: Browser; page: Page; base: string; close: () => Promise<void> };
 

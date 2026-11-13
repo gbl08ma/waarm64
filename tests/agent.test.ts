@@ -383,10 +383,10 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
 
 test("the guest agent's unit: a long-running root service, wanted by multi-user.target, sandboxed but for what it needs", () => {
   const c = agentCredentials(guestWords().agent);
-  assert.deepEqual(c.map((x) => x.name), ['webpc.agent.sh', 'systemd.extra-unit.webpc-agent.service', 'systemd.unit-dropin.multi-user.target~webpc-agent']);
+  assert.deepEqual(c.map((x) => x.name), ['waarm64.agent.sh', 'systemd.extra-unit.waarm64-agent.service', 'systemd.unit-dropin.multi-user.target~waarm64-agent']);
   const unit = c[1].data;
   assert.match(unit, new RegExp(`^Description=${words('guest:guest-words.agent').source}$`, 'm'));
-  for (const line of ['Type=simple', 'ImportCredential=webpc.agent.sh', 'ExecStart=/bin/sh %d/webpc.agent.sh', 'ExecStartPre=-+modprobe -q qemu_fw_cfg', 'TemporaryFileSystem=/run/webpc:mode=0700,exec,nosuid', 'Nice=10', 'MemoryMax=32M', 'OOMScoreAdjust=500', 'ProtectSystem=strict', 'Restart=on-failure']) {
+  for (const line of ['Type=simple', 'ImportCredential=waarm64.agent.sh', 'ExecStart=/bin/sh %d/waarm64.agent.sh', 'ExecStartPre=-+modprobe -q qemu_fw_cfg', 'TemporaryFileSystem=/run/waarm64:mode=0700,exec,nosuid', 'Nice=10', 'MemoryMax=32M', 'OOMScoreAdjust=500', 'ProtectSystem=strict', 'Restart=on-failure']) {
     assert.match(unit, new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), line);
   }
   assert.doesNotMatch(unit, /^Type=oneshot$/m);
@@ -407,14 +407,14 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   // X11 (step 5): the private /tmp keeps the X server's sockets (read-only; none there is no failure).
   assert.match(unit, /^PrivateTmp=yes$/m);
   assert.match(unit, /^BindReadOnlyPaths=-\/tmp\/\.X11-unix$/m);
-  assert.equal(c[2].data, '[Unit]\nWants=webpc-agent.service\nAfter=webpc-agent.service\n');
+  assert.equal(c[2].data, '[Unit]\nWants=waarm64-agent.service\nAfter=waarm64-agent.service\n');
   for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
 });
 
 const hasDash = process.env.PATH?.split(':').some((p) => existsSync(join(p, 'dash')));
 
-test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/webpc, run in the script's place; without the file, nothing", { skip: !hasDash && 'no dash' }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'webpc-agent-'));
+test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/waarm64, run in the script's place; without the file, nothing", { skip: !hasDash && 'no dash' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'waarm64-agent-'));
   try {
     const at = (p: string) => join(root, p);
     // The script with its absolute paths moved under `root`, and udevadm a stub that says what it waited for.
@@ -425,17 +425,17 @@ test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/we
     writeFileSync(script, agentScript().replace(/(?<=[ =>])\/(sys|run)\//g, `${root}/$1/`));
     const run = () => execFileSync('dash', [script], { stdio: 'pipe', env: { PATH: `${at('bin')}:/usr/bin:/bin` } }).toString();
     // No fw_cfg file (no setting, or a kernel without qemu_fw_cfg): exits, nothing run.
-    mkdirSync(at('run/webpc'), { recursive: true });
+    mkdirSync(at('run/waarm64'), { recursive: true });
     assert.equal(run(), '');
-    assert.equal(existsSync(at('run/webpc/agent')), false);
+    assert.equal(existsSync(at('run/waarm64/agent')), false);
     // The file: copied, made executable for root only, run with the script's place (exec), after udev's link.
     const raw = at(`sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}/raw`);
     mkdirSync(raw.replace(/\/raw$/, ''), { recursive: true });
     const program = `#!/bin/sh\necho "agent ran as $$ with $#"\n`;
     writeFileSync(raw, gzipSync(program));
     assert.match(run(), /^agent ran as \d+ with 0\n$/);
-    assert.equal(readFileSync(at('run/webpc/agent'), 'utf8'), program, 'gunzipped');
-    assert.equal(execFileSync('stat', ['-c', '%a', at('run/webpc/agent')]).toString().trim(), '500');
+    assert.equal(readFileSync(at('run/waarm64/agent'), 'utf8'), program, 'gunzipped');
+    assert.equal(execFileSync('stat', ['-c', '%a', at('run/waarm64/agent')]).toString().trim(), '500');
     assert.equal(readFileSync(at('log'), 'utf8'), `udevadm wait --timeout=60 ${AGENT_PORT}\n`);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -451,7 +451,7 @@ test("the guest agent's binary: fetched whole if it is an ELF file, gzipped; oth
   try {
     assert.deepEqual(new Uint8Array(gunzipSync((await agentBinary(at(elf)))!)), elf, 'gzipped for fw_cfg');
     assert.equal(await agentBinary(at(new TextEncoder().encode('<!doctype html>'))), undefined, "a server's page");
-    assert.equal(await agentBinary('http://127.0.0.1:1/webpc-agent'), undefined, 'nothing there');
+    assert.equal(await agentBinary('http://127.0.0.1:1/waarm64-agent'), undefined, 'nothing there');
   } finally {
     console.warn = warn;
   }

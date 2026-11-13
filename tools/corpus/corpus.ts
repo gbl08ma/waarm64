@@ -5,7 +5,7 @@ export const CODE = 0x100000n;
 export const DATA = 0x200000n;
 export const DATA_SIZE = 8192;
 export const MAX_CODE = 1023;
-export const FORMAT = "webpc-corpus 1";
+export const FORMAT = "waarm64-corpus 1";
 
 const M64 = (1n << 64n) - 1n;
 
@@ -100,7 +100,7 @@ export function packInput(t: Test): Uint8Array {
   const s = initialState(t);
   const buf = new Uint8Array(8 + REGS_SIZE + DATA_SIZE + 4 * t.code.length);
   const dv = new DataView(buf.buffer);
-  dv.setUint32(0, 0x49435057, true);
+  dv.setUint32(0, 0x494d4157, true);
   dv.setUint32(4, t.code.length, true);
   putRegs(dv, 8, s.regs);
   buf.set(s.mem, 8 + REGS_SIZE);
@@ -115,7 +115,7 @@ const SIGNALS: Record<number, string> = { 4: "sigill", 5: "sigtrap", 7: "sigbus"
 /** Fills t.out/mem/exit from one harness output record. */
 export function applyOutput(t: Test, rec: Uint8Array): void {
   const dv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength);
-  if (dv.getUint32(0, true) !== 0x4f435057) throw new Error("bad output record");
+  if (dv.getUint32(0, true) !== 0x4f4d4157) throw new Error("bad output record");
   const signo = dv.getUint32(4, true);
   const siCode = dv.getUint32(8, true);
   const addr = dv.getBigUint64(16, true);

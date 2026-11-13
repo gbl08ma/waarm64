@@ -16,7 +16,7 @@
 //   a JPEG arrives as a PNG of its pixels; Copy the screen and a 1.5 MB PNG of noise reach wl-paste byte for byte (and
 //   the noise back to the host); an offer past the 64 MiB cap is refused before any bytes cross.
 // - What the agent and its session child cost while sway runs (plan §3.3's targets: no CPU time, no wakeups, VmRSS).
-// WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s).
+// WAARM64_AGENT_IDLE=<s> sets the idle window (default 20 s).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -28,14 +28,14 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = 'target/images/debian-sway/disk.qcow2';
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const AGENT = new URL('../target/images/agent/webpc-agent', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WEBPC_DISTROS=debian)'
+const AGENT = new URL('../target/images/agent/waarm64-agent', import.meta.url);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WAARM64_DISTROS=debian)'
   : !existsSync(new URL(`../${IMAGE}`, import.meta.url)) ? 'SKIPPED: run images/debian-sway/build.sh'
   : (!existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh edk2 agent';
-const IDLE_S = Number(process.env.WEBPC_AGENT_IDLE ?? 20);
+const IDLE_S = Number(process.env.WAARM64_AGENT_IDLE ?? 20);
 
 let browser: Browser;
 let base: string;
@@ -116,7 +116,7 @@ async function share(page: Page, on: boolean) {
 // The guest's side: wl-clipboard as the user, on whichever socket sway has; and what the agent says in the journal.
 const W = 'wlc() { runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-? | head -1) "$@"; }';
 const guestHas = (page: Page) => run(page, 'wlc wl-paste -n | sha256sum | cut -c1-64');
-const journal = (page: Page) => run(page, 'journalctl -b -u webpc-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | tail -6');
+const journal = (page: Page) => run(page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | tail -6');
 /** Waits until the guest's clipboard has `want` (by its SHA-256). */
 async function guestHasText(page: Page, want: string, what: string) {
   for (let i = 0; ; i++) {
@@ -176,7 +176,7 @@ async function swayUp(page: Page, after = 0) {
       if (Number(m[1].replace(/\D/g, '')) > after) return { session: Number(m[1].replace(/\D/g, '')), journal: lines };
     }
     if (i > 60) {
-      const ns = await run(page, 'p=$(systemctl show -p MainPID --value webpc-agent); cat /proc/$p/wchan; echo; grep -h inotify /proc/$p/fdinfo/*; cat /run/systemd/seats/seat0 | grep ACTIVE; s=$(sed -n "s/^ACTIVE=//p" /run/systemd/seats/seat0); grep -E "^(UID|STATE|CLASS|TYPE)=" /run/systemd/sessions/$s; ls /run/systemd/sessions; ps -o pid,user,args --ppid $p; loginctl list-sessions --no-legend; journalctl -b -u getty@tty1 -o cat --no-pager | tail -5');
+      const ns = await run(page, 'p=$(systemctl show -p MainPID --value waarm64-agent); cat /proc/$p/wchan; echo; grep -h inotify /proc/$p/fdinfo/*; cat /run/systemd/seats/seat0 | grep ACTIVE; s=$(sed -n "s/^ACTIVE=//p" /run/systemd/seats/seat0); grep -E "^(UID|STATE|CLASS|TYPE)=" /run/systemd/sessions/$s; ls /run/systemd/sessions; ps -o pid,user,args --ppid $p; loginctl list-sessions --no-legend; journalctl -b -u getty@tty1 -o cat --no-pager | tail -5');
       assert.fail(`sway or the agent's child didn't come up: sockets ${sock}; the agent says: ${lines}; sway says: ${await run(page, 'grep -v Xwayland /tmp/sway.log | tail -c 900; journalctl -b -o cat --no-pager | grep -iE "segfault|dumped|sway" | tail -4')}; the agent's namespace: ${ns}`);
     }
     await page.waitForTimeout(1000);
@@ -370,7 +370,7 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   assert.equal(await run(page, 'wlc wl-paste -l | tr "\\n" " "'), before, "the guest's clipboard after the refused offer");
 
   // Idle while sway runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
-  const pid = await run(page, 'systemctl show -p MainPID --value webpc-agent');
+  const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
   const child = await run(page, `ps -o pid= --ppid ${pid} | tr -d " "`);
   assert.match(child, /^\d+$/, `one session child: ${child}`);
   assert.equal(await run(page, `stat -c %U /proc/${child}`), 'user', "the child runs as the session's user");

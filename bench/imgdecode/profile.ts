@@ -56,7 +56,7 @@ console.log(await run('mkdir -p /mnt/i && mount -o ro /dev/vdb /mnt/i && ls /mnt
 await type('stty cols 200\n');
 // No ASLR: the sampler's PCs carry no process, and every process's libraries then sit at the same addresses.
 console.log(await run('echo 0 > /proc/sys/kernel/randomize_va_space; sysctl -qw kernel.kptr_restrict=0; awk \'$2 ~ /^[tT]$/ {print $1, $3}\' /proc/kallsyms | LC_ALL=C sort > /tmp/ks; wc -l < /tmp/ks'));
-type Hooks = { __webpcProfile: (on: boolean) => void; __profile?: [string, number][] };
+type Hooks = { __waarm64Profile: (on: boolean) => void; __profile?: [string, number][] };
 for (const c of cases) {
   const [b, fmt] = c.split(':');
   const url = `file:///mnt/i/loop.html?fmt=${fmt}`;
@@ -77,9 +77,9 @@ for (const c of cases) {
   const cpuBefore = await run(`for p in $(ps -eo pid,args --no-headers | grep -Ei 'chrom|firefox' | grep -v grep | awk '{print $1}'); do echo $p $(awk '{print $14+$15}' /proc/$p/stat 2>/dev/null); done | tr '\\n' ';'`);
   const stepsBefore = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number } } }).__status?.stats.steps ?? 0);
   const hBefore = helpers.length;
-  await page.evaluate(() => { const w = window as unknown as Hooks; delete w.__profile; w.__webpcProfile(true); });
+  await page.evaluate(() => { const w = window as unknown as Hooks; delete w.__profile; w.__waarm64Profile(true); });
   await page.waitForTimeout(WINDOW * 1000);
-  await page.evaluate(() => (window as unknown as Hooks).__webpcProfile(false));
+  await page.evaluate(() => (window as unknown as Hooks).__waarm64Profile(false));
   const steps = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number } } }).__status?.stats.steps ?? 0) - stepsBefore;
   console.log(`# ${c}: guest steps in the window ${(steps / 1e9).toFixed(2)}G`);
   await page.waitForFunction(() => (window as unknown as Hooks).__profile, null, { timeout: 30_000 });

@@ -4397,14 +4397,14 @@
   }
  },
  "profiles": {
-  "VP_WEBPC_webgpu_swiftshader": {
+  "VP_WAARM64_webgpu_swiftshader": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct",
-   "description": "WebGPU swiftshader, direct: the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct: the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4412,7 +4412,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4420,14 +4420,14 @@
     "swiftshader_direct"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_gs": {
+  "VP_WAARM64_webgpu_swiftshader_gs": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + geometry shaders (a compute pre-pass)",
-   "description": "WebGPU swiftshader, direct + geometry shaders (a compute pre-pass): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + geometry shaders (a compute pre-pass): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4435,7 +4435,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4444,14 +4444,14 @@
     "swiftshader_gs"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_tess": {
+  "VP_WAARM64_webgpu_swiftshader_tess": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + tessellation (a compute pre-pass)",
-   "description": "WebGPU swiftshader, direct + tessellation (a compute pre-pass): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + tessellation (a compute pre-pass): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4459,7 +4459,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4468,14 +4468,14 @@
     "swiftshader_tess"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_xfb": {
+  "VP_WAARM64_webgpu_swiftshader_xfb": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + transform feedback (the vertex shader run as compute)",
-   "description": "WebGPU swiftshader, direct + transform feedback (the vertex shader run as compute): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + transform feedback (the vertex shader run as compute): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4483,7 +4483,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4492,14 +4492,14 @@
     "swiftshader_xfb"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_largepoints": {
+  "VP_WAARM64_webgpu_swiftshader_largepoints": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + large points (a quad per point)",
-   "description": "WebGPU swiftshader, direct + large points (a quad per point): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + large points (a quad per point): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4507,7 +4507,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4516,14 +4516,14 @@
     "swiftshader_largepoints"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_vpstores": {
+  "VP_WAARM64_webgpu_swiftshader_vpstores": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + vertexPipelineStoresAndAtomics (the vertex shader as compute)",
-   "description": "WebGPU swiftshader, direct + vertexPipelineStoresAndAtomics (the vertex shader as compute): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + vertexPipelineStoresAndAtomics (the vertex shader as compute): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4531,7 +4531,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4540,14 +4540,14 @@
     "swiftshader_vpstores"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_mdi": {
+  "VP_WAARM64_webgpu_swiftshader_mdi": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + multiDrawIndirect and drawIndirectCount (a pass writes the indirect buffer)",
-   "description": "WebGPU swiftshader, direct + multiDrawIndirect and drawIndirectCount (a pass writes the indirect buffer): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + multiDrawIndirect and drawIndirectCount (a pass writes the indirect buffer): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4555,7 +4555,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4564,14 +4564,14 @@
     "swiftshader_mdi"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_ycbcr": {
+  "VP_WAARM64_webgpu_swiftshader_ycbcr": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + samplerYcbcrConversion (planes sampled and converted in the shader; GTK4 asserts it with dma-bufs)",
-   "description": "WebGPU swiftshader, direct + samplerYcbcrConversion (planes sampled and converted in the shader; GTK4 asserts it with dma-bufs): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + samplerYcbcrConversion (planes sampled and converted in the shader; GTK4 asserts it with dma-bufs): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4579,7 +4579,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4588,14 +4588,14 @@
     "swiftshader_ycbcr"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_provoking": {
+  "VP_WAARM64_webgpu_swiftshader_provoking": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + last-vertex provoking (VK_EXT_provoking_vertex: indices rotated, or the flat value fetched in the shader)",
-   "description": "WebGPU swiftshader, direct + last-vertex provoking (VK_EXT_provoking_vertex: indices rotated, or the flat value fetched in the shader): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + last-vertex provoking (VK_EXT_provoking_vertex: indices rotated, or the flat value fetched in the shader): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4603,7 +4603,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4612,14 +4612,14 @@
     "swiftshader_provoking"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_ubo": {
+  "VP_WAARM64_webgpu_swiftshader_ubo": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + uniform buffers past WebGPU's 12 a stage (the rest as read-only storage buffers)",
-   "description": "WebGPU swiftshader, direct + uniform buffers past WebGPU's 12 a stage (the rest as read-only storage buffers): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + uniform buffers past WebGPU's 12 a stage (the rest as read-only storage buffers): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4627,7 +4627,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4636,14 +4636,14 @@
     "swiftshader_ubo"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_arrays": {
+  "VP_WAARM64_webgpu_swiftshader_arrays": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + dynamically indexed descriptor arrays (a switch over separate bindings)",
-   "description": "WebGPU swiftshader, direct + dynamically indexed descriptor arrays (a switch over separate bindings): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + dynamically indexed descriptor arrays (a switch over separate bindings): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4651,7 +4651,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4660,14 +4660,14 @@
     "swiftshader_arrays"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_samplerate": {
+  "VP_WAARM64_webgpu_swiftshader_samplerate": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + sampleRateShading (WGSL per-sample interpolation; interpolateAt* from derivatives)",
-   "description": "WebGPU swiftshader, direct + sampleRateShading (WGSL per-sample interpolation; interpolateAt* from derivatives): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + sampleRateShading (WGSL per-sample interpolation; interpolateAt* from derivatives): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4675,7 +4675,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4684,14 +4684,14 @@
     "swiftshader_samplerate"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_drawparams": {
+  "VP_WAARM64_webgpu_swiftshader_drawparams": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + shaderDrawParameters (base vertex, base instance, draw index from immediates; indirect draws patched by a pass)",
-   "description": "WebGPU swiftshader, direct + shaderDrawParameters (base vertex, base instance, draw index from immediates; indirect draws patched by a pass): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + shaderDrawParameters (base vertex, base instance, draw index from immediates; indirect draws patched by a pass): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4699,7 +4699,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4708,14 +4708,14 @@
     "swiftshader_drawparams"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_rgb": {
+  "VP_WAARM64_webgpu_swiftshader_rgb": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + 3-component formats (converted when written, fetched by the shader)",
-   "description": "WebGPU swiftshader, direct + 3-component formats (converted when written, fetched by the shader): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + 3-component formats (converted when written, fetched by the shader): the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4723,7 +4723,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],
@@ -4732,14 +4732,14 @@
     "swiftshader_rgb"
    ]
   },
-  "VP_WEBPC_webgpu_swiftshader_all": {
+  "VP_WAARM64_webgpu_swiftshader_all": {
    "version": 1,
    "api-version": "1.3.296",
    "label": "WebGPU swiftshader, direct + every emulated row",
-   "description": "WebGPU swiftshader, direct + every emulated row: the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (webpc VK0, question A).",
+   "description": "WebGPU swiftshader, direct + every emulated row: the Vulkan the dev VM's SwiftShader adapter (Chromium) backs (waarm64 VK0, question A).",
    "contributors": {
-    "webpc": {
-     "company": "webpc",
+    "waarm64": {
+     "company": "waarm64",
      "contact": false
     }
    },
@@ -4747,7 +4747,7 @@
     {
      "revision": 1,
      "date": "2026-10-25",
-     "author": "webpc",
+     "author": "waarm64",
      "comment": "VK0 A"
     }
    ],

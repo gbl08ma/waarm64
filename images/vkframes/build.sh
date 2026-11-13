@@ -72,8 +72,8 @@ CAPTURE="$(declare -f capture); $(declare -p LVP G ROOT W PROFILE_NAME); capture
 
 # The replay for Debian, from the host's clone (build-gfxr.sh's, with its submodules), only the replay tool and no
 # window systems (the guest replays offscreen).
-podman build -q -t localhost/webpc-vkframes "$ROOT/images/vkframes" >/dev/null
-podman run --rm -v "$ROOT/target/vulkan-tools/gfxreconstruct-src:/src:ro,Z" -v "$W:/out:Z" localhost/webpc-vkframes sh -euc '
+podman build -q -t localhost/waarm64-vkframes "$ROOT/images/vkframes" >/dev/null
+podman run --rm -v "$ROOT/target/vulkan-tools/gfxreconstruct-src:/src:ro,Z" -v "$W:/out:Z" localhost/waarm64-vkframes sh -euc '
   [ -f /out/build/build.ninja ] || cmake -S /src -B /out/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_WERROR=OFF \
     -DGFXRECON_ENABLE_OPENXR=OFF -DGFXRECON_TOCPP_SUPPORT=OFF -DBUILD_WSI_XCB_SUPPORT=OFF -DBUILD_WSI_XLIB_SUPPORT=OFF \
     -DBUILD_WSI_WAYLAND_SUPPORT=OFF -DBUILD_WSI_DISPLAY_SUPPORT=OFF >/dev/null
@@ -103,7 +103,7 @@ for p in "${PROGRAMS[@]}"; do
 done
 
 # The replay's libraries that Debian's base may lack, beside it; then the disk.
-podman run --rm -v "$W:/out:Z" localhost/webpc-vkframes sh -euc '
+podman run --rm -v "$W:/out:Z" localhost/waarm64-vkframes sh -euc '
   strip /out/tree/vkf/bin/gfxrecon-replay
   for l in $(ldd /out/tree/vkf/bin/gfxrecon-replay | awk "/lz4|zstd/ { print \$3 }"); do cp -L "$l" /out/tree/vkf/lib/; done
   size=$(du -sm /out/tree | cut -f1)

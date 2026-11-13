@@ -75,7 +75,7 @@
       bind:this={hostnameInput}
       bind:value={hostname}
       // i18n-ignore-next: the default hostname, not words
-      placeholder="webpc"
+      placeholder="waarm64"
       autocomplete="off"
       spellcheck="false"
     />

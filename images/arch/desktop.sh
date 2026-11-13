@@ -3,7 +3,7 @@
 # aarch64 port) with sway, foot, Firefox, Chromium (bench/gpu/chromium-flicker.ts), htop, nano, lsof, gtk4-demo (bench/gpu/gtk4-load.ts), mesa-utils, Mesa's Venus
 # driver and vulkan-tools (Vulkan on a machine with it: docs/devices.md "Venus"), Xwayland (X11 programs under sway: their
 # Vulkan windows through Mesa's prime blit, vk/README.md "Presentation"; GD G7) and PipeWire (WirePlumber, its PulseAudio and ALSA ends), sound through
-# the kernel's own virtio_snd module, VA-API through webpc's driver (our webpc-va package, docs/graphics.md "Video"), and the
+# the kernel's own virtio_snd module, VA-API through waarm64's driver (our waarm64-va package, docs/graphics.md "Video"), and the
 # media of images/arch/media.sh in /home/arch/media. A 20 GiB root, mostly free (the qcow2 is compressed and keeps
 # none of it), for packages installed by hand. On demand only: not part of images/build.sh, CI or any test (~10 min,
 # mostly pacman and the container builds; the mirror's packages of the day).
@@ -33,15 +33,15 @@ PACKAGES="sway foot firefox htop ttf-dejavu pipewire pipewire-pulse pipewire-als
 [ -z "$KDE" ] || PACKAGES="$PACKAGES plasma-meta plasma-login-manager konsole"
 [ -n "$OUT" ] || OUT=$W/desktop${KDE:+-kde}.qcow2
 
-echo "==== webpc-va"
-rm -f "$W"/pkg/webpc-va-*
-"$ROOT/images/arch/webpc-va.sh"
+echo "==== waarm64-va"
+rm -f "$W"/pkg/waarm64-va-*
+"$ROOT/images/arch/waarm64-va.sh"
 echo "==== media"
 "$ROOT/images/arch/media.sh" "$W/media"
 
 FILES=$W/desktop-files
 rm -rf "$FILES"; mkdir -p "$FILES/root/pkg" "$FILES/home/arch/media"
-cp "$W"/pkg/webpc-va-*.pkg.tar.* "$FILES/root/pkg/"
+cp "$W"/pkg/waarm64-va-*.pkg.tar.* "$FILES/root/pkg/"
 cp "$W"/media/{avsync.webm,sintel.webm,sintel-silent.webm,sintel_trailer-480p.mp4,avsync.html} "$FILES/home/arch/media/"
 echo "==== image"
 "$ROOT/images/arch/build.sh" --out "$OUT" --root-mib 20480 --packages "$PACKAGES" --files "$FILES" --setup "$ROOT/images/arch/desktop-setup.sh"

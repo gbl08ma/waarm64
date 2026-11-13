@@ -25,7 +25,7 @@ self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[
   try {
     const m = MACHINES.debian;
     const [wasm, kernel] = await Promise.all([
-      get(new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href), get(m.kernel),
+      get(new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url).href), get(m.kernel),
     ]);
     const vm = await bootVm(wasm, {
       ramSize: m.ramMiB * 2 ** 20, kernel, cmdline: '', jit: 1, ncpus: 2, parallel: true, realtime: true, serialIn: e.data.serial,

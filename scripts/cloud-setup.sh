@@ -15,7 +15,7 @@ if [ ! -x "$NODE_DIR/bin/node" ]; then
   curl -fsSL "https://nodejs.org/dist/$v/node-$v-linux-x64.tar.xz" | tar -xJ -C "$NODE_DIR" --strip-components=1
 fi
 # Test tools: dtc is built from source below (Ubuntu's 1.7.0 prints strings differently from the
-# 1.7.2 that produced tests/dtb/webpc.dts).
+# 1.7.2 that produced tests/dtb/waarm64.dts).
 need=()
 for p in qemu-aarch64:qemu-user qemu-img:qemu-utils flex:flex bison:bison make:make gcc:gcc; do
   command -v "${p%%:*}" >/dev/null || need+=("${p##*:}")

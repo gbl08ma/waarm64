@@ -1,6 +1,6 @@
 // The tailnet client's module and its I/O (web/ts-client.ts, net/ts) in Node,
 // with no network: a stub WebSocket stands in for the relay. The protocols
-// are covered natively (`cargo test -p webpc_ts`, a fake tailcat server
+// are covered natively (`cargo test -p waarm64_ts`, a fake tailcat server
 // included); a real tailcat server is bench/net/tailcat.ts's and
 // tests/net/tailcat.sh's (docs/networking/tailnet.md).
 import { test } from 'node:test';

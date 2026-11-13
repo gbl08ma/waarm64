@@ -55,8 +55,8 @@ onmessage = async () => {
   try {
     const all = await navigator.usb.getDevices();
     const devices = all.map((d) => ({ id: `${d.vendorId.toString(16)}:${d.productId.toString(16)}`, serial: d.serialNumber ?? null }));
-    const z = all.find((d) => d.serialNumber === 'webpc-zero');
-    const a = all.find((d) => d.serialNumber === 'webpc-acm');
+    const z = all.find((d) => d.serialNumber === 'waarm64-zero');
+    const a = all.find((d) => d.serialNumber === 'waarm64-acm');
     postMessage({ type: 'result', usb: 'usb' in navigator, devices, zero: z && (await zero(z)), acm: a && (await acm(a)) });
   } catch (err) {
     postMessage({ type: 'error', message: String(err?.stack ?? err) });

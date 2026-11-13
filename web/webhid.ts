@@ -106,7 +106,7 @@ export class WebHidDevice extends VirtualDevice {
     super(layout.speed, {
       device: layout.device,
       configs: [layout.config],
-      strings: [dev.productName || 'HID device', opts.serial ?? 'webpc-hid'],
+      strings: [dev.productName || 'HID device', opts.serial ?? 'waarm64-hid'],
       extra: (type, index) => (index !== 0 ? undefined : type === 0x21 ? layout.hid : type === 0x22 ? layout.report : undefined),
     });
     this.dev = dev;
@@ -249,7 +249,7 @@ export function webHidOpener(hid: WebHidLike) {
     };
     hid.addEventListener('disconnect', onDisconnect);
     try {
-      return await openWebHid(dev, { serial: `webpc-hid-${ctx.connector ?? 0}` });
+      return await openWebHid(dev, { serial: `waarm64-hid-${ctx.connector ?? 0}` });
     } catch (e) {
       hid.removeEventListener('disconnect', onDisconnect);
       throw e;

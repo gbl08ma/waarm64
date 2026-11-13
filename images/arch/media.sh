@@ -68,7 +68,7 @@ EOS
 cat > "$OUT/avsync.html" <<'EOF'
 <!doctype html>
 <meta charset="utf-8">
-<title>webpc avsync</title>
+<title>waarm64 avsync</title>
 <style>html, body { margin: 0; height: 100%; background: #000; overflow: hidden } video { width: 100%; height: 100%; object-fit: contain }</style>
 <video id="v" autoplay playsinline></video>
 <script>

@@ -29,7 +29,7 @@ class Records {
     if (!this.#reading) {
       this.#reading = this.#read()
         // The page goes on with the records it had: the next change reads them again.
-        .catch((e: unknown) => console.warn('webpc: the records could not be read:', e))
+        .catch((e: unknown) => console.warn('waarm64: the records could not be read:', e))
         .finally(() => {
           this.#reading = undefined;
         });

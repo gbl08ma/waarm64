@@ -904,7 +904,7 @@ test('virgl: the capsets are VIRGL (v1, 308 bytes) and VIRGL2 (v2, 1408 bytes), 
   const caps = decodeCaps(blob.r.subarray(24));
   assert.equal(caps.max_version, 2);
   assert.equal(caps.glsl_level, 130);
-  assert.equal(caps.renderer, 'webpc');
+  assert.equal(caps.renderer, 'waarm64');
   assert.equal(decodeCaps(v1.r.subarray(24)).max_version, 1);
   // Nothing WebGL2 lacks: no dual-source blending, no fbfetch (VIRGL_CAP_TGSI_FBFETCH), no indep blend.
   assert.equal(caps.max_dual_source_render_targets, 0);

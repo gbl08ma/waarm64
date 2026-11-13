@@ -12,9 +12,9 @@
 #
 # Gadgets (vendor 0x0525, NetChip, as Linux's own gadgets):
 #   zero      0525:a4a0 Gadget Zero as g_zero: configuration 1 source/sink (pattern 1: i % 63), configuration 2
-#             loopback; serial "webpc-zero"
+#             loopback; serial "waarm64-zero"
 #   zero-a, zero-b   two Gadget Zeros without a serial number, identical but for bcdDevice (the getDevices() order check)
-#   acm       0525:a4a7 a CDC ACM serial port as g_serial's ACM mode; serial "webpc-acm"
+#   acm       0525:a4a7 a CDC ACM serial port as g_serial's ACM mode; serial "waarm64-acm"
 #
 # dummy_hcd isn't built by openSUSE's kernel: `install` fetches drivers/usb/gadget/udc/dummy_hcd.c (GPL-2.0, not
 # copied into this repo) for the running kernel's version from kernel.org's stable tree and builds it out of tree
@@ -25,9 +25,9 @@ cd "$(dirname "$0")/../.."
 G=/sys/kernel/config/usb_gadget
 KVER=$(uname -r)
 NUDC=4
-POLICY=/etc/chromium/policies/managed/webpc-usb.json
-RULES=/etc/udev/rules.d/70-webpc-usb.rules
-MODPROBE=/etc/modprobe.d/50-webpc-usb.conf
+POLICY=/etc/chromium/policies/managed/waarm64-usb.json
+RULES=/etc/udev/rules.d/70-waarm64-usb.rules
+MODPROBE=/etc/modprobe.d/50-waarm64-usb.conf
 ALL=(zero zero-a zero-b acm)
 # The origins the policy grants every 0525 gadget and every HID device to: the USB tests serve on these ports.
 PORTS=(8190 8191 8192 8193 8194 8195 8196 8197)
@@ -73,14 +73,14 @@ install() {
   # ACM gadget's device-side tty (/dev/ttyGS*: the far end of the guest's serial port),
   # /dev/uhid, and the hidraw nodes of uhid's devices (tests/usb/uhid.ts).
   cat > "$tmp/rules" << 'EOF'
-# webpc's USB test rig (tests/usb/gadget.sh, tests/usb/uhid.ts)
+# waarm64's USB test rig (tests/usb/gadget.sh, tests/usb/uhid.ts)
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0525", MODE="0666"
 KERNEL=="uhid", MODE="0666"
 SUBSYSTEM=="hidraw", DEVPATH=="/devices/virtual/misc/uhid/*", MODE="0666"
 SUBSYSTEM=="tty", KERNEL=="ttyGS*", MODE="0666"
 EOF
   # The host's class drivers would hold the gadgets' interfaces (WebUSB doesn't detach them, docs/usb.md "What the browser allows").
-  printf '%s\n' '# webpc USB test rig: keep the gadgets free for WebUSB and QEMU (tests/usb/gadget.sh)' \
+  printf '%s\n' '# waarm64 USB test rig: keep the gadgets free for WebUSB and QEMU (tests/usb/gadget.sh)' \
     'blacklist usbtest' 'blacklist cdc_acm' > "$tmp/modprobe"
   local urls
   urls=$(printf '"http://127.0.0.1:%s",' "${PORTS[@]}")
@@ -129,20 +129,20 @@ free_udc() {
 w() { echo "$2" | sudo tee "$1" > /dev/null; }
 
 make_gadget() {
-  local name=$1 g=$G/webpc-$1
+  local name=$1 g=$G/waarm64-$1
   [ -d "$g" ] && return
   sudo mkdir "$g"
   w "$g/idVendor" 0x0525
   w "$g/bcdUSB" 0x0200
   sudo mkdir "$g/strings/0x409"
-  w "$g/strings/0x409/manufacturer" webpc
+  w "$g/strings/0x409/manufacturer" waarm64
   case $name in
     zero | zero-a | zero-b)
       w "$g/idProduct" 0xa4a0
       w "$g/strings/0x409/product" 'Gadget Zero'
       # zero-a and zero-b differ only in bcdDevice (1.01, 1.02), which isn't part of the identity: it tells them apart in tests.
       case $name in
-        zero) w "$g/strings/0x409/serialnumber" webpc-zero ;;
+        zero) w "$g/strings/0x409/serialnumber" waarm64-zero ;;
         zero-a) w "$g/bcdDevice" 0x0101 ;;
         zero-b) w "$g/bcdDevice" 0x0102 ;;
       esac
@@ -158,7 +158,7 @@ make_gadget() {
     acm)
       w "$g/idProduct" 0xa4a7
       w "$g/strings/0x409/product" 'Gadget Serial'
-      w "$g/strings/0x409/serialnumber" webpc-acm
+      w "$g/strings/0x409/serialnumber" waarm64-acm
       sudo mkdir "$g/functions/acm.0"
       sudo mkdir -p "$g/configs/c.1/strings/0x409"
       w "$g/configs/c.1/strings/0x409/configuration" 'CDC ACM'
@@ -170,7 +170,7 @@ make_gadget() {
 }
 
 remove_gadget() {
-  local g=$G/webpc-$1 c f
+  local g=$G/waarm64-$1 c f
   [ -d "$g" ] || return 0
   [ -n "$(cat "$g/UDC")" ] && w "$g/UDC" ''
   for c in "$g"/configs/*; do
@@ -186,7 +186,7 @@ remove_gadget() {
 # The bus path of a gadget's host-side device (e.g. 3-1), once enumerated.
 host_path() {
   local udc
-  udc=$(cat "$G/webpc-$1/UDC")
+  udc=$(cat "$G/waarm64-$1/UDC")
   local d
   for d in /sys/bus/usb/devices/usb*; do
     [ "$(cat "$d/product" 2> /dev/null)" = 'Dummy host controller' ] || continue
@@ -225,9 +225,9 @@ wait_enumerated() {
 
 status() {
   local d n
-  for d in "$G"/webpc-*; do
+  for d in "$G"/waarm64-*; do
     [ -d "$d" ] || continue
-    n=${d##*/webpc-}
+    n=${d##*/waarm64-}
     echo "$n $(cat "$d/UDC") host $(host_path "$n")"
   done
 }
@@ -247,7 +247,7 @@ case $cmd in
   down)
     [ $# -gt 0 ] || set -- "${ALL[@]}"
     for n in "$@"; do remove_gadget "$n"; done
-    if ! compgen -G "$G/webpc-*" > /dev/null && lsmod | grep -q '^dummy_hcd '; then sudo rmmod dummy_hcd; fi
+    if ! compgen -G "$G/waarm64-*" > /dev/null && lsmod | grep -q '^dummy_hcd '; then sudo rmmod dummy_hcd; fi
     ;;
   status) status ;;
   *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;

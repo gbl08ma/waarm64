@@ -29,7 +29,7 @@ export function fatImage(label: string, files: { name: string; data: string | Ui
 
   // The boot sector and its BIOS parameter block.
   img.set([0xeb, 0x3c, 0x90], 0);
-  img.set(ascii('WEBPC', 8), 3);
+  img.set(ascii('WAARM64', 8), 3);
   view.setUint16(11, SECTOR, true);
   img[13] = CLUSTER_SECTORS;
   view.setUint16(14, 1, true); // reserved sectors

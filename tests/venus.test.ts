@@ -11,7 +11,7 @@ const T = new URL('../target/', import.meta.url);
 const IMAGE = new URL('images/linux-gpu/Image', T);
 
 test('the gpu test kernel finds a Venus device: the window, the features, three capsets', { skip: !existsSync(IMAGE) && 'SKIPPED: run images/build.sh linux-gpu' }, async () => {
-  const wasm = readFileSync(new URL('wasm32-unknown-unknown/release/webpc_core.wasm', T));
+  const wasm = readFileSync(new URL('wasm32-unknown-unknown/release/waarm64_core.wasm', T));
   const r = await runToPowerOff(wasm, {
     ramSize: 256 << 20, kernel: readFileSync(IMAGE), initrd: readFileSync(new URL('images/linux-gpu/initramfs.cpio', T)), cmdline: 'console=ttyAMA0 panic=-1', jit: 1,
     devices: [{ type: 'gpu', width: 640, height: 480, virgl: true, venus: true }],

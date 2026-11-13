@@ -15,7 +15,7 @@ const REPS = Number(process.env.REPS ?? 7);
 type Sync = (b: Uint8Array) => Uint8Array;
 const fflate = await import(process.env.FFLATE ?? 'fflate') as { deflateSync(b: Uint8Array, o?: { level?: number }): Uint8Array; inflateSync(b: Uint8Array, o?: { out?: Uint8Array }): Uint8Array };
 const fzstd = await import(process.env.FZSTD ?? 'fzstd') as { decompress(b: Uint8Array, out?: Uint8Array): Uint8Array };
-const lz = await lzCodec(readFileSync(new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)));
+const lz = await lzCodec(readFileSync(new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)));
 
 /** The LZ4 block format's decoder in JavaScript (core/src/lz.rs's format), into `out` of the raw length. */
 function lz4Decode(src: Uint8Array, out: Uint8Array): Uint8Array {

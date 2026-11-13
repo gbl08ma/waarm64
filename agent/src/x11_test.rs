@@ -44,7 +44,7 @@ impl Xvfb {
     /// An Xvfb on a free display number, its cookie in a file of the test's own (`-auth`, as startx does).
     fn start(name: &str) -> Xvfb {
         let dir =
-            std::env::temp_dir().join(format!("webpc-agent-x11-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("waarm64-agent-x11-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         let auth = dir.join("Xauthority");
@@ -186,8 +186,10 @@ fn text(n: usize) -> Vec<u8> {
 
 /// The page's end and the child on a thread, at `at`; a runtime directory of the test's own (no compositor in it).
 fn child(at: impl FnOnce(&Path) -> Where, name: &str) -> (Page, Served, PathBuf) {
-    let runtime =
-        std::env::temp_dir().join(format!("webpc-agent-x11run-{name}-{}", std::process::id()));
+    let runtime = std::env::temp_dir().join(format!(
+        "waarm64-agent-x11run-{name}-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&runtime);
     std::fs::create_dir(&runtime).unwrap();
     let (mine, theirs) = socketpair(
@@ -464,7 +466,7 @@ fn a_compositor_without_data_control_gives_way_to_x11() {
     let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
     let x = Xvfb::start("nodc");
     let runtime =
-        std::env::temp_dir().join(format!("webpc-agent-x11run-nodc-{}", std::process::id()));
+        std::env::temp_dir().join(format!("waarm64-agent-x11run-nodc-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&runtime);
     std::fs::create_dir(&runtime).unwrap();
     let listener = std::os::unix::net::UnixListener::bind(runtime.join("wayland-0")).unwrap();
@@ -829,7 +831,7 @@ fn two_incr_transfers_to_one_window_both_end() {
     host_offer(&mut page, 4, vec![(TEXT, t.len() as u32)], None);
     let mut r = Raw::connect(&x);
     let (clip, utf8, incr) = (r.atom("CLIPBOARD"), r.atom("UTF8_STRING"), r.atom("INCR"));
-    let (pa, pb) = (r.atom("WEBPC_TEST_A"), r.atom("WEBPC_TEST_B"));
+    let (pa, pb) = (r.atom("WAARM64_TEST_A"), r.atom("WAARM64_TEST_B"));
     // One window, two properties (as a MULTIPLE does, or two pastes in a row from one program).
     let w = r.window(1 << 22);
     for p in [pa, pb] {

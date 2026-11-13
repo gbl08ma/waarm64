@@ -416,9 +416,9 @@ impl Session {
 
     fn host_info(&self) -> HostInfo<'_> {
         HostInfo {
-            ipn_version: concat!("webpc-ts-", env!("CARGO_PKG_VERSION")),
+            ipn_version: concat!("waarm64-ts-", env!("CARGO_PKG_VERSION")),
             os: "js",
-            app: "webpc",
+            app: "waarm64",
             hostname: Some(self.cfg.hostname.as_str()),
             net_info: self.home.map(|h| NetInfo {
                 preferred_derp: std::num::NonZeroU32::new(h).map(Into::into),

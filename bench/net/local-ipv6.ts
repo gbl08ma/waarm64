@@ -1,12 +1,12 @@
 // IPv6 through the local helper on hosts that have it (docs/plans/networking-local.md §5, L0; bench/net/REPORT.md "The
 // local helper"). Debian on the page in the dev VM, which has no IPv6 of its own, so one of two rigs:
-//   node bench/net/local-ipv6.ts mac <out.json>      the helper on the Mac (cross-built here, kept in ~/webpc-net-test
+//   node bench/net/local-ipv6.ts mac <out.json>      the helper on the Mac (cross-built here, kept in ~/waarm64-net-test
 //                                                    there) over an ssh tunnel: the Mac's real IPv6, curl and apt over it
 //   unshare -Urn node bench/net/local-ipv6.ts netns <out.json>
 //                                                    everything in a new network namespace whose "internet" is a dummy
 //                                                    interface holding the helper's probe target: the reach really goes
 //                                                    (the address is removed) and comes back under a running guest
-// One Debian boot each. Build target/net/webpc-net first for netns (tests/webpc-net.ts `buildHelper`), which has no network for the toolchain.
+// One Debian boot each. Build target/net/waarm64-net first for netns (tests/waarm64-net.ts `buildHelper`), which has no network for the toolchain.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -18,7 +18,7 @@ import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { withDebianLock } from '../../tests/debian-lock.ts';
 import { loginRoot, run as runIn } from '../../tests/serial-console.ts';
-import { helperSource } from '../../tests/webpc-net.ts';
+import { helperSource } from '../../tests/waarm64-net.ts';
 
 const helperDir = () => {
   const s = helperSource();
@@ -43,11 +43,11 @@ const http = createServer((_, res) => res.end('hello over IPv6\n'));
 
 async function rig() {
   if (mode === 'mac') {
-    execFileSync('go', ['build', '-trimpath', '-o', `${ROOT}target/net/webpc-net-darwin-arm64`, '.'], { cwd: helperDir(), env: { ...process.env, GOOS: 'darwin', GOARCH: 'arm64', CGO_ENABLED: '0' }, stdio: 'inherit', timeout: 300_000 });
-    execFileSync('ssh', [MAC, 'mkdir -p webpc-net-test']);
-    execFileSync('scp', ['-q', `${ROOT}target/net/webpc-net-darwin-arm64`, `${MAC}:webpc-net-test/webpc-net`]);
+    execFileSync('go', ['build', '-trimpath', '-o', `${ROOT}target/net/waarm64-net-darwin-arm64`, '.'], { cwd: helperDir(), env: { ...process.env, GOOS: 'darwin', GOARCH: 'arm64', CGO_ENABLED: '0' }, stdio: 'inherit', timeout: 300_000 });
+    execFileSync('ssh', [MAC, 'mkdir -p waarm64-net-test']);
+    execFileSync('scp', ['-q', `${ROOT}target/net/waarm64-net-darwin-arm64`, `${MAC}:waarm64-net-test/waarm64-net`]);
     // Another port there: Lima forwards the VM's loopback ports to the Mac's.
-    const h = spawn('ssh', ['-tt', '-L', `${PORT}:127.0.0.1:${PORT + 10}`, MAC, `WEBPC_NET_TOKEN=${token} exec webpc-net-test/webpc-net --listen 127.0.0.1:${PORT + 10} --origin ${base}`], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const h = spawn('ssh', ['-tt', '-L', `${PORT}:127.0.0.1:${PORT + 10}`, MAC, `WAARM64_NET_TOKEN=${token} exec waarm64-net-test/waarm64-net --listen 127.0.0.1:${PORT + 10} --origin ${base}`], { stdio: ['pipe', 'pipe', 'pipe'] });
     procs.push(h);
     return h;
   }
@@ -64,7 +64,7 @@ async function rig() {
   await new Promise<void>((r) => dns.bind(53, PROBE, r));
   dns.on('error', () => {});
   await new Promise<void>((r) => http.listen(8086, PROBE, r));
-  const h = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${PORT}`, '--origin', base], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const h = spawn(`${ROOT}target/net/waarm64-net`, ['--listen', `127.0.0.1:${PORT}`, '--origin', base], { env: { ...process.env, WAARM64_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
   procs.push(h);
   return h;
 }
@@ -78,7 +78,7 @@ for (let k = 0; k < 150 && !helperLog.includes('listening on'); k++) await new P
 if (!helperLog.includes('listening on')) throw new Error(`the helper didn't start: ${helperLog}`);
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-const overlay = 'webpc-net-ipv6';
+const overlay = 'waarm64-net-ipv6';
 const removeOverlay = (page: Page) => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay).catch(() => {});
 
 /** Polls the guest until `default` in its IPv6 routes is `want`; the seconds that took. */

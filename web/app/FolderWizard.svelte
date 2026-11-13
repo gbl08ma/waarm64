@@ -52,7 +52,7 @@
     wizard.open();
     step = o.machine && choices.length ? 'pick' : 'kind';
     for (const id of folders.held)
-      void folders.locks.holder(`webpc-folder:${id}`).then((who) => {
+      void folders.locks.holder(`waarm64-folder:${id}`).then((who) => {
         if (who) holders = { ...holders, [id]: who };
       });
   }

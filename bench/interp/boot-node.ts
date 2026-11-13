@@ -8,7 +8,7 @@ import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from
 const [guest = 'buildroot', mode = '4'] = process.argv.slice(2);
 const IMAGES = new URL('../../target/images/', import.meta.url);
 const image = (p: string) => readFileSync(new URL(p, IMAGES));
-const wasm = readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const wasm = readFileSync(process.env.WASM ?? new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const jit = Number(mode) as 0 | 1 | 4;
 const a = DISTROS.alpine;
 const o = guest === 'alpine'
@@ -17,6 +17,6 @@ const o = guest === 'alpine'
 const t = performance.now();
 const r = await runToPowerOff(wasm, o);
 const ms = performance.now() - t;
-if (!/webpc: test (exit 0|ok)/.test(r.console)) console.log(r.console.slice(-3000));
+if (!/waarm64: test (exit 0|ok)/.test(r.console)) console.log(r.console.slice(-3000));
 console.log(`${guest} jit ${jit}: ${r.steps} steps in ${ms.toFixed(0)} ms, ${(r.steps / ms / 1000).toFixed(1)} MIPS`);
 if (process.env.STATS) console.log(JSON.stringify(r.stats));

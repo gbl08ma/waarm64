@@ -12,21 +12,21 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
 
 ## 1. The rules
 
-1. **Folders are the browser's.** A list kept in this browser (IndexedDB `webpc`, object store `folders`), each one
+1. **Folders are the browser's.** A list kept in this browser (IndexedDB `waarm64`, object store `folders`), each one
    of two kinds: [a folder on your computer](ui:folders:FolderWizard.state.host) (a directory handle the user picked or dropped) or **a folder in the
    browser** (a directory in OPFS, `folders/<id>/`). Each has a name and **Read-only**. Machines are attached to
    folders; deleting a folder detaches it from every machine (and, for one in the browser, deletes its files, asked
    first with their size).
 2. **A machine has shared folders or not** (`shares: true` in the machine record, left out when off; the shape's
    `devices` lists `9p`, before the disks; new machines on, older ones off so their shapes and snapshots stay). On, the
-   machine has one 9p device, tag `webpc`, whatever is attached. Turning it on or off needs the machine off (no hotplug), as a disk or an
+   machine has one 9p device, tag `waarm64`, whatever is attached. Turning it on or off needs the machine off (no hotplug), as a disk or an
    adapter does.
 3. **Attaching and detaching don't touch the shape** and are saved at once, running or not: the device's root is a
    directory the server makes, with one entry per attached folder, under the folder's name (made unique with
    ` (2)`… on a clash). A folder attached while the machine runs appears at the root (the guest mounts with
    `cache=none`, so its next `ls` sees it). One detached while the guest holds fids into it makes them answer
    `ESTALE`. Up to 16 folders per machine (`MAX_FOLDERS`; the root is a listing, so this is a UI bound, not a slot).
-4. **One writer at a time.** A Web Lock per folder (`webpc-folder:<id>`), taken by a running machine: `shared` for a
+4. **One writer at a time.** A Web Lock per folder (`waarm64-folder:<id>`), taken by a running machine: `shared` for a
    read-only attachment, `exclusive` for a read-write one (the attachment's own Read-only, or the folder's). Several
    machines can read a folder; one can write it, and then none other reads it (a reader would see writes land
    halfway). A machine that wants a held folder is told which machine holds it and offers [Use it here](ui:folders:FoldersMenu.useHere), as the
@@ -46,7 +46,7 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
 
 ### 2.1 The record
 
-`Folder` in `web/app/folders.ts` (DOM-free), IndexedDB `webpc` `folders`: an id (also the lock's name and, for a folder in the
+`Folder` in `web/app/folders.ts` (DOM-free), IndexedDB `waarm64` `folders`: an id (also the lock's name and, for a folder in the
 browser, its OPFS directory), the user's name (a picked folder's starts as its directory's name), `kind: 'host' |
 'opfs'`, `readOnly`, `handle` (host only), `lastUsed` (what the wizard preselects). A machine record's
 `folders: {id, readOnly}[]` are its attachments, in the root's order. A definition (export) carries `shares` and
@@ -80,7 +80,7 @@ changes are disabled and say which machine has it.
 runs as a generator whose `yield` is `await`: a tree that answers at once costs no microtask.
 - **memory** (`MemoryTree`): the tests' and Alpine's (`{type: '9p', tag, files}`), synchronous, the one the native twin
   (`core/tests/common/p9.rs`) matches.
-- **folders** (`FolderTree`, `web/9p-folders.ts`): the page's (`{type: '9p', tag: 'webpc', folders: [...]}` with the handles, structured-cloned to the
+- **folders** (`FolderTree`, `web/9p-folders.ts`): the page's (`{type: '9p', tag: 'waarm64', folders: [...]}` with the handles, structured-cloned to the
   device worker): the root is the server's own directory (mode 0555, the attached folders' names), and each name is a
   directory handle served by one of two backends:
   - **host**: the asynchronous File System Access API only (`getFile`, `createWritable`, `removeEntry`, `move`,
@@ -170,7 +170,7 @@ after the request it names**. What changes while the machine runs comes over the
 ## 5. The guest
 
 - **The mount** is units of the page's (`web/app/shares-mount.ts`, SMBIOS credentials, systemd 256+): `<unit>.mount`
-  (`What=webpc`, `Where=<mount point>`, `Type=9p`,
+  (`What=waarm64`, `Where=<mount point>`, `Type=9p`,
   `Options=trans=virtio,version=9p2000.L,cache=none,msize=1048576,access=user,nofail`) and `<unit>.automount`, wanted
   by `remote-fs.target` through a drop-in, so the first access mounts it and a guest without the module or the device
   boots on. systemd creates the mount point if it is missing. Debian 13 loads `9pnet_virtio` from the device's modalias
@@ -184,7 +184,7 @@ after the request it names**. What changes while the machine runs comes over the
   `/tmp`, `/usr`, `/var` themselves, and anything under `/dev`, `/proc`, `/sys`); mounting over a directory that has
   files hides them, which the field's note says. The units are read at boot, so a new mount point applies at the next
   start.
-- Guests without systemd 256 see the device and mount it by hand: `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none webpc /mnt`.
+- Guests without systemd 256 see the device and mount it by hand: `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none waarm64 /mnt`.
   The Folders menu says so.
 
 ## 6. Snapshots

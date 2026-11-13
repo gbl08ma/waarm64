@@ -27,7 +27,7 @@ mkdirSync(out, { recursive: true });
 const SNAPS = Number(process.env.SNAPS ?? 3);
 const WARM_S = Number(process.env.WARM_S ?? 30);
 const SCENES = (process.env.SCENES ?? 'idle,sway,desktop').split(',');
-const lz = await lzCodec(readFileSync(new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url)));
+const lz = await lzCodec(readFileSync(new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)));
 
 type Saved = { desc: { target: number; format: number; width: number; height: number; depth: number; arraySize: number; lastLevel: number; nrSamples: number; bind: number }; levels: { how: string; data: { length: number } }[]; lost?: string };
 /** The file's frames by kind (count, raw and stored bytes), and the renderer's state from its DEVS (unpacked by the core's codec). */
@@ -102,11 +102,11 @@ const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 async function scene(name: string) {
   const snaps = [];
   for (let k = 0; k < SNAPS; k++) {
-    const r = await snapshot(page, `${out}/${name}-${k}.webpcsnap`);
+    const r = await snapshot(page, `${out}/${name}-${k}.waarm64snap`);
     log(name, k, JSON.stringify({ bytes: r.bytes, pausedMs: Math.round(r.pausedMs), stateMs: Math.round(r.stateMs), blobBytes: r.blobBytes, renderer: r.file.renderer && { resources: r.file.renderer.resources, kinds: r.file.renderer.kinds } }));
     snaps.push(r);
     // Only the last file of `desktop` stays (the restore's); KEEP=1 keeps every scene's last.
-    if (k < SNAPS - 1 || (name !== 'desktop' && !process.env.KEEP)) rmSync(`${out}/${name}-${k}.webpcsnap`);
+    if (k < SNAPS - 1 || (name !== 'desktop' && !process.env.KEEP)) rmSync(`${out}/${name}-${k}.waarm64snap`);
     // The page keeps a download's Blob for 60 s (its URL revoked then): a GiB-sized snapshot each few seconds piles up.
     await page.waitForTimeout(Number(process.env.GAP_S ?? 65) * 1000);
   }
@@ -152,7 +152,7 @@ results.desktopBefore = { procs: await run(procs), ffFps: await ffFrames(run, 10
 log('desktop before', JSON.stringify(results.desktopBefore));
 save();
 if (SCENES.includes('desktop')) await scene('desktop');
-const file = `${out}/desktop-${SNAPS - 1}.webpcsnap`;
+const file = `${out}/desktop-${SNAPS - 1}.waarm64snap`;
 const shot = await page.locator('#screen').screenshot({ path: `${out}/desktop-saved.png` });
 await s.close();
 
@@ -164,7 +164,7 @@ if (SCENES.includes('desktop')) {
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', env: chromiumEnv() });
   const p2 = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
-  await p2.addInitScript(() => localStorage.setItem('webpc.settings', JSON.stringify({ screen: '1376x762' })));
+  await p2.addInitScript(() => localStorage.setItem('waarm64.settings', JSON.stringify({ screen: '1376x762' })));
   await answerAsks(p2);
   const warnings = new Map<string, number>();
   p2.on('console', (m) => { const t = m.text(); if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1); });

@@ -545,7 +545,7 @@ export class Gpu {
         // A stable UUID a resource is known by across devices: its id, in a version 4 shape.
         const r = new Uint8Array(HDR + 16);
         const w = new DataView(r.buffer);
-        w.setUint32(HDR, 0x77656270, false); // "webp"
+        w.setUint32(HDR, 0x57413634, false); // "WA64"
         w.setUint32(HDR + 4, 0x4000, false);
         w.setUint32(HDR + 8, 0x80000000, false);
         w.setUint32(HDR + 12, u32(0), false);

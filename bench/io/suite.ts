@@ -38,7 +38,7 @@ type Run = Awaited<ReturnType<typeof ioRun>>[number];
 
 /** The JSON between a job's markers. */
 function fioJson(r: Run, name: string): Fio['jobs'][0] {
-  const s = r.console.split(`webpc: ${name} start`)[1]?.split(`webpc: ${name} end`)[0];
+  const s = r.console.split(`waarm64: ${name} start`)[1]?.split(`waarm64: ${name} end`)[0];
   const j = s && s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1);
   if (!j) throw new Error(`no ${name} output:\n${r.console}`);
   return (JSON.parse(j) as Fio).jobs[0];

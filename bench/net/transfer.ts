@@ -56,8 +56,8 @@ try {
       return [k, d];
     }));
     await page.goto(`${base}/tests/browser/core.html`);
-    await page.evaluate(async () => (await navigator.storage.getDirectory()).removeEntry('webpc-offload-ab', { recursive: true }).catch(() => {}));
-    await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: env.WEBPC_TAILCAT_ADDR, overlay: 'webpc-offload-ab' })}`);
+    await page.evaluate(async () => (await navigator.storage.getDirectory()).removeEntry('waarm64-offload-ab', { recursive: true }).catch(() => {}));
+    await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: env.WAARM64_TAILCAT_ADDR, overlay: 'waarm64-offload-ab' })}`);
     await page.waitForFunction('window.harness?.tailscale().state === "Running"', null, { timeout: 60_000, polling: 250 });
     const run = (cmd: string, ms = 120_000) => runIn(page, cmd, ms, async () => '');
     await loginRoot(page, 240_000, async () => '');

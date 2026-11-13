@@ -149,7 +149,7 @@ stopping means the guest stopped decoding; `frames` growing while `decoded` stal
 automatic split, and snapshots of machines at the old ceiling would then load only onto a split set by hand. It stays
 at **1 GiB**: the core's heap is much larger than the ~150 MB once seen (`jit.md` "Memory").
 
-The bench-only hook `heapUse` (web/vm.ts; the page's `window.__webpcHeap()` with `?displaystats`) counts the
+The bench-only hook `heapUse` (web/vm.ts; the page's `window.__waarm64Heap()` with `?displaystats`) counts the
 reserve's non-zero pages in 32 MiB buckets. The allocator carves the reserve from its start, and freed memory keeps
 its bytes, so the extent of touched pages is the heap's high-water mark.
 - Debian on 4 vCPUs with two `go build` loops and a `find | sha256sum` churn (`heap-go/`, 7 minutes, one JIT flush)

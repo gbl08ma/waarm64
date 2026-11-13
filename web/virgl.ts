@@ -198,7 +198,7 @@ export function virglCaps(capset: 1 | 2): Uint8Array {
     // VIRGL_CAP_V2_*: UNTYPED_RESOURCE, STRING_MARKER, COPY_TRANSFER_BOTH_DIRECTIONS. Out: BLEND_EQUATION
     // (advanced blending), TEXTURE_SHADOW_LOD, MIRROR_CLAMP_TO_EDGE.
     capability_bits_v2: bits(1, 4, 7),
-    renderer: 'webpc',
+    renderer: 'waarm64',
     max_anisotropy: 16,
     max_texture_samplers: 16,
     max_const_buffer_size: [16384, 16384, 0, 0, 0, 0],

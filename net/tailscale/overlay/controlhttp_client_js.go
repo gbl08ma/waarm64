@@ -16,8 +16,8 @@ import (
 	"tailscale.com/net/wsconn"
 )
 
-// webpc's copy of tailscale.com/control/controlhttp/client_js.go (v1.102.5), used
-// through build.sh: the one change is marked "webpc" below.
+// waarm64's copy of tailscale.com/control/controlhttp/client_js.go (v1.102.5), used
+// through build.sh: the one change is marked "waarm64" below.
 
 // Variant of Dial that tunnels the request over WebSockets, since we cannot do
 // bi-directional communication over an HTTP connection when in JS.
@@ -41,7 +41,7 @@ func (d *Dialer) Dial(ctx context.Context) (*ClientConn, error) {
 		wsScheme = "ws"
 		host = net.JoinHostPort(host, d.HTTPPort)
 	} else if d.HTTPSPort != "" && d.HTTPSPort != "443" && d.HTTPSPort != NoPort {
-		// webpc: upstream always dials wss on 443; a control server behind
+		// waarm64: upstream always dials wss on 443; a control server behind
 		// TLS on another port (headscale on :8443) needs its port kept.
 		host = net.JoinHostPort(host, d.HTTPSPort)
 	}

@@ -20,7 +20,7 @@ export function installBenchHooks(
   if (params.has('iostats'))
     window.__ioStats = () =>
       new Promise((resolve) => {
-        const ch = new BroadcastChannel('webpc-iostats');
+        const ch = new BroadcastChannel('waarm64-iostats');
         ch.onmessage = (e) => {
           ch.close();
           resolve(e.data);
@@ -36,19 +36,19 @@ export function installBenchHooks(
     return (await replies.worker.ask((id) => w.postMessage(msg(id)))) as Extract<FromWorker, { type: K }>;
   };
   // A stop's and the heap's answers land in the globals the benchmarks wait on (`__profile`, `__timeline`, `__heap`).
-  window.__webpcProfile = (on) => {
+  window.__waarm64Profile = (on) => {
     if (on) m.run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
     else void ask((id) => ({ type: 'profile', on, id })).then((a) => a && (window.__profile = a.samples));
   };
-  window.__webpcTimeline = (on) => {
+  window.__waarm64Timeline = (on) => {
     if (on) m.run?.worker.postMessage({ type: 'timeline', on } satisfies ToWorker);
     else void ask((id) => ({ type: 'timeline', on, id })).then((a) => a && (window.__timeline = a.timeline));
   };
   window.__serialLog = () => terminal.log;
-  window.__webpcHeap = () => void ask((id) => ({ type: 'heap', id })).then((a) => a && (window.__heap = a.heap));
-  window.__webpcStallGpu = (ms) => gpu({ type: 'stall', ms });
-  window.__webpcVkSkip = (paths) => gpu({ type: 'vkskip', skip: paths });
-  window.__webpcGrab = () => {
+  window.__waarm64Heap = () => void ask((id) => ({ type: 'heap', id })).then((a) => a && (window.__heap = a.heap));
+  window.__waarm64StallGpu = (ms) => gpu({ type: 'stall', ms });
+  window.__waarm64VkSkip = (paths) => gpu({ type: 'vkskip', skip: paths });
+  window.__waarm64Grab = () => {
     const w = m.run?.gpu;
     if (!w) return Promise.resolve({ width: 0, height: 0, pixels: new Uint8Array(0) });
     return replies.grabs.ask((id) => w.postMessage({ type: 'grab', id } satisfies ToGpuWorker));

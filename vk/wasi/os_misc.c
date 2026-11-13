@@ -79,5 +79,5 @@ const char *util_get_process_name(void);
 const char *
 util_get_process_name(void)
 {
-   return "webpc-gpu";
+   return "waarm64-gpu";
 }

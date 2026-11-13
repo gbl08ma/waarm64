@@ -15,7 +15,7 @@
   const t0 = performance.now();
   const room = startRoom({
     room: {
-      link: `webpc-room:${encodeURIComponent(q.get('room'))}?nostr=${encodeURIComponent(q.get('nostr'))}&derp=${encodeURIComponent(q.get('relay'))}`,
+      link: `waarm64-room:${encodeURIComponent(q.get('room'))}?nostr=${encodeURIComponent(q.get('nostr'))}&derp=${encodeURIComponent(q.get('relay'))}`,
       known: q.has('peer') ? [q.get('peer')] : [], relayOnly: q.has('relayOnly'), incoming: q.get('incoming') !== '0',
     },
     iceServers: [],

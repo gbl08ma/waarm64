@@ -36,7 +36,7 @@ export type DevKnobs = {
   sharesAsync: string[];
   /** The display reports its draw latencies (`draw-stats`, kept in `window.__drawStats`; `?displaystats`, bench/gpu). */
   displayStats: boolean;
-  /** The disks keep stage timers and a trace of their base reads (the `webpc-iostats` channel; `?iostats`, bench/remote-disk). */
+  /** The disks keep stage timers and a trace of their base reads (the `waarm64-iostats` channel; `?iostats`, bench/remote-disk). */
   ioStats: boolean;
   /** A remote disk's blocks aren't kept in OPFS (`?diskcache=0`: bench/remote-disk's A/B). */
   noDiskCache: boolean;

@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
-import { buildHelper } from '../../tests/webpc-net.ts';
+import { buildHelper } from '../../tests/waarm64-net.ts';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const out = process.argv[2];
@@ -22,10 +22,10 @@ const port = (server.address() as { port: number }).port;
 const copy = `http://127.0.0.1:${port}`;
 const listen = 18742;
 
-buildHelper(); // at the commit tests/webpc-net.ts pins, or WEBPC_NET_SRC
+buildHelper(); // at the commit tests/waarm64-net.ts pins, or WAARM64_NET_SRC
 const token = randomBytes(32).toString('base64url');
 const ws = `ws://127.0.0.1:${listen}/${token}`;
-const helper = spawn(`${ROOT}target/net/webpc-net`, ['--listen', `127.0.0.1:${listen}`, '--origin', origin, '--origin', copy, '--no-ipv6'], { env: { ...process.env, WEBPC_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+const helper = spawn(`${ROOT}target/net/waarm64-net`, ['--listen', `127.0.0.1:${listen}`, '--origin', origin, '--origin', copy, '--no-ipv6'], { env: { ...process.env, WAARM64_NET_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
 let log = '';
 helper.stdout.on('data', (d) => { log += d; });
 helper.stderr.on('data', (d) => { log += d; });
@@ -33,7 +33,7 @@ for (let k = 0; k < 100 && !log.includes('listening on'); k++) await new Promise
 
 // What a socket does: open (and its close code when the helper closes it), or how it failed, in ms.
 const socket = (u: string, ms: number) => {
-  const s = new WebSocket(u, 'webpc-net.v1');
+  const s = new WebSocket(u, 'waarm64-net.v1');
   const t0 = performance.now();
   return new Promise<string>((resolve) => {
     const t = setTimeout(() => resolve(`pending after ${ms} ms`), ms);

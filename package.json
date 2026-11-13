@@ -1,10 +1,10 @@
 {
-  "name": "webpc",
+  "name": "waarm64",
   "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gbl08ma/webpc"
+    "url": "https://github.com/gbl08ma/waarm64"
   },
   "type": "module",
   "engines": {

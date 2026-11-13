@@ -55,9 +55,9 @@ const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...resu
 await rootShell();
 if (disk) await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
 // SHIM=1: the VA driver on the media disk (bench/video/media-disk.sh's target/video/shim/) as the guest's (an image
-// whose webpc-va is older: VK2 L6's webpc-va 3 sizes exported surfaces).
-if (disk && process.env.SHIM) log('shim', await run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/ && echo shim installed'));
-results.info = await run('uname -r; pacman -Q linux firefox pipewire wireplumber mesa webpc-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
+// whose waarm64-va is older: VK2 L6's waarm64-va 3 sizes exported surfaces).
+if (disk && process.env.SHIM) log('shim', await run('cp /mnt/media/waarm64_drv_video.so /usr/lib/dri/ && echo shim installed'));
+results.info = await run('uname -r; pacman -Q linux firefox pipewire wireplumber mesa waarm64-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
 log('info', results.info);
 const userPrefs = (list: string) => list.split(';').filter(Boolean).map((kv) => {
   const [k, v] = [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)];
@@ -100,7 +100,7 @@ const listen = () => page.evaluate(async () => {
   const ctx = w.__audio.context(), gain = w.__audio.output();
   if (!ctx || !gain || w.__onsetCtx === ctx) return !!ctx;
   await ctx.audioWorklet.addModule('/bench/audio/onset-worklet.ts');
-  const node = new AudioWorkletNode(ctx, 'webpc-onset', { numberOfInputs: 1, numberOfOutputs: 0 });
+  const node = new AudioWorkletNode(ctx, 'waarm64-onset', { numberOfInputs: 1, numberOfOutputs: 0 });
   node.port.onmessage = (e: MessageEvent<number>) => {
     const ts = ctx.getOutputTimestamp();
     (w.__onsets ??= []).push(ts.performanceTime! + (e.data / ctx.sampleRate - ts.contextTime!) * 1000);

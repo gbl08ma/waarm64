@@ -28,12 +28,12 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   const m = machine();
   const s = shapeOf(m, (id) => DISKS.get(id));
   assert.deepEqual(s.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'blk', 'blk', 'vsock']);
-  assert.deepEqual(s.disks.map((d) => [d.slot, d.serial]), [[6, 'webpc-a00000000001'], [7, 'webpc-a00000000002']]);
+  assert.deepEqual(s.disks.map((d) => [d.slot, d.serial]), [[6, 'waarm64-a00000000001'], [7, 'waarm64-a00000000002']]);
   assert.ok(serialOf('a00000000001').length <= 20);
   // Pinned: a hash that moved means every kept snapshot is orphaned by an upgrade of the page (ABI 59's, 60's and 62's CPU
-  // features moved it, on purpose: they're in the hash).
+  // features moved it, on purpose: they're in the hash; so did the rename, through the disks' serials).
   const h = await shapeHash(s);
-  assert.equal(h, 'b23c5b5d57aa7a3d35ef5443deeaf7231bedacd12ab1fedc96058b5dcf7fbd63');
+  assert.equal(h, '98d7992de26c133da8c4e7898c3bd9467f02be26e90f5b4dc7253ae79ea126c7');
   assert.equal(canonical({ b: 1, a: [2, { d: undefined, c: 3 }] }), '{"a":[2,{"c":3}],"b":1}');
   // Key order and what the guest can't see (names, the chosen overlay, in place, dates) don't move it.
   const same = machine({ name: 'Other', modified: 5, attachments: m.attachments.map((a) => ({ ...a, overlay: 'c00000000009', inPlace: true })) });
@@ -139,7 +139,7 @@ test('shapes pinned: representative shapes\' hashes and what shapeDiff says of t
   ];
   const seen = await Promise.all(variants.map(async (v) => [await shapeHash(v), diffWords(base, v), diffWords(v, base)]));
   const digest = createHash('sha256').update(JSON.stringify(seen)).digest('hex');
-  assert.equal(digest, '9146eda12f7d61ed33944a80275ed26b1a7c2528086e70d0efeb0f4fce67c4c1', 'the shapes\' hashes or their diffs moved');
+  assert.equal(digest, '4c3ecfebf328b3473be259d1781861fe8fd70f630bf3fc9ae38625342832ea03', 'the shapes\' hashes or their diffs moved');
 });
 
 test('network adapters in the shape: one at the default MAC is the card machines had before; more, or another MAC, move it', async () => {
@@ -245,7 +245,7 @@ const expected = {
 test('the store over memory: records after bytes, the sweep of what a crash left, deletions in order, another tab hears the changes', async () => {
   const r = await storeFlows(async () => {
     const [records, files] = [memoryRecords(), memoryFiles()];
-    const channel = `webpc-store-test-${Math.random()}`;
+    const channel = `waarm64-store-test-${Math.random()}`;
     return { a: new Store(records, files, { channel }), b: new Store(records, files, { channel }), write: async (p, n) => files.write(p, n) };
   });
   assert.deepEqual(r, expected);

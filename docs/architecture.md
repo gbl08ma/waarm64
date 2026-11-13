@@ -1,6 +1,6 @@
 # Architecture
 
-webpc is a whole-system AArch64 emulator for the browser: a Rust core compiled to wasm32 (the same
+waarm64 is a whole-system AArch64 emulator for the browser: a Rust core compiled to wasm32 (the same
 crate builds natively for tests), TypeScript host glue, and a JIT that turns guest code into
 WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the primary target.
 

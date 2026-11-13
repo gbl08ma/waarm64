@@ -1,7 +1,7 @@
 # The tailnet client: tailcat and Tailscale
 
 The page's network backends behind the Ethernet gateway ([devices.md](../devices.md) "net": frames at
-the device, IP packets on the gateway's port) are one client of our own: `net/ts` (crate `webpc_ts`),
+the device, IP packets on the gateway's port) are one client of our own: `net/ts` (crate `waarm64_ts`),
 a small Rust wasm module that holds the protocols' state, driven by a TypeScript worker that does the
 I/O. It speaks two protocols, and holds a room's member beside them ([rooms.md](rooms.md)):
 
@@ -32,7 +32,7 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
 
 - **Sans I/O.** The module never opens a socket or waits: the worker feeds it WebSocket messages,
   guest packets, `fetch` results and timer firings, and carries out the actions it returns. So the
-  tests drive it natively (`cargo test -p webpc_ts`) or in Node with no network.
+  tests drive it natively (`cargo test -p waarm64_ts`) or in Node with no network.
 - **The ABI** (`net/ts/src/wasm.rs` documents it). `ts_new(config JSON) → handle` makes a tailcat
   client (`addr`, `serve`) or, with `control`, a Tailscale one on the kept node `state`. Inputs:
   `ts_ws_message`, `ts_ws_closed`, `ts_fetched`, `ts_guest` (a packet from the guest), `ts_tick`;
@@ -142,7 +142,7 @@ wire, 2026-11-12: DF-clear 1,268- and 1,280-byte packets never reached the exit 
 "fragmentation needed" with MTU 1260, and 1,260 bytes passed either way). IPv6 goes as is.
 
 **The VM as a server** (`Config.serve`). The kept identity (node key and pre-shared key, IndexedDB
-`webpc-tailcat`) makes a kept address: the disco key is derived from the node key (BLAKE2s).
+`waarm64-tailcat`) makes a kept address: the disco key is derived from the node key (BLAKE2s).
 `tailcat::encode_addr` writes the address: inline nodes for one's own relay, the short region form for
 the public map, whose nearest region the page picks by `/derp/probe` timings. A meowing key becomes a
 WireGuard peer, if `Serve.allow` (tailcat's `--allow`, the connection's `tailcat.allow`) is empty or has it; one not
@@ -188,7 +188,7 @@ reference, the Go client (`net/tailscale`, now a test fixture) and the tests the
   a response is fixed up before it's read again (`netmap.rs` `one_family`). Our `Hostinfo` has the hostname and `PreferredDERP`, no
   endpoints. The capability version is tailscale-rs's (`CapabilityVersion::CURRENT`).
 - **The kept node** (`store.rs`, `web/tailscale-state.ts`): the Go client's own `ipn.StateStore` as the
-  page kept it before the switch, IndexedDB `webpc-tailscale`, object store `state`, keys
+  page kept it before the switch, IndexedDB `waarm64-tailscale`, object store `state`, keys
   `<profile>/<StateKey>` (one profile per control server), values the hex of the bytes: `_machinekey`
   (`privkey:<hex>`), `_current-profile` (`profile-<4 hex>`), `_profiles` (the `LoginProfile` map), and
   the profile's `ipn.Prefs`, whose `Config` (Persist) holds `PrivateNodeKey`, `OldPrivateNodeKey`,
@@ -250,7 +250,7 @@ start, 137 Mbit/s each way; the module alone in Node, 323–329 Mbit/s each way.
 ## Tests
 
 [testing.md](../testing.md) "The network on Debian" has the list and where each runs. In short:
-`cargo test -p webpc_ts` (everything sans I/O: CBOR, the address, NAT46, DERP against a fake relay,
+`cargo test -p waarm64_ts` (everything sans I/O: CBOR, the address, NAT46, DERP against a fake relay,
 both clients against fake servers, Noise against `ts_noise`'s responder, HTTP/2 against `h2`'s
 server, the netmap, the store, the filter, MagicDNS); `tests/ts-client.test.ts` (the module's
 boundary); the tailcat rig (`tests/net/tailcat.sh`: `derper` and `tailcat serve exit-node` built
@@ -266,7 +266,7 @@ the rooms' tests ([rooms.md](rooms.md) "Tests"). Serving, against the real CLI
 (`tests/net/tailcat-cli.ts`): `tailcat ping` (the rig's relay; tailcat's public ones opt-in), a kept key let in by a
 second exit node's `--allow` and a fresh one not (`tests/tailcat-browser.test.ts`), and `tailcat ssh` into
 images/debian-tools/build.sh's Debian with an allow list of the CLI's key (`tests/net-tailcat.test.ts`; over the
-public relays with `WEBPC_TAILCAT_INTERNET=1`: 1.6 s to log in through Frankfurt, 2026-11-09). Because a tailcat exit node reaches
+public relays with `WAARM64_TAILCAT_INTERNET=1`: 1.6 s to log in through Frankfurt, 2026-11-09). Because a tailcat exit node reaches
 private addresses, a server on this machine stands in for the internet: the exit-node path is routine
 there, where Tailscale's is opt-in.
 

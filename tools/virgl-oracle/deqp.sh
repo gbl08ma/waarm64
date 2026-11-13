@@ -12,12 +12,12 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 B=$ROOT/target/virgl-oracle/build
 api=$1 out=$(realpath -m "$2") pick=${3:-50}
 [ -x "$B/vtest/virgl_test_server" ] || { echo "build the oracle first: tools/virgl-oracle/build.sh" >&2; exit 1; }
-podman image exists localhost/webpc-deqp || { echo "build dEQP first: images/deqp/build.sh" >&2; exit 1; }
+podman image exists localhost/waarm64-deqp || { echo "build dEQP first: images/deqp/build.sh" >&2; exit 1; }
 mkdir -p "$out/sock"
 sock=$out/sock/vtest.sock
 rm -f "$sock"
 if [ -f "$pick" ]; then cp "$pick" "$out/cases.txt"; else
-  podman run --rm localhost/webpc-deqp cat /cts/external/openglcts/data/gl_cts/data/mustpass/gles/aosp_mustpass/main/$api-main.txt |
+  podman run --rm localhost/waarm64-deqp cat /cts/external/openglcts/data/gl_cts/data/mustpass/gles/aosp_mustpass/main/$api-main.txt |
     awk -v s="$pick" -v o="${OFFSET:-0}" 'NR % s == (o + 1) % s' > "$out/cases.txt"
 fi
 MESA_GLES_VERSION_OVERRIDE=3.0 LD_LIBRARY_PATH=$B/src \
@@ -26,7 +26,7 @@ server=$!
 trap 'kill $server 2>/dev/null || true' EXIT
 for _ in $(seq 50); do [ -S "$sock" ] && break; sleep 0.1; done
 podman run --rm --security-opt label=disable -v "$out:/out" -e EGL_PLATFORM=surfaceless -e GALLIUM_DRIVER=virpipe -e LIBGL_ALWAYS_SOFTWARE=1 -e VTEST_SOCKET_NAME=/out/sock/vtest.sock \
-  -w /build/modules/$api localhost/webpc-deqp sh -c "
+  -w /build/modules/$api localhost/waarm64-deqp sh -c "
   timeout 7000 ./deqp-$api --deqp-caselist-file=/out/cases.txt --deqp-surface-type=pbuffer --deqp-gl-config-name=rgba8888d24s8ms0 \
     --deqp-surface-width=256 --deqp-surface-height=256 --deqp-log-filename=/tmp/deqp.qpa --deqp-log-images=disable \
     --deqp-log-shader-sources=disable --deqp-watchdog=enable 2>&1 |

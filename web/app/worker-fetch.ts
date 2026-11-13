@@ -5,7 +5,7 @@ import type { Machine } from './machine.ts';
 import { failure } from './worker-errors.ts';
 import { post } from './worker-post.ts';
 
-export const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href;
+export const CORE = new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url).href;
 /** A URL as the user knows it: a path in the repository. */
 const repoPath = (url: string) => new URL(url).pathname.replace(/^\//, '');
 

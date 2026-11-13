@@ -2,7 +2,7 @@
 // controller, Gadget Zero attached from the toolbar's USB menu (`?usbzero=1`) and seen by the guest, a kept snapshot
 // that asks first, empties the ports and attaches it again (the guest sees it unplugged and back), and a detach. The
 // status bar's USB total counts its traffic, and its renderer and frame rate are the simple framebuffer's.
-// Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh); ~50 s.
+// Opt-in with WAARM64_DISTROS=debian (scripts/ci-machines.sh); ~50 s.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -15,11 +15,11 @@ import { answerAsks, type Question } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const GLUE = new URL('../web/usb.ts', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)'
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)'
   : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run images/build.sh debian edk2'
     : !existsSync(GLUE) && 'SKIPPED: no xHCI glue (web/usb.ts) yet';
 
@@ -79,7 +79,7 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
     return id;
   }, { size, bytes: image.length });
   // The status bar (docs/frontend.md "The status bar"): the screen's renderer and frame rate, the USB devices' total.
-  await page.evaluate(() => localStorage.setItem('webpc.settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('webpc.settings') ?? '{}'), statusBar: [{ kind: 'gpu' }, { kind: 'fps' }, { kind: 'usbtotal' }] })));
+  await page.evaluate(() => localStorage.setItem('waarm64.settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}'), statusBar: [{ kind: 'gpu' }, { kind: 'fps' }, { kind: 'usbtotal' }] })));
   await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&usbzero=1&${credentialsQuery()}`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 420_000, polling: 250 });
   await shows(page, /login: /);

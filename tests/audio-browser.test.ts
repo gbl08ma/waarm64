@@ -30,7 +30,7 @@ import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
-const skip = process.env.WEBPC_AUDIO_TESTS !== '1' ? 'SKIPPED: scripts/ci-audio.sh runs it (WEBPC_AUDIO_TESTS=1)'
+const skip = process.env.WAARM64_AUDIO_TESTS !== '1' ? 'SKIPPED: scripts/ci-audio.sh runs it (WAARM64_AUDIO_TESTS=1)'
   : !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd';
 
 let browser: Browser;
@@ -43,7 +43,7 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  micDir = mkdtempSync(join(tmpdir(), 'webpc-mic-'));
+  micDir = mkdtempSync(join(tmpdir(), 'waarm64-mic-'));
   const wav = join(micDir, 'tone.wav');
   writeFileSync(wav, toneWav(MIC_HZ, 48000, 10));
   browser = await chromium.launch({
@@ -99,7 +99,7 @@ async function inTime(page: Page, what: string) {
 const report = (log: string) => {
   const [, frames] = /snd: wrote (\d+) frames/.exec(log) ?? [];
   const [, end, ms] = /snd: \d+ frames queued at the end, (drain|drop) ok after (\d+) ms/.exec(log) ?? [];
-  assert.ok(frames && ms && /webpc: snd test ok/.test(log), `the guest didn't finish:\n${log.slice(-2000)}`);
+  assert.ok(frames && ms && /waarm64: snd test ok/.test(log), `the guest didn't finish:\n${log.slice(-2000)}`);
   return { frames: Number(frames), ms: Number(ms), end };
 };
 
@@ -165,7 +165,7 @@ test('with its context not running, the page says sound waits for a click; the g
 });
 
 test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fresh profile and plays on: heard, in time, to its end', { skip, timeout: 4 * 60_000 }, async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'webpc-snd-snap-'));
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-snd-snap-'));
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -182,7 +182,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     const saved = page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000, polling: 20 })
       .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.locator('#message-text').textContent()}`); });
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.locator('#save-snapshot').click()]);
-    const path = join(dir, 'snd.webpcsnap');
+    const path = join(dir, 'snd.waarm64snap');
     await download.saveAs(path);
     await saved;
     const after = (await header(page))[READ];
@@ -249,7 +249,7 @@ const recorded = (log: string) => {
 async function micPage(stored: Record<string, unknown>, rec?: number, init?: () => void) {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.addInitScript((s) => localStorage.setItem('webpc.settings', JSON.stringify(s)), stored);
+  await page.addInitScript((s) => localStorage.setItem('waarm64.settings', JSON.stringify(s)), stored);
   if (init) await page.addInitScript(init);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));

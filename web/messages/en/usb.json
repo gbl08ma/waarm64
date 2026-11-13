@@ -220,7 +220,7 @@
     "note": "Title of the folded remedy (a udev rule) under the problem \"This browser couldn't open the device. Your user account probably has no permission to use it.\""
   },
   "usb-problems.openFailed.linux.udev": {
-    "message": "Add this udev rule to /etc/udev/rules.d/70-webpc.rules:",
+    "message": "Add this udev rule to /etc/udev/rules.d/70-waarm64.rules:",
     "note": "Step 1 of the Linux remedy for a device the user may not open; the rule to copy follows."
   },
   "usb-problems.openFailed.linux.reload": {

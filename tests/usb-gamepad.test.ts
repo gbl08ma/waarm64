@@ -61,14 +61,14 @@ function guestChromium(r: Uint8Array): { pressed: boolean[]; axes: number[]; tri
 }
 
 test('the game pad describes itself as a wired Xbox 360 controller', async () => {
-  const d = new UsbGamepad({ name: 'Xbox 360 Controller', serial: 'webpc-pad-1' });
+  const d = new UsbGamepad({ name: 'Xbox 360 Controller', serial: 'waarm64-pad-1' });
   assert.equal(d.speed, 'full');
   const dev = (await control(d, 0x80, 6, 0x100, 0, 18)).data!;
   assert.deepEqual([dev[4], dev[5], dev[6], dev[7], dev[8] | dev[9] << 8, dev[10] | dev[11] << 8], [0xff, 0xff, 0xff, 8, 0x045e, 0x028e]);
   assert.deepEqual([GAMEPAD_VENDOR, GAMEPAD_PRODUCT], [0x045e, 0x028e]);
   assert.equal(string((await control(d, 0x80, 6, 0x302, 0x409, 255)).data!), 'Xbox 360 Controller');
-  assert.equal(string((await control(d, 0x80, 6, 0x303, 0x409, 255)).data!), 'webpc-pad-1');
-  assert.equal(string((await control(new UsbGamepad(), 0x80, 6, 0x302, 0x409, 255)).data!), 'webpc game pad');
+  assert.equal(string((await control(d, 0x80, 6, 0x303, 0x409, 255)).data!), 'waarm64-pad-1');
+  assert.equal(string((await control(new UsbGamepad(), 0x80, 6, 0x302, 0x409, 255)).data!), 'waarm64 game pad');
   const c = (await control(d, 0x80, 6, 0x200, 0, 255)).data!;
   assert.equal(c[2] | c[3] << 8, c.length);
   // xpad matches the vendor and the interface ff/5d/01, and wants exactly two endpoints, interrupt IN and OUT.
@@ -196,7 +196,7 @@ test('the page\'s usb-pad messages reach the game pad through the glue, and its 
     await new Promise((r) => setTimeout(r, 20));
     assert.deepEqual(answers, [{ type: 'usb-state', connector: 1, state: 'attached', device, speed: 'full' }]);
     const gp = (usb as unknown as { plugged: { dev: UsbGamepad }[] }).plugged[1].dev;
-    assert.equal(string((await control(gp, 0x80, 6, 0x303, 0x409, 255)).data!), 'webpc-pad-1', 'the serial is the connector\'s');
+    assert.equal(string((await control(gp, 0x80, 6, 0x303, 0x409, 255)).data!), 'waarm64-pad-1', 'the serial is the connector\'s');
     channel.port2.postMessage({ type: 'usb-pad', connector: 1, pad: pad({ pressed: press(9), axes: [0, -1] }) });
     channel.port2.postMessage({ type: 'usb-pad', connector: 2, pad: pad({ pressed: press(0) }) });
     await new Promise((r) => setTimeout(r, 20));

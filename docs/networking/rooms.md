@@ -12,7 +12,7 @@ broadcast, IPv4 between guests, a directory on the page) is [plans/networking-p2
 with `room/link.rs` (the link), `room/lookup.rs` (lookups) and `nostr.rs` (NIP-01 and BIP-340 over `k256`);
 `web/room.ts` and `web/room-worker.ts` are its page and worker, sharing `web/ts-client.ts`'s I/O. A room is a
 connection kind on the page ([frontend.md](../frontend.md) "Network": the wizard's Join the global public room, Create
-a room and Join a room, the menu's name and link to copy); the node key a connection keeps is in `webpc-room`
+a room and Join a room, the menu's name and link to copy); the node key a connection keeps is in `waarm64-room`
 ([adapters.md](adapters.md) §2.1), which the worker reads at the start (`identityKey`; an ephemeral connection's comes
 as `identity`). It reuses tailcat's data plane (WireGuard through DERP, an address from the node key), the Ethernet
 gateway ([devices.md](../devices.md) "net") and network adapters ([adapters.md](adapters.md)). Measurements:
@@ -114,19 +114,19 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 
 ## The room and its names
 
-- **A room's link** (`room::Link`): `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
+- **A room's link** (`room::Link`): `waarm64-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
   `derp` is a region ID of the DERP map (0: its first) or a derper inline (`host[:port]`). Anything without the scheme
   is a bare ID, with the defaults: six public Nostr relays (`DEFAULT_NOSTR`: relay.primal.net and five of Trystero's
   list, those that carried every case R4 measured, bench/net/REPORT.md "Rooms on public servers"), and every region of the DERP map with DERP nodes a browser can reach and an ID from 1 to 0x7FFF, lowest ID first (at most 8; taken
   once the map loads). At
   most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read, without
   the parts that were the defaults (`Link::encode`), so a link copied from the menu follows the defaults as they change.
-- **The global public room** is the link `webpc-room:global`: a bare ID, so the defaults, as they change.
+- **The global public room** is the link `waarm64-room:global`: a bare ID, so the defaults, as they change.
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
   of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
   /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.internal`.
-  So a key can be mined for an address: `cargo run --release -p webpc_ts --example room-key-mine -- <link> --prefix
+  So a key can be mined for an address: `cargo run --release -p waarm64_ts --example room-key-mine -- <link> --prefix
   HEX | --suffix HEX | --regex RE` (all given must hold) prints keys whose address has those digits after the room's /48
   at its start or end (compared as bits, no text), or matches the expression on the address written out whole (8 groups
   of 4; `--compressed`: as the page writes it, where `::` moves with the zeros), with the address and the name, and the
@@ -317,7 +317,7 @@ the user's two machines on one network went direct once the browser allowed it (
 
 ## Tests
 
-`cargo test -p webpc_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
+`cargo test -p waarm64_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
 to a key on the same region, fake Nostr relays and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
 and misdirected lookups, the trial rate, incoming off and its flows, two regions, the hour's turn and a clock 40
 minutes off, a forged lookup that doesn't move a live peer and one that names another region, a reloaded peer
@@ -325,7 +325,7 @@ called back, a peer made again on one side, both dialing at once, a lost call ba
 copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
 cases; BIP-340's first vector); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
 NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
-RFC 6455 server, no dependency); `tests/room-browser.test.ts` (Chromium, `WEBPC_TAILCAT=1`: pages joining one room
+RFC 6455 server, no dependency); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room
 by its link on the rig's derper and that relay, by address and by name, relay only, incoming off); `tests/room-link.test.ts` (the page's link and
 key checks against link.rs's); `tests/connections.test.ts`'s and `tests/network.test.ts`'s room cases;
 `tests/net-live.test.ts` (the key's lock); `tests/page-connections.test.ts` (the global room in the wizard); and, in

@@ -3,8 +3,8 @@
 / {
 	#address-cells = <0x02>;
 	#size-cells = <0x02>;
-	compatible = "webpc", "linux,dummy-virt";
-	model = "webpc";
+	compatible = "waarm64", "linux,dummy-virt";
+	model = "waarm64";
 	interrupt-parent = <0x01>;
 
 	chosen {
@@ -27,6 +27,24 @@
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0x00 0x40000000 0x00 0xfc00000>;
+		numa-node-id = <0x00>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x00 0x40000000>;
+		numa-node-id = <0x01>;
+	};
+
+	memory@100000000 {
+		device_type = "memory";
+		reg = <0x01 0x00 0x01 0x00>;
+		numa-node-id = <0x02>;
+	};
+
+	distance-map {
+		compatible = "numa-distance-map-v1";
+		distance-matrix = <0x00 0x00 0x0a 0x00 0x01 0x14 0x00 0x02 0x14 0x01 0x00 0x14 0x01 0x01 0x0a 0x01 0x02 0x14 0x02 0x00 0x14 0x02 0x01 0x14 0x02 0x02 0x0a>;
 	};
 
 	cpus {
@@ -38,6 +56,15 @@
 			compatible = "arm,armv8";
 			reg = <0x00>;
 			enable-method = "psci";
+			numa-node-id = <0x00>;
+		};
+
+		cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,armv8";
+			reg = <0x01>;
+			enable-method = "psci";
+			numa-node-id = <0x00>;
 		};
 	};
 
@@ -57,7 +84,7 @@
 		#interrupt-cells = <0x03>;
 		interrupt-controller;
 		#redistributor-regions = <0x01>;
-		reg = <0x00 0x8000000 0x00 0x10000 0x00 0x80a0000 0x00 0x20000>;
+		reg = <0x00 0x8000000 0x00 0x10000 0x00 0x80a0000 0x00 0x40000>;
 		phandle = <0x01>;
 	};
 

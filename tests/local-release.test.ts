@@ -1,4 +1,4 @@
-// The page's install lines for the local helper (web/local-release.ts) against the release's (webpc-net's build.sh
+// The page's install lines for the local helper (web/local-release.ts) against the release's (waarm64-net's build.sh
 // --install, which writes INSTALL.md): the same lines, byte for byte, for every target, from the sums of a build of ours.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -7,29 +7,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { installLines, parseSums, RELEASE, TARGETS, thisTarget, type Release } from '../web/local-release.ts';
-import { helperSource } from './webpc-net.ts';
+import { helperSource } from './waarm64-net.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
 /** The install lines of build.sh --install (the pinned source's) for `release`, by target, against the page's. */
 function sameLines(dir: string, release: Release, sums: string) {
-  const tmp = mkdtempSync(join(tmpdir(), 'webpc-release-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'waarm64-release-'));
   writeFileSync(join(tmp, 'SHA256SUMS'), sums);
-  const md = execFileSync('sh', [`${dir}/build.sh`, '--install', join(tmp, 'SHA256SUMS'), release.version], { encoding: 'utf8', env: { ...process.env, WEBPC_NET_DOWNLOAD: '' } });
+  const md = execFileSync('sh', [`${dir}/build.sh`, '--install', join(tmp, 'SHA256SUMS'), release.version], { encoding: 'utf8', env: { ...process.env, WAARM64_NET_DOWNLOAD: '' } });
   rmSync(tmp, { recursive: true });
   const blocks = [...md.matchAll(/^## (\w+) (\w+).*\n\n```\w+\n([\s\S]*?)\n```$/gm)];
   assert.equal(blocks.length, TARGETS.length);
   for (const [, os, arch, lines] of blocks) {
     const t = TARGETS.find((x) => x.os === os && x.arch === arch)!;
     assert.equal(installLines(release, t), lines, `${release.version} ${os} ${arch}`);
-    assert.ok(lines.includes(release.sums[`webpc-net-${release.version}-${os}-${arch}${os === 'windows' ? '.exe' : ''}`]));
+    assert.ok(lines.includes(release.sums[`waarm64-net-${release.version}-${os}-${arch}${os === 'windows' ? '.exe' : ''}`]));
   }
 }
 
 test("the page's install lines are the release's", (t) => {
   const src = helperSource();
   if ('skip' in src) return t.skip(src.skip);
-  const text = readFileSync(`${ROOT}bench/net/results/local-helper/build-x86_64.txt`, 'utf8').split('\n').filter((l) => !l.startsWith('#')).join('\n');
+  const text = readFileSync(`${ROOT}bench/net/results/local-helper/build-v0.3.0-aarch64.txt`, 'utf8').split('\n').filter((l) => !l.startsWith('#')).join('\n');
   const repro = { version: 'v0.0.0-repro', sums: parseSums(text) };
   assert.equal(Object.keys(repro.sums).length, 7);
   sameLines(src.dir, repro, text);

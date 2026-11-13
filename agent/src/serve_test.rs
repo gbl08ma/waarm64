@@ -91,7 +91,7 @@ struct Harness {
 impl Harness {
     fn start(name: &str) -> Harness {
         let root =
-            std::env::temp_dir().join(format!("webpc-agent-serve-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("waarm64-agent-serve-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         for d in ["seats", "sessions", "users"] {
             std::fs::create_dir_all(root.join(d)).unwrap();

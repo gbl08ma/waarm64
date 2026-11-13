@@ -336,7 +336,7 @@ test('leaving a running machine asks first, unless Preferences says not to', { s
   const box = page.locator('[data-field=leave-warning]');
   assert.equal(await box.isChecked(), true, 'on by default');
   await box.uncheck();
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings')!).leaveWarning), false);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings')!).leaveWarning), false);
   await page.reload({ timeout: 30_000 });
   assert.deepEqual(asked, ['beforeunload'], 'not asked again');
   assert.deepEqual(errors, []);

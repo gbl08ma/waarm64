@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "The third-party code, dependencies and references of webpc: the authoritative list (docs/third-party.md says how to keep it).",
+    "The third-party code, dependencies and references of waarm64: the authoritative list (docs/third-party.md says how to keep it).",
     "Each section is a table: `columns` name the cells of `md` (Markdown). An entry with `about` (a group of the About pane) is shown on the",
     "Machines page and needs `url`, `version`, `license` (SPDX) and `licenseTexts` (pinned links), or `parts` with those; tools/third-party.ts checks it."
   ],
@@ -1387,7 +1387,7 @@
       "id": "rust-agent",
       "title": "The guest agent's crates",
       "intro": [
-        "Built into `target/images/agent/webpc-agent` by `images/build.sh agent` (`agent/`, docs/plans/clipboard.md §3.3), the clipboard sharing program the page gives a machine with the setting, which runs in the guest. Its one dependency, `rustix` (the user's choice), and the two crates `rustix` builds in on Linux (`agent/Cargo.lock` pins them; licenses as their Cargo.toml says them)."
+        "Built into `target/images/agent/waarm64-agent` by `images/build.sh agent` (`agent/`, docs/plans/clipboard.md §3.3), the clipboard sharing program the page gives a machine with the setting, which runs in the guest. Its one dependency, `rustix` (the user's choice), and the two crates `rustix` builds in on Linux (`agent/Cargo.lock` pins them; licenses as their Cargo.toml says them)."
       ],
       "columns": [
         {
@@ -1665,7 +1665,7 @@
             "library": "Rust's standard library (`core`, `alloc`, `std`) and the crates it builds in for wasm32 (`dlmalloc` 0.2.14, `hashbrown` 0.17.1, `compiler_builtins` 0.1.160; `library/Cargo.lock`)",
             "version": "the pinned nightly (`rust-toolchain.toml`: nightly-2026-09-24, `6eeff9a52`)",
             "license": "MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`; `compiler_builtins` also carries LLVM's compiler-rt parts, Apache-2.0 WITH LLVM-exception)",
-            "use": "rebuilt by `-Zbuild-std` into the core (`webpc_core.wasm`) and the tailnet client (`ts.wasm`)"
+            "use": "rebuilt by `-Zbuild-std` into the core (`waarm64_core.wasm`) and the tailnet client (`ts.wasm`)"
           }
         },
         {
@@ -1689,7 +1689,7 @@
             "library": "Rust's standard library (`core` and `alloc`: the agent is `no_std`) as the `aarch64-unknown-linux-musl` target ships it",
             "version": "stable 1.99.0 (`agent/rust-toolchain.toml`, `b940084d7`)",
             "license": "MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`; `compiler_builtins` also carries LLVM's compiler-rt parts, Apache-2.0 WITH LLVM-exception)",
-            "use": "linked statically into the guest agent (`webpc-agent`)"
+            "use": "linked statically into the guest agent (`waarm64-agent`)"
           }
         },
         {
@@ -1709,7 +1709,7 @@
             "library": "musl, the C library (and its startup files) of Rust's `aarch64-unknown-linux-musl` target, \"self-contained\"",
             "version": "1.2.5 with Rust's patches (`src/ci/docker/scripts/musl.sh` at `b940084d7`)",
             "license": "MIT (`COPYRIGHT`)",
-            "use": "linked statically into the guest agent (`webpc-agent`): its startup, `malloc` (the agent's allocator), `fork` and `exit` (`agent/src/rt.rs`)"
+            "use": "linked statically into the guest agent (`waarm64-agent`): its startup, `malloc` (the agent's allocator), `fork` and `exit` (`agent/src/rt.rs`)"
           }
         }
       ]
@@ -1881,7 +1881,7 @@
           "id": "dev-lunarg-vulkan-sdk",
           "name": "LunarG's Vulkan SDK",
           "md": {
-            "package": "LunarG's Vulkan SDK for macOS (VK0's Mac arm; `bench/vulkan/macsdk.ts` unpacks the loader, KosmicKrisp, MoltenVK, glslc, the validation and GFXReconstruct layers and tools into `target/vulkan/macsdk`, copied to the Mac host's `~/webpc-gpu-bench`, never installed); and its Linux SDK, which `bench/vulkan/nvidia.sh` fetches into its own directory on the user's desktop (headers, loader, glslc, `vulkaninfo`, GFXReconstruct), with a portable Node v26.7.0 (MIT, `LICENSE` at v26.7.0) and Playwright's Chrome for Testing",
+            "package": "LunarG's Vulkan SDK for macOS (VK0's Mac arm; `bench/vulkan/macsdk.ts` unpacks the loader, KosmicKrisp, MoltenVK, glslc, the validation and GFXReconstruct layers and tools into `target/vulkan/macsdk`, copied to the Mac host's `~/waarm64-gpu-bench`, never installed); and its Linux SDK, which `bench/vulkan/nvidia.sh` fetches into its own directory on the user's desktop (headers, loader, glslc, `vulkaninfo`, GFXReconstruct), with a portable Node v26.7.0 (MIT, `LICENSE` at v26.7.0) and Playwright's Chrome for Testing",
             "version": "1.4.363.0",
             "license": "Apache-2.0 (loader, layers, GFXReconstruct is MIT), MIT (KosmicKrisp: Mesa), Apache-2.0 (MoltenVK, shaderc); each component's licence checked at its `vulkan-sdk-1.4.363.0` tag or release (rows below), not in the SDK's installer payload"
           }
@@ -2336,7 +2336,7 @@
             "binary": "`target/images/edk2/QEMU_EFI.fd`, and the UEFI Shell in `shell.img` (tests only) (`images/build.sh edk2`, M8 phase B)",
             "source": "[EDK2](https://github.com/tianocore/edk2) `edk2-stable202608`, `2970e5699ba6`, `ArmVirtPkg/ArmVirtQemuKernel.dsc`",
             "license": "BSD-2-Clause-Patent; linked in from its submodules: OpenSSL (Apache-2.0, in `Hash2DxeCrypto`) and libfdt (BSD-2-Clause, dual with GPL-2.0)",
-            "use": "built with four small patches of ours (`images/edk2/*.patch`: the virtio-gpu as a console, the boot logo's progress bar, the GOP's flushes a frame at a time, and NonDiscoverablePciDeviceDxe and our driver in the build; they change EDK2's files, under its license) and one driver of ours, `images/edk2/WebpcXhciDxe` (webpc's own code, MIT: it registers the DT's `generic-xhci` as a non-discoverable xHCI through EDK2's library interfaces; no EDK2 code copied into it) and run as the guest's UEFI firmware; served to users with `LICENSES.txt` (the three texts), as binary redistribution requires. No EDK2 code is copied into webpc's own code"
+            "use": "built with four small patches of ours (`images/edk2/*.patch`: the virtio-gpu as a console, the boot logo's progress bar, the GOP's flushes a frame at a time, and NonDiscoverablePciDeviceDxe and our driver in the build; they change EDK2's files, under its license) and one driver of ours, `images/edk2/Waarm64XhciDxe` (waarm64's own code, MIT: it registers the DT's `generic-xhci` as a non-discoverable xHCI through EDK2's library interfaces; no EDK2 code copied into it) and run as the guest's UEFI firmware; served to users with `LICENSES.txt` (the three texts), as binary redistribution requires. No EDK2 code is copied into waarm64's own code"
           }
         }
       ]

@@ -4,7 +4,7 @@
 #   cargo fuzz run virtqueue         (from core/; the virtio transport and split queues)
 #   cargo run --release --bin sweep  (from core/fuzz/)
 [package]
-name = "webpc-core-fuzz"
+name = "waarm64-core-fuzz"
 version = "0.0.0"
 edition = "2024"
 license = "MIT"
@@ -16,7 +16,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 capstone = "0.14.0"
-webpc-core = { path = ".." }
+waarm64-core = { path = ".." }
 
 [[bin]]
 name = "decode"

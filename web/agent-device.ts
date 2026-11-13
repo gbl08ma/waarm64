@@ -1,7 +1,7 @@
 // The agent's device (docs/devices.md "agent"; docs/plans/clipboard.md §2): a virtio-console of its own, with the
-// MULTIPORT feature and one named port, `org.webpc.agent.0`, the guest's agent's way to the page. It is on a machine
+// MULTIPORT feature and one named port, `org.waarm64.agent.0`, the guest's agent's way to the page. It is on a machine
 // only while its clipboard setting is on, so it leaves every other machine's shape alone. Linux's virtio_console
-// makes `/dev/vport<N>p0` of the port and udev links it as `/dev/virtio-ports/org.webpc.agent.0`; no port is a console
+// makes `/dev/vport<N>p0` of the port and udev links it as `/dev/virtio-ports/org.waarm64.agent.0`; no port is a console
 // (no CONSOLE_PORT message), so no hvc appears.
 //
 // The control handshake (virtio 1.2 §5.3.6.2, as Linux's driver runs it): the driver fills the control receive queue
@@ -14,7 +14,7 @@ import { bytes, type Ram, type Segment } from './ram.ts';
 import type { Backend, Ctx, Request } from './devices.ts';
 
 /** The port names, in port order: their ids are their indices. */
-export const AGENT_PORTS = ['org.webpc.agent.0'];
+export const AGENT_PORTS = ['org.waarm64.agent.0'];
 
 /** VIRTIO_CONSOLE_F_MULTIPORT. */
 export const F_MULTIPORT = 1n << 1n;

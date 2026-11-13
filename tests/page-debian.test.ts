@@ -18,8 +18,8 @@
 //    variable, the file read past the page cache, the firmware's variable store beside the new
 //    overlay, the screen drawn at its own size and the new window's size as the preferred mode);
 //    Suspend and a reload resume it; a reload after that boots its disk normally with every file.
-// Realtime: not reproducible, so WEBPC_PAGE_RUNS repeats it (all must pass). Opt-in with
-// WEBPC_DISTROS=debian (scripts/ci-debian.sh).
+// Realtime: not reproducible, so WAARM64_PAGE_RUNS repeats it (all must pass). Opt-in with
+// WAARM64_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -77,11 +77,11 @@ test("the page's readiness: the marker or the agent's HELLO, whichever first, on
   assert.equal(said(undefined, false, 'localhost login: ', 'HELLO'), 1);
 });
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
+const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run images/build.sh debian edk2' : !existsSync(new URL('../target/images/linux-snd/snd-rec', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play and snd-rec)';
-const RUNS = Number(process.env.WEBPC_PAGE_RUNS ?? 1);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run images/build.sh debian edk2' : !existsSync(new URL('../target/images/linux-snd/snd-rec', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play and snd-rec)';
+const RUNS = Number(process.env.WAARM64_PAGE_RUNS ?? 1);
 /** The second disk (served from the repo): snd-play and a tone (tests/snd-disk.ts). */
 const SND_DISK = `target/tests/snd-${process.pid}.tar`;
 /** The fake microphone's tone, Hz. */
@@ -96,7 +96,7 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  dir = mkdtempSync(join(tmpdir(), 'webpc-debian-'));
+  dir = mkdtempSync(join(tmpdir(), 'waarm64-debian-'));
   // Chromium's fake microphone plays a 500 Hz tone (the guest records it: audio S4).
   writeFileSync(join(dir, 'mic.wav'), toneWav(10, 48000, [MIC_HZ, MIC_HZ]));
   browser = await chromium.launch({
@@ -237,7 +237,7 @@ async function headerOnly(name: string, header: Record<string, unknown>) {
 /** The firmware's variable store beside the default disk's overlay, once EDK2 has written to it (an erased bank is all 0xFF). */
 const flashWritten = (page: Page) => page.waitForFunction(async () => {
   try {
-    const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
+    const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('waarm64-debian')).getFileHandle('flash')).getFile();
     return f.size === 1 << 20 && new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff);
   } catch {
     return false;
@@ -261,9 +261,9 @@ for (let run = 1; run <= RUNS; run++) {
     await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
 
     // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
-    await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
+    await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.waarm64snap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
     await page.waitForTimeout(1000);
-    assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.otherMachine', { name: 'buildroot-header.webpcsnap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
+    assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.otherMachine', { name: 'buildroot-header.waarm64snap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
     assert.notEqual(await stateOf(page), 'failed');
 
     // GRUB's menu counts 5 s from when it starts (~5 s after the boot manager did): `c` on the screen until it is stopped.
@@ -305,15 +305,15 @@ for (let run = 1; run <= RUNS; run++) {
     await shows(page, /==vsock vmw_vsock_virtio_transport vsock-stream:2:8573 0(?!\d)/);
     // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
     await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
-    await shows(page, /==dmi webpc webpc Virtual Machine webpc EDK II ArmVirtQemuKernel/);
+    await shows(page, /==dmi waarm64 waarm64 Virtual Machine waarm64 EDK II ArmVirtQemuKernel/);
     // The keyboard layout (web/app/keyboard.ts): SMBIOS credentials, a unit that ran before the logins; Debian's
     // /etc/default/keyboard, read back by localed, and XKB_DEFAULT_* in this login's environment.
-    await onSerial(page, 'clear; echo ==kb""d $(systemctl show -P Result webpc-keyboard.service) $(localectl status | grep -o "X11 Layout: [a-z]*" | cut -d" " -f3) $XKB_DEFAULT_LAYOUT $XKB_DEFAULT_MODEL.\n');
+    await onSerial(page, 'clear; echo ==kb""d $(systemctl show -P Result waarm64-keyboard.service) $(localectl status | grep -o "X11 Layout: [a-z]*" | cut -d" " -f3) $XKB_DEFAULT_LAYOUT $XKB_DEFAULT_MODEL.\n');
     await shows(page, /==kbd success gb gb pc105\./);
     // The network's settings (web/app/guest-net.ts): the unit ran before networkd, and networkd reads its drop-in in /run
     // for the file that configures the adapter (Debian's netplan's, which sorts before the page's card.network).
-    await onSerial(page, 'clear; l=$(ls /sys/class/net | grep ^e | head -1); echo ==ne""t $(systemctl show -P Result webpc-network.service) $(networkctl status --json=short $l | grep -o "\\"NetworkFileDropins\\":[^]]*]") ==en""d\n');
-    await shows(page, /==net success "NetworkFileDropins":\["\/run\/systemd\/network\/[^"]+\.network\.d\/50-webpc\.conf"\] ==end/);
+    await onSerial(page, 'clear; l=$(ls /sys/class/net | grep ^e | head -1); echo ==ne""t $(systemctl show -P Result waarm64-network.service) $(networkctl status --json=short $l | grep -o "\\"NetworkFileDropins\\":[^]]*]") ==en""d\n');
+    await shows(page, /==net success "NetworkFileDropins":\["\/run\/systemd\/network\/[^"]+\.network\.d\/50-waarm64\.conf"\] ==end/);
     // Nothing speculates, and the core's SMCCC answers say so (docs/cpu.md): Spectre-v4 is not affected. (Spectre-v2 still
     // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
     await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');
@@ -321,10 +321,10 @@ for (let run = 1; run <= RUNS; run++) {
     // The pointing devices (`?mouse=1&touch=1`, docs/frontend.md "Mouse lock", "Touch"): the tablet with the side buttons
     // and the horizontal and high-resolution wheels, the relative mouse (the same wheels), the multitouch screen (direct);
     // a touch on the page's screen reaches the touchscreen's events.
-    await onSerial(page, 'clear; for d in /sys/class/input/input*; do case "$(cat $d/name)" in webpc\\ t*|webpc\\ m*) echo "==$(tr " " _ <$d/name):p=$(cat $d/properties):r=$(cat $d/capabilities/rel):a=$(cat $d/capabilities/abs):k=$(cat $d/capabilities/key | tr " " .)";; esac; done; echo ==in""put\n');
+    await onSerial(page, 'clear; for d in /sys/class/input/input*; do case "$(cat $d/name)" in waarm64\\ t*|waarm64\\ m*) echo "==$(tr " " _ <$d/name):p=$(cat $d/properties):r=$(cat $d/capabilities/rel):a=$(cat $d/capabilities/abs):k=$(cat $d/capabilities/key | tr " " .)";; esac; done; echo ==in""put\n');
     await shows(page, /==input/);
     const devices = (await terminal(page)).replace(/\s+/g, ' ');
-    for (const want of ['==webpc_tablet:p=0:r=1940:a=3:k=1f0000.0.0.0.0', '==webpc_mouse:p=0:r=1943:a=0:k=1f0000.0.0.0.0', '==webpc_touchscreen:p=2:r=0:a=260800000000003:k=400.0.0.0.0.0']) {
+    for (const want of ['==waarm64_tablet:p=0:r=1940:a=3:k=1f0000.0.0.0.0', '==waarm64_mouse:p=0:r=1943:a=0:k=1f0000.0.0.0.0', '==waarm64_touchscreen:p=2:r=0:a=260800000000003:k=400.0.0.0.0.0']) {
       assert.ok(devices.includes(want), `missing ${want}: ${devices}`);
     }
     await onSerial(page, 'clear; e=$(grep -l touchscreen /sys/class/input/event*/device/name | cut -d/ -f5); (timeout 8 cat /dev/input/$e | wc -c >/tmp/touch.n &); sleep 1; echo ==touch""-wait\n');
@@ -426,9 +426,9 @@ for (let run = 1; run <= RUNS; run++) {
     assert.equal(await connector(page, 'shrunk'), 'enabled');
     assert.deepEqual((await geometry(page)).canvas, g0.canvas, 'the console is not cropped');
     // Files on the disk (synced), a variable in the shell, then a snapshot of the running machine, which runs on.
-    await onSerial(page, 'echo webpc-kept-$((6*7)) >/root/webpc-mark && echo disk-kept-$((6*7)) >/root/snapmark && sync && SNAPVAR=ram-kept-$((6*7)) && echo sy""nced\n');
+    await onSerial(page, 'echo waarm64-kept-$((6*7)) >/root/waarm64-mark && echo disk-kept-$((6*7)) >/root/snapmark && sync && SNAPVAR=ram-kept-$((6*7)) && echo sy""nced\n');
     await shows(page, /synced/);
-    const saved = await save(page, 'debian.webpcsnap');
+    const saved = await save(page, 'debian.waarm64snap');
     console.log(`# debian snapshot: ${(saved.bytes / 1e6).toFixed(1)} MB, machine paused ${saved.pausedMs.toFixed(0)} ms`);
     assert.equal(await stateOf(page), 'running');
     await onSerial(page, 'echo sti""ll-$((6*7))\n');
@@ -443,8 +443,8 @@ for (let run = 1; run <= RUNS; run++) {
     await running(page);
     console.log(`# debian page ${run}: reloaded, running at ${at()}`);
     await serialLogin(page);
-    await onSerial(page, 'cat /root/webpc-mark\n');
-    await shows(page, /cat \/root\/webpc-mark\s*webpc-kept-42/);
+    await onSerial(page, 'cat /root/waarm64-mark\n');
+    await shows(page, /cat \/root\/waarm64-mark\s*waarm64-kept-42/);
     assert.deepEqual(errors, []);
     await context.close();
 
@@ -483,7 +483,7 @@ for (let run = 1; run <= RUNS; run++) {
     // The firmware's variable store is back beside the new overlay (the restore deleted the copy): written before `running` is posted.
     const flash = await p2.evaluate(async () => {
       try {
-        const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
+        const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('waarm64-debian')).getFileHandle('flash')).getFile();
         return { size: f.size, written: new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff) };
       } catch (e) {
         return String(e);
@@ -515,14 +515,14 @@ for (let run = 1; run <= RUNS; run++) {
     await p2.locator('#suspend').click();
     await p2.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
     const suspendMs = performance.now() - t2;
-    const kept = (await opfs(p2))['webpc-debian'];
+    const kept = (await opfs(p2))['waarm64-debian'];
     assert.ok(kept.suspend > 1 << 20, JSON.stringify(kept));
     await p2.reload();
     const t3 = performance.now();
     await running(p2, undefined, 120_000);
     console.log(`# debian suspend: ${(kept.suspend / 1e6).toFixed(1)} MB kept, suspended in ${(suspendMs / 1000).toFixed(1)} s, resumed ${((performance.now() - t3) / 1000).toFixed(1)} s after the reload`);
     assert.match((await message(p2))!, words('machine:worker.resumed', {}, { start: true }));
-    assert.equal((await opfs(p2))['webpc-debian'].suspend, undefined, 'a resumed machine has no suspended copy');
+    assert.equal((await opfs(p2))['waarm64-debian'].suspend, undefined, 'a resumed machine has no suspended copy');
     await onSerial(p2, 'clear; echo var=[$SUSVAR]; echo third-$((6*7)) >/root/third && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/snapmark /root/after /root/third && echo al""l-three\n');
     await shows(p2, /var=\[suspended-42\][^]*?disk-kept-42\s*after-42\s*third-42\s*all-three/);
     // A reload now boots the machine's disk normally (the overlay the restore wrote and the resumed machine

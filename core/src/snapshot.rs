@@ -6,8 +6,8 @@
 //! A snapshot comes from a file a user chose, so a reader never trusts it: every
 //! read is bounds-checked and every count has a limit ([`Error::Corrupt`]).
 
-/// `WPCS`.
-pub const MAGIC: u32 = u32::from_le_bytes(*b"WPCS");
+/// `WA64`.
+pub const MAGIC: u32 = u32::from_le_bytes(*b"WA64");
 /// Bumped whenever a saved field is added, removed or changes meaning (the
 /// pinned bytes in `vm/tests.rs` fail when the layout moves without it).
 /// 3: a guest in PSCI SYSTEM_SUSPEND, after the devices. 4: a virtio transport's SHMSel, and

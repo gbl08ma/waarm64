@@ -12,7 +12,7 @@
 #
 # Brings Gadget Zero up (tests/usb/gadget.sh up zero) if it isn't. Writes each boot's serial console to
 # target/usb/oracle/ (test-N.log, or guest.log) and, with --trace, QEMU's trace beside it (.trace); exits 0 when every
-# boot printed "webpc: usb test ok". Needs qemu-hw-usb-host (QEMU's usb-host device) and the gadget rig
+# boot printed "waarm64: usb test ok". Needs qemu-hw-usb-host (QEMU's usb-host device) and the gadget rig
 # (tests/usb/gadget.sh install).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -31,15 +31,15 @@ img=target/images/linux-usb
 out=target/usb/oracle
 [ -f "$img/Image" ] || { echo "oracle: no $img (images/build.sh linux-usb)" >&2; exit 1; }
 qemu-system-aarch64 -device help 2>&1 | grep -q '"usb-host"' || { echo 'oracle: QEMU has no usb-host (sudo zypper in qemu-hw-usb-host)' >&2; exit 1; }
-[ -d /sys/kernel/config/usb_gadget/webpc-zero ] || tests/usb/gadget.sh up zero > /dev/null
+[ -d /sys/kernel/config/usb_gadget/waarm64-zero ] || tests/usb/gadget.sh up zero > /dev/null
 
 # Gadget Zero's host-side bus and address, by its serial (looked up before each boot: a reset can renumber it).
 locate() {
   local d
   for d in /sys/bus/usb/devices/*; do
-    [ "$(cat "$d/serial" 2> /dev/null)" = webpc-zero ] && { echo "$(cat "$d/busnum") $(cat "$d/devnum")"; return; }
+    [ "$(cat "$d/serial" 2> /dev/null)" = waarm64-zero ] && { echo "$(cat "$d/busnum") $(cat "$d/devnum")"; return; }
   done
-  echo 'oracle: Gadget Zero (serial webpc-zero) is not on the host bus' >&2
+  echo 'oracle: Gadget Zero (serial waarm64-zero) is not on the host bus' >&2
   exit 1
 }
 
@@ -60,26 +60,26 @@ mkdir -p "$out"
 rm -f "$out"/*.log "$out"/*.trace
 start=$SECONDS
 if [ -n "$args" ]; then
-  boot "$args" "$out/guest.log" "${WEBPC_ORACLE_TIMEOUT:-300}"
-  grep -E '^(usb:|webpc:)|testusb|usbtest' "$out/guest.log" | sed 's/^\[[ 0-9.]*\] //' | tail -60
+  boot "$args" "$out/guest.log" "${WAARM64_ORACLE_TIMEOUT:-300}"
+  grep -E '^(usb:|waarm64:)|testusb|usbtest' "$out/guest.log" | sed 's/^\[[ 0-9.]*\] //' | tail -60
   echo "oracle: $((SECONDS - start)) s; the guest's console in $out/guest.log"
-  grep -q 'webpc: usb test ok' "$out/guest.log"
+  grep -q 'waarm64: usb test ok' "$out/guest.log"
   exit
 fi
 # Each of testusb's tests in a boot of its own (~2 s under TCG), so one that hangs times out alone.
 bad=0
 for t in $tests; do
   log=$out/test-$t.log
-  boot "-a,-t,$t,$COMMON" "$log" "${WEBPC_ORACLE_TIMEOUT:-30}"
-  if grep -q 'webpc: usb test ok' "$log" && grep -qE "test $t, +[0-9.]+ secs" "$log"; then
+  boot "-a,-t,$t,$COMMON" "$log" "${WAARM64_ORACLE_TIMEOUT:-30}"
+  if grep -q 'waarm64: usb test ok' "$log" && grep -qE "test $t, +[0-9.]+ secs" "$log"; then
     r=ok
-  elif grep -q 'webpc: usb test ok' "$log"; then
+  elif grep -q 'waarm64: usb test ok' "$log"; then
     r="not run (usbtest skips it for this device)"
   elif r=$(grep -m1 -oE "test $t --> [0-9]+ \([^)]*\)" "$log"); then
     r=${r#test $t --> }
     bad=1
   elif grep -q 'terminating on signal 15' "$log"; then
-    r="hung (killed after ${WEBPC_ORACLE_TIMEOUT:-30} s)"
+    r="hung (killed after ${WAARM64_ORACLE_TIMEOUT:-30} s)"
     bad=1
   else
     r='no result'

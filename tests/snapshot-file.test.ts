@@ -281,7 +281,7 @@ function handFile(frames: Uint8Array[]) {
   const json = new TextEncoder().encode(JSON.stringify(HEADER));
   const head = new Uint8Array(16 + json.length + 4);
   const v = new DataView(head.buffer);
-  head.set(new TextEncoder().encode('WEBPCSNP'));
+  head.set(new TextEncoder().encode('WAARMSNP'));
   v.setUint32(8, 1, true); v.setUint32(12, json.length, true); head.set(json, 16); v.setUint32(16 + json.length, crc32(json), true);
   return concat([head, ...frames]);
 }

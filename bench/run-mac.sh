@@ -2,7 +2,7 @@
 # The boot and small-guest benchmarks (and bench/vulkan's pages) on the Mac host's Chromium (Playwright's Chrome for Testing,
 # headless, temporary profile): macOS has V8's wasm trap handler, so its numbers are without the
 # explicit bounds checks this Linux arm64 VM's carry (docs/v8.md "Bounds checks"). The pages, the
-# wasm core and the Alpine images are copied to ~/webpc-bench there (~600 MB), the packages installed there; it
+# wasm core and the Alpine images are copied to ~/waarm64-bench there (~600 MB), the packages installed there; it
 # needs Node, npm and the Chromium that Playwright installed. Nothing else on the host is touched.
 #   [WASM=core.wasm] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
 # e.g. bench/run-mac.sh user-default --page bench/boot/index.html --only alpine_user_jit
@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 name=$1; shift
 HOST=${MAC_HOST:-macmini.lan}
-DEST=webpc-bench
+DEST=waarm64-bench
 CORE=target/wasm32-unknown-unknown/release
 ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $DEST/target/bench"
 rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/vulkan bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
@@ -18,11 +18,11 @@ rsync -a --delete --exclude results --exclude memory bench/boot bench/interp ben
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
 rsync -a --delete web "$HOST:$DEST/"
-rsync -a "${WASM:-$CORE/webpc_core.wasm}" "$HOST:$DEST/$CORE/webpc_core.wasm"
+rsync -a "${WASM:-$CORE/waarm64_core.wasm}" "$HOST:$DEST/$CORE/waarm64_core.wasm"
 rsync -a target/images/alpine target/images/alpine-user "$HOST:$DEST/target/images/"
 rsync -a --exclude '*defconfig' --exclude 'System.map' target/images/linux target/images/buildroot "$HOST:$DEST/target/images/"
 rsync -a target/bench/coremark.bin target/bench/coremark-linux "$HOST:$DEST/target/bench/"
-ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WEBPC_TAILSCALE=0 && \
+ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && \
   node --disable-warning=ExperimentalWarning bench/run.ts --out bench/results/local/$name.json $*"
 mkdir -p bench/results/local/mac

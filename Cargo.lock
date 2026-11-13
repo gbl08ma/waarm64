@@ -1910,6 +1910,51 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "waarm64-core"
+version = "0.0.0"
+dependencies = [
+ "miniz_oxide",
+]
+
+[[package]]
+name = "waarm64-memspike"
+version = "0.0.0"
+
+[[package]]
+name = "waarm64_ts"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake2",
+ "bytes",
+ "chacha20poly1305",
+ "chrono",
+ "crypto_box",
+ "curve25519-dalek 5.0.0",
+ "ed25519-dalek",
+ "getrandom 0.3.4",
+ "h2",
+ "http",
+ "ipnet",
+ "k256",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "ts_capabilityversion",
+ "ts_control_serde",
+ "ts_disco_protocol",
+ "ts_keys",
+ "ts_noise",
+ "ts_packet",
+ "ts_packetfilter",
+ "ts_packetfilter_state",
+ "ts_tunnel",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "wasi"
 version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1967,51 +2012,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "webpc-core"
-version = "0.0.0"
-dependencies = [
- "miniz_oxide",
-]
-
-[[package]]
-name = "webpc-memspike"
-version = "0.0.0"
-
-[[package]]
-name = "webpc_ts"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "blake2",
- "bytes",
- "chacha20poly1305",
- "chrono",
- "crypto_box",
- "curve25519-dalek 5.0.0",
- "ed25519-dalek",
- "getrandom 0.3.4",
- "h2",
- "http",
- "ipnet",
- "k256",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tokio",
- "ts_capabilityversion",
- "ts_control_serde",
- "ts_disco_protocol",
- "ts_keys",
- "ts_noise",
- "ts_packet",
- "ts_packetfilter",
- "ts_packetfilter_state",
- "ts_tunnel",
- "x25519-dalek",
 ]
 
 [[package]]

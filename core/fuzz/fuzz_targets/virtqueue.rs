@@ -5,9 +5,9 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use webpc_core::mem::Mem;
-use webpc_core::virtio::{DevShared, DeviceEntry, Transport};
-use webpc_core::vm::RAM_BASE;
+use waarm64_core::mem::Mem;
+use waarm64_core::virtio::{DevShared, DeviceEntry, Transport};
+use waarm64_core::vm::RAM_BASE;
 
 const RAM: usize = 8 << 10;
 
@@ -19,7 +19,14 @@ fuzz_target!(|data: &[u8]| {
     for (k, &b) in image.iter().enumerate() {
         mem.write(RAM_BASE + k as u64, 1, b as u64).unwrap();
     }
-    let entry = DeviceEntry { device_id: 2, features: 0, queues: 2, queue_size: 16, config_len: 8, shm: 0 };
+    let entry = DeviceEntry {
+        device_id: 2,
+        features: 0,
+        queues: 2,
+        queue_size: 16,
+        config_len: 8,
+        shm: 0,
+    };
     let (mut t, sh) = (Transport::new(entry), Box::<DevShared>::default());
     // A driver bring-up with both queues in RAM, the rings where the image says.
     let w = |t: &mut Transport, off: u64, v: u64| t.write(off, 4, v, &mem, &sh);

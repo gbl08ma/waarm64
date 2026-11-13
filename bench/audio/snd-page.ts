@@ -43,7 +43,7 @@ try {
       await context.close();
       const [, frames] = /snd: wrote (\d+) frames/.exec(r.log) ?? [];
       const [, end, ms] = /snd: \d+ frames queued at the end, (drain|drop) (?:ok|.*) after (\d+) ms/.exec(r.log) ?? [];
-      const guest = { ok: /webpc: snd test ok/.test(r.log), frames: Number(frames), ms: Number(ms), end, lengthMs: (1000 * Number(frames)) / 48000 };
+      const guest = { ok: /waarm64: snd test ok/.test(r.log), frames: Number(frames), ms: Number(ms), end, lengthMs: (1000 * Number(frames)) / 48000 };
       const ring = Object.fromEntries(Object.entries(HEADER).map(([n, i]) => [n, r.h[i]]));
       const steady = r.stats.slice(1); // the first second has the context's start in it
       const med = (f: (s: SndStats) => number) => {

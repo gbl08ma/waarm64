@@ -1913,7 +1913,7 @@ fn a_link_without_regions_takes_the_maps_and_the_nearest_is_home() {
     assert_eq!(n.regions(0), ["wss://b.test/derp"]);
     assert_eq!(
         n.nodes[0].c.cfg.link.encode(),
-        "webpc-room:test%20room?nostr=wss%3A%2F%2Fnostr.test",
+        "waarm64-room:test%20room?nostr=wss%3A%2F%2Fnostr.test",
         "the link handed out still follows the defaults"
     );
 }

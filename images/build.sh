@@ -47,7 +47,7 @@
 #   static C program; stress.c is the atomics stress, built with LSE and with
 #   LL/SC atomics. Output: an initramfs (BusyBox + the tests, booted with
 #   linux/Image) and litmus.tar (the same tests for real hardware: the oracle
-#   VM). herdtools7 is CeCILL-B: built and run here, never copied into webpc.
+#   VM). herdtools7 is CeCILL-B: built and run here, never copied into waarm64.
 #   Built natively in Alpine's arm64 container, as alpine-user.
 # debian: the official debian-13-nocloud-arm64 qcow2 as published (disk.qcow2),
 #   with the kernel (Image) and initrd (initrd.img) taken out of its /boot by
@@ -71,7 +71,7 @@
 #   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
 #   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
 # agent: clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3),
-#   webpc-agent, a static aarch64-unknown-linux-musl binary the page ships: built
+#   waarm64-agent, a static aarch64-unknown-linux-musl binary the page ships: built
 #   natively in the Rust project's Alpine image (the toolchain agent/rust-toolchain.toml
 #   names), linked by rust-lld. The one image with a fallback: without Podman (a
 #   cloud session), the host's cargo builds it the same way (rustup's musl target,
@@ -109,7 +109,7 @@ GL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 mesa-dev=26.1.6-r0"
 MESA=26.1.6
 MESA_SHA256=5296b88a0f1e012e2cb9ada150a2bbadf728ca81e5a4fb2ab43c83a4d2158606
 VIRGL_TOOLS="build-base=0.5-r4 meson=1.11.1-r0 samurai=1.2-r8 python3=3.14.10-r1 py3-mako=1.3.12-r0 py3-yaml=6.0.3-r2 py3-packaging=26.2-r0 llvm22-dev=22.1.3-r1 libdrm-dev=2.4.134-r0 expat-dev=2.10.0-r0 zlib-dev=1.4-r0 zstd-dev=1.5.7-r2 bison=3.8.2-r3 flex=2.6.4-r8 linux-headers=7.0.0-r1 elfutils-dev=0.195-r0"
-KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 openssl-dev=3.5.9-r0"
+KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.3-r0 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 openssl-dev=3.5.9-r0"
 LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r3 make=4.4.1-r4 tar=1.35-r5"
 HERDTOOLS_TAG=7.58
 HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
@@ -143,7 +143,7 @@ buildroot() {
   mkdir -p "$out/dl"
   [ -d "$br" ] || git clone -q --depth 1 --branch "$BUILDROOT_TAG" https://gitlab.com/buildroot.org/buildroot.git "$br"
   [ "$(git -C "$br" rev-parse HEAD)" = "$BUILDROOT_COMMIT" ] || { echo "buildroot: not $BUILDROOT_COMMIT" >&2; exit 1; }
-  export WEBPC_IMAGES=$root/images
+  export WAARM64_IMAGES=$root/images
   make -s -C "$br" O="$root/$1" BR2_DL_DIR="$root/$out/dl" BR2_DEFCONFIG="$root/$2" defconfig
   make -s -C "$br" O="$root/$1" BR2_DL_DIR="$root/$out/dl" -j"$(nproc)"
 }
@@ -185,7 +185,7 @@ build_linux() {
       else
         cat "$src/arch/arm64/configs/defconfig" images/linux.fragment > "$obj/allconfig"
       fi
-      k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc"
+      k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64"
       $k KCONFIG_ALLCONFIG="$obj/allconfig" $target
       missing=$(grep "^CONFIG_" images/linux.fragment | grep -vxFf "$obj/.config" || true)
       [ -z "$missing" ] || { echo "linux.fragment ($base): not applied:" >&2; echo "$missing" >&2; exit 1; }
@@ -201,8 +201,8 @@ build_ltp() {
   local dst=$out/ltp bro=$out/build/buildroot-ltp src=$out/build/linux-$LINUX obj=$out/build/linux-headers
   rm -rf "$bro" "$obj" "$dst"
   mkdir -p "$bro" "$obj" "$dst"
-  cat images/buildroot.defconfig images/ltp/buildroot.fragment > "$bro/webpc_defconfig"
-  buildroot "$bro" "$bro/webpc_defconfig"
+  cat images/buildroot.defconfig images/ltp/buildroot.fragment > "$bro/waarm64_defconfig"
+  buildroot "$bro" "$bro/waarm64_defconfig"
   # The arm64 and breakpoints selftests, with the kernel's UAPI headers, and
   # images/ltp/debug.c into the target tree; then Buildroot again to remake
   # the root filesystem with them.
@@ -212,7 +212,7 @@ build_ltp() {
   make -s -C "$src/tools/testing/selftests" O="$root/$obj/kselftest" ARCH=arm64 CROSS_COMPILE="$cc" \
     TARGETS="arm64 breakpoints" ARM64_SUBTARGETS="abi signal tags" KHDR_INCLUDES="-isystem $root/$obj/usr/include" \
     INSTALL_PATH="$root/$bro/target/usr/lib/kselftests" install
-  "${cc}gcc" -O2 -Wall -Werror -isystem "$root/$obj/usr/include" -o "$bro/target/usr/bin/webpc-debug" images/ltp/debug.c
+  "${cc}gcc" -O2 -Wall -Werror -isystem "$root/$obj/usr/include" -o "$bro/target/usr/bin/waarm64-debug" images/ltp/debug.c
   make -s -C "$out/dl/buildroot-$BUILDROOT_TAG" O="$root/$bro" BR2_DL_DIR="$root/$out/dl"
   cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
 }
@@ -263,15 +263,15 @@ build_alpine() {
     mv /tmp/modloop/modules/$kver $r/lib/modules/
     # The boot test: a local.d script, the local service in the default runlevel,
     # and what an installed system runs at sysinit and boot.
-    install -m 755 images/alpine/webpc.start $r/etc/local.d/
+    install -m 755 images/alpine/waarm64.start $r/etc/local.d/
     chroot $r sh -euc "
       for s in devfs dmesg; do rc-update -q add \$s sysinit; done
       for s in modules hostname; do rc-update -q add \$s boot; done
       for s in killprocs mount-ro; do rc-update -q add \$s shutdown; done
       rc-update -q add local default"
     find $r -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
-    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d $r -L alpine -U 77656270-6300-4000-8000-000000000011 \
-      -E hash_seed=77656270-6300-4000-8000-000000000012,no_copy_xattrs "$dst/rootfs.ext4" 256M
+    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d $r -L alpine -U 57413634-0000-4000-8000-000000000011 \
+      -E hash_seed=57413634-0000-4000-8000-000000000012,no_copy_xattrs "$dst/rootfs.ext4" 256M
   ' - "$tar" "$iso" "$dst" "$ALPINE_PKGS" "$USERLAND_TOOLS" "$ALPINE_KERNEL"
   cp "$iso/boot/initramfs-virt" "$dst/initramfs-virt"
   # vmlinuz-virt is EFI zboot: gzip'd Image at the offset and size in bytes 8-15.
@@ -293,14 +293,14 @@ build_alpine-user() {
     cp /etc/resolv.conf "$r/etc/"
     cp -r "$4/apks" "$r/tmp/apks"
     chroot "$r" apk --no-progress --no-cache -q -X /tmp/apks add $2
-    rm -r "$r/etc/resolv.conf" "$r/tmp/apks" "$r/var/log/apk.log" "$r/etc/local.d/webpc.start"
-    install -m 755 images/alpine/user/webpc-user.start "$r/etc/local.d/"
-    mkdir -p "$r/usr/local/share/webpc"
-    install -m 644 images/alpine/user/*.lua images/alpine/user/speed.sql "$r/usr/local/share/webpc/"
+    rm -r "$r/etc/resolv.conf" "$r/tmp/apks" "$r/var/log/apk.log" "$r/etc/local.d/waarm64.start"
+    install -m 755 images/alpine/user/waarm64-user.start "$r/etc/local.d/"
+    mkdir -p "$r/usr/local/share/waarm64"
+    install -m 644 images/alpine/user/*.lua images/alpine/user/speed.sql "$r/usr/local/share/waarm64/"
     find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     # no_copy_xattrs: the host'"'"'s SELinux labels (random per container) would reach the image.
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-user \
-      -U 77656270-6300-4000-8000-000000000013 -E hash_seed=77656270-6300-4000-8000-000000000014,no_copy_xattrs \
+      -U 57413634-0000-4000-8000-000000000013 -E hash_seed=57413634-0000-4000-8000-000000000014,no_copy_xattrs \
       "$1/alpine-user/rootfs-user.ext4" 256M
   ' - "$out" "$USERLAND_PKGS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
@@ -318,14 +318,14 @@ build_alpine-gl() {
     debugfs -R "rdump / $r" "$1/alpine/rootfs.ext4" 2>/dev/null
     cp /etc/resolv.conf "$r/etc/"
     chroot "$r" apk --no-progress --no-cache -q add $2
-    rm "$r/etc/resolv.conf" "$r/var/log/apk.log" "$r/etc/local.d/webpc.start"
-    install -m 755 images/alpine/gl/webpc-gl.start "$r/etc/local.d/"
+    rm "$r/etc/resolv.conf" "$r/var/log/apk.log" "$r/etc/local.d/waarm64.start"
+    install -m 755 images/alpine/gl/waarm64-gl.start "$r/etc/local.d/"
     gcc -O2 -o "$r/usr/local/bin/glcomp" images/alpine/gl/glcomp.c -lEGL -lGLESv2
     gcc -O2 -o "$r/usr/local/bin/glquery" images/alpine/gl/glquery.c -lEGL -lGLESv2
     strip "$r/usr/local/bin/glcomp" "$r/usr/local/bin/glquery"
     find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-gl \
-      -U 77656270-6300-4000-8000-000000000015 -E hash_seed=77656270-6300-4000-8000-000000000016,no_copy_xattrs \
+      -U 57413634-0000-4000-8000-000000000015 -E hash_seed=57413634-0000-4000-8000-000000000016,no_copy_xattrs \
       "$1/alpine-gl/rootfs-gl.ext4" 512M
   ' - "$out" "$GL_PKGS" "$GL_TOOLS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
@@ -355,10 +355,10 @@ build_alpine-virgl() {
     DESTDIR=$r ninja -C b install >/dev/null
     rm -rf "$r/opt/mesa/include" "$r/opt/mesa/lib/pkgconfig"
     cd - >/dev/null
-    install -m 755 images/alpine/gl/webpc-gl.start "$r/etc/local.d/"
+    install -m 755 images/alpine/gl/waarm64-gl.start "$r/etc/local.d/"
     find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-virgl \
-      -U 77656270-6300-4000-8000-000000000017 -E hash_seed=77656270-6300-4000-8000-000000000018,no_copy_xattrs \
+      -U 57413634-0000-4000-8000-000000000017 -E hash_seed=57413634-0000-4000-8000-000000000018,no_copy_xattrs \
       "$1/alpine-virgl/rootfs-virgl.ext4" 512M
   ' - "$out" "$tar" "$VIRGL_TOOLS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
@@ -373,14 +373,14 @@ build_linux-crypto() {
     src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-crypto dst=$root/$4
     mkdir -p "$obj"
     cat images/linux.fragment images/crypto/linux.fragment > "$obj/allconfig"
-    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64"
     $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
     missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
     [ -z "$missing" ] || { echo "linux-crypto: not applied:" >&2; echo "$missing" >&2; exit 1; }
     $k -j"$(nproc)" Image
-    gcc -static -Os -o "$obj/webpc-init" images/crypto/init.c
+    gcc -static -Os -o "$obj/waarm64-init" images/crypto/init.c
     gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
-    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/webpc-init" > "$obj/cpio.list"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/waarm64-init" > "$obj/cpio.list"
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
     cp "$obj/arch/arm64/boot/Image" "$dst/Image"
     cp "$obj/.config" "$dst/config"
@@ -397,14 +397,14 @@ build_linux-gpu() {
     src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-gpu dst=$root/$4
     mkdir -p "$obj"
     cat images/linux.fragment images/gpu/linux.fragment > "$obj/allconfig"
-    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64"
     $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
     missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
     [ -z "$missing" ] || { echo "linux-gpu: not applied:" >&2; echo "$missing" >&2; exit 1; }
     $k -j"$(nproc)" Image
-    gcc -static -Os -o "$obj/webpc-init" images/gpu/init.c
+    gcc -static -Os -o "$obj/waarm64-init" images/gpu/init.c
     gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
-    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/webpc-init" > "$obj/cpio.list"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/waarm64-init" > "$obj/cpio.list"
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
     cp "$obj/arch/arm64/boot/Image" "$dst/Image"
     cp "$obj/.config" "$dst/config"
@@ -421,16 +421,16 @@ build_linux-snd() {
     src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-snd dst=$root/$4
     mkdir -p "$obj"
     cat images/linux.fragment images/snd/linux.fragment > "$obj/allconfig"
-    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc KBUILD_BUILD_VERSION=1" # the version (#1) pinned: a rebuild in the same tree is the same kernel
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64 KBUILD_BUILD_VERSION=1" # the version (#1) pinned: a rebuild in the same tree is the same kernel
     $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
     missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
     [ -z "$missing" ] || { echo "linux-snd: not applied:" >&2; echo "$missing" >&2; exit 1; }
     $k -j"$(nproc)" Image
-    gcc -static -Os -o "$obj/webpc-init" images/snd/init.c -lm
+    gcc -static -Os -o "$obj/waarm64-init" images/snd/init.c -lm
     gcc -static -Os -s -o "$dst/snd-play" images/snd/play.c # a WAV player for guests without alsa-utils (the page'"'"'s Debian test)
     gcc -static -Os -s -o "$dst/snd-rec" images/snd/rec.c # and a recorder
     gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
-    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/webpc-init" > "$obj/cpio.list"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/waarm64-init" > "$obj/cpio.list"
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
     cp "$obj/arch/arm64/boot/Image" "$dst/Image"
     cp "$obj/.config" "$dst/config"
@@ -447,15 +447,15 @@ build_linux-usb() {
     src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-usb dst=$root/$4
     mkdir -p "$obj"
     cat images/linux.fragment images/usb/linux.fragment > "$obj/allconfig"
-    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc KBUILD_BUILD_VERSION=1"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64 KBUILD_BUILD_VERSION=1"
     $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
     missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
     [ -z "$missing" ] || { echo "linux-usb: not applied:" >&2; echo "$missing" >&2; exit 1; }
     $k -j"$(nproc)" Image
-    gcc -static -Os -o "$obj/webpc-init" images/usb/init.c
+    gcc -static -Os -o "$obj/waarm64-init" images/usb/init.c
     gcc -static -Os -o "$obj/testusb" "$src/tools/usb/testusb.c" -lpthread # the kernel'"'"'s own (GPL): built and run, not copied
     gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
-    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\ndir /sys 0755 0 0\nfile /init %s 0755 0 0\nfile /testusb %s 0755 0 0\n" "$obj/webpc-init" "$obj/testusb" > "$obj/cpio.list"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\ndir /sys 0755 0 0\nfile /init %s 0755 0 0\nfile /testusb %s 0755 0 0\n" "$obj/waarm64-init" "$obj/testusb" > "$obj/cpio.list"
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
     cp "$obj/arch/arm64/boot/Image" "$dst/Image"
     cp "$obj/.config" "$dst/config"
@@ -472,15 +472,15 @@ build_linux-usbhost() {
     src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-usbhost dst=$root/$4
     mkdir -p "$obj"
     cat images/linux.fragment images/usb/linux.fragment images/usbhost/linux.fragment > "$obj/allconfig"
-    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc KBUILD_BUILD_VERSION=1"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=waarm64 KBUILD_BUILD_HOST=waarm64 KBUILD_BUILD_VERSION=1"
     $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
     missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
     [ -z "$missing" ] || { echo "linux-usbhost: not applied:" >&2; echo "$missing" >&2; exit 1; }
     $k -j"$(nproc)" Image
-    gcc -static -Os -o "$obj/webpc-init" images/usbhost/init.c
+    gcc -static -Os -o "$obj/waarm64-init" images/usbhost/init.c
     gcc -static -Os -o "$obj/testusb" "$src/tools/usb/testusb.c" -lpthread # the kernel'"'"'s own (GPL): built and run, not copied
     gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
-    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\ndir /sys 0755 0 0\nfile /init %s 0755 0 0\nfile /testusb %s 0755 0 0\n" "$obj/webpc-init" "$obj/testusb" > "$obj/cpio.list"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\ndir /sys 0755 0 0\nfile /init %s 0755 0 0\nfile /testusb %s 0755 0 0\n" "$obj/waarm64-init" "$obj/testusb" > "$obj/cpio.list"
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
     cp "$obj/arch/arm64/boot/Image" "$dst/Image"
     cp "$obj/.config" "$dst/config"
@@ -541,7 +541,7 @@ build_litmus() {
 # The FP suite (images/fptest/): SoftFloat (ARM's NaN rules) and testfloat_gen
 # from the pinned sources, fptest.c and its form tables (forms.py), all static,
 # natively in Alpine's arm64 container; an initramfs (BusyBox, the init, the
-# suite; booted with linux/Image, webpc.fptest=<options>) and fptest.tar (the
+# suite; booted with linux/Image, waarm64.fptest=<options>) and fptest.tar (the
 # same programs and run.sh, for the oracle VM).
 build_fptest() {
   local dst=$out/fptest b=$out/build/fptest
@@ -578,13 +578,13 @@ build_fptest() {
 
 build_debian() {
   rm -rf "$out/debian"
-  WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
+  WAARM64_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
 }
 
 build_alpine-uefi() {
   rm -rf "$out/alpine-uefi"
   mkdir -p "$out/alpine-uefi"
-  WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning --input-type=module -e '
+  WAARM64_DL=$root/$out/dl node --disable-warning=ExperimentalWarning --input-type=module -e '
     import { linkSync, readFileSync } from "node:fs";
     const { download } = await import(process.argv[1] + "/tools/debian.ts");
     const { images } = JSON.parse(readFileSync(process.argv[1] + "/images/alpine-uefi.json", "utf8"));
@@ -607,10 +607,10 @@ build_edk2() {
   mkdir -p "$b" "$dst"
   tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
   cp images/edk2/startup.nsh "$b/"
-  # webpc's own driver (images/edk2/WebpcXhciDxe, MIT): the DT's generic-xhci as a non-discoverable xHCI, so the
+  # waarm64's own driver (images/edk2/Waarm64XhciDxe, MIT): the DT's generic-xhci as a non-discoverable xHCI, so the
   # firmware's USB stack drives the machine's controller and the page's built-in keyboard (docs/usb.md "The keyboard").
   # usb-xhci.patch adds it and NonDiscoverablePciDeviceDxe to ArmVirtQemuKernel's build.
-  cp -r images/edk2/WebpcXhciDxe "$b/ArmVirtPkg/"
+  cp -r images/edk2/Waarm64XhciDxe "$b/ArmVirtPkg/"
   # The firmware on the screen (docs/firmware.md "Our patches"): the boot manager connects a
   # virtio-gpu on virtio-mmio before the console, as it does PCI displays, so its GOP joins ConOut and shows
   # the logo and the firmware's text (virtio-gpu-console); the boot progress bar draws in one Blt a second,
@@ -636,21 +636,21 @@ build_edk2() {
     # picks from them by hash(GUID) (so a fixed hash seed too). They are public in the
     # binary either way.
     d=Build/ArmVirtQemuKernel-AArch64/RELEASE_GCC && mkdir -p $d
-    python3 -c "import hashlib, json, sys; [json.dump([int.from_bytes(hashlib.sha256(b\"webpc-edk2-%d-%d\" % (b, i)).digest()[:b // 8], \"little\") % ((1 << b) - 1) for i in range(100)], open(sys.argv[1] + \"/StackCookieValues%d.json\" % b, \"w\")) for b in (32, 64)]" $d
+    python3 -c "import hashlib, json, sys; [json.dump([int.from_bytes(hashlib.sha256(b\"waarm64-edk2-%d-%d\" % (b, i)).digest()[:b // 8], \"little\") % ((1 << b) - 1) for i in range(100)], open(sys.argv[1] + \"/StackCookieValues%d.json\" % b, \"w\")) for b in (32, 64)]" $d
     export PYTHONHASHSEED=0
     build -s -a AARCH64 -t GCC -b RELEASE -p ArmVirtPkg/ArmVirtQemuKernel.dsc -D NETWORK_ENABLE=FALSE -n "$(nproc)" > build.log 2>&1 || { tail -30 build.log; exit 1; }
     # The test disk: 8 MiB of FAT, a fixed volume ID, every timestamp SOURCE_DATE_EPOCH.
     img=Build/shell.img && rm -f $img
     cp $d/AARCH64/Shell.efi Build/BOOTAA64.EFI && touch -d @$SOURCE_DATE_EPOCH startup.nsh Build/BOOTAA64.EFI
-    mkfs.fat -C -i 57454250 -n WEBPC $img 8192 >/dev/null
+    mkfs.fat -C -i 57413634 -n WAARM64 $img 8192 >/dev/null
     mmd -i $img ::/EFI ::/EFI/BOOT
     mcopy -m -i $img Build/BOOTAA64.EFI ::/EFI/BOOT/ && mcopy -m -i $img startup.nsh ::/
   ' - "$EDK2_SNAPSHOT" "$EDK2_TOOLS"
   cp "$b/Build/ArmVirtQemuKernel-AArch64/RELEASE_GCC/FV/QEMU_EFI.fd" "$b/Build/shell.img" "$dst/"
   # The binary goes to users, so its licenses go with it: EDK2's, and those of the
   # submodules linked in (OpenSSL in Hash2DxeCrypto, libfdt).
-  { echo "QEMU_EFI.fd: EDK2 $EDK2_TAG ($EDK2_COMMIT), ArmVirtPkg/ArmVirtQemuKernel.dsc, built by webpc's images/build.sh edk2."
-    echo "It also holds WebpcXhciDxe, webpc's own driver (MIT, as the rest of webpc: images/edk2/WebpcXhciDxe in its sources)."
+  { echo "QEMU_EFI.fd: EDK2 $EDK2_TAG ($EDK2_COMMIT), ArmVirtPkg/ArmVirtQemuKernel.dsc, built by waarm64's images/build.sh edk2."
+    echo "It also holds Waarm64XhciDxe, waarm64's own driver (MIT, as the rest of waarm64: images/edk2/Waarm64XhciDxe in its sources)."
     for f in License.txt CryptoPkg/Library/OpensslLib/openssl/LICENSE.txt MdePkg/Library/BaseFdtLib/libfdt/BSD-2-Clause; do
       printf '\n==== %s ====\n\n' "$f"; cat "$src/$f"
     done; } > "$dst/LICENSES.txt"
@@ -673,7 +673,7 @@ build_agent() {
     printf '%s\n' "Built by the host's cargo (images/build.sh agent without Podman): for tests only, not the shipped build." \
       "npm run dist refuses it; images/build.sh agent where Podman is builds that one (docs/images.md \"agent\")." > "$dst/HOST-BUILD"
   fi
-  cp "$b/target/aarch64-unknown-linux-musl/release/webpc-agent" "$dst/"
+  cp "$b/target/aarch64-unknown-linux-musl/release/waarm64-agent" "$dst/"
 }
 
 # Vulkan's renderer (vk/build.sh) in Node's Debian image, its work tree kept for the next build.
@@ -709,7 +709,7 @@ inputs() {
   [ "$1" = buildroot ] && files+=(images/buildroot.defconfig $(find images/overlay -type f | sort))
   [ "$1" = linux ] && files+=(images/linux.fragment) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = debian ] && files+=(images/debian.json) && pins='^export SOURCE'
-  [ "$1" = alpine ] && files+=(images/alpine/webpc.start) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = alpine ] && files+=(images/alpine/waarm64.start) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = alpine-gl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine/.inputs") && pins='^(GL_|USERLAND_TOOLS|USERLAND_CONTAINER)'
@@ -721,7 +721,7 @@ inputs() {
   [ "$1" = linux-usbhost ] && files+=(images/linux.fragment $(find images/usb images/usbhost -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
-  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/WebpcXhciDxe -type f | sort)) && pins='^EDK2_'
+  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/Waarm64XhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = venus ] && files=(vk/build.sh) && pins='^VENUS_'
@@ -750,7 +750,7 @@ outputs() {
     fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
-    agent) echo agent/webpc-agent ;;
+    agent) echo agent/waarm64-agent ;;
     venus) echo venus/venus.wasm venus/LICENSES.txt ;;
   esac
 }
@@ -802,7 +802,7 @@ build() {
     echo "WARNING: $name differs from images/SHA256SUMS (update it if the inputs changed on purpose)" >&2
 }
 
-if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
+if [ -z "${WAARM64_IN_CONTAINER:-}" ]; then
   rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= agent= venus=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
@@ -810,18 +810,18 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   done
   # The Buildroot images, natively in the host's architecture.
   if [ ${#br[@]} -gt 0 ]; then
-    tag=webpc-buildroot:$(sha256sum images/buildroot/Containerfile | cut -c1-12)
+    tag=waarm64-buildroot:$(sha256sum images/buildroot/Containerfile | cut -c1-12)
     podman image exists "$tag" || podman build -t "$tag" -f images/buildroot/Containerfile images/buildroot
     mkdir -p "$out"
     podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
-      -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${br[@]}"
+      -e WAARM64_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${br[@]}"
   fi
   if [ ${#rest[@]} -gt 0 ]; then
-    tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
+    tag=waarm64-images:$(sha256sum images/Containerfile | cut -c1-12)
     podman image exists "$tag" || podman build -t "$tag" -f images/Containerfile images
     mkdir -p "$out"
     podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
-      -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${rest[@]}"
+      -e WAARM64_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${rest[@]}"
   fi
   # After the images container, the ones built natively in Alpine's arm64
   # container (alpine-user builds on alpine).

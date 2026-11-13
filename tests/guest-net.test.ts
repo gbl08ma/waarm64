@@ -16,19 +16,19 @@ const hasDash = process.env.PATH?.split(':').some((p) => existsSync(join(p, 'das
 test('credentials: a unit before networkd, its drop-in on networkd and its script, as base64 SMBIOS strings', () => {
   const c = netCredentials(guestWords().network);
   assert.match(c[1].data, new RegExp(`^Description=${words('guest:guest-words.network').source}$`, 'm'));
-  assert.deepEqual(c.map((x) => x.name), ['webpc.network.sh', 'systemd.extra-unit.webpc-network.service', 'systemd.unit-dropin.systemd-networkd.service~webpc-network']);
+  assert.deepEqual(c.map((x) => x.name), ['waarm64.network.sh', 'systemd.extra-unit.waarm64-network.service', 'systemd.unit-dropin.systemd-networkd.service~waarm64-network']);
   assert.match(c[1].data, /^DefaultDependencies=no$/m);
   assert.match(c[1].data, /^Before=systemd-networkd\.service /m);
   assert.match(c[1].data, /^After=local-fs\.target systemd-network-generator\.service$/m);
-  assert.match(c[1].data, /^ImportCredential=webpc\.network\.sh$/m);
-  assert.match(c[1].data, /^ExecStart=\/bin\/sh %d\/webpc\.network\.sh$/m);
+  assert.match(c[1].data, /^ImportCredential=waarm64\.network\.sh$/m);
+  assert.match(c[1].data, /^ExecStart=\/bin\/sh %d\/waarm64\.network\.sh$/m);
   assert.match(c[1].data, /^ConditionPathExists=!\/etc\/initrd-release$/m);
-  assert.equal(c[2].data, '[Unit]\nWants=webpc-network.service\nAfter=webpc-network.service\n');
+  assert.equal(c[2].data, '[Unit]\nWants=waarm64-network.service\nAfter=waarm64-network.service\n');
   for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
 });
 
 test("the script: every .network file in networkd's directories gets the drop-in in /run, the same again changes nothing", { skip: !hasDash && 'no dash' }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'webpc-net-'));
+  const root = mkdtempSync(join(tmpdir(), 'waarm64-net-'));
   try {
     const at = (p: string) => join(root, p);
     // Arch's (sorts before the page's card.network), the page's own, a vendor's, and an example that isn't a .network.
@@ -45,8 +45,8 @@ test("the script: every .network file in networkd's directories gets the drop-in
     const dropins = readdirSync(at('run/systemd/network')).filter((d) => d.endsWith('.d')).sort();
     assert.deepEqual(dropins, ['20-en.network.d', '80-container-host0.network.d', 'card.network.d']);
     for (const d of dropins) {
-      assert.deepEqual(readdirSync(at(`run/systemd/network/${d}`)), ['50-webpc.conf']);
-      assert.equal(readFileSync(at(`run/systemd/network/${d}/50-webpc.conf`), 'utf8'), DROPIN);
+      assert.deepEqual(readdirSync(at(`run/systemd/network/${d}`)), ['50-waarm64.conf']);
+      assert.equal(readFileSync(at(`run/systemd/network/${d}/50-waarm64.conf`), 'utf8'), DROPIN);
     }
     assert.equal(readFileSync(at('etc/systemd/network/20-en.network'), 'utf8'), '[Match]\nName=en*\n[Network]\nDHCP=yes\n', "the guest's own file is left as it is");
     assert.equal(existsSync(at('etc/systemd/network/20-en.network.d')), false, 'nothing outside /run');

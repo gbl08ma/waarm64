@@ -39,7 +39,7 @@ const SOCKET_QUEUE = 256;
 
 export type RoomConfig = {
   room: {
-    /** The room's link (`webpc-room:<id>?nostr=…&derp=…`, net/ts/src/room/link.rs), or a bare ID (the defaults). */
+    /** The room's link (`waarm64-room:<id>?nostr=…&derp=…`, net/ts/src/room/link.rs), or a bare ID (the defaults). */
     link: string;
     /** The home region: an index into the link's DERP regions (default: the first of them to answer a probe, the nearest). */
     home?: number;

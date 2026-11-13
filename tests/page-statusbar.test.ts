@@ -14,8 +14,8 @@ import { words } from './words.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
-/** `WEBPC_SHOTS=<dir>`: screenshots of the bar and its editor, to look at. */
-const shots = process.env.WEBPC_SHOTS;
+/** `WAARM64_SHOTS=<dir>`: screenshots of the bar and its editor, to look at. */
+const shots = process.env.WAARM64_SHOTS;
 
 let browser: Browser;
 let base: string;
@@ -36,7 +36,7 @@ const pattern = (key: string, re: Record<string, string> = {}) => {
 };
 const bar = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? '').replace(/\s+/g, ' ').trim());
 const kinds = (page: Page, sel: string) => page.$$eval(sel, (els) => els.map((e) => (e as HTMLElement).dataset.kind));
-const kept = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').statusBar);
+const kept = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}').statusBar);
 
 test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn from the machine, remembered', { skip }, async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -104,7 +104,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   const keys = () => page.getAttribute('#status [data-kind=keyboard]', 'data-tone');
   assert.equal(await keys(), 'off');
   await page.check('[data-field=status-fullscreen]');
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings')!).statusFullscreen), true);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings')!).statusFullscreen), true);
   await page.click('#fullscreen');
   await page.waitForFunction(() => document.fullscreenElement === document.body, null, { timeout: 5000 });
   assert.equal(await page.locator('#status').isVisible(), true);

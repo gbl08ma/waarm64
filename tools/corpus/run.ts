@@ -14,7 +14,7 @@ import { GROUPS, generate } from "./gen.ts";
 const ROOT = new URL("../../", import.meta.url).pathname;
 const HARNESS = `${ROOT}target/harness/harness`;
 const LIMACTL = "/opt/homebrew/bin/limactl";
-const REMOTE = "/tmp/webpc-harness";
+const REMOTE = "/tmp/waarm64-harness";
 const BATCH = 400;
 
 function sh(cmd: string, args: string[], input?: Uint8Array): Buffer {

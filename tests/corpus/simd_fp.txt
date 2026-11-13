@@ -1,4 +1,4 @@
-webpc-corpus 1
+waarm64-corpus 1
 oracle m4 2026-09-25
 test simd_fp.vec_same.0000
 code 6e71f4a5

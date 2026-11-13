@@ -371,7 +371,7 @@ test('virtio-input drops the oldest whole frames past its queue', () => {
 });
 
 test('virtio-input config answers', () => {
-  assert.equal(new TextDecoder().decode(inputConfig('keyboard', 1, 0)), 'webpc keyboard');
+  assert.equal(new TextDecoder().decode(inputConfig('keyboard', 1, 0)), 'waarm64 keyboard');
   assert.equal(inputConfig('keyboard', 0x11, 1).length, 32); // keys 1-248
   assert.deepEqual([...inputConfig('keyboard', 0x11, 0x11)], [7]);
   assert.deepEqual([...inputConfig('tablet', 0x11, 3)], [3]);
@@ -385,7 +385,7 @@ test('virtio-input config answers', () => {
   assert.deepEqual([...inputConfig('mouse', 0x11, 2)], [0x43, 0x19]);
   assert.deepEqual([...inputConfig('tablet', 0x11, 2)], [0x40, 0x19]);
   assert.equal(inputConfig('mouse', 0x11, 3).length, 0);
-  assert.equal(new TextDecoder().decode(inputConfig('touch', 1, 0)), 'webpc touchscreen');
+  assert.equal(new TextDecoder().decode(inputConfig('touch', 1, 0)), 'waarm64 touchscreen');
   assert.deepEqual([...inputConfig('touch', 0x10, 0)], [2]); // INPUT_PROP_DIRECT
   assert.equal(inputConfig('tablet', 0x10, 0).length, 0);
   const abs = inputConfig('touch', 0x11, 3);
@@ -555,7 +555,7 @@ test('virtio-blk: a discard or a write of zeroes that finds the storage full get
   const map = { ...m, read: m.read.bind(m), getSize: m.getSize.bind(m), truncate: m.truncate.bind(m), flush: m.flush.bind(m),
     write: (buf: Uint8Array, o: { at: number }) => (o.at + buf.length > m.getSize() && (never || kept.getSize() > 0) ? 0 : m.write(buf, o)) };
   let told = 0;
-  const b = blk(ctx, src, { data: memFile(), map, meta: memFile(), close() {} }, true, undefined, 'webpc-blk', false, () => told++);
+  const b = blk(ctx, src, { data: memFile(), map, meta: memFile(), close() {} }, true, undefined, 'waarm64-blk', false, () => told++);
   /** DISCARD (11) or WRITE_ZEROES (13, unmap allowed) of blocks [k, k + n); the status. */
   const ask = async (type: number, k: number, n: number) => {
     const h = new DataView(ram.buffer, 0, 32);
@@ -596,7 +596,7 @@ test('virtio-blk: a write the storage refuses (short, or QuotaExceededError) is 
       return file.write(buf, o);
     } };
   let told = 0;
-  const b = blk(ctx, src, { data, map: memFile(), meta: memFile(), close() {} }, true, undefined, 'webpc-blk', false, () => told++);
+  const b = blk(ctx, src, { data, map: memFile(), meta: memFile(), close() {} }, true, undefined, 'waarm64-blk', false, () => told++);
   /** Writes block `k` (OUT; or WRITE_ZEROES over its first half); the status. */
   const write = async (k: number, zeroes = false) => {
     const h = new DataView(ram.buffer, 0, 16);

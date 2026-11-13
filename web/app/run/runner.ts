@@ -202,7 +202,7 @@ export class Runner {
     const failed = (reason: string) => {
       // The canvas is the GPU worker's now: a fresh start, without 3D.
       this.d.machine.no3d = reason;
-      console.warn(`webpc: no 3D: ${reason}`);
+      console.warn(`waarm64: no 3D: ${reason}`);
       gpu.terminate();
       r.worker.terminate();
       r.input.detach();

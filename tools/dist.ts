@@ -3,9 +3,9 @@
 // core, the tailnet client, the UEFI firmware, clipboard sharing's guest agent, Vulkan's renderer), then builds the page with Vite (vite.config.ts) into `target/dist/`:
 //   index.html                        the page, the commit it was built from in a meta tag (tools/stamp.ts)
 //   assets/                           its code bundled (the page, each worker, the sound worklet; minified, with source
-//                                     maps), its CSS, and the binaries it fetches: the core (webpc_core.wasm), the
+//                                     maps), its CSS, and the binaries it fetches: the core (waarm64_core.wasm), the
 //                                     tailnet client (ts.wasm), EDK2 (QEMU_EFI.fd), clipboard sharing's guest agent
-//                                     (webpc-agent, fetched only by a machine with the setting), Vulkan's renderer
+//                                     (waarm64-agent, fetched only by a machine with the setting), Vulkan's renderer
 //                                     (venus.wasm, fetched only by a machine with Vulkan on); every name hashed
 //   web/app/index.html                a redirect to the root (the page was there until 2026-10-23)
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below; web/app/public/)
@@ -31,7 +31,7 @@ import { BUNDLED } from './third-party.ts';
 export const OUT = join(ROOT, 'target/dist');
 
 /** Marks a directory as a build of the page (web/app/public/ carries it): the only kind this script deletes before writing. */
-const MARK = '.webpc-dist';
+const MARK = '.waarm64-dist';
 
 /** The binaries the page fetches, as paths in the repository. */
 export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, BUNDLED['EDK2-LICENSES.txt'], AGENT];

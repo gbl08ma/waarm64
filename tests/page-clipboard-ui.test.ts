@@ -52,7 +52,7 @@ async function run(page: Page, cmd: string, ms = 30_000) {
   return re.exec(await terminal(page))![1].trim();
 }
 /** The guest's shell opens the agent's port as fd 3 (the page then sends HELLO and the switch). */
-const openPort = (page: Page) => onSerial(page, 'exec 3<>/dev/$(basename $(dirname $(grep -l org.webpc.agent.0 /sys/class/virtio-ports/*/name)))\n');
+const openPort = (page: Page) => onSerial(page, 'exec 3<>/dev/$(basename $(dirname $(grep -l org.waarm64.agent.0 /sys/class/virtio-ports/*/name)))\n');
 /** The guest writes `bytes` to the port. */
 const guestWrites = (page: Page, bytes: Uint8Array) => run(page, `printf '${[...bytes].map((b) => `\\${b.toString(8).padStart(3, '0')}`).join('')}' >&3; echo written`);
 /** The guest reads `n` bytes from the port: the frames in them. */

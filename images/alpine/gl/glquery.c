@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
   for (int pass = 0; pass < 2; pass++) {
     const char *name = pass ? "frames" : "warm";
     int n = pass ? frames : 5, nw = 0;
-    printf("webpc: %s start\n", name); fflush(stdout);
+    printf("waarm64: %s start\n", name); fflush(stdout);
     double t0 = now();
     for (int f = 0; f < n; f++) {
       glClearColor(0.2f, 0.2f, 0.2f, 1); glClear(GL_COLOR_BUFFER_BIT);
@@ -75,7 +75,7 @@ int main(int argc, char **argv) {
       if (pass) finishes[f] = now() - t;
     }
     double ms = now() - t0;
-    printf("webpc: %s end\n", name);
+    printf("waarm64: %s end\n", name);
     printf("glquery: %s: %d frames, %.2f ms a frame, %.2f frames/s\n", name, n, ms / n, 1e3 * n / ms);
     if (pass) {
       if (nw) stats("wait", waits, nw);

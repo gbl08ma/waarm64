@@ -7,7 +7,7 @@
 import type { Credential } from './machine.ts';
 
 /**
- * The credentials of unit `name` (`webpc-<what>.service`), a oneshot that runs `script` (a credential of its own: no
+ * The credentials of unit `name` (`waarm64-<what>.service`), a oneshot that runs `script` (a credential of its own: no
  * quoting in the unit). `unit`: its [Unit] lines past the description (ordering); `wantedBy`: the unit whose drop-in
  * wants it and orders itself after it (the generator can't read an [Install] section). `service`: its [Service] lines
  * before the script's, in place of `Type=oneshot` (a long-running service: web/app/guest-agent.ts).
@@ -52,7 +52,7 @@ export type GuestWords = {
 };
 
 /** The fw_cfg file the core moves into SMBIOS type 11 (core/src/smbios.rs `OEM_STRINGS`, ABI 49): NUL-separated strings. */
-export const OEM_STRINGS_FILE = 'opt/webpc/oem-strings';
+export const OEM_STRINGS_FILE = 'opt/waarm64/oem-strings';
 
 /** Credentials as SMBIOS type 11 strings, systemd's binary form (base64: the contents have newlines). */
 export const oemStrings = (credentials: Credential[]) =>

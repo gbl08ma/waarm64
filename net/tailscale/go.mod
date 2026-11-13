@@ -1,4 +1,4 @@
-module webpc/net/tailscale
+module waarm64/net/tailscale
 
 go 1.26.6
 

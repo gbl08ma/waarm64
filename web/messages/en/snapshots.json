@@ -105,7 +105,7 @@
   },
   "Snapshots.download.title": {
     "message": "Download the snapshot as a file.",
-    "note": "Tooltip of a kept snapshot's download button: saves the snapshot as a .webpcsnap file."
+    "note": "Tooltip of a kept snapshot's download button: saves the snapshot as a .waarm64snap file."
   },
   "Snapshots.delete": {
     "message": "Delete",
@@ -120,7 +120,7 @@
     "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab), when the machine is open on this page: picks a snapshot file and restores it at once."
   },
   "Snapshots.restoreFile.title": {
-    "message": "Restore this machine from a snapshot file (.webpcsnap) at once, without storing the file in this browser.",
+    "message": "Restore this machine from a snapshot file (.waarm64snap) at once, without storing the file in this browser.",
     "note": "Tooltip of the Restore from a file… button."
   },
   "Snapshots.import": {
@@ -128,7 +128,7 @@
     "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab): picks a snapshot file and keeps it with the machine, to restore later."
   },
   "Snapshots.import.title": {
-    "message": "Store a snapshot file (.webpcsnap) with this machine in this browser, to restore later.",
+    "message": "Store a snapshot file (.waarm64snap) with this machine in this browser, to restore later.",
     "note": "Tooltip of the Import a file… button."
   },
   "Snapshots.toFile.title": {
@@ -436,8 +436,8 @@
     "note": "The confirm button of the question asked by Snapshot when the machine's 3D state is large."
   },
   "snapshot-actions.fileType": {
-    "message": "webpc snapshot",
-    "note": "The kind of file in the browser's save dialog of Save snapshot (a snapshot file, .webpcsnap)."
+    "message": "waarm64 snapshot",
+    "note": "The kind of file in the browser's save dialog of Save snapshot (a snapshot file, .waarm64snap)."
   },
   "snapshot-actions.saved": {
     "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.",

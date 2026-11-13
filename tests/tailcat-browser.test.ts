@@ -4,8 +4,8 @@
 // port a lease, and carries UDP to an echo server on the exit node's machine and back. The
 // guest's side is tests/net-tailcat.test.ts's. A kept identity is the same node through a server, so an exit node
 // can let only it in (`--allow`); a served machine answers `tailcat ping` (disco), over tailcat's public relays too
-// (opt-in, WEBPC_TAILCAT_INTERNET=1: this machine reaches them, and tailcat.dev's map).
-// Opt-in: WEBPC_TAILCAT=1 (needs Go for tests/net/tailcat.sh's tailcat and derper, and
+// (opt-in, WAARM64_TAILCAT_INTERNET=1: this machine reaches them, and tailcat.dev's map).
+// Opt-in: WAARM64_TAILCAT=1 (needs Go for tests/net/tailcat.sh's tailcat and derper, and
 // target/net/ts.wasm, net/ts/build.sh).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -18,7 +18,7 @@ import { exitNode, RIG_RELAY, tailcatRun } from './net/tailcat-cli.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
-const skip = process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1'
+const skip = process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT=1'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : !has('go', 'version') && !existsSync(`${ROOT}target/net/tailcat-test/bin/tailcat`) ? 'SKIPPED: no Go to build tailcat and derper'
   : undefined;
@@ -32,7 +32,7 @@ let echo: ReturnType<typeof createSocket>;
 before(async () => {
   if (skip) return;
   const env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2)));
-  addr = env.WEBPC_TAILCAT_ADDR;
+  addr = env.WAARM64_TAILCAT_ADDR;
   echo = createSocket('udp4');
   echo.on('message', (m, r) => echo.send(m, r.port, r.address));
   await new Promise<void>((resolve) => echo.bind(0, '127.0.0.1', resolve));
@@ -110,8 +110,8 @@ test('a kept identity is the same node through a server: an exit node with --all
 });
 
 test("a served machine answers tailcat ping (disco over the relay), on its own relay or tailcat's public ones", { skip, timeout: 180_000 }, async () => {
-  const relays = [{ relay: RIG_RELAY, internet: false }, ...(process.env.WEBPC_TAILCAT_INTERNET === '1' ? [{ relay: '', internet: true }] : [])];
-  if (relays.length === 1) console.log("# SKIPPED: tailcat ping through tailcat's public relays (opt-in: WEBPC_TAILCAT_INTERNET=1)");
+  const relays = [{ relay: RIG_RELAY, internet: false }, ...(process.env.WAARM64_TAILCAT_INTERNET === '1' ? [{ relay: '', internet: true }] : [])];
+  if (relays.length === 1) console.log("# SKIPPED: tailcat ping through tailcat's public relays (opt-in: WAARM64_TAILCAT_INTERNET=1)");
   for (const { relay, internet } of relays) {
     await harnessOn({ serve: '', relay }, async (h) => {
       const served = (await h()).netmap?.serving ?? '';

@@ -1,6 +1,6 @@
 // Chromium in the guest showing older frames (docs/graphics.md "The call queue"; dev-only, not in tests): the desktop image with Chromium
 // (images/arch/desktop.sh), sway on 3D, and Chromium in kiosk mode on a page that plays sintel-silent.webm (decoded on
-// the host through webpc-va) beside a frame counter drawn as two rows of 16 black or white blocks: row A the frame's
+// the host through waarm64-va) beside a frame counter drawn as two rows of 16 black or white blocks: row A the frame's
 // number, row B the number over 16 (a region damaged once every 16 frames). The host watches the screen through
 // Chromium's screencast and counts, over PHASE_S seconds, the frames where A went back (an older frame shown) and those
 // where B isn't A over 16 (two regions of one frame from different times: what a lost partial redraw leaves).

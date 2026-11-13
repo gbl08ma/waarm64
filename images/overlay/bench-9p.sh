@@ -5,7 +5,7 @@
 # timed by the host between its markers.
 mount -t 9p -o trans=virtio,version=9p2000.L host /mnt
 cd /mnt
-mark() { echo "webpc: $1"; }
+mark() { echo "waarm64: $1"; }
 mark "9p write start"; dd if=/dev/zero of=big bs=1M count=16 2>/dev/null; mark "9p write end"
 mark "9p read start"; dd if=big of=/dev/null bs=1M 2>/dev/null; mark "9p read end"
 mark "9p create start"; for i in $(seq 200); do : > f$i; done; mark "9p create end"

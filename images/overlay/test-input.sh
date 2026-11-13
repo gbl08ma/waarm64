@@ -20,4 +20,4 @@ events() { # fd, the last event to read
 }
 events 3 "1 30 0"
 events 4 "1 272 0"
-echo "webpc: test ok"
+echo "waarm64: test ok"

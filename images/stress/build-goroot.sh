@@ -28,7 +28,7 @@ podman run --rm -v "$root:$root:z" -w "$root" -e HOME=/tmp -e SOURCE_DATE_EPOCH=
 # pack it as ext4 in Alpine's arm64 container (Go'"'"'s has no e2fsprogs)
 podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH=1788220800 "$ALPINE" sh -euc '
   apk add --no-cache -q e2fsprogs
-  mke2fs -q -t ext4 -d target/images/stress/goroot.d -L webpc-go -E root_owner=0:0 -U 5fb2a0c1-9c2a-4a41-8d3e-0d1c5a3b7e11 target/images/stress/goroot.ext4 160M
+  mke2fs -q -t ext4 -d target/images/stress/goroot.d -L waarm64-go -E root_owner=0:0 -U 5fb2a0c1-9c2a-4a41-8d3e-0d1c5a3b7e11 target/images/stress/goroot.ext4 160M
   rm -rf target/images/stress/goroot.d
 '
 ls -l target/images/stress/goroot.ext4

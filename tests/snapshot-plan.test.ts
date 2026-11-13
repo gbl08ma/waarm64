@@ -13,7 +13,7 @@ import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import { SnapshotError } from '../web/snapshot-file.ts';
 import { bootVm, compileCore, type BootOptions } from '../web/vm.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
+const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
 const KERNEL = readFileSync(new URL('baremetal/uart.bin', import.meta.url));
 const SIZE = 1 << 20;
 const zeroBase = { size: SIZE, format: 'raw' as const, read: async (_o: number, len: number) => new Uint8Array(len) };
@@ -113,13 +113,13 @@ test("a swap ramdisk starts with its swap page; a restored one keeps the snapsho
     await (await bootVm(module, { ...o, devices: into, restore: r.restore })).close();
     return (into[0] as { ramInit: [number, Uint8Array][] }).ramInit;
   };
-  const fresh = await carried({ type: 'blk', source: 'ram', size: SIZE, swap: 'webpc-swap0' });
+  const fresh = await carried({ type: 'blk', source: 'ram', size: SIZE, swap: 'waarm64-swap0' });
   assert.equal(fresh.length, 1);
   const [c, bytes] = fresh[0];
   assert.equal(c, 0);
-  assert.equal(Buffer.compare(bytes.subarray(0, 4096), swapHeader(SIZE, 'webpc-swap0', bytes.slice(1036, 1052))), 0, 'the swap page, with its UUID');
+  assert.equal(Buffer.compare(bytes.subarray(0, 4096), swapHeader(SIZE, 'waarm64-swap0', bytes.slice(1036, 1052))), 0, 'the swap page, with its UUID');
   assert.ok(bytes.subarray(4096).every((x) => x === 0), 'nothing past it');
-  const restored = await carried({ type: 'blk', source: 'ram', size: SIZE, swap: 'webpc-swap0', ramInit: [] });
+  const restored = await carried({ type: 'blk', source: 'ram', size: SIZE, swap: 'waarm64-swap0', ramInit: [] });
   assert.deepEqual(restored, [], "a restored swap ramdisk is the snapshot's");
 });
 

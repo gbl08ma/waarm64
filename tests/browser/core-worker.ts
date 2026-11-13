@@ -3,7 +3,7 @@ import { coreImports } from '../../web/vm.ts';
 
 try {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
-  const { instance } = await WebAssembly.instantiateStreaming(fetch('/target/wasm32-unknown-unknown/release/webpc_core.wasm'), coreImports(mem));
+  const { instance } = await WebAssembly.instantiateStreaming(fetch('/target/wasm32-unknown-unknown/release/waarm64_core.wasm'), coreImports(mem));
   const ex = instance.exports as Record<string, (...a: number[]) => number>;
   const counter = mem.grow(1) * 65536; // past the core's own data and stack
   ex.atomic_inc(counter);

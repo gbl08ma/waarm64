@@ -29,7 +29,7 @@ static long psci(u64 f, u64 a, u64 b, u64 c) {
   return (long)x0;
 }
 
-// CPU i is Aff0 = i (QEMU virt and webpc number up to 16 CPUs so).
+// CPU i is Aff0 = i (QEMU virt and waarm64 number up to 16 CPUs so).
 static u64 me(void) { return sysreg(MPIDR_EL1) & 0xff; }
 
 static void sgi(u64 id, u64 cpu) { set_sysreg(ICC_SGI1R_EL1, id << 24 | 1UL << cpu); }

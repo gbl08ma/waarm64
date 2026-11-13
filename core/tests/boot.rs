@@ -48,7 +48,7 @@ fn boot_with(b: common::Boot) -> common::Run {
     assert!(r.powered_off(), "no SYSTEM_OFF");
     let out = &r.console;
     assert!(
-        out.contains("webpc: test ok\n") && out.contains("webpc: test exit 0\n"),
+        out.contains("waarm64: test ok\n") && out.contains("waarm64: test exit 0\n"),
         "test script failed"
     );
     assert!(out.contains("answer: 42\n"));
@@ -59,7 +59,7 @@ fn boot_with(b: common::Boot) -> common::Run {
         rng.is_some_and(|h| h.len() == 32 && h.bytes().all(|b| b.is_ascii_hexdigit())),
         "hwrng: {rng:?}"
     );
-    assert_eq!(r.hvc, "webpc: hvc0 ok\n");
+    assert_eq!(r.hvc, "waarm64: hvc0 ok\n");
     assert!(out.contains("/dev/root / ext4 ro,"), "root filesystem");
     assert!(out.contains("vda magic: 53ef\n"));
     r
@@ -118,11 +118,11 @@ fn linux_boots_through_the_block_interpreter() {
     });
 }
 
-/// Parallel SMP isn't reproducible: `WEBPC_PARALLEL_RUNS` boots each (default 2).
+/// Parallel SMP isn't reproducible: `WAARM64_PARALLEL_RUNS` boots each (default 2).
 #[test]
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn linux_boots_in_parallel_on_1_2_and_4_vcpus() {
-    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
+    let runs = std::env::var("WAARM64_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
     for n in [1, 2, 4] {
         for _ in 0..runs {
             let r = boot_mode("linux/Image", true, n, true);
@@ -166,7 +166,10 @@ fn root_is_writable_through_an_overlay_across_boots() {
                 .join("\n")
         );
         let out = &r.console;
-        assert!(r.powered_off() && out.contains("webpc: test ok\n"), "{out}");
+        assert!(
+            r.powered_off() && out.contains("waarm64: test ok\n"),
+            "{out}"
+        );
         assert!(out.contains(&format!("rw: boot {n}\n")), "{out}");
         let verb = if n == 1 { "rw: wrote " } else { "rw: kept " };
         hashes.push(
@@ -192,7 +195,7 @@ fn boot_devices(script: &str) -> common::Run {
     });
     eprintln!("[{}]\n{}", r.summary, r.console);
     assert!(
-        r.powered_off() && r.console.contains("webpc: test ok\n"),
+        r.powered_off() && r.console.contains("waarm64: test ok\n"),
         "test script failed"
     );
     r
@@ -230,10 +233,10 @@ fn input_events_reach_the_guest() {
     let r = boot_devices("/test-input.sh");
     let out = &r.console;
     for want in [
-        "N: Name=\"webpc keyboard\"\n",
+        "N: Name=\"waarm64 keyboard\"\n",
         "B: EV=120003\n",
         "B: LED=7\n",
-        "N: Name=\"webpc tablet\"\n",
+        "N: Name=\"waarm64 tablet\"\n",
         "B: EV=f\n",
         "B: REL=1940\n", // REL_HWHEEL, REL_WHEEL, REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES
         "B: ABS=3\n",
@@ -264,7 +267,7 @@ fn console_input_reaches_a_shell() {
     eprintln!("[{}]\n{}", r.summary, r.console);
     assert!(r.powered_off(), "no SYSTEM_OFF");
     assert!(r.console.contains(common::CONSOLE_INPUT_WANT), "no echo");
-    assert!(r.console.contains("webpc: test exit 0\n"));
+    assert!(r.console.contains("waarm64: test exit 0\n"));
     assert_eq!(r.steps, common::steps("console-input"));
 }
 
@@ -340,7 +343,7 @@ fn the_device_test_runs_through_snapshots() {
         r.summary, r.snapshots
     );
     assert!(
-        r.powered_off() && r.console.contains("webpc: test ok\n"),
+        r.powered_off() && r.console.contains("waarm64: test ok\n"),
         "{}",
         r.console
     );
@@ -395,11 +398,11 @@ fn console_input_survives_snapshots() {
 /// thread per vCPU; between them the VM is saved with every vCPU out of the
 /// core and a new one restored (power states, CPU_ON requests, WFI, the timer
 /// lines and the clock go through the state). Not reproducible:
-/// `WEBPC_PARALLEL_RUNS` boots each (default 2).
+/// `WAARM64_PARALLEL_RUNS` boots each (default 2).
 #[test]
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn linux_boots_in_parallel_through_snapshots() {
-    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
+    let runs = std::env::var("WAARM64_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
     let kernel = common::image("linux/Image");
     let devices = common::guest_devices("buildroot/rootfs.ext4", None);
     for n in [1, 2, 4] {
@@ -420,8 +423,8 @@ fn linux_boots_in_parallel_through_snapshots() {
                 out.contains(&format!("smp: Brought up 1 node, {n} CPU")),
                 "{out}"
             );
-            assert!(out.contains("webpc: test ok\n") && out.contains("webpc: test exit 0\n"));
-            assert_eq!(r.hvc, "webpc: hvc0 ok\n");
+            assert!(out.contains("waarm64: test ok\n") && out.contains("waarm64: test exit 0\n"));
+            assert_eq!(r.hvc, "waarm64: hvc0 ok\n");
             assert!(r.snapshots.len() >= 20, "{} snapshots", r.snapshots.len());
         }
     }

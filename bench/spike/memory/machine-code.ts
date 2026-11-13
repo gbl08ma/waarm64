@@ -38,7 +38,7 @@ export function parseJitdump(buf: Buffer): Code[] {
 }
 
 if (import.meta.main) {
-  const dir = mkdtempSync(join(os.tmpdir(), 'webpc-jitdump-'));
+  const dir = mkdtempSync(join(os.tmpdir(), 'waarm64-jitdump-'));
   const server = await startServer();
   const port = (server.address() as { port: number }).port;
   const browser = await chromium.launch({

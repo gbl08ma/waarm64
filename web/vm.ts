@@ -365,7 +365,7 @@ const RECEIVED_MAX = 4096;
 
 /** A flush of at least this many slots is worth a {@link collect}. */
 const NUDGE_SLOTS = 4096;
-/** An install this long is logged (`webpc-slow install`). */
+/** An install this long is logged (`waarm64-slow install`). */
 const SLOW_INSTALL_MS = 20;
 
 /**
@@ -464,9 +464,9 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
-      // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
+      // timelines (bench/gpu/guest-session.ts collects `waarm64-slow` lines).
       const ms = performance.now() - t0;
-      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
+      if (ms >= SLOW_INSTALL_MS) console.debug(`waarm64-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
       return at;
     },
     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
@@ -738,10 +738,10 @@ export const TABLET_EVENTS = [[3, 0, 16384], [3, 1, 8192], [1, 272, 1], [0, 0, 0
  * `read`, then 100 lines (5.5 KB with the rest: more than the 4 KiB RX ring)
  * whose md5sum it prints before it exits.
  */
-export const CONSOLE_INPUT = 'stty -echo; read l; echo "webpc: got [$l]"; head -n 100 | md5sum; exit\nhello from the host\n' +
+export const CONSOLE_INPUT = 'stty -echo; read l; echo "waarm64: got [$l]"; head -n 100 | md5sum; exit\nhello from the host\n' +
   Array.from({ length: 100 }, (_, i) => `line ${String(i).padStart(3, '0')}: the quick brown fox jumps over the lazy dog\n`).join('');
 export const CONSOLE_INPUT_STEP = 30_000_000;
-export const CONSOLE_INPUT_WANT = 'webpc: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n';
+export const CONSOLE_INPUT_WANT = 'waarm64: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n';
 /** Their kernel command line. */
 /** `jit_helper_report` of the vCPU at `cpu` (a `jit_new` vCPU, or `vm_cpu`), parsed. */
 export function helperReport(ex: { jit_helper_report(v: number): number }, memory: WebAssembly.Memory, cpu: number): { op: string; calls: number }[] {
@@ -759,7 +759,7 @@ export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro
 /**
  * Distro images from images/build.sh (paths under target/images) with a command
  * line that runs a test and powers off (core/tests/common `ALPINE`).
- * Alpine: OpenRC's local service runs images/alpine/webpc.start.
+ * Alpine: OpenRC's local service runs images/alpine/waarm64.start.
  */
 export const DISTROS = {
   alpine: { kernel: 'alpine/Image', initrd: 'alpine/initramfs-virt', disk: 'alpine/rootfs.ext4', cmdline: 'console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro' },

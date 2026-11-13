@@ -20,7 +20,7 @@ const have = spawnSync('qemu-img', ['--version']).status === 0;
 const skip = !have && 'SKIPPED: no qemu-img';
 
 let dir: string;
-before(() => { dir = mkdtempSync(join(tmpdir(), 'webpc-qcow2w-')); });
+before(() => { dir = mkdtempSync(join(tmpdir(), 'waarm64-qcow2w-')); });
 after(() => { if (dir) rmSync(dir, { recursive: true }); });
 
 /** What `hashSource` is: node:crypto's SHA-256 of the SHA-256 digests of the slices. */
@@ -127,7 +127,7 @@ for (const compress of [false, true]) {
       assert.match(qemu('info', join(dir, 'changes.qcow2')), /backing file: base\.raw/);
       assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'changes.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
       // Our header extension carries the base's hash, after the format name.
-      assert.ok(out.bytes().subarray(0, CLUSTER).toString('latin1').includes(`WPC2\0\0\0@${hash}`));
+      assert.ok(out.bytes().subarray(0, CLUSTER).toString('latin1').includes(`WAM2\0\0\0@${hash}`));
     });
 
     test(`the whole disk (${name}${how}) as qcow2: zero clusters left out, check passes, and qemu-img and our reader see the merged disk`, { skip }, async () => {

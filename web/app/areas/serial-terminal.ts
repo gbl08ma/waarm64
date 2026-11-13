@@ -115,7 +115,7 @@ export class SerialTerminal {
         run: () => {
           const a = Object.assign(document.createElement('a'), {
             href: URL.createObjectURL(new Blob([this.log], { type: 'text/plain' })),
-            download: `webpc-${machine}-serial-${new Date().toISOString().replace(/[:.]/g, '-')}.log`,
+            download: `waarm64-${machine}-serial-${new Date().toISOString().replace(/[:.]/g, '-')}.log`,
           });
           a.click();
           setTimeout(() => URL.revokeObjectURL(a.href), 10_000);

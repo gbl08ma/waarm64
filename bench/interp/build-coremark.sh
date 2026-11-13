@@ -26,5 +26,5 @@ echo "$out/coremark.bin: $(stat -c %s "$out/coremark.bin") bytes, $ITERATIONS it
 # syscalls (CoreMark picks its iterations and times itself), to run natively
 # and under qemu-aarch64: target/bench/coremark-linux.
 clang --target=aarch64-linux-gnu $flags -ffreestanding -nostdlib -static -fno-stack-protector -fno-pie \
-  -fuse-ld=lld -fno-builtin -DWEBPC_LINUX -DITERATIONS=0 "-DFLAGS_STR=\"$flags\"" -Icoremark -I"$cm" \
+  -fuse-ld=lld -fno-builtin -DWAARM64_LINUX -DITERATIONS=0 "-DFLAGS_STR=\"$flags\"" -Icoremark -I"$cm" \
   -o "$out/coremark-linux" coremark/core_portme.c "$cm"/core_{list_join,main,matrix,state,util}.c

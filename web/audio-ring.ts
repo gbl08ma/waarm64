@@ -4,7 +4,7 @@
 // channels) behind a header of i32 words, read and written with Atomics only. The indices count frames and wrap
 // at 2^32: `(write - read) >>> 0` is what's queued.
 //
-// The microphone's ring (audio S4) is the same the other way round: the page's `webpc-mic` worklet writes what the
+// The microphone's ring (audio S4) is the same the other way round: the page's `waarm64-mic` worklet writes what the
 // microphone hears (WRITE, its QUANTA heartbeat) while the device worker asks for it (RUN, at RATE), and the device
 // worker's source reads it (READ); frames the ring had no room for are counted in UNDERRUNS (times) and GAP_FRAMES.
 //

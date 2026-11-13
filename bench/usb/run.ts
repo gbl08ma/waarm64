@@ -35,7 +35,7 @@ async function withPage<T>(f: (page: import('playwright-core').Page) => Promise<
   }
 }
 
-const opts = { serial: 'webpc-zero', n: 200, sizes: [4096, 65536, 1048576], depths: [1, 4, 8], ms: 1500 };
+const opts = { serial: 'waarm64-zero', n: 200, sizes: [4096, 65536, 1048576], depths: [1, 4, 8], ms: 1500 };
 
 if (order) {
   const seen: { worker: string[][]; page: string[] }[] = [];

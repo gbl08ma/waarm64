@@ -327,5 +327,5 @@ JIT's arm runs at 1.0–1.6× on Debian's workloads and 1.06–1.18× on copies 
 accesses to that memory pay it. One memory64 would charge ~15–20% to every access of every machine to remove that
 uneven cost. **A single memory64 is not worth it while V8 checks each access.** Revisit if V8 gains range analysis for
 memory64 indexes or hoists checks out of loops. The core builds for wasm64 unchanged (`cargo build --target
-wasm64-unknown-unknown -p webpc-core`), so a prototype would mainly need the JIT's addresses in i64 and the host's
+wasm64-unknown-unknown -p waarm64-core`), so a prototype would mainly need the JIT's addresses in i64 and the host's
 pointer arguments as BigInt.

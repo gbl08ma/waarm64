@@ -9,20 +9,20 @@ Development happens in the Lima VM **`dev`** on the M4 Mac mini (`macmini.lan`: 
 the x86_64 desktop (which the user needs for other work).
 - openSUSE Tumbleweed aarch64, Lima `vz`, 8 vCPUs, 18 GiB, 150 GiB disk, no host mounts, from
   `template:experimental/opensuse-tumbleweed` with Lima's containerd off. Home is `/home/gabriel.guest`; the repo is
-  `~/Development/webpc` (remote `origin` on GitHub).
+  `~/Development/waarm64` (remote `origin` on GitHub).
 - From outside: `ssh macmini.lan /opt/homebrew/bin/limactl shell dev`. Inside, `macmini.lan` points at the Mac host
   (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 4 GiB) shares the Mac:
   `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
-- The Mac host runs real-GPU benchmarks from `~/webpc-gpu-bench` (`bench/gpu/sway-mac.sh` copies what they need;
+- The Mac host runs real-GPU benchmarks from `~/waarm64-gpu-bench` (`bench/gpu/sway-mac.sh` copies what they need;
   nothing is installed there; its disk has little room: keep it small). Their browser is the current Stable Chrome
-  for Testing, which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/webpc-chrome/<version>/` when
+  for Testing, which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/waarm64-chrome/<version>/` when
   Stable moves, not Playwright's own download: that lags Stable and is an early build of its milestone (153.0.8010.12
   read clobbered immediates in indirect dispatches, which 153's release didn't: GD G4). After every run on the Mac (not the VM's own CI,
   which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load and any Chrome for Testing no run owns
   (`--kill` ends those, by PID): a run that hangs the GPU leaves its browser behind (the harness's alarm ends node,
   not Chrome), and a GPU held at 100% throttles the whole Mac, the dev VM's CI with it (GD G4: five such browsers made
   CI's timing tests fail for an hour). A GPU process stuck exiting can't be ended: only a restart of the Mac frees it.
-- Side checkouts: `../webpc-exp` and `../webpc-base` (detached worktrees for A/B experiments).
+- Side checkouts: `../waarm64-exp` and `../waarm64-base` (detached worktrees for A/B experiments).
 - Benchmark numbers from the x86_64 desktop (M0 to M5 step 7) aren't comparable with the VM's.
 
 ## Worktrees
@@ -76,7 +76,7 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
 - **Go** (`net/tailscale/go.mod` pins the toolchain) builds the Go Tailscale client, `net/tailscale/build.sh` (no
   longer the page's: a test fixture, tests/ts-tailnet.test.ts's hand-over, kept because the Rust client keeps its node in
   the Go client's store format, `net/ts/src/store.rs`, its only format), the tailcat rig, and the local network
-  helper, `github.com/gbl08ma/webpc-net` (its own repository, checked out at `../webpc-net`; its `go.mod` pins go1.27.3; **go1.27-race** too, or `go test -race` doesn't link: `relocation target
+  helper, `github.com/gbl08ma/waarm64-net` (its own repository, checked out at `../waarm64-net`; its `go.mod` pins go1.27.3; **go1.27-race** too, or `go test -race` doesn't link: `relocation target
   __tsan_free not defined`). The networking tests'
   headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.
 
@@ -85,10 +85,10 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
 testing.md "USB" has how they're used. The VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so
 `tests/usb/gadget.sh install` can build `dummy_hcd` out of tree (openSUSE doesn't ship it; the source comes from
 kernel.org's stable tree for the running version) into `/lib/modules/<kver>/updates/`. Run it again after a kernel
-update. It also installs `/etc/udev/rules.d/70-webpc-usb.rules` (the 0525 gadgets' usbfs nodes, `/dev/uhid`, uhid's
-`hidraw` nodes and the ACM gadget's `/dev/ttyGS*` open to the user), `/etc/modprobe.d/50-webpc-usb.conf` (blocks
+update. It also installs `/etc/udev/rules.d/70-waarm64-usb.rules` (the 0525 gadgets' usbfs nodes, `/dev/uhid`, uhid's
+`hidraw` nodes and the ACM gadget's `/dev/ttyGS*` open to the user), `/etc/modprobe.d/50-waarm64-usb.conf` (blocks
 `usbtest` and `cdc_acm` on the host, so the gadgets stay free) and Chromium's managed policy
-`/etc/chromium/policies/managed/webpc-usb.json` (WebUSB grants the 0525 gadgets, and WebHID every HID device, to
+`/etc/chromium/policies/managed/waarm64-usb.json` (WebUSB grants the 0525 gadgets, and WebHID every HID device, to
 `http://127.0.0.1:8190`–`8197`). `qemu-hw-usb-host` (QEMU's `usb-host`, for `tests/usb/oracle.sh`): installing it
 moved QEMU from 11.1.1 to 11.1.2 on 2026-10-18, while `qemu-linux-user` (the corpus oracle) and `qemu-img` stay at
 11.1.1.
@@ -96,7 +96,7 @@ moved QEMU from 11.1.1 to 11.1.2 on 2026-10-18, while `qemu-linux-user` (the cor
 ## Deploying
 
 The page and the disk images' host `vmdisks.tny.im` (`deploy/disks/`), only when the user asks; images never on R2
-(remote-disks.md): wrangler in `~/.local/bin`, the Cloudflare token in `~/.config/cloudflare/webpc.env` (never print
+(remote-disks.md): wrangler in `~/.local/bin`, the Cloudflare token in `~/.config/cloudflare/waarm64.env` (never print
 it); frontend.md "Deployed at vm.tny.im".
 
 ## Dev-only tools
@@ -111,20 +111,20 @@ under Lima): use ASan builds and valgrind.
 The CI scripts, and when each must run, are in CLAUDE.md. The rest:
 
 ```sh
-scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
+scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/waarm64_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
-WEBPC_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus groups only (fast JIT iteration)
-node --test tests/jit-diff.test.ts                                 # JIT vs interpreter on random words (WEBPC_JIT_DIFF=<n>)
-WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long lockstep (CI runs 20M)
-WEBPC_DISTROS=alpine,alpine-user scripts/ci.sh   # which distro tests run (default: the current Alpine images; Debian is ci-debian.sh's)
-WEBPC_INTERP=1 node --test tests/boot-node*.test.ts     # also the long guests' interpreter runs in Node
-WEBPC_JIT_STRESS=1 node --test tests/boot-node*.test.ts # every Node boot under JIT-stress (hours; not routine)
+WAARM64_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus groups only (fast JIT iteration)
+node --test tests/jit-diff.test.ts                                 # JIT vs interpreter on random words (WAARM64_JIT_DIFF=<n>)
+WAARM64_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long lockstep (CI runs 20M)
+WAARM64_DISTROS=alpine,alpine-user scripts/ci.sh   # which distro tests run (default: the current Alpine images; Debian is ci-debian.sh's)
+WAARM64_INTERP=1 node --test tests/boot-node*.test.ts     # also the long guests' interpreter runs in Node
+WAARM64_JIT_STRESS=1 node --test tests/boot-node*.test.ts # every Node boot under JIT-stress (hours; not routine)
 cargo test --release --test boot -- --ignored --nocapture      # Buildroot natively (also: kvm_unit_tests, ltp, distros [alpine])
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/<name>/ (--check <name>); images.md
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]    # regenerate golden corpus groups (QEMU / the M4 oracle VM)
 scripts/tsan.sh                # ThreadSanitizer on the native parallel SMP runner (in ci.sh)
-WEBPC_PARALLEL_RUNS=20 cargo test --release --test baremetal baremetal_parallel   # parallel SMP, repeated
+WAARM64_PARALLEL_RUNS=20 cargo test --release --test baremetal baremetal_parallel   # parallel SMP, repeated
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])      # decoder sweep vs Capstone (~3 min; sys: seconds)
 (cd core && cargo fuzz run virtqueue)                           # libFuzzer on the virtio transport
 node tests/virgl-fuzz.ts [seconds] [first seed]               # virgl's stream decoder fuzzed (docs/testing.md "virgl fuzzing")
@@ -142,12 +142,12 @@ npm run dist                   # the page built (Vite) as static files for any w
 npm run serve                  # Vite's dev server with COOP/COEP and hot reloading on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
 node tools/screens.ts --label <name>   # screenshots of every page state without a guest (toolbar menus, Machines page wide and 720 px, dialogs, wizard steps) -> bench/results/local/screens/<name>/; --compare <other> --label <name>: what differs (frontend.md "Screenshots")
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
-(cd ../webpc-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
-WEBPC_NET_SRC=../webpc-net node --test tests/page-local.test.ts   # webpc's tests against that checkout instead of the commit tests/webpc-net.ts pins
+(cd ../waarm64-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
+WAARM64_NET_SRC=../waarm64-net node --test tests/page-local.test.ts   # waarm64's tests against that checkout instead of the commit tests/waarm64-net.ts pins
 net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; networking/tailnet.md)
 node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
 node bench/net/clients.ts 5    # the Tailscale client in Chromium (the Podman tailnet): load, Running, RTT, throughput, the worker's memory and CPU
-WEBPC_DISTROS=debian WEBPC_START_COLD=1 node --test tests/start.test.ts  # npm start on a fresh copy, building its own core
+WAARM64_DISTROS=debian WAARM64_START_COLD=1 node --test tests/start.test.ts  # npm start on a fresh copy, building its own core
 vk/build.sh [native]           # Venus's renderer -> target/vk/venus.wasm (vk/README.md), with its stamp venus.wasm.inputs
 images/build.sh venus          # the same in Podman (what npm start runs when the stamp is stale), installed in target/vk/
 npm run bench -- --page bench/interp/index.html [--only jit_mips]       # small guests, CoreMark

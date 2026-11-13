@@ -6,7 +6,7 @@
 // status (steps, steps in JIT code, compile time) sampled at its START and RUN markers.
 //
 // usage: timeout 900 node bench/apps/chromium.ts [--ncpus 4] [--json out.json] [page...]
-//   --wasm <file>: serve that core instead of target/.../webpc_core.wasm (A/B of a core change)
+//   --wasm <file>: serve that core instead of target/.../waarm64_core.wasm (A/B of a core change)
 //   pages default to chrome://newtab three times. Headless Chromium 153 in the guest serves the new tab page for
 //   every chrome:// URL (version, settings, credits: all "New Tab"); data: and file: URLs load as asked.
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
@@ -31,7 +31,7 @@ const renderers = () => execFileSync('ps', ['-eo', 'pid=,cputimes=,args=', '--so
 let perf: ChildProcess | undefined;
 const page = await browser.newPage();
 // --wasm <file>: a variant core in place of the built one (A/B of core changes without a rebuild in between).
-if (opt.wasm) await page.route('**/webpc_core.wasm', (r) => r.fulfill({ path: opt.wasm, contentType: 'application/wasm' }));
+if (opt.wasm) await page.route('**/waarm64_core.wasm', (r) => r.fulfill({ path: opt.wasm, contentType: 'application/wasm' }));
 page.on('console', (m) => { if (/panic|error/i.test(m.text())) console.log('# console:', m.text().slice(0, 400)); });
 page.on('pageerror', (e) => console.log('# pageerror:', String(e).slice(0, 400)));
 await page.goto(`${base}/web/app/?disk=${encodeURIComponent(opt.disk)}&ncpus=${opt.ncpus}&view=terminal`);

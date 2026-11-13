@@ -14,7 +14,7 @@ type Exports = {
 };
 
 async function setup() {
-  const url = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
+  const url = new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
   const wasm = url.protocol === 'file:' ? await (await import('node:fs/promises')).readFile(url) : await (await fetch(url)).arrayBuffer();
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);

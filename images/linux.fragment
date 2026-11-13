@@ -1,4 +1,4 @@
-# Linux 6.18 for webpc: allnoconfig plus these (images/build.sh checks that each
+# Linux 6.18 for waarm64: allnoconfig plus these (images/build.sh checks that each
 # one took effect). Our platform only: arm64 4K pages and 48-bit VA, GICv2 and GICv3 (M7),
 # PL011 with earlycon, the arch timer, PSCI, initrd support; printk, devtmpfs
 # (mounted by the kernel: the root filesystem has an empty /dev); virtio-mmio

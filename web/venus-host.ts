@@ -534,7 +534,7 @@ export class VenusRenderer {
     return { ringCmds: sum(0, 2), queueCmds: sum(2, 4), nestedCmds: sum(4, 6), replies: sum(1, 2) + sum(3, 4) + sum(5, 6), idles: events[0], notifies: events[1] };
   }
 
-  /** The emulated work left out from now on (`VenusOptions.skip`; the bench hook `window.__webpcVkSkip`), none with []. */
+  /** The emulated work left out from now on (`VenusOptions.skip`; the bench hook `window.__waarm64VkSkip`), none with []. */
   skip(paths: readonly string[]) {
     const known = paths.filter((k): k is keyof typeof SKIPS => k in SKIPS);
     for (const k of paths) if (!(k in SKIPS)) console.warn(`venus: vkskip=${k} ignored (not one of ${Object.keys(SKIPS).join(', ')})`);

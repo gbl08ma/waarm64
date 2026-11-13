@@ -6,7 +6,7 @@
 // dist` writes it) served on 127.0.0.1 (Vite's preview server) and the URL. Each step but the page's build (~1 s) is
 // skipped when its output is current, so a second start takes about a second. No disk image: the page waits for the user's (docs/frontend.md).
 //   npm start [-- --host <addr>] [-- --port <n>] [-- --prepare-only]
-// PORT sets the port too (default 8080); WEBPC_DL the download cache.
+// PORT sets the port too (default 8080); WAARM64_DL the download cache.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -19,7 +19,7 @@ import { prepareTailnetClient } from './tailscale.ts';
 // serve.ts and dist.ts are imported once `npm ci` ran: they run Vite, a package it installs.
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/webpc_core.wasm');
+export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/waarm64_core.wasm');
 const WASM_STAMP = WASM + '.inputs';
 
 /** Why node_modules doesn't match package-lock.json (npm's own record of what it installed, node_modules/.package-lock.json), or undefined if it does. */
@@ -70,7 +70,7 @@ export function firmwareStale(root = ROOT): string | undefined {
 }
 
 /** Clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3), which the page hands a machine with the setting. */
-export const AGENT = 'target/images/agent/webpc-agent';
+export const AGENT = 'target/images/agent/waarm64-agent';
 /** Beside a build of the agent by the host's cargo (images/build.sh agent without Podman): for tests, not for `npm run dist`. */
 export const AGENT_HOST_BUILD = 'target/images/agent/HOST-BUILD';
 
@@ -191,7 +191,7 @@ export async function main(argv = process.argv.slice(2)) {
   const addr = server.address() as { port: number };
   const shown = values.host === '0.0.0.0' || values.host === '::' ? '127.0.0.1' : values.host.includes(':') ? `[${values.host}]` : values.host;
   const url = `http://${shown}:${addr.port}${APP}`;
-  console.log(`\nwebpc is ready (in ${((performance.now() - t0) / 1000).toFixed(1)} s): open ${url} in Chromium or Chrome.`);
+  console.log(`\nwaarm64 is ready (in ${((performance.now() - t0) / 1000).toFixed(1)} s): open ${url} in Chromium or Chrome.`);
   if (values.host !== '127.0.0.1' && values.host !== 'localhost' && values.host !== '::1') {
     console.log(`Listening on ${values.host}: a browser elsewhere gets no cross-origin isolation over plain HTTP (only localhost counts as secure), so the page won't run there; forward the port instead.`);
   }
