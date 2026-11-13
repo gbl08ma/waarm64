@@ -1750,12 +1750,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   prebuilt; for dEQP-VK (VK-GL-CTS ~20 min natively on arm64) a prebuilt `deqp-vk.ext4` and `guest-vk.qcow2` from the
   dev VM, put where the cloud's egress allows (GitHub release downloads are refused), may be the cheaper way.
 
-- **dEQP-GLES3's `flush_finish.wait`, `.flush` and `.flush_wait` taken out of tests/deqp/gles3.txt (2026-11-13):** timing
-  cases (their calibration's draw times jump when both lists run at once): a CompatibilityWarning in `scripts/ci-deqp.sh`'s
-  sample (seed 3554039740) twice in a row, as in bench/gpu/REPORT.md (seed 2720526300); all three pass alone
-  (`CASES=` with `bench/gpu/deqp-run.ts`). Back in the list if the runner gives timing cases a list of their own, run
-  alone after the others. GLES2's three haven't warned yet.
-
 ## Upstream reports (to file at the project's end)
 
 Bugs found in other projects, kept here until the user's round-up of upstream reports; each with what's needed to

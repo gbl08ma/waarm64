@@ -16,7 +16,9 @@
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
 // DISK2=<the second disk, a path under the repo, default target/deqp's>, GUEST_ENV=<VAR=value ... for deqp-vk: e.g. a Venus
 // built from another Mesa on that disk, VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json (VK4 T24)>,
-// RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list; JOBS_BLOCK=<k>: blocks of k cases dealt in turn), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
+// LATE=<file of case names: run after the others, alone in one dEQP process: timing cases, whose calibration a busy host
+// upsets; their statuses join the others'>, LATE_GO=stdin (before them, print `deqp-run: late cases waiting` and wait
+// for a line on stdin: the caller holds them until no other machine runs), RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list; JOBS_BLOCK=<k>: blocks of k cases dealt in turn), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases), CONSOLE_FILE=<path> (guest-session.ts: the renderers' console
 // lines whole, a shader that didn't compile with its WGSL).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -38,9 +40,10 @@ const JOBS = Math.max(1, Number(process.env.JOBS ?? 1));
 // builtin_functions.precision, ~1,250 cases of up to 30 s, kept one of four processes 1,500 s where the others took
 // 120-400); else each process takes a contiguous block of it (dEQP-VK's runs: neighbours as in the list).
 const JOBS_BLOCK = Number(process.env.JOBS_BLOCK ?? 0);
+// /tmp/deqp.sh's split of its list ($1) to its processes ($2).
 const SPLIT = JOBS_BLOCK > 0
-  ? `awk -v b=${JOBS_BLOCK} -v j=${JOBS} '{ f = sprintf("/tmp/jcases.%02d", int((NR - 1) / b) % j); print > f }' /tmp/cases.txt`
-  : `split -n l/${JOBS} -d -a 2 /tmp/cases.txt /tmp/jcases.`;
+  ? `awk -v b=${JOBS_BLOCK} -v j=$2 '{ f = sprintf("/tmp/jcases.%02d", int((NR - 1) / b) % j); print > f }' $1`
+  : `split -n l/$2 -d -a 2 $1 /tmp/jcases.`;
 const CAPTURE = process.env.CAPTURE;
 // Dawn zeroes workgroup memory through Vulkan's VK_KHR_zero_initialize_workgroup_memory where the device has it, which
 // costs SwiftShader ~17 s of compile for a 16 KiB array (VK4 T2: `max_workgroup_memory.*` timed out, a crash); Tint's
@@ -114,20 +117,38 @@ done
 echo "$(( $(date +%s) - start ))" > $J/elapsed
 EOF
 cat > /tmp/deqp.sh <<'EOF'
+# sh /tmp/deqp.sh <cases> <processes>: the statuses, logs and output appended to /tmp/deqp.{res,qpa,out}.
 echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
 start=$(date +%s)
 rm -rf /tmp/j[0-9]* /tmp/jcases.*
 SPLIT
 k=0; for f in /tmp/jcases.*; do mkdir -p /tmp/j$k; mv $f /tmp/j$k/cases.txt; J=/tmp/j$k sh /tmp/deqp1.sh & k=$((k + 1)); done
 wait
-cat /tmp/j[0-9]*/deqp.res > /tmp/deqp.res; cat /tmp/j[0-9]*/deqp.qpa > /tmp/deqp.qpa; cat /tmp/j[0-9]*/deqp.out > /tmp/deqp.out
+cat /tmp/j[0-9]*/deqp.res >> /tmp/deqp.res; cat /tmp/j[0-9]*/deqp.qpa >> /tmp/deqp.qpa; cat /tmp/j[0-9]*/deqp.out >> /tmp/deqp.out
 echo "elapsed $(( $(date +%s) - start )); each: $(cat /tmp/j[0-9]*/elapsed | tr '\n' ' ')"
-EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('SPLIT', SPLIT).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '$J/rest.txt')));
+EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('SPLIT', () => SPLIT).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '$J/rest.txt')));
 const t0 = performance.now();
-const elapsed = await run('sh /tmp/deqp.sh', (LIMIT_S + 120) * 1000);
+const elapsed = await run(`: > /tmp/deqp.res; : > /tmp/deqp.qpa; : > /tmp/deqp.out; sh /tmp/deqp.sh /tmp/cases.txt ${JOBS}`, (LIMIT_S + 120) * 1000);
 const seconds = (performance.now() - t0) / 1000;
 results.seconds = seconds;
 log('ran', elapsed, seconds.toFixed(0), 's');
+// LATE: the timing cases, after the others, in one process (with LATE_GO=stdin once the caller says go); then counted
+// with the list's (/tmp/cases.txt).
+if (process.env.LATE) {
+  const late = readFileSync(process.env.LATE, 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#'));
+  await pasteSerial(`cat > /tmp/late.txt <<'EOF'\n${late.join('\n')}\nEOF`);
+  if (process.env.LATE_GO === 'stdin') {
+    console.log('deqp-run: late cases waiting');
+    const t = performance.now();
+    await new Promise((resolve) => process.stdin.once('data', resolve));
+    process.stdin.destroy();
+    results.lateWaitS = Math.round((performance.now() - t) / 1000);
+  }
+  const t1 = performance.now();
+  log('late', late.length, await run('sh /tmp/deqp.sh /tmp/late.txt 1; cat /tmp/late.txt >> /tmp/cases.txt', (LIMIT_S + 120) * 1000), ((performance.now() - t1) / 1000).toFixed(0), 's');
+  results.late = late.length;
+  results.cases = (results.cases as number) + late.length;
+}
 // Venus's pipelines over the run (web/gpu-worker.ts `venusPipelines`: made, their ms until ready, the translator's
 // calls and ms): where a slow case's time goes (VK4 T21).
 if (vk) {

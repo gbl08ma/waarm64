@@ -44,12 +44,12 @@ only edits docs: `.md` files or code comments):
   tone heard, the microphone, snapshots while it plays); it must pass too when a change touches sound (virtio-snd,
   the sound ring, the Sound menu, the microphone). They time the sound against the clock, so they run alone:
   beside `npm test`'s other files a starved guest failed their timing now and then (backlog).
-- **`scripts/ci-deqp.sh`** (~9 min; `--full` ~48 min) runs dEQP on the page (`page-deqp`: GLES2's and GLES3's pass lists in
+- **`scripts/ci-deqp.sh`** (~11 min; `--full` ~49 min) runs dEQP on the page (`page-deqp`: GLES2's and GLES3's pass lists in
   `tests/deqp/`, every case expected to pass, a machine each, both at once); it must pass too when a change touches 3D (the
   virgl renderer, the TGSI translator, the caps, the GPU worker, virtio-gpu's 3D commands), and at the end of a
   graphics track. It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are every
   case of dEQP's mustpass lists that passed on SwiftShader in the census of 2026-11-09 (17,027 and 44,399:
-  bench/gpu/REPORT.md "dEQP-GLES's census"; 17,035 and 44,476 with the cases the caps from WebGL2's extensions added, 44,473 after three timing cases were filed; `bench/gpu/deqp-census.ts --lists` makes them from a whole run's results).
+  bench/gpu/REPORT.md "dEQP-GLES's census"; 17,035 and 44,476 with the cases the caps from WebGL2's extensions added; `bench/gpu/deqp-census.ts --lists` makes them from a whole run's results).
   By default a sample of each, as `ci-deqp-vk.sh`'s: every 8th case of each group (a name's second to fourth parts)
   from an offset per group a seed draws, at least one case a group, in the list's order (`tests/deqp-lists.ts`), so
   runs together cover the lists; each run prints its seed (`WAARM64_DEQP_SEED=<n>` runs that sample again). **A case
@@ -57,7 +57,10 @@ only edits docs: `.md` files or code comments):
   fixed, flaky or not. `--full` (`WAARM64_DEQP_FULL=1`) runs the whole lists: at a graphics track's end and for a change
   that cuts across groups (the translator, the renderer's state). A machine runs four dEQP processes
   (`WAARM64_DEQP_JOBS`), the list dealt to them in blocks of 16 (`deqp-run.ts`'s `JOBS_BLOCK`: in quarters, GLES3's
-  slow `builtin_functions.precision` group fell to one process, 1,500 s where the others took 120 to 400). CI's Chromium is
+  slow `builtin_functions.precision` group fell to one process, 1,500 s where the others took 120 to 400). The timing
+  cases (`flush_finish`: their calibration's draw times jump on a busy host, a CompatibilityWarning when both lists ran
+  at once) are dealt to no one: every one runs after its list, in one dEQP process, once no other machine is running
+  (`deqp-run.ts`'s `LATE` and `LATE_GO=stdin`, ~35 s a list). CI's Chromium is
   SwiftShader; a real GPU differs (graphics.md "Testing": on the Mac's, ANGLE on Metal, 85 GLES2 and 129 GLES3 cases fail,
   all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2`, `gles3` or `vk`, the last with `VIRGL_GPU=virgl,vulkan`, `STRIDE`/`OFFSET`/`CASES`

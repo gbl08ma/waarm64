@@ -1148,7 +1148,7 @@ The census of 2026-11-09 (bench/gpu/REPORT.md "dEQP-GLES's census") ran both lis
 failing, every "not supported" WebGL2's limit, the run's configuration or a cap we didn't take from WebGL2's
 extensions; independent blending and clip control from them since (REPORT.md "virgl's caps from WebGL2's extensions")
 pass 85 more. **`scripts/ci-deqp.sh`** runs the pass lists in `tests/deqp/`, every case that passes (17,035 and
-44,473: three timing cases filed, docs/backlog.md): a seeded sample by default, `--full` the whole lists (docs/testing.md). Groups that caught regressions
+44,476): a seeded sample by default, `--full` the whole lists (docs/testing.md). Groups that caught regressions
 a thin sample missed: GLES3's `lifetime`, `occlusion_query` and `texstorage2d/3d.format` (a query destroyed while
 pending hung the guest; the drawn depth upload's `UNPACK_ALIGNMENT`); a sample takes an eighth of each.
 
