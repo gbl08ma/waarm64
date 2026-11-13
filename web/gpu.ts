@@ -1032,7 +1032,7 @@ export class Gpu {
 
   /**
    * Why `save` would refuse now, or undefined, without reading anything back: a snapshot asks before it touches the
-   * machine (before the clock catch-up's sleep key and the pause; web/app/worker-snapshot.ts). `save` decides again.
+   * machine (before its input is held and the pause; web/app/worker-snapshot.ts). `save` decides again.
    */
   async refusal(): Promise<WireError | undefined> {
     if (this.venusInUse()) return toWire(msg('display:gpu.unsaveable.venus'));

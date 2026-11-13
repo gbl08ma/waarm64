@@ -59,8 +59,8 @@ export type Input = {
   release(): void;
   /**
    * Holds the guest's input (on) or lets it through again (off): while held, what's held is released and the element's
-   * keys, pointer, wheel and touches go nowhere, so a snapshot's sleep key isn't undone by a mouse moved over the screen
-   * (KDE cancels a suspend on any input) and nothing arrives while the machine is paused (docs/frontend.md "The guest's clock").
+   * keys, pointer, wheel and touches go nowhere, so nothing arrives while the machine is paused for a save
+   * (docs/frontend.md "Snapshots").
    */
   hold(on: boolean): void;
   /** Whether the input is held (`hold`). */

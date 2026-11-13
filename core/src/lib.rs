@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 66;
+pub const ABI_VERSION: u32 = 67;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -931,19 +931,6 @@ pub unsafe extern "C" fn vm_suspended(vm: *const vm::Vm) -> u32 {
 pub unsafe extern "C" fn vm_wake(vm: *const vm::Vm) -> u32 {
     // SAFETY: guaranteed by the caller.
     unsafe { &*vm }.wake_suspended() as u32
-}
-
-/// Moves a suspended guest's realtime clock on by `ns` (the time it slept
-/// through while the machine was in a file); the RTC stays on the host's
-/// time. 1 if done; 0 if the guest isn't suspended or time is deterministic.
-/// Parallel mode: from any thread; round-robin: between [`vm_run`] calls.
-///
-/// # Safety
-/// See the note above [`vm_new`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn vm_clock_skip(vm: *const vm::Vm, ns: u64) -> u32 {
-    // SAFETY: guaranteed by the caller.
-    unsafe { &*vm }.clock_skip(ns) as u32
 }
 
 // JIT plumbing (M5 step 1), for tests/jit.test.ts and bench/jit.

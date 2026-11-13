@@ -830,10 +830,9 @@ fn a_realtime_clock_continues_and_the_rtc_shows_the_hosts_time() {
 }
 
 #[test]
-fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_time() {
+fn system_suspend_waits_for_the_host_and_restores_with_the_rtc_on_host_time() {
     const LDR_W2_X0: u32 = 0xb940_0002; // ldr w2, [x0]
     const ENTRY: u64 = RAM_BASE + 0x100;
-    const HOUR: u64 = 3_600_000_000_000;
     let cfg = VmConfig {
         deterministic: 0,
         rtc: 1_700_000_000_000,
@@ -846,7 +845,6 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     (a.cpu().x[0], a.cpu().x[1]) = (0x8400_000a, 0xc400_000e); // FEATURES(SYSTEM_SUSPEND)
     a.vm.run(1);
     assert_eq!(a.cpu().x[0], 0);
-    assert!(!a.vm.clock_skip(HOUR), "not suspended");
     // SYSTEM_SUSPEND(entry, context): the context is the RTC's address, which the entry reads.
     let c = a.cpu();
     (c.x[0], c.x[1], c.x[2]) = (0xc400_000e, ENTRY, RTC);
@@ -854,7 +852,7 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     assert_eq!(a.vm.exit.value, u64::MAX, "nothing wakes it but the host");
     assert!(a.vm.suspended());
     let state = a.save();
-    // Restored an hour later: the clock moves on by that hour, the RTC doesn't move twice.
+    // Restored an hour later: the RTC shows the host's time (the guest agent sets its clock from it, not the core).
     let later = VmConfig {
         rtc: cfg.rtc + 3_600_000,
         ..cfg
@@ -862,16 +860,12 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     let (mut b, r) = a.restore(&state, later, &[]);
     assert_eq!(r, Ok(()));
     assert!(b.vm.suspended());
-    let before = b.vm.now();
-    assert!(b.vm.clock_skip(HOUR));
-    assert_eq!(b.vm.now() - before, 3600 * 62_500_000);
     assert!(b.vm.wake_suspended());
     assert!(!b.vm.suspended() && !b.vm.wake_suspended());
     assert_eq!(b.vm.run(2), exit::BUDGET);
     assert_eq!((b.cpu().pc, b.cpu().x[0]), (ENTRY + 4, RTC));
     let s = b.cpu().x[2];
     assert!((1_700_003_600..1_700_003_602).contains(&s), "{s}");
-    assert!(!b.vm.clock_skip(HOUR), "awake again");
     // A state without the field restores awake.
     let (c, r) = a.restore(&state[..state.len() - 20], later, &[]);
     assert_eq!(r, Ok(()));
@@ -889,7 +883,7 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     (c.x[0], c.x[1], c.x[2]) = (0xc400_000e, ENTRY, 0);
     assert_eq!(d.vm.run(1), exit::BUDGET);
     assert_eq!(d.cpu().x[0], u64::MAX);
-    assert!(!d.vm.suspended() && !d.vm.clock_skip(HOUR));
+    assert!(!d.vm.suspended());
 }
 
 #[test]

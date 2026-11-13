@@ -231,7 +231,7 @@ transports do.
   the same table again. A driver's resume writes ERSTBA again before CRS (Linux's `xhci_restore_registers`), which
   starts the ring over; without CRS putting it back, the producer wrote at the ring's start while the guest read
   mid-ring, and every ERDP write raised the interrupt again (a stuck guest at ~190k IRQ/s after its PSCI
-  SYSTEM_SUSPEND, the clock catch-up's). A CRS with nothing kept, or another table, sets USBSTS.SRE, and Linux
+  SYSTEM_SUSPEND, then the clock catch-up's, now `systemctl suspend`'s). A CRS with nothing kept, or another table, sets USBSTS.SRE, and Linux
   initializes the controller again. Halted, an ERDP write takes the position without interrupting; the unread
   events interrupt once R/S is set.
 - **Hot-plug:** an attach or detach from the host is a connect status change. On a detach, the TDs in

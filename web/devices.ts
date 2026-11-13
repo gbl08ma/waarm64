@@ -5,7 +5,6 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { msg, msgOf, type Msg, type WireError } from './msg.ts';
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
-import { agentDevice, agentEntry, type AgentSpec } from './agent-device.ts';
 import { vsockDevice, vsockEntry, type VsockSpec } from './vsock-device.ts';
 import { p9, type P9Files } from './9p.ts';
 import { folders9p, type FolderSpec } from './9p-folders.ts';
@@ -61,7 +60,6 @@ export type DeviceSpec =
   | GpuSpec
   | SndSpec
   | { type: 'clock' }
-  | AgentSpec
   | VsockSpec;
 
 export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][]; swap?: string };
@@ -177,7 +175,7 @@ export type SndSpec = {
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : (d.type === 'input' || d.type === 'snd' || d.type === '9p' || d.type === 'agent' || d.type === 'vsock') && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : (d.type === 'input' || d.type === 'snd' || d.type === '9p') && d.port ? [d.port] : d.type === 'vsock' ? [...(d.port ? [d.port] : []), ...(d.agent ? [d.agent] : [])] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -212,9 +210,7 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'rng': return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
     // virtio-rtc (web/clock.ts): no features (no alarms), the requestq alone; no config space.
     case 'clock': return { entry: [BigInt(CLOCK_ID), 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
-    // The agent's virtio-console (web/agent-device.ts): MULTIPORT, its named port.
-    case 'agent': return agentEntry();
-    // systemd's notify socket (web/vsock-device.ts): a virtio-vsock, the guest's CID 3.
+    // systemd's notify socket and the guest agent's port (web/vsock-device.ts): a virtio-vsock, the guest's CID 3.
     case 'vsock': return vsockEntry();
     case 'blk': {
       // Features SEG_MAX (2), and RO (5) or, with an overlay, FLUSH (9); config:
@@ -1099,7 +1095,6 @@ export class Devices {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
         case 'clock': return clock(ctx, deterministic);
-        case 'agent': return agentDevice(ctx, d);
         case 'vsock': return vsockDevice(ctx, d);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;

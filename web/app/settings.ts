@@ -39,10 +39,10 @@ export type Settings = {
 /** Preferences: ask before the page is left while a machine runs (on unless turned off). */
 export const leaveWarning = () => settings().leaveWarning !== false;
 /**
- * Preferences: the guest's clock catches up after a snapshot (on unless turned off; `?clocksync=1` or `0` decides for
- * the page, the last one if there are several): Save snapshot and Suspend first ask the guest to sleep, and loading
- * the file wakes it with the time it was away (docs/frontend.md "The guest's clock"). Off, a snapshot is a pause the
- * guest can hardly tell.
+ * Preferences: the guest agent sets the guest's clock to the browser's (on unless turned off; `?clocksync=1` or `0`
+ * decides for the page, the last one if there are several) whenever it may have fallen behind: a restore, a save's
+ * pause, the host's own sleep (docs/frontend.md "The guest's clock"). Off, a snapshot is a pause the guest can hardly
+ * tell.
  */
 export const clockSync = () => {
   const q = new URLSearchParams(location.search).getAll('clocksync').at(-1);

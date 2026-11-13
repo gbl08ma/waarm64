@@ -32,7 +32,7 @@ import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import type { Problems } from './problems.ts';
 import type { Replies } from './replies.ts';
 import { dispatch, Run } from './run.ts';
-import { channels, startMessage, type Channels, type StartWith } from './start-message.ts';
+import { channels, startMessage, type AgentChannels, type Channels, type StartWith } from './start-message.ts';
 import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
@@ -60,9 +60,8 @@ export type RunnerDeps = {
     syncKeyboard(r: Run): Promise<void>;
     keyboardKey(code: string, down: boolean): boolean;
   };
-  /** Clipboard sharing over the agent's port (none: the machine has none). */
-  /** A run's clipboard sharing over the agent's port (none: the machine has no sharing); `up` at each agent's HELLO. */
-  clipboard: (port: MessagePort | undefined, up: () => void) => ClipboardShare | undefined;
+  /** A run's guest agent (web/app/areas/agent-actions.ts) and its clipboard sharing (none: not shared); `up` at each HELLO. */
+  agent: (ch: AgentChannels, up: () => void) => ClipboardShare | undefined;
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
@@ -127,7 +126,7 @@ export class Runner {
     const worker = new Worker(new URL('../worker.ts', import.meta.url), { type: 'module' });
     // The guest's signs that it's up, beside its ready marker: the agent's HELLO, systemd's READY=1 (web/vsock-device.ts).
     const up = () => worker.postMessage({ type: 'up' } satisfies ToWorker);
-    const share = this.d.clipboard(ch.agent?.port1, up);
+    const share = this.d.agent(ch, up);
     if (ch.notify) onReady(ch.notify.port1, up);
     clipboard.follow(share);
     window.__clipboard = share; // the tests' hook

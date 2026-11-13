@@ -14,6 +14,7 @@ import { isLive, power } from './areas/power.svelte.ts';
 import { records } from './areas/records.svelte.ts';
 import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
+import { AgentActions } from './areas/agent-actions.ts';
 import { ClipboardActions } from './areas/clipboard-actions.ts';
 import { DiskActions } from './areas/disk-actions.ts';
 import { changesHeader, DiskChanges } from './areas/disk-changes.ts';
@@ -134,6 +135,7 @@ const messages = new Messages(machine, () => {
   if (screen.cursor) screen.setCursor(undefined);
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
+const agentActions = new AgentActions();
 const usbView = new UsbView(
   machine,
   () => usbEntries.locks,
@@ -163,7 +165,7 @@ const runner = new Runner({
     syncKeyboard: (r) => usbRun.syncKeyboard(r),
     keyboardKey: usbRun.keyboardKey,
   },
-  clipboard: (port, up) => clipboardActions.begin(port, up),
+  agent: (ch, up) => clipboardActions.begin(agentActions.begin(ch, up), ch.clipboard),
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },
   later: {
     problems: () => problems,
@@ -214,6 +216,7 @@ const snapshots = new SnapshotActions({
   ...core,
   emptyPorts: (r, what) => usbRun.emptyPorts(r, what),
   plugBack: (r, was) => usbRun.plugBack(r, was),
+  syncClock: () => agentActions.syncClock(),
   askBytes: (r, post) => {
     const gpu = r.gpu;
     return gpu ? replies.bytes.ask((id) => post(gpu, id), { ms: 1000, fallback: 0 }) : Promise.resolve(0);

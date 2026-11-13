@@ -45,8 +45,9 @@ default is `debian`), `?ncpus=N`, `?ram=MiB` (both over a stored machine's recor
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
 line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
 firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
-passes none), `?clipboard=1` (clipboard sharing's device, docs/devices.md "agent";
-`window.__agent` is the page's end of its port), `?disk2=<url>` (a second,
+passes none), `?clipboard=1` (clipboard sharing through the guest agent, docs/devices.md "The guest's agent";
+`window.__agent` is the page's end of its connection; `?agentstub` gives the link a channel whose device end a test plays,
+`window.__agentStub`, on any machine), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
 test's `--disk2` gives it the Go toolchain image, docs/images.md "The Go compiler on a second disk"), `?snd=stats[,timer]`
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
@@ -79,6 +80,7 @@ worker failure (`no3d`, which a switch clears): as that machine would run once o
 | 3D or 2D | `?gpu=virgl`, `?gpu=2d` (`virgl-null`: 2D on the page) | `display` | the Machine menu's Graphics | 3D; 2D without WebGL2 or once the GPU worker failed; none with `?display=simple` |
 | Vulkan | `?gpu=vulkan` (on only; 2D takes it off) | `vulkan` | — | off; only beside 3D |
 | USB controller, mouse, touchscreen, clipboard sharing | `?usb=`, `?mouse=`, `?touch=`, `?clipboard=` (`1`, `0`) | `usb`, `mouse`, `touch`, `clipboard` | — | off |
+| The guest agent (firmware machines) | `?agent=` (`1`, `0`) | `agent` (unset: on) | — | on |
 | The clock device | `?clock=` (`1`, `0`) | `clock` (unset: off, a record from before it) | — | on |
 | The guest takes the network's settings | `?netconfig=` (`1`, `0`) | `netConfig` | — | on |
 | The keyboard layout | `?keyboard=<id>` (`none`) | `keyboard` | — | the browser's; none for the tests' `?machine=` guests |
@@ -277,7 +279,7 @@ window's bottom and its contents scroll (many adapters, many USB devices), never
 `clipboard-transfer.ts`, the held paste chord in `clipboard-chord.ts` and the browser's side, the hashes and the reads in
 `clipboard-host.ts`; wired in `areas/clipboard-actions.ts`): shown while the running machine has
 **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (or `?clipboard=1`). The button's state (`data-state`; never pressed: the toolbar presses only what it switches itself): *sharing*, *paused*
-(the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its port closed), each with
+(the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its connection ended), each with
 its tooltip, and a state's light as the Network buttons have: green sharing, grey paused, amber waiting, and amber
 too (its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is `prompt` or
 `denied`, or the focus reads stopped (below). The menu: **[Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow)** while the
@@ -508,16 +510,16 @@ Page → worker:
   directory of its own files. `config.cpu` is the vCPUs' features as one list (web/cpu-features.ts: the page's
   `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
   worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
-  `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`), parsed by the
+  `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
+  `?agentstub`), parsed by the
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
   features, the kernel and the command line are then the file's.
-- `up`: the guest said it's up, systemd's READY=1 on the notify socket (devices.md "vsock") or the clipboard agent's
+- `up`: the guest said it's up, systemd's READY=1 on the notify socket (devices.md "vsock") or the guest agent's
   HELLO (web/app/agent-link.ts `onHello`): a machine still `booting` is `running`.
-- `snapshot {id, handle?, keep?, whole?, sleep?}`: save a snapshot of the running machine to the file handle's
+- `snapshot {id, handle?, keep?, whole?}`: save a snapshot of the running machine to the file handle's
   stream, or, without one, back in `snapshot-chunk` messages, or with `keep` into that OPFS file (a kept snapshot,
-  machines.md §5.2); `whole` puts a disk written in place in it whole; `sleep` gives the guest a while to suspend
-  itself first (the clock catch-up's Sleep key), woken once the file is written. Answered by `snapshot-done` or
+  machines.md §5.2); `whole` puts a disk written in place in it whole. Answered by `snapshot-done` or
   `snapshot-error`.
 - `snapshot-check {id, what}`: whether a device would refuse a snapshot or a suspend (`what`) now (Vulkan in use, a
   video decoding: web/vm.ts `refusal`, each backend's `refusal`, the GPU worker's `snapshotRefusal` behind the calls
@@ -576,9 +578,9 @@ Worker → page:
 - `notice {message}`: what the devices say while the machine runs on (a ramdisk out of memory, the storage full), a
   message.
 - `snapshot-progress {id, phase, fraction}` (the phase a message), `snapshot-chunk {id, data}` (transferred; without a
-  handle), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins, slept?}` (the file is complete; the ms
+  handle), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins}` (the file is complete; the ms
   from the pause request to the resume, and of the devices' state in it; the bytes of their binary parts; the disks
-  it pins, which a kept snapshot's record takes; whether the guest slept through it), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
+  it pins, which a kept snapshot's record takes), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
   `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
 - `profile {id, samples}`, `timeline {id, timeline}`, `heap {id, heap}`: the benchmarks' answers.
 - `serial` also has `replay` for a restored terminal's saved tail.
@@ -666,9 +668,8 @@ the machine isn't stopped. One exception, asked before the picker (its OK is the
 whose 3D state would add 64 MiB or more (the GPU worker's count of its resources' bytes, before compression:
 `VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md "Snapshots with 3D in use"); the
 same for a stored machine's kept snapshot. **Before anything touches the machine** (that question, the picker, the USB
-ports emptied, the clock catch-up's sleep key), Snapshot, a kept snapshot and Suspend ask the worker whether a device
-would refuse it now (`snapshot-check`: Vulkan in use, a video decoding), and say the failure at once if so: a refusal
-found only at the pause had put the guest to sleep for a file that couldn't be written. The worker pauses it (`vm.pause()`), writes the file with
+ports emptied, the guest's input held), Snapshot, a kept snapshot and Suspend ask the worker whether a device
+would refuse it now (`snapshot-check`: Vulkan in use, a video decoding), and say the failure at once if so. The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
@@ -783,31 +784,39 @@ are Start and Boot instead). A failure before that leaves the machine running.
 ### The guest's clock
 
 Without help, a snapshot is a pause the guest can hardly tell: the counter goes on from where it was saved, so the
-guest's own clock is behind by the time the file sat (or the machine was suspended) until something sets it
-(`hwclock -s`, timesyncd over a network); the RTC shows the host's time. Turning the catch-up off keeps that, for
-those who pause a machine so that it doesn't notice.
+guest's own clock is behind by the time the file sat (or the machine was suspended, or paused for a save) until
+something sets it (`hwclock -s`, timesyncd over a network); the RTC shows the host's time. Turning the clock's switch
+off keeps that, for those who pause a machine so that it doesn't notice.
 
-**The clock catch-up** (Preferences' "[Suspend the guest before taking a snapshot](ui:machines:PreferencesPane.clockSync)": the behaviour that shows, the clock being why; `settings().clockSync`, **on by
-default** since 2026-10-25, the user; `?clocksync=1` or `0` decides for the page, the last one if there are several:
-`web/app/settings.ts` `clockSync`; the page tests' `PAGE_QUERY` turns it off, `tests/page-clock.test.ts` on) makes it notice as a laptop
-does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
-keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 10 s for the
-guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; [Putting the guest to
-sleep](ui:snapshots:worker-snapshot.phase.sleep) in the state line) before it pauses the machine. **The guest's input
-is held** from the key (from the write without the catch-up) until the save ends (web/input.ts `hold`: what was held
-released, the screen's keys, pointer, wheel and touches dropped, no `wake`): the mouse is over the screen once a
-question is answered, and KDE cancels its suspend on any input (its login screen dimmed and came back, and the save
-then waited the 10 s out); input during the pause would only complete into a guest that can't run. A file taken while the guest slept says so (`slept: true` in
-its header), and **loading it** (a snapshot, or a suspended machine resumed) moves the guest's clock on by the time
-since the header's `created` (`vm_clock_skip`) and wakes it: its resume counts that as sleep, so its wall clock is
-the browser's again and its monotonic clock hasn't jumped (nothing it times runs out). The running machine wakes once
-its file is written, its clock moved on by the time the core held it for the write. A guest that doesn't suspend on
-the key in time (no logind, or the key handled elsewhere) is saved as it is, and the message says its clock will lag;
-with the catch-up off nothing is pressed and nothing moves. Measured on Debian in a cloud session
-(`tests/page-clock.test.ts`): within 0.4 s of the host after its own save, after a resume 20 s on and after a load
-minutes later, against −80 s for a load 80 s on with it off.
+**The guest agent sets the clock** (devices.md "The guest's agent": TIME), under Preferences'
+"[Set the guest's clock after a restore](ui:machines:PreferencesPane.clockSync)" (`settings().clockSync`, **on by
+default**; `?clocksync=1` or `0` decides for the page, the last one if there are several: `web/app/settings.ts`
+`clockSync`; the page tests' `PAGE_QUERY` turns it off, `tests/page-clock.test.ts` on). The page
+(`web/app/areas/agent-actions.ts`) sends the browser's wall clock (`Date.now()`) to an agent whose HELLO has
+`CAP.TIME`, and the agent sets CLOCK_REALTIME to it unless it is within 50 ms already:
+- **at each agent's HELLO**: a boot, the agent started again, and **a restore** (a snapshot loaded, a suspended machine
+  resumed): the restore resets the guest's vsock transport, so the restored agent connects again at once;
+- **after a save's pause** (Snapshot, a kept snapshot: `SnapshotActions`' end), which the guest's clock didn't see;
+- **when the host's own sleep shows**: every 10 s (`SLEEP_CHECK_MS`) the page compares `Date.now()` with
+  `performance.now()`, which the guest's counter follows and which may not count a laptop's sleep; past 2 s apart
+  (`SLEEP_GAP_MS`) since the last check, it sends the time.
 
-**A guest that suspends itself** (`systemctl suspend`, a desktop's idle suspend, the catch-up's key arriving late)
+The wall clock jumps; the monotonic clock doesn't (nothing the guest times runs out), and systemd's calendar timers
+and NTP clients see a clock step. Only machines that run the agent get this (firmware machines with systemd 256 and
+above, the agent on: its Settings tab); others lag as without it. Measured on Debian in the dev VM
+(`tests/page-clock.test.ts`, 2026-11-13): the guest's clock, set 120 s back first, within 0.1 s of the host after Save
+snapshot, after Suspend and a resume 20 s on, and after the file loaded minutes later (the sleep key's way: 0.4 s).
+**The guest's input is held** through a save
+(web/input.ts `hold`: what was held released, the screen's keys, pointer, wheel and touches dropped, no `wake`): input
+during the pause would only complete into a guest that can't run.
+
+Until 2026-11-13 the clock caught up differently: Snapshot and Suspend pressed the guest's sleep key, waited up to
+10 s for it to suspend itself (PSCI SYSTEM_SUSPEND), and a file taken asleep (`slept`) woke with the core's clock
+moved on by the time away (`vm_clock_skip`). It worked only where logind slept on the key in time, KDE's login screen
+undid it on any input, and a guest that slept carried its devices through a suspend (devices.md "Across a suspend"):
+the agent replaced it (the AGENT track).
+
+**A guest that suspends itself** (`systemctl suspend`, a desktop's idle suspend)
 sleeps until a key or a click on its screen or terminal: the worker's status says `asleep` (`vm_suspended`), the page
 says so once in the message bar, and the next input posts `wake` (`vm_wake`) before going to the guest. Keys typed
 while it resumes (under a second on Debian) may be lost, as on a machine still waking.
@@ -823,7 +832,7 @@ no state: `fromHeader` takes the layout without `clock` when that's the file's).
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
 (name, size, modification time) or URL. The network across a snapshot isn't handled: the guest
 keeps its DHCP lease and its connections are gone with the Tailscale client's. The guest's clock
-lags by the time the file sat around until something sets it (the RTC is current), unless the clock catch-up is on
+lags by the time the file sat around until something sets it (the RTC is current), unless the guest agent sets it
 (above). A snapshot is for the core versions that read its format (`snapshot_version_min` to `snapshot_version`).
 
 ## The screen
@@ -1232,13 +1241,14 @@ credentials, clipboard sharing's agent) are one pure function of its start messa
   that it ran and that networkd reads its drop-in for netplan's file. On the desktop guest (2026-10-23, by hand) networkd
   reads it for Arch's `/etc/systemd/network/20-en.network`; there the card's fw_cfg credential never arrives (no
   `card.network` in /run), while the SMBIOS ones do.
-- **Clipboard sharing's agent** (`web/app/guest-agent.ts`, a machine with `clipboard`): `waarm64-agent.service`, a
+- **The guest agent** (`web/app/guest-agent.ts`, a machine with `agent`, on unless `false`): `waarm64-agent.service`, a
   long-running service (`guestUnit`'s `service` lines in place of `Type=oneshot`) wanted by `multi-user.target`,
   whose script copies the agent's binary out of fw_cfg (`opt/waarm64/agent`, not a credential: too big for SMBIOS) into
-  `/run/waarm64` and runs it (docs/devices.md "The guest's agent"). Its description is
-  [Clipboard sharing with the emulator](ui:guest:guest-words.agent). The setting is the Settings tab's
-  **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default; a change of shape: the agent's device); ticking it is the click that asks
-  for the browser's read permission ("The toolbar", Clipboard).
+  `/run/waarm64` and runs it (docs/devices.md "The guest's agent"); it connects to the page over vsock. Its description
+  is [The emulator's guest agent](ui:guest:guest-words.agent). The settings are the Settings tab's
+  **[Run the guest agent](ui:machines:DeviceSwitches.agent)** (on by default) and, under it,
+  **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (off by default); neither changes the
+  shape. Ticking the latter is the click that asks for the browser's read permission ("The toolbar", Clipboard).
 - **The keyboard layout** writes to the guest's disk instead (`/etc/default/keyboard`, localed's files,
   `/etc/environment`): Xorg's `xorg.conf.d`, localed, console-setup and pam_env read `/etc` only, so nothing in `/run`
   would reach them, and turning it off leaves the last layout set.

@@ -58,6 +58,7 @@ export type Definition = {
     jitMiB?: number;
     keyboard?: string;
     netConfig?: false;
+    agent?: false;
     display: Display;
     vulkan?: boolean;
     network: boolean;
@@ -110,6 +111,7 @@ function settingsOf(m: MachineRecord): Definition['machine'] {
     ramMiB: m.ramMiB,
     ...setOf({ ramSplit: m.ramSplit, jitMiB: m.jitMiB, keyboard: m.keyboard }),
     ...(m.netConfig === false ? { netConfig: false } : {}),
+    ...(m.agent === false ? { agent: false } : {}),
     display: m.display,
     ...onOf(m, ['vulkan']),
     network: macs.length > 0,
@@ -178,6 +180,7 @@ const MACHINE_CHECKS: ((m: Raw) => boolean)[] = [
   (m) => optional(m.jitMiB, (v) => isInt(v, 1, 4096)),
   (m) => optional(m.keyboard, (v) => typeof v === 'string' && validKeyboard(v)),
   (m) => optional(m.netConfig, isFalse),
+  (m) => optional(m.agent, isFalse),
   (m) => m.display === '2d' || m.display === '3d',
   (m) => optional(m.vulkan, isBool),
   (m) => isBool(m.network),
@@ -289,6 +292,7 @@ function machineFrom(def: Definition, name: string, attachments: Attachment[], n
     ramMiB: m.ramMiB,
     ...setOf({ ramSplit: m.ramSplit, jitMiB: m.jitMiB, keyboard: m.keyboard }),
     ...(m.netConfig === false ? { netConfig: false as const } : {}),
+    ...(m.agent === false ? { agent: false as const } : {}),
     display: m.display,
     ...onOf(m, ['vulkan']),
     // The adapters come without connections: those hold secrets, and are this browser's (docs/networking/adapters.md §5).

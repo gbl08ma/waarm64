@@ -1,65 +1,65 @@
-// The page's end of the agent's port (web/agent-device.ts; docs/plans/clipboard.md §2): frames to and from the guest's
-// agent (web/agent-frame.ts), whether the agent holds its end open, and how much the page has in flight. The device
-// takes the page's bytes as the guest posts buffers; the link keeps at most `WINDOW` bytes the guest hasn't taken
-// yet, so a guest that stops reading costs the page a queue of frames, not the device's memory.
+// The page's end of the guest agent's connection (web/vsock-device.ts; docs/devices.md "The guest's agent"): frames to
+// and from the agent (web/agent-frame.ts), whether it is connected, and how much the page has in flight. The device
+// takes the page's bytes as the guest's credit and buffers allow; the link keeps at most `WINDOW` bytes the guest hasn't
+// taken yet, so a guest that stops reading costs the page a queue of frames, not the device's memory.
 //
-// What it says: HELLO each time the agent opens its end (the agent answers with its own: `agent`), TYPE (`type`), the
-// toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent opens its end (a
-// restarted agent starts unpaused, a restored one is as its snapshot was), and the clipboard's frames, which
-// web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's clipboard menu (web/app/ClipboardMenu.svelte)
-// drives it through `ClipboardShare`; the tests through `window.__agent` and `window.__clipboard`.
+// What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
+// page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it), TIME (`time`),
+// TYPE (`type`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
+// clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
+// and `window.__clipboard`.
 //
-// A stream from the guest that may not begin at a frame (the port open in a restored snapshot: the agent may have been
-// inside a frame's writes) or that went out of step (`broken`) is begun afresh: the page's HELLO carries a nonce, the
-// agent answers with SYNC carrying it before its HELLO, and the reader drops everything before that (`FrameReader.sync`).
+// Each connection is a stream of its own, begun at a frame: a restore resets the guest's transport, so the agent
+// connects again. A stream that goes out of step (`broken`) is reset by the page, and the agent connects again too.
 
 import {
   CAP,
   decodeHello,
   encodeFrame,
   encodeHello,
+  encodeTime,
   FRAME,
   FrameReader,
-  NONCE,
   typePayloads,
   VERSION,
   type Frame,
   type Hello,
 } from '../agent-frame.ts';
-import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
+import type { AgentFromDevice, AgentToDevice } from '../vsock-device.ts';
 
 /** The most bytes in flight to the guest (sent to the device, not yet in the guest's buffers). */
 export const WINDOW = 256 << 10;
 
-/** What the page says it can do (web/agent-frame.ts `CAP`). */
-export const PAGE_CAPS = CAP.TYPE | CAP.TEXT | CAP.IMAGE;
+/** What the page says it does (web/agent-frame.ts `CAP`): the clock always, the clipboard's frames where it is shared. */
+export const pageCaps = (clipboard: boolean) => CAP.TIME | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0);
 
 export class AgentLink {
-  /** The guest's agent holds its end of the port open. */
+  /** The guest's agent is connected. */
   open = false;
-  /** The agent's HELLO, since its end last opened. */
+  /** The agent's HELLO, since it last connected. */
   agent?: Hello;
   /** The toolbar's switch: sharing paused for the run (the agent hears it whenever it opens its end). */
   paused = false;
   /** Called with each frame from the guest's agent. */
   onFrame?: (f: Frame) => void;
-  /** Called when the agent opens or closes its end. */
+  /** Called when the agent connects or its connection ends. */
   onOpen?: (open: boolean) => void;
-  /** Called with the agent's HELLO. */
-  onHello?: (h: Hello) => void;
+  /** Called with the agent's HELLO (each listener: the clipboard's, the clock's, the page's sign that the guest is up). */
+  readonly onHello: ((h: Hello) => void)[] = [];
   private reader = new FrameReader();
   private queue: Uint8Array[] = [];
   private inflight = 0;
   private port: MessagePort;
-  /** The device's port this link is (web/agent-device.ts `AGENT_PORTS`). */
-  private id: number;
+  /** What the page's HELLO says (`pageCaps`). */
+  readonly caps: number;
 
-  constructor(port: MessagePort, id = 0) {
-    [this.port, this.id] = [port, id];
+  constructor(port: MessagePort, caps: number) {
+    [this.port, this.caps] = [port, caps];
     port.onmessage = (e: MessageEvent<AgentFromDevice | undefined>) => this.fromDevice(e.data);
   }
 
-  /** Sends a frame; false (nothing sent) while the agent's end is closed. */
+  /** Sends a frame; false (nothing sent) while the agent isn't connected. */
   send(type: number, payload?: Uint8Array): boolean {
     if (!this.open) return false;
     this.queue.push(encodeFrame(type, payload));
@@ -70,6 +70,15 @@ export class AgentLink {
   /** Whether the agent said it pastes on the console (its HELLO has TYPE). */
   get canType() {
     return !!this.agent && (this.agent.caps & CAP.TYPE) !== 0;
+  }
+
+  /**
+   * Sets the guest's clock to the host's (`ms`, `Date.now()`'s scale): TIME, after the agent's HELLO said it can;
+   * false (nothing sent) otherwise.
+   */
+  time(ms = Date.now()): boolean {
+    if (!this.agent || !(this.agent.caps & CAP.TIME) || !(this.caps & CAP.TIME)) return false;
+    return this.send(FRAME.TIME, encodeTime(ms));
   }
 
   /**
@@ -100,18 +109,6 @@ export class AgentLink {
     return this.inflight + this.queue.reduce((n, b) => n + b.length, 0);
   }
 
-  /** Whether the stream from the guest is being begun afresh (a restored opening, or out of step): until the agent's SYNC. */
-  get syncing() {
-    return this.reader.syncing;
-  }
-
-  /** HELLO, with a nonce whose SYNC the reader waits for: what came before it is dropped. */
-  private resync() {
-    const nonce = crypto.getRandomValues(new Uint8Array(NONCE));
-    this.reader.sync(nonce);
-    this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }, nonce));
-  }
-
   close() {
     this.port.close();
   }
@@ -121,16 +118,15 @@ export class AgentLink {
       const b = this.queue.shift();
       if (!b) break;
       this.inflight += b.length;
-      this.port.postMessage({ type: 'data', port: this.id, bytes: b } satisfies AgentToDevice, [b.buffer]);
+      this.port.postMessage({ type: 'data', bytes: b } satisfies AgentToDevice, [b.buffer]);
     }
   }
 
-  /** A message from the device worker's port: this link's port opened or closed, its bytes taken, the agent's bytes. */
+  /** A message from the device: the agent connected or its connection ended, the page's bytes taken, the agent's bytes. */
   private fromDevice(m: AgentFromDevice | undefined) {
-    if (m?.port !== this.id) return;
-    switch (m.type) {
+    switch (m?.type) {
       case 'open':
-        return this.opened(m.open, !!m.restored);
+        return this.opened(m.open);
       case 'taken':
         this.inflight = Math.max(0, this.inflight - m.n);
         this.pump();
@@ -140,22 +136,19 @@ export class AgentLink {
     }
   }
 
-  /** The agent's port opened (`restored`: from a snapshot) or closed. */
-  private opened(open: boolean, restored: boolean) {
-    if (open === this.open && !restored) return;
-    // A new opening is a new stream both ways: what was half read or queued belonged to the last one.
+  /** The agent connected, or its connection ended. */
+  private opened(open: boolean) {
+    // Each connection is a new stream both ways: what was half read or queued belonged to the last one.
     this.open = open;
     this.agent = undefined;
     this.reader.reset();
     this.queue = [];
     this.inflight = 0;
     if (open) {
-      // Restored: the agent's stream may be inside a frame, so it is begun at a SYNC.
-      if (restored) this.resync();
-      else this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }));
-      // The switch, said either way: an agent restored from a snapshot taken while paused is paused, and the pause
-      // is the run's, not the snapshot's (plan §5).
-      this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
+      this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: this.caps }));
+      // The switch, said at each connection: an agent restored from a snapshot taken while paused is paused, and the
+      // pause is the run's, not the snapshot's (plan §5).
+      if (this.caps & CAP.TEXT) this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
     }
     this.onOpen?.(open);
   }
@@ -167,12 +160,12 @@ export class AgentLink {
         const h = decodeHello(f.payload);
         if (h) {
           this.agent = h;
-          this.onHello?.(h);
+          for (const f of this.onHello) f(h);
         }
       }
       this.onFrame?.(f);
     }
-    // Out of step (a frame's length that can't be): begun afresh, at the agent's SYNC.
-    if (this.reader.broken) this.resync();
+    // Out of step (a frame's length that can't be): the connection reset, so the agent connects again.
+    if (this.reader.broken) this.port.postMessage({ type: 'reset' } satisfies AgentToDevice);
   }
 }

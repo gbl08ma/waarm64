@@ -22,7 +22,7 @@
   let { net }: Props = $props();
 
   let warnOnLeave = $state(leaveWarning());
-  let catchUpClock = $state(settings().clockSync !== false);
+  let setClock = $state(settings().clockSync !== false);
   let shaderMiB = $state(settings().shaderMiB ?? CACHE_BUDGET / 2 ** 20);
   const DEFAULT_SHADER_MIB = CACHE_BUDGET / 2 ** 20;
   /** The budgets offered, the one set among them. */
@@ -53,8 +53,8 @@
       {t('machines:PreferencesPane.leaveWarning')}
     </Check>
     <Check
-      bind:checked={catchUpClock}
-      onchange={() => remember({ clockSync: catchUpClock })}
+      bind:checked={setClock}
+      onchange={() => remember({ clockSync: setClock })}
       field="clock-sync"
       note={t('machines:PreferencesPane.clockSync.note')}
     >

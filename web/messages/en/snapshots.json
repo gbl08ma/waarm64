@@ -443,25 +443,9 @@
     "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.",
     "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
   },
-  "snapshot-actions.saved.slept": {
-    "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The guest slept during the snapshot, so loading it will wake the guest with its clock caught up.",
-    "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file with the clock catch-up on (Preferences) and the guest asleep for it: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
-  },
-  "snapshot-actions.saved.awake": {
-    "message": "Saved the snapshot {{name}} ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again.\nThe guest didn't go to sleep when asked, so its clock will lag after the snapshot is loaded. Its sleep key may do nothing.",
-    "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file with the clock catch-up on (Preferences) when the guest didn't go to sleep for it: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
-  },
   "snapshot-actions.kept": {
     "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
-  },
-  "snapshot-actions.kept.slept": {
-    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page. The guest slept during the snapshot, so loading it will wake the guest with its clock caught up.",
-    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser with the clock catch-up on (Preferences) and the guest asleep for it: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
-  },
-  "snapshot-actions.kept.awake": {
-    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page.\nThe guest didn't go to sleep when asked, so its clock will lag after the snapshot is loaded. Its sleep key may do nothing.",
-    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser with the clock catch-up on (Preferences) when the guest didn't go to sleep for it: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
   },
   "snapshot-actions.runsOn.noFile": {
     "message": "The machine is still running, and no file was saved.",
@@ -710,10 +694,6 @@
   "worker-start.phase.restoring": {
     "message": "Restoring the machine",
     "note": "Line on the boot card and the machine's state in the status bar while a snapshot's machine is made."
-  },
-  "worker-snapshot.phase.sleep": {
-    "message": "Putting the guest to sleep",
-    "note": "The machine's state in the status bar while a snapshot or Suspend waits for the guest to go to sleep (the clock catch-up, Preferences)."
   },
   "worker-snapshot.phase.pausing": {
     "message": "Pausing the machine",

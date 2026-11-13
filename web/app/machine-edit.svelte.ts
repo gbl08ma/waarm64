@@ -12,8 +12,9 @@ import { current } from './areas/current.svelte.ts';
 import { page } from './page.ts';
 
 /** The record's switches: a device the guest sees, on or off. */
-export type Switch = 'usb' | 'vulkan' | 'mouse' | 'touch' | 'clock' | 'shares' | 'clipboard';
-const SWITCHES: Switch[] = ['usb', 'vulkan', 'mouse', 'touch', 'clock', 'shares', 'clipboard'];
+/** The switches in the shape (not the guest agent's and the clipboard's: they ride the vsock every firmware machine has). */
+export type Switch = 'usb' | 'vulkan' | 'mouse' | 'touch' | 'clock' | 'shares';
+const SWITCHES: Switch[] = ['usb', 'vulkan', 'mouse', 'touch', 'clock', 'shares'];
 
 const macs = (m: MachineRecord) =>
   adaptersOf(m)
@@ -117,6 +118,7 @@ export class MachineEdit {
     if (!m.jitMiB) delete m.jitMiB;
     if (!m.keyboard) delete m.keyboard;
     if (m.netConfig !== false) delete m.netConfig;
+    if (m.agent !== false) delete m.agent;
     if (!m.shares) delete m.shares;
     if (!m.clipboard) delete m.clipboard;
     if (m.sharesMount !== false) delete m.sharesMount;

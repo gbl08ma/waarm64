@@ -1,16 +1,18 @@
-//! waarm64-agent: the guest's end of clipboard sharing (docs/plans/clipboard.md §3; docs/devices.md "The guest's
-//! agent"). The page delivers it over fw_cfg and a credential unit starts it as root (web/app/guest-agent.ts). The root
-//! process holds the agent's port: it answers the page's HELLO, pastes TYPE's text on the foreground text console
-//! (src/console.rs), holds PAUSE until RESUME, and follows the active session on seat0 through logind's files
-//! (src/logind.rs). For that session's user it forks a child (no exec) that drops to the user's ids before it reads
+//! waarm64-agent: the guest's agent (docs/devices.md "The guest's agent"; clipboard sharing: docs/plans/clipboard.md
+//! §3). The page delivers it over fw_cfg and a credential unit starts it as root (web/app/guest-agent.ts). The root
+//! process connects to the page over vsock (src/vsock.rs), again whenever the connection ends (a restore resets the
+//! guest's transport): it answers the page's HELLO, sets the guest's clock from TIME, pastes TYPE's text on the
+//! foreground text console (src/console.rs), and holds PAUSE until RESUME. Where the page's HELLO says the clipboard is
+//! shared, it follows the active session on seat0 through logind's files (src/logind.rs), and for that session's user
+//! it forks a child (no exec) that drops to the user's ids before it reads
 //! anything from the display, and shares the user's Wayland clipboard (src/session.rs), or the X server's where Wayland
 //! has no data-control (src/x11.rs); the clipboard's frames pass
-//! between the port and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout but
+//! between the connection and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout but
 //! while a paste is being typed (TYPE's text goes in bursts as the console's reader takes it, `console::Typist`, and
 //! the loop serves the rest meanwhile): an idle guest sees no CPU time from either (plan §3.3). The page hears what
 //! became of a paste (TYPED: typed, or why not: a console that shows a compositor's graphics gets none of it).
 //!
-//!   waarm64-agent [port]    the port's device (default /dev/virtio-ports/org.waarm64.agent.0)
+//!   waarm64-agent [port]    the host's vsock port (default 8574)
 
 #![cfg_attr(not(test), no_std, no_main)]
 
@@ -35,6 +37,7 @@ mod serve_test;
 mod session;
 #[cfg(test)]
 mod sway_test;
+mod vsock;
 mod wire;
 mod x11;
 #[cfg(test)]
@@ -50,11 +53,16 @@ use rustix::io::{Errno, read, write};
 use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
 use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
 
-#[cfg_attr(test, allow(dead_code))]
-const PORT: &str = "/dev/virtio-ports/org.waarm64.agent.0";
-
 /// What the agent says it can do (frame.rs `cap`).
-const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT | frame::cap::IMAGE;
+const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT | frame::cap::IMAGE | frame::cap::TIME;
+
+/// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
+/// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
+const CLOCK_SLACK_NS: u64 = 50_000_000;
+
+/// The waits between failed connections: the first, and the most (doubling).
+const RETRY_FIRST_MS: u64 = 500;
+const RETRY_MOST_MS: u64 = 30_000;
 
 /// The bytes queued for a child past which it is taken to be stuck (and stopped): the page's DATA is paced by the
 /// child's MOREs, so a child that keeps up never has this much waiting.
@@ -65,11 +73,11 @@ unsafe extern "C" {
     fn fork() -> i32;
 }
 
-/// Why serving the port stopped.
+/// Why serving the connection stopped.
 enum Stop {
-    /// The stream from the page went out of step: reopen the port (both ends start afresh).
+    /// The stream from the page went out of step: connect again (both ends start afresh).
     Broken,
-    /// The host's end is gone, or the port failed.
+    /// The host's end is gone (a restore resets the transport), or the connection failed.
     Failed(&'static str, Errno),
 }
 
@@ -81,29 +89,41 @@ extern "C" fn main(argc: i32, argv: *const *const core::ffi::c_char) -> i32 {
     let port = (argc > 1)
         // SAFETY: the C library's `argv` holds `argc` NUL-terminated strings.
         .then(|| unsafe { core::ffi::CStr::from_ptr(*argv.add(1)) })
-        .and_then(|a| a.to_str().ok());
-    run(port.unwrap_or(PORT))
+        .and_then(|a| a.to_str().ok()?.parse().ok());
+    run(port.unwrap_or(vsock::AGENT_PORT))
 }
 
-/// Serves the port at `path`, reopening it when the page's stream goes out of step.
+/// Serves the page over vsock's `port`, connecting again whenever the connection ends: at once after one that was
+/// served, then at waits that double up to `RETRY_MOST_MS` while connecting fails (the vsock driver not loaded yet, a
+/// page without the agent's end).
 #[cfg_attr(test, allow(dead_code))]
-fn run(path: &str) -> ! {
+fn run(port: u32) -> ! {
     let mut agent = Agent::new(logind::Paths::default(), Box::new(console::Vt::default()));
+    let mut wait = 0;
     loop {
-        let port = match open(
-            path,
-            OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC,
-            Mode::empty(),
-        ) {
-            Ok(p) => p,
-            Err(e) => fail("can't open the port", e),
-        };
-        match serve(&port, &mut agent) {
-            Stop::Broken => log(
-                "the page's stream went out of step: reopening the port",
-                None,
-            ),
-            Stop::Failed(what, e) => fail(what, e),
+        if wait > 0 {
+            let ts = rustix::time::Timespec {
+                tv_sec: (wait / 1000) as i64,
+                tv_nsec: ((wait % 1000) * 1_000_000) as i64,
+            };
+            let _ = rustix::thread::nanosleep(&ts);
+        }
+        match vsock::connect(port) {
+            Ok(conn) => {
+                wait = 0;
+                match serve(&conn, &mut agent) {
+                    Stop::Broken => {
+                        log("the page's stream went out of step: connecting again", None)
+                    }
+                    Stop::Failed(what, e) => log(what, Some(e)),
+                }
+            }
+            Err(e) => {
+                if wait == 0 {
+                    log("can't connect to the page", Some(e));
+                }
+                wait = (wait * 2).clamp(RETRY_FIRST_MS, RETRY_MOST_MS);
+            }
         }
     }
 }
@@ -118,9 +138,13 @@ struct Proc {
     key: logind::Active,
 }
 
-/// What lasts across the port's openings: the pause, the session tracking and its child.
+/// What lasts across the connections: the pause, the session tracking and its child.
 struct Agent {
     paths: logind::Paths,
+    /// The page shares the clipboard (its HELLO's `cap::TEXT`): the session child runs only then.
+    clipboard: bool,
+    /// Sets the guest's clock (CLOCK_REALTIME) to a time in nanoseconds since the epoch; the tests' records it.
+    set_clock: fn(u64) -> Result<(), Errno>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
     /// The tests': a function on a thread in place of the forked child.
@@ -154,6 +178,8 @@ impl Agent {
         .ok();
         let mut a = Agent {
             paths,
+            clipboard: false,
+            set_clock,
             typist: console::Typist::new(console),
             #[cfg(test)]
             test_child: None,
@@ -214,8 +240,12 @@ impl Agent {
         changed
     }
 
-    /// Starts, stops or swaps the session child for the active session now. `port`: closed in a new child.
+    /// Starts, stops or swaps the session child for the active session now (none while the clipboard isn't shared).
+    /// `port`: the connection, closed in a new child.
     fn track(&mut self, port: RawFd) {
+        if !self.clipboard {
+            return self.stop_child();
+        }
         self.watch();
         let want = logind::active(&self.paths);
         if self
@@ -358,6 +388,26 @@ impl Agent {
         true
     }
 
+    /// TIME: the guest's clock set to the host's `ns`, unless it is within `CLOCK_SLACK_NS` of it already.
+    fn time(&mut self, ns: u64) {
+        let now = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+        let ours = (now.tv_sec as i128) * 1_000_000_000 + now.tv_nsec as i128;
+        let off = ns as i128 - ours;
+        if off.unsigned_abs() < CLOCK_SLACK_NS as u128 {
+            return;
+        }
+        match (self.set_clock)(ns) {
+            Ok(()) => log(
+                &format!(
+                    "the clock set from the host's: moved {} ms",
+                    off / 1_000_000
+                ),
+                None,
+            ),
+            Err(e) => log("can't set the clock", Some(e)),
+        }
+    }
+
     fn flush_child(&mut self) {
         let Some(c) = &mut self.child else { return };
         while !c.out.is_empty() {
@@ -376,7 +426,18 @@ impl Agent {
     }
 }
 
-/// The agent's state while it holds the port open.
+/// The guest's clock (CLOCK_REALTIME), set: the agent's `set_clock`.
+fn set_clock(ns: u64) -> Result<(), Errno> {
+    rustix::time::clock_settime(
+        rustix::time::ClockId::Realtime,
+        rustix::time::Timespec {
+            tv_sec: (ns / 1_000_000_000) as i64,
+            tv_nsec: (ns % 1_000_000_000) as i64,
+        },
+    )
+}
+
+/// The agent's state while it is connected.
 struct Session<'a> {
     port: &'a OwnedFd,
     agent: &'a mut Agent,
@@ -401,8 +462,7 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
     s.agent.typist.reset();
     s.agent.track(port.as_raw_fd());
     let mut reader = frame::Reader::default();
-    // virtio_console hands a read one of the guest's receive buffers (a page) at most.
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 16384];
     loop {
         s.agent.flush_child();
         let mut tags = Vec::with_capacity(4);
@@ -443,8 +503,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
             match tag {
                 Tag::Port => {
                     let n = match read(port, &mut buf) {
-                        // virtio_console: no data and the host's end closed (the page's device keeps it open).
-                        Ok(0) => return Stop::Failed("the host closed the port", Errno::PIPE),
+                        // The host's end closed (or reset: a restore, a page that wants the stream afresh).
+                        Ok(0) => {
+                            return Stop::Failed("the host closed the connection", Errno::PIPE);
+                        }
                         Ok(n) => n,
                         Err(Errno::INTR) | Err(Errno::AGAIN) => continue,
                         Err(e) => return Stop::Failed("read", e),
@@ -484,13 +546,20 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
 impl Session<'_> {
     fn frame(&mut self, kind: u8, payload: &[u8]) {
         match kind {
-            // The page's HELLO (it sends one each time it sees the port open, and to begin the stream afresh): the
-            // agent's answers it, after a SYNC if it carried a nonce. The child hears it too: its transfers in flight
-            // were the page's before.
+            // The page's HELLO (one at each connection): the agent's answers it. It says whether the clipboard is
+            // shared (the session child runs or stops); the child hears it too: its transfers in flight were the
+            // page's before.
             frame::HELLO => {
                 frame::hello_answer(payload, CAPS, &mut self.out);
-                if frame::Hello::decode(payload).is_some() {
+                if let Some(h) = frame::Hello::decode(payload) {
+                    self.agent.clipboard = h.caps & (frame::cap::TEXT | frame::cap::IMAGE) != 0;
+                    self.agent.track(self.port.as_raw_fd());
                     self.agent.for_child(kind, payload);
+                }
+            }
+            frame::TIME => {
+                if let Some(ns) = frame::decode_time(payload) {
+                    self.agent.time(ns);
                 }
             }
             frame::TYPE if !self.agent.paused => {
@@ -607,9 +676,4 @@ fn log(what: &str, e: Option<Errno>) {
     }
     line.push(b'\n');
     rt::stderr(&line);
-}
-
-fn fail(what: &str, e: Errno) -> ! {
-    log(what, Some(e));
-    rt::exit(1);
 }

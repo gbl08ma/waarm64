@@ -58,8 +58,9 @@ export type MachineConfig = {
   vulkan: boolean;
   /**
    * The devices besides the fixed ones (`slots`): the network adapters (one per `ports.nets`; none without `network`),
-   * a relative mouse and a touchscreen, the clock (virtio-rtc), shared folders (virtio-9p), clipboard sharing's agent
-   * device and the USB controller (an xHCI, docs/usb.md "The page").
+   * a relative mouse and a touchscreen, the clock (virtio-rtc), shared folders (virtio-9p) and the USB controller (an
+   * xHCI, docs/usb.md "The page"); and what the guest agent does over vsock (`agent`: delivered at all; `clipboard`:
+   * shares the clipboard), which isn't a device of its own.
    */
   devices: {
     nets: number;
@@ -67,6 +68,7 @@ export type MachineConfig = {
     touch: boolean;
     clock: boolean;
     shares: boolean;
+    agent: boolean;
     clipboard: boolean;
     usb: boolean;
   };
@@ -121,7 +123,7 @@ export type MachinePorts = {
    * page's attachments and grants to the device worker (web/9p-folders.ts `FoldersToDevice`).
    */
   folders?: { list: FolderSpec[]; port: MessagePort };
-  /** Clipboard sharing's agent (web/agent-device.ts; web/app/agent-link.ts has the page's end). */
+  /** The guest agent's, over the vsock (web/vsock-device.ts; web/app/agent-link.ts has the page's end). */
   agent?: MessagePort;
   /** systemd's notifications (web/vsock-device.ts `VsockFromDevice`), a `firmware` machine's: the page's end hears READY=1. */
   notify?: MessagePort;
@@ -178,22 +180,20 @@ export type ToWorker =
    * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
    * in the overlay) is written beside the overlay, and it stops: `suspend-done`, then the state `suspended`. On a
    * failure it runs on, with a `snapshot-error`. Progress comes as `snapshot-progress`; each of them echoes `id` (the
-   * page's, web/app/run/run.ts `Run.save`). `sleep`: the page has
-   * pressed the guest's sleep key (the clock catch-up, docs/frontend.md "The guest's clock"): it waits
-   * a while for the guest to suspend itself first, and the file then says it slept.
+   * page's, web/app/run/run.ts `Run.save`).
    */
-  | { type: 'suspend'; id: number; sleep?: boolean }
+  | { type: 'suspend'; id: number }
   /**
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
    * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/machines.md
    * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). Answered by
-   * `snapshot-done` or `snapshot-error`, each message of it with its `id`. `sleep`: as `suspend`'s; the guest is woken once the file is written.
+   * `snapshot-done` or `snapshot-error`, each message of it with its `id`.
    */
-  | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean; sleep?: boolean }
+  | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean }
   /**
    * Whether a snapshot or a suspend (`what`) would be refused now by a device (Vulkan in use, a video decoding),
-   * asked before the page touches the machine (its USB ports, the guest's sleep key); answered by `snapshot-check`.
+   * asked before the page touches the machine (its USB ports, its input); answered by `snapshot-check`.
    */
   | { type: 'snapshot-check'; id: number; what: 'snapshot' | 'suspend' }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
@@ -289,7 +289,6 @@ export type FromWorker =
       stateMs: number;
       blobBytes: number;
       pins: SnapshotDisk[];
-      slept?: boolean;
     }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
   | { type: 'snapshot-error'; id: number; error: WireError }

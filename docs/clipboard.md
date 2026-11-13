@@ -2,17 +2,18 @@
 
 A machine with **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** shares the clipboard both
 ways between the user's computer and the guest: text, images and HTML, between the browser's Clipboard API and the
-guest's Wayland or X11 desktop, and text typed at a text console. The guest's side is a small program of ours that the
-page starts at every boot with nothing written to the guest's disk. This page is the topic's overview. The details are
-in [devices.md](devices.md) "agent" (the device), devices.md "The guest's agent" (the agent and its frames) and
+guest's Wayland or X11 desktop, and text typed at a text console. The guest's side is the guest agent, a small program
+of ours that the page starts at every boot with nothing written to the guest's disk (it also sets the guest's clock:
+frontend.md "The guest's clock"). This page is the topic's overview. The details are
+in [devices.md](devices.md) "vsock" (the channel), devices.md "The guest's agent" (the agent and its frames) and
 [frontend.md](frontend.md) "The toolbar", Clipboard (the page's rules). The design and the user's choices are in
 [plans/clipboard.md](plans/clipboard.md) (§7).
 
 ## The shape
 
 ```
- host clipboard ── Clipboard API / paste event ── page (main thread) ── worker ── virtio-console port
-                                                                                   "org.waarm64.agent.0"
+ host clipboard ── Clipboard API / paste event ── page (main thread) ── worker ── virtio-vsock
+                                                                                   host CID 2, port 8574
                                                                                         │
  guest: waarm64-agent.service (root; from fw_cfg into a tmpfs of its own, started by a credential unit)
         └─ a session child for the active session on seat0 (its uid): Wayland data-control, else X11's CLIPBOARD
@@ -21,7 +22,7 @@ in [devices.md](devices.md) "agent" (the device), devices.md "The guest's agent"
 
 | Piece | Where | |
 |---|---|---|
-| The channel | `web/agent-device.ts` (the device), `web/app/agent-link.ts` (`AgentLink`), `web/agent-frame.ts` (the frames) | a virtio-console with MULTIPORT and one named port, transport kind `agent`, only on machines with the setting (so the other machines' shapes and step counts don't move) |
+| The channel | `web/vsock-device.ts` (the device), `web/app/agent-link.ts` (`AgentLink`), `web/app/areas/agent-actions.ts` (a run's link), `web/agent-frame.ts` (the frames) | the agent's stream connection on the vsock every `firmware` machine has (so no setting changes a machine's shape) |
 | The page's side | `web/app/clipboard.ts` (`ClipboardShare`), `web/app/ClipboardMenu.svelte`, `web/input.ts` (the held paste chord), `web/app/png-worker.ts` (conversions to PNG) | the browser's clipboard, the permission, the rules below |
 | The agent | `agent/` (Rust, its own crate and stable toolchain, `rustix` its one dependency), `images/build.sh agent` | a static aarch64 musl binary: the root loop (`main.rs`, `logind.rs`, `console.rs`), the session child (`session.rs`), Wayland (`wire.rs`), X11 (`x11.rs`), the frames (`frame.rs`, the twin of `web/agent-frame.ts`) |
 | Its delivery | `web/app/guest-agent.ts` | the binary as the fw_cfg file `opt/waarm64/agent` (gzipped by the page), the unit as SMBIOS credentials (systemd 256+) |
@@ -29,19 +30,22 @@ in [devices.md](devices.md) "agent" (the device), devices.md "The guest's agent"
 The frames are length-prefixed (`u32` length, `u8` type, a payload of at most 64 KiB). Offers are lazy: a side says
 what types it has, and the other side REQUESTs the bytes, which come as DATA in 64 KiB chunks under a credit (4
 frames, then one for each MORE), so neither side holds more than a few chunks of a transfer. Text under 4 KiB goes
-inline in its OFFER. The table of frames (HELLO, SYNC, SESSION, OFFER, REQUEST, DATA, ACK, MORE, TYPE, TYPED, PAUSE,
-RESUME) is in devices.md "The guest's agent".
+inline in its OFFER. The table of frames (HELLO, SESSION, OFFER, REQUEST, DATA, ACK, MORE, TYPE, TYPED, PAUSE,
+RESUME, TIME) is in devices.md "The guest's agent".
 
 ## The setting and the toolbar
 
 - **The setting** is per machine, off by default, on the Machines page's Settings tab (`MachineRecord.clipboard`;
-  a transient machine has it only from `?clipboard=1`, which, like `?clipboard=0`, is over a stored machine's too). Turning it on or off changes the machine's shape (it adds or
-  removes the device), so it warns when snapshots would be orphaned. Ticking it is the click that asks for Chromium's
-  `clipboard-read` permission. Its note says what the agent is, what the guest needs (systemd 256+, a Wayland desktop
-  with data-control or an X11 session), that nothing is written to the disk, and that the toolbar's menu pauses it.
+  a transient machine has it only from `?clipboard=1`, which, like `?clipboard=0`, is over a stored machine's too),
+  under [Run the guest agent](ui:machines:DeviceSwitches.agent) (on by default, `MachineRecord.agent`, `?agent=`),
+  which it needs: off with it. Neither is in the machine's shape (the agent talks over the vsock every firmware
+  machine has, and the page's HELLO says whether the clipboard is shared), so neither orphans snapshots; both apply
+  from the next boot (the page's HELLO at each connection says the clipboard's). Ticking it is the click that asks for
+  Chromium's `clipboard-read` permission. Its note says what the guest needs (systemd 256+, a Wayland desktop
+  with data-control or an X11 session) and that the toolbar's menu pauses it.
 - **The toolbar's clipboard button** is shown while the running machine has the setting on. Its states are
   *sharing*, *paused* (for the run: the next start shares again) and *waiting* (before the agent's HELLO, or after
-  its port closed). It has a mark while the read permission is `prompt` or `denied`, or after the focus reads have
+  its connection ended). It has a mark while the read permission is `prompt` or `denied`, or after the focus reads have
   stopped. Its menu has [Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow) (while `prompt`), the
   switch [Share the clipboard](ui:clipboard:ClipboardMenu.share),
   [Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send),
@@ -82,7 +86,7 @@ the pause drops it.
   the run, and the menu says why. A read whose types have no text breaks a run. Refusals are silent.
 - **Echoes.** Each side keeps a hash of what it last received, so that the other side doesn't offer it back. The hash
   stands for "the clipboard still has it", so it is forgotten whenever that stops being known: the clipboard moving
-  on the other way, a refusal, the port's opening or closing, HELLO, SESSION, the pause. The page's hashes cover text
+  on the other way, a refusal, the connection's coming or going, HELLO, SESSION, the pause. The page's hashes cover text
   and image together (`contentHash`). After writing a guest's image, the page reads the clipboard back once, because
   Chromium re-encodes the PNG it writes, and keeps the read-back's hash as the guest's.
 - **Caps.** 16 MiB for text and HTML and 64 MiB for an image, on both sides. The page's offers carry their sizes,
@@ -98,11 +102,10 @@ the pause drops it.
   The page offers HTML only beside its text or image, as Chromium sanitised it.
 - **The pause** stops everything in both directions at once. The agent drops its ownership of the guest's clipboard
   if the host's data was in it, ends the transfers, and ignores the guest's changes until RESUME, which sends
-  nothing. The link says PAUSE or RESUME at every opening of the port, since a restored agent is as its snapshot was.
-- **Restores and new pages.** The page's HELLO carries a nonce. The agent answers SYNC with it before its own HELLO,
-  and the page drops what came before (a snapshot can fall between the writes of one frame). The new page's HELLO ends
-  the session child's transfers in flight, drops the host's offer unless its text is whole in the agent's cache, and
-  offers the guest's selection again.
+  nothing. The link says PAUSE or RESUME at each connection, since a restored agent is as its snapshot was.
+- **Restores and new pages.** A restore resets the guest's vsock transport, so the restored agent connects again and
+  its stream begins at a frame. The new page's HELLO ends the session child's transfers in flight, drops the host's
+  offer unless its text is whole in the agent's cache, and offers the guest's selection again.
 - **Concealed copies** (password managers) can't be told apart by the page. The pause is for those.
 - **Several tabs** each run their own machine. Only the focused tab reads or writes the shared host clipboard.
 - **Not shared:** PRIMARY (the middle-click selection), and copying from a text console. The serial terminal has its
@@ -113,17 +116,17 @@ the pause drops it.
 **Delivery.** `waarm64-agent.service` (`Type=simple`, wanted by `multi-user.target`) runs
 `modprobe -q qemu_fw_cfg` outside its sandbox, then its script gunzips
 `/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent/raw` into `/run/waarm64` (a `TemporaryFileSystem=` of its own,
-mode 0700, `exec`), waits for udev's `/dev/virtio-ports/org.waarm64.agent.0` and `exec`s it. A boot without the setting
-has no unit and no binary. Machines without firmware (direct kernel boots) have no fw_cfg file or credentials, and
-don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts in 10 minutes.
+mode 0700, `exec`) and `exec`s it; it connects to the page over vsock, and again whenever the connection ends. A boot
+with the agent off has no unit and no binary. Machines without firmware (direct kernel boots) have no fw_cfg file,
+credentials or vsock, and don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts in 10 minutes.
 
 **What it does** (devices.md "The guest's agent" has it all):
 
-- **The root process** owns the port. It follows the active session on seat0 through logind's state files
+- **The root process** holds the connection. On a machine that shares the clipboard, it follows the active session on seat0 through logind's state files
   (`/run/systemd/seats/seat0`, `/run/systemd/sessions/<id>`, watched with inotify), and through
   `/proc/self/mountinfo` for the user's runtime directory. It forks a **session child** (no exec) for that session,
   which drops to the user's uid and gid before it reads anything from a display, and talks to the parent over a
-  socketpair in the port's own frames.
+  socketpair in the connection's own frames.
 - **Wayland:** the child connects to `$XDG_RUNTIME_DIR/wayland-<n>` and binds `ext_data_control_manager_v1`, else
   `zwlr_data_control_manager_v1`, with a client written by hand. Sway and KDE Plasma have one of them. GNOME (Mutter)
   has neither.
@@ -141,12 +144,12 @@ don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts i
 
 | | Measured |
 |---|---|
-| The binary | **130,064 bytes** (the Podman build), 81,680 gzipped by the page. It is `no_std` (`agent/src/rt.rs`): `core` and `alloc` on musl's `main`, `malloc`, `fork` and `exit`, an insertion sort for its few names (`core`'s sorts are ~3 KiB a type), and the unwind tables, which `panic=abort` never reads, dropped at the link (`agent/no-unwind.ld`, ~27 KiB). With `std` it was 449,264 bytes (~245 KB gzipped), ~320 KiB of it `std`'s (an empty `fn main` builds to 327,048). What's left: the agent's own code ~65 KiB, musl ~10 KiB, `core`'s formatting ~12 KiB (docs/backlog.md) |
+| The binary | **132,696 bytes** (the Podman build, 2026-11-13: vsock and the clock; 130,064 on the console), ~83 KB gzipped by the page. It is `no_std` (`agent/src/rt.rs`): `core` and `alloc` on musl's `main`, `malloc`, `fork` and `exit`, an insertion sort for its few names (`core`'s sorts are ~3 KiB a type), and the unwind tables, which `panic=abort` never reads, dropped at the link (`agent/no-unwind.ld`, ~27 KiB). With `std` it was 449,264 bytes (~245 KB gzipped), ~320 KiB of it `std`'s (an empty `fn main` builds to 327,048). What's left: the agent's own code ~65 KiB, musl ~10 KiB, `core`'s formatting ~12 KiB (docs/backlog.md) |
 | The boot's fw_cfg read | Linux's `qemu_fw_cfg` reads the data register a byte at a time (`ioread8_rep`), so there is one MMIO exit per byte: 4–12 µs a byte. **332 ms for the `no_std` build's 81,680 bytes** (4.1 µs a byte), plus 32 ms of `gzip -dc` (`tests/page-agent.test.ts` logs both). With `std`, the 333 KiB console build had taken 4.1 s raw and 1.3 s gzipped (187 KiB, 7 µs a byte). The unit is `Type=simple` after the login prompt, so the boot doesn't wait for it, but it is a vCPU's time at every boot and every restart |
 | Idle | 0 ticks of CPU and 0 voluntary context switches over 20–60 s, for the agent and its session child, with sway and with Xvfb. One thread each, blocked in `ppoll` with no timeout. The two bounded exceptions are a paste being typed (1 ms steps) and a compositor's socket that refuses (25 tries, 200 ms apart) |
 | Memory | VmRSS **168 KiB** (the console agent); **328 KiB and 264 KiB** (the agent and its child with sway); **320 KiB and 424 KiB** (with X11). With `std`: 300, 572 and 516, 604 and 704. The unit's `MemoryMax=32M` is a cap for a bug, not a budget |
-| Throughput | ~0.8 MB/s, the channel's rate under the credit: a 1.58 MB PNG from the host to `wl-paste` in 1.9–2.0 s, to xclip by INCR in 2.2 s |
-| Sandbox | `systemd-analyze security` 3.8, "OK" (3.7 before X11's socket directory was bound in) |
+| Throughput | ~0.8 MB/s on the virtio-console, the channel's rate under the credit: a 1.58 MB PNG from the host to `wl-paste` in 1.9–2.0 s, to xclip by INCR in 2.2 s. Not measured again over vsock (4 KiB packets, as the console's buffers were) |
+| Sandbox | `systemd-analyze security` 3.8, "OK" (3.7 before X11's socket directory was bound in), on the console; not measured since the clock (`CAP_SYS_TIME`) and vsock (no `PrivateNetwork`) |
 
 ## The machine's state
 
@@ -193,18 +196,16 @@ gives activation in Firefox's BiDi, so Firefox's activation rules were measured 
 - **Debian 13 mounts `/run` `noexec`** (`rw,nosuid,nodev,noexec`): `exec` of a binary in a `RuntimeDirectory` fails
   with EACCES. That is why the unit has a `TemporaryFileSystem=` of its own mounted `exec`, and needs no
   `memfd_create` loader.
-- **Linux's virtio_console drops what arrives for a port nobody holds open**, and the device does the same on its
-  side. So the page learns that the agent is there from the port's `open`, and the link resets its reader and queue
-  at each opening.
-- **Port 0 needn't be a console:** Linux makes a port a console only on CONSOLE_PORT. So the single port is id 0 with
-  four queues. A second port (spice-vdagent's) would be id 1 at queues 4 and 5 (`portQueues`), with `max_nr_ports` 2.
-- **The unit's capabilities** are only `CAP_SYS_ADMIN` (TIOCSTI, which root keeps under
+- **The agent was on a virtio-console of its own until 2026-11-13** (a named port, `org.waarm64.agent.0`, a transport
+  kind that changed the machine's shape with the setting, and SYNC to begin a restored stream at a frame). vsock took
+  its place with the clock (AGENT track): no shape, no udev wait, a restore's connection begun afresh. spice-vdagent's
+  port (plans/clipboard.md §6) would need virtio-serial again.
+- **The unit's capabilities** are only `CAP_SYS_TIME` (the clock), `CAP_SYS_ADMIN` (TIOCSTI, which root keeps under
   `dev.tty.legacy_tiocsti=0` through this check), `CAP_SETUID` and `CAP_SETGID` (the session children, hence no
   `NoNewPrivileges`), and `CAP_KILL` (stopping a child, which is the user's process by then). There is no DAC
   override, so whatever the agent reads of a user's it must reach by `stat` or as the child: root can't open the
   user's 0700 runtime directory, so it learns that it is mounted from its owner. X11's sockets reach the private
-  /tmp through `BindReadOnlyPaths=-/tmp/.X11-unix` (a path socket connects across network namespaces and through a
-  read-only bind; `PrivateNetwork` hides the abstract ones).
+  /tmp through `BindReadOnlyPaths=-/tmp/.X11-unix` (a path socket connects through a read-only bind).
 - **Stopping a child closes its socket first** (the child ends by itself), then SIGKILL. The first build killed first,
   without `CAP_KILL`. The kill was refused and the agent's `waitpid` hung at sway's restart (found by the page test).
 - **Debian's xclip 0.13 drops requests that come during an INCR**, so a conversion waits while the owner is busy with
@@ -220,9 +221,9 @@ gives activation in Firefox's BiDi, so Firefox's activation rules were measured 
 | Where | What |
 |---|---|
 | `agent/` (`cargo test`, in `scripts/ci.sh`'s `agent` step with clippy and the build) | the frames, Wayland's and X11's wire formats, logind's files, the types and echo rules, the Typist on a fake n_tty; `serve_test.rs` (the root loop on a socketpair), `sway_test.rs` (the session child against a headless sway 1.12 with wl-clipboard: ext data-control), `x11_test.rs` (against an Xvfb of its own with xclip); each skipped without its programs |
-| `tests/agent.test.ts` (Node, `npm test`) | the device on hand-built queues, the link, the unit's lines and script, `ClipboardShare` on a faked link and browser (every rule above), the held paste chord |
-| `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, `npm test`) | the button's states and menu, the permission (headless: denied), the Machines page's switch, the PNG worker, Copy the screen on the framebuffer; the guest's shell plays the agent on the port |
-| `tests/page-agent.test.ts` (Debian, `scripts/ci-debian.sh`) | the agent over fw_cfg, its HELLO and unit, the fw_cfg read's time, idle CPU and RSS, TYPE onto tty1 (fast and slow readers, graphics mode refused), PAUSE, the port echoed by `cat` |
+| `tests/agent.test.ts`, `tests/vsock.test.ts` (Node, `npm test`) | the link, the clock's TIME, the unit's lines and script, `ClipboardShare` on a faked link and browser (every rule above), the held paste chord; the vsock device's agent connection on hand-built queues |
+| `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, `npm test`) | the button's states and menu, the permission (headless: denied), the Machines page's switches, the PNG worker, Copy the screen on the framebuffer; the test plays the agent's device end (`?agentstub`) |
+| `tests/page-agent.test.ts` (Debian, `scripts/ci-debian.sh`) | the agent over fw_cfg, its HELLO and unit, the fw_cfg read's time, idle CPU and RSS, TYPE onto tty1 (fast and slow readers, graphics mode refused), PAUSE, the connection echoed by perl |
 | `tests/page-clipboard.test.ts`, `tests/page-clipboard-x11.test.ts` (`images/debian-sway/build.sh`'s Debian, `scripts/ci-debian.sh --platform`; skipped without the image) | sway 1.10 through `zwlr`, and Xvfb from a tty login: text, images and HTML both ways, the paste chord, echoes, the pause, idle costs, the session's end and a new one; Copy the screen on the default 3D path, and on virtio-gpu 2D's scanout with `WAARM64_DISTROS=debian WAARM64_PAGE_QUERY=gpu=2d` (passes, ~150 s) |
 
 Each step's cases and planted bugs are in [testing.md](testing.md)'s clipboard rows.

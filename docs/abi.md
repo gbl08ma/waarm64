@@ -265,14 +265,11 @@ puts its functions into the core's table.
 ## System suspend (ABI 54)
 
 A guest in PSCI SYSTEM_SUSPEND ([platform.md](platform.md) "System suspend") has every vCPU off until the host wakes
-it. In parallel mode all three from any thread; in round-robin, `vm_suspended` from any thread, `vm_wake` and
-`vm_clock_skip` between `vm_run` calls (a wake takes effect at the next one, and a snapshot taken before it keeps it):
+it. In parallel mode both from any thread; in round-robin, `vm_suspended` from any thread, `vm_wake` between `vm_run`
+calls (a wake takes effect at the next one, and a snapshot taken before it keeps it):
 - `vm_suspended(vm) -> u32`: 1 while the guest is suspended.
 - `vm_wake(vm) -> u32`: its vCPU resumes at the entry it gave, with x0 = its context (parallel mode: the vCPU's wake
   word is bumped and notified). 0 if it wasn't suspended.
-- `vm_clock_skip(vm, ns) -> u32`: moves a suspended guest's realtime clock on by `ns` (the PL031 keeps showing the
-  host's time); 0, and nothing done, if the guest isn't suspended or time is deterministic. Linux counts the jump as
-  sleep when it resumes.
 
 ## User-mode exports (corpus, differential tests, `bench/interp`)
 
@@ -599,6 +596,7 @@ implemented by this step).
 | 62 | FEAT_RDM and FEAT_LRCPC2: `VmConfig.features` bits 12 and 13; `ID_AA64ISAR0_EL1` RDM = 1, `ID_AA64ISAR1_EL1` LRCPC = 2 |
 | 63 | FEAT_FCMA: `VmConfig.features` bit 14; `ID_AA64ISAR1_EL1` FCMA = 1 |
 | 65 | FEAT_FP16 and FEAT_FHM: `VmConfig.features` bits 15 and 16 (FHM only with FP16); `ID_AA64PFR0_EL1` FP = AdvSIMD = 1, `ID_AA64ISAR0_EL1` FHM = 1 |
+| 67 | `vm_clock_skip` gone: the guest's clock after a restore is the guest agent's (docs/frontend.md "The guest's clock"), not a suspended guest's skip |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

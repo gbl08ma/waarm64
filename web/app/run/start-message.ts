@@ -27,11 +27,18 @@ export type Channels = {
   /** A relative mouse (the pointer while the screen holds the mouse) and a touchscreen. */
   mouse?: MessageChannel;
   touch?: MessageChannel;
-  /** Clipboard sharing's port to the guest's agent (docs/plans/clipboard.md). */
+  /** The guest agent's end (web/app/agent-link.ts), a `firmware` machine's with the agent on (over its vsock). */
   agent?: MessageChannel;
+  /** The agent shares the clipboard (the page's HELLO says so). */
+  clipboard: boolean;
+  /** The agent's device end is the page's tests' (web/app/run/dev-knobs.ts `agentStub`), not the worker's. */
+  agentStub: boolean;
   /** systemd's notifications, a firmware machine's (web/vsock-device.ts): the page hears READY=1. */
   notify?: MessageChannel;
 };
+
+/** What a run's guest agent takes of its channels (web/app/areas/agent-actions.ts). */
+export type AgentChannels = Pick<Channels, 'agent' | 'clipboard' | 'agentStub'>;
 
 /** A run's channels for what the configuration has. */
 export function channels(c: MachineConfig, sound: Channels['sound'], nets: Channels['nets']): Channels {
@@ -47,7 +54,9 @@ export function channels(c: MachineConfig, sound: Channels['sound'], nets: Chann
     shares: optional(c.devices.shares),
     mouse: optional(c.devices.mouse),
     touch: optional(c.devices.touch),
-    agent: optional(c.devices.clipboard),
+    agent: optional(c.dev.agentStub || (c.devices.agent && !!(MACHINES[c.machine] as Machine).firmware)),
+    agentStub: c.dev.agentStub,
+    clipboard: c.devices.clipboard,
     notify: optional(!!(MACHINES[c.machine] as Machine).firmware),
   };
 }
@@ -79,7 +88,7 @@ function ports(ch: Channels, w: StartWith): MachinePorts {
     mouse: ch.mouse?.port2,
     touch: ch.touch?.port2,
     folders: ch.shares && w.folders && { list: w.folders, port: ch.shares.port2 },
-    agent: ch.agent?.port2,
+    agent: ch.agentStub ? undefined : ch.agent?.port2,
     notify: ch.notify?.port2,
     sound: ch.sound,
     renderer: w.three?.renderer,
@@ -108,7 +117,9 @@ export function startMessage(
     about: w.about,
     plan: w.plan,
   };
-  const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agent, ch.notify].flatMap((c) => (c ? [c.port2] : []));
+  const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agentStub ? undefined : ch.agent, ch.notify].flatMap((c) =>
+    c ? [c.port2] : [],
+  );
   const transfer: Transferable[] = [
     ch.keyboard.port2,
     ch.tablet.port2,

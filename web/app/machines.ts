@@ -184,7 +184,6 @@ export async function updateMachine(store: Store, m: MachineRecord) {
       !!x.touch,
       !!x.clock,
       !!x.shares,
-      !!x.clipboard,
       x.jitMiB ?? 0,
     ]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'shape');

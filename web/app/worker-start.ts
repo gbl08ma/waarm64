@@ -23,9 +23,9 @@ type Lz = Awaited<ReturnType<typeof lzCodec>>;
 
 /**
  * What a start fetches: the core, and without a snapshot the kernel and initrd (whole) and the saved variable store
- * (a snapshot has it in its RAM, and needs no kernel); the disks are only checked. Clipboard sharing's guest agent is
- * fetched only for a machine with the setting (web/app/guest-agent.ts); without it (not built) the machine runs as it
- * would, its port unopened.
+ * (a snapshot has it in its RAM, and needs no kernel); the disks are only checked. The guest agent is fetched only for a
+ * `firmware` machine with it on (web/app/guest-agent.ts) and without a snapshot (a restored guest has its own); without
+ * it (not built) the machine runs as it would, with no agent.
  */
 export async function fetchParts(m: StartMessage, machine: Machine, snapshot: boolean, stopped: () => boolean) {
   const flash =
@@ -37,7 +37,7 @@ export async function fetchParts(m: StartMessage, machine: Machine, snapshot: bo
       : undefined;
   const urls = m.disks.flatMap((d) => ('url' in d.source ? [new URL(d.source.url, self.location.href).href] : []));
   const disks = checkDisks(urls, machine);
-  const agent = m.config.devices.clipboard && machine.firmware ? agentBinary() : undefined;
+  const agent = m.config.devices.agent && machine.firmware && !snapshot ? agentBinary() : undefined;
   const images = snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])];
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...images], machine, stopped);
   await disks;

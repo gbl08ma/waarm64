@@ -3,7 +3,7 @@
 // clipboard menu's actions (web/app/page.ts's `clipboard*`), "Copy the screen" among them.
 import type { DisplayFromPage } from '../../gpu-present.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
-import { AgentLink } from '../agent-link.ts';
+import type { AgentLink } from '../agent-link.ts';
 import { ClipboardShare } from '../clipboard.ts';
 import { isPasteChord, onMac, PNG, watchReadPermission, type Host } from '../clipboard-host.ts';
 import type { Grab } from '../hooks.ts';
@@ -44,8 +44,6 @@ export class ClipboardActions {
   readonly #m: PageMachine;
   readonly #replies: { grabs: Replies<Grab>; screens: Replies<Blob | undefined> };
   readonly #canvas: () => HTMLCanvasElement;
-  /** The running machine's end of the agent's port (web/app/agent-link.ts), while it has clipboard sharing. */
-  #agent: AgentLink | undefined;
 
   constructor(
     m: PageMachine,
@@ -55,13 +53,9 @@ export class ClipboardActions {
     [this.#m, this.#replies, this.#canvas] = [m, replies, canvas];
   }
 
-  /** A run's sharing over the agent's port `port` (none: the machine has no clipboard sharing); `up` at each agent's HELLO. */
-  begin(port: MessagePort | undefined, up: () => void) {
-    this.#agent?.close();
-    this.#agent = port && new AgentLink(port);
-    if (this.#agent) this.#agent.onHello = up;
-    window.__agent = this.#agent; // the tests' hook
-    return this.#agent && new ClipboardShare(this.#agent, clipboardHost());
+  /** A run's sharing over its agent's link (none: no sharing, the machine has no agent or doesn't share). */
+  begin(link: AgentLink | undefined, share: boolean) {
+    return share && link ? new ClipboardShare(link, clipboardHost()) : undefined;
   }
 
   /** Follows what sharing follows: the focus, the paste chord, the clipboard's changes, the read permission. */

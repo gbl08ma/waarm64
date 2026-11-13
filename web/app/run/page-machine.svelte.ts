@@ -233,7 +233,8 @@ export class PageMachine {
         touch: resolved.touch,
         clock: resolved.clock,
         shares: resolved.shares,
-        clipboard: resolved.clipboard,
+        agent: resolved.agent,
+        clipboard: resolved.agent && resolved.clipboard,
         usb: resolved.usb,
       },
       guest: {

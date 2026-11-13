@@ -1,7 +1,8 @@
-// Clipboard sharing's guest agent (docs/plans/clipboard.md §3.1; docs/devices.md "The guest's agent"): the page hands a
-// machine with the setting the binary (agent/, `images/build.sh agent`) as the fw_cfg file `opt/waarm64/agent`, and a
-// unit (web/app/guest-unit.ts: SMBIOS credentials, systemd 256+) that copies it into /run and runs it as root. Nothing
-// is installed: a boot without the setting has no unit and no binary, and /run is gone at the next boot.
+// The guest agent (docs/devices.md "The guest's agent"; clipboard sharing: docs/plans/clipboard.md §3.1): the page hands
+// a `firmware` machine with the agent on the binary (agent/, `images/build.sh agent`) as the fw_cfg file
+// `opt/waarm64/agent`, and a unit (web/app/guest-unit.ts: SMBIOS credentials, systemd 256+) that copies it into /run and
+// runs it as root; the agent connects to the page over the machine's vsock (web/vsock-device.ts `AGENT_PORT`). Nothing
+// is installed: a boot without the agent has no unit and no binary, and /run is gone at the next boot.
 
 import { guestUnit } from './guest-unit.ts';
 import type { Credential } from './machine.ts';
@@ -41,12 +42,9 @@ export async function agentBinary(url = AGENT_BINARY): Promise<Uint8Array | unde
   return undefined;
 }
 
-/** The agent's port, as udev links it (web/agent-device.ts `AGENT_PORTS`). */
-export const AGENT_PORT = '/dev/virtio-ports/org.waarm64.agent.0';
-
 /** The script the unit runs. POSIX sh: the binary out of fw_cfg (gunzipped) into the unit's own tmpfs, then run. */
 export function agentScript(): string {
-  return `# From waarm64: the machine's clipboard sharing, run at every boot while it is on (docs/plans/clipboard.md).
+  return `# From waarm64: the machine's guest agent, run at every boot while it is on (docs/devices.md, "The guest's agent").
 # The page gives the agent's binary as an fw_cfg file; it runs from /run/waarm64, a tmpfs of this unit's own.
 f=/sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}/raw
 if [ ! -r "$f" ]; then
@@ -54,19 +52,20 @@ if [ ! -r "$f" ]; then
   exit 0
 fi
 gzip -dc "$f" >/run/waarm64/agent && chmod 0500 /run/waarm64/agent || exit 1
-# udev links the port by its name once it has seen the device.
-udevadm wait --timeout=60 ${AGENT_PORT} 2>/dev/null
+# It connects to the page over vsock, and again whenever the connection ends.
 exec /run/waarm64/agent
 `;
 }
 
 /**
  * The [Service] lines (plan §3.1): a long-running root process, low priority, its memory capped (a cap for a bug, not
- * a budget: plan §3.3) and first to go when the guest runs out. Sandboxed as far as what it does allows: TIOCSTI on the
- * foreground console needs CAP_SYS_ADMIN, the session children change uid (CAP_SETUID, CAP_SETGID; no NoNewPrivileges,
- * which would stop them) and are the user's processes then, which the agent stops (CAP_KILL); they read the session's files in /run/user and the home (read-only).
- * The private /tmp keeps the host's X11 sockets' directory, bound in read-only (an X session's child connects to its
- * display's socket there; `PrivateNetwork` hides the abstract ones; `-`: a guest without it starts all the same).
+ * a budget: plan §3.3) and first to go when the guest runs out. Sandboxed as far as what it does allows: setting the
+ * clock needs CAP_SYS_TIME (and no `ProtectClock`), TIOCSTI on the foreground console CAP_SYS_ADMIN, the session children
+ * change uid (CAP_SETUID, CAP_SETGID; no NoNewPrivileges, which would stop them) and are the user's processes then, which
+ * the agent stops (CAP_KILL); they read the session's files in /run/user and the home (read-only). Its sockets are Unix
+ * ones (the session's) and vsock (the page): no `PrivateNetwork`, whose namespace a kernel with vsock namespaces would
+ * keep from the host's CID. The private /tmp keeps the host's X11 sockets' directory, bound in read-only (an X session's
+ * child connects to its display's socket there; `-`: a guest without it starts all the same).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/waarm64 is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -79,20 +78,18 @@ RestartSec=5s
 Nice=10
 MemoryMax=32M
 OOMScoreAdjust=500
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
 BindReadOnlyPaths=-/tmp/.X11-unix
-PrivateNetwork=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
-ProtectClock=yes
 ProtectHostname=yes
-RestrictAddressFamilies=AF_UNIX
+RestrictAddressFamilies=AF_UNIX AF_VSOCK
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
@@ -107,8 +104,8 @@ export const agentCredentials = (description: string): Credential[] =>
     name: 'waarm64-agent.service',
     description,
     script: agentScript(),
-    // The port appears with the device, early; the unit waits for udev's link itself (the script). A failure that lasts
-    // (no port, the host's end closed) ends at the start limit: 5 starts in 10 minutes, which starts RestartSec (5 s)
+    // The agent connects (and connects again) by itself; a failure that lasts (the binary unreadable, a crash) ends at
+    // the start limit: 5 starts in 10 minutes, which starts RestartSec (5 s)
     // apart can reach (systemd's default, 5 in 10 s, they never do), rather than a restart every 5 s for the boot, each
     // reading the binary out of fw_cfg again (1.3 s of a vCPU).
     unit: 'After=systemd-udev-trigger.service\nStartLimitIntervalSec=10min\nStartLimitBurst=5\n',

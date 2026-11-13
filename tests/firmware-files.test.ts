@@ -49,7 +49,7 @@ const disks = (c: Case): StartDisk[] => [
 function start(c: Case) {
   const config: MachineConfig = {
     machine: c.machine, ncpus: 2, ram: { mib: 1024 }, cpu: [], display: '2d', vulkan: false,
-    devices: { nets: c.nets, mouse: false, touch: false, clock: true, shares: !!c.sharesPath, clipboard: !!c.agent, usb: false },
+    devices: { nets: c.nets, mouse: false, touch: false, clock: true, shares: !!c.sharesPath, agent: !!c.agent, clipboard: !!c.agent, usb: false },
     guest: { keyLayout: c.keyLayout, netConfig: c.netConfig, sharesPath: c.sharesPath, credentials: c.credentials },
     dev: parseDevKnobs(new URLSearchParams()),
   };

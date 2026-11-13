@@ -1,9 +1,11 @@
 # A guest agent (a plan for the host-integration track; not scheduled)
 
 **Status:** written at the exit of M8 graphics G1 (2026-10-02) from that step's brainstorm and
-measurements. Nothing here is built but the clipboard, which isn't the stock agents': the user chose an agent of our
-own for it (2026-11-05, [clipboard.md](clipboard.md) §3.4), built by the CLIP track ([../clipboard.md](../clipboard.md)),
-whose binary and port are where the other jobs below can go too. The user decided on 2026-10-01 that G1 stays agent-free, that
+measurements. Built since, with an agent of our own rather than the stock ones: the clipboard (the user's choice,
+2026-11-05, [clipboard.md](clipboard.md) §3.4; the CLIP track, [../clipboard.md](../clipboard.md)) and **the time after
+a resume** (the AGENT track, 2026-11-13: TIME, [../frontend.md](../frontend.md) "The guest's clock"), the agent on by
+default on every firmware machine and over vsock ([../devices.md](../devices.md) "The guest's agent"). Its binary and
+connection are where the other jobs below can go too. The user decided on 2026-10-01 that G1 stays agent-free, that
 the agent is **its own later step**, that it **starts from the stock agents' protocols**
 (spice-vdagent, qemu-guest-agent) so distro packages work unmodified, and that an agent of ours, if
 one is built, reaches arbitrary images **through a tools disk first**, with an opt-in zero-touch

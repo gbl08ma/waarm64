@@ -47,6 +47,11 @@ export type DevKnobs = {
    * ready marker (`?ready=guest`: the tests' check of those signs, docs/devices.md "vsock").
    */
   guestReadyOnly: boolean;
+  /**
+   * The guest agent's end played by the page's tests (`?agentstub`, tests/page-clipboard-ui.test.ts): the link's channel
+   * on any machine, its device end kept on the page (`window.__agentStub`) instead of the worker's vsock.
+   */
+  agentStub: boolean;
 };
 
 /** The machine worker's knobs from the page's query. */
@@ -74,5 +79,6 @@ export function parseDevKnobs(q: URLSearchParams): DevKnobs {
     noDiskCache: q.get('diskcache') === '0',
     avProbe: q.has('avprobe'),
     guestReadyOnly: q.get('ready') === 'guest',
+    agentStub: q.has('agentstub'),
   };
 }

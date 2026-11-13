@@ -1,14 +1,15 @@
 // Clipboard sharing's page without the agent (docs/plans/clipboard.md §4–§5, docs/frontend.md "The toolbar"): on
-// Buildroot with `?clipboard=1` (seconds), the guest's shell plays the agent on the port (`exec 3<>` its node, HELLO
-// written with printf, the page's frames read back with dd and decoded here). The toolbar's clipboard button: absent
+// Buildroot with `?clipboard=1` (seconds) and `?agentstub`, the test plays the agent's device end (the page's frames
+// collected and decoded here, the agent's posted). The toolbar's clipboard button: absent
 // without the setting; waiting, sharing, paused; the browser's read permission (prompt: the amber light and the item that
 // asks, which headless Chromium answers with a denial; denied: how to allow it; granted, by the test, updating the
 // button at once); sync with the permission (the host's copy offered on `clipboardchange`, which Chromium fires);
 // the switch saying PAUSE and RESUME, nothing offered while paused and nothing sent by the resume; Send the clipboard
 // to the guest and Type the clipboard; Copy the screen (the framebuffer the guest drew, as a PNG on the host's
-// clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's
-// switch: off for a machine that hasn't it, its note, ticking it asks for the permission, the orphans' warning both
-// ways, saved into the record.
+// clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker
+// (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's switches: the agent's, on by default, and
+// the clipboard's under it, off for a machine that hasn't it, its note, ticking it asks for the permission, neither
+// orphaning snapshots, saved into the record.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -17,7 +18,7 @@ import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
 import { CAP, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
-import { PAGE_CAPS } from '../web/app/agent-link.ts';
+import { pageCaps } from '../web/app/agent-link.ts';
 import { TEXT } from '../web/app/clipboard-host.ts';
 import { plain, t } from '../web/i18n.ts';
 
@@ -51,15 +52,28 @@ async function run(page: Page, cmd: string, ms = 30_000) {
     .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal(page)}`); });
   return re.exec(await terminal(page))![1].trim();
 }
-/** The guest's shell opens the agent's port as fd 3 (the page then sends HELLO and the switch). */
-const openPort = (page: Page) => onSerial(page, 'exec 3<>/dev/$(basename $(dirname $(grep -l org.waarm64.agent.0 /sys/class/virtio-ports/*/name)))\n');
-/** The guest writes `bytes` to the port. */
-const guestWrites = (page: Page, bytes: Uint8Array) => run(page, `printf '${[...bytes].map((b) => `\\${b.toString(8).padStart(3, '0')}`).join('')}' >&3; echo written`);
-/** The guest reads `n` bytes from the port: the frames in them. */
+/**
+ * The agent's device end, played by the test (`?agentstub`, web/app/run/dev-knobs.ts): the bytes the page sends are
+ * collected (and taken at once), as a guest agent reading its vsock connection would.
+ */
+const stub = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { __agentStub: MessagePort; __stubGot: number[] };
+  w.__stubGot = [];
+  w.__agentStub.onmessage = (e: MessageEvent<{ type: string; bytes?: Uint8Array }>) => {
+    if (e.data.type !== 'data' || !e.data.bytes) return;
+    w.__stubGot.push(...e.data.bytes);
+    w.__agentStub.postMessage({ type: 'taken', n: e.data.bytes.length });
+  };
+});
+/** The "agent" connects (the page then sends HELLO and the switch), or its connection ends. */
+const openPort = (page: Page, open = true) => page.evaluate((open) => (window as unknown as { __agentStub: MessagePort }).__agentStub.postMessage({ type: 'open', open }), open);
+/** The "agent" writes `bytes`. */
+const guestWrites = (page: Page, bytes: Uint8Array) => page.evaluate((b) => (window as unknown as { __agentStub: MessagePort }).__agentStub.postMessage({ type: 'data', bytes: new Uint8Array(b) }), [...bytes]);
+/** The "agent" reads `n` bytes: the frames in them. */
 async function guestReads(page: Page, n: number): Promise<Frame[]> {
-  const hex = await run(page, `dd bs=1 count=${n} <&3 2>/dev/null | od -An -v -tx1`);
-  const bytes = new Uint8Array(hex.split(/\s+/).filter(Boolean).map((x) => parseInt(x, 16)));
-  assert.equal(bytes.length, n, `the guest read ${hex}`);
+  await page.waitForFunction((n) => (window as unknown as { __stubGot: number[] }).__stubGot.length >= n, n, { timeout: 10_000, polling: 50 })
+    .catch(async () => assert.fail(`the agent's end got ${await page.evaluate(() => JSON.stringify((window as unknown as { __stubGot: number[] }).__stubGot))}, not ${n} bytes`));
+  const bytes = new Uint8Array(await page.evaluate((n) => (window as unknown as { __stubGot: number[] }).__stubGot.splice(0, n), n));
   return new FrameReader().push(bytes);
 }
 const HELLO = encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | CAP.TEXT }));
@@ -85,8 +99,9 @@ const menu = async (page: Page, open: boolean) => {
   if ((await page.evaluate(() => (document.getElementById('clipboard-menu') as HTMLDetailsElement).open)) !== open) await page.click('#clipboard-menu > summary');
 };
 async function boot(page: Page, query: string) {
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&${query}`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&agentstub&${query}`);
   await page.waitForFunction(() => document.body.dataset.state === 'running' && /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
+  await stub(page);
 }
 
 test("the toolbar's clipboard button: only with the setting; waiting, sharing, paused; the read permission's states; sync, the switch, Send and Type", { skip, timeout: 180_000 }, async () => {
@@ -108,10 +123,10 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   assert.equal(await page.isVisible('#clipboard-waiting'), true);
   await menu(page, false);
 
-  // The guest's "agent" opens the port: the page's HELLO and the switch (RESUME); its HELLO back: sharing (never pressed), with the
+  // The "agent" connects: the page's HELLO and the switch (RESUME); its HELLO back: sharing (never pressed), with the
   // permission's amber light (no permission: the guest's menus don't get the host's copy).
   await openPort(page);
-  const opening = await guestReads(page, encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: PAGE_CAPS })).length + 5);
+  const opening = await guestReads(page, encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: pageCaps(true) })).length + 5);
   assert.deepEqual(opening.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
   await guestWrites(page, HELLO);
   b = await waitButton(page, (x) => x.state === 'sharing', 'after HELLO');
@@ -168,27 +183,31 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   assert.equal(new TextDecoder().decode(typed.payload), during);
   assert.deepEqual([end.type, end.payload.length], [FRAME.TYPE, 0]);
   // What became of a paste (the agent's TYPED) shows in the menu the click left open: a failure keeps it open, where the
-  // user looks; typed whole, it closes. The guest's side is set up first, to answer in the background, because typing
-  // on the serial shell closes the menu (onSerial). The background job's output goes away from run()'s `$(…)`, which
-  // would otherwise wait for it (and it waits for the click's frames).
+  // user looks; typed whole, it closes. The "agent" answers a moment after the click's frames.
   const isOpen = () => page.evaluate(() => (document.getElementById('clipboard-menu') as HTMLDetailsElement).open);
-  const answerLater = (typed: number) => run(page, `(sleep 3; dd bs=1 count=${5 + Buffer.byteLength(during) + 5} <&3 >/dev/null 2>&1; printf '${[...encodeFrame(FRAME.TYPED, new Uint8Array([typed]))].map((b) => `\\${b.toString(8).padStart(3, '0')}`).join('')}' >&3) </dev/null >/dev/null 2>&1 & echo later`);
-  await answerLater(TYPED.NOT_TEXT);
+  const answerLater = async (typed: number) => {
+    await guestReads(page, 5 + Buffer.byteLength(during) + 5);
+    await page.waitForTimeout(3000);
+    await guestWrites(page, encodeFrame(FRAME.TYPED, new Uint8Array([typed])));
+  };
   await menu(page, true);
   await page.click('#clipboard-type');
+  let later = answerLater(TYPED.NOT_TEXT);
   assert.equal(await isOpen(), true, 'the menu closed at the click, before Type\'s outcome');
   await page.waitForSelector('#clipboard-not-text', { timeout: 10_000 });
+  await later;
   assert.equal(await isOpen(), true, 'the menu closed before Type\'s refusal showed');
   assert.equal(await page.textContent('#clipboard-not-text'), t('clipboard:ClipboardMenu.notText'));
-  await answerLater(TYPED.DONE);
   await menu(page, true);
   await page.click('#clipboard-type');
+  later = answerLater(TYPED.DONE);
   assert.equal(await isOpen(), true, 'the menu closed at the click, before Type\'s outcome');
   await page.waitForFunction(() => !(document.getElementById('clipboard-menu') as HTMLDetailsElement).open, undefined, { timeout: 10_000 });
+  await later;
 
-  // The "agent" closes the port: waiting again.
-  await onSerial(page, 'exec 3>&-\n');
-  await waitButton(page, (x) => x.state === 'waiting', 'the port closed');
+  // The "agent's" connection ends: waiting again.
+  await openPort(page, false);
+  await waitButton(page, (x) => x.state === 'waiting', 'the connection ended');
   // A machine started with the permission granted: the host's clipboard goes to the guest once its agent says HELLO.
   await boot(page, 'clipboard=1');
   await openPort(page);
@@ -198,9 +217,9 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   assert.equal(inline(atHello), during);
 
   // Copy the screen: a PNG of the framebuffer (640×480, the console's text on it) on the host's clipboard, no agent
-  // needed (the port closed: waiting).
-  await onSerial(page, 'exec 3>&-\n');
-  await waitButton(page, (x) => x.state === 'waiting', 'the port closed again');
+  // needed (the connection ended: waiting).
+  await openPort(page, false);
+  await waitButton(page, (x) => x.state === 'waiting', 'the connection ended again');
   // The guest draws its top 160 rows white (x8r8g8b8: 640 × 4 bytes a row); the rest stays black.
   assert.equal(await run(page, "head -c 409600 /dev/zero | tr '\\000' '\\377' >/dev/fb0; echo drawn"), 'drawn');
   await page.waitForTimeout(500);
@@ -241,12 +260,13 @@ test("the agent's HELLO says the machine is up: with the serial marker off (`?re
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&clipboard=1&ready=guest`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&view=both&agentstub&clipboard=1&ready=guest`);
   // Buildroot's shell prompt (its marker) is up, but not watched for: the machine is still booting.
   await page.waitForFunction(() => /# $/.test(`${document.querySelector('.xterm-rows')?.textContent?.trimEnd()} `), null, { timeout: 60_000, polling: 200 });
+  await stub(page);
   await openPort(page);
-  await guestReads(page, encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: PAGE_CAPS })).length + 5); // the page's HELLO and RESUME
-  assert.equal(await page.evaluate(() => document.body.dataset.state), 'booting', 'the port open, no HELLO yet');
+  await guestReads(page, encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: pageCaps(true) })).length + 5); // the page's HELLO and RESUME
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'booting', 'connected, no HELLO yet');
   await guestWrites(page, HELLO);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 10_000, polling: 100 })
     .catch(async () => assert.fail(`after the agent's HELLO the machine is ${await page.evaluate(() => document.body.dataset.state)}`));
@@ -310,7 +330,7 @@ test('the PNG worker (web/app/png.ts): a BMP, a JPEG and RGBA pixels as PNGs of 
   await context.close();
 });
 
-test("the Machines page's clipboard switch: off by default, its note; ticking it asks for the permission; the orphans' warning; saved", { timeout: 120_000 }, async () => {
+test("the Machines page's agent and clipboard switches: the agent on by default, the clipboard off, its note; off without the agent; ticking it asks for the permission; no orphans (not in the shape); saved", { timeout: 120_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -331,10 +351,20 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
   await page.reload();
   await page.locator('.machines .pick', { hasText: 'Clipboard machine' }).click();
   await page.locator('.machines [data-selected] [data-tab=settings]').click();
+  const stored = () => page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const m = await (await Store.open()).get('machines', 'cccccccccccc');
+    return { agent: m.agent, clipboard: m.clipboard };
+  });
+  const save = async () => {
+    await page.click('.machines [data-action=save]');
+    await page.waitForFunction(() => (document.querySelector('.machines [data-action=save]') as HTMLButtonElement).disabled, null, { polling: 100 });
+  };
+  assert.equal(await page.isChecked('.machines [data-field=agent]'), true, 'the agent: on by default');
+  assert.equal(await page.textContent('.machines [data-agent-note]'), t('machines:DeviceSwitches.agent.on'));
   assert.equal(await page.isChecked('.machines [data-field=clipboard]'), false);
   const note = await page.locator('.machines .check-field', { has: page.locator('[data-field=clipboard]') }).locator('.note').textContent();
   assert.equal(note?.replace(/\s+/g, ' ').trim(), plain(t('machines:DeviceSwitches.clipboard.note')).replace(/\s+/g, ' ').trim());
-  assert.equal(await page.locator('.machines [data-clipboard-orphans]').count(), 0);
   // Ticking it is the click that asks: Chromium prompts (headless: denied at once).
   assert.equal(await readState(page), 'prompt');
   await page.check('.machines [data-field=clipboard]');
@@ -342,21 +372,17 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
     if (i > 50) assert.fail(`ticking the switch didn't ask: the permission is ${await readState(page)}`);
     await page.waitForTimeout(100);
   }
-  assert.equal(await page.textContent('.machines [data-clipboard-orphans]'), t('machines:DeviceSwitches.clipboard.orphans.on'));
-  await page.click('.machines [data-action=save]');
-  await page.waitForFunction(() => (document.querySelector('.machines [data-action=save]') as HTMLButtonElement).disabled, null, { polling: 100 });
-  assert.ok(asked.some((q) => q.text === t('machines:machine-edit.orphans.confirm')), 'asked first');
-  const saved = await page.evaluate(async () => {
-    const { Store } = await import('/web/app/store.ts' as string);
-    return (await (await Store.open()).get('machines', 'cccccccccccc')).clipboard;
-  });
-  assert.equal(saved, true);
+  await save();
+  assert.deepEqual(await stored(), { agent: undefined, clipboard: true });
+  assert.ok(!asked.some((q) => q.text === t('machines:machine-edit.orphans.confirm')), 'no snapshot orphaned: nothing asked');
+  // The agent off: the clipboard's switch with it.
+  await page.uncheck('.machines [data-field=agent]');
+  assert.equal(await page.textContent('.machines [data-agent-note]'), t('machines:DeviceSwitches.agent.off'));
+  assert.equal(await page.isDisabled('.machines [data-field=clipboard]'), true);
+  await save();
+  assert.deepEqual(await stored(), { agent: false, clipboard: true });
   await page.click('.machines [data-tab=snapshots]');
-  await page.locator('.machines', { hasText: t('machines:shape-diff.clipboard.hadNo') }).waitFor();
-  // Off again: the warning says so; unticking asks nothing.
-  await page.locator('.machines [data-selected] [data-tab=settings]').click();
-  await page.uncheck('.machines [data-field=clipboard]');
-  assert.equal(await page.textContent('.machines [data-clipboard-orphans]'), t('machines:DeviceSwitches.clipboard.orphans.off'));
+  assert.equal(await page.locator('.machines', { hasText: t('machines:shape-diff.clipboard.hadNo') }).count(), 0, 'the snapshot still fits');
   assert.deepEqual(errors, []);
   await context.close();
 });

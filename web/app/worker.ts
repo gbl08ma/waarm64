@@ -27,7 +27,7 @@ import { sessionOf, type Session } from './worker-header.ts';
 import { profile, timeline } from './worker-profile.ts';
 import { post, state } from './worker-post.ts';
 import { status } from './worker-status.ts';
-import { checkSnapshot, saveSnapshot, suspend, TAIL, wakeRestored, type Running } from './worker-snapshot.ts';
+import { checkSnapshot, saveSnapshot, suspend, TAIL, type Running } from './worker-snapshot.ts';
 import {
   bootOptions,
   checkSplit,
@@ -65,10 +65,10 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       });
       break;
     case 'snapshot':
-      void saveSnapshot(running(), m.id, m.handle, m.keep, m.whole, m.sleep);
+      void saveSnapshot(running(), m.id, m.handle, m.keep, m.whole);
       break;
     case 'suspend':
-      void suspend(running(), m.id, m.sleep);
+      void suspend(running(), m.id);
       break;
     case 'snapshot-check':
       void checkSnapshot(running(), m.id, m.what);
@@ -258,12 +258,10 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
 }
 
 /**
- * The booted machine before it runs: a restored guest asleep for its snapshot wakes (`header`), a resumed one's
- * suspended copy is dropped, a restore's variable store is kept again, the framebuffer is shown; and its state posted
+ * The booted machine before it runs: a resumed one's suspended copy is dropped, a restore's variable store is kept again, the framebuffer is shown; and its state posted
  * (booting, with the boot's `note`; or running where it was, the terminal as it was).
  */
 async function booted(v: Vm, m: StartMessage, o: { header?: SnapshotHeader; resume: boolean; note: unknown }) {
-  if (o.header) wakeRestored(v, o.header);
   // The resumed machine is about to write its disk: its suspended copy is void from here.
   if (o.resume && home) await dropSuspend(home);
   if (o.header) await keepFlash(v); // the restore deleted the copy beside the overlay: the bank the machine has goes back

@@ -181,7 +181,6 @@ function runSlots(m: MachineRecord, run: { display: Display | 'none'; devices?: 
     touch: has('touch', m.touch),
     clock: has('clock', m.clock),
     shares: has('9p', m.shares),
-    clipboard: has('agent', m.clipboard),
     attachments: m.attachments,
   });
 }
@@ -289,7 +288,6 @@ export async function machineLike(
     touch: snap.shape.devices.includes('touch'),
     clock: snap.shape.devices.includes('clock'),
     ...(snap.shape.devices.includes('9p') ? { shares: true } : {}),
-    ...(snap.shape.devices.includes('agent') ? { clipboard: true } : {}),
     ...(snap.shape.jitMiB ? { jitMiB: snap.shape.jitMiB } : {}),
     attachments,
     created: now,

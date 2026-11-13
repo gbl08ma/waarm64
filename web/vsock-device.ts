@@ -1,5 +1,5 @@
-// The guest's notify socket (docs/devices.md "vsock"): a virtio-vsock (virtio 1.2 §5.10) whose one service is systemd's
-// `vmm.notify_socket`. A `firmware` machine's credential (web/app/firmware-files.ts) points the guest's systemd at
+// The guest's vsock (docs/devices.md "vsock"): a virtio-vsock (virtio 1.2 §5.10) with two services, systemd's
+// `vmm.notify_socket` and the guest agent's port. A `firmware` machine's credential (web/app/firmware-files.ts) points the guest's systemd at
 // `vsock-stream:2:NOTIFY_PORT`, the host's CID, as systemd-vmspawn does; systemd (254 and later) then sends its
 // sd_notify messages there, one stream connection each: `READY=1` once the boot's jobs are done, `STATUS=…`,
 // `X_SYSTEMD_UNIT_ACTIVE=<target>` (256 and later), `EXIT_STATUS=` at the end. The device answers the connection, takes
@@ -10,6 +10,12 @@
 // another port or of another type is refused (RST), a guest's half close is answered by the host's full close
 // (SHUTDOWN of both ways: the guest resets and its `recv` gives EOF), a guest's full close by RST. Nothing is kept across
 // a snapshot: a restored device tells the guest its transport was reset, which drops the guest's connections.
+//
+// The guest agent (web/app/guest-agent.ts) connects to `AGENT_PORT`, one connection at a time, while the page has an
+// end for it (`agent`): a byte stream both ways under vsock's credit, the agent's frames (web/agent-frame.ts) in it.
+// The page hears the connection open and close (`open`), the agent's bytes (`data`), and how many of its own the guest
+// took (`taken`); a page that wants the stream begun afresh resets the connection (`reset`), and the agent connects
+// again.
 
 import { bytes, type Ram, type Segment } from './ram.ts';
 import type { Backend, Ctx, Request } from './devices.ts';
@@ -21,6 +27,8 @@ export const GUEST_CID = 3;
 export const HOST_CID = 2;
 /** The host's port the guest's systemd sends its notifications to (`vmm.notify_socket`). */
 export const NOTIFY_PORT = 8573;
+/** The host's port the guest agent connects to. */
+export const AGENT_PORT = 8574;
 /** The credential that points systemd at it (systemd's `vsock-stream:` form, 254 and later). */
 export const notifySocket = () => `vsock-stream:${HOST_CID}:${NOTIFY_PORT}`;
 
@@ -42,6 +50,12 @@ export const EVENT_TRANSPORT_RESET = 0;
 export const BUF_ALLOC = 64 << 10;
 /** The most packets the device holds for the guest's receive buffers before it drops more (a guest that stopped taking them). */
 const MAX_OUT = 256;
+/** The agent's connection's `buf_alloc`: the device hands the agent's bytes to the page at once, so it is credit only. */
+export const AGENT_BUF = 256 << 10;
+/** How far the agent's bytes taken run ahead of what the guest was told before the device tells it (CREDIT_UPDATE). */
+const CREDIT_STEP = AGENT_BUF >> 2;
+/** The most page bytes the device holds for the agent's connection before it drops more: the page keeps far fewer in flight (web/app/agent-link.ts). */
+export const MAX_PENDING = 1 << 20;
 
 /** The device's entry: ID 19, no optional features (stream sockets are implied), three queues of 64; config `guest_cid`. */
 export function vsockEntry(): { entry: bigint[]; config: Uint8Array } {
@@ -53,7 +67,19 @@ export function vsockEntry(): { entry: bigint[]; config: Uint8Array } {
 /** The device to the page: a notification, its lines (`READY=1`, `STATUS=…`). */
 export type VsockFromDevice = { type: 'notify'; lines: string[] };
 
-export type VsockSpec = { type: 'vsock'; port?: MessagePort };
+/**
+ * The device to the page's agent end: the agent's connection opened or closed, its bytes, the page's bytes the guest
+ * took.
+ */
+export type AgentFromDevice =
+  | { type: 'open'; open: boolean }
+  | { type: 'data'; bytes: Uint8Array }
+  | { type: 'taken'; n: number };
+/** The page's agent end to the device: bytes for the agent, or the connection reset (the agent connects again). */
+export type AgentToDevice = { type: 'data'; bytes: Uint8Array } | { type: 'reset' };
+
+/** `port`: systemd's notifications; `agent`: the guest agent's end (none: the agent's connections are refused). */
+export type VsockSpec = { type: 'vsock'; port?: MessagePort; agent?: MessagePort };
 
 /** The page's end of the device's port: `up` at each READY=1 (the boot's jobs are done). */
 export function onReady(port: MessagePort, up: () => void) {
@@ -110,18 +136,67 @@ export function decodeHeader(b: Uint8Array): Header {
 /** A connection from the guest: its port, the message so far, the bytes taken (`fwd_cnt`). */
 type Conn = { chunks: Uint8Array[]; size: number; fwdCnt: number };
 
+/**
+ * The agent's connection: the guest's port; the guest's bytes taken (`fwdCnt`) and how many of them it was told;
+ * the guest's receive space (`bufAlloc`, `peerFwd`) and the bytes sent it (`txCnt`); the page's bytes not sent yet.
+ */
+type AgentConn = {
+  port: number;
+  fwdCnt: number;
+  told: number;
+  bufAlloc: number;
+  peerFwd: number;
+  txCnt: number;
+  pending: Uint8Array[];
+  held: number;
+  /** A CREDIT_REQUEST sent and not answered: not sent again. */
+  asked: boolean;
+};
+
 export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
   const conns = new Map<number, Conn>();
+  let agent: AgentConn | undefined;
   const rx: Request[] = [];
   let out: Uint8Array[] = [];
   const events: Request[] = [];
   let resetPending = false;
+  const toPage = (m: AgentFromDevice, transfer: Transferable[] = []) => d.agent?.postMessage(m, transfer);
 
-  const flush = () => {
+  /** Room for the agent's bytes in the guest's receive space (vsock's credit). */
+  const credit = (a: AgentConn) => Math.max(0, a.bufAlloc - ((a.txCnt - a.peerFwd) >>> 0));
+  /** The control packets first, as far as the guest's buffers go. */
+  const flushOut = () => {
     while (rx.length && out.length) {
       const r = rx.shift()!;
       ctx.complete(r.w0, scatter(ctx.ram(), r.write, out.shift()!));
     }
+  };
+  const flush = () => {
+    flushOut();
+    // The page's bytes for the agent, as far as the guest's buffers and its credit go: a packet a buffer.
+    let taken = 0;
+    while (agent && rx.length && agent.held) {
+      const room = Math.min(credit(agent), rx[0].write.reduce((n, s) => n + s.len, 0) - HDR);
+      if (room <= 0) {
+        // Out of credit: the guest's next packet says how much it has read (a CREDIT_REQUEST asks it to say).
+        if (!agent.asked && credit(agent) === 0) {
+          agent.asked = true;
+          out.push(agentHeader(agent, OP.CREDIT_REQUEST));
+          flushOut();
+        }
+        break;
+      }
+      const chunk = take(agent.pending, room);
+      agent.held -= chunk.length;
+      const packet = new Uint8Array(HDR + chunk.length);
+      packet.set(agentHeader(agent, OP.RW, chunk.length));
+      packet.set(chunk, HDR);
+      agent.txCnt = (agent.txCnt + chunk.length) >>> 0;
+      const r = rx.shift()!;
+      ctx.complete(r.w0, scatter(ctx.ram(), r.write, packet));
+      taken += chunk.length;
+    }
+    if (taken) toPage({ type: 'taken', n: taken });
   };
   const flushEvents = () => {
     if (!resetPending || !events.length) return;
@@ -129,24 +204,29 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
     const r = events.shift()!;
     ctx.complete(r.w0, scatter(ctx.ram(), r.write, new Uint8Array(4))); // le32 id 0: TRANSPORT_RESET
   };
+  const header = (port: number, from: number, op: number, o: { flags?: number; len?: number; bufAlloc?: number; fwdCnt?: number } = {}) =>
+    encodeHeader({
+      srcCid: HOST_CID,
+      dstCid: GUEST_CID,
+      srcPort: from,
+      dstPort: port,
+      len: o.len ?? 0,
+      type: TYPE_STREAM,
+      op,
+      flags: o.flags ?? 0,
+      bufAlloc: o.bufAlloc ?? BUF_ALLOC,
+      fwdCnt: o.fwdCnt ?? 0,
+    });
+  /** A packet of the agent's connection; it tells the guest the bytes taken. */
+  const agentHeader = (a: AgentConn, op: number, len = 0, flags = 0) => {
+    a.told = a.fwdCnt;
+    return header(a.port, AGENT_PORT, op, { len, flags, bufAlloc: AGENT_BUF, fwdCnt: a.fwdCnt });
+  };
   /** A packet to the guest's `port` from the host's `from`. */
   const send = (port: number, from: number, op: number, flags = 0) => {
     if (out.length >= MAX_OUT) return;
-    const fwdCnt = conns.get(port)?.fwdCnt ?? 0;
-    out.push(
-      encodeHeader({
-        srcCid: HOST_CID,
-        dstCid: GUEST_CID,
-        srcPort: from,
-        dstPort: port,
-        len: 0,
-        type: TYPE_STREAM,
-        op,
-        flags,
-        bufAlloc: BUF_ALLOC,
-        fwdCnt,
-      }),
-    );
+    if (from === AGENT_PORT && agent?.port === port) out.push(agentHeader(agent, op, 0, flags));
+    else out.push(header(port, from, op, { flags, fwdCnt: conns.get(port)?.fwdCnt ?? 0 }));
     flush();
   };
   /** The guest's whole message, posted (empty: nothing). */
@@ -156,8 +236,55 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
     const lines = text.split('\n').filter((l) => l);
     d.port?.postMessage({ type: 'notify', lines } satisfies VsockFromDevice);
   };
+  /** The agent's connection gone (the page hears it). */
+  const dropAgent = () => {
+    if (!agent) return;
+    agent = undefined;
+    toPage({ type: 'open', open: false });
+  };
+
+  const onAgent = (h: Header, payload: Uint8Array) => {
+    const port = h.srcPort;
+    if (h.op === OP.REQUEST) {
+      if (!d.agent) return send(port, AGENT_PORT, OP.RST);
+      // One connection: a new one (the agent started again) takes the old one's place.
+      if (agent && agent.port !== port) {
+        send(agent.port, AGENT_PORT, OP.RST);
+        dropAgent();
+      }
+      const fresh = !agent;
+      agent = { port, fwdCnt: 0, told: 0, bufAlloc: h.bufAlloc, peerFwd: h.fwdCnt, txCnt: 0, pending: [], held: 0, asked: false };
+      send(port, AGENT_PORT, OP.RESPONSE);
+      if (fresh) toPage({ type: 'open', open: true });
+      return;
+    }
+    const a = agent;
+    if (!a || a.port !== port) return h.op === OP.RST ? undefined : send(port, AGENT_PORT, OP.RST);
+    if (h.op === OP.RST) return dropAgent();
+    // Every packet says the guest's receive space.
+    [a.bufAlloc, a.peerFwd, a.asked] = [h.bufAlloc, h.fwdCnt, false];
+    switch (h.op) {
+      case OP.RW:
+        if (payload.length) {
+          a.fwdCnt = (a.fwdCnt + payload.length) >>> 0;
+          const bytes = payload.slice();
+          toPage({ type: 'data', bytes }, [bytes.buffer]);
+          if (((a.fwdCnt - a.told) >>> 0) >= CREDIT_STEP) send(port, AGENT_PORT, OP.CREDIT_UPDATE);
+        }
+        break;
+      case OP.CREDIT_REQUEST:
+        send(port, AGENT_PORT, OP.CREDIT_UPDATE);
+        break;
+      case OP.SHUTDOWN:
+        // The agent closes or shuts down a way: the connection is done (the page starts afresh with the next).
+        send(port, AGENT_PORT, OP.RST);
+        return dropAgent();
+    }
+    flush(); // the guest's credit may have grown
+  };
 
   const onPacket = (h: Header, payload: Uint8Array) => {
+    if (h.dstCid === HOST_CID && h.dstPort === AGENT_PORT && h.type === TYPE_STREAM) return onAgent(h, payload);
     const port = h.srcPort;
     const conn = conns.get(port);
     const ours = h.dstCid === HOST_CID && h.dstPort === NOTIFY_PORT && h.type === TYPE_STREAM;
@@ -197,9 +324,23 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
         }
         return send(port, h.dstPort, OP.SHUTDOWN, SHUTDOWN_RCV | SHUTDOWN_SEND);
       default:
-        return; // CREDIT_UPDATE: the device sends no data, so the guest's credit doesn't matter
+        return; // CREDIT_UPDATE: the device sends no data on these, so the guest's credit doesn't matter
     }
   };
+
+  const fromPage = (m: AgentToDevice | undefined) => {
+    if (!agent) return;
+    if (m?.type === 'reset') {
+      send(agent.port, AGENT_PORT, OP.RST);
+      return dropAgent();
+    }
+    if (m?.type !== 'data' || !(m.bytes instanceof Uint8Array) || !m.bytes.length) return;
+    if (agent.held + m.bytes.length > MAX_PENDING) return;
+    agent.pending.push(m.bytes);
+    agent.held += m.bytes.length;
+    flush();
+  };
+  if (d.agent) d.agent.onmessage = (e: MessageEvent<AgentToDevice | undefined>) => fromPage(e.data);
 
   return {
     request(r) {
@@ -223,20 +364,41 @@ export function vsockDevice(ctx: Ctx, d: VsockSpec): Backend {
     },
     reset() {
       conns.clear();
+      dropAgent();
       rx.length = 0;
       events.length = 0;
       out = [];
       resetPending = false;
     },
-    close: () => d.port?.close(),
+    close() {
+      d.port?.close();
+      d.agent?.close();
+    },
     // The guest's buffers are posted again by the core at a restore; the connections aren't kept: the guest is told its
-    // transport was reset, so it drops them (a notification in flight is lost; its sender gets an error, not a hang).
+    // transport was reset, so it drops them (a notification in flight is lost, its sender gets an error, not a hang;
+    // the agent connects again).
     save: () => ({ reset: true }),
     restore() {
       resetPending = true;
       flushEvents();
     },
   };
+}
+
+/** The first `n` bytes (at most) of a queue of chunks, taken off it. */
+function take(q: Uint8Array[], n: number): Uint8Array {
+  if (q[0].length <= n && q.length === 1) return q.shift()!;
+  const out = new Uint8Array(Math.min(n, q.reduce((a, b) => a + b.length, 0)));
+  let k = 0;
+  while (k < out.length) {
+    const c = q[0];
+    const m = Math.min(c.length, out.length - k);
+    out.set(c.subarray(0, m), k);
+    k += m;
+    if (m === c.length) q.shift();
+    else q[0] = c.subarray(m);
+  }
+  return out;
 }
 
 const concat = (q: Uint8Array[]) => {

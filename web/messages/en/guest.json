@@ -12,7 +12,7 @@
     "note": "Inside the guest: the description of the mount and automount units of the shared folders (e.g. mnt-waarm64.mount), as `systemctl status`, `mount` tools and the boot log show it. One line, no trailing period."
   },
   "guest-words.agent": {
-    "message": "Clipboard sharing with the emulator",
-    "note": "Inside the guest: the description of the systemd unit (waarm64-agent.service) that runs the small program of the emulator's that shares the clipboard between the guest and the web app, as `systemctl status` and the boot log show it. One line, no trailing period."
+    "message": "The emulator's guest agent",
+    "note": "Inside the guest: the description of the systemd unit (waarm64-agent.service) that runs the small program of the emulator's that sets the guest's clock and shares the clipboard between the guest and the web app, as `systemctl status` and the boot log show it. One line, no trailing period."
   }
 }

@@ -2,11 +2,15 @@
 // through hand-built queues as Linux's virtio_transport drives it for sd_notify: a connection to the host's port, the
 // message, the guest's half close (systemd 256 and later: `shutdown(SHUT_WR)`, then a `recv` that waits for EOF) or full
 // close (254 and 255: `close`), each answered so the guest's PID 1 never waits; other ports and types refused; a message
-// past the credit reset; a restore telling the guest its transport was reset. And the page's end (`onReady`), and the
-// credential (web/app/firmware-files.ts).
+// past the credit reset; a restore telling the guest its transport was reset. The guest agent's connection
+// (`AGENT_PORT`): bytes both ways, the guest's credit honoured and the device's own given back, one connection at a
+// time, the page's reset, refused without the page's end. And the page's end (`onReady`), and the credential
+// (web/app/firmware-files.ts).
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import {
+  AGENT_BUF,
+  AGENT_PORT,
   BUF_ALLOC,
   decodeHeader,
   encodeHeader,
@@ -25,6 +29,7 @@ import {
   TYPE_STREAM,
   vsockDevice,
   vsockEntry,
+  type AgentFromDevice,
   type Header,
   type VsockFromDevice,
 } from '../web/vsock-device.ts';
@@ -211,6 +216,114 @@ test('vsock: a restored device resets the transport (once an event buffer is the
   restored.request(rx);
   restored.request(g.packet(1023, OP.RW, { payload: text('READY=1') }));
   assert.deepEqual(g.received([rx]).map((h) => h.op), [OP.RST]);
+});
+
+/** The device with an agent end: what it posts to the page's agent end, and the guest's receive buffers (`n` of them). */
+function agentDevice(g: ReturnType<typeof guest>, n = 16) {
+  const ch = channel();
+  const got: AgentFromDevice[] = [];
+  ch.port1.onmessage = (e: MessageEvent<AgentFromDevice>) => got.push(e.data);
+  const dev = vsockDevice(g.ctx, { type: 'vsock', agent: ch.port2 });
+  const buffers = Array.from({ length: n }, () => g.rxBuffer());
+  for (const b of buffers) dev.request(b);
+  /** What the page sent, once the device has it (a port's messages come in a later task). */
+  const page = async (m: unknown) => {
+    ch.port1.postMessage(m);
+    await new Promise((r) => setTimeout(r, 20));
+  };
+  return { dev, got, buffers, page, settle: (k: number) => settle(got, k) };
+}
+
+/** The packets the device completed in `buffers`, their headers and payloads. */
+function packets(g: ReturnType<typeof guest>, buffers: { w0: number; write: { off: number }[] }[]) {
+  return g.done.flatMap((d) => {
+    const b = buffers.find((x) => x.w0 === d.w0);
+    if (!b) return [];
+    const h = decodeHeader(g.ram.subarray(b.write[0].off, b.write[0].off + HDR));
+    return [{ h, payload: g.ram.slice(b.write[0].off + HDR, b.write[0].off + HDR + h.len) }];
+  });
+}
+
+test("vsock: the agent's connection: opened, its bytes to the page, the page's to the guest; closed by the agent", async () => {
+  const g = guest();
+  const d = agentDevice(g);
+  d.dev.request(g.packet(2000, OP.REQUEST, { to: AGENT_PORT }));
+  await d.settle(1);
+  assert.deepEqual(d.got, [{ type: 'open', open: true }]);
+  const [response] = packets(g, d.buffers);
+  assert.deepEqual([response.h.op, response.h.srcPort, response.h.dstPort, response.h.bufAlloc], [OP.RESPONSE, AGENT_PORT, 2000, AGENT_BUF]);
+  d.dev.request(g.packet(2000, OP.RW, { to: AGENT_PORT, payload: text('hello') }));
+  await d.settle(2);
+  assert.deepEqual(d.got[1], { type: 'data', bytes: text('hello') });
+  await d.page({ type: 'data', bytes: text('from the page') });
+  await d.settle(3);
+  assert.deepEqual(d.got[2], { type: 'taken', n: 13 });
+  const rw = packets(g, d.buffers).at(-1)!;
+  assert.deepEqual([rw.h.op, rw.h.len, rw.h.fwdCnt, new TextDecoder().decode(rw.payload)], [OP.RW, 13, 5, 'from the page'], "the page's bytes, and the agent's taken");
+  // The agent closes: RST back, the page hears it, and its bytes go nowhere.
+  d.dev.request(g.packet(2000, OP.SHUTDOWN, { to: AGENT_PORT, flags: SHUTDOWN_RCV | SHUTDOWN_SEND }));
+  await d.settle(4);
+  assert.deepEqual(d.got[3], { type: 'open', open: false });
+  assert.equal(packets(g, d.buffers).at(-1)!.h.op, OP.RST);
+  const before = g.done.length;
+  await d.page({ type: 'data', bytes: text('lost') });
+  assert.equal(g.done.length, before);
+});
+
+test("vsock: the agent's connection: the page's bytes as the guest's credit and buffers allow (a CREDIT_REQUEST when it runs out); the device's credit given back as it takes", async () => {
+  const g = guest();
+  const d = agentDevice(g, 4);
+  d.dev.request(g.packet(2001, OP.REQUEST, { to: AGENT_PORT, bufAlloc: 6000, fwdCnt: 0 }));
+  await d.settle(1);
+  // 10,000 bytes; the guest has room for 6,000, and three buffers of 4 KiB (one took the RESPONSE).
+  await d.page({ type: 'data', bytes: new Uint8Array(10_000).fill(7) });
+  const sent = () => packets(g, d.buffers).filter((p) => p.h.op === OP.RW).reduce((n, p) => n + p.h.len, 0);
+  assert.equal(sent(), 6000, 'the credit');
+  assert.equal(packets(g, d.buffers).at(-1)!.h.op, OP.CREDIT_REQUEST, 'out of credit: asked');
+  // The guest read it all: its credit update lets the rest go into new buffers.
+  const more = [g.rxBuffer(), g.rxBuffer(), g.rxBuffer()];
+  for (const b of more) d.dev.request(b);
+  d.dev.request(g.packet(2001, OP.CREDIT_UPDATE, { to: AGENT_PORT, bufAlloc: 6000, fwdCnt: 6000 }));
+  const all = packets(g, [...d.buffers, ...more]).filter((p) => p.h.op === OP.RW);
+  assert.equal(all.reduce((n, p) => n + p.h.len, 0), 10_000);
+  assert.ok(all.every((p) => p.payload.every((b) => b === 7)));
+  await d.settle(3);
+  assert.equal(d.got.filter((m) => m.type === 'taken').reduce((n, m) => n + (m.type === 'taken' ? m.n : 0), 0), 10_000);
+  // The agent's bytes: past a quarter of the device's buf_alloc unannounced, a CREDIT_UPDATE says what was taken.
+  const rx = [g.rxBuffer(), g.rxBuffer()];
+  for (const b of rx) d.dev.request(b);
+  for (let k = 0; k < AGENT_BUF / 4 / 4096; k++) d.dev.request(g.packet(2001, OP.RW, { to: AGENT_PORT, payload: new Uint8Array(4096), fwdCnt: 10_000, bufAlloc: 6000 }));
+  const update = packets(g, [...d.buffers, ...more, ...rx]).filter((p) => p.h.op === OP.CREDIT_UPDATE);
+  assert.deepEqual(update.map((p) => p.h.fwdCnt), [AGENT_BUF / 4]);
+});
+
+test("vsock: the agent's connection: one at a time (a new one takes the old one's place), the page's reset, refused without the page's end; a restore drops it", async () => {
+  const g = guest();
+  const d = agentDevice(g);
+  d.dev.request(g.packet(2002, OP.REQUEST, { to: AGENT_PORT }));
+  d.dev.request(g.packet(2003, OP.REQUEST, { to: AGENT_PORT }));
+  await d.settle(3);
+  assert.deepEqual(d.got, [{ type: 'open', open: true }, { type: 'open', open: false }, { type: 'open', open: true }]);
+  assert.deepEqual(packets(g, d.buffers).map((p) => [p.h.dstPort, p.h.op]), [[2002, OP.RESPONSE], [2002, OP.RST], [2003, OP.RESPONSE]]);
+  // The page resets it (a stream out of step): RST, and the page hears it closed.
+  await d.page({ type: 'reset' });
+  await d.settle(4);
+  assert.deepEqual(d.got[3], { type: 'open', open: false });
+  assert.deepEqual(packets(g, d.buffers).at(-1)!.h.op, OP.RST);
+  d.dev.request(g.packet(2003, OP.RW, { to: AGENT_PORT, payload: text('x') }));
+  assert.deepEqual(packets(g, d.buffers).at(-1)!.h.op, OP.RST, 'its packets refused');
+  // No page end (a machine without the agent): refused.
+  const g2 = guest();
+  const bare = vsockDevice(g2.ctx, { type: 'vsock' });
+  const rx = g2.rxBuffer();
+  bare.request(rx);
+  bare.request(g2.packet(2004, OP.REQUEST, { to: AGENT_PORT }));
+  assert.deepEqual(g2.received([rx]).map((h) => h.op), [OP.RST]);
+  // A device reset drops it: the page hears it closed.
+  d.dev.request(g.packet(2005, OP.REQUEST, { to: AGENT_PORT }));
+  d.dev.reset();
+  await d.settle(6);
+  assert.deepEqual(d.got.slice(4), [{ type: 'open', open: true }, { type: 'open', open: false }]);
 });
 
 test("vsock: the page's end hears READY=1, not the rest", async () => {

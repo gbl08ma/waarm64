@@ -702,11 +702,6 @@ impl Clock {
         }
     }
 
-    /// Moves it on by `ns` (nothing reads it meanwhile: every vCPU is off).
-    fn skip(&self, ns: u64) {
-        self.base.fetch_add(ns, Ordering::Relaxed);
-    }
-
     /// Stops it at its reading now, which it returns, until the next `start`.
     /// No vCPU runs meanwhile (a snapshot is taken with every vCPU out of the core).
     fn hold(&self) -> u64 {
@@ -1001,27 +996,6 @@ impl Vm {
             self.wake(c);
         }
         // Round-robin takes it at its next `run`.
-        true
-    }
-
-    /// Moves a suspended guest's clock on by `ns` (realtime mode only; false
-    /// otherwise): the time it would have slept through. Linux's resume
-    /// counts the counter's progress over a suspend as sleep (a nonstop
-    /// clocksource), so its realtime clock catches up and its monotonic one
-    /// doesn't move. The RTC still shows the host's time. Parallel mode: from
-    /// any thread; round-robin: no vCPU runs.
-    pub fn clock_skip(&self, ns: u64) -> bool {
-        if !self.realtime() || self.clock.ns().saturating_add(ns) >= TIME_MAX {
-            return false;
-        }
-        let mut p = self.plat.lock();
-        if p.suspended.is_none() {
-            return false;
-        }
-        self.clock.skip(ns);
-        if let Some(rtc) = &mut p.rtc {
-            rtc.shift(ns / 1_000_000);
-        }
         true
     }
 

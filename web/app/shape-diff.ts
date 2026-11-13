@@ -70,12 +70,15 @@ const HAD = {
   touch: [msg('machines:shape-diff.touch.had'), msg('machines:shape-diff.touch.hadNo')],
   clock: [msg('machines:shape-diff.clock.had'), msg('machines:shape-diff.clock.hadNo')],
   '9p': [msg('machines:shape-diff.shares.had'), msg('machines:shape-diff.shares.hadNo')],
+  // The agent's virtio-console, in snapshots from before the agent went over vsock (2026-11-13): no machine has it now.
   agent: [msg('machines:shape-diff.clipboard.had'), msg('machines:shape-diff.clipboard.hadNo')],
 } as const;
 
 const devices: Comparer = (was, now) =>
   (['mouse', 'touch', 'clock', '9p', 'agent'] as const).flatMap((k) =>
-    was.devices.includes(k) !== now.devices.includes(k) ? [HAD[k][was.devices.includes(k) ? 0 : 1]] : [],
+    (was.devices as string[]).includes(k) !== (now.devices as string[]).includes(k)
+      ? [HAD[k][(was.devices as string[]).includes(k) ? 0 : 1]]
+      : [],
   );
 
 /** How many disks, then each one both have. */

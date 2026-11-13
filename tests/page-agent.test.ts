@@ -1,14 +1,15 @@
-// Clipboard sharing's guest agent on Debian (docs/plans/clipboard.md §2–§3, steps 1 and 2): a machine with
-// `?clipboard=1` has the agent's device (web/agent-device.ts), whose port Debian's virtio_console names and udev links
-// as /dev/virtio-ports/org.waarm64.agent.0, and the agent (agent/, web/app/guest-agent.ts): over fw_cfg into /run, started
-// by its credential unit, it opens the port and answers the page's HELLO (web/app/agent-link.ts, `window.__agent`).
+// The guest agent on Debian (docs/devices.md "The guest's agent"; clipboard sharing: docs/plans/clipboard.md §2–§3):
+// the agent (agent/, web/app/guest-agent.ts), over fw_cfg into /run and started by its credential unit, connects to the
+// page over the machine's vsock (web/vsock-device.ts `AGENT_PORT`) and answers the page's HELLO (web/app/agent-link.ts,
+// `window.__agent`), here with `?clipboard=1`.
 // Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
 // console (a reader on tty1 writes what it gets to a file; a long paste arrives whole; none of it while tty1 is in
 // graphics mode, as under a compositor: TYPED says why), the toolbar's clipboard
 // button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), the
-// page carrying on when the agent stops, and the port itself without the agent: `cat` echoing it into
-// itself (a small frame, and 320 KiB of 64 KiB frames past the link's window, so the guest's buffers and the window's
-// flow both turn over). The agent's start again at the end: its unit runs it anew.
+// page carrying on when the agent stops, and the connection itself without the agent: perl connected to the agent's
+// port echoing it into itself (a small frame, and 320 KiB of 64 KiB frames past the link's window and vsock's credit, so
+// the guest's buffers, the credit and the window's flow all turn over). The agent's start again at the end: its unit
+// runs it anew.
 // WAARM64_AGENT_IDLE=<s> sets the idle window (default 20 s; the plan's measurement is 60).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -59,7 +60,7 @@ async function run(page: Page, cmd: string, ms = 60_000) {
   return re.exec(await terminal(page))![1].trim();
 }
 type Hello = { version: number; caps: number };
-type Link = { open: boolean; syncing: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
+type Link = { open: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
 const link = <T>(page: Page, f: (l: Link) => T) => page.evaluate(`(${f})(window.__agent)`) as Promise<T>;
 const isOpen = (page: Page, open: boolean) =>
   page.waitForFunction((want) => (window as unknown as { __agent?: Link }).__agent?.open === want, open, { timeout: 120_000, polling: 100 });
@@ -80,7 +81,7 @@ async function share(page: Page, on: boolean) {
 const typed = (page: Page) => run(page, 'sha256sum </tmp/typed | cut -c1-64; stat -c %s /tmp/typed').then((s) => s.split(/\s+/));
 const TYPE = 5;
 
-test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing idle, types on the console, pauses; the page carries on without it; the port echoes', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
+test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing idle, types on the console, pauses; the page carries on without it; the connection echoes', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -89,7 +90,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
 
-  // The agent: over fw_cfg, started by its unit, the port open, its HELLO (version 1, TYPE).
+  // The agent: over fw_cfg, started by its unit, connected over vsock, its HELLO (version 1, TYPE, TIME).
   await shows(page, /login: /); // `running` may come from the agent's HELLO, before the getty's prompt
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
@@ -99,8 +100,9 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   });
   assert.equal(h.version, 1);
   assert.ok(h.caps & 1, `the agent can TYPE (caps ${h.caps})`);
+  assert.ok(h.caps & 16, `the agent sets the clock (caps ${h.caps})`);
   await buttonIs(page, 'sharing');
-  assert.equal(await run(page, 'ls /dev/virtio-ports/; cat /sys/class/virtio-ports/*/name'), 'org.waarm64.agent.0 org.waarm64.agent.0');
+  assert.equal(await run(page, 'test -d /sys/module/vmw_vsock_virtio_transport && echo vsock'), 'vsock');
   assert.equal(await run(page, 'systemctl is-active waarm64-agent'), 'active');
   const pid = await run(page, 'systemctl show -p MainPID --value waarm64-agent');
   assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/waarm64/agent');
@@ -201,7 +203,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     await page.waitForTimeout(500);
   }
 
-  // The agent stopped: the page hears the port close, the link refuses, the machine runs on.
+  // The agent stopped: the page hears its connection end, the link refuses, the machine runs on.
   await run(page, 'systemctl stop waarm64-agent; echo stopped');
   await isOpen(page, false);
   await buttonIs(page, 'waiting');
@@ -209,8 +211,9 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   assert.equal(await link(page, (l) => l.agent), undefined);
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running');
 
-  // The port without the agent: `cat` holds it open, echoing it into itself.
-  await onSerial(page, 'clear; exec 3<>/dev/virtio-ports/org.waarm64.agent.0; cat <&3 >&3 & echo st""arted\n');
+  // The connection without the agent: perl connects to the agent's port (AF_VSOCK 40, struct sockaddr_vm for the host's
+  // CID 2) and echoes what it reads into it.
+  await onSerial(page, `clear; perl -e 'socket(my $s, 40, 1, 0) or die "socket: $!"; connect($s, pack("SSLLCx3", 40, 0, 8574, 2, 0)) or die "connect: $!"; while (sysread($s, my $b, 65536)) { my $o = 0; $o += syswrite($s, $b, length($b) - $o, $o) while $o < length $b }' & echo st""arted\n`);
   await shows(page, /started/);
   await isOpen(page, true);
   const echoed = await page.evaluate(async () => {
@@ -219,9 +222,9 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     const sent: [number, number, number][] = [];
     const got: [number, number, number][] = [];
     const done = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`${got.length} of ${sent.length} frames back after 120 s (syncing: ${link.syncing}, backlog ${link.backlog})`)), 120_000);
+      const timer = setTimeout(() => reject(new Error(`${got.length} of ${sent.length} frames back after 120 s (backlog ${link.backlog})`)), 120_000);
       link.onFrame = (f) => {
-        if (f.type === 1 || f.type === 7) return; // the link's own HELLO and RESUME at the opening, echoed (whether before this or after)
+        if (f.type === 1 || f.type === 7) return; // the link's own HELLO and RESUME at the connection, echoed (whether before this or after)
         got.push([f.type, f.payload.length, sum(f.payload)]);
         if (got.length === sent.length) { clearTimeout(timer); resolve(); }
       };
@@ -236,7 +239,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     return { sent, got };
   });
   assert.deepEqual(echoed.got, echoed.sent);
-  await onSerial(page, 'clear; kill %1; exec 3<&-; echo cl""osed\n');
+  await onSerial(page, 'clear; kill %1; echo cl""osed\n');
   await shows(page, /closed/);
   await isOpen(page, false);
 

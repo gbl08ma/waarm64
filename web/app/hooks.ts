@@ -43,6 +43,8 @@ declare global {
     __virglCapture?: Uint8Array[];
     /** The running machine's clipboard agent link and sharing (the clipboard tests). */
     __agent?: AgentLink;
+    /** The agent's device end, under `?agentstub` (web/app/run/dev-knobs.ts). */
+    __agentStub?: MessagePort;
     __clipboard?: ClipboardShare;
     /** `?snd=`: the page's sound (tests and measurements). */
     __audio?: PageAudio;

@@ -1,9 +1,10 @@
 // The agent's framing (docs/plans/clipboard.md §2): what the page and the guest's agent (waarm64-agent) say to each other
-// over the agent's port (web/agent-device.ts), as frames: a u32 length (little-endian, the bytes after it: the type
+// over the agent's vsock connection (web/vsock-device.ts), as frames: a u32 length (little-endian, the bytes after it: the type
 // and the payload), a u8 type, then the payload. This module cuts the byte stream into frames, both ways, and defines
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
-// ACK and MORE (step 3), the capability `CAP.TEXT`; SYNC (a stream begun afresh), SESSION and TYPED; `CAP.IMAGE` (step 5).
+// ACK and MORE (step 3), the capability `CAP.TEXT`; SESSION and TYPED; `CAP.IMAGE` (step 5); TIME, `CAP.TIME` (the
+// guest's clock).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -24,11 +25,7 @@ export const FRAME = {
   ACK: 8,
   /** A request id and a count: how many more DATA frames the requester takes (0 stops the answer). */
   MORE: 9,
-  /**
-   * The agent's, before its HELLO when the page's HELLO carried a nonce: the nonce, back. The page's reader skips the
-   * bytes before it (the rest of a frame a snapshot cut, or a stream out of step: `FrameReader.sync`).
-   */
-  SYNC: 10,
+  // 10 was SYNC (a stream begun afresh after a restore, over the virtio-console the agent had before vsock): unused.
   /**
    * The agent's: the guest's clipboard changed hands (a session child started or stopped, or its compositor came or
    * went). What the page knew of the guest's clipboard is gone, and so are the transfers of the one before.
@@ -36,6 +33,8 @@ export const FRAME = {
   SESSION: 11,
   /** The agent's: a u8 status (`TYPED`), what became of TYPE's text. */
   TYPED: 12,
+  /** The page's: the host's wall clock (`encodeTime`), for the guest's (the agent sets it). */
+  TIME: 13,
 } as const;
 
 /** TYPED's statuses. */
@@ -96,8 +95,9 @@ export const CAP = {
   TEXT: 1 << 1,
   /** Images in the clipboard's frames: `image/png` from the page, the guest programs' image types to it (plan §4.4). */
   IMAGE: 1 << 2,
-  // Reserved for the next steps: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs
-  // has the same list).
+  /** TIME: the guest's clock set from the host's (the agent), or a page that sends it. */
+  TIME: 1 << 4,
+  // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 
 /** An OFFER: its serial, its types (and sizes, `UNKNOWN` where unknown), and the first type's bytes if inline. */
@@ -229,26 +229,13 @@ function fields(p: Uint8Array) {
 /** A HELLO: the sender's version and capabilities. */
 export type Hello = { version: number; caps: number };
 
-/** The length of HELLO's nonce. */
-export const NONCE = 8;
-
-/**
- * HELLO's payload: u16 version, u32 capabilities (little-endian); later versions append fields. The page's may append
- * a nonce (`NONCE` bytes): the agent then sends SYNC with it before its own HELLO.
- */
-export function encodeHello(h: Hello, nonce?: Uint8Array): Uint8Array {
-  if (nonce && nonce.length !== NONCE) throw new RangeError(`a HELLO nonce of ${nonce.length} bytes`);
-  const b = new Uint8Array(6 + (nonce?.length ?? 0));
+/** HELLO's payload: u16 version, u32 capabilities (little-endian); later versions append fields. */
+export function encodeHello(h: Hello): Uint8Array {
+  const b = new Uint8Array(6);
   const v = new DataView(b.buffer);
   v.setUint16(0, h.version, true);
   v.setUint32(2, h.caps >>> 0, true);
-  if (nonce) b.set(nonce, 6);
   return b;
-}
-
-/** A HELLO's nonce, if it has one. */
-export function helloNonce(p: Uint8Array): Uint8Array | undefined {
-  return p.length >= 6 + NONCE ? p.slice(6, 6 + NONCE) : undefined;
 }
 
 /** A HELLO's fields; undefined if the payload is too short to be one. */
@@ -256,6 +243,16 @@ export function decodeHello(p: Uint8Array): Hello | undefined {
   if (p.length < 6) return undefined;
   const v = new DataView(p.buffer, p.byteOffset, p.byteLength);
   return { version: v.getUint16(0, true), caps: v.getUint32(2, true) };
+}
+
+/** TIME's payload: u64 nanoseconds since the Unix epoch (`ms`, the host's wall clock, `Date.now()`'s scale). */
+export function encodeTime(ms: number): Uint8Array {
+  const b = new Uint8Array(8);
+  // Whole milliseconds and the rest apart: their product as a double would lose the nanoseconds.
+  const whole = Math.floor(Math.max(0, ms));
+  const ns = BigInt(whole) * 1_000_000n + BigInt(Math.round((Math.max(0, ms) - whole) * 1e6));
+  new DataView(b.buffer).setBigUint64(0, ns, true);
+  return b;
 }
 
 /** The most text in one TYPE frame, in UTF-8 bytes. */
@@ -296,44 +293,16 @@ export function encodeFrame(type: number, payload: Uint8Array = new Uint8Array(0
 /**
  * Cuts a byte stream into frames, whatever pieces it arrives in. A length that can't be a frame's (zero, or past
  * `MAX_PAYLOAD`) means the stream is out of step: the reader is `broken` and drops everything until `reset`, which
- * the link does when the port closes (the agent starts its stream again when it opens it), or `sync`.
+ * the link does with each new connection (it resets one out of step: the agent connects again).
  */
 export class FrameReader {
   private buf = new Uint8Array(0);
   broken = false;
-  /** The SYNC frame's bytes `sync` waits for: everything before them is dropped. */
-  private marker?: Uint8Array;
-
-  /**
-   * Starts afresh at the SYNC frame carrying `nonce` (the agent's answer to a HELLO with it): the bytes before it are
-   * dropped, whatever they are (a frame begun before a snapshot, a stream out of step). The nonce is new, so nothing
-   * sent before the HELLO can hold it.
-   */
-  sync(nonce: Uint8Array) {
-    this.reset();
-    this.marker = encodeFrame(FRAME.SYNC, nonce);
-  }
-
-  /** Waiting for a SYNC (`sync`). */
-  get syncing() {
-    return !!this.marker;
-  }
 
   /** The frames `bytes` completes. */
   push(bytes: Uint8Array): Frame[] {
     if (this.broken) return [];
-    let all = this.buf.length ? concat(this.buf, bytes) : bytes;
-    if (this.marker) {
-      const m = this.marker;
-      const i = find(all, m);
-      if (i < 0) {
-        // The marker's start may be at the end: kept.
-        this.buf = all.slice(Math.max(0, all.length - (m.length - 1)));
-        return [];
-      }
-      this.marker = undefined;
-      all = all.subarray(i + m.length);
-    }
+    const all = this.buf.length ? concat(this.buf, bytes) : bytes;
     const out: Frame[] = [];
     let at = 0;
     while (all.length - at >= LEN) {
@@ -359,17 +328,7 @@ export class FrameReader {
   reset() {
     this.buf = new Uint8Array(0);
     this.broken = false;
-    this.marker = undefined;
   }
-}
-
-/** Where `m` first is in `a`, or -1. */
-function find(a: Uint8Array, m: Uint8Array) {
-  outer: for (let i = a.indexOf(m[0]); i >= 0 && i <= a.length - m.length; i = a.indexOf(m[0], i + 1)) {
-    for (let k = 1; k < m.length; k++) if (a[i + k] !== m[k]) continue outer;
-    return i;
-  }
-  return -1;
 }
 
 function concat(a: Uint8Array, b: Uint8Array) {

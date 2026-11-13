@@ -695,21 +695,29 @@
     "message": "Adding or removing the mouse, the touchscreen, or the clock device changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
     "note": "Machines page, Settings tab: warning under the Mouse, Touchscreen and Clock device boxes once one of them changed (not saved yet); only for a machine with snapshots."
   },
+  "DeviceSwitches.agent": {
+    "message": "Run the guest agent",
+    "note": "Machines page, Settings tab: the label of the box that has the page start its small program (the guest agent) in the guest at each boot, which sets the guest's clock after a restore and, if the box under it is ticked, shares the clipboard."
+  },
+  "DeviceSwitches.agent.title": {
+    "message": "At every boot, this emulator starts a small program of its own in the guest, which talks to the web app over the machine's vsock device.",
+    "note": "Machines page, Settings tab: tooltip of Run the guest agent."
+  },
+  "DeviceSwitches.agent.on": {
+    "message": "The guest agent sets the guest's clock after a snapshot is restored, after a pause, and after your computer wakes from sleep (Preferences can turn that off). It can also share the clipboard. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk. Changes apply from the next boot.",
+    "note": "Machines page, Settings tab: the note under Run the guest agent while it is ticked. Preferences: the Preferences pane's switch for setting the guest's clock."
+  },
+  "DeviceSwitches.agent.off": {
+    "message": "Without the guest agent, the guest's clock falls behind after a snapshot is restored until something in the guest sets it, and the clipboard isn't shared. Changes apply from the next boot.",
+    "note": "Machines page, Settings tab: the note under Run the guest agent while it is unticked."
+  },
   "DeviceSwitches.clipboard": {
     "message": "Share the clipboard with the guest",
-    "note": "Machines page, Settings tab: the label of the box that has the machine share the clipboard with the guest (the agent's device, and the program the page starts in the guest). Ticking it may make the browser ask whether the web app may read the clipboard."
+    "note": "Machines page, Settings tab: the label of the box, under Run the guest agent (and off while it is), that has the agent share the clipboard with the guest. Ticking it may make the browser ask whether the web app may read the clipboard."
   },
   "DeviceSwitches.clipboard.note": {
     "message": "Copy and paste text and images between your computer and the guest's desktop. The guest must be running systemd version 256 or above, and either an X11 session or a Wayland desktop that supports the data-control protocol, such as sway or KDE Plasma. You can pause the sharing, or type the clipboard into a text console, from the <icon>clipboard menu</icon> in the toolbar.",
     "note": "Machines page, Settings tab: the note under Share the clipboard with the guest (docs/plans/clipboard.md §5, docs/clipboard.md for the details it leaves out). Kept short on purpose: what it does, what the guest needs, where it's controlled. data-control is the Wayland protocol (ext or wlr) the emulator's agent needs; an X11 session: Xorg, or Xwayland under a desktop without data-control, through the CLIPBOARD selection; typing is the toolbar menu's Type the clipboard item. The <icon> marker's words are followed by the toolbar's clipboard icon."
-  },
-  "DeviceSwitches.clipboard.orphans.on": {
-    "message": "Turning clipboard sharing on changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings tab: warning under Share the clipboard with the guest once it is ticked (not saved yet); only for a machine with snapshots."
-  },
-  "DeviceSwitches.clipboard.orphans.off": {
-    "message": "Turning clipboard sharing off changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings tab: warning under Share the clipboard with the guest once it is unticked (not saved yet); only for a machine with snapshots."
   },
   "SaveRow.saveRestart": {
     "message": "Save and restart",
@@ -940,11 +948,11 @@
     "note": "Machines page, Preferences: the label of a box."
   },
   "PreferencesPane.clockSync.note": {
-    "message": "Keeps the guest's clock right after a snapshot or Suspend. Snapshot and Suspend first press the guest's sleep key, so the guest suspends itself, as a laptop does when its lid closes; it wakes once the file is written, and again when the file is loaded, and its clock catches up with the time that passed. A guest that doesn't sleep on the key, such as one without systemd-logind, is saved as it is after up to 10 s. When this is off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.",
-    "note": "Machines page, Preferences: the note under Suspend the guest before taking a snapshot."
+    "message": "The guest agent sets the guest's clock to your computer's when a snapshot is restored, after the pause of a snapshot or Suspend, and when your computer wakes from sleep. Only machines that run the guest agent (their Settings tab) can have their clock set. When this is off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.",
+    "note": "Machines page, Preferences: the note under Set the guest's clock after a restore. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent."
   },
   "PreferencesPane.clockSync": {
-    "message": "Suspend the guest before taking a snapshot",
+    "message": "Set the guest's clock after a restore",
     "note": "Machines page, Preferences: the label of a box."
   },
   "PreferencesPane.oskToggle": {

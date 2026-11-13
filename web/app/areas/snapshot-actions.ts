@@ -7,7 +7,6 @@ import type { ToGpuWorker } from '../../gpu-worker.ts';
 import { ask } from '../ask.svelte.ts';
 import { askPersist } from '../storage-report.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
-import { clockSync } from '../settings.ts';
 import { newId } from '../shape.ts';
 import { snapshotPath } from '../store.ts';
 import type { Core } from '../run/core.ts';
@@ -30,27 +29,16 @@ export type SnapshotDeps = Core & {
   askBytes(r: Run, post: (gpu: Worker, id: number) => void): Promise<number>;
   /** The error a snapshot or a suspend would end with now for a device's reason (the worker's `snapshot-check`), or none. */
   refusal(r: Run, what: 'snapshot' | 'suspend'): Promise<unknown>;
+  /** The guest agent sets the guest's clock (web/app/areas/agent-actions.ts): a save's pause held it still. */
+  syncClock(): void;
 };
 
 export const SNAPSHOT_SUFFIX = '.waarm64snap';
 /** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/graphics.md "Snapshots with 3D in use"). */
 const GRAPHICS_WARN = 64 << 20;
 
-/** What a saved snapshot's message adds under the clock catch-up: whether the guest slept for it (undefined: not asked). */
-const sleptAs = (slept?: boolean) => (slept === undefined || !clockSync() ? undefined : slept ? 'slept' : 'awake');
-/** The words of a snapshot saved to a file, or kept in the browser, with whether the guest slept for it. */
-const SAVED = {
-  file: {
-    slept: 'snapshots:snapshot-actions.saved.slept',
-    awake: 'snapshots:snapshot-actions.saved.awake',
-    plain: 'snapshots:snapshot-actions.saved',
-  },
-  kept: {
-    slept: 'snapshots:snapshot-actions.kept.slept',
-    awake: 'snapshots:snapshot-actions.kept.awake',
-    plain: 'snapshots:snapshot-actions.kept',
-  },
-} as const;
+/** The words of a snapshot saved to a file, or kept in the browser. */
+const SAVED = { file: 'snapshots:snapshot-actions.saved', kept: 'snapshots:snapshot-actions.kept' } as const;
 /** A snapshot file's name: the machine's and the time's. */
 function fileName(machine: string, d: Date) {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -69,15 +57,11 @@ export class SnapshotActions {
     return r.live() && !power.busy && isLive(power.state);
   }
   /**
-   * Right before a save: the guest's input is held until it ends (`#over`; web/input.ts `hold`), and with the clock
-   * catch-up (Preferences, `?clocksync=`; docs/frontend.md "The guest's clock") the guest's sleep key is pressed, so it
-   * suspends itself and its own resume counts the time the file sat. Whether it was.
+   * Right before a save: the guest's input is held until it ends (`#over`; web/input.ts `hold`): input during the pause
+   * would only complete into a guest that can't run.
    */
-  #sleepFirst(r: Run) {
-    const sleep = clockSync();
-    if (sleep) r.input.chord('Sleep');
+  #holdInput(r: Run) {
     r.input.hold(true);
-    return sleep;
   }
   /** A save's phase in the state's words: with how far it is while that's known. */
   readonly #progress = (phase: Msg, f: number) =>
@@ -85,7 +69,7 @@ export class SnapshotActions {
 
   /**
    * Whether a device refuses the snapshot or the suspend (`what`) now (Vulkan in use, a video decoding): then it is
-   * said as the save's failure would be, before anything touches the machine (its USB ports, the guest's sleep key).
+   * said as the save's failure would be, before anything touches the machine (its USB ports, its input).
    */
   async #refused(r: Run, what: 'snapshot' | 'suspend', runsOn: string) {
     const e = await this.#d.refusal(r, what);
@@ -118,10 +102,11 @@ export class SnapshotActions {
       r.save(send, { progress: this.#progress, chunk, done: (m) => resolve(m as Done), error: reject });
     });
   }
-  /** The save is over (it worked or not): the devices go back on. */
+  /** The save is over (it worked or not): the devices go back on, and the guest's clock, held during the pause, is set. */
   #over(r: Run, unplugged: Unplugged) {
     power.saving = false;
     r.input.hold(false);
+    if (r.live()) this.#d.syncClock();
     void this.#d.plugBack(r, unplugged);
   }
   /** Says a snapshot was saved, if the machine runs on. */
@@ -129,7 +114,7 @@ export class SnapshotActions {
     if (!r.live() || !isLive(power.state)) return;
     this.#d.messages.setState(power.state);
     const words = { name, size: done.bytes, seconds: (done.pausedMs / 1000).toFixed(1) };
-    this.#d.messages.notify(msg(SAVED[how][sleptAs(done.slept) ?? 'plain'], words));
+    this.#d.messages.notify(msg(SAVED[how], words));
   }
   /** Says the save failed, if the machine runs on (`what`: what the page did about it). */
   #failed(r: Run, e: unknown, what: string) {
@@ -183,15 +168,15 @@ export class SnapshotActions {
     power.saving = true;
     const parts: Blob[] = [];
     try {
-      const sleep = this.#sleepFirst(r);
-      const done = await this.#write(r, { type: 'snapshot', handle, whole: o.whole, sleep }, (data) => {
+      this.#holdInput(r);
+      const done = await this.#write(r, { type: 'snapshot', handle, whole: o.whole }, (data) => {
         parts.push(new Blob([data as Uint8Array<ArrayBuffer>]));
       });
       if (!handle) download(new Blob(parts), suggestedName);
       parts.length = 0;
-      const { bytes, pausedMs, stateMs, blobBytes, slept } = done;
+      const { bytes, pausedMs, stateMs, blobBytes } = done;
       // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes.
-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, slept });
+      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes });
       this.#saved(r, 'file', handle?.name ?? suggestedName, done);
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.noFile'));
@@ -217,11 +202,8 @@ export class SnapshotActions {
       if (!about) throw new Error('no stored machine');
       await askPersist();
       const done = await m.store.writing(async () => {
-        const done = await this.#write(r, {
-          type: 'snapshot',
-          keep: snapshotPath(s.record.id, id),
-          sleep: this.#sleepFirst(r),
-        });
+        this.#holdInput(r);
+        const done = await this.#write(r, { type: 'snapshot', keep: snapshotPath(s.record.id, id) });
         const pins = done.pins.map(({ slot, overlay, generation, blocks, ram }: SnapshotDisk) => ({
           slot,
           overlay,
@@ -264,8 +246,9 @@ export class SnapshotActions {
     const unplugged = await this.#d.emptyPorts(r, 'suspend');
     if (!unplugged || !this.#ready(r)) return;
     power.saving = true;
+    this.#holdInput(r);
     r.save(
-      { type: 'suspend', sleep: this.#sleepFirst(r) },
+      { type: 'suspend' },
       {
         progress: this.#progress,
         chunk: () => undefined,

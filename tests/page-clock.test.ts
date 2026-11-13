@@ -1,11 +1,11 @@
-// The guest's clock across snapshots with the clock catch-up on (`?clocksync=1`, the Preferences' "Suspend the guest
-// before taking a snapshot", on by default; the page tests turn it off; docs/frontend.md "The guest's clock"), on Debian: Save snapshot first presses the guest's
-// sleep key, so Debian suspends itself (PSCI SYSTEM_SUSPEND) and the file says it slept; the running machine wakes
-// with its clock on time, and so does the file loaded minutes later in a fresh profile, and a suspended machine
-// resumed after a while. A guest that suspends itself wakes on a key. Off (tests/page-debian.test.ts), a snapshot is a
-// pause the guest's clock doesn't see, as before.
+// The guest's clock set by the guest agent (`?clocksync=1`, Preferences' "Set the guest's clock after a restore", on
+// by default; the page tests turn it off; docs/frontend.md "The guest's clock"), on Debian: the agent connects over vsock
+// and the page sends TIME at its HELLO, after a save's pause, and at a restore (the restored agent connects again). The
+// guest's clock is set back first each time, so only the agent puts it right: after Save snapshot, after Suspend and a
+// resume 20 s on, and after the file loaded minutes later in a fresh profile. A guest that suspends itself still sleeps
+// and wakes on a key. Off (tests/page-debian.test.ts), a snapshot is a pause the guest's clock doesn't see, as before.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -13,8 +13,6 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
-import { openSnapshot } from '../web/snapshot-file.ts';
-import { lzCodec } from '../web/lz.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
@@ -23,8 +21,8 @@ import { answerAsks } from './page-ask.ts';
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const CORE = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const AGENT = new URL('../target/images/agent/waarm64-agent', import.meta.url);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh --platform runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh debian edk2 agent';
 /** The guest's clock may be this far from the host's (s): the reading's own latency, a terminal round trip. */
 const SLACK = 3;
 
@@ -72,10 +70,21 @@ const near = async (page: Page, what: string) => {
   assert.ok(Math.abs(d) < SLACK, `${what}: the guest's clock is ${d.toFixed(1)} s off`);
 };
 
-test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and wakes with its clock on time; a guest asleep by itself wakes on a key', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  // With the USB controller: Linux's xHCI suspend and resume (CSS, its registers written again, CRS) go through each
-  // sleep; a controller that started its event ring over left the guest stuck in an interrupt storm (docs/usb.md).
-  const query = `ncpus=2&view=both&usb=1&clocksync=1&${unattendedQuery()}`;
+/** The guest's clock set back two minutes (on the serial terminal), so that only the agent's TIME puts it right. */
+async function setBack(page: Page) {
+  await onSerial(page, 'clear; date -s "@$(( $(date +%s) - 120 ))" >/dev/null; echo se""tback\n');
+  await shows(page, /setback/);
+  const d = await offset(page);
+  assert.ok(d < -100, `the guest's clock set back: ${d.toFixed(1)} s`);
+}
+/** Until the guest agent has said HELLO on this page (after a restore: once it connected again). */
+const agentUp = (page: Page) =>
+  page.waitForFunction(() => !!(window as unknown as { __agent?: { agent?: unknown } }).__agent?.agent, null, { timeout: 120_000, polling: 200 });
+
+test('the guest agent sets the clock after a snapshot, a resume and a load; a guest asleep by itself wakes on a key', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
+  // With the USB controller: Linux's xHCI suspend and resume (CSS, its registers written again, CRS) go through the
+  // guest's own sleep; a controller that started its event ring over left the guest stuck in an interrupt storm (docs/usb.md).
+  const query = `ncpus=2&view=both&usb=1&clocksync=1&agent=1&${unattendedQuery()}`;
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
@@ -87,40 +96,40 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
   await shows(page, /login: /);
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
+  await agentUp(page);
   await near(page, 'booted');
   // The clock device (virtio-rtc, a transient machine's by default) is there; Debian 13's 6.12 has no driver for it.
   await onSerial(page, 'clear; grep -l 0x0011 /sys/bus/virtio/devices/*/device | wc -l; echo li""sted\n');
   await shows(page, /^\s*1\s*listed/);
 
-  // Save snapshot: the guest sleeps for it (its sleep key, then systemd-logind), and the running machine wakes on time.
+  // Save snapshot: after its pause, the agent sets the clock.
+  await setBack(page);
   const [download] = await Promise.all([page.waitForEvent('download', { timeout: 180_000 }), page.locator('#save-snapshot').click()]);
   const file = join(dir, 'debian.waarm64snap');
   await download.saveAs(file);
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
-  assert.match(await message(page), words('snapshots:snapshot-actions.saved.slept', {}, { start: true }));
-  const lz = await lzCodec(readFileSync(CORE));
-  assert.equal((await openSnapshot(new Blob([readFileSync(file)]), { codecs: [lz] })).header.slept, true);
   await near(page, 'after its snapshot');
-  await onSerial(page, 'clear; journalctl -b -o cat | grep -c "suspend entry (deep)"; echo co""unted\n');
-  await shows(page, /^\s*1\s*counted/); // `clear` took the command line
+  await onSerial(page, 'clear; journalctl -b -u waarm64-agent -o cat | grep -c "clock set"; echo co""unted\n');
+  await shows(page, /^\s*[1-9]\d*\s*counted/); // the agent's log says so (`clear` took the command line)
 
   // A guest that suspends itself sleeps until a key (its clock runs on meanwhile: the counter doesn't stop).
   await onSerial(page, 'systemctl suspend\n');
   await page.waitForFunction((said) => (document.getElementById('message-text')?.textContent ?? '') === said, t('machine:worker-messages.asleep'), { timeout: 60_000 });
   await page.waitForTimeout(5000);
   await onSerial(page, '\n');
+  await awake(page);
   await onSerial(page, 'clear; echo aw""ake-$((6*7))\n');
   await shows(page, /awake-42/);
   await near(page, 'woken by a key');
 
-  // Suspend: the machine stops asleep; resumed a while later, it wakes on time.
+  // Suspend: resumed a while later, the agent connects again and sets the clock.
   await page.locator('#suspend').click();
   await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
   await page.waitForTimeout(20_000);
   await page.reload();
   await running(page, 180_000);
   assert.match(await message(page), words('machine:worker.resumed', {}, { start: true }));
-  await awake(page);
+  await agentUp(page);
   await near(page, 'resumed 20 s after its suspend');
   assert.deepEqual(errors, []);
   await context.close();
@@ -133,7 +142,7 @@ test('with the clock catch-up, the guest sleeps for a snapshot or a suspend and 
   await p2.setInputFiles('#load-snapshot-input', file);
   await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000 });
   await running(p2, 180_000);
-  await awake(p2);
+  await agentUp(p2);
   await near(p2, 'its snapshot loaded minutes later');
   // Nothing in the guest minded: no failed unit, no RCU stall, no watchdog.
   await onSerial(p2, 'clear; systemctl --failed --no-legend | wc -l; dmesg | grep -ciE "rcu.*stall|soft lockup|watchdog"; echo che""cked\n');

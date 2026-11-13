@@ -1380,16 +1380,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
-- **`vm.cantSave.notQuiet` on KDE's login screen** (the user, 2026-11-12): a snapshot whose sleep key the guest's
-  mouse undid failed so after the 10 s wait, and the machine seemed stuck afterwards. Not reproduced on the KDE image
-  (`images/arch/desktop.sh --kde`) with Playwright's mouse moving over the screen, the input hold taken out (the guest
-  slept anyway, later), nor on sway awake with the screen busy. Since then the page holds the guest's input through a
-  save, and `Vm.snapshot` waits 10 s (`QUIET_MS`) rather than 1000 round trips. If it comes back: which device wasn't
-  quiet (its rings, `config_gen`, `backlog`: core/src/virtio.rs `Transport::quiet`), said in the error's details.
-- **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND) resets every virtio
-  device in its resume without a SYSTEM_SUSPEND, so the reset isn't carried ([devices.md](devices.md) "Across a
-  suspend") and virtio-gpu stops as before. Not seen yet; marking the devices from the page's sleep key on would cover
-  it, at the cost of a reset carried for a guest that never suspended.
+- **`vm.cantSave.notQuiet` on KDE's login screen** (the user, 2026-11-12): a snapshot whose sleep key (the clock
+  catch-up's, gone since 2026-11-13: no save puts the guest to sleep now) the guest's mouse undid failed so after the
+  10 s wait, and the machine seemed stuck afterwards. Not reproduced on the KDE image (`images/arch/desktop.sh --kde`)
+  nor on sway awake with the screen busy. The page holds the guest's input through a save, and `Vm.snapshot` waits
+  10 s (`QUIET_MS`) rather than 1000 round trips. If it comes back: which device wasn't quiet (its rings,
+  `config_gen`, `backlog`: core/src/virtio.rs `Transport::quiet`), said in the error's details.
+- **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
+  desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
+  carried ([devices.md](devices.md) "Across a suspend") and virtio-gpu stops as before. Not seen yet, and rarer since
+  snapshots no longer put the guest to sleep.
 
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
   processes beside the page's snd snapshot test, once in eight runs (before the last bound change; none in 51 runs
@@ -1408,9 +1408,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The network across a snapshot:** the guest keeps its lease and its connections' state; the
   restored machine's card is on whatever the page connects it to now. A link down/up at restore
   would make the guest ask for a lease again; open connections are lost either way.
-- **The guest's clock after a restore**: the catch-up is done (on by default) (docs/frontend.md "The guest's clock": the guest
-  suspends itself for the file, PSCI SYSTEM_SUSPEND, and wakes with its clock moved on; why moving a running guest's
-  counter can't: platform.md "System suspend"), and the virtio-rtc device. What's left:
+- **The guest's clock after a restore**: the guest agent sets it (docs/frontend.md "The guest's clock": TIME at its
+  HELLO, after a save's pause, at the host's own sleep; the AGENT track, 2026-11-13), and the virtio-rtc device. What's
+  left:
   - **virtio-rtc against a running driver.** Checked against the driver's message formats only: Debian's kernels (up
     to 6.17 in trixie-backports) leave `CONFIG_VIRTIO_RTC` out. In the dev VM: our kernel (`images/linux`) with it
     on, the guest's `/sys/class/rtc/rtc*/since_epoch` and its PTP clock (`phc_ctl`, chrony's `refclock PHC`) against
@@ -1418,13 +1418,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **virtio-rtc's cross-timestamps** (READ_CROSS with the ARM virtual counter: the reading and CNTVCT at one instant,
     which the device worker would need the core's clock for) and **alarms** (an RTC alarm that wakes a suspended
     guest: `rtcwake`).
-  - **Guests that don't sleep on the key** (no systemd-logind: Alpine with OpenRC; a desktop that takes the key and
-    asks first) are saved as before; an agent (`guest-set-time`, [plans/agent.md](plans/agent.md) step 2) or a link
-    flap for timesyncd (a virtio-net `VIRTIO_NET_F_STATUS` down and up on restore: Debian's networkd and timesyncd
-    re-sync at once on it; networked guests only) would cover them.
-  - **The host's own sleep** (a laptop's lid): `performance.now()` may not count it, so the guest's counter doesn't
-    either and its clock falls behind as after a snapshot. The page could notice `Date.now()` moving away from it and
-    run the catch-up (sleep key, skip, wake) by itself.
+  - **Guests without the agent** (no firmware: the direct-boot machines; no systemd 256: Alpine with OpenRC; the agent
+    turned off) lag as before. A link flap for timesyncd (a virtio-net `VIRTIO_NET_F_STATUS` down and up on restore:
+    Debian's networkd and timesyncd re-sync at once on it; networked guests only) or the agent from a tools disk
+    (plans/agent.md) would cover them.
+  - **A step, not a slew:** the agent sets CLOCK_REALTIME at once (past 50 ms off). A guest with chrony or timesyncd
+    sees a step it didn't make; none was seen to mind on Debian (`tests/page-clock.test.ts`), but a long-running
+    guest whose NTP client disciplines the clock may log it.
 - **One worker compresses RAM** (the core's LZ): 0.44 s for 304 MB of pages. Four would take it
   to 0.15 s (`bench/boot/REPORT.md` "M8 phase C loop 4"); chunks must then be dealt out
   interleaved, not as ranges. And the file's blocks are copied through the codec's own instance
@@ -1609,22 +1609,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Clipboard sharing ([clipboard.md](clipboard.md))
 
-- **The agent over virtio-vsock instead of its virtio-console** (the user's question, 2026-11-12: it makes sense; not
-  started). Every firmware machine now has a vsock for systemd's notify socket (devices.md "vsock"), so the agent could
-  connect to the host's CID 2 on a port of its own. What it would buy: **the clipboard setting stops changing the
-  machine's shape** (no `agent` transport: turning it on or off would no longer orphan snapshots, only add or drop the
-  fw_cfg binary and unit); a connection per purpose (control, each transfer) with vsock's own credit, instead of one
-  byte stream with the frames' length prefix, CREDIT/MORE and the SYNC nonce after a restore (a restore's
-  TRANSPORT_RESET drops the connections and the agent reconnects, which is what a restore means today too); no
-  `udevadm wait` for `/dev/virtio-ports/…`; and room for plans/agent.md's other jobs as other ports. What it costs:
-  the device then carries data to the guest (today it only answers), so it needs the guest's credit (`buf_alloc`,
-  `fwd_cnt`, CREDIT_REQUEST when it's short), connections the page can open and close, and a decision on what a
-  snapshot keeps (resetting is simplest and matches "a paste cut by a restore" below); the agent's transport in Rust
-  (`AF_VSOCK` sockets: musl has them, `rustix`'s support to check), its tests (`serve_test.rs` runs on a socketpair,
-  which stays), and the page's link (`AgentLink`: per connection instead of per port). The guest needs
-  `CONFIG_VIRTIO_VSOCKETS` (Debian's and Arch's kernels have it as a module); the console stays for spice-vdagent's port
-  (step 6 below), which needs virtio-serial. Measure the channel's rate against today's ~0.8 MB/s first.
-- **The agent's size past `no_std`:** 130,064 bytes, ~79 KB gzipped (clipboard.md "What it costs"). What's left is
+- **The agent's channel over vsock, not measured** (the AGENT track moved it there, 2026-11-13): its rate (4 KiB
+  packets, a completion each, as the console's buffers were; ~0.8 MB/s then) and `systemd-analyze security` without
+  `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
+  connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
+  jobs.
+- **The agent's size past `no_std`:** 132,696 bytes, ~82 KB gzipped (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
@@ -1634,9 +1624,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Two compositors for one user** (sway on two VTs): the session child takes the first `wayland-<n>` that accepts.
   Which socket is the active session's isn't known without reading the session's processes' environment
   (`WAYLAND_DISPLAY`), as X11's display already is.
-- **A paste cut by a restore:** the page's HELLO (a restore mid-paste) ends the guest program's pipe, so it gets what
+- **A paste cut by a restore:** the new connection's HELLO (a restore mid-paste) ends the guest program's pipe, so it gets what
   had crossed, truncated; a pipe has no way to say "failed". An X11 requestor under INCR is the same.
-- **No `splice`:** the child reads and writes the port's bytes in 64 KiB chunks between the port and the Wayland or
+- **No `splice`:** the child reads and writes the connection's bytes in 64 KiB chunks between it and the Wayland or
   X11 pipes (they cross the parent anyway). And a page→guest answer that the guest's reader dropped is a MORE 0 the
   page honours, but what the page already sent (at most the credit, 4 chunks) still crosses.
 - **sway restarted at boot, seen twice** in the Debian sway image's page test: the boot's first sway ended within
@@ -1645,7 +1635,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The plan's optional step 6** (plans/clipboard.md §6; each needs the user's OK): spice-vdagent's port
   (`com.redhat.spice.0`, a second port on the same device, for Xorg and GNOME guests that have it), GNOME on Wayland
   through the portal's Clipboard interface (a RemoteDesktop session the user consents to), and other agent jobs in the
-  same binary and port (a ready signal, the time after a resume, sway's resize: plans/agent.md).
+  same binary and connection (a ready signal, sway's resize: plans/agent.md).
 
 ## Tests and tools
 

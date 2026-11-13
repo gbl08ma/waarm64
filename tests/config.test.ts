@@ -11,27 +11,29 @@ import type { MachineRecord } from '../web/app/shape.ts';
 const record = (over: Partial<MachineRecord> = {}): MachineRecord => ({
   id: 'aaaaaaaaaaaa', name: 'Brisk Heron', ncpus: 2, ramMiB: 1024, display: '2d', network: true, created: 0, modified: 0, attachments: [], ...over,
 });
-/** A stored machine with every switch off (`clock` and `netConfig` unset: a record from before them), and one with every switch on. */
+/** A stored machine with every switch off (`clock`, `netConfig` and `agent` unset: a record from before them; the last two on then), and one with every switch on. */
 const OFF = record();
 const ON = record({ usb: true, mouse: true, touch: true, clipboard: true, clock: true, shares: true, netConfig: false, display: '3d', vulkan: true, keyboard: 'gb' });
 const ENV = { gpu: true, ramMiB: 2048, cores: 8 };
-const DEVICES: (keyof DeviceSwitches)[] = ['usb', 'mouse', 'touch', 'clipboard', 'clock', 'shares', 'netConfig'];
+const DEVICES: (keyof DeviceSwitches)[] = ['usb', 'mouse', 'touch', 'agent', 'clipboard', 'clock', 'shares', 'netConfig'];
 /** The switches that are on, by name. */
 const on = (d: DeviceSwitches) => DEVICES.filter((k) => d[k]).join(' ');
 
 type Row = [name: string, query: string, record: MachineRecord | undefined, settings: Settings, expect: Partial<Omit<Resolved, 'devices'>> & { devices?: string }];
 const TABLE: Row[] = [
-  // The devices (and the guest's network settings).
-  ['transient: the defaults', '', undefined, {}, { devices: 'clock netConfig' }],
-  ['transient: each device on', 'usb=1&mouse=1&touch=1&clipboard=1', undefined, {}, { devices: 'usb mouse touch clipboard clock netConfig' }],
-  ['transient: the clock and the network settings off', 'clock=0&netconfig=0', undefined, {}, { devices: '' }],
-  ['transient: =0 of an off one, =1 of an on one', 'usb=0&clock=1&netconfig=1', undefined, {}, { devices: 'clock netConfig' }],
-  ['stored, all off: as its record', '', OFF, {}, { devices: 'netConfig' }],
-  ['stored, all off: the address turns each on', 'usb=1&mouse=1&touch=1&clipboard=1&clock=1', OFF, {}, { devices: 'usb mouse touch clipboard clock netConfig' }],
-  ['stored, all on: as its record', '', ON, {}, { devices: 'usb mouse touch clipboard clock shares' }],
-  ['stored, all on: the address turns each off', 'usb=0&mouse=0&touch=0&clipboard=0&clock=0', ON, {}, { devices: 'shares' }],
-  ['stored: ?netconfig=1 over its record', 'netconfig=1', ON, {}, { devices: 'usb mouse touch clipboard clock shares netConfig' }],
-  ['stored: ?netconfig=0 over its record', 'netconfig=0', OFF, {}, { devices: '' }],
+  // The devices (and the guest agent and network settings, on unless turned off).
+  ['transient: the defaults', '', undefined, {}, { devices: 'agent clock netConfig' }],
+  ['transient: each device on', 'usb=1&mouse=1&touch=1&clipboard=1', undefined, {}, { devices: 'usb mouse touch agent clipboard clock netConfig' }],
+  ['transient: the agent, the clock and the network settings off', 'agent=0&clock=0&netconfig=0', undefined, {}, { devices: '' }],
+  ['transient: =0 of an off one, =1 of an on one', 'usb=0&clock=1&netconfig=1&agent=1', undefined, {}, { devices: 'agent clock netConfig' }],
+  ['stored, all off: as its record', '', OFF, {}, { devices: 'agent netConfig' }],
+  ['stored, all off: the address turns each on', 'usb=1&mouse=1&touch=1&clipboard=1&clock=1', OFF, {}, { devices: 'usb mouse touch agent clipboard clock netConfig' }],
+  ['stored, all on: as its record', '', ON, {}, { devices: 'usb mouse touch agent clipboard clock shares' }],
+  ['stored, all on: the address turns each off', 'usb=0&mouse=0&touch=0&agent=0&clipboard=0&clock=0', ON, {}, { devices: 'shares' }],
+  ['stored: ?netconfig=1 over its record', 'netconfig=1', ON, {}, { devices: 'usb mouse touch agent clipboard clock shares netConfig' }],
+  ['stored: ?netconfig=0 over its record', 'netconfig=0', OFF, {}, { devices: 'agent' }],
+  ['stored: the agent off in its record (its clipboard switch kept)', '', record({ agent: false, clipboard: true }), {}, { devices: 'clipboard netConfig' }],
+  ['stored: ?agent=1 over its record', 'agent=1', record({ agent: false }), {}, { devices: 'agent netConfig' }],
   // The size.
   ['transient: the default size', '', undefined, {}, { ncpus: 4, ramMiB: 2048, ramSplit: undefined, jitMiB: 0 }],
   ['transient: the size chosen last', '', undefined, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }],
@@ -86,7 +88,7 @@ test('asRun: without the address, a stored machine runs as its record (its snaps
 test("addressFor: another machine than the page's resolves without the address's size and switches (finding 2)", async () => {
   const disks = () => ({ id: 'd', kind: 'blank', name: 'd', size: 1 << 30, identity: { kind: 'blank', id: 'd', bytes: 1 << 30 }, created: 0 }) as const;
   const attachments = [{ id: 'a00000000001', disk: 'd', readOnly: false }];
-  const q = new URLSearchParams('m=aaaaaaaaaaab&ncpus=4&ram=2048&split=1024,1024&jitmb=96&usb=1&mouse=1&touch=1&clipboard=1&clock=1&netconfig=0&gpu=2d');
+  const q = new URLSearchParams('m=aaaaaaaaaaab&ncpus=4&ram=2048&split=1024,1024&jitmb=96&usb=1&mouse=1&touch=1&clipboard=1&agent=0&clock=1&netconfig=0&gpu=2d');
   for (const r of [OFF, ON].map((x) => ({ ...x, attachments }))) {
     const other = asRun(r, resolveMachine(addressFor(q, false), r, {}, ENV));
     assert.equal(await shapeHash(shapeOf(other, disks)), await shapeHash(shapeOf(r, disks)), `${r.name}: its kept snapshots' hash`);

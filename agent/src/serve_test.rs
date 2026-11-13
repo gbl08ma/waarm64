@@ -1,4 +1,4 @@
-//! The root process's loop (`serve`) natively: a socketpair stands in for the port, the test's own directories for
+//! The root process's loop (`serve`) natively: a socketpair stands in for the vsock connection, the test's own directories for
 //! logind's files and the users' runtime directories, a console of the test's for the foreground terminal, and a
 //! child on a thread that answers each frame it gets with an ACK of the frame's type (`ECHO | kind`) for the forked
 //! session child (src/sway_test.rs tests the real one).
@@ -14,6 +14,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+/// The clock the agent set (`Agent::set_clock`), every test's.
+static CLOCK: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+fn record_clock(ns: u64) -> io::Result<()> {
+    CLOCK.lock().unwrap().push(ns);
+    Ok(())
+}
 
 /// The test child's ACK serials: this, with the type of the frame it got.
 const ECHO: u32 = 0xec40_0000;
@@ -116,6 +124,7 @@ impl Harness {
         let agent = std::thread::spawn(move || {
             let mut a = Agent::new(paths, Box::new(FakeConsole(c)));
             a.test_child = Some(echo_child);
+            a.set_clock = record_clock;
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -188,7 +197,7 @@ impl Harness {
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        // The page's end closed: the agent's loop ends (the host closed the port).
+        // The page's end closed: the agent's loop ends (the host closed the connection).
         let (a, b) = socketpair(
             AddressFamily::UNIX,
             SocketType::STREAM,
@@ -201,7 +210,7 @@ impl Drop for Harness {
         if let Some(a) = self.agent.take()
             && !std::thread::panicking()
         {
-            assert_eq!(a.join().unwrap(), "the host closed the port");
+            assert_eq!(a.join().unwrap(), "the host closed the connection");
         }
         let _ = std::fs::remove_dir_all(&self.root);
     }
@@ -219,11 +228,56 @@ fn offer(serial: u32) -> Vec<u8> {
 }
 
 fn hello() -> [u8; 6] {
-    frame::Hello {
-        version: 1,
-        caps: frame::cap::TYPE | frame::cap::TEXT,
-    }
-    .encode()
+    hello_with(frame::cap::TYPE | frame::cap::TEXT | frame::cap::TIME)
+}
+
+fn hello_with(caps: u32) -> [u8; 6] {
+    frame::Hello { version: 1, caps }.encode()
+}
+
+#[test]
+fn no_session_child_without_the_clipboard() {
+    let mut h = Harness::start("noclip");
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a =
+        frame::Hello::decode(&h.page.next(frame::HELLO, 2000).expect("the agent's HELLO")).unwrap();
+    assert_ne!(a.caps & frame::cap::TIME, 0, "the agent sets the clock");
+    let uid = rustix::process::getuid().as_raw();
+    h.logind(
+        "sessions/3",
+        &format!("UID={uid}\nCLASS=user\nSTATE=active\n"),
+    );
+    h.logind("seats/seat0", "IS_SEAT0=1\nACTIVE=3\n");
+    std::thread::sleep(Duration::from_millis(300));
+    h.page.send(frame::OFFER, &offer(9));
+    assert_eq!(
+        frame::decode_ack(&h.page.next(frame::ACK, 2000).unwrap()),
+        Some((9, frame::ack::NO_SESSION)),
+        "no child while the page doesn't share the clipboard"
+    );
+    // The clipboard shared (a page's HELLO with it): the child starts.
+    h.page.send(frame::HELLO, &hello());
+    h.activate();
+}
+
+#[test]
+fn sets_the_clock_from_time_past_the_slack() {
+    let mut h = Harness::start("time");
+    let now = || {
+        let t = rustix::time::clock_gettime(rustix::time::ClockId::Realtime);
+        t.tv_sec as u64 * 1_000_000_000 + t.tv_nsec as u64
+    };
+    let far = now() + 90_000_000_000;
+    let near = now() + 1_000_000;
+    h.page.send(frame::TIME, &far.to_le_bytes());
+    h.page.send(frame::TIME, &near.to_le_bytes());
+    h.page.send(frame::TIME, &[1, 2, 3]);
+    // Frames are served in order: the HELLO's answer comes after the TIMEs were taken.
+    h.page.send(frame::HELLO, &hello());
+    assert!(h.page.next(frame::HELLO, 2000).is_some());
+    let set = CLOCK.lock().unwrap().clone();
+    assert!(set.contains(&far), "90 s off: set");
+    assert!(!set.contains(&near), "1 ms off: left");
 }
 
 #[test]

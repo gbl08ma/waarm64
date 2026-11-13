@@ -138,8 +138,13 @@ export type MachineRecord = {
    */
   shares?: boolean;
   /**
-   * Clipboard sharing with the guest (docs/plans/clipboard.md): the agent's device (a virtio-console with its named
-   * port, web/agent-device.ts), and the agent the page gives the guest at boot. Off by default; in the shape when on.
+   * False: no guest agent (docs/devices.md "The guest's agent": the binary and its unit the page gives a `firmware`
+   * machine's guest at boot, over vsock); absent: the agent. Not in the shape: vsock is every `firmware` machine's.
+   */
+  agent?: false;
+  /**
+   * Clipboard sharing with the guest (docs/clipboard.md), through the agent: off by default. Not in the shape (the
+   * agent hears it in the page's HELLO).
    */
   clipboard?: boolean;
   /** False: the page doesn't mount them in the guest; absent: it does, at `sharesPath`. Not in the shape: the guest's disk decides what a path means. */
@@ -211,7 +216,7 @@ export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds only some machines have (their record's switches; the notify socket, a `firmware` machine's). */
-type OptionalKind = 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'vsock';
+type OptionalKind = 'mouse' | 'touch' | 'clock' | '9p' | 'vsock';
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | OptionalKind | 'blk';
 /** The vCPUs' optional features: web/cpu-features.ts's table (`CPU_DEFAULT` the ones a machine has unless turned off). */
@@ -239,7 +244,6 @@ export function slots(m: {
   touch?: boolean;
   clock?: boolean;
   shares?: boolean;
-  clipboard?: boolean;
   vsock?: boolean;
   attachments: unknown[];
 }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
@@ -254,7 +258,6 @@ export function slots(m: {
     ...(m.touch ? [{ kind: 'touch' as const }] : []),
     ...(m.clock ? [{ kind: 'clock' as const }] : []),
     ...(m.shares ? [{ kind: '9p' as const }] : []),
-    ...(m.clipboard ? [{ kind: 'agent' as const }] : []),
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
     ...(m.vsock === false ? [] : [{ kind: 'vsock' as const }]),
   ];
@@ -327,7 +330,6 @@ export function shapeOf(
     touch: m.touch,
     clock: m.clock,
     shares: m.shares,
-    clipboard: m.clipboard,
     attachments: m.attachments,
   });
   return {

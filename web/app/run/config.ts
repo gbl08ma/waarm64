@@ -45,6 +45,7 @@ export type DeviceSwitches = {
   usb: boolean;
   mouse: boolean;
   touch: boolean;
+  agent: boolean;
   clipboard: boolean;
   clock: boolean;
   shares: boolean;
@@ -117,6 +118,7 @@ export const SWITCHES = {
   usb: 'usb',
   mouse: 'mouse',
   touch: 'touch',
+  agent: 'agent',
   clipboard: 'clipboard',
   clock: 'clock',
   netConfig: 'netconfig',
@@ -150,6 +152,8 @@ function resolveDevices(q: URLSearchParams, record: MachineRecord | undefined): 
     usb: flag('usb'),
     mouse: flag('mouse'),
     touch: flag('touch'),
+    // The guest agent: on unless the record or the address says not. The clipboard goes through it.
+    agent: asked('agent') ?? record?.agent !== false,
     clipboard: flag('clipboard'),
     clock: asked('clock') ?? (record ? !!record.clock : true),
     shares: !!record?.shares,
@@ -175,6 +179,7 @@ export function asRun(
     usb: d.usb,
     mouse: d.mouse,
     touch: d.touch,
+    agent: d.agent ? undefined : false,
     clipboard: d.clipboard,
     clock: d.clock,
     shares: d.shares,

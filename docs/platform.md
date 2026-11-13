@@ -317,8 +317,8 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   were due fire at once; it **stands at that reading until a vCPU first runs** (`Clock::start`, in
   `run` and `run_cpu`), and so does the saved VM's from the moment its state is taken (`Clock::hold`)
   until it runs on, so the saved and every restored machine go on from the same instant. A guest that was suspended
-  (PSCI SYSTEM_SUSPEND, "System suspend" above) is restored suspended, and the host may move its clock on by the time
-  away before it wakes it (`vm_clock_skip`): the page's clock catch-up does. On the page
+  (PSCI SYSTEM_SUSPEND, "System suspend" above) is restored suspended, until the host wakes it. The guest's wall
+  clock after a restore is the guest agent's to set (frontend.md "The guest's clock"), not the core's. On the page
   the vCPU workers start ~130 ms after the state is restored and a save pauses the machine for as
   long as the file takes; a guest waiting with a shorter timeout (ALSA's wait for a sound period,
   100 ms) found it expired before it ran ([audio.md](audio.md) "Linux driver behavior"). The vCPU workers of a parallel VM start
@@ -523,11 +523,10 @@ driver's resume) carried over it ([devices.md](devices.md) "Across a suspend"): 
 
 **The clock across it.** The counter runs on while the guest is suspended, and Linux's resume counts its progress as
 sleep (the arch timer is a nonstop clocksource): CLOCK_REALTIME and CLOCK_BOOTTIME move on, CLOCK_MONOTONIC doesn't,
-and the soft-lockup and RCU-stall detectors are reset. So **`vm_clock_skip(ns)`, allowed only while the guest is
-suspended**, moves the clock on by time that didn't pass in the VM (a snapshot sitting in a file; the clock held while
-a state is written), and the guest's own resume catches its wall clock up; the PL031's base moves back by as much
-(`Pl031::shift`), so it still shows the host's time. The same jump in a guest that isn't suspended is what the core
-never does: measured on Debian 13 (an hour on CNTVCT at a restore), `date` was right at once, but RCU reported a
+and the soft-lockup and RCU-stall detectors are reset. The core moves no clock on by time that didn't pass in the VM
+(a snapshot sitting in a file); until ABI 67 `vm_clock_skip(ns)` did for a suspended guest, whose own resume then
+caught its wall clock up (the page put the guest to sleep for each snapshot): the guest agent now sets the wall clock
+instead (frontend.md "The guest's clock"). The same jump in a guest that isn't suspended is what the core never does: measured on Debian 13 (an hour on CNTVCT at a restore), `date` was right at once, but RCU reported a
 self-detected stall and systemd killed journald for its watchdog (`WatchdogSec=`, on CLOCK_MONOTONIC); arm64 has no
 "guest was paused" signal to the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`: arm64 takes asm-generic's
 `kvm_check_and_clear_guest_paused`, which returns false). A snapshot taken while the guest is suspended saves that

@@ -114,50 +114,51 @@ the PL011, [platform.md](platform.md) "PL011"). virtio-rng:
 `crypto.getRandomValues` in the browser's realtime mode; **splitmix64 seeded 0** in deterministic
 mode (and natively in realtime mode: std has no CSPRNG).
 
-### agent (ID 3): clipboard sharing's virtio-console
+### The guest's agent (over vsock)
 
-`{type: 'agent', port}` (`web/agent-device.ts`), only on a machine with clipboard sharing (`MachineRecord.clipboard`,
-a transient machine's `?clipboard=1`: its own transport kind, `agent`, after `9p` in the slots, so other machines'
-shapes don't move): a virtio-console with **MULTIPORT** (feature 1), one port (`max_nr_ports` 1, so four queues:
-port 0's receive and transmit, the control receive and transmit) named **`org.waarm64.agent.0`**. Linux's
-virtio_console makes `/dev/vport<N>p0` of it and udev links `/dev/virtio-ports/org.waarm64.agent.0`; no port is a console
-(no CONSOLE_PORT), so no hvc. The handshake is the driver's: control buffers and DEVICE_READY, then PORT_ADD from the
-device, PORT_READY from the driver, PORT_NAME and PORT_OPEN 1 (the host end is always open) from the device. The
-guest's PORT_OPEN (1 on its open, 0 on its last close) goes to the page as `open`; the page's bytes fill the port's
-receive buffers in order while the guest holds it open (dropped otherwise, as Linux drops them), at most `MAX_PENDING`
-(1 MiB) held. The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__agent`): frames
-(`web/agent-frame.ts`: a u32 length, a u8 type, the payload of at most 64 KiB and change) with at most `WINDOW` (256 KiB)
-in flight, from the device's `taken` counts. A snapshot keeps the port's state, the bytes not yet taken and control
-messages not yet sent; the guest's buffers come back with the core's held requests. What goes over it is the agent's:
-[plans/clipboard.md](plans/clipboard.md).
-
-#### The guest's agent
+The guest agent is a program of ours the page starts in a `firmware` machine's guest at each boot (`MachineRecord.agent`,
+on unless `false`; a transient machine's `?agent=0` or `1`, which is over a stored machine's too). It isn't a device:
+it connects to the page over the machine's vsock (above, `AGENT_PORT`), so turning it on or off changes no machine's
+shape. It sets the guest's clock (TIME, below; frontend.md "The guest's clock") and, on a machine that shares the
+clipboard (`MachineRecord.clipboard`, `?clipboard=1`; what the page's HELLO says), shares it ([clipboard.md](clipboard.md)).
+The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__agent`), made by
+`web/app/areas/agent-actions.ts` for each run: frames (`web/agent-frame.ts`: a u32 length, a u8 type, the payload of at
+most 64 KiB and change) with at most `WINDOW` (256 KiB) in flight, from the device's `taken` counts. Each connection is
+a stream of its own, begun at a frame: a restore resets the guest's transport (the device's TRANSPORT_RESET), and the
+agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 130 KB).
-A machine with clipboard sharing that has firmware fetches it (`web/app/guest-agent.ts` `agentBinary`: an ELF file or
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 133 KB).
+A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
-without the unit, its port never opened. The unit, `waarm64-agent.service` (`Type=simple`, wanted by
+without the unit, and nothing connects. The unit, `waarm64-agent.service` (`Type=simple`, wanted by
 `multi-user.target`): `modprobe -q qemu_fw_cfg` outside the sandbox (`ExecStartPre=-+`), then its script copies
 `/sys/firmware/qemu_fw_cfg/by_name/opt/waarm64/agent/raw` into `/run/waarm64/agent` (a tmpfs of the unit's own,
 `TemporaryFileSystem=` mode 0700 and `exec`: Debian 13 mounts /run `noexec`, so a `RuntimeDirectory` can't run it;
-gone with the unit), waits for udev's link (`udevadm wait`) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
+gone with the unit) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
 `OOMScoreAdjust=500`, `Restart=on-failure` (`RestartSec=5s`) under a start limit it can reach, 5 starts in 10
 minutes (`StartLimitIntervalSec=`, `StartLimitBurst=`: systemd's default, 5 in 10 s, starts 5 s apart never reach,
 and a failure that lasts would restart for the boot, each start reading the binary out of fw_cfg again, ~0.3 s of a
 vCPU); sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp (with the host's `/tmp/.X11-unix`
-bound in read-only, `BindReadOnlyPaths=-`: an X session's socket, where a session child connects; `PrivateNetwork`
-hides the abstract sockets) and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:
-`systemd-analyze security` 3.8, "OK"; 3.7 before X11's bind) with the capabilities it needs: `CAP_SYS_ADMIN` for
-TIOCSTI, `CAP_SETUID` and `CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the
-user's process by then); no DAC override.
+bound in read-only, `BindReadOnlyPaths=-`: an X session's socket, where a session child connects),
+`RestrictAddressFamilies=AF_UNIX AF_VSOCK` (no `PrivateNetwork`: a kernel with vsock namespaces would keep a private
+network namespace from the host's CID), the kernel's tunables, modules and logs protected (not the clock, which it
+sets), …) with the capabilities it needs: `CAP_SYS_TIME` for the clock, `CAP_SYS_ADMIN` for TIOCSTI, `CAP_SETUID` and
+`CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the user's process by then); no
+DAC override.
+
+**Its connection** (`agent/src/vsock.rs`: `struct sockaddr_vm` of its own, which rustix lacks): a stream to the host's
+CID 2 on `AGENT_PORT` (8574), blocking. When it ends (the page's reset, a restore's transport reset, the page gone) the
+agent connects again at once, then while connecting fails (the vsock driver not loaded yet, a page with no end for it:
+the device refuses) at waits that double from 0.5 s to 30 s, logging the first failure of a run. What lasts across
+connections (the pause, the session child) stays; the page's HELLO at each connection says the rest.
 
 The root process is one thread blocked in `ppoll` with no timeout (but 1 ms ticks while a paste is typed: TYPE
-below), on the port, an inotify descriptor watching
+below), on the connection, an inotify descriptor watching
 logind's `/run/systemd/seats` and `/run/systemd/sessions` (`IN_MOVED_TO`, `IN_DELETE`: logind renames each file into
-place; an `IN_Q_OVERFLOW` counts as a change) and `/proc/self/mountinfo` (POLLPRI when the mount table changes). It
-follows **the active session on seat0**
+place; an `IN_Q_OVERFLOW` counts as a change) and `/proc/self/mountinfo` (POLLPRI when the mount table changes). Where
+the page's HELLO has `CAP.TEXT` or `CAP.IMAGE` (the machine shares the clipboard), it follows **the active session on seat0**
 (`agent/src/logind.rs`): `seat0`'s `ACTIVE=`, that session's `UID=` and `CLASS=` (a user's, not a greeter's), whatever
 its `TYPE` (a user logged in on a tty who runs sway has `TYPE=tty`), once the user's runtime directory
 `/run/user/<uid>` is mounted (its owner the user: a `stat`, the agent's root having no `CAP_DAC_OVERRIDE`; root's
@@ -165,13 +166,14 @@ bare mount point is root's too, so root's directory counts as mounted once it is
 the mount is what the mount table's change says). For it the root process **forks a session child** (no exec), which closes the
 parent's descriptors, drops to the user (`setgroups` to none, `setresgid`, `setresuid` to the directory's gid and the
 uid) before it reads anything from the display, sets `PR_SET_PDEATHSIG`, and talks to the parent over a socketpair in
-the port's own frames; the parent passes the clipboard's frames between the two (to the child the page's HELLO too;
+the connection's own frames; the parent passes the clipboard's frames between the two (to the child the page's HELLO too;
 from the child only OFFER, REQUEST, DATA, ACK, MORE, SESSION) and answers them itself while there is no child (ACK
 `NO_SESSION`, DATA `FAIL`). A new active session
 replaces the child (its socket closed, which ends it, then SIGKILL and reaped); a child that ends by itself (its runtime directory unmounted) isn't started again
 for the same session. Each child's serials and request ids start at a base of its own (the parent's count << 24), so
-a later child's never meet an earlier one's in the page. Its tests (`agent/src/serve_test.rs`) run the root loop
-natively: a socketpair for the port, directories of their own for logind's and the runtime directories, a console of
+a later child's never meet an earlier one's in the page. A HELLO without the clipboard's capabilities stops the child.
+Its tests (`agent/src/serve_test.rs`) run the root loop natively: a socketpair for the connection, a recorder for the
+clock, directories of their own for logind's and the runtime directories, a console of
 their own, and a child on a thread that echoes what it gets.
 
 **The session child** (`agent/src/session.rs`, one thread in `ppoll`) watches the runtime directory (inotify,
@@ -265,7 +267,7 @@ the Debian test image's Xvfb session.
 - **SESSION**: when the data device is bound, and when it goes (the compositor's connection lost, the seat's
   `finished`), the child's transfers end as at PAUSE and it sends SESSION; the parent sends one too when it stops a
   child or one ends.
-- **The page's HELLO** (passed on by the parent: a new page, a restored one, the port reopened), whose page knows
+- **The page's HELLO** (passed on by the parent: at each connection, a new page's or a restored guest's), whose page knows
   nothing of the one before: the transfers in flight were an earlier page's, which won't answer them; they end without
   a word to the new page (a guest program pasting gets its pipe's end, not a wait for DATA that won't come; a
   request's MORE from the new page with an earlier page's id finds nothing). The host's offer goes, its selection
@@ -278,8 +280,8 @@ to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append; the page's may append an 8-byte nonce | the page sends it at each opening of the port (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent) |
-| SYNC (10) | the page's nonce | the agent's, before its HELLO when the page's HELLO had a nonce (`hello_answer`). The page sends one where the agent's stream may not begin at a frame: the port open in a restored snapshot (the device's `open` says `restored`: a snapshot can fall between the writes of one frame) and when its reader goes out of step; its reader then drops everything before the SYNC (`FrameReader.sync`) |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME). The page's says the clipboard's three only on a machine that shares it (`pageCaps`), and the agent runs its session child only then |
+| TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |
 | REQUEST (3) | u32 serial, u32 id, u8 length, the type | the bytes of offer `serial`, please; the answer may send `CREDIT` (4) DATA frames before the requester's first MORE |
@@ -288,11 +290,12 @@ to the side that offers, request ids to the side that requests:
 | MORE (9) | u32 id, u32 count | the requester takes `count` more DATA frames for request `id`; 0 stops the answer |
 | TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF); empty: the paste's end (`AgentLink.type` sends one after each paste's frames) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); queued (1 MiB at most) and typed in bursts of 4 KiB between the loop's other work (`console::Typist`, stepped every 1 ms while it has text), paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB; for a reader in canonical mode, whose `FIONREAD` counts whole lines only, the line typed so far counts too, so a line longer than the buffer stalls and is dropped, not cut short), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. A frame with no room in the queue is dropped with the rest of its paste (up to the empty frame), so what is typed is a prefix, and the typed bytes go from the queue once they pass half of it (a long paste holds about 1 MiB, not itself). Only while the VT shows text (`KDGETMODE` is `KD_TEXT`, checked at each burst): a compositor running on it puts it in graphics mode, and the lines would wait in its input for the shell to run once the compositor ends. Not UTF-8: dropped. PAUSE drops what is queued |
 | TYPED (12) | u8 status (0 DONE, 1 NOT_TEXT, 2 REFUSED, 3 DROPPED) | the agent's: what became of TYPE's text, once it has nothing left to type (DONE) or as it drops it (NOT_TEXT: graphics on the console, none of it typed; REFUSED: the console can't be opened or refused it, or not UTF-8; DROPPED: the reader stalled or too much was queued, said as it happens and again as the queue's end). The page keeps the last for the clipboard menu (`ClipboardShare.typed`), which says why after Type the clipboard |
-| PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and says PAUSE or RESUME at every opening of the agent's end (a restarted agent starts unpaused; a restored one is as its snapshot was, and the pause is the run's); the parent passes both to its child, and PAUSE first to a new child |
+| PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and, on a machine that shares the clipboard, says PAUSE or RESUME at each connection (a restarted agent starts unpaused; a restored one is as its snapshot was, and the pause is the run's); the parent passes both to its child, and PAUSE first to a new child |
 
-A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes and reopens the port,
-which starts both directions afresh (the link resets at each opening; the session child stays). It breaks the page's
-reader too, which begins afresh at a SYNC (above). A child's stream that
+A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes the connection and
+connects again, which starts both directions afresh (the link resets at each connection; the session child stays). It
+breaks the page's reader too: the page resets the connection (`reset` to the device), and the agent connects again. A
+child's stream that
 breaks, or more than 4 MiB queued for it, stops the child. The log lines of both go to the journal
 (`waarm64-agent: …`, the child's `waarm64-agent: session: …`).
 
@@ -305,8 +308,8 @@ behind it (the chord's Ctrl released after the V; a second press a second press)
 document while the screen's canvas has focus gives the text (`pasted`), the page offers it unless it is the last text
 either way (a hash of each) or empty, and the key goes to the guest at the agent's ACK or after 300 ms (`ACK_WAIT`;
 300 ms more if no paste event comes, `PASTE_WAIT`). An ACK that refuses is taken whenever it comes. The hashes stand
-for what the guest's clipboard has: an offer forgets the guest's, the guest's copy the page's, and the port's opening
-or closing, HELLO, SESSION and the pause forget both (and drop the transfers). An offer that a newer one began during
+for what the guest's clipboard has: an offer forgets the guest's, the guest's copy the page's, and the connection's
+coming or going, HELLO, SESSION and the pause forget both (and drop the transfers). An offer that a newer one began during
 its waits (reading an image's bytes for its hash) isn't sent, nor is a focus read's whose read a paste began during:
 the guest's clipboard ends with the newest. The page answers the agent's REQUESTs for its newest offer within their
 credit; its own requests stop (MORE 0) when no DATA came for 30 s (`REQUEST_WAIT`: a guest program that never serves
@@ -319,11 +322,11 @@ the guest's image is requested at the write to the host's clipboard (frontend.md
 request with its type's cap. Its hashes cover text and image together (`contentHash`: the text's cyrb53, the image's
 SHA-256), and the guest's image stands as the host's read-back of it.
 
-### vsock (ID 19): systemd's notify socket
+### vsock (ID 19): systemd's notify socket and the guest agent
 
-`{type: 'vsock', port}` (`web/vsock-device.ts`), on every `firmware` machine: a virtio-vsock with no optional features
-(stream sockets are implied), three queues (receive, transmit, event), the guest's CID **3** in its config. Its one
-service is systemd's **`vmm.notify_socket`**: the machine's fw_cfg credential (`web/app/firmware-files.ts`; a
+`{type: 'vsock', port, agent}` (`web/vsock-device.ts`), on every `firmware` machine: a virtio-vsock with no optional
+features (stream sockets are implied), three queues (receive, transmit, event), the guest's CID **3** in its config.
+Its two services are the guest agent's connection (below) and systemd's **`vmm.notify_socket`**: the machine's fw_cfg credential (`web/app/firmware-files.ts`; a
 `?credential=` of that name replaces it) is `vsock-stream:2:8573`, the host's CID and `NOTIFY_PORT`, the form
 systemd-vmspawn hands its guests. systemd 254 and later reads it in PID 1 and sends its sd_notify messages there, each
 over a connection of its own: **`READY=1`** (with `STATUS=Ready.`) when the boot's jobs are done, `STATUS=…`,
@@ -332,13 +335,26 @@ Older systemd, or none, ignores it. The page's end (`onReady`, in `Runner`) turn
 machine is `running` (frontend.md "Worker → page", `state`), whichever of it, the serial `ready` marker and the
 clipboard agent's HELLO comes first.
 
+**The guest agent's connection** (devices.md "The guest's agent"): a REQUEST to **`AGENT_PORT` (8574)** on CID 2 of
+type STREAM, while the page has an end for it (`agent`, a machine with the agent on: web/app/run/start-message.ts),
+gets RESPONSE and the page hears `open`; without one, RST. One connection at a time: a new one (the agent started
+again) resets the old, and the page hears it close and open. Both ways carry bytes: the agent's RW payloads go to the
+page as `data` at once, so the device's `buf_alloc` (`AGENT_BUF`, 256 KiB) is credit only, given back (CREDIT_UPDATE)
+each time a quarter of it has been taken since the guest was last told; the page's bytes (`data`, at most
+`MAX_PENDING`, 1 MiB, held) go into the guest's receive buffers as RW packets, each as large as the buffer and the
+guest's credit (its `buf_alloc` less what was sent past its `fwd_cnt`, from every packet's header) allow, with a
+CREDIT_REQUEST when the credit runs out, and the page hears how many were `taken` (`AgentLink`'s window). The agent's
+SHUTDOWN or RST ends it (the device answers SHUTDOWN with RST), as does the page's `reset` (RST to the guest) and a
+device reset; the page hears `open` false. A restore resets the transport (below), so the restored agent connects
+again.
+
 The device answers every connection, whatever the page does, because the guest's PID 1 is the sender and waits:
 systemd 256 and later sends, `shutdown(SHUT_WR)`s, then `recv`s until EOF (254 and 255 `close`). A REQUEST to
 `NOTIFY_PORT` on CID 2 of type STREAM gets RESPONSE (`buf_alloc` 64 KiB, `fwd_cnt` the bytes taken); anything else, or
 a packet of no connection, gets RST. The message is posted (`{type: 'notify', lines}`) at the guest's SHUTDOWN with
 SEND: a half close is answered by the host's own SHUTDOWN of both ways (Linux then resets, and its `recv` gives EOF),
 a full close by RST. A message past 64 KiB is reset and dropped; CREDIT_REQUEST gets CREDIT_UPDATE (the device sends no
-data, so the guest's credit doesn't matter). Nothing is kept across a snapshot: a restored device sends
+data on these, so the guest's credit doesn't matter). Nothing is kept across a snapshot: a restored device sends
 TRANSPORT_RESET on the event queue, so a connection in flight fails in the guest rather than hanging its sender.
 
 With sshd installed, the device also has systemd 258+'s ssh-generator make `sshd-vsock.socket` (vsock port 22), whose
@@ -353,7 +369,8 @@ shape's hash (`shape.ts` `hashed`): a snapshot or suspended machine from before 
 (`worker-header.ts` `slotsOf`), as one from before the clock does. Linux's driver is `vmw_vsock_virtio_transport`
 (`CONFIG_VIRTIO_VSOCKETS`, a module in Debian's and Arch's kernels, loaded by its modalias). Tests: `tests/vsock.test.ts`
 (the device through hand-built queues, both closes, the refusals, the credit, a restore, the page's end, the
-credential); on Debian, `tests/page-debian.test.ts` boots with `?ready=guest`, so only READY=1 makes the page `running`,
+credential; the agent's connection: both ways, the guest's credit and the device's, one at a time, the page's reset,
+refused without the page's end); on Debian, `tests/page-debian.test.ts` boots with `?ready=guest`, so only READY=1 makes the page `running`,
 and checks the driver bound, the credential and PID 1's silence about it. READY=1 can come before the serial getty's prompt, so a test that logs in on the serial terminal waits for `login: ` itself, not for `running`.
 
 ### clock (ID 17): virtio-rtc
