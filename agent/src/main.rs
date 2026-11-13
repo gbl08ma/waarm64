@@ -40,6 +40,7 @@ mod serve_test;
 mod session;
 #[cfg(test)]
 mod sway_test;
+mod trim;
 mod vsock;
 mod wire;
 mod x11;
@@ -64,7 +65,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::DISPLAY
     | frame::cap::RENEW
     | frame::cap::LEASE
-    | frame::cap::DESKTOP;
+    | frame::cap::DESKTOP
+    | frame::cap::TRIM;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -171,6 +173,11 @@ struct Agent {
     lease: lease::Paths,
     leasing: Option<lease::Job>,
     leased: Option<u8>,
+    /// TRIM's mount table, how a filesystem is trimmed (the tests' records it), its child, and TRIMMED's status once done.
+    trim: trim::Paths,
+    fitrim: trim::Fitrim,
+    trimming: Option<lease::Job>,
+    trimmed: Option<u8>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
     /// The tests': a function on a thread in place of the forked child.
@@ -217,6 +224,10 @@ impl Agent {
             lease: lease::Paths::default(),
             leasing: None,
             leased: None,
+            trim: trim::Paths::default(),
+            fitrim: trim::fitrim,
+            trimming: None,
+            trimmed: None,
             typist: console::Typist::new(console),
             #[cfg(test)]
             test_child: None,
@@ -511,6 +522,7 @@ enum Tag {
     Child,
     Keygen,
     Lease,
+    Trim,
 }
 
 fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
@@ -546,6 +558,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.leasing {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Lease);
+        }
+        if let Some(j) = &s.agent.trimming {
+            fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
+            tags.push(Tag::Trim);
         }
         if let Some(c) = &s.agent.child {
             let f = if c.out.is_empty() {
@@ -592,6 +608,11 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                         s.agent.leased = Some(lease::done(j));
                     }
                 }
+                Tag::Trim => {
+                    if let Some(j) = s.agent.trimming.take() {
+                        s.agent.trimmed = Some(trim::done(j));
+                    }
+                }
                 Tag::Keygen => {
                     if let Some(k) = s.agent.keygen.take() {
                         let (done, failed) = renew::keygen_done(k, &s.agent.renew);
@@ -617,6 +638,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         }
         if let Some(st) = s.agent.leased.take() {
             frame::encode(frame::LEASED, &[st], &mut s.out);
+        }
+        if let Some(st) = s.agent.trimmed.take() {
+            frame::encode(frame::TRIMMED, &[st], &mut s.out);
         }
         if core::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
@@ -694,6 +718,17 @@ impl Session<'_> {
                             self.agent.leased = Some(lease::status::FAILED);
                         }
                     },
+                }
+            }
+            // The filesystems trimmed (src/trim.rs). One run at a time: a TRIM while one runs is answered by its
+            // TRIMMED (the page waits for the next).
+            frame::TRIM if self.agent.trimming.is_none() => {
+                match trim::spawn(&self.agent.trim, self.agent.fitrim) {
+                    Ok(j) => self.agent.trimming = Some(j),
+                    Err(e) => {
+                        log("trim: fork", Some(e));
+                        self.agent.trimmed = Some(trim::status::FAILED);
+                    }
                 }
             }
             frame::TIME => {

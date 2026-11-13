@@ -19,6 +19,8 @@ export type RunAgent = {
   begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined;
   end(): void;
   restored(template: boolean): void;
+  /** A disk's write found the browser's storage full (web/app/areas/trim-actions.ts `full`). */
+  storageFull(): void;
 };
 
 /** `body[data-desktop]`'s words for DESKTOP's states (absent: no agent). */

@@ -1,6 +1,7 @@
 // The disk out (docs/frontend.md "Your own disk"): the changes over the image (a qcow2 that names it as its backing
 // file), or the whole disk. The machine stops while it's written (the overlay's files are the writer's); the file goes
-// to where the user picks, or is downloaded.
+// to where the user picks, or is downloaded. A running guest whose agent can trims its filesystems first (web/app/areas/
+// trim-actions.ts `beforeExport`): what it freed isn't written to the file.
 import { msg, MsgError, t } from '../../i18n.ts';
 import { ask } from '../ask.svelte.ts';
 import { runExport, type ExportMode } from '../export.ts';
@@ -66,8 +67,11 @@ const stillReads = (file: File) =>
 
 export class DiskExport {
   readonly #c: Core;
-  constructor(c: Core) {
+  /** The running guest's trim, before the machine stops. */
+  readonly #trim: () => Promise<void>;
+  constructor(c: Core, trim: () => Promise<void>) {
     this.#c = c;
+    this.#trim = trim;
   }
 
   /** Whether the page's machine uses it (then it stops): its boot disk's overlay, or any attachment of the stored machine. */
@@ -171,6 +175,10 @@ export class DiskExport {
     )
       return;
     await pw.exclusively(async () => {
+      if (running) {
+        messages.stateText(msg('disks:disk-export.trimming'));
+        await this.#trim();
+      }
       await runner.stop();
       messages.setState('off');
       messages.stateText(msg('disks:disk-export.saving'));

@@ -127,6 +127,26 @@
     "message": "The guest has suspended itself. Press a key or click its screen or terminal to wake it.",
     "note": "Notice in the message bar (under the toolbar) when the guest suspends itself (its own sleep, not the page's Suspend); it clears itself after a while."
   },
+  "trim-actions.trimmed": {
+    "message": "The guest's unused disk space was freed: its disks' changes went from {{before, bytes}} to {{after, bytes}} in this browser's storage.",
+    "note": "Notice in the message bar (under the toolbar) after the Machines page's Free unused disk space, when the guest trimmed its filesystems. {{before}} and {{after}}: what the machine's disks' changes took in this browser's storage before and after."
+  },
+  "trim-actions.failed": {
+    "message": "Some of the guest's filesystems couldn't be trimmed (the guest's journal says why). Its disks' changes went from {{before, bytes}} to {{after, bytes}} in this browser's storage.",
+    "note": "Notice in the message bar (under the toolbar) after the Machines page's Free unused disk space, when the guest trimmed some of its filesystems and failed for others. {{before}} and {{after}}: what the machine's disks' changes took before and after."
+  },
+  "trim-actions.none": {
+    "message": "None of the guest's filesystems can hand back unused space: none is on a disk that takes it.",
+    "note": "Notice in the message bar (under the toolbar) after the Machines page's Free unused disk space, when no filesystem in the guest takes a trim (none is on a disk, or the disks don't discard)."
+  },
+  "trim-actions.noAnswer": {
+    "message": "The guest didn't free its unused disk space: its agent didn't answer.",
+    "note": "Notice in the message bar (under the toolbar) after the Machines page's Free unused disk space, when the guest agent isn't connected or didn't answer in time."
+  },
+  "trim-actions.full": {
+    "message": "To make room, the guest freed its unused disk space: its disks' changes went from {{before, bytes}} to {{after, bytes}} in this browser's storage.",
+    "note": "Notice in the message bar (under the toolbar) after the page found the browser's storage full (disks:devices.storageFull) and had the guest trim its filesystems, when that made the disks' changes smaller. {{before}} and {{after}}: what they took before and after."
+  },
   "runner.workerFailed": {
     "message": "The emulator stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that runs the machine failed (the machine has crashed; Show serial log and the like follow); the browser's error is the detail under it."

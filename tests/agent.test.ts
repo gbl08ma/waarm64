@@ -12,9 +12,10 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
+import { TrimActions } from '../web/app/areas/trim-actions.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
@@ -1113,6 +1114,9 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   // LEASE and LEASED (agent/src/lease.rs `status`).
   assert.deepEqual([FRAME.LEASE, FRAME.LEASED, CAP.LEASE], [17, 18, 128]);
   assert.deepEqual([LEASED.RENEWED, LEASED.NO_CLIENT, LEASED.FAILED], [0, 1, 2]);
+  // TRIM and TRIMMED (agent/src/trim.rs `status`).
+  assert.deepEqual([FRAME.TRIM, FRAME.TRIMMED, CAP.TRIM], [20, 21, 2048]);
+  assert.deepEqual([TRIMMED.TRIMMED, TRIMMED.NONE, TRIMMED.FAILED], [0, 1, 2]);
   // DESKTOP and its states (agent/src/frame.rs `desktop`).
   assert.deepEqual([FRAME.DESKTOP, CAP.DESKTOP, DESKTOP.NONE, DESKTOP.WAYLAND, DESKTOP.X11], [19, 1024, 0, 1, 2]);
 });
@@ -1204,6 +1208,83 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   settled([0]);
   assert.equal(await r.done, 'gone');
   assert.deepEqual(r.flaps, []);
+});
+
+test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, the overlays compacted after it, what it did said; nothing without an agent that trims", async () => {
+  /** A link whose agent says `caps` and answers TRIM with `status` once `go` is called (none: never). */
+  const agentWith = (caps: number, status?: number) => {
+    const { port1, port2 } = channel();
+    const link = new AgentLink(port1, pageCaps(false));
+    const trims: number[] = [];
+    const reader = new FrameReader();
+    let answer = () => {};
+    port2.onmessage = (e) => {
+      if (e.data.type !== 'data') return;
+      for (const f of reader.push(e.data.bytes))
+        if (f.type === FRAME.TRIM) {
+          trims.push(f.type);
+          if (status !== undefined) answer = () => port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.TRIMMED, new Uint8Array([status])) });
+        }
+      port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+    };
+    port2.postMessage({ type: 'open', open: true, conn: 1 });
+    port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+    return { link, trims, go: () => answer(), close: () => { link.close(); port2.close(); } };
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const make = (link: AgentLink | undefined) => {
+    const said: string[] = [];
+    const compactions: number[] = [];
+    const shown = { canTrim: false };
+    const a = new TrimActions({ link }, { notify: (m) => said.push(m.key) }, async (_ms, measure) => (measure ? { before: 6 << 20, after: 6 << 20 } : (compactions.push(1), { before: 5 << 20, after: 3 << 20 })), shown);
+    a.follow(link);
+    return { a, said, compactions, shown };
+  };
+  // An agent that trims: two asks, one TRIM; the overlays compacted once; the storage bar's ask says the sizes.
+  const ok = agentWith(CAP.TIME | CAP.TRIM, TRIMMED.TRIMMED);
+  let m = make(ok.link);
+  await settle();
+  assert.equal(m.shown.canTrim, true, 'its HELLO shows the button');
+  const asked = m.a.asked();
+  const before = m.a.beforeExport();
+  await settle();
+  ok.go();
+  await Promise.all([asked, before]);
+  assert.deepEqual([ok.trims.length, m.compactions.length], [1, 1], 'joined');
+  assert.deepEqual(m.said, ['machine:trim-actions.trimmed']);
+  const direct = m.a.trim();
+  await settle();
+  ok.go();
+  assert.deepEqual(await direct, { status: TRIMMED.TRIMMED, before: 6 << 20, after: 3 << 20 }, 'before: measured ahead of the trim (its discards may compact already)');
+  // The storage full: trimmed again, and said because the overlays shrank.
+  const full = m.a.full();
+  await settle();
+  ok.go();
+  await full;
+  assert.deepEqual([ok.trims.length, m.said.at(-1)], [3, 'machine:trim-actions.full']);
+  m.a.end();
+  assert.equal(m.shown.canTrim, false);
+  ok.close();
+  // Nothing to trim: no compaction, said so.
+  const none = agentWith(CAP.TIME | CAP.TRIM, TRIMMED.NONE);
+  m = make(none.link);
+  await settle();
+  const p = m.a.asked();
+  await settle();
+  none.go();
+  await p;
+  assert.deepEqual([m.compactions.length, m.said], [0, ['machine:trim-actions.none']]);
+  none.close();
+  // An agent without CAP.TRIM: no button, nothing sent before an export or when full; the bar's ask says no answer.
+  const old = agentWith(CAP.TIME);
+  m = make(old.link);
+  await settle();
+  assert.equal(m.shown.canTrim, false);
+  await m.a.beforeExport();
+  await m.a.full();
+  await m.a.asked();
+  assert.deepEqual([old.trims.length, m.compactions.length, m.said], [0, 0, ['machine:trim-actions.noAnswer']]);
+  old.close();
 });
 
 test("the link: RENEW once after a template's restore, at the first HELLO of an agent that renews (random bytes each time); RENEWED kept", async () => {

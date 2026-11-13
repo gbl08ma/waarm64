@@ -122,7 +122,8 @@ it connects to the page over the machine's vsock (above, `AGENT_PORT`), so turni
 shape. It sets the guest's clock (TIME, below; frontend.md "The guest's clock"), on a machine that shares the
 clipboard (`MachineRecord.clipboard`, `?clipboard=1`; what the page's HELLO says) shares it ([clipboard.md](clipboard.md)),
 and on one with virtio-gpu's screen sets the session's outputs to the page's size (DISPLAY, "The screen's size" below);
-it says when the guest's graphical session is up (DESKTOP, "The desktop's state" below).
+it says when the guest's graphical session is up (DESKTOP, "The desktop's state" below), and it trims the guest's
+filesystems when the page asks (TRIM, "Disk space handed back" below).
 The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__agent`), made by
 `web/app/areas/agent-actions.ts` for each run: frames (`web/agent-frame.ts`: a u32 length, a u8 type, the payload of at
 most 64 KiB and change) with at most `WINDOW` (256 KiB) in flight, from the device's `taken` counts. Each connection is
@@ -373,18 +374,46 @@ user sees changes:** not the status bar's state, not the boot card. Tests: the c
 `body[data-desktop]` (`tests/agent.test.ts`), and on Debian the sway and X11 page tests' waits (down and up again
 across a new session).
 
+**Disk space handed back** (TRIM; `web/app/areas/trim-actions.ts`, `agent/src/trim.rs`; the user's choice,
+2026-11-13): a guest deletes files and its disks' overlays keep their blocks until it trims (blk below: a `discard`
+mount, or `fstrim.timer` once a week). The page has the agent trim them at three times: the Machines page's storage
+bar's [Free unused disk space](ui:machines:StorageBar.storage.trim) (shown while this tab's machine runs with an agent
+that says `CAP.TRIM`; its notice says what the disks' changes took before the trim and after the compaction: measured
+first, since the trim's discards may compact an overlay already, past half free), when a disk's write found the
+browser's storage full (`isStorageFull`, at the storage-full notice, at most once a minute: what the guest freed makes
+room; said only if the overlays shrank), and before a disk's Export stops the running machine (the file then holds only
+what the guest still uses; whatever comes of it, the export goes on). The agent does what `fstrim -a` does, itself (no
+guest tool): in a forked child polled by its pidfd, a `sync` (what was deleted and not yet written out is free on disk
+too), then FITRIM on one mount point of each filesystem whose source is under `/dev/` and whose superblock isn't
+read-only (`/proc/self/mountinfo`; the first of its mount points that opens: ProtectSystem's read-only binds take it
+too, FITRIM needs CAP_SYS_ADMIN, which the unit keeps; nothing in the unit changed). TRIMMED says 0 trimmed, 1 none
+takes it (EOPNOTSUPP: a disk that doesn't discard), 2 one failed; a TRIM while one runs is answered by its TRIMMED, and
+the page joins asks into one. Then, if anything was trimmed, the page asks the machine's worker to compact the overlays
+in full (`compact` → `Vm.compact` → the device worker → `Devices.compact`, which with `measure` only reports the sizes: each overlay's `compact()`, however few
+slots are free, once none of its disk's requests is in flight; a change compacts only past half free, so after a trim
+of a fifth of a disk the file wouldn't shrink): the disk's I/O waits while the blocks above the free slots are copied
+down (at most as many as were freed). Measured on Debian (`tests/page-agent.test.ts`, 2026-11-13): 96 MiB kept and a
+48 MiB file deleted (a change's compaction leaves a third free), then the button: the overlay's files went from 153 MiB to
+106 MiB; the agent's idle cost stays 0 ticks and 0 wakeups. Tests: the mount table's rules and
+the root loop's (fake FITRIM: once per filesystem, a disk that doesn't discard, one that fails; `agent/src/trim.rs`,
+`serve_test.rs`), `TrimActions` (joined asks, the compaction only after a trim, the notices; `tests/agent.test.ts`), the
+compaction asked for (tests/overlay.test.ts, and on Buildroot `tests/trim.test.ts`: 4 MiB trimmed of 16, which a change
+leaves, given back), and Debian's end to end from the storage bar (`tests/page-agent.test.ts`).
+
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
 | LEASE (17) | none | the page's, after a restore once its connections are up ("The network after a restore" below), to an agent whose HELLO has `CAP.LEASE` (bit 7) |
 | LEASED (18) | u8 status: 0 renewed, 1 no network manager the agent knows (or its tool missing), 2 its tool failed | the agent's, when its tool ended (`AgentLink.lease`'s answer) |
 | DESKTOP (19) | u8 state: 0 none, 1 Wayland's, 2 X11's | the agent's, to a page whose HELLO has `CAP.DESKTOP`: the graphical session's state at each change, and at a connection once the page's HELLO came if it isn't none ("The desktop's state" above) |
+| TRIM (20) | none | the page's, to an agent whose HELLO has `CAP.TRIM`: the guest's filesystems trimmed ("Disk space handed back" above) |
+| TRIMMED (21) | u8 status: 0 trimmed, 1 no filesystem takes it, 2 one failed | the agent's, when the trim's child ended (`AgentLink.trim`'s answer) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |
@@ -519,7 +548,8 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   with the unmap flag, and unknown flags, are `UNSUPP`; a range past the end or too long, and
   anything but one segment, `IOERR`. Linux takes it as it is (`fstrim` on Buildroot's and Debian's
   ext4; `tests/trim.test.ts`). The guest has to trim: `fstrim -av`, a `discard` mount option, or
-  the distribution's weekly `fstrim.timer`.
+  the distribution's weekly `fstrim.timer`; with the guest agent the page has it trim, and compacts the overlays after
+  ("Disk space handed back" above).
 - **Over HTTP** in the browser: one **synchronous XHR range request** per request (needs a worker:
   no binary sync XHR on a page's main thread, no XHR in Node, where `file:` URLs read with
   `node:fs`). The dev server answers `Range: bytes=` requests on `target/` (206/416, `Accept-Ranges`,

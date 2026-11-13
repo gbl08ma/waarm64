@@ -106,7 +106,9 @@ Since decided (the user, 2026-10-17):
   and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
   first time something is stored (without it the browser may evict the origin's data under pressure); while the
   browser hasn't granted it, the storage bar offers [Protect from automatic deletion](ui:machines:StorageBar.storage.persist),
-  which asks again, with a tooltip saying what it means. A guest's
+  which asks again, with a tooltip saying what it means, and while this tab's machine runs with the guest agent,
+  [Free unused disk space](ui:machines:StorageBar.storage.trim): the guest trims its filesystems and the overlays are
+  compacted ([devices.md](devices.md) "Disk space handed back"; the storage-full notice below has it done too). A guest's
   write the storage refuses (over the quota: OPFS's sync handles come back short or throw `QuotaExceededError`)
   fails with `IOERR` after the remote disks' kept blocks give way (`releaseStores`), and the page says the storage
   is full with `estimate()`'s numbers (devices.ts `storageFull`, a notice), once until a write lands again and at

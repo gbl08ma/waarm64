@@ -33,6 +33,8 @@ export type Page = {
   powerOffAsked(): Promise<void>;
   /** Saves a disk to a file: the page's own (transient machine), or a stored disk with one of its overlays. */
   saveDisk(mode: ExportMode, compress: boolean, target?: { disk: DiskRecord; overlay?: string }): Promise<void>;
+  /** The storage bar's Free unused disk space: the running guest trims its filesystems (web/app/areas/trim-actions.ts). */
+  trimDisks(): Promise<void>;
   /** Loads a changes file: onto the page's disk, or into a new overlay of a stored machine's attachment. */
   importChanges(file: File, target?: { machine: MachineRecord; attachment: string }): Promise<void>;
   resetDisk(): Promise<void>;

@@ -23,6 +23,7 @@ export type ToDeviceWorker =
   | { type: 'refusal' }
   | { type: 'written'; id: number; device: number }
   | { type: 'blocks'; id: number; device: number; blocks: number[] }
+  | { type: 'compact'; id: number; measure?: boolean }
   | { type: 'close' };
 /** Device worker → owner. */
 export type FromDeviceWorker =
@@ -34,7 +35,7 @@ export type FromDeviceWorker =
   | { type: 'drained' }
   | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
   | { type: 'refusal'; refused?: WireError }
-  | { type: 'disk'; id: number; written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; error?: string }
+  | { type: 'disk'; id: number; written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; error?: string }
   | { type: 'closed'; stats?: unknown };
 
 // The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).
@@ -76,6 +77,14 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
     } catch (err) {
       self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker);
     }
+  }
+  else if (e.data.type === 'compact') {
+    // The overlays compacted after a trim the page asked for (web/devices.ts `Devices.compact`).
+    const id = e.data.id;
+    devices!.compact(e.data.measure).then(
+      (compacted) => self.postMessage({ type: 'disk', id, compacted } satisfies FromDeviceWorker),
+      (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
+    );
   }
   else if (e.data.type === 'close') {
     // What the backends hold back (a shared folder's write sessions) lands first, bounded: a host that doesn't answer doesn't keep the page.

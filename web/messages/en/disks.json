@@ -767,6 +767,10 @@
     "message": "Saving the disk",
     "note": "The machine's state in the status bar when a disk's export starts (its phases and percentages follow)."
   },
+  "disk-export.trimming": {
+    "message": "Freeing the guest's unused disk space",
+    "note": "The machine's state in the status bar before a running machine stops for a disk's export: the guest agent has the guest trim its filesystems, so that what they no longer use isn't saved."
+  },
   "devices.ramdiskFull": {
     "message": "The ramdisk is out of memory, as this browser tab can't get any more. The guest's writes to it fail with I/O errors. Delete files on it and trim it (fstrim) to make room.",
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a ramdisk can't grow (the tab has no more memory)."

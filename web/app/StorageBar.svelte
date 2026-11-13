@@ -1,6 +1,6 @@
 <!--
   The Machines page's foot: the browser's storage, used and its quota (persisted or not: ask for it), what clears the
-  remote disks' cache and the shaders', and what holds the bytes.
+  remote disks' cache and the shaders', what has the running guest hand back the space it freed, and what holds the bytes.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -9,6 +9,8 @@
   import { t } from '../i18n.ts';
   import { askPersist, type storageReport } from './storage-report.ts';
   import { clearShaderStore } from '../venus-cache.ts';
+  import { page } from './page.ts';
+  import { current } from './areas/current.svelte.ts';
 
   type Props = { storage: Awaited<ReturnType<typeof storageReport>>; act: Act };
   let { storage, act }: Props = $props();
@@ -50,6 +52,16 @@
       onclick={() => act(t('machines:StorageBar.busy.clearing'), clearShaderStore)}
     >
       {t('machines:StorageBar.storage.clearShaders', { size: storage.shaders })}
+    </Button>
+  {/if}
+  {#if current.canTrim}
+    <Button
+      variant="plain"
+      data-action="trim-disks"
+      title={t('machines:StorageBar.storage.trim.title')}
+      onclick={() => act(t('machines:StorageBar.busy.trimming'), () => page.trimDisks())}
+    >
+      {t('machines:StorageBar.storage.trim')}
     </Button>
   {/if}
   <details>

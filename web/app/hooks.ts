@@ -46,6 +46,8 @@ declare global {
     /** The agent's device end, under `?agentstub` (web/app/run/dev-knobs.ts). */
     __agentStub?: MessagePort;
     __clipboard?: ClipboardShare;
+    /** What the last trim the page asked of the guest did (web/app/areas/trim-actions.ts; the agent's test). */
+    __trimmed?: { status?: number; before?: number; after?: number };
     /** `?snd=`: the page's sound (tests and measurements). */
     __audio?: PageAudio;
     /** The page's live folders (tools/screens.ts). */

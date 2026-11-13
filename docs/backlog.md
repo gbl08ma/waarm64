@@ -352,8 +352,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   tests' guests moves every writable guest's step count (the driver reads the longer config) and
   needs the native twin (`core/tests/common` `Overlay`) to take the requests. One segment per
   request (`max_discard_seg` 1); a compaction copies synchronously in the device worker (at most
-  the blocks freed, so a trim of GBs can hold the guest's I/O for seconds). The page's Debian
-  doesn't mount with `discard`: the user runs `fstrim`, or waits for `fstrim.timer`.
+  the blocks freed, so a trim of GBs can hold the guest's I/O for seconds; the full one after the agent's trim too).
+  The page's Debian doesn't mount with `discard`: without the guest agent the user runs `fstrim`, or waits for
+  `fstrim.timer` (with it: devices.md "Disk space handed back").
 - **A handle read back off the record:** in an off-the-record profile (Incognito; Playwright's `newContext`), Chromium 153
   dies reading a record that holds a `FileSystemHandle` from IndexedDB (storing it is fine; on a disk profile all is):
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
@@ -1614,7 +1615,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 165,904 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 168,320 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the

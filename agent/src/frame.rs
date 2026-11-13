@@ -45,6 +45,10 @@ pub const LEASED: u8 = 18;
 /// The agent's: a u8 (`desktop`), the graphical session on seat0 now: the session child's compositor connected, or its
 /// X server set up; none when it goes (the tests wait on it, docs/devices.md "The desktop's state").
 pub const DESKTOP: u8 = 19;
+/// The page's: the guest's filesystems are to tell their disks what they no longer use (src/trim.rs).
+pub const TRIM: u8 = 20;
+/// The agent's: a u8 status, what became of TRIM (`trim::status`).
+pub const TRIMMED: u8 = 21;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -78,6 +82,8 @@ pub mod cap {
     pub const LEASE: u32 = 1 << 7;
     /// DESKTOP: the graphical session's state said (the agent), or a page that takes it.
     pub const DESKTOP: u32 = 1 << 10;
+    /// TRIM and TRIMMED: the guest's filesystems trimmed on the page's request.
+    pub const TRIM: u32 = 1 << 11;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 

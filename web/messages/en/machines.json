@@ -1527,6 +1527,10 @@
     "message": "Clearing",
     "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Clear the URL disks' cache."
   },
+  "StorageBar.busy.trimming": {
+    "message": "Freeing unused disk space",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Free unused disk space (the guest trims its filesystems, then its disks' changes shrink)."
+  },
   "StorageBar.storage.clear": {
     "message": "Clear the URL disks' cache ({{size, bytes}})",
     "note": "Machines page: the browser's storage, in the bar at the page's bottom. A button that drops the kept blocks of URL disks. {{size}}: their bytes."
@@ -1550,6 +1554,14 @@
   "StorageBar.storage.clearShaders.title": {
     "message": "Delete the shaders that machines with Vulkan translated. A program's next start translates them again, which takes longer. A machine running now keeps those it holds and stores them again as they change.",
     "note": "Machines page: the browser's storage, in the bar at the page's bottom. Tooltip of Clear Vulkan's shaders."
+  },
+  "StorageBar.storage.trim": {
+    "message": "Free unused disk space",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom, shown while this tab's machine runs with the guest agent. A button: the guest's filesystems tell its disks which blocks they no longer use, and the disks' changes in this browser shrink by them."
+  },
+  "StorageBar.storage.trim.title": {
+    "message": "Have the running guest hand back the disk space its files no longer use (it trims its filesystems, as fstrim does), so that its disks' changes take less of this browser's storage. Its disks pause for a few seconds while they shrink.",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. Tooltip of Free unused disk space."
   },
   "PreferencesPane.shaderBudget": {
     "message": "Space for Vulkan's shaders",

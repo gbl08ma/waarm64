@@ -141,6 +141,28 @@ test('once half the data file is free slots, the blocks left move down and the f
   assert.equal(data.getSize(), before);
 });
 
+test("a compaction asked for moves the blocks down however few slots are free, and the file ends at the last one's", async () => {
+  const size = 400 * 4096;
+  const base = openDisk((off, len) => new Uint8Array(len).fill(7), size);
+  const [data, map] = [memFile(), memFile()];
+  const d = overlay(base, data, map);
+  for (let b = 0; b < 200; b++) assert.ok(await d.write(b * 4096, new Uint8Array(4096).fill((b % 251) + 1)));
+  // A tenth of them trimmed, spread out: below the change's threshold, so the file keeps its size.
+  for (let b = 3; b < 200; b += 10) assert.ok(d.discard(b * 4096, 2 * 4096));
+  assert.equal(data.getSize(), 200 * 4096, 'a change compacts only past half free');
+  assert.equal(d.bytes?.(), data.getSize() + map.getSize());
+  assert.ok(d.compact?.());
+  assert.equal(data.getSize(), 160 * 4096, 'the 160 blocks left, in 160 slots');
+  for (const disk of [d, overlay(base, data, map)])
+    for (let b = 0; b < 220; b++) {
+      const want = b >= 200 ? 7 : b % 10 === 3 || b % 10 === 4 ? 0 : (b % 251) + 1;
+      const got = (await disk.read(b * 4096, 4096))!;
+      assert.ok(got.every((x) => x === want), `block ${b} reads ${got[0]}, not ${want}`);
+    }
+  assert.ok(d.compact?.(), 'again: nothing to move');
+  assert.equal(data.getSize(), 160 * 4096);
+});
+
 test('a write the storage refuses (short, or a thrown QuotaExceededError) fails alone: its slots go back, and a compaction after it moves only real blocks', async () => {
   for (const how of ['short', 'throws'] as const) {
     const size = 300 * 4096;

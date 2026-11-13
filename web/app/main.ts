@@ -16,6 +16,7 @@ import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
 import { LeaseActions } from './areas/lease-actions.ts';
+import { askCompact, TrimActions } from './areas/trim-actions.ts';
 import { ClipboardActions } from './areas/clipboard-actions.ts';
 import { DiskActions } from './areas/disk-actions.ts';
 import { changesHeader, DiskChanges } from './areas/disk-changes.ts';
@@ -146,6 +147,12 @@ const leaseActions = new LeaseActions({
   link: () => agentActions.link,
   flap: (i) => machine.run?.netLinks[i]?.postMessage({ type: 'flap' }),
 });
+const trimActions = new TrimActions(
+  agentActions,
+  messages,
+  (ms, measure) => askCompact(machine.run?.worker, replies.worker, ms, measure),
+  current,
+);
 screen.onSent = (size) => agentActions.display(size);
 const usbView = new UsbView(
   machine,
@@ -177,11 +184,9 @@ const runner = new Runner({
     keyboardKey: usbRun.keyboardKey,
   },
   agent: {
-    begin: (ch, up) => clipboardActions.begin(agentActions.begin(ch, up), ch.clipboard),
-    end: () => {
-      agentActions.end();
-      leaseActions.end();
-    },
+    begin: (ch, up) => clipboardActions.begin(trimActions.follow(agentActions.begin(ch, up)), ch.clipboard),
+    end: () => [agentActions, leaseActions, trimActions].forEach((a) => a.end()),
+    storageFull: () => void trimActions.full(),
     restored: (template) => {
       if (template) agentActions.renew();
       void leaseActions.restored();
@@ -232,7 +237,7 @@ const problems = new Problems({
   resetDisk: disks.resetAction,
   grantFiles: (d) => disks.grantFiles(d),
 });
-const diskExport = new DiskExport(core);
+const diskExport = new DiskExport(core, () => trimActions.beforeExport());
 const snapshots = new SnapshotActions({
   ...core,
   emptyPorts: (r, what) => usbRun.emptyPorts(r, what),
@@ -270,6 +275,7 @@ const page: Page = {
   powerOff: () => powerActions.powerOff(),
   powerOffAsked: () => powerActions.powerOffAsked(),
   saveDisk: (mode, compress, target) => diskExport.save(mode, compress, target),
+  trimDisks: () => trimActions.asked(),
   importChanges: (file, target) => changes.load(file, target),
   resetDisk: () => disks.reset(),
   saveSettings: (m) => sizes.saveSettings(m),

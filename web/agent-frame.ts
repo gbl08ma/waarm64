@@ -6,7 +6,8 @@
 // ACK and MORE (step 3), the capability `CAP.TEXT`; SESSION and TYPED; `CAP.IMAGE` (step 5); TIME, `CAP.TIME` (the
 // guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size); RENEW and RENEWED, `CAP.RENEW`
 // (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore);
-// DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down).
+// DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down); TRIM and TRIMMED, `CAP.TRIM` (the guest's
+// filesystems trimmed on the page's request).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -49,6 +50,10 @@ export const FRAME = {
   LEASED: 18,
   /** The agent's: a u8 state (`DESKTOP`), the graphical session on the guest's seat0 now. */
   DESKTOP: 19,
+  /** The page's: the guest's filesystems are to tell their disks what they no longer use (a trim). */
+  TRIM: 20,
+  /** The agent's: a u8 status (`TRIMMED`), what became of TRIM. */
+  TRIMMED: 21,
 } as const;
 
 /** DESKTOP's states (agent/src/frame.rs `desktop`). */
@@ -67,6 +72,16 @@ export const LEASED = {
   RENEWED: 0,
   /** None the agent knows runs, or its tool isn't there: the page flaps the link instead. */
   NO_CLIENT: 1,
+  FAILED: 2,
+} as const;
+
+/** TRIMMED's statuses (agent/src/trim.rs `status`). */
+export const TRIMMED = {
+  /** At least one filesystem trimmed, none failed. */
+  TRIMMED: 0,
+  /** No filesystem takes a trim (none on a block device, or their disks don't discard). */
+  NONE: 1,
+  /** A filesystem's trim failed (others may have been trimmed). */
   FAILED: 2,
 } as const;
 
@@ -146,6 +161,8 @@ export const CAP = {
   LEASE: 1 << 7,
   /** DESKTOP: the guest's graphical session's state said (the agent), or a page that takes it. */
   DESKTOP: 1 << 10,
+  /** TRIM and TRIMMED: the guest's filesystems trimmed on the page's request (the agent's). */
+  TRIM: 1 << 11,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

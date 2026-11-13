@@ -153,6 +153,7 @@ pub fn spawn(cmds: &[Vec<String>]) -> Result<Job, Errno> {
     }
     if pid == 0 {
         let _ = rustix::process::set_parent_process_death_signal(Some(Signal::KILL));
+        crate::rt::close_inherited();
         let ok = argvs.iter().all(|a| run(a));
         crate::rt::exit(if ok { 0 } else { 1 });
     }

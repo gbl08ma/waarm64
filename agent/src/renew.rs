@@ -290,6 +290,7 @@ fn spawn_keygen(keygen: &str, keys: &[(String, String)]) -> Result<(Pid, OwnedFd
     }
     if pid == 0 {
         let _ = rustix::process::set_parent_process_death_signal(Some(Signal::KILL));
+        crate::rt::close_inherited();
         // SAFETY: umask has no preconditions. The public halves are for everyone to read, as ssh-keygen makes them.
         unsafe { umask(0o022) };
         let mut ok = true;

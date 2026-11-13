@@ -25,6 +25,20 @@ pub fn exit(code: i32) -> ! {
     unsafe { c_exit(code) }
 }
 
+/// Closes every file descriptor past stderr: a forked helper's first step, so that it holds none of the agent's
+/// (the page's connection above all: a copy kept open would outlive the agent's own close of it). `close_range`
+/// (Linux 5.9; the agent's guests have systemd 256, so 6.x): one call, nothing to list.
+pub fn close_inherited() {
+    unsafe extern "C" {
+        fn syscall(n: core::ffi::c_long, ...) -> core::ffi::c_long;
+    }
+    /// `__NR_close_range`: the same number on every architecture (asm-generic's, and x86's).
+    const CLOSE_RANGE: core::ffi::c_long = 436;
+    // SAFETY: close_range takes two descriptor numbers and flags, and closes only the child's own copies; nothing in
+    // the child uses them after this.
+    unsafe { syscall(CLOSE_RANGE, 3u32, u32::MAX, 0u32) };
+}
+
 /// Writes all of `bytes` to stderr (the journal's), as far as it takes them.
 pub fn stderr(mut bytes: &[u8]) {
     while !bytes.is_empty() {

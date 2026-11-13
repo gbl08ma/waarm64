@@ -73,6 +73,9 @@ export async function storageFull(): Promise<Msg> {
   return n ? msg('disks:devices.storageFull.numbers', { used: n.used, quota: n.quota }) : msg('disks:devices.storageFull');
 }
 
+/** Whether `m` is `storageFull`'s (the page then has the guest trim: web/app/areas/trim-actions.ts `full`). */
+export const isStorageFull = (m: Msg) => m.key === 'disks:devices.storageFull' || m.key === 'disks:devices.storageFull.numbers';
+
 /** How often the page is told at most that the storage is full. */
 const FULL_REPEAT_MS = 60_000;
 
@@ -309,6 +312,8 @@ export type Backend = {
   refusal?(): Promise<WireError | undefined>;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
   written?(): { blocks: number[]; generation?: number }; blocks?(blocks: number[]): Uint8Array;
+  /** A disk's overlay compacted once no request of its runs (web/overlay.ts `compact`; `measure`: only its size): the bytes its files took before and after. */
+  compact?(measure?: boolean): Promise<{ before: number; after: number }>;
 };
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
@@ -996,6 +1001,27 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return p;
     };
   }
+  if (rw?.compact && rw.bytes) {
+    // The compaction moves blocks between slots: it runs with none of the disk's requests in flight (one may wait on
+    // the base's bytes with slots taken), and whole, synchronously, so none starts meanwhile.
+    const [request, compact, size] = [backend.request, rw.compact, rw.bytes];
+    const running = new Set<Promise<unknown>>();
+    backend.request = (r) => {
+      const p = request.call(backend, r);
+      if (p instanceof Promise) {
+        running.add(p);
+        void p.then(() => running.delete(p), () => running.delete(p));
+      }
+      return p;
+    };
+    backend.compact = async (measure) => {
+      const before = size();
+      if (measure) return { before, after: before };
+      while (running.size) await Promise.allSettled(running);
+      compact(); // a failed move leaves the block where it was (copied before its map entry moves)
+      return { before, after: size() };
+    };
+  }
   return backend;
 }
 
@@ -1171,6 +1197,16 @@ export class Devices {
   /** The first backend's reason a snapshot would be refused now (`Backend.refusal`), or undefined. */
   async refusal(): Promise<WireError | undefined> {
     return (await Promise.all(this.backends.map((b) => b.refusal?.()))).find((x) => x);
+  }
+
+  /** The disks' overlays compacted (after a trim the page asked for; `measure`: only their sizes): the bytes their files took before and after, summed. */
+  async compact(measure = false): Promise<{ before: number; after: number }> {
+    const sum = { before: 0, after: 0 };
+    for (const b of this.backends) {
+      const r = await b.compact?.(measure);
+      if (r) [sum.before, sum.after] = [sum.before + r.before, sum.after + r.after];
+    }
+    return sum;
   }
 
   /** Resolves once no request of a `concurrent` backend runs (a snapshot's quiesce: their completions land first) and what the backends hold back landed. */

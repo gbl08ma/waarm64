@@ -1418,7 +1418,8 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   (`compression_type=zstd`, QEMU 5.1 on) is not written: it needs a compressor compiled to wasm (a
   dependency), and with deflate on four threads the export is within a third of not compressing. What the guest's filesystem has freed
   is still data to the export until the guest trims it (`fstrim -av`: the disk takes DISCARD,
-  [devices.md](devices.md) "blk"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user
+  [devices.md](devices.md) "blk"; a running guest with the agent is trimmed first, before the machine stops for the
+  export: devices.md "Disk space handed back"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user
   keeps it beside the changes) and carries the base file's **hash** in an extension of ours
   (type `WAM2`, ASCII hex: QEMU ignores unknown extensions; qcow2 itself has no checksum of a backing
   file), `hashSource` in `web/changes.ts`: the SHA-256 of the SHA-256 digests, in order, of the

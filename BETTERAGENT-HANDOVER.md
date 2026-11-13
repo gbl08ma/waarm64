@@ -1,13 +1,13 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–5 done (jobs 1–4 and the mid-track review's fixes); the next loop is job 5.
+Loops 1–6 done (jobs 1–5 and the mid-track review's fixes); the next loop is job 6.
 
 ## State
 
 The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEWED 16 (bit 6), LEASE 17 / LEASED 18
-(bit 7), DESKTOP 19 (bit 10); free from 20 and bit 11 (bit 3 reserved for text/html, 8 and 9 for session kinds). The
-binary is 165,904 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
+(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11); free from 22 and bit 12 (bit 3 reserved for text/html, 8
+and 9 for session kinds). The binary is 168,320 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
 
 - **Job 1, the screen's size:** the page sends the size it asks the guest's display for (DISPLAY, at each change and
   each agent HELLO). Wayland: `agent/src/outputs.rs` (wlr-output-management custom mode; sway, wlroots). X11 sessions:
@@ -27,22 +27,31 @@ binary is 165,904 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS 
   it to a page with `CAP.DESKTOP`, which every page says (so the child runs wherever seat0 has an active session). The
   page: `AgentLink.desktop`, `body[data-desktop]` (`tests/page-desktop.ts`), which the sway and X11 page tests wait on.
   Nothing the user sees changed. devices.md "The desktop's state".
+- **Job 5, disk space handed back (loop 6):** the agent trims (`agent/src/trim.rs`: `sync`, then FITRIM itself on each
+  `/dev/` filesystem of the mount table, no fstrim), then the page compacts the overlays in full (`Vm.compact` →
+  `Devices.compact`; a change compacts only past half free). Asked from the Machines page's storage bar (Free unused
+  disk space), at the storage-full notice, and before a disk's Export stops the machine (`web/app/areas/trim-actions.ts`).
+  The user's choices (when, `fstrim -a`'s scope, the storage bar). devices.md "Disk space handed back".
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real
-  ssh-keygen and sshd run in the native test); NetworkManager (a fake nmcli).
+  ssh-keygen and sshd run in the native test); NetworkManager (a fake nmcli); the trim before an Export and at the
+  storage-full notice (`TrimActions` with fakes; Debian runs only the storage bar's).
 
 ## Next
 
-1. Job 5 (fstrim on demand), then 6, 7, 8 as the kickoff orders them; ask the user what a job does to the guest where
-   the kickoff leaves it open (job 6: whether the layout's disk write stays).
+1. Job 6 (the keyboard layout in the running session), then 7, 8 as the kickoff orders them; ask the user what a job
+   does to the guest where the kickoff leaves it open (job 6: whether the layout's disk write stays).
 2. The track's end: an out-of-context review over the whole track, `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`,
    `ci-net.sh`, `ci-graphics.sh`; then PLAN.md's row, the kickoff and this handover deleted.
 
 ## Found (worth not re-discovering)
 
-- **The page's linter caps a file at 300 lines** (eslint `max-lines`, in `ci.sh`'s lint); `runner.ts` sits at the limit,
-  `worker.ts` and `net-live.ts` near it: put new logic in a module of its own. Format with the project's config
+- **The page's linter caps a file at 300 lines** (eslint `max-lines`, in `ci.sh`'s lint) and a function's complexity at
+  15; `main.ts` (299) and `runner.ts` sit at the limit, `worker.ts` and `net-live.ts` near it (worker.ts's `onmessage`
+  sends its asks to `worker-profile.ts`'s `asked` from `default`): put new logic in a module of its own. A `.svelte.ts`
+  module can't be imported by the Node tests (runes): keep testable logic in plain `.ts` and its `$state` elsewhere
+  (`current.canTrim`). Format with the project's config
   (`npm run format`, or tools/lint/node_modules/.bin/prettier --config tools/lint/prettier.config.ts), never a bare
   `npx prettier` (it rewrote a whole file at another width).
 - **A port handed to a device must be listed in web/devices.ts's transfer list** (the `specs.flatMap` near line 178),
@@ -50,6 +59,8 @@ binary is 165,904 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS 
 - **The agent's sandbox** (`RestrictAddressFamilies=AF_UNIX AF_VSOCK`) breaks tools that use netlink: networkctl (even
   with an index) and if_nametoindex; D-Bus tools (busctl, nmcli) work. Check a guest tool from inside the unit on Debian,
   not only natively.
+- **A forked helper closes what it inherited** (`rt::close_inherited`, `close_range`): else it holds the page's
+  connection (and, in the tests, other tests' sockets) for as long as it runs; one flaked `ci.sh` that way.
 - **OpenSSH ≥ 9.8's listener loads host keys only at its start and SIGHUP**; `sshd -D` writes no pid file.
 - **Xvfb can't grow its screen past its start size**: RandR tests run on Xorg's dummy driver (xf86-video-dummy and
   xrandr in the dev VM: docs/devenv.md).

@@ -49,6 +49,14 @@ export type WritableDisk = Disk & {
   block(b: number): Uint8Array | undefined;
   /** Whether block `b` is one the overlay holds as zeros, without a slot. */
   zeroed(b: number): boolean;
+  /**
+   * Moves the blocks in the overlay's highest slots into its free ones and cuts its file's end off, however few are
+   * free (a change does it only once half of them are: after a trim the page asked for, all that was freed goes back
+   * to the browser's storage). False on a failed read or write. An overlay's; a ramdisk gives memory back by itself.
+   */
+  compact?(): boolean;
+  /** The bytes the overlay's files take (its data and map). */
+  bytes?(): number;
   /** The overlay's generation, and `epoch` (both: overlays with a `meta`; a ramdisk has neither). */
   generation?(): number;
   epoch?(): void;
@@ -168,12 +176,13 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   /**
    * Once half of `data` is free slots, the blocks in its highest slots move into the free ones
    * below them and the end is cut off: what the guest trimmed goes back to the browser's storage
-   * (the moves are at most as many as the slots freed since the last time). A block is copied
-   * before its map entry points to the copy. False on a failed read or write.
+   * (the moves are at most as many as the slots freed since the last time); with `force`, however
+   * few are free. A block is copied before its map entry points to the copy. False on a failed read
+   * or write.
    */
-  const compact = () => {
+  const compact = (force = false) => {
     shrink();
-    if (isFree.size < COMPACT_MIN || isFree.size * 2 < slots) return true;
+    if (!force && (isFree.size < COMPACT_MIN || isFree.size * 2 < slots)) return true;
     const owner = new Uint32Array(slots);
     for (let b = 0; b < blocks; b++) if (map[b] && map[b] !== ZERO) owner[map[b] - 1] = b;
     const buf = new Uint8Array(BLOCK);
@@ -348,7 +357,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return data.read(out, { at: (map[b] - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation, epoch: () => { bumped = false; } };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation, epoch: () => { bumped = false; } };
 }
 
 /**

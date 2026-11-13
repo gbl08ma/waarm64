@@ -1,8 +1,25 @@
-// The machine worker's profilers, for benchmarks (web/app/worker.ts; docs/benchmarking.md): the guest PC sampler and
-// the vCPU timeline over the running machine `vm`.
+// The machine worker's answers to the page's asks about the running machine `vm` (web/app/worker.ts `asked`): the
+// profilers, for benchmarks (docs/benchmarking.md: the guest PC sampler and the vCPU timeline), its heap's use, and the
+// disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts).
 import type { Vm } from '../vm.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
+import type { ToWorker } from './protocol.ts';
 import { post } from './worker-post.ts';
+
+/** Answers `m` if it is one of these asks (a profiler on or off, the heap, the compaction). */
+export function asked(vm: Vm | undefined, m: ToWorker) {
+  if (m.type === 'profile') void profile(vm, m.on, m.id);
+  else if (m.type === 'timeline') void timeline(vm, m.on, m.id);
+  else if (m.type === 'heap') {
+    if (vm) post({ type: 'heap', id: m.id, heap: vm.heapUse() });
+  } else if (m.type === 'compact') {
+    const id = m.id;
+    void (vm ? vm.compact(m.measure) : Promise.resolve(undefined)).then(
+      (c) => post({ type: 'compacted', id, ...c }),
+      () => post({ type: 'compacted', id }),
+    );
+  }
+}
 
 let stopSampler: (() => Promise<[string, number][]>) | undefined;
 /**

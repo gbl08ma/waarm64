@@ -24,7 +24,7 @@ import type { DeviceKind } from './shape.ts';
 import type { StartMessage } from './worker-devices.ts';
 import { explain } from './worker-errors.ts';
 import { sessionOf, type Session } from './worker-header.ts';
-import { profile, timeline } from './worker-profile.ts';
+import { asked } from './worker-profile.ts';
 import { post, state } from './worker-post.ts';
 import { status } from './worker-status.ts';
 import { checkSnapshot, saveSnapshot, suspend, TAIL, type Running } from './worker-snapshot.ts';
@@ -78,15 +78,6 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       break;
     case 'up':
       return up?.();
-    case 'profile':
-      void profile(vm, m.on, m.id);
-      break;
-    case 'timeline':
-      void timeline(vm, m.on, m.id);
-      break;
-    case 'heap':
-      if (vm) post({ type: 'heap', id: m.id, heap: vm.heapUse() });
-      break;
     case 'stop':
       stopping = true;
       void (async () => {
@@ -96,6 +87,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
         post({ type: 'stopped' });
       })();
       break;
+    default:
+      asked(vm, m); // the profilers, the heap, the disks' compaction
   }
 };
 

@@ -5,7 +5,8 @@
 // Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
 // console (a reader on tty1 writes what it gets to a file; a long paste arrives whole; none of it while tty1 is in
 // graphics mode, as under a compositor: TYPED says why), the toolbar's clipboard
-// button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), the
+// button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), a trim
+// from the Machines page's storage bar (a deleted file's blocks out of the overlay, its files compacted), the
 // page carrying on when the agent stops, and the connection itself without the agent: perl connected to the agent's
 // port echoing it into itself (a small frame, and 320 KiB of 64 KiB frames past the link's window and vsock's credit, so
 // the guest's buffers, the credit and the window's flow all turn over). The agent's start again at the end: its unit
@@ -21,7 +22,8 @@ import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
-import { FRAME, TYPED } from '../web/agent-frame.ts';
+import { CAP, FRAME, TRIMMED, TYPED } from '../web/agent-frame.ts';
+import { words } from './words.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -86,6 +88,15 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
+  // Every message the bar shows, as it shows it (a notice may be replaced before it is read).
+  await page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { messages: string[] }).messages = seen;
+    new MutationObserver(() => {
+      const t = document.getElementById('message-text')?.textContent ?? '';
+      if (seen.at(-1) !== t) seen.push(t);
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&clipboard=1&${unattendedQuery()}`);
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
@@ -255,6 +266,29 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
     if (i > 20) assert.fail(`after the restart tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantAgain)}`);
     await page.waitForTimeout(500);
   }
+  // TRIM, last (the Machines page's visit resizes the screen: the page has a size to say at an echoed HELLO after it),
+  // from the Machines page's storage bar (Free unused disk space; docs/devices.md "Disk space handed back"): a
+  // deleted file's 48 MiB leave the overlay, whose files shrink by them at the compaction in full that follows (a
+  // change compacts only past half free), and the message bar says so.
+  assert.ok(h.caps & CAP.TRIM, `the agent trims (caps ${h.caps})`);
+  // 96 MiB kept beside it: the 48 MiB trimmed stay under half the overlay, which only the compaction asked for gives back.
+  await run(page, 'for f in keep big; do dd if=/dev/urandom of=/root/$f bs=1M count=$([ $f = keep ] && echo 96 || echo 48) 2>/dev/null; done; sync; rm /root/big; sync; echo done', 300_000);
+  await page.click('#machines-open');
+  await page.click('[data-action="trim-disks"]');
+  const got = await page.waitForFunction(() => window.__trimmed, null, { timeout: 240_000, polling: 250 }).then((r) => r.jsonValue()) as { status?: number; before?: number; after?: number };
+  t.diagnostic(`trim: ${JSON.stringify(got)}`);
+  if (got.status !== TRIMMED.TRIMMED) {
+    await page.click('[data-action="back"]');
+    assert.fail(`TRIMMED ${got.status}; the agent says: ${await run(page, 'journalctl -b -u waarm64-agent -o cat --no-pager | tail -5')}`);
+  }
+  assert.ok(got.before! - got.after! >= 40 << 20, `the overlays went from ${got.before} to ${got.after} bytes`);
+  await page.click('[data-action="back"]');
+  const said = words('machine:trim-actions.trimmed');
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), said.source, { timeout: 10_000, polling: 100 })
+    .catch(async (e) => { throw new Error(`${e}; the message bar said: ${await page.evaluate(() => JSON.stringify((window as unknown as { messages: string[] }).messages.slice(-6)))}`); });
+  await run(page, 'rm /root/keep; echo gone');
+  assert.match(await run(page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep -c "trim: the filesystems trimmed"'), /^1$/);
+
   assert.deepEqual(errors, []);
   await page.close();
 }));

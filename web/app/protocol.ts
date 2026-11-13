@@ -197,6 +197,8 @@ export type ToWorker =
    * asked before the page touches the machine (its USB ports, its input); answered by `snapshot-check`.
    */
   | { type: 'snapshot-check'; id: number; what: 'snapshot' | 'suspend' }
+  /** The disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts); answered by `compacted`. */
+  | { type: 'compact'; id: number; measure?: boolean }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /**
@@ -300,6 +302,8 @@ export type FromWorker =
   | { type: 'snapshot-error'; id: number; error: WireError }
   /** `snapshot-check`'s answer: the error the save would end with (`toWire`), or none. */
   | { type: 'snapshot-check'; id: number; refused?: WireError }
+  /** `compact`'s answer: the bytes the overlays' files took before and after (none: no machine running). */
+  | { type: 'compacted'; id: number; before?: number; after?: number }
   /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size. */
   | { type: 'suspend-done'; id: number; bytes: number }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */

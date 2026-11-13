@@ -56,6 +56,8 @@ class Current {
   hasNetwork = $state(false);
   /** It has a relative mouse (the lock's `raw` mode). */
   hasMouse = $state(false);
+  /** Its guest's agent trims the guest's filesystems (the Machines page's Free unused disk space: web/app/areas/trim-actions.ts). */
+  canTrim = $state(false);
   /** The graphics it runs with (`data-graphics` on the body, for tests); undefined without a virtio-gpu. */
   graphics = $state<'3d' | '2d'>();
 

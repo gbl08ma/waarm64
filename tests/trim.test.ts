@@ -21,7 +21,7 @@ const skip = (!existsSync(WASM) || !existsSync(new URL('linux/Image', IMAGES)) |
 let last: { read: number; written: number; cpuSteps: number[]; steps: number } | undefined;
 
 /** Boots a shell on the disk with overlay `name`, runs `script` line by line at its prompts; the console's text. */
-async function shell(name: string, discard: boolean, script: string[]) {
+async function shell(name: string, discard: boolean, script: string[], atEnd?: (vm: Awaited<ReturnType<typeof bootVm>>) => Promise<unknown>) {
   const devices: BootOptions['devices'] = [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: DISK.href, overlay: name, discard }];
   const { port1, port2 } = new MessageChannel();
   const vm = await bootVm(readFileSync(WASM), { ramSize: 256 << 20, kernel: readFileSync(new URL('linux/Image', IMAGES)), cmdline: `${GUEST_CMDLINE} -- /bin/sh`, devices, ncpus: 2, parallel: true, jit: 1, idleLimitMs: 30_000, serialIn: port2 });
@@ -42,6 +42,7 @@ async function shell(name: string, discard: boolean, script: string[]) {
       }
     }
   } finally {
+    await atEnd?.(vm);
     const io = vm.deviceIo();
     last = { read: io[4], written: io[5], cpuSteps: vm.cpuStats().map((c) => c.steps), steps: vm.stats().steps };
     await vm.close();
@@ -80,6 +81,26 @@ test('Linux trims a disk that offers DISCARD: a deleted file\'s blocks leave the
   assert.ok(h.data >= (h.blocks - h.zeroed) * 4096);
   // The filesystem is whole on the trimmed overlay: a second boot reads what was written after the trim.
   assert.match(await shell('trim-on', true, ['cat /kept; ls /big', 'poweroff -f']), /\nkept\nls: \/big: No such file or directory\n/);
+});
+
+test("a compaction asked for (the page's, after the guest agent's trim: vm.compact) gives back what a change's doesn't", { skip, timeout: 120_000 }, async () => {
+  // 12 MiB kept and 4 MiB trimmed: a third of the data file free, which a change leaves (it compacts past half).
+  const script = [
+    'mount -o remount,rw /',
+    'dd if=/dev/urandom of=/keep bs=1M count=12 2>/dev/null; dd if=/dev/urandom of=/big bs=1M count=4 2>/dev/null; sync; rm /big; sync',
+    'fstrim /; echo fstrim=$?; md5sum /keep; sync',
+    'mount -o remount,ro /; poweroff -f',
+  ];
+  let sizes: { before: number; after: number } | undefined;
+  const out = await shell('trim-compact', true, script, async (vm) => (sizes = await vm.compact()));
+  assert.match(out, /fstrim=0\n/);
+  assert.ok(sizes && sizes.before >= 16 << 20, `before: ${sizes?.before} bytes (the trimmed slots kept)`);
+  assert.ok(sizes.after < 14 << 20 && sizes.after >= 12 << 20, `after: ${sizes.after} bytes`);
+  const h = await held('trim-compact');
+  assert.ok(h.data < 14 << 20 && h.data <= sizes.after, `the data file is ${h.data} bytes`);
+  // What was kept reads the same from the moved blocks, at the next boot.
+  const sum = /\n([0-9a-f]{32})  \/keep\n/;
+  assert.equal(sum.exec(await shell('trim-compact', true, ['md5sum /keep', 'poweroff -f']))?.[1], sum.exec(out)?.[1]);
 });
 
 test('without the offer the guest can\'t trim, and the deleted file stays in the overlay', { skip, timeout: 120_000 }, async () => {

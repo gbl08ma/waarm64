@@ -13,6 +13,7 @@ import { status } from '../areas/status.svelte.ts';
 import { graphics, type Graphics } from '../statusbar-graphics.ts';
 import { metrics } from '../statusbar-metrics.ts';
 import type { FromWorker, Status } from '../protocol.ts';
+import { isStorageFull } from '../../devices.ts';
 import { benchHooks } from './knobs.ts';
 import type { Handlers, Run } from './run.ts';
 import type { Runner } from './runner.ts';
@@ -127,7 +128,10 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
       keys.live = m.live;
       void x.d.usb.syncKeyboard(r);
     },
-    notice: (m) => x.d.messages.notify(m.message, 'error'),
+    notice: (m) => {
+      x.d.messages.notify(m.message, 'error');
+      if (isStorageFull(m.message)) x.d.agent.storageFull();
+    },
     status: (m) => {
       if (m.status.asleep && !r.asleep && !power.saving) x.d.messages.notify(msg('machine:worker-messages.asleep'));
       r.asleep = !!m.status.asleep;
@@ -137,6 +141,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     profile: (m) => x.d.replies.worker.answer(m.id, m),
     timeline: (m) => x.d.replies.worker.answer(m.id, m),
     heap: (m) => x.d.replies.worker.answer(m.id, m),
+    compacted: (m) => x.d.replies.worker.answer(m.id, m),
     'snapshot-check': (m) => x.d.replies.worker.answer(m.id, m),
     restored: (m) => x.d.agent.restored(m.template),
     phase: (m) => {

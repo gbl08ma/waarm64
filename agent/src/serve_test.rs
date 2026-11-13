@@ -31,6 +31,28 @@ fn record_clock(ns: u64) -> io::Result<()> {
     Ok(())
 }
 
+/// The tests' FITRIM (in the agent's forked child: what it did goes to files): a mount point with an `unsupported`
+/// file takes no trim, one with `fails` fails; any other gets a line in its `trimmed`.
+fn record_trim(point: &str) -> io::Result<()> {
+    let p = std::path::Path::new(point);
+    if p.join("unsupported").exists() {
+        return Err(io::Errno::OPNOTSUPP);
+    }
+    if p.join("fails").exists() {
+        return Err(io::Errno::IO);
+    }
+    if !p.is_dir() {
+        return Err(io::Errno::NOENT);
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(p.join("trimmed"))
+        .unwrap();
+    std::io::Write::write_all(&mut f, b"trimmed\n").unwrap();
+    Ok(())
+}
+
 /// The test child's ACK serials: this, with the type of the frame it got.
 const ECHO: u32 = 0xec40_0000;
 
@@ -142,6 +164,7 @@ impl Harness {
             nmcli: vec![s("nmcli")],
             net: s("net"),
         };
+        let trim_table = s("mountinfo");
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
         let (mine, theirs) = socketpair(
@@ -158,6 +181,10 @@ impl Harness {
             a.add_entropy = record_entropy;
             a.renew = renew;
             a.lease = lease;
+            a.trim = crate::trim::Paths {
+                mountinfo: trim_table,
+            };
+            a.fitrim = record_trim;
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -777,6 +804,59 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         h.page.next(frame::LEASED, 5000).as_deref(),
         Some(&[status::NO_CLIENT][..])
     );
+}
+
+#[test]
+fn trims_each_filesystem_and_says_what_became_of_it() {
+    use crate::trim::status;
+    let mut h = Harness::start("trim");
+    let root = h.root.clone();
+    let r = |p: &str| root.join(p);
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::TRIM, 0, "the agent trims");
+    let trims = |d: &str| {
+        std::fs::read_to_string(r(&format!("{d}/trimmed")))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    };
+    let ask = |h: &mut Harness| {
+        h.page.send(frame::TRIM, &[]);
+        h.page.next(frame::TRIMMED, 5000)
+    };
+    // No mount table, or nothing on a block device: none takes it.
+    assert_eq!(ask(&mut h).as_deref(), Some(&[status::NONE][..]));
+    for d in ["root", "boot", "gone"] {
+        std::fs::create_dir(r(d)).unwrap();
+    }
+    std::fs::remove_dir(r("gone")).unwrap();
+    // The root's filesystem through a mount point the unit can't reach, then its own; a bind of it; the boot disk's;
+    // a tmpfs.
+    let table = format!(
+        "1 0 254:1 / {gone} rw - ext4 /dev/vda2 rw\n2 1 254:1 / {root} rw - ext4 /dev/vda2 rw\n\
+         3 1 254:1 /x {root} ro - ext4 /dev/vda2 rw\n4 1 254:17 / {boot} rw - vfat /dev/vdb1 rw\n\
+         5 1 0:25 / {root} rw - tmpfs tmpfs rw\n",
+        gone = r("gone").display(),
+        root = r("root").display(),
+        boot = r("boot").display()
+    );
+    std::fs::write(r("mountinfo"), table).unwrap();
+    assert_eq!(ask(&mut h).as_deref(), Some(&[status::TRIMMED][..]));
+    assert_eq!(
+        (trims("root"), trims("boot")),
+        (1, 1),
+        "each filesystem once"
+    );
+    // A disk that doesn't discard: the others are still trimmed.
+    std::fs::write(r("boot/unsupported"), "").unwrap();
+    assert_eq!(ask(&mut h).as_deref(), Some(&[status::TRIMMED][..]));
+    assert_eq!((trims("root"), trims("boot")), (2, 1));
+    // One that fails: FAILED, the rest trimmed all the same.
+    std::fs::write(r("boot/fails"), "").unwrap();
+    std::fs::remove_file(r("boot/unsupported")).unwrap();
+    assert_eq!(ask(&mut h).as_deref(), Some(&[status::FAILED][..]));
+    assert_eq!(trims("root"), 3);
 }
 
 #[test]
