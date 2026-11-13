@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { RENEWED } from '../web/agent-frame.ts';
+import { LEASED, RENEWED } from '../web/agent-frame.ts';
 import { asTemplate } from '../web/snapshot-file.ts';
 import { words } from './words.ts';
 import { unattendedQuery } from './debian-unattended.ts';
@@ -127,6 +127,11 @@ test("a template's restore has the agent renew the guest's identity; the same sn
     assert.equal(after.keys.split(' ').length, before.keys.split(' ').length, 'as many as before');
     assert.equal(await run(b.page, 'ls /etc/ssh | grep -c "\\.new" || true'), '0', 'none left half made');
   }
+  // The agent renews the leases through networkd (docs/devices.md "The network after a restore"): its networkctl over
+  // D-Bus from inside the unit's sandbox. The page asks once its connections are up; this machine's card has none, so
+  // the test asks itself.
+  const leased = await b.page.evaluate(() => (window as unknown as { __agent: { lease(ms: number): Promise<number | undefined> } }).__agent.lease(60_000));
+  assert.equal(leased, LEASED.RENEWED, `LEASED; the agent says: ${await run(b.page, 'journalctl -b -u waarm64-agent -o cat --no-pager | grep lease | tail -3')}`);
   // Nothing in the guest minded.
   assert.equal(await run(b.page, 'systemctl --failed --no-legend | wc -l'), '0');
   await b.context.close();

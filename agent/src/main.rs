@@ -30,6 +30,7 @@ mod prelude {
 mod clip;
 mod console;
 mod frame;
+mod lease;
 mod logind;
 mod outputs;
 mod renew;
@@ -61,7 +62,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::IMAGE
     | frame::cap::TIME
     | frame::cap::DISPLAY
-    | frame::cap::RENEW;
+    | frame::cap::RENEW
+    | frame::cap::LEASE;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -164,6 +166,10 @@ struct Agent {
     /// RENEW's keys' helper, running; RENEWED's bits, once done, for the connection to send.
     keygen: Option<renew::Keygen>,
     renewed: Option<[u8; 2]>,
+    /// LEASE's paths, its tool's run, and LEASED's status once done.
+    lease: lease::Paths,
+    leasing: Option<lease::Job>,
+    leased: Option<u8>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
     /// The tests': a function on a thread in place of the forked child.
@@ -205,6 +211,9 @@ impl Agent {
             add_entropy: renew::add_entropy,
             keygen: None,
             renewed: None,
+            lease: lease::Paths::default(),
+            leasing: None,
+            leased: None,
             typist: console::Typist::new(console),
             #[cfg(test)]
             test_child: None,
@@ -353,6 +362,7 @@ impl Agent {
             close.extend(self.mounts.as_ref().map(|f| f.as_raw_fd()));
             close.extend(self.typist.fd());
             close.extend(self.keygen.as_ref().map(|k| k.pidfd.as_raw_fd()));
+            close.extend(self.leasing.as_ref().map(|j| j.pidfd.as_raw_fd()));
             for fd in close {
                 // SAFETY: the parent's descriptors, which this process (which never returns to their owners) no
                 // longer uses; their OwnedFds are never dropped here (session::run exits).
@@ -491,6 +501,7 @@ enum Tag {
     Mounts,
     Child,
     Keygen,
+    Lease,
 }
 
 fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
@@ -520,6 +531,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(k) = &s.agent.keygen {
             fds.push(PollFd::new(&k.pidfd, PollFlags::IN));
             tags.push(Tag::Keygen);
+        }
+        if let Some(j) = &s.agent.leasing {
+            fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
+            tags.push(Tag::Lease);
         }
         if let Some(c) = &s.agent.child {
             let f = if c.out.is_empty() {
@@ -561,6 +576,11 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                     }
                 }
                 Tag::Ino => track |= s.agent.inotify(),
+                Tag::Lease => {
+                    if let Some(j) = s.agent.leasing.take() {
+                        s.agent.leased = Some(lease::done(j));
+                    }
+                }
                 Tag::Keygen => {
                     if let Some(k) = s.agent.keygen.take() {
                         let (done, failed) = renew::keygen_done(k, &s.agent.renew);
@@ -583,6 +603,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         }
         if let Some(r) = s.agent.renewed.take() {
             frame::encode(frame::RENEWED, &r, &mut s.out);
+        }
+        if let Some(st) = s.agent.leased.take() {
+            frame::encode(frame::LEASED, &[st], &mut s.out);
         }
         if core::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
@@ -630,6 +653,25 @@ impl Session<'_> {
                 match r.keygen {
                     Some(k) => self.agent.keygen = Some(k),
                     None => self.agent.renewed = Some([r.done, r.failed]),
+                }
+            }
+            // The machine restored and its connections up: the guest's leases renewed (src/lease.rs); one run at a time.
+            frame::LEASE if self.agent.leasing.is_none() => {
+                match lease::commands(&self.agent.lease) {
+                    None => {
+                        log(
+                            "lease: no network manager the agent knows (networkd, NetworkManager) with its tool",
+                            None,
+                        );
+                        self.agent.leased = Some(lease::status::NO_CLIENT);
+                    }
+                    Some(cmds) => match lease::spawn(&cmds) {
+                        Ok(j) => self.agent.leasing = Some(j),
+                        Err(e) => {
+                            log("lease: fork", Some(e));
+                            self.agent.leased = Some(lease::status::FAILED);
+                        }
+                    },
                 }
             }
             frame::TIME => {

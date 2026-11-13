@@ -15,6 +15,7 @@ import { records } from './areas/records.svelte.ts';
 import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
+import { LeaseActions } from './areas/lease-actions.ts';
 import { ClipboardActions } from './areas/clipboard-actions.ts';
 import { DiskActions } from './areas/disk-actions.ts';
 import { changesHeader, DiskChanges } from './areas/disk-changes.ts';
@@ -36,6 +37,7 @@ import { PageFolders } from './folders-live.ts';
 import type { Grab } from './hooks.ts';
 import { setAdapterConnection } from './machines.ts';
 import { PageNetwork } from './net-live.ts';
+import { NetSettled } from './net-settled.ts';
 import { providePage, type Page } from './page.ts';
 import { installBenchHooks } from './run/bench-hooks.ts';
 import { params } from './run/knobs.ts';
@@ -84,8 +86,11 @@ current.hasGpu = machine.hasGpu;
 usb.follow({ on: () => machine.has('usb'), running: () => !!machine.run?.usb && isLive(power.state) });
 
 // The network and the folders are made first (their menus show them), and the sound.
-const net = new PageNetwork({
+// The page's network settling (a restored guest renews its leases then: web/app/areas/lease-actions.ts).
+const netSettled = new NetSettled(() => net.views().map((v) => v.view.phase));
+const net: PageNetwork = new PageNetwork({
   store,
+  onChange: () => netSettled.changed(),
   state: {
     forgetTailnet: forgetProfile,
     forgetTailcat: forgetTailcatIdentity,
@@ -136,6 +141,11 @@ const messages = new Messages(machine, () => {
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
 const agentActions = new AgentActions(() => screen.sent);
+const leaseActions = new LeaseActions({
+  whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
+  link: () => agentActions.link,
+  flap: (i) => machine.run?.netLinks[i]?.postMessage({ type: 'flap' }),
+});
 screen.onSent = (size) => agentActions.display(size);
 const usbView = new UsbView(
   machine,
@@ -168,8 +178,14 @@ const runner = new Runner({
   },
   agent: {
     begin: (ch, up) => clipboardActions.begin(agentActions.begin(ch, up), ch.clipboard),
-    end: () => agentActions.end(),
-    renew: () => agentActions.renew(),
+    end: () => {
+      agentActions.end();
+      leaseActions.end();
+    },
+    restored: (template) => {
+      if (template) agentActions.renew();
+      void leaseActions.restored();
+    },
   },
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },
   later: {

@@ -15,7 +15,6 @@ import { shares } from '../areas/shares.svelte.ts';
 import { status } from '../areas/status.svelte.ts';
 import type { ScreenView } from '../areas/screen-view.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
-import type { ClipboardShare } from '../clipboard.ts';
 import type { PageFolders } from '../folders-live.ts';
 import type { Grab } from '../hooks.ts';
 import { resolveKeyboard } from '../keyboard.ts';
@@ -31,7 +30,8 @@ import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import type { Problems } from './problems.ts';
 import type { Replies } from './replies.ts';
 import { dispatch, Run } from './run.ts';
-import { channels, startMessage, type AgentChannels, type Channels, type StartWith } from './start-message.ts';
+import { channels, startMessage, type Channels, type StartWith } from './start-message.ts';
+import type { RunAgent } from '../areas/agent-actions.ts';
 import { displayHandlers, gpuHandlers, ledEvent, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
@@ -60,7 +60,8 @@ export type RunnerDeps = {
     keyboardKey(code: string, down: boolean): boolean;
   };
   /** A run's guest agent (web/app/areas/agent-actions.ts) and its clipboard sharing (none: not shared); `up` at each HELLO. */
-  agent: { begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined; end(): void; renew(): void };
+  agent: RunAgent;
+
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
@@ -154,7 +155,7 @@ export class Runner {
     canvas.addEventListener('keydown', () => this.wake());
     canvas.addEventListener('pointerdown', () => this.wake());
     const usb = ch.usb && this.d.usb.ports(ch.usb.port1);
-    const r = new Run(m, { worker, input, serial: ch.serial.port1, display: ch.display.port1, usb });
+    const r = new Run(m, { worker, input, ch, usb });
     m.run = r;
     const display = displayHandlers(this);
     // Not through `guard`: tests/page-cursor.test.ts finds the display's port by this handler's source.

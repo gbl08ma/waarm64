@@ -138,7 +138,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     timeline: (m) => x.d.replies.worker.answer(m.id, m),
     heap: (m) => x.d.replies.worker.answer(m.id, m),
     'snapshot-check': (m) => x.d.replies.worker.answer(m.id, m),
-    template: () => x.d.agent.renew(),
+    restored: (m) => x.d.agent.restored(m.template),
     phase: (m) => {
       bootCard.line = text(m.text);
       bootCard.progress = undefined;

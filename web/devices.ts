@@ -91,7 +91,7 @@ export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
  * machine with several adapters has `SEVERAL_ADAPTERS`, so that the IPv4 default route moves from one to another at the
  * next renewal.
  */
-export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSeconds?: number; renewSeconds?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
+export type NetSpec = { type: 'net'; mac?: string; gateway?: number; leaseSeconds?: number; renewSeconds?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort; link?: MessagePort } };
 /**
  * The DHCP timers of a machine with several adapters (docs/networking/adapters.md §4): the guest renews every 10 s,
  * so the IPv4 default route follows the primary within that (IPv6's moves with the router advertisement), and the lease
@@ -175,7 +175,7 @@ export type SndSpec = {
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : (d.type === 'input' || d.type === 'snd' || d.type === '9p') && d.port ? [d.port] : d.type === 'vsock' ? [...(d.port ? [d.port] : []), ...(d.agent ? [d.agent] : [])] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? (d.adapter instanceof MessagePort ? [d.adapter] : [d.adapter.ip, ...(d.adapter.link ? [d.adapter.link] : [])]) : (d.type === 'input' || d.type === 'snd' || d.type === '9p') && d.port ? [d.port] : d.type === 'vsock' ? [...(d.port ? [d.port] : []), ...(d.agent ? [d.agent] : [])] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -526,6 +526,9 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     : a instanceof MessagePort ? portAdapter(a, receiveFrame)
     : gateway(fromGateway, portBackend(a.ip, { frames: toFrames, gateway: toGateway }), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds, stale: flap });
   if (a instanceof MessagePort) framesTo = adapter; // a frame port from the start: its own, the card's frames go to it
+  // The page's: a flap asked for (a restored guest whose agent couldn't renew its lease: web/app/areas/lease-actions.ts).
+  const link = typeof a === 'object' && !(a instanceof MessagePort) ? a.link : undefined;
+  if (link) link.onmessage = (e: MessageEvent<{ type?: string } | undefined>) => { if (e.data?.type === 'flap') flap(); };
   const out = (f: Uint8Array) => (framesMode ? framesTo?.send(f) : adapter.send(f));
   return {
     request(r) {
@@ -553,6 +556,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     },
     close: () => {
       clearTimeout(flapping);
+      link?.close();
       if (framesTo !== adapter) framesTo?.close?.();
       adapter.close?.();
     },

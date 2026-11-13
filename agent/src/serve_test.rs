@@ -128,6 +128,13 @@ impl Harness {
             keygen: vec![s("no-keygen"), s("ssh-keygen")],
             proc: "/proc".into(),
         };
+        let lease = crate::lease::Paths {
+            networkd: s("netif-links"),
+            busctl: vec![s("busctl")],
+            nm: s("NetworkManager"),
+            nmcli: vec![s("nmcli")],
+            net: s("net"),
+        };
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
         let (mine, theirs) = socketpair(
@@ -143,6 +150,7 @@ impl Harness {
             a.set_clock = record_clock;
             a.add_entropy = record_entropy;
             a.renew = renew;
+            a.lease = lease;
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -680,4 +688,86 @@ fn have_keyscan() -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok()
+}
+
+#[test]
+fn renews_the_leases_with_the_network_manager_that_runs() {
+    use crate::lease::status;
+    use std::os::unix::fs::PermissionsExt;
+    let mut h = Harness::start("lease");
+    let r = |p: &str| h.root.join(p);
+    // The cards: two with a device, `lo` and a bridge without.
+    for (k, (n, dev)) in [
+        ("enp0s1", true),
+        ("eth1", true),
+        ("lo", false),
+        ("br0", false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        std::fs::create_dir_all(r(&format!("net/{n}"))).unwrap();
+        std::fs::write(r(&format!("net/{n}/ifindex")), format!("{}\n", k + 2)).unwrap();
+        if dev {
+            std::fs::create_dir(r(&format!("net/{n}/device"))).unwrap();
+        }
+    }
+    let tool = |name: &str, exit: u8| {
+        std::fs::write(
+            r(name),
+            format!(
+                "#!/bin/sh\necho \"$*\" >> {}\nexit {exit}\n",
+                r("calls").display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(r(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let calls = || std::fs::read_to_string(r("calls")).unwrap_or_default();
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::LEASE, 0, "the agent renews leases");
+    // No network manager it knows: the page is told (it flaps the link instead).
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::NO_CLIENT][..])
+    );
+    // networkd running, busctl there: RenewLink for each card.
+    tool("busctl", 0);
+    tool("nmcli", 0);
+    std::fs::create_dir(r("netif-links")).unwrap();
+    std::fs::create_dir(r("NetworkManager")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    // Its D-Bus method by index: networkctl resolves a link over netlink, which the unit's RestrictAddressFamilies
+    // refuses (Debian 13: "Address family not supported by protocol").
+    let m = "call org.freedesktop.network1 /org/freedesktop/network1 org.freedesktop.network1.Manager RenewLink i";
+    assert_eq!(calls(), format!("{m} 2\n{m} 3\n"), "networkd first");
+    // NetworkManager alone: each card connected again.
+    std::fs::remove_dir(r("netif-links")).unwrap();
+    std::fs::remove_file(r("calls")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert_eq!(calls(), "device connect enp0s1\ndevice connect eth1\n");
+    // Its tool failing: FAILED.
+    tool("nmcli", 4);
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::FAILED][..])
+    );
+    // The tool gone: none it knows.
+    std::fs::remove_file(r("nmcli")).unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::NO_CLIENT][..])
+    );
 }

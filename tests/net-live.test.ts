@@ -9,6 +9,7 @@ import { connectionLock, memoryState, type Connection, type ConnectionState } fr
 import { HeldError } from '../web/app/net-claims.ts';
 import { connectOf } from '../web/app/net-connect.ts';
 import { PageNetwork } from '../web/app/net-live.ts';
+import { NetSettled } from '../web/app/net-settled.ts';
 import { t } from '../web/i18n.ts';
 import { msgOf, toWire } from '../web/msg.ts';
 import type { Adapter } from '../web/app/shape.ts';
@@ -53,10 +54,11 @@ function pageOn(channel: string, name: string, records = memoryRecords(), kept: 
   const store = new Store(records, memoryFiles(), { channel });
   const c = clients(() => { kept.length = 0; }); // the client forgets the node
   const saved: (string | undefined)[] = [];
-  const net = new PageNetwork({ store, state, me: () => name, onChange: () => {}, save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, kept: async () => kept });
+  const hooks: { change?: () => void } = {};
+  const net = new PageNetwork({ store, state, me: () => name, onChange: () => hooks.change?.(), save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, kept: async () => kept });
   const close = () => { net.locks.close(); store.close(); };
   opened.push(close);
-  return { store, records, net, saved, ...c, close };
+  return { store, records, net, saved, hooks, ...c, close };
 }
 const tailnet = (net: PageNetwork, o: { ephemeral?: boolean } = {}) => net.conns.create({ kind: 'tailnet', ephemeral: o.ephemeral, tailnet: { controlURL: 'https://hs.example', hostname: 'box', exitNode: '' } });
 const adapters = (...conns: (Connection | undefined)[]): Adapter[] => conns.map((c, i) => ({ id: `a${i}`, mac: MAC.replace(/6$/, String(6 + i)), ...(c ? { connection: c.id } : {}) }));
@@ -520,4 +522,43 @@ test("a room's key: an ephemeral connection and a stored one on its key, in two 
   assert.equal(q.net.runs(pasted.id), 0, 'free once the other let it go');
   p.close();
   q.close();
+});
+
+test("NetSettled's `when` (a restore's lease renewal waits for it): pending while none connects; once one has, when every adapter settled or after the grace", async () => {
+  const p = pageOn('nl-when', 'M');
+  const settled = new NetSettled(() => p.net.views().map((v) => v.view.phase));
+  p.hooks.change = () => settled.changed();
+  const a = await tailnet(p.net);
+  const b = await p.net.conns.create({ kind: 'tailcat', tailcat: { exit: 'tcEXIT', serve: false, relay: '' } });
+  p.net.ports('m', adapters(a, b));
+  await p.net.autoconnect();
+  const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+  let got: number[] | undefined;
+  void settled.when(150).then((k) => { got = k; });
+  await tick(250);
+  assert.equal(got, undefined, 'none connected: pending, past the grace too');
+  p.all[0].set('Running', netmap()); // i18n-ignore
+  await tick();
+  assert.equal(got, undefined, 'the other still connecting: within the grace');
+  await tick(200);
+  assert.deepEqual(got, [0], 'the grace over: the one connected');
+  // Both settle: at once.
+  let now: number[] | undefined;
+  void settled.when(10_000).then((k) => { now = k; });
+  await tick();
+  assert.equal(now, undefined);
+  p.all[1].fail('no server');
+  await tick();
+  assert.deepEqual(now, [0], "the other's error is settled: no wait for the grace");
+  // A run that ended meanwhile: left pending.
+  let late: number[] | undefined;
+  let over = false;
+  p.net.ports('m2', adapters(a, undefined)); // another machine: its client starts afresh
+  await p.net.autoconnect();
+  void settled.when(50, () => over).then((k) => { late = k; });
+  over = true;
+  p.all.at(-1)!.set('Running', netmap()); // i18n-ignore
+  await tick(100);
+  assert.equal(late, undefined, 'cancelled');
+  p.close();
 });

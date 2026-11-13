@@ -5,7 +5,7 @@
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
 // ACK and MORE (step 3), the capability `CAP.TEXT`; SESSION and TYPED; `CAP.IMAGE` (step 5); TIME, `CAP.TIME` (the
 // guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size); RENEW and RENEWED, `CAP.RENEW`
-// (a template's copy made the guest's own).
+// (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -42,6 +42,19 @@ export const FRAME = {
   RENEW: 15,
   /** The agent's: what RENEW renewed and what failed (`decodeRenewed`, bits `RENEWED`). */
   RENEWED: 16,
+  /** The page's: the machine was restored and its connections are up: the guest is to renew its leases. */
+  LEASE: 17,
+  /** The agent's: a u8 status (`LEASED`), what became of LEASE. */
+  LEASED: 18,
+} as const;
+
+/** LEASED's statuses (agent/src/lease.rs `status`). */
+export const LEASED = {
+  /** The guest's network manager was told to renew. */
+  RENEWED: 0,
+  /** None the agent knows runs, or its tool isn't there: the page flaps the link instead. */
+  NO_CLIENT: 1,
+  FAILED: 2,
 } as const;
 
 /** RENEWED's bits (agent/src/renew.rs `what`). */
@@ -116,6 +129,8 @@ export const CAP = {
   DISPLAY: 1 << 5,
   /** RENEW and RENEWED: a template's copy made the guest's own (the agent's; the page sends RENEW to an agent that says it). */
   RENEW: 1 << 6,
+  /** LEASE and LEASED: the guest's leases renewed after a restore (the agent's). */
+  LEASE: 1 << 7,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

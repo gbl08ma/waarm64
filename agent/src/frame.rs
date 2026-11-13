@@ -37,6 +37,11 @@ pub const DISPLAY: u8 = 14;
 pub const RENEW: u8 = 15;
 /// The agent's: what RENEW renewed and what failed (u8 bits each, `renew::what`).
 pub const RENEWED: u8 = 16;
+/// The page's: the machine was restored and its connections are up: the guest's network manager is to renew its leases
+/// (src/lease.rs).
+pub const LEASE: u8 = 17;
+/// The agent's: a u8 status, what became of LEASE (`lease::status`).
+pub const LEASED: u8 = 18;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -66,6 +71,8 @@ pub mod cap {
     pub const DISPLAY: u32 = 1 << 5;
     /// RENEW and RENEWED: a template's copy made the guest's own.
     pub const RENEW: u32 = 1 << 6;
+    /// LEASE and LEASED: the guest's leases renewed after a restore.
+    pub const LEASE: u32 = 1 << 7;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 

@@ -1400,9 +1400,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   hash when the file has one (`SnapshotDisk.sha256`); what's missing is computing it off the save
   path (`hashSource`, web/changes.ts: ~640 MiB/s; cache it beside the overlay) and hashing the base at a restore
   whose identity differs.
-- **The network across a snapshot:** the guest keeps its lease and its connections' state; the
-  restored machine's card is on whatever the page connects it to now. A link down/up at restore
-  would make the guest ask for a lease again; open connections are lost either way.
+- **The network after a restore, not run end to end** (devices.md "The network after a restore"): the guest agent's
+  renewal (busctl's RenewLink to networkd from inside the unit's sandbox) is run on Debian, the page's waiting and the
+  flap with fakes; no test restores a snapshot with a live connection (a tailnet, the local helper) and watches the
+  guest take the new lease: the network tests drive the guest through `tests/browser/netguest.html`, which has no
+  snapshots or agent. NetworkManager's `nmcli device connect` is tested with a fake nmcli only.
 - **The guest's clock after a restore**: the guest agent sets it (docs/frontend.md "The guest's clock": TIME at its
   HELLO, after a save's pause, at the host's own sleep; the AGENT track, 2026-11-13), and the virtio-rtc device. What's
   left:
@@ -1610,7 +1612,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 160,744 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 165,008 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the

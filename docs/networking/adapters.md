@@ -179,7 +179,8 @@ running in another tab takes effect there at once: that tab hears the record cha
 ## 5. Snapshots, definitions, copies
 
 - **Snapshots** pin the adapters, which are in the shape, and not the connections (like USB devices). A restore keeps
-  the machine's current attachments, and the restored guest renews its leases.
+  the machine's current attachments, and the restored guest renews its leases once the page's connections are up:
+  through the guest agent at once, else by a link flap (devices.md "The network after a restore").
 - **A machine's definition** carries its adapters' MACs (`machine.macs`, left out for one at the default) and not its
   connections, which hold secrets and are this browser's: an imported machine's adapters come detached.
 - **[Duplicate](ui:machines:MachinePane.duplicate)** copies the adapters with their MACs and no connections.

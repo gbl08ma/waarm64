@@ -109,3 +109,33 @@ test("net: on the helper's frames, the page's gateway says nothing to the guest 
     for (const p of [ip.port1, frames.port1]) p.close();
   }
 });
+
+test("net: the page's link flaps the card on asking (a restored guest whose agent couldn't renew its lease: web/app/areas/lease-actions.ts), under a driver only", { timeout: FLAP_MS + 5000 }, async () => {
+  const config = new Uint8Array(8);
+  config[6] = 1;
+  const links: number[] = [];
+  let features = 0n;
+  const ctx = {
+    ram: () => [new Uint8Array(4096)], complete: () => {}, features: () => features, config: () => config, io: new Float64Array(2),
+    changeConfig: (w: (c: Uint8Array) => void) => { w(config); links.push(config[6]); },
+  } as unknown as Ctx;
+  const ip = new MessageChannel();
+  const link = new MessageChannel();
+  const n = net(ctx, { type: 'net', adapter: { ip: ip.port2, link: link.port2 } });
+  try {
+    link.port1.postMessage({ type: 'flap' });
+    await tick(100);
+    assert.deepEqual(links, [], 'no driver: nothing');
+    features = 1n;
+    link.port1.postMessage({ type: 'flap' });
+    link.port1.postMessage({ type: 'flap' }); // one flap at a time
+    await tick(100);
+    assert.deepEqual(links, [0], 'down');
+    await tick(FLAP_MS + 100);
+    assert.deepEqual(links, [0, 1], 'up FLAP_MS later');
+  } finally {
+    n.close?.();
+    ip.port1.close();
+    link.port1.close();
+  }
+});

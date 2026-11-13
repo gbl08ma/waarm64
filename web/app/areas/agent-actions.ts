@@ -6,9 +6,17 @@
 // the screen's size, which the agent's session follows (DISPLAY: the guest's compositor or X server set to it).
 import { AgentLink, pageCaps } from '../agent-link.ts';
 import { clockSync } from '../settings.ts';
+import type { ClipboardShare } from '../clipboard.ts';
 import type { AgentChannels } from '../run/start-message.ts';
 
 type Size = { width: number; height: number };
+
+/** What a run asks of its agent (web/app/run/runner.ts): its link begun and ended; a restore's renewals (`template`: its identity too). */
+export type RunAgent = {
+  begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined;
+  end(): void;
+  restored(template: boolean): void;
+};
 
 /** How often the page compares the wall clock with `performance.now()`. */
 export const SLEEP_CHECK_MS = 10_000;
@@ -61,6 +69,11 @@ export class AgentActions {
   /** The screen's size the guest is asked for now (a new window size, settled): the agent's session takes it too. */
   display(size: Size) {
     this.#link?.display(size);
+  }
+
+  /** The run's link, if it has one. */
+  get link(): AgentLink | undefined {
+    return this.#link;
   }
 
   /** The guest was restored from a template: its agent renews its identity (web/app/agent-link.ts `renew`). */

@@ -111,7 +111,8 @@ export type MachinePorts = {
    * end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other end and gives it to a
    * client (web/app/network.ts). The machine gets its `network` credentials when it has any.
    */
-  nets: { mac: string; ip: MessagePort }[];
+  /** Each adapter's IP port, and the page's link to its card (`{type: 'flap'}`: web/app/areas/lease-actions.ts). */
+  nets: { mac: string; ip: MessagePort; link?: MessagePort }[];
   /**
    * The USB controller's: the page's `usb-attach` and `usb-detach` to the device worker and its `usb-state` back
    * (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The page attaches its devices once the machine runs (at a start,
@@ -273,8 +274,11 @@ export type FromWorker =
   | { type: 'status'; status: Status }
   /** Something the devices say while the machine runs on (a ramdisk out of memory): the message bar shows it. */
   | { type: 'notice'; message: Msg }
-  /** The machine is restored from a template (a snapshot whose header has `template: true`): its agent renews the guest's identity. */
-  | { type: 'template' }
+  /**
+   * The machine is restored (a snapshot, a suspended copy): the guest renews its leases once the connections are up; from
+   * a template (a snapshot whose header has `template: true`), its agent renews the guest's identity too.
+   */
+  | { type: 'restored'; template: boolean }
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
   | { type: 'phase'; text: Msg }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */

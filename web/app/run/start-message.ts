@@ -19,7 +19,9 @@ export type Channels = {
   serial: MessageChannel;
   sound: ReturnType<PageAudio['attach']>;
   /** The machine's network adapters' ends of the IP ports (web/app/net-live.ts: the clients of their connections). */
-  nets: { mac: string; ip: MessagePort }[];
+  nets: { mac: string; ip: MessagePort; link?: MessagePort }[];
+  /** The page's ends of the cards' links. */
+  netLinks: MessagePort[];
   /** A USB controller's port its devices are attached over (docs/usb.md "The page"). */
   usb?: MessageChannel;
   /** Shared folders' port: what's attached while it runs goes over it (docs/shares.md). */
@@ -41,9 +43,17 @@ export type Channels = {
 export type AgentChannels = Pick<Channels, 'agent' | 'clipboard' | 'agentStub'>;
 
 /** A run's channels for what the configuration has. */
-export function channels(c: MachineConfig, sound: Channels['sound'], nets: Channels['nets']): Channels {
+export function channels(
+  c: MachineConfig,
+  sound: Channels['sound'],
+  ips: { mac: string; ip: MessagePort }[],
+): Channels {
   const optional = (on: boolean) => (on ? new MessageChannel() : undefined);
+  // Each card's link of the page's to its device (a flap: web/app/areas/lease-actions.ts).
+  const links = ips.map(() => new MessageChannel());
+  const nets = ips.map((n, i) => ({ ...n, link: links[i].port2 }));
   return {
+    netLinks: links.map((l) => l.port1),
     display: new MessageChannel(),
     keyboard: new MessageChannel(),
     tablet: new MessageChannel(),
@@ -128,7 +138,7 @@ export function startMessage(
     ch.sound.port,
     ...(w.screen ? [w.screen] : []),
     ...(w.three ? [w.three.renderer] : []),
-    ...ch.nets.map((n) => n.ip),
+    ...ch.nets.flatMap((n) => (n.link ? [n.ip, n.link] : [n.ip])),
     ...ends,
   ];
   return [message, transfer];

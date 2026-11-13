@@ -6,6 +6,7 @@ import type { UsbPorts } from '../usb-live.ts';
 import type { Sample } from '../statusbar-metrics.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
 import type { Msg } from '../../msg.ts';
+import type { Channels } from './start-message.ts';
 
 /** A save in progress (a snapshot, a suspend): the worker's messages for it, by its id (web/app/run/worker-messages.ts). */
 export type SnapshotJob = {
@@ -29,6 +30,8 @@ export class Run {
   readonly usb?: UsbPorts;
   /** Its USB devices went on (once it ran). */
   usbStarted = false;
+  /** The page's end of each network card's link (`{type: 'flap'}`: web/app/areas/lease-actions.ts). */
+  readonly netLinks: MessagePort[];
   /** The guest has suspended itself (`Status.asleep`): a key or a click wakes it. */
   asleep = false;
   /** The run's last status (the status bar's rates are since it). */
@@ -42,14 +45,15 @@ export class Run {
 
   constructor(
     holder: RunHolder,
-    o: { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; usb?: UsbPorts },
+    o: { worker: Worker; input: Input; ch: Pick<Channels, 'serial' | 'display' | 'netLinks'>; usb?: UsbPorts },
   ) {
     this.#holder = holder;
     this.worker = o.worker;
     this.input = o.input;
-    this.serial = o.serial;
-    this.display = o.display;
+    this.serial = o.ch.serial.port1;
+    this.display = o.ch.display.port1;
     this.usb = o.usb;
+    this.netLinks = o.ch.netLinks;
   }
 
   /** It is the page's run (not one stopped, or replaced by a restart). A call, not a getter: it changes across awaits. */

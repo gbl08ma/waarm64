@@ -80,6 +80,8 @@ export class AgentLink {
   private renewSent = false;
   /** What the agent's RENEWED said (the tests read it). */
   renewed?: { done: number; failed: number };
+  /** `lease`'s answers awaited: LEASED's status, or undefined when the connection ends first. */
+  private leasing: ((status?: number) => void)[] = [];
 
   constructor(port: MessagePort, caps: number) {
     [this.port, this.caps] = [port, caps];
@@ -146,6 +148,39 @@ export class AgentLink {
     this.renewSent = this.send(FRAME.RENEW, crypto.getRandomValues(new Uint8Array(RENEW_BYTES)));
   }
 
+  /** The agent's HELLO: now if it said it, else when it does, within `ms` (undefined past it). */
+  hello(ms: number): Promise<Hello | undefined> {
+    if (this.agent) return Promise.resolve(this.agent);
+    return new Promise((resolve) => {
+      const on = (h: Hello) => done(h);
+      const timer = setTimeout(() => done(undefined), ms);
+      const done = (h: Hello | undefined) => {
+        clearTimeout(timer);
+        const i = this.onHello.indexOf(on);
+        if (i >= 0) this.onHello.splice(i, 1);
+        resolve(h);
+      };
+      this.onHello.push(on);
+    });
+  }
+
+  /**
+   * The guest's leases renewed (LEASE: the machine was restored and its connections are up): LEASED's status, or
+   * undefined if the agent can't (no `CAP.LEASE`), the connection ends first, or nothing comes within `ms`.
+   */
+  lease(ms: number): Promise<number | undefined> {
+    if (!this.agent || !(this.agent.caps & CAP.LEASE) || !this.send(FRAME.LEASE)) return Promise.resolve(undefined);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => done(undefined), ms);
+      const done = (status?: number) => {
+        clearTimeout(timer);
+        this.leasing = this.leasing.filter((f) => f !== done);
+        resolve(status);
+      };
+      this.leasing.push(done);
+    });
+  }
+
   private sendDisplay() {
     if (!this.size || !this.agent || !(this.agent.caps & CAP.DISPLAY) || !(this.caps & CAP.DISPLAY)) return false;
     return this.send(FRAME.DISPLAY, encodeDisplay(this.size.width, this.size.height));
@@ -209,6 +244,7 @@ export class AgentLink {
     this.inflight = 0;
     this.resetting = false;
     this.renewSent = false;
+    for (const done of [...this.leasing]) done(undefined);
     if (!open) this.conn = 0;
     if (open) {
       this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: this.caps }));
@@ -231,6 +267,7 @@ export class AgentLink {
           for (const f of this.onHello) f(h);
         }
       }
+      if (f.type === FRAME.LEASED) for (const done of [...this.leasing]) done(f.payload[0]);
       if (f.type === FRAME.RENEWED) {
         this.renewed = decodeRenewed(f.payload);
         this.renewing = false;

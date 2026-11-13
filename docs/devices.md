@@ -129,7 +129,7 @@ a stream of its own, begun at a frame: a restore resets the guest's transport (t
 agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 161 KB).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 165 KB).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
@@ -318,7 +318,7 @@ image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn
 true`, set by `tools/snapshot-template.ts` with `web/snapshot-file.ts` `asTemplate`, which rewrites the header alone: an
 internal tool for demo images, never set by the page, whose own snapshots keep their identity) is one every visitor
 restores the same: the same kernel CRNG, machine id, random seed and SSH host keys in every copy. At its restore (not a
-resume) the worker says `template`, and the run's link owes RENEW (64 random bytes) until the agent's RENEWED: sent at
+resume) the worker's `restored` says `template`, and the run's link owes RENEW (64 random bytes) until the agent's RENEWED: sent at
 the HELLO of an agent with `CAP.RENEW`, once a connection (a connection that ends before RENEWED sends it again at the
 next; the agent renews once at a time, so a RENEW during the keys' helper is the same renewal's). The root process: the bytes added to `/dev/random`'s input pool and credited (`RNDADDENTROPY`),
 then the CRNG reseeded (`RNDRESEEDCRNG`: added entropy otherwise reaches it only at its next periodic reseed); a new
@@ -338,6 +338,25 @@ template must be taken from a guest booted by a page with it. Tests: `agent/src/
 the real one), `tests/agent.test.ts` (the link, `asTemplate`), `tests/page-template.test.ts` (Debian: the same snapshot
 unflagged keeps its identity, flagged gets a new machine id and seed; the test image has no sshd).
 
+**The network after a restore** (LEASE; `web/app/areas/lease-actions.ts`, `agent/src/lease.rs`; the user's design,
+2026-11-13): a restored guest (a snapshot, a suspended copy: the worker says `restored`) holds the leases it had when
+it was saved, while the page may connect its cards elsewhere now. Not at once: the page's gateway offers nothing while
+its connection has no lease and NAKs a renewal (web/gateway.ts `dhcp`), after which a client backs off for long. So the
+page waits until its network has settled with a card connected (web/app/net-settled.ts `NetSettled.when`, fed by the page network's `onChange`: every adapter
+with a client connected, or waiting on the user, a login or an error; 30 s at most once the first connected; none
+connected, pending until one is), then asks the agent (its HELLO within 20 s) for LEASE. The agent tells the guest's
+network manager through its own tool, where both are there: systemd-networkd (running: `/run/systemd/netif/links`)
+through `busctl call org.freedesktop.network1 … RenewLink i <ifindex>` for each card (`/sys/class/net/<name>` with a
+`device`), what `networkctl renew` calls (networkctl resolves a link over netlink, even an index, which the unit's
+`RestrictAddressFamilies` refuses: seen on Debian 13), or NetworkManager (`/run/NetworkManager`) through `nmcli
+device connect <name>`, in a forked child polled by its pidfd; LEASED says what came of it. A renewal keeps an address
+that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
+Where the agent can't (none within 20 s, no `CAP.LEASE`, LEASED not 0, no answer in 60 s), each connected card's link
+flaps instead: the run's link port to its device (`Run.netLinks`, `{type: 'flap'}`) → `FLAP_MS`, 7 s down (net
+below). networkd's DHCP DUID stays the one its start read (a template's old machine id). Tests: the root loop (fake
+busctl, nmcli), the link, `LeaseActions` with fakes, `NetSettled` (tests/net-live.test.ts), the flap on asking
+(tests/net-path.test.ts), and on Debian (`tests/page-template.test.ts`) the agent's renewal through busctl.
+
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
@@ -347,6 +366,8 @@ to the side that offers, request ids to the side that requests:
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
+| LEASE (17) | none | the page's, after a restore once its connections are up ("The network after a restore" below), to an agent whose HELLO has `CAP.LEASE` (bit 7) |
+| LEASED (18) | u8 status: 0 renewed, 1 no network manager the agent knows (or its tool missing), 2 its tool failed | the agent's, when its tool ended (`AgentLink.lease`'s answer) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

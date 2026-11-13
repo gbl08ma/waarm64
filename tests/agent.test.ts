@@ -12,8 +12,9 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, FRAME, RENEWED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, FRAME, LEASED, RENEWED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
+import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
@@ -1109,6 +1110,63 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   // RENEW and RENEWED (agent/src/frame.rs, agent/src/renew.rs `what`).
   assert.deepEqual([FRAME.RENEW, FRAME.RENEWED, CAP.RENEW], [15, 16, 64]);
   assert.deepEqual([RENEWED.ENTROPY, RENEWED.MACHINE_ID, RENEWED.SEED, RENEWED.SSH], [1, 2, 4, 8]);
+  // LEASE and LEASED (agent/src/lease.rs `status`).
+  assert.deepEqual([FRAME.LEASE, FRAME.LEASED, CAP.LEASE], [17, 18, 128]);
+  assert.deepEqual([LEASED.RENEWED, LEASED.NO_CLIENT, LEASED.FAILED], [0, 1, 2]);
+});
+
+test("a restore's leases (web/app/areas/lease-actions.ts): once the network settled, the agent renews them; without it, or when it can't, the connected cards flap; a run that ends first does neither", async () => {
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  /** A link whose agent answers LEASE with `status` (none: never says HELLO). */
+  const agentWith = (caps: number | undefined, status?: number) => {
+    const { port1, port2 } = channel();
+    const link = new AgentLink(port1, pageCaps(false));
+    const leases: number[] = [];
+    const reader = new FrameReader();
+    port2.onmessage = (e) => {
+      if (e.data.type !== 'data') return;
+      for (const f of reader.push(e.data.bytes)) {
+        if (f.type !== FRAME.LEASE) continue;
+        leases.push(f.type);
+        if (status !== undefined) port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.LEASED, new Uint8Array([status])) });
+      }
+      port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+    };
+    if (caps !== undefined) {
+      port2.postMessage({ type: 'open', open: true, conn: 1 });
+      port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+    }
+    return { link, leases, close: () => { link.close(); port2.close(); } };
+  };
+  const run = async (link: AgentLink | undefined, connected: Promise<number[]>) => {
+    const flaps: number[] = [];
+    const a = new LeaseActions({ whenConnected: () => connected, link: () => link, flap: (i) => flaps.push(i), waits: { grace: 50, agent: 100, leased: 200 } });
+    return { a, flaps, done: a.restored() };
+  };
+  // The agent renews: no flap.
+  const ok = agentWith(CAP.TIME | CAP.LEASE, LEASED.RENEWED);
+  let r = await run(ok.link, Promise.resolve([0, 2]));
+  assert.equal(await r.done, 'agent');
+  assert.deepEqual(r.flaps, []);
+  assert.equal(ok.leases.length, 1);
+  ok.close();
+  // An agent with no network manager it knows, one without CAP.LEASE, one that never connects, none: the cards flap.
+  for (const [what, x] of [['NO_CLIENT', agentWith(CAP.TIME | CAP.LEASE, LEASED.NO_CLIENT)], ['no CAP.LEASE', agentWith(CAP.TIME)], ['silent', agentWith(undefined)]] as const) {
+    await settle();
+    r = await run(x.link, Promise.resolve([1]));
+    assert.equal(await r.done, 'flap', what);
+    assert.deepEqual(r.flaps, [1], what);
+    x.close();
+  }
+  r = await run(undefined, Promise.resolve([0]));
+  assert.equal(await r.done, 'flap', 'no agent at all');
+  // The run ends before the network settles: nothing.
+  let settled!: (k: number[]) => void;
+  r = await run(undefined, new Promise((res) => { settled = res; }));
+  r.a.end();
+  settled([0]);
+  assert.equal(await r.done, 'gone');
+  assert.deepEqual(r.flaps, []);
 });
 
 test("the link: RENEW once after a template's restore, at the first HELLO of an agent that renews (random bytes each time); RENEWED kept", async () => {

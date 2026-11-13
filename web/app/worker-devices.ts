@@ -100,7 +100,7 @@ const net: Maker = (slot, m) => {
     mac: n.mac,
     gateway: slot.adapter,
     ...(m.ports.nets.length > 1 ? SEVERAL_ADAPTERS : {}),
-    adapter: { ip: n.ip },
+    adapter: { ip: n.ip, link: n.link },
   };
 };
 
