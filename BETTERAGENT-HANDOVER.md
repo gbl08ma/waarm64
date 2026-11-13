@@ -1,7 +1,7 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–8 done (jobs 1–7 and the mid-track review's fixes); the next loop is job 8.
+Loops 1–9 done (jobs 1–7, the agent's gzip and the mid-track review's fixes); the next loop is job 8.
 
 ## State
 
@@ -42,6 +42,10 @@ The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEW
   `/dev/tty0`'s KDGETMODE and TIOCGWINSZ, then `/dev/vcsu`, or `/dev/vcs` where the console isn't UTF-8); the page
   writes it as Copy the screen does (`areas/clipboard-actions.ts`). Read-only: nothing in the unit changed. The screen
   only, no scrollback. devices.md "A text console's text".
+- **The agent shipped as the build's zopfli gzip (loop 9, the user's ask):** `waarm64-agent.gz` (105,912 bytes,
+  `images/build.sh agent`, in SHA256SUMS), handed to fw_cfg as it is; vite.config.ts `plainGzip` and .htaccess drop the
+  `Content-Encoding` servers put on a `.gz`; an ELF that arrives decoded is gzipped by the page as before. Cloudflare's
+  headers on it: check at the next deploy.
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real

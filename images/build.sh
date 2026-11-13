@@ -126,6 +126,7 @@ EDK2_SNAPSHOT=20260924T000000Z
 EDK2_TOOLS="build-essential uuid-dev acpica-tools python3 python-is-python3 dosfstools mtools"
 AGENT_CONTAINER=docker.io/library/rust@sha256:0cce0a5e0e8ba67b455257a3a02a1d99005f382748789d6464460028810f1627 # 1.99.0-alpine3.24, multi-arch
 AGENT_TOOLCHAIN=1.99.0 # the image's, and agent/rust-toolchain.toml's
+AGENT_TOOLS="zopfli=1.0.3_git20260213-r0" # the gzip the page ships (waarm64-agent.gz): 7% smaller than level 6's
 VENUS_CONTAINER=docker.io/library/node@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 # 26.13.0-trixie-slim, multi-arch
 VENUS_SNAPSHOT=20261106T000000Z # after the image's Debian (2026-11-05)
 VENUS_TOOLS="git curl ca-certificates build-essential pkg-config meson ninja-build python3 python3-mako python3-yaml python3-packaging bison flex libdrm-dev libvulkan-dev libzstd-dev zlib1g-dev libexpat1-dev glslang-tools"
@@ -674,6 +675,14 @@ build_agent() {
       "npm run dist refuses it; images/build.sh agent where Podman is builds that one (docs/images.md \"agent\")." > "$dst/HOST-BUILD"
   fi
   cp "$b/target/aarch64-unknown-linux-musl/release/waarm64-agent" "$dst/"
+  # What the page fetches and hands to fw_cfg as it is (web/app/guest-agent.ts): zopfli's gzip, in the image as root
+  # (apk; rootless, so the file is still the user's). Without Podman, gzip -9 (a HOST-BUILD anyway).
+  if command -v podman >/dev/null; then
+    podman run --rm -v "$root/$dst:/a:z" "$AGENT_CONTAINER" \
+      sh -c "apk add -q --no-cache $AGENT_TOOLS && zopfli -c /a/waarm64-agent > /a/waarm64-agent.gz"
+  else
+    gzip -9nc "$dst/waarm64-agent" > "$dst/waarm64-agent.gz"
+  fi
 }
 
 # Vulkan's renderer (vk/build.sh) in Node's Debian image, its work tree kept for the next build.
@@ -750,7 +759,7 @@ outputs() {
     fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
-    agent) echo agent/waarm64-agent ;;
+    agent) echo agent/waarm64-agent agent/waarm64-agent.gz ;;
     venus) echo venus/venus.wasm venus/LICENSES.txt ;;
   esac
 }

@@ -2,6 +2,7 @@
 // files (Vite's preview server over the copy, tools/serve.ts: headers and ranges), the page opens idle and boots
 // Buildroot (its images linked into the copy for the test: the copy itself has none).
 import assert from 'node:assert/strict';
+import { gunzipSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,7 +38,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); if (out) rmSync(out, { recursive: true, force: true }); });
 
-test('the static copy is the page bundled: a few hashed files, its binaries among them, no source', { skip: skipCopy }, () => {
+test('the static copy is the page bundled: a few hashed files, its binaries among them, no source', { skip: skipCopy }, async () => {
   const files = readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile()).map((f) => f.split(sep).join('/'));
   assert.ok(!files.some((f) => /\.(?:ts|svelte)$/.test(f)), `source in the copy: ${files.filter((f) => /\.(?:ts|svelte)$/.test(f)).join(', ')}`);
   for (const f of ['index.html', 'web/app/index.html', '_headers', '.htaccess', '.nojekyll', 'LICENSE', 'THIRD-PARTY-LICENSES.md', 'EDK2-LICENSES.txt']) assert.ok(files.includes(f), `${f} is missing`);
@@ -45,9 +46,13 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
     assert.ok(files.some((f) => new RegExp(`^assets/${name}-[\\w-]{8}\\.(?:js|wasm|fd)$`).test(f)), `no assets/${name}-<hash>`);
   }
   // Clipboard sharing's guest agent, which the worker fetches by its hashed name (web/app/guest-agent.ts).
-  const agent = files.find((f) => /^assets\/waarm64-agent-[\w-]{8}$/.test(f));
-  assert.ok(agent, 'no assets/waarm64-agent-<hash>');
-  assert.equal(Buffer.compare(readFileSync(join(out, agent)).subarray(0, 4), Buffer.from('\x7fELF', 'latin1')), 0, 'the agent is an ELF file');
+  const agent = files.find((f) => /^assets\/waarm64-agent-[\w-]{8}\.gz$/.test(f));
+  assert.ok(agent, 'no assets/waarm64-agent-<hash>.gz');
+  assert.equal(Buffer.compare(gunzipSync(readFileSync(join(out, agent))).subarray(0, 4), Buffer.from('\x7fELF', 'latin1')), 0, 'the agent is a gzipped ELF file');
+  // Served as the bytes it is (vite.config.ts `plainGzip`): no Content-Encoding, which would have the browser decode it.
+  const served = await fetch(`${base}/${agent}`, { headers: { 'accept-encoding': 'gzip' } });
+  assert.deepEqual([served.headers.get('content-encoding'), served.headers.get('content-type')], [null, 'application/gzip']);
+  assert.equal(Buffer.compare(Buffer.from(await served.arrayBuffer()), readFileSync(join(out, agent))), 0, "the agent's gzip as it is");
   assert.ok(files.some((f) => /^assets\/worker-[\w-]{8}\.js$/.test(f) && readFileSync(join(out, f), 'utf8').includes(agent.slice('assets/'.length))), "the worker doesn't name the agent's asset");
   const scripts = files.filter((f) => f.endsWith('.js'));
   assert.ok(scripts.length < 40, `${scripts.length} scripts: the page isn't bundled`);

@@ -1629,12 +1629,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
   stable toolchain) would drop it. Rewriting the agent's ~20 `format!`s saves ~2–3 KiB alone; not done.
   Measured 2026-11-13 on the 179,672-byte build: `opt-level = "s"` is 203,720 bytes (124,161 gzipped): worse, `"z"`
-  stays. Compressed ahead of time instead of by the page's `CompressionStream('gzip')` (113,872, level 6's size):
-  `gzip -9n` 109,790, zopfli (`pigz -11 -n`) 105,878 (−7%, ~34 ms less of the guest's fw_cfg read at ~4.2 µs a byte),
-  `xz -9e` 90,148 (the guest's script would need xz). A prebuilt `waarm64-agent.gz` (images/build.sh, its hash in
-  SHA256SUMS) would also shrink the page's download from 180 KB to 106 KB; a server must not send it with
-  `Content-Encoding: gzip` (the page would get it decoded: a magic-bytes check and the page's own compression as the
-  fallback).
+  stays. The page now ships the build's zopfli gzip (105,912; `CompressionStream`'s level 6 was 113,872); `xz -9e`
+  would be 90,148, but the guest's script would need xz. Cloudflare's static assets not yet checked for
+  `Content-Encoding` on the `.gz` (at the next deploy: the page then gzips the ELF itself, ~8 KB more for the guest).
 - **A text console's text, the rest of it** (devices.md "A text console's text"): only the screen, not the
   scrollback (fbcon keeps it in a buffer of its own, which no `/dev` node shows); and the path for a console not in
   UTF-8 mode (`/dev/vcs`'s bytes, ASCII only) not run on a guest (Debian's consoles are UTF-8); what was on a console

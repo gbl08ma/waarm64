@@ -14,27 +14,35 @@ import type { Credential } from './machine.ts';
  */
 export const AGENT_FILE = 'opt/waarm64/agent';
 
-/** Where the page fetches the binary from: the build's output (Vite copies it into the static copy, hashed). */
-export const AGENT_BINARY = new URL('../../target/images/agent/waarm64-agent', import.meta.url).href;
+/**
+ * Where the page fetches the binary from: the build's gzip of it (zopfli's, `images/build.sh agent`; Vite copies it into
+ * the static copy, hashed), handed to fw_cfg as it is.
+ */
+export const AGENT_BINARY = new URL('../../target/images/agent/waarm64-agent.gz', import.meta.url).href;
 
-/** An ELF file's first bytes: what a fetch of the binary must give (a server's page for a missing file isn't one). */
+/** An ELF file's first bytes, and a gzip stream's. */
 const ELF = [0x7f, 0x45, 0x4c, 0x46];
+const GZIP = [0x1f, 0x8b];
+
+const starts = (b: Uint8Array, magic: number[]) => magic.every((x, i) => b[i] === x);
 
 /**
  * The binary, gzipped (`AGENT_FILE`), or undefined (and why, on the console) if it can't be had: not built
  * (`images/build.sh agent`), or the server doesn't have it. The machine then starts without the agent: no unit, the port
- * never opened.
+ * never opened. A server that sends the gzip with `Content-Encoding: gzip` gives the page the ELF file itself: the page
+ * gzips that (`CompressionStream`'s, ~7% larger than the build's).
  */
 export async function agentBinary(url = AGENT_BINARY): Promise<Uint8Array | undefined> {
   try {
     const r = await fetch(url);
     const b = r.ok ? new Uint8Array(await r.arrayBuffer()) : undefined;
-    if (b && ELF.every((x, i) => b[i] === x))
+    if (b && starts(b, GZIP)) return b;
+    if (b && starts(b, ELF))
       return new Uint8Array(
         await new Response(new Blob([b]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(),
       );
     console.warn(
-      `clipboard sharing: no agent at ${url} (${r.status}${b ? ', not an ELF file' : ''}): images/build.sh agent builds it`, // i18n-ignore: a developer's (the console)
+      `clipboard sharing: no agent at ${url} (${r.status}${b ? ', not a gzip or an ELF file' : ''}): images/build.sh agent builds it`, // i18n-ignore: a developer's (the console)
     );
   } catch (e) {
     console.warn(`clipboard sharing: the agent's fetch failed (${String(e)})`); // i18n-ignore: a developer's (the console)

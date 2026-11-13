@@ -291,7 +291,7 @@ test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/wa
   }
 });
 
-test("the guest agent's binary: fetched whole if it is an ELF file, gzipped; otherwise none (the machine starts without it)", async () => {
+test("the guest agent's binary: the build's gzip as it is; an ELF file (a server that decoded the gzip) gzipped; otherwise none (the machine starts without it)", async () => {
   const elf = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0]);
   const at = (body: BodyInit | null, status = 200) => `data:application/octet-stream;base64,${status === 200 && body instanceof Uint8Array ? Buffer.from(body).toString('base64') : ''}`;
   const warn = console.warn;
@@ -299,6 +299,8 @@ test("the guest agent's binary: fetched whole if it is an ELF file, gzipped; oth
   console.warn = (m: string) => warned.push(m);
   try {
     assert.deepEqual(new Uint8Array(gunzipSync((await agentBinary(at(elf)))!)), elf, 'gzipped for fw_cfg');
+    const gz = gzipSync(elf, { level: 9 });
+    assert.equal(Buffer.compare(Buffer.from((await agentBinary(at(new Uint8Array(gz))))!), gz), 0, 'the gzip as it came');
     assert.equal(await agentBinary(at(new TextEncoder().encode('<!doctype html>'))), undefined, "a server's page");
     assert.equal(await agentBinary('http://127.0.0.1:1/waarm64-agent'), undefined, 'nothing there');
   } finally {

@@ -1901,14 +1901,16 @@ stops if a binary is missing, Vulkan's renderer among them), then builds the pag
 - `assets/`: the page's code bundled, minified, with source maps: the page (`index-<hash>.js`, its CSS), each worker
   (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
   deflate) and the sound worklet; and the binaries the page fetches, the core (`waarm64_core.wasm`), the tailnet client
-  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`), clipboard sharing's guest agent (`waarm64-agent`, fetched only by a machine with
+  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`), clipboard sharing's guest agent (`waarm64-agent.gz`, the build's gzip, fetched only by a machine with
   the setting) and Vulkan's renderer (`venus.wasm`, 12 MiB, fetched only by a machine with
   Vulkan on: vk/README.md "On the page"). Every name is hashed, so a host's caches never serve a stale file with a new
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the
   page is.
 - From `web/app/public/`, copied as they are: `_headers` (Netlify, Cloudflare Pages and Workers' static assets) and
-  `.htaccess` (Apache) with the two headers, `.nojekyll`, and `web/app/index.html`, which redirects to the root with
+  `.htaccess` (Apache) with the two headers (and, for Apache, the agent's `.gz` as `application/gzip` with no
+  `Content-Encoding`, which would have the browser decode it; Vite's servers likewise: vite.config.ts `plainGzip`;
+  a server that decodes it all the same costs only the page's own gzip of the ELF it gets), `.nojekyll`, and `web/app/index.html`, which redirects to the root with
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
   firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh

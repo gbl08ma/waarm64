@@ -69,8 +69,11 @@ export function firmwareStale(root = ROOT): string | undefined {
   return r.status === 0 ? undefined : 'the UEFI firmware is out of date';
 }
 
-/** Clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3), which the page hands a machine with the setting. */
-export const AGENT = 'target/images/agent/waarm64-agent';
+/**
+ * Clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3), which the page hands a machine with the setting:
+ * the build's gzip of it (web/app/guest-agent.ts `AGENT_BINARY`).
+ */
+export const AGENT = 'target/images/agent/waarm64-agent.gz';
 /** Beside a build of the agent by the host's cargo (images/build.sh agent without Podman): for tests, not for `npm run dist`. */
 export const AGENT_HOST_BUILD = 'target/images/agent/HOST-BUILD';
 

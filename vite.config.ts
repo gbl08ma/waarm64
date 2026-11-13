@@ -3,6 +3,7 @@
 // client and the firmware as hashed assets) to target/dist/; the dev server (tools/serve.ts, `npm run serve`, the tests)
 // serves the whole repository from source, so the test pages under tests/browser/ and bench/ load web/'s modules as they are.
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import sirv from 'sirv';
 import { defineConfig, type Plugin } from 'vite';
@@ -47,6 +48,34 @@ const nodeModules = (): Plugin => ({
 });
 
 /**
+ * A `.gz` file as the bytes it is (the guest agent's gzip, which the page hands to the guest compressed: web/app/guest-agent.ts):
+ * sirv, the dev server's and the preview's static server, sends one with `Content-Encoding: gzip`, so the browser would
+ * decode it. Its headers lose that, and say `application/gzip`.
+ */
+const plainGzip = (): Plugin => {
+  // Returning nothing: a function returned would be taken for a hook to run after Vite's own middleware.
+  const use = (server: { middlewares: { use: (f: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => unknown } }) => {
+    server.middlewares.use((req, res, next) => {
+      if ((req.url ?? '').split('?')[0].endsWith('.gz')) {
+        const writeHead = res.writeHead.bind(res) as (code: number, headers?: OutgoingHttpHeaders) => ServerResponse;
+        res.writeHead = ((code: number, headers?: OutgoingHttpHeaders) => {
+          // Both ways a server may have them: set on the response (Vite's own copy of sirv, the preview's), or given here.
+          res.removeHeader('Content-Encoding');
+          res.setHeader('Content-Type', 'application/gzip');
+          if (headers) {
+            delete headers['Content-Encoding'];
+            headers['Content-Type'] = 'application/gzip';
+          }
+          return writeHead(code, headers);
+        }) as typeof res.writeHead;
+      }
+      next();
+    });
+  };
+  return { name: 'waarm64-plain-gzip', configureServer: use, configurePreviewServer: use };
+};
+
+/**
  * The dev server's `/`: the page, which is web/app/ in the repository. And target/ (the guest images, the binaries) as
  * plain files, with range requests, ahead of Vite's own handling, which takes a file without an extension (a kernel's
  * `Image`) for a module.
@@ -63,7 +92,7 @@ const rootPage = (): Plugin => ({
   },
 });
 
-/** Assets' names in the copy: Vite's, but a file without an extension (the guest agent, waarm64-agent) keeps none (no trailing dot after its hash). */
+/** Assets' names in the copy: Vite's, but a file without an extension keeps none (no trailing dot after its hash). */
 const assetFileNames = (a: { names?: string[] }) => (/\.[^./]+$/.test(a.names?.[0] ?? '') ? 'assets/[name]-[hash][extname]' : 'assets/[name]-[hash]');
 
 // Mode `test` (tools/serve.ts `startServer`, the tests' and benchmarks' dev server): no watching or hot reloading, and
@@ -75,7 +104,7 @@ export default defineConfig(({ command, mode }) => ({
   appType: 'mpa',
   // Copied as they are into the static copy: the hosts' headers files and web/app/'s old address's redirect.
   publicDir: command === 'build' ? `${ROOT}web/app/public` : false,
-  plugins: [svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), nodeModules()],
+  plugins: [plainGzip(), svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), nodeModules()],
   resolve: mode === 'test' ? { conditions: ['module', 'browser', 'production'] } : {},
   worker: { format: 'es', plugins: () => [nodeModules()], rollupOptions: { output: { assetFileNames } } },
   // No pre-bundling: the few packages the page uses are ES modules, and every test process runs its own dev server (a
