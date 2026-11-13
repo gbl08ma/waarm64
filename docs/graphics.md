@@ -135,7 +135,7 @@ why the device is as it is.
   | GNOME on Wayland; Xorg | Not measured | Expected: live for GNOME, `xrandr --auto` for Xorg |
 
   Live resize is the guest agent's job (devices.md "The guest's agent": wlr-output-management's custom mode, what
-  `swaymsg … mode --custom` asks for; X11 not yet, backlog) or a desktop's own setting.
+  `swaymsg … mode --custom` asks for; RandR under X11) or a desktop's own setting.
 
 ### Console scrolling and the flush pacing
 

@@ -129,7 +129,7 @@ a stream of its own, begun at a frame: a restore resets the guest's transport (t
 agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 145 KB).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 151 KB).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
@@ -293,9 +293,21 @@ flight at a time; `cancelled` (the state changed under the serial) asks again at
 either way a size asked once isn't asked again until the page's changes, so a mode the user sets in the session stays
 until the window changes. A new compositor (a new connection) takes the page's size at its start. No program of the
 guest's is run (no `swaymsg`, `wlr-randr`): a compositor without the protocol (KDE's KWin on Wayland, which follows the display event by
-itself: a user's session; GNOME's mutter, expected to, unmeasured) is left alone, logged once. X11 sessions: not yet (backlog). The
-native test (`agent/src/sway_test.rs`) runs a headless sway; `tests/page-clipboard.test.ts` the Debian image's
-headless sway as the page's window changes.
+itself: a user's session; GNOME's mutter, expected to, unmeasured) is left alone, logged once. The native test (`agent/src/sway_test.rs`) runs a headless sway;
+`tests/page-clipboard.test.ts` the Debian image's headless sway as the page's window changes.
+
+**Under X11** (`agent/src/x11/randr.rs`, RandR 1.2 by hand on the child's X connection; no `xrandr`): only for an X11
+session, one with no Wayland compositor (the child connects to the session's X server for the size alone if the
+clipboard isn't shared; Xwayland's outputs, `XWAYLAND*`, are the compositor's and left alone). For a size not asked
+yet: GetScreenResources (the server probes its outputs, so a kernel's mode of the new size after the display event is
+found), GetOutputInfo of each output, GetGeometry of the root; the first connected output with a CRTC; its own mode of
+the page's size, else the server's (AddOutputMode), else one made (CreateMode named `WxH`, CVT-like timings at 60 Hz:
+the virtual GPU reads none; a mode of that name but another size is someone's own and stops it). Then SetScreenSize to
+hold the CRTC if the mode doesn't fit the screen now, SetCrtcConfig (0,0, no rotation, the one output), SetScreenSize to
+the mode (its millimetres at 96 dpi); one run at a time, a size that came meanwhile after it; an error or a refused
+CRTC is logged. A desktop's own daemon (KDE's kscreen) may set the same size too. The native test
+(`agent/src/x11_test.rs`) runs Xorg on the dummy driver (Xvfb's screen can't grow past the size it started with; the Debian
+image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn't measured (backlog).
 
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:

@@ -62,7 +62,8 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
   (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug
   virglrenderer for the oracle, graphics.md "Tools"), sway and foot, and wl-clipboard (the clipboard agent's native test
   against a headless sway, `agent/src/sway_test.rs`), and xclip (its X11 test against Xvfb, `agent/src/x11_test.rs`;
-  Xvfb and xauth were there already). qemu-ui-opengl is installed but QEMU's
+  Xvfb and xauth were there already), xf86-video-dummy and xrandr (the agent's RandR test against Xorg on the dummy
+  driver, `agent/src/x11_test.rs`; Xorg was there already). qemu-ui-opengl is installed but QEMU's
   `virtio-gpu-gl` can't run (no DRM render node in the VM: graphics.md "Findings").
 - Vulkan, for VK0 (bench/vulkan/REPORT.md): vulkan-devel, vulkan-tools, vulkan-validationlayers, shaderc (glslc),
   spirv-tools, spirv-cross, Mesa-libGLESv3-devel, 7zip (unpacks the macOS SDK); for its tools (`tools/venus-oracle/`,

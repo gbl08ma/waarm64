@@ -22,6 +22,9 @@ fn have(cmd: &str, arg: &str) -> bool {
         .is_ok()
 }
 
+/// Xorg on the dummy driver: one screen, room for 2048×2048 (its outputs start at 1024×768).
+const XORG_DUMMY: &str = "Section \"Device\"\n  Identifier \"d\"\n  Driver \"dummy\"\n  VideoRam 65536\nEndSection\nSection \"Screen\"\n  Identifier \"s\"\n  Device \"d\"\n  DefaultDepth 24\n  SubSection \"Display\"\n    Depth 24\n    Virtual 2048 2048\n  EndSubSection\nEndSection\n";
+
 /// The tests one at a time: each one's child takes any display of the user's it finds (another test's too).
 static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -43,6 +46,11 @@ struct Xvfb {
 impl Xvfb {
     /// An Xvfb on a free display number, its cookie in a file of the test's own (`-auth`, as startx does).
     fn start(name: &str) -> Xvfb {
+        Xvfb::start_with(name, false)
+    }
+
+    /// `start`, or with `xorg` an Xorg on the dummy driver (RandR's modes can be made and set on it, not on Xvfb's).
+    fn start_with(name: &str, xorg: bool) -> Xvfb {
         let dir =
             std::env::temp_dir().join(format!("waarm64-agent-x11-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -71,15 +79,32 @@ impl Xvfb {
         assert!(st.success());
         #[allow(clippy::zombie_processes)]
         // waited for in Drop, or the test fails (and its process ends)
-        let server = Command::new("Xvfb")
-            .arg(format!(":{n}"))
-            .arg("-auth")
-            .arg(&auth)
-            .args(["-nolisten", "tcp", "-screen", "0", "320x240x24"])
-            .stdout(Stdio::null())
-            .stderr(std::fs::File::create(dir.join("xvfb.log")).unwrap())
-            .spawn()
-            .unwrap();
+        let server = if xorg {
+            std::fs::write(dir.join("xorg.conf"), XORG_DUMMY).unwrap();
+            Command::new("Xorg")
+                .arg(format!(":{n}"))
+                .arg("-config")
+                .arg(dir.join("xorg.conf"))
+                .arg("-logfile")
+                .arg(dir.join("xorg.log"))
+                .arg("-auth")
+                .arg(&auth)
+                .args(["-noreset", "-nolisten", "tcp"])
+                .stdout(Stdio::null())
+                .stderr(std::fs::File::create(dir.join("xvfb.log")).unwrap())
+                .spawn()
+                .unwrap()
+        } else {
+            Command::new("Xvfb")
+                .arg(format!(":{n}"))
+                .arg("-auth")
+                .arg(&auth)
+                .args(["-nolisten", "tcp", "-screen", "0", "320x240x24"])
+                .stdout(Stdio::null())
+                .stderr(std::fs::File::create(dir.join("xvfb.log")).unwrap())
+                .spawn()
+                .unwrap()
+        };
         let x = Xvfb {
             dir,
             server,
@@ -866,4 +891,83 @@ fn two_incr_transfers_to_one_window_both_end() {
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
     let _ = std::fs::remove_dir_all(&runtime);
+}
+
+impl Xvfb {
+    /// The screen's size as xrandr says it (`current W x H`).
+    fn screen(&self) -> Option<(u32, u32)> {
+        let out = self.cmd("timeout").args(["5", "xrandr"]).output().ok()?;
+        let s = String::from_utf8(out.stdout).ok()?;
+        let at = s.find("current ")? + 8;
+        let mut it = s[at..].split(',').next()?.split(" x ");
+        Some((
+            it.next()?.trim().parse().ok()?,
+            it.next()?.trim().parse().ok()?,
+        ))
+    }
+
+    fn screen_becomes(&self, size: (u32, u32), ms: u64) -> bool {
+        let end = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < end {
+            if self.screen() == Some(size) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        false
+    }
+}
+
+#[test]
+fn sets_an_x_servers_screen_to_the_pages_size_without_the_clipboard() {
+    let dummy = std::path::Path::new("/usr/lib64/xorg/modules/drivers/dummy_drv.so").exists()
+        || std::path::Path::new("/usr/lib/xorg/modules/drivers/dummy_drv.so").exists();
+    if !have("Xorg", "-version") || !dummy || !have("xrandr", "--version") || !have("xauth", "-V") {
+        eprintln!("SKIPPED: no Xorg with the dummy driver, xrandr or xauth (docs/devenv.md)");
+        return;
+    }
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    let x = Xvfb::start_with("randr", true);
+    assert!(
+        x.screen_becomes((1024, 768), 10_000),
+        "Xorg's own size: {:?}",
+        x.screen()
+    );
+    let size = |w: u32, h: u32| [w.to_le_bytes(), h.to_le_bytes()].concat();
+    let (mut page, served, _runtime) = child(
+        |r| Where {
+            jobs: Jobs {
+                clip: false,
+                resize: true,
+            },
+            ..x.at(r)
+        },
+        "randr",
+    );
+    // A size no mode has: made, then set (the screen grown to it).
+    page.send(frame::DISPLAY, &size(1200, 904));
+    assert!(x.screen_becomes((1200, 904), 10_000), "{:?}", x.screen());
+    // Smaller, one of the output's own modes.
+    page.send(frame::DISPLAY, &size(800, 600));
+    assert!(x.screen_becomes((800, 600), 10_000), "{:?}", x.screen());
+    // Wider but shorter than now: the screen grown in one side, then sized to the mode.
+    page.send(frame::DISPLAY, &size(1024, 576));
+    assert!(x.screen_becomes((1024, 576), 10_000), "{:?}", x.screen());
+    // The made mode again: found, not made twice.
+    page.send(frame::DISPLAY, &size(1200, 904));
+    assert!(x.screen_becomes((1200, 904), 10_000), "{:?}", x.screen());
+    let modes = x.cmd("xrandr").output().unwrap().stdout;
+    let made = String::from_utf8_lossy(&modes)
+        .lines()
+        .filter(|l| l.trim_start().starts_with("1200x904 "))
+        .count();
+    assert_eq!(
+        made,
+        1,
+        "one mode of 1200x904: {}",
+        String::from_utf8_lossy(&modes)
+    );
+    assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
+    drop(page);
+    assert_eq!(served.join().unwrap(), Ok("session: the parent is gone"));
 }

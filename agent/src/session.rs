@@ -718,14 +718,16 @@ impl Child {
 
     // ---- X11's way (src/x11.rs): where Wayland has no data-control.
 
-    /// Whether the X server's clipboard is to be shared: no compositor, or one known to have no data-control.
+    /// Whether the X server is wanted: its clipboard to be shared (no compositor, or one known to have no
+    /// data-control), or its screen's size set (no compositor: an X11 session; under a compositor Xwayland's screen is
+    /// the compositor's).
     fn x_wanted(&self) -> bool {
-        self.jobs.clip
-            && !self.x11.is_empty()
+        let clip = self.jobs.clip
             && self
                 .wl
                 .as_ref()
-                .is_none_or(|w| w.inited && w.device.is_none())
+                .is_none_or(|w| w.inited && w.device.is_none());
+        !self.x11.is_empty() && (clip || (self.jobs.resize && self.wl.is_none()))
     }
 
     /// The X server's clipboard is the one shared (its connection set up).
@@ -747,8 +749,11 @@ impl Child {
             }
             let home = x11::home_of(self.uid);
             let cookie = x11::cookie(n, &procs, home.as_deref());
-            match X::connect(&self.x11, n, cookie.as_deref(), self.uid) {
-                Ok(x) => {
+            match X::connect(&self.x11, n, cookie.as_deref(), self.uid, self.jobs) {
+                Ok(mut x) => {
+                    if let Some(size) = self.want {
+                        x.resize(size);
+                    }
                     self.x = Some(x);
                     self.xretries = 0;
                     return;
@@ -763,7 +768,7 @@ impl Child {
     }
 
     /// The X server's connection ends: if its clipboard was shared, the page hears SESSION. A server that refused us
-    /// (before the setup was done) is tried again by the retries, the first time.
+    /// (its setup not done) is tried again by the retries, the first time.
     fn x_disconnect(&mut self, why: &str) {
         let Some(x) = self.x.take() else { return };
         log(&format!("session: {why} (:{})", x.display), None);
@@ -772,6 +777,8 @@ impl Child {
             self.host = None;
             self.guest = None;
             self.probe = None;
+        }
+        if x.ready || x.is_set_up() {
             self.x_try(true, false);
         } else if !self.x_refused.contains(&x.display) {
             self.x_refused.push(x.display);
@@ -947,6 +954,9 @@ impl Child {
                     self.want = Some(size);
                     if let Some(wl) = self.wl.as_mut() {
                         wl.resize(size);
+                    }
+                    if let Some(x) = self.x.as_mut() {
+                        x.resize(size);
                     }
                 }
             }

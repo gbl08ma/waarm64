@@ -1,0 +1,452 @@
+//! The screen's size on an X server (DISPLAY: docs/devices.md "The guest's agent"): RandR 1.2 by hand on the session
+//! child's X connection (src/x11.rs), for an X11 session (one with no Wayland compositor: Xwayland's outputs, a
+//! compositor's to set, are left alone). No program of the guest's is run (no `xrandr`).
+//!
+//! When the page's size is known (and differs from the one last asked for): GetScreenResources (which has the server
+//! probe its outputs: a kernel's mode of the new size, after the display event, is found), GetOutputInfo of each
+//! output and GetGeometry of the root (the screen's size now). The output is the first connected one with a CRTC whose
+//! name isn't Xwayland's; its mode the first of the output's own of the page's size, else any of the server's of that
+//! size, else one made (CreateMode, named `WxH` as xrandr's `--newmode` habit has it, with CVT-like timings: the
+//! virtual GPU reads none), which AddOutputMode gives the output. Then the screen is grown to hold the CRTC if it must
+//! (SetScreenSize), the CRTC set (SetCrtcConfig at 0,0 with the mode, no rotation, the one output), and the screen
+//! sized to the mode (its millimetres at 96 dpi). One such run at a time; a size that comes meanwhile runs after it.
+
+use super::{Want, X, op, u16_at, u32_at};
+use crate::log;
+use crate::prelude::*;
+
+/// RandR's minor opcodes.
+mod minor {
+    pub const QUERY_VERSION: u8 = 0;
+    pub const SET_SCREEN_SIZE: u8 = 7;
+    pub const GET_SCREEN_RESOURCES: u8 = 8;
+    pub const GET_OUTPUT_INFO: u8 = 9;
+    pub const CREATE_MODE: u8 = 16;
+    pub const ADD_OUTPUT_MODE: u8 = 18;
+    pub const SET_CRTC_CONFIG: u8 = 21;
+}
+
+/// The core's GetGeometry.
+const GET_GEOMETRY: u8 = 14;
+/// SetCrtcConfig's rotation: none.
+const ROTATE_0: u16 = 1;
+
+/// A reply of RandR's awaited.
+#[derive(Clone, Copy, Debug)]
+pub enum Step {
+    Extension,
+    Version,
+    Resources,
+    Output(u32),
+    Geometry,
+    Created,
+    Crtc,
+}
+
+/// A mode the server has: its id and size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Mode {
+    id: u32,
+    width: u16,
+    height: u16,
+}
+
+/// What a run has learnt so far.
+#[derive(Default)]
+struct Run {
+    size: (u32, u32),
+    /// GetScreenResources answered.
+    resources: bool,
+    config_time: u32,
+    modes: Vec<(Mode, String)>,
+    outputs_left: usize,
+    /// The output chosen, its CRTC, and its own modes.
+    output: Option<(u32, u32, Vec<u32>)>,
+    /// An output Xwayland's (none other chosen: the compositor's to set).
+    xwayland: bool,
+    /// The root's size now.
+    screen: Option<(u16, u16)>,
+}
+
+#[derive(Default)]
+pub struct Randr {
+    /// The job: the screen's size followed (the child's `Jobs::resize`).
+    pub on: bool,
+    major: Option<u8>,
+    /// RandR 1.2 or later is there.
+    ok: bool,
+    /// The page's size, and the one last asked for (not again until the page's changes).
+    want: Option<(u32, u32)>,
+    asked: Option<(u32, u32)>,
+    run: Option<Run>,
+    told: bool,
+}
+
+impl Randr {
+    pub fn new(on: bool) -> Randr {
+        Randr {
+            on,
+            ..Default::default()
+        }
+    }
+}
+
+/// CVT-like timings for a mode of `w`×`h` at 60 Hz: ModeInfo's fields after the size (dot clock in Hz, then
+/// hsync start, end, total, skew, vsync start, end, total).
+pub fn timings(w: u16, h: u16) -> (u32, [u16; 7]) {
+    let (hs, he, ht) = (w + 48, w + 80, w + 160);
+    let (vs, ve, vt) = (h + 3, h + 7, h + 25);
+    let clock = ht as u64 * vt as u64 * 60;
+    (clock as u32, [hs, he, ht, 0, vs, ve, vt])
+}
+
+impl X {
+    /// At the setup: RandR asked for.
+    pub(super) fn randr_start(&mut self) {
+        self.req(
+            op::QUERY_EXTENSION,
+            0,
+            Some(Want::Randr(Step::Extension)),
+            |r| r.u16(5).u16(0).bytes(b"RANDR"),
+        );
+    }
+
+    /// The page's size: set, once RandR is known, unless asked already.
+    pub fn resize(&mut self, size: (u32, u32)) {
+        if !self.randr.on {
+            return;
+        }
+        self.randr.want = Some(size);
+        self.randr_go();
+    }
+
+    fn randr_go(&mut self) {
+        let r = &self.randr;
+        let (Some(major), Some(want)) = (r.major, r.want) else {
+            return;
+        };
+        if !r.ok || r.run.is_some() || r.asked == Some(want) {
+            return;
+        }
+        let root = self.root;
+        self.randr.asked = Some(want);
+        self.randr.run = Some(Run {
+            size: want,
+            ..Run::default()
+        });
+        self.req(
+            major,
+            minor::GET_SCREEN_RESOURCES,
+            Some(Want::Randr(Step::Resources)),
+            |r| r.u32(root),
+        );
+        self.req(GET_GEOMETRY, 0, Some(Want::Randr(Step::Geometry)), |r| {
+            r.u32(root)
+        });
+    }
+
+    /// A run ends (done, refused, or an error): the next size, if one came meanwhile.
+    fn randr_end(&mut self, why: Option<&str>) {
+        if let (Some(why), Some(run)) = (why, &self.randr.run) {
+            let (w, h) = run.size;
+            log(
+                &format!("session: the X server's screen at {w}x{h}: {why}"),
+                None,
+            );
+        }
+        self.randr.run = None;
+        self.randr_go();
+    }
+
+    pub(super) fn randr_error(&mut self, step: Step, code: u8) {
+        match step {
+            Step::Extension | Step::Version => self.randr.ok = false,
+            _ => self.randr_end(Some(&format!("the X server's error {code}"))),
+        }
+    }
+
+    pub(super) fn randr_reply(&mut self, step: Step, r: &[u8]) {
+        match step {
+            Step::Extension => {
+                if r.len() < 12 || r[8] == 0 {
+                    return log(
+                        "session: the X server has no RandR: its screen left as it is",
+                        None,
+                    );
+                }
+                let major = r[9];
+                self.randr.major = Some(major);
+                self.req(
+                    major,
+                    minor::QUERY_VERSION,
+                    Some(Want::Randr(Step::Version)),
+                    |q| q.u32(1).u32(3),
+                );
+            }
+            Step::Version => {
+                let (maj, min) = (u32_at(r, 8), u32_at(r, 12));
+                self.randr.ok = maj > 1 || (maj == 1 && min >= 2);
+                if !self.randr.ok {
+                    return log(
+                        &format!(
+                            "session: the X server's RandR is {maj}.{min}, not 1.2: its screen left as it is"
+                        ),
+                        None,
+                    );
+                }
+                self.randr_go();
+            }
+            Step::Resources => self.resources(r),
+            Step::Output(output) => self.output_info(output, r),
+            Step::Geometry => {
+                if let Some(run) = self.randr.run.as_mut() {
+                    run.screen = Some((u16_at(r, 16), u16_at(r, 18)));
+                }
+                self.randr_plan();
+            }
+            Step::Created => {
+                let mode = u32_at(r, 8);
+                let Some((output, crtc, _)) =
+                    self.randr.run.as_ref().and_then(|r| r.output.clone())
+                else {
+                    return self.randr_end(None);
+                };
+                let major = self.randr.major.unwrap();
+                self.req(major, minor::ADD_OUTPUT_MODE, None, |q| {
+                    q.u32(output).u32(mode)
+                });
+                self.randr_set(output, crtc, mode);
+            }
+            Step::Crtc => {
+                let status = r[1];
+                let size = self.randr.run.as_ref().map(|r| r.size);
+                if status == 0 {
+                    if let Some((w, h)) = size {
+                        log(
+                            &format!("session: the X server's screen set to {w}x{h}"),
+                            None,
+                        );
+                    }
+                    self.randr_end(None);
+                } else {
+                    self.randr_end(Some(&format!("SetCrtcConfig's status {status}")));
+                }
+            }
+        }
+    }
+
+    /// GetScreenResources' reply: its modes kept, each output asked about.
+    fn resources(&mut self, r: &[u8]) {
+        if r.len() < 32 {
+            return self.randr_end(Some("a short reply"));
+        }
+        let config_time = u32_at(r, 12);
+        let (crtcs, outputs, modes, names) = (
+            u16_at(r, 16) as usize,
+            u16_at(r, 18) as usize,
+            u16_at(r, 20) as usize,
+            u16_at(r, 22) as usize,
+        );
+        let at_outputs = 32 + 4 * crtcs;
+        let at_modes = at_outputs + 4 * outputs;
+        let at_names = at_modes + 32 * modes;
+        if r.len() < at_names + names {
+            return self.randr_end(Some("a short reply"));
+        }
+        let mut list = Vec::with_capacity(modes);
+        let mut name_at = at_names;
+        for k in 0..modes {
+            let m = &r[at_modes + 32 * k..at_modes + 32 * (k + 1)];
+            let len = u16_at(m, 26) as usize;
+            let name =
+                String::from_utf8_lossy(r.get(name_at..name_at + len).unwrap_or(&[])).into_owned();
+            name_at += len;
+            list.push((
+                Mode {
+                    id: u32_at(m, 0),
+                    width: u16_at(m, 4),
+                    height: u16_at(m, 6),
+                },
+                name,
+            ));
+        }
+        let ids: Vec<u32> = (0..outputs)
+            .map(|k| u32_at(r, at_outputs + 4 * k))
+            .collect();
+        let major = self.randr.major.unwrap();
+        let Some(run) = self.randr.run.as_mut() else {
+            return;
+        };
+        run.resources = true;
+        run.config_time = config_time;
+        run.modes = list;
+        run.outputs_left = ids.len();
+        for id in ids {
+            self.req(
+                major,
+                minor::GET_OUTPUT_INFO,
+                Some(Want::Randr(Step::Output(id))),
+                |q| q.u32(id).u32(config_time),
+            );
+        }
+        self.randr_plan();
+    }
+
+    /// GetOutputInfo's reply: the output taken if it is the first connected one with a CRTC (not Xwayland's).
+    fn output_info(&mut self, output: u32, r: &[u8]) {
+        let Some(run) = self.randr.run.as_mut() else {
+            return;
+        };
+        run.outputs_left = run.outputs_left.saturating_sub(1);
+        if r.len() >= 36 {
+            let crtc = u32_at(r, 12);
+            let connected = r[24] == 0;
+            let (crtcs, modes, clones, name_len) = (
+                u16_at(r, 26) as usize,
+                u16_at(r, 28) as usize,
+                u16_at(r, 32) as usize,
+                u16_at(r, 34) as usize,
+            );
+            let at_modes = 36 + 4 * crtcs;
+            let at_name = at_modes + 4 * modes + 4 * clones;
+            let name = r.get(at_name..at_name + name_len).unwrap_or(&[]);
+            if name.starts_with(b"XWAYLAND") {
+                run.xwayland = true;
+            } else if connected && crtc != 0 && run.output.is_none() && r.len() >= at_name {
+                let own = (0..modes).map(|k| u32_at(r, at_modes + 4 * k)).collect();
+                run.output = Some((output, crtc, own));
+            }
+        }
+        self.randr_plan();
+    }
+
+    /// Once the outputs and the screen's size are known: the mode found or made, then set.
+    fn randr_plan(&mut self) {
+        let Some(run) = self.randr.run.as_ref() else {
+            return;
+        };
+        if !run.resources || run.outputs_left > 0 || run.screen.is_none() {
+            return;
+        }
+        let Some((output, crtc, own)) = run.output.clone() else {
+            if run.xwayland && !self.randr.told {
+                self.randr.told = true;
+                log(
+                    "session: the X server is Xwayland: its screen is the compositor's",
+                    None,
+                );
+            }
+            return self.randr_end(if run.xwayland {
+                None
+            } else {
+                Some("no output to set")
+            });
+        };
+        let (w, h) = (
+            run.size.0.min(u16::MAX as u32) as u16,
+            run.size.1.min(u16::MAX as u32) as u16,
+        );
+        if run.screen == Some((w, h)) {
+            return self.randr_end(None);
+        }
+        let sized = |m: &Mode| m.width == w && m.height == h;
+        let found = own
+            .iter()
+            .find_map(|id| run.modes.iter().find(|(m, _)| m.id == *id && sized(m)))
+            .map(|(m, _)| (m.id, true))
+            .or_else(|| {
+                run.modes
+                    .iter()
+                    .find(|(m, _)| sized(m))
+                    .map(|(m, _)| (m.id, false))
+            });
+        let name = format!("{w}x{h}");
+        let named = run
+            .modes
+            .iter()
+            .find(|(_, n)| *n == name)
+            .map(|(m, _)| m.id);
+        let major = self.randr.major.unwrap();
+        match found {
+            Some((mode, true)) => self.randr_set(output, crtc, mode),
+            Some((mode, false)) => {
+                self.req(major, minor::ADD_OUTPUT_MODE, None, |q| {
+                    q.u32(output).u32(mode)
+                });
+                self.randr_set(output, crtc, mode);
+            }
+            // A mode of that name but another size (someone's own): not ours to replace.
+            None if named.is_some() => self.randr_end(Some("a mode of that name has another size")),
+            None => {
+                let (clock, t) = timings(w, h);
+                let root = self.root;
+                self.req(
+                    major,
+                    minor::CREATE_MODE,
+                    Some(Want::Randr(Step::Created)),
+                    |q| {
+                        let mut q = q.u32(root).u32(0).u16(w).u16(h).u32(clock);
+                        for v in t {
+                            q = q.u16(v);
+                        }
+                        q.u16(name.len() as u16).u32(0).bytes(name.as_bytes())
+                    },
+                );
+            }
+        }
+    }
+
+    /// The screen grown if the mode doesn't fit it, the CRTC set, the screen made the mode's size.
+    fn randr_set(&mut self, output: u32, crtc: u32, mode: u32) {
+        let Some(run) = self.randr.run.as_ref() else {
+            return;
+        };
+        let (w, h) = (run.size.0 as u16, run.size.1 as u16);
+        let (sw, sh) = run.screen.unwrap_or((w, h));
+        let config_time = run.config_time;
+        let (major, root) = (self.randr.major.unwrap(), self.root);
+        let mm = |px: u16| (px as u32 * 254).div_ceil(960);
+        let set_size = |x: &mut X, w: u16, h: u16| {
+            x.req(major, minor::SET_SCREEN_SIZE, None, |q| {
+                q.u32(root).u16(w).u16(h).u32(mm(w)).u32(mm(h))
+            });
+        };
+        let (gw, gh) = (sw.max(w), sh.max(h));
+        if (gw, gh) != (sw, sh) {
+            set_size(self, gw, gh);
+        }
+        self.req(
+            major,
+            minor::SET_CRTC_CONFIG,
+            Some(Want::Randr(Step::Crtc)),
+            |q| {
+                q.u32(crtc)
+                    .u32(0)
+                    .u32(config_time)
+                    .u16(0)
+                    .u16(0)
+                    .u32(mode)
+                    .u16(ROTATE_0)
+                    .u16(0)
+                    .u32(output)
+            },
+        );
+        if (gw, gh) != (w, h) {
+            set_size(self, w, h);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timings_are_a_modes() {
+        let (clock, t) = timings(1280, 720);
+        let [hs, he, ht, skew, vs, ve, vt] = t;
+        assert!(1280 < hs && hs < he && he < ht && skew == 0);
+        assert!(720 < vs && vs < ve && ve < vt);
+        assert_eq!(clock, ht as u32 * vt as u32 * 60);
+    }
+}

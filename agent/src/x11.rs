@@ -28,6 +28,9 @@
 
 use crate::prelude::*;
 use crate::rt::{self, Instant};
+use crate::session::Jobs;
+
+mod randr;
 use alloc::collections::VecDeque;
 use core::time::Duration;
 use rustix::event::PollFlags;
@@ -567,6 +570,8 @@ enum Want {
     },
     /// A conversion's property, read.
     Property(u32),
+    /// RandR's (src/x11/randr.rs).
+    Randr(randr::Step),
 }
 
 /// Where a conversion's bytes go.
@@ -676,13 +681,24 @@ pub struct X {
     serves: Vec<Serve>,
     /// The last serve's id.
     serve_id: u32,
+    /// The clipboard is shared over this connection.
+    clip: bool,
+    randr: randr::Randr,
 }
 
 impl X {
     /// Connects to display `n`'s socket in `dir` and sends the setup (with `cookie`, if there is one), if the socket is
     /// root's or `uid`'s (the session's user: `/tmp/.X11-unix` is anyone's to bind in, and the cookie isn't anyone's to
     /// see). Nonblocking: a server stopped with its backlog full refuses (`AGAIN`) rather than holding the child up.
-    pub fn connect(dir: &str, n: u32, cookie: Option<&[u8]>, uid: u32) -> Result<X, Errno> {
+    /// `jobs`: what the connection is for, the clipboard (CLIPBOARD watched, our windows made) and the screen's size
+    /// (RandR).
+    pub fn connect(
+        dir: &str,
+        n: u32,
+        cookie: Option<&[u8]>,
+        uid: u32,
+        jobs: Jobs,
+    ) -> Result<X, Errno> {
         let path = format!("{dir}/X{n}");
         let st = rustix::fs::stat(path.as_str())?;
         if !trusted_socket(st.st_mode, st.st_uid, uid) {
@@ -723,7 +739,14 @@ impl X {
             queue: VecDeque::new(),
             serves: Vec::new(),
             serve_id: 0,
+            clip: jobs.clip,
+            randr: randr::Randr::new(jobs.resize),
         })
+    }
+
+    /// The server took us (its setup's reply was a success).
+    pub fn is_set_up(&self) -> bool {
+        self.set_up
     }
 
     pub fn pending(&self) -> bool {
@@ -853,6 +876,12 @@ impl X {
         self.root = root;
         self.max_request = max_request.max(4096);
         self.win = base | (1 & mask);
+        if self.randr.on {
+            self.randr_start();
+        }
+        if !self.clip {
+            return;
+        }
         for (i, name) in NAMES.iter().enumerate() {
             self.req(op::INTERN_ATOM, 0, Some(Want::Atom(i)), |r| {
                 r.u16(name.len() as u16).u16(0).bytes(name.as_bytes())
@@ -912,6 +941,7 @@ impl X {
                             ));
                         }
                         Want::Held { .. } => {}
+                        Want::Randr(step) => self.randr_error(step, code),
                     }
                 }
                 // Others are a requestor's window gone mid-transfer, mostly: nothing to do.
@@ -969,6 +999,7 @@ impl X {
                 }
             }
             Want::Property(prop) => self.got_property(prop, r, evs),
+            Want::Randr(step) => self.randr_reply(step, r),
         }
         Ok(())
     }
@@ -1868,11 +1899,11 @@ mod tests {
         let (_l, dir) = listener("x11owner", 3);
         let d = dir.to_str().unwrap();
         assert!(
-            X::connect(d, 3, Some(&[7; 16]), me).is_ok(),
+            X::connect(d, 3, Some(&[7; 16]), me, Jobs::default()).is_ok(),
             "the user's own"
         );
         assert!(
-            X::connect(d, 3, Some(&[7; 16]), me + 1).is_err(),
+            X::connect(d, 3, Some(&[7; 16]), me + 1, Jobs::default()).is_err(),
             "another user's socket, bound first in the world-writable directory"
         );
         let sock = mode_of(rustix::fs::FileType::Socket);
@@ -1893,7 +1924,17 @@ mod tests {
     fn a_long_targets_list_keeps_the_types_we_know() {
         let me = rustix::process::getuid().as_raw();
         let (_l, dir) = listener("x11targets", 4);
-        let mut x = X::connect(dir.to_str().unwrap(), 4, None, me).unwrap();
+        let mut x = X::connect(
+            dir.to_str().unwrap(),
+            4,
+            None,
+            me,
+            Jobs {
+                clip: true,
+                resize: false,
+            },
+        )
+        .unwrap();
         for (i, a) in x.atoms.iter_mut().enumerate() {
             *a = 0x100 + i as u32;
         }
