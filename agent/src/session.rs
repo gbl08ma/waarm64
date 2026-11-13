@@ -258,11 +258,12 @@ pub struct Where {
 }
 
 /// A session child's jobs, from the page's HELLO: the clipboard shared (`cap::TEXT`, `cap::IMAGE`), the screen's size
-/// followed (`cap::DISPLAY`).
+/// followed (`cap::DISPLAY`), the graphical session's state said (`cap::DESKTOP`).
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub struct Jobs {
     pub clip: bool,
     pub resize: bool,
+    pub desktop: bool,
 }
 
 impl Jobs {
@@ -270,11 +271,12 @@ impl Jobs {
         Jobs {
             clip: caps & (frame::cap::TEXT | frame::cap::IMAGE) != 0,
             resize: caps & frame::cap::DISPLAY != 0,
+            desktop: caps & frame::cap::DESKTOP != 0,
         }
     }
 
     pub fn any(&self) -> bool {
-        self.clip || self.resize
+        self.clip || self.resize || self.desktop
     }
 }
 
@@ -317,6 +319,8 @@ struct Child {
     jobs: Jobs,
     /// The page's screen size (DISPLAY), which the outputs are set to.
     want: Option<(u32, u32)>,
+    /// The graphical session's state last said (DESKTOP, `frame::desktop`).
+    desktop: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -374,6 +378,7 @@ pub fn serve(
         Jobs {
             clip: true,
             resize: false,
+            desktop: false,
         },
     )
 }
@@ -451,6 +456,7 @@ pub fn serve_at(
         stop: None,
         jobs: at.jobs,
         want: None,
+        desktop: frame::desktop::NONE,
     };
     c.connect(true);
     c.x_try(true, false);
@@ -463,6 +469,7 @@ pub fn serve_at(
             x.expire(Instant::now(), &mut evs);
             c.x_events(evs);
         }
+        c.say_desktop();
         c.flush();
         if let Some(why) = c.stop.take() {
             return Ok(why);
@@ -719,15 +726,37 @@ impl Child {
     // ---- X11's way (src/x11.rs): where Wayland has no data-control.
 
     /// Whether the X server is wanted: its clipboard to be shared (no compositor, or one known to have no
-    /// data-control), or its screen's size set (no compositor: an X11 session; under a compositor Xwayland's screen is
-    /// the compositor's).
+    /// data-control), or, with no compositor (an X11 session; under a compositor Xwayland's screen is the
+    /// compositor's), its screen's size set or its state said.
     fn x_wanted(&self) -> bool {
         let clip = self.jobs.clip
             && self
                 .wl
                 .as_ref()
                 .is_none_or(|w| w.inited && w.device.is_none());
-        !self.x11.is_empty() && (clip || (self.jobs.resize && self.wl.is_none()))
+        let session = (self.jobs.resize || self.jobs.desktop) && self.wl.is_none();
+        !self.x11.is_empty() && (clip || session)
+    }
+
+    /// The graphical session now (`frame::desktop`): a compositor's once its globals are known, else an X server's
+    /// once it took us.
+    fn desktop_now(&self) -> u8 {
+        if self.wl.as_ref().is_some_and(|w| w.inited) {
+            frame::desktop::WAYLAND
+        } else if self.x.as_ref().is_some_and(|x| x.is_set_up()) {
+            frame::desktop::X11
+        } else {
+            frame::desktop::NONE
+        }
+    }
+
+    /// DESKTOP to the parent when the session's state changed (the page asked for it: `Jobs::desktop`).
+    fn say_desktop(&mut self) {
+        let now = self.desktop_now();
+        if self.jobs.desktop && now != self.desktop {
+            self.desktop = now;
+            self.send(frame::DESKTOP, |o| o.push(now));
+        }
     }
 
     /// The X server's clipboard is the one shared (its connection set up).
@@ -1732,6 +1761,7 @@ pub fn x_jobs(jobs: Jobs, compositor: bool) -> Jobs {
     Jobs {
         clip: jobs.clip,
         resize: jobs.resize && !compositor,
+        desktop: jobs.desktop,
     }
 }
 
@@ -1756,15 +1786,17 @@ mod tests {
         let both = Jobs {
             clip: true,
             resize: true,
+            desktop: true,
         };
         assert_eq!(x_jobs(both, false), both, "an X11 session: both");
         assert_eq!(
             x_jobs(both, true),
             Jobs {
                 clip: true,
-                resize: false
+                resize: false,
+                desktop: true
             },
-            "under a compositor (one without data-control): the clipboard only"
+            "under a compositor (one without data-control): not the size"
         );
     }
 
@@ -1827,6 +1859,7 @@ mod tests {
             jobs: Jobs {
                 clip: true,
                 resize: false,
+                desktop: false,
             },
         };
         let child = std::thread::spawn(move || serve_at(theirs, at, 0));

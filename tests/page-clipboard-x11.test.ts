@@ -23,6 +23,7 @@ import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { desktopNow, desktops, recordDesktop } from './page-desktop.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = 'target/images/debian-sway/disk.qcow2';
@@ -122,16 +123,20 @@ async function hostImage(page: Page, f: (x: HostImage) => boolean, what: string,
     await page.waitForTimeout(250);
   }
 }
-/** Waits for the agent's session child on the X server's CLIPBOARD (display 1), in a session after `after`. */
+/**
+ * Waits for the agent's session child on the X server's CLIPBOARD (display 1), in a session after `after`, and for the
+ * page to say the guest's desktop is X11's (DESKTOP).
+ */
 async function xUp(page: Page, after = 0) {
   for (let i = 0; ; i++) {
     const lines = await journal(page);
     const m = [...lines.matchAll(/a child for session (\w+) \(uid 1000\)/g)].pop();
-    if (m && lines.slice(lines.lastIndexOf(m[0])).includes("on the X server's CLIPBOARD (:1)")) {
+    const desktop = await desktopNow(page);
+    if (m && desktop === 'x11' && lines.slice(lines.lastIndexOf(m[0])).includes("on the X server's CLIPBOARD (:1)")) {
       const session = Number(m[1].replace(/\D/g, ''));
       if (session > after) return { session, journal: lines };
     }
-    if (i > 90) assert.fail(`the agent's child didn't come up on X: the agent says: ${lines}; X says: ${await run(page, 'tail -c 600 /tmp/x11.log; ls -la /tmp/.X11-unix; ps -o pid,user,args -u user')}`);
+    if (i > 90) assert.fail(`the agent's child didn't come up on X (the page's desktop: ${desktop}): the agent says: ${lines}; X says: ${await run(page, 'tail -c 600 /tmp/x11.log; ls -la /tmp/.X11-unix; ps -o pid,user,args -u user')}`);
     await page.waitForTimeout(1000);
   }
 }
@@ -159,6 +164,7 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
   const h = await hello(page);
   assert.ok(h.caps & 2, `the agent shares text (caps ${h.caps})`);
   await onSerial(page, `${X}\n`);
+  await recordDesktop(page);
   // The user's next login is an X session: sway ends (and its session), getty logs the user in again.
   await run(page, 'touch /tmp/x11; for i in $(seq 60); do pgrep -x sway >/dev/null && break; sleep 1; done; pkill -x sway; echo switched');
   const up = await xUp(page);
@@ -295,6 +301,7 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
   // The X server ends (and its session); getty logs the user in again, X comes back, and so does sharing.
   await run(page, 'pkill -x Xvfb; echo stopped');
   const again = await xUp(page, up.session);
+  assert.deepEqual((await desktops(page)).slice(-3), ['x11', 'none', 'x11'], "the page's desktop: down with X, up with it again");
   t.diagnostic(`X again, session ${again.session}`);
   await run(page, 'printf guest-after-x-again | xc xclip -i -selection clipboard >/dev/null 2>&1; echo copied');
   await hostHas(page, 'guest-after-x-again', 'xclip with X again');

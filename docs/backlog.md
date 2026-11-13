@@ -1318,7 +1318,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
   has no serial getty would need its own. systemd 254+ guests on firmware machines say READY=1 on the notify socket
   (devices.md "vsock"), and the guest agent's HELLO is a sign too (on by default, systemd 256+); a guest with neither
-  (no systemd, an older one) still depends on the marker. Not built: a compositor's first cursor or 3D context on the virtio-gpu (desktops only).
+  (no systemd, an older one) still depends on the marker. The agent's DESKTOP (devices.md "The desktop's state")
+  says when a compositor or an X server is up, but only to the tests (`body[data-desktop]`): the user chose not to show
+  it, and the boot card and the state line don't use it. Not built: a compositor's first cursor or 3D context on the virtio-gpu.
 - **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
   EDK2's terminal driver, and a fast run of arrow keys can lose bytes (the PL011's FIFO against a guest that polls;
   frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
@@ -1612,7 +1614,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 165,008 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 165,904 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the

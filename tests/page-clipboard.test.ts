@@ -29,6 +29,7 @@ import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { desktopNow, desktops, recordDesktop } from './page-desktop.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = 'target/images/debian-sway/disk.qcow2';
@@ -197,18 +198,22 @@ async function outputIs(page: Page, want: Size | string, what: string) {
     await page.waitForTimeout(500);
   }
 }
-/** Waits for sway's socket and the agent's session child on the compositor's data-control, in session `not` or later. */
+/**
+ * Waits for sway's socket and the agent's session child on the compositor's data-control, in session `not` or later,
+ * and for the page to say the guest's desktop is Wayland's (DESKTOP).
+ */
 async function swayUp(page: Page, after = 0) {
   for (let i = 0; ; i++) {
     const lines = await journal(page);
     const m = [...lines.matchAll(/a child for session (\w+) \(uid 1000\)/g)].pop();
     const sock = await run(page, 'ls /run/user/1000/ 2>/dev/null | grep -c "^wayland-[0-9]*$"');
-    if (m && sock === '1' && /on the compositor's \w+data_control_manager_v1/.test(lines.slice(lines.lastIndexOf(m[0])))) {
+    const desktop = await desktopNow(page);
+    if (m && sock === '1' && desktop === 'wayland' && /on the compositor's \w+data_control_manager_v1/.test(lines.slice(lines.lastIndexOf(m[0])))) {
       if (Number(m[1].replace(/\D/g, '')) > after) return { session: Number(m[1].replace(/\D/g, '')), journal: lines };
     }
     if (i > 60) {
       const ns = await run(page, 'p=$(systemctl show -p MainPID --value waarm64-agent); cat /proc/$p/wchan; echo; grep -h inotify /proc/$p/fdinfo/*; cat /run/systemd/seats/seat0 | grep ACTIVE; s=$(sed -n "s/^ACTIVE=//p" /run/systemd/seats/seat0); grep -E "^(UID|STATE|CLASS|TYPE)=" /run/systemd/sessions/$s; ls /run/systemd/sessions; ps -o pid,user,args --ppid $p; loginctl list-sessions --no-legend; journalctl -b -u getty@tty1 -o cat --no-pager | tail -5');
-      assert.fail(`sway or the agent's child didn't come up: sockets ${sock}; the agent says: ${lines}; sway says: ${await run(page, 'grep -v Xwayland /tmp/sway.log | tail -c 900; journalctl -b -o cat --no-pager | grep -iE "segfault|dumped|sway" | tail -4')}; the agent's namespace: ${ns}`);
+      assert.fail(`sway or the agent's child didn't come up: sockets ${sock}, the page's desktop ${desktop}; the agent says: ${lines}; sway says: ${await run(page, 'grep -v Xwayland /tmp/sway.log | tail -c 900; journalctl -b -o cat --no-pager | grep -iE "segfault|dumped|sway" | tail -4')}; the agent's namespace: ${ns}`);
     }
     await page.waitForTimeout(1000);
   }
@@ -231,6 +236,7 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   assert.ok(h.caps & 2, `the agent shares text (caps ${h.caps})`);
   // In the serial shell itself (a command's $(…) would define it in a subshell).
   await onSerial(page, `${W}\n`);
+  await recordDesktop(page);
   const up = await swayUp(page);
   t.diagnostic(`sway and the agent's child in session ${up.session}: ${up.journal}`);
   // The session sway runs in is a tty's (logged in by getty), active on seat0: the agent found it all the same.
@@ -443,6 +449,7 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   await guestHasText(page, 'host before sway again', 'the paste chord before sway again');
   await run(page, 'pkill -x sway; echo stopped');
   const again = await swayUp(page, up.session);
+  assert.deepEqual((await desktops(page)).slice(-3), ['wayland', 'none', 'wayland'], "the page's desktop: down with sway, up with the new one");
   t.diagnostic(`sway again, session ${again.session}; its runs: ${await run(page, 'grep "^== sway" /tmp/sway.log')}`);
   await outputIs(page, last, "the new sway at the page's size (its config says 800x600)");
   await guestHasText(page, 'host before sway again', "the host's text in the new session (SESSION)");

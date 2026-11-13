@@ -3,7 +3,10 @@
 // each agent's HELLO (a boot, the agent started again, a restore: the restored guest's agent connects again), after a
 // save's pause (`syncClock`, web/app/areas/snapshot-actions.ts), and when the host's own sleep shows (the wall clock
 // moving away from `performance.now()`, which the guest's counter follows and which may not count a host's sleep); and
-// the screen's size, which the agent's session follows (DISPLAY: the guest's compositor or X server set to it).
+// the screen's size, which the agent's session follows (DISPLAY: the guest's compositor or X server set to it); and the
+// guest's graphical session as the agent says it (DESKTOP), as `body[data-desktop]` for the tests' waits (nothing the
+// user sees: docs/devices.md "The desktop's state").
+import { DESKTOP } from '../../agent-frame.ts';
 import { AgentLink, pageCaps } from '../agent-link.ts';
 import { clockSync } from '../settings.ts';
 import type { ClipboardShare } from '../clipboard.ts';
@@ -16,6 +19,13 @@ export type RunAgent = {
   begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined;
   end(): void;
   restored(template: boolean): void;
+};
+
+/** `body[data-desktop]`'s words for DESKTOP's states (absent: no agent). */
+const DESKTOP_WORDS: Record<number, string> = {
+  [DESKTOP.NONE]: 'none',
+  [DESKTOP.WAYLAND]: 'wayland',
+  [DESKTOP.X11]: 'x11',
 };
 
 /** How often the page compares the wall clock with `performance.now()`. */
@@ -46,6 +56,11 @@ export class AgentActions {
     window.__agent = link; // the tests' hooks
     window.__agentStub = ch.agentStub ? ch.agent?.port2 : undefined;
     if (!link) return undefined;
+    const desktop = (d: number) => {
+      document.body.dataset.desktop = DESKTOP_WORDS[d] ?? 'none';
+    };
+    desktop(link.desktop);
+    link.onDesktop = desktop;
     if (size) link.display(size);
     link.onHello.push(up, () => this.syncClock());
     let offset = Date.now() - performance.now();
@@ -64,6 +79,7 @@ export class AgentActions {
     clearInterval(this.#timer);
     this.#timer = undefined;
     window.__agent = undefined;
+    delete document.body.dataset.desktop;
   }
 
   /** The screen's size the guest is asked for now (a new window size, settled): the agent's session takes it too. */

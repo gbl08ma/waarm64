@@ -194,6 +194,7 @@ impl Xvfb {
             jobs: Jobs {
                 clip: true,
                 resize: false,
+                desktop: false,
             },
         }
     }
@@ -527,6 +528,7 @@ fn a_compositor_without_data_control_gives_way_to_x11() {
         jobs: Jobs {
             clip: true,
             resize: false,
+            desktop: false,
         },
     };
     let child = std::thread::spawn(move || session::serve_at(theirs, w, 0x0300_0000));
@@ -939,6 +941,7 @@ fn sets_an_x_servers_screen_to_the_pages_size_without_the_clipboard() {
             jobs: Jobs {
                 clip: false,
                 resize: true,
+                desktop: false,
             },
             ..x.at(r)
         },
@@ -970,6 +973,41 @@ fn sets_an_x_servers_screen_to_the_pages_size_without_the_clipboard() {
     assert!(
         !has("1200x904") && !has("1000x704"),
         "no mode made is left: {modes}"
+    );
+    assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
+    drop(page);
+    assert_eq!(served.join().unwrap(), Ok("session: the parent is gone"));
+}
+
+#[test]
+fn says_when_an_x11_session_is_up_and_when_it_goes() {
+    if skip() {
+        return;
+    }
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut x = Xvfb::start("desktop");
+    let (mut page, served, _runtime) = child(
+        |r| Where {
+            jobs: Jobs {
+                clip: false,
+                resize: false,
+                desktop: true,
+            },
+            ..x.at(r)
+        },
+        "desktop",
+    );
+    assert_eq!(
+        page.next(frame::DESKTOP, 5000).as_deref(),
+        Some(&[frame::desktop::X11][..]),
+        "up once the server took us"
+    );
+    let _ = x.server.kill();
+    let _ = x.server.wait();
+    assert_eq!(
+        page.next(frame::DESKTOP, 5000).as_deref(),
+        Some(&[frame::desktop::NONE][..]),
+        "down when it goes"
     );
     assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
     drop(page);

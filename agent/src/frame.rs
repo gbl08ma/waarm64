@@ -42,6 +42,9 @@ pub const RENEWED: u8 = 16;
 pub const LEASE: u8 = 17;
 /// The agent's: a u8 status, what became of LEASE (`lease::status`).
 pub const LEASED: u8 = 18;
+/// The agent's: a u8 (`desktop`), the graphical session on seat0 now: the session child's compositor connected, or its
+/// X server set up; none when it goes (the tests wait on it, docs/devices.md "The desktop's state").
+pub const DESKTOP: u8 = 19;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -73,6 +76,8 @@ pub mod cap {
     pub const RENEW: u32 = 1 << 6;
     /// LEASE and LEASED: the guest's leases renewed after a restore.
     pub const LEASE: u32 = 1 << 7;
+    /// DESKTOP: the graphical session's state said (the agent), or a page that takes it.
+    pub const DESKTOP: u32 = 1 << 10;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
@@ -95,6 +100,16 @@ pub mod ack {
     pub const TOO_LARGE: u8 = 3;
     /// No type the agent takes.
     pub const NO_TYPE: u8 = 4;
+}
+
+/// DESKTOP's states.
+pub mod desktop {
+    /// No graphical session (no compositor connected, no X server set up).
+    pub const NONE: u8 = 0;
+    /// A Wayland compositor's (the session child connected and its globals known).
+    pub const WAYLAND: u8 = 1;
+    /// An X server's, with no compositor (an X11 session: the child's connection set up).
+    pub const X11: u8 = 2;
 }
 
 /// TYPED's statuses.
@@ -501,6 +516,17 @@ mod tests {
         assert_eq!(decode_time(&[1, 2, 3]), None);
         // DISPLAY: the bytes tests/agent.test.ts "frames: TIME and SESSION" pins (1280x720; later fields ignored).
         assert_eq!((DISPLAY, cap::DISPLAY), (14, 32));
+        // DESKTOP and its states: the numbers tests/agent.test.ts pins.
+        assert_eq!(
+            (
+                DESKTOP,
+                cap::DESKTOP,
+                desktop::NONE,
+                desktop::WAYLAND,
+                desktop::X11
+            ),
+            (19, 1024, 0, 1, 2)
+        );
         assert_eq!(
             decode_display(&[0, 5, 0, 0, 0xd0, 2, 0, 0, 9]),
             Some((1280, 720))

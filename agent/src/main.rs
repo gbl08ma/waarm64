@@ -63,7 +63,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::TIME
     | frame::cap::DISPLAY
     | frame::cap::RENEW
-    | frame::cap::LEASE;
+    | frame::cap::LEASE
+    | frame::cap::DESKTOP;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -184,6 +185,8 @@ struct Agent {
     /// A session whose child ended by itself: not started again for it until the session changes.
     exited: Option<logind::Active>,
     generation: u32,
+    /// The graphical session's state as the child last said it (DESKTOP; none without a child).
+    desktop: u8,
     /// A child stopped or ended: the page hears SESSION (what it knew of the guest's clipboard, and that child's
     /// transfers, are gone).
     lost: bool,
@@ -224,6 +227,7 @@ impl Agent {
             child: None,
             exited: None,
             generation: 0,
+            desktop: frame::desktop::NONE,
             lost: false,
         };
         a.watch();
@@ -309,6 +313,7 @@ impl Agent {
     fn stop_child(&mut self) {
         if let Some(c) = self.child.take() {
             self.lost = true;
+            self.desktop = frame::desktop::NONE;
             let pid = c.pid;
             drop(c);
             if let Some(pid) = pid {
@@ -322,6 +327,7 @@ impl Agent {
     fn child_gone(&mut self) {
         if let Some(c) = self.child.take() {
             self.lost = true;
+            self.desktop = frame::desktop::NONE;
             if let Some(pid) = c.pid {
                 let _ = waitpid(Some(pid), WaitOptions::empty());
             }
@@ -492,6 +498,9 @@ struct Session<'a> {
     agent: &'a mut Agent,
     /// Frames to send.
     out: Vec<u8>,
+    /// The page said HELLO on this connection; DESKTOP's state it was last told (it knows none at first).
+    hello: bool,
+    told: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -509,6 +518,8 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         port,
         agent,
         out: Vec::new(),
+        hello: false,
+        told: frame::desktop::NONE,
     };
     s.agent.typist.reset();
     s.agent.track(port.as_raw_fd());
@@ -610,6 +621,16 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if core::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
         }
+        // The graphical session's state, to a page that asked for it, when it isn't what the page was last told.
+        let desktop = if s.hello && s.agent.jobs.desktop {
+            s.agent.desktop
+        } else {
+            frame::desktop::NONE
+        };
+        if desktop != s.told {
+            s.told = desktop;
+            frame::encode(frame::DESKTOP, &[desktop], &mut s.out);
+        }
         if let Some(status) = s.agent.typist.step() {
             frame::encode(frame::TYPED, &[status], &mut s.out);
         }
@@ -628,6 +649,7 @@ impl Session<'_> {
             frame::HELLO => {
                 frame::hello_answer(payload, CAPS, &mut self.out);
                 if let Some(h) = frame::Hello::decode(payload) {
+                    self.hello = true;
                     self.agent.jobs = session::Jobs::from_caps(h.caps);
                     self.agent.hello = Some(payload.to_vec());
                     if !self.agent.jobs.resize {
@@ -721,7 +743,7 @@ impl Session<'_> {
     }
 
     /// Frames from the child, to the page: the clipboard's only (it is the user's process; nothing else of its
-    /// passes).
+    /// passes), and the session's state (DESKTOP, one of its known values), which the loop says.
     fn child_input(&mut self) {
         let Some(c) = &mut self.agent.child else {
             return;
@@ -734,7 +756,12 @@ impl Session<'_> {
             Err(_) => return self.agent.child_gone(),
         };
         let out = &mut self.out;
+        let desktop = &mut self.agent.desktop;
         c.reader.push(&buf[..n], |kind, payload| {
+            // The session's state: kept, said to the page as the loop's end decides (`serve`).
+            if kind == frame::DESKTOP && payload.len() == 1 && payload[0] <= frame::desktop::X11 {
+                *desktop = payload[0];
+            }
             if matches!(
                 kind,
                 frame::OFFER

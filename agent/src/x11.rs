@@ -1932,6 +1932,7 @@ mod tests {
             Jobs {
                 clip: true,
                 resize: false,
+                desktop: false,
             },
         )
         .unwrap();

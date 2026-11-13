@@ -5,7 +5,8 @@
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
 // ACK and MORE (step 3), the capability `CAP.TEXT`; SESSION and TYPED; `CAP.IMAGE` (step 5); TIME, `CAP.TIME` (the
 // guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size); RENEW and RENEWED, `CAP.RENEW`
-// (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore).
+// (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore);
+// DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -46,6 +47,18 @@ export const FRAME = {
   LEASE: 17,
   /** The agent's: a u8 status (`LEASED`), what became of LEASE. */
   LEASED: 18,
+  /** The agent's: a u8 state (`DESKTOP`), the graphical session on the guest's seat0 now. */
+  DESKTOP: 19,
+} as const;
+
+/** DESKTOP's states (agent/src/frame.rs `desktop`). */
+export const DESKTOP = {
+  /** No graphical session: no compositor connected, no X server set up. */
+  NONE: 0,
+  /** A Wayland compositor's (the agent's session child connected to it). */
+  WAYLAND: 1,
+  /** An X server's, with no compositor (an X11 session). */
+  X11: 2,
 } as const;
 
 /** LEASED's statuses (agent/src/lease.rs `status`). */
@@ -131,6 +144,8 @@ export const CAP = {
   RENEW: 1 << 6,
   /** LEASE and LEASED: the guest's leases renewed after a restore (the agent's). */
   LEASE: 1 << 7,
+  /** DESKTOP: the guest's graphical session's state said (the agent), or a page that takes it. */
+  DESKTOP: 1 << 10,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 
@@ -210,7 +225,11 @@ export function encodeData(id: number, flags: number, bytes: Uint8Array = new Ui
 
 export function decodeData(p: Uint8Array): { id: number; flags: number; bytes: Uint8Array } | undefined {
   if (p.length < 5) return undefined;
-  return { id: new DataView(p.buffer, p.byteOffset, p.byteLength).getUint32(0, true), flags: p[4], bytes: p.subarray(5) };
+  return {
+    id: new DataView(p.buffer, p.byteOffset, p.byteLength).getUint32(0, true),
+    flags: p[4],
+    bytes: p.subarray(5),
+  };
 }
 
 /** ACK's payload: u32 serial (the page's offer), u8 status (`ACK`). */
@@ -324,7 +343,8 @@ export function typePayloads(text: string, max = TYPE_CHUNK): Uint8Array[] {
 
 /** The bytes of a frame. Throws past `MAX_PAYLOAD` (a sender's bug: data goes in frames of 64 KiB). */
 export function encodeFrame(type: number, payload: Uint8Array = new Uint8Array(0)): Uint8Array {
-  if (payload.length > MAX_PAYLOAD) throw new Error(`an agent frame of ${payload.length} bytes (at most ${MAX_PAYLOAD})`);
+  if (payload.length > MAX_PAYLOAD)
+    throw new Error(`an agent frame of ${payload.length} bytes (at most ${MAX_PAYLOAD})`);
   if (!Number.isInteger(type) || type < 0 || type > 255) throw new Error(`an agent frame of type ${type}`);
   const out = new Uint8Array(LEN + 1 + payload.length);
   new DataView(out.buffer).setUint32(0, 1 + payload.length, true);

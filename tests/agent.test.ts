@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, FRAME, LEASED, RENEWED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
@@ -191,7 +191,7 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP });
   sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
@@ -1055,7 +1055,7 @@ test("the guest's clipboard changed hands (the port reopened, HELLO, SESSION): t
   assert.ok(!written.includes('stale'), "the dead child's answer: not written");
 });
 
-test("the link: TIME once the agent said it can; a machine without the clipboard says only TIME, no switch; a stream out of step reset", async () => {
+test("the link: TIME once the agent said it can; a machine without the clipboard says only TIME and DESKTOP, no switch; a stream out of step reset", async () => {
   const { port1, port2 } = channel();
   const link = new AgentLink(port1, pageCaps(false));
   const sent: Frame[] = [];
@@ -1071,7 +1071,7 @@ test("the link: TIME once the agent said it can; a machine without the clipboard
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   await settle();
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO], 'no clipboard: no switch');
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME | CAP.DESKTOP });
   assert.equal(link.time(1000), false, "before the agent's HELLO");
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE })) });
   await settle();
@@ -1102,17 +1102,54 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([...encodeFrame(FRAME.TIME, encodeTime(0))], [9, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual([...encodeHello({ version: 1, caps: CAP.TIME })], [1, 0, 16, 0, 0, 0]);
   assert.deepEqual([FRAME.SESSION, FRAME.TIME, CAP.TIME], [11, 13, 16]);
-  assert.deepEqual(pageCaps(false), CAP.TIME);
+  assert.deepEqual(pageCaps(false), CAP.TIME | CAP.DESKTOP);
   // DISPLAY (agent/src/frame.rs `decode_display` pins the payload).
   assert.deepEqual([FRAME.DISPLAY, CAP.DISPLAY], [14, 32]);
   assert.deepEqual([...encodeDisplay(1280, 720)], [0, 5, 0, 0, 0xd0, 2, 0, 0]);
-  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DISPLAY);
+  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DESKTOP | CAP.DISPLAY);
   // RENEW and RENEWED (agent/src/frame.rs, agent/src/renew.rs `what`).
   assert.deepEqual([FRAME.RENEW, FRAME.RENEWED, CAP.RENEW], [15, 16, 64]);
   assert.deepEqual([RENEWED.ENTROPY, RENEWED.MACHINE_ID, RENEWED.SEED, RENEWED.SSH], [1, 2, 4, 8]);
   // LEASE and LEASED (agent/src/lease.rs `status`).
   assert.deepEqual([FRAME.LEASE, FRAME.LEASED, CAP.LEASE], [17, 18, 128]);
   assert.deepEqual([LEASED.RENEWED, LEASED.NO_CLIENT, LEASED.FAILED], [0, 1, 2]);
+  // DESKTOP and its states (agent/src/frame.rs `desktop`).
+  assert.deepEqual([FRAME.DESKTOP, CAP.DESKTOP, DESKTOP.NONE, DESKTOP.WAYLAND, DESKTOP.X11], [19, 1024, 0, 1, 2]);
+});
+
+test("the link: the guest's desktop as the agent says it (DESKTOP), none again when its connection ends or a new one opens", async () => {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1, pageCaps(false));
+  const seen: number[] = [];
+  link.onDesktop = (d) => seen.push(d);
+  port2.onmessage = (e) => {
+    if (e.data.type === 'data') port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const say = (conn: number, p: number[]) => port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.DESKTOP, new Uint8Array(p)) });
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.DESKTOP })) });
+  say(1, [DESKTOP.WAYLAND]);
+  await settle();
+  assert.equal(link.desktop, DESKTOP.WAYLAND);
+  say(1, [DESKTOP.WAYLAND]);
+  say(1, []); // not a state: ignored
+  say(1, [DESKTOP.X11]);
+  await settle();
+  assert.deepEqual(seen, [DESKTOP.WAYLAND, DESKTOP.X11], 'each change, once');
+  // The connection ends (a restore): none until the agent says it again.
+  port2.postMessage({ type: 'open', open: false, conn: 1 });
+  await settle();
+  assert.equal(link.desktop, DESKTOP.NONE);
+  port2.postMessage({ type: 'open', open: true, conn: 2 });
+  say(1, [DESKTOP.WAYLAND]); // an earlier connection's
+  await settle();
+  assert.equal(link.desktop, DESKTOP.NONE, "an earlier connection's state dropped");
+  say(2, [DESKTOP.WAYLAND]);
+  await settle();
+  assert.deepEqual(seen, [DESKTOP.WAYLAND, DESKTOP.X11, DESKTOP.NONE, DESKTOP.WAYLAND]);
+  link.close();
+  port2.close();
 });
 
 test("a restore's leases (web/app/areas/lease-actions.ts): once the network settled, the agent renews them; without it, or when it can't, the connected cards flap; a run that ends first does neither", async () => {
@@ -1686,8 +1723,10 @@ test("a focus read still reading its image when a paste chord's text comes: the 
 
 test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HELLO and on `syncClock`, under Preferences' switch; again when the wall clock moves away from performance.now() (the host slept)", async (t) => {
   const { AgentActions, SLEEP_CHECK_MS, SLEEP_GAP_MS } = await import('../web/app/areas/agent-actions.ts');
-  const g = globalThis as unknown as { location?: unknown; localStorage?: unknown; window?: unknown };
-  const saved = { location: g.location, localStorage: g.localStorage, window: g.window };
+  const g = globalThis as unknown as { location?: unknown; localStorage?: unknown; window?: unknown; document?: unknown };
+  const saved = { location: g.location, localStorage: g.localStorage, window: g.window, document: g.document };
+  const body = { dataset: {} as Record<string, string | undefined> };
+  g.document = { body };
   let search = '';
   g.location = { get search() { return search; } };
   g.localStorage = { getItem: () => null, setItem: () => undefined };
@@ -1711,12 +1750,16 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   t.mock.timers.enable({ apis: ['setInterval'] });
   const actions = new AgentActions(() => undefined);
   const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => ups++)!;
-  assert.equal(link.caps, CAP.TIME);
+  assert.equal(link.caps, CAP.TIME | CAP.DESKTOP);
+  assert.equal(body.dataset.desktop, 'none', "the guest's desktop: none yet");
   assert.equal(actions.syncClock(), false, 'no agent yet');
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
   await settle();
   assert.equal(ups, 1, 'the HELLO: the guest is up');
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.DESKTOP, new Uint8Array([DESKTOP.X11])) });
+  await settle();
+  assert.equal(body.dataset.desktop, 'x11', 'DESKTOP as body[data-desktop]');
   assert.equal(times.length, 1, 'TIME at the HELLO');
   assert.equal(actions.syncClock(), true);
   await settle();
@@ -1741,6 +1784,7 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   actions.end();
   assert.equal(actions.syncClock(), false, 'after the run');
   assert.equal((g.window as { __agent?: unknown }).__agent, undefined);
+  assert.equal(body.dataset.desktop, undefined, 'no agent, no state');
   jump += SLEEP_GAP_MS + 1000;
   t.mock.timers.tick(SLEEP_CHECK_MS);
   await settle();

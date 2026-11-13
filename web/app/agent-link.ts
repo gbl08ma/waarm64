@@ -6,7 +6,7 @@
 // What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
 // page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it, DISPLAY on one
 // with a screen of virtio-gpu's; RENEW needs only the agent's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO),
-// RENEW once after a template's restore (`renew`), TYPE (`type`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// RENEW once after a template's restore (`renew`), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
 // connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
 // clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
 // and `window.__clipboard`.
@@ -18,6 +18,7 @@
 
 import {
   CAP,
+  DESKTOP,
   decodeHello,
   decodeRenewed,
   encodeDisplay,
@@ -37,11 +38,12 @@ import type { AgentFromDevice, AgentToDevice } from '../vsock-device.ts';
 export const WINDOW = 256 << 10;
 
 /**
- * What the page says it does (web/agent-frame.ts `CAP`): the clock always, the clipboard's frames where it is shared,
- * the screen's size where the guest's screen follows the page's (`display`: virtio-gpu's).
+ * What the page says it does (web/agent-frame.ts `CAP`): the clock and the desktop's state always (every machine has a
+ * screen), the clipboard's frames where it is shared, the screen's size where the guest's screen follows the page's
+ * (`display`: virtio-gpu's).
  */
 export const pageCaps = (clipboard: boolean, display = false) =>
-  CAP.TIME | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0) | (display ? CAP.DISPLAY : 0);
+  CAP.TIME | CAP.DESKTOP | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0) | (display ? CAP.DISPLAY : 0);
 
 /** RENEW's random bytes. */
 export const RENEW_BYTES = 64;
@@ -57,6 +59,10 @@ export class AgentLink {
   onFrame?: (f: Frame) => void;
   /** Called when the agent connects or its connection ends. */
   onOpen?: (open: boolean) => void;
+  /** The guest's graphical session as the agent last said it (DESKTOP; none while it isn't connected): the tests' waits. */
+  desktop: number = DESKTOP.NONE;
+  /** Called when `desktop` changes. */
+  onDesktop?: (d: number) => void;
   /** Called with the agent's HELLO (each listener: the clipboard's, the clock's, the page's sign that the guest is up). */
   readonly onHello: ((h: Hello) => void)[] = [];
   private reader = new FrameReader();
@@ -245,6 +251,7 @@ export class AgentLink {
     this.resetting = false;
     this.renewSent = false;
     for (const done of [...this.leasing]) done(undefined);
+    this.setDesktop(DESKTOP.NONE);
     if (!open) this.conn = 0;
     if (open) {
       this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: this.caps }));
@@ -253,6 +260,12 @@ export class AgentLink {
       if (this.caps & CAP.TEXT) this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
     }
     this.onOpen?.(open);
+  }
+
+  private setDesktop(d: number) {
+    if (d === this.desktop) return;
+    this.desktop = d;
+    this.onDesktop?.(d);
   }
 
   /** The agent's bytes: its frames, a HELLO taken as the agent's. */
@@ -268,6 +281,7 @@ export class AgentLink {
         }
       }
       if (f.type === FRAME.LEASED) for (const done of [...this.leasing]) done(f.payload[0]);
+      if (f.type === FRAME.DESKTOP && f.payload.length === 1) this.setDesktop(f.payload[0]);
       if (f.type === FRAME.RENEWED) {
         this.renewed = decodeRenewed(f.payload);
         this.renewing = false;

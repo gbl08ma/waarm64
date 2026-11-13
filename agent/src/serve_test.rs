@@ -34,7 +34,8 @@ fn record_clock(ns: u64) -> io::Result<()> {
 /// The test child's ACK serials: this, with the type of the frame it got.
 const ECHO: u32 = 0xec40_0000;
 
-/// The test child: an ACK for each frame, until the parent closes its end.
+/// The test child: an ACK for each frame, until the parent closes its end; DESKTOP with a value no state has at each
+/// HELLO, X11's at each OFFER.
 fn echo_child(fd: OwnedFd, _runtime: String, _base: u32) {
     let mut reader = frame::Reader::default();
     let mut buf = [0u8; 65536];
@@ -46,6 +47,12 @@ fn echo_child(fd: OwnedFd, _runtime: String, _base: u32) {
         let mut out = Vec::new();
         reader.push(&buf[..n], |k, _| {
             frame::encode(frame::ACK, &frame::ack(ECHO | k as u32, 0), &mut out);
+            if k == frame::HELLO {
+                frame::encode(frame::DESKTOP, &[7], &mut out);
+            }
+            if k == frame::OFFER {
+                frame::encode(frame::DESKTOP, &[frame::desktop::X11], &mut out);
+            }
         });
         let mut at = 0;
         while at < out.len() {
@@ -770,4 +777,38 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         h.page.next(frame::LEASED, 5000).as_deref(),
         Some(&[status::NO_CLIENT][..])
     );
+}
+
+#[test]
+fn says_the_childs_desktop_to_a_page_that_asks() {
+    let mut h = Harness::start("desktop");
+    let caps = frame::cap::TIME | frame::cap::DESKTOP;
+    h.page.send(frame::HELLO, &hello_with(caps));
+    let a =
+        frame::Hello::decode(&h.page.next(frame::HELLO, 2000).expect("the agent's HELLO")).unwrap();
+    assert_ne!(a.caps & frame::cap::DESKTOP, 0, "the agent says it");
+    // A child for the state alone: what it says (a known state only) reaches the page, once.
+    h.activate();
+    assert_eq!(
+        h.page.next(frame::DESKTOP, 2000).as_deref(),
+        Some(&[frame::desktop::X11][..]),
+        "the child's state, not a value it can't have"
+    );
+    h.page.send(frame::HELLO, &hello_with(caps));
+    assert!(h.echoed(frame::HELLO, 2000), "the same child hears it");
+    assert!(
+        h.page.next(frame::DESKTOP, 300).is_none(),
+        "the same state: not said again"
+    );
+    // The session goes: the child stopped, the state down.
+    h.logind("seats/seat0", "IS_SEAT0=1\n");
+    assert_eq!(
+        h.page.next(frame::DESKTOP, 2000).as_deref(),
+        Some(&[frame::desktop::NONE][..])
+    );
+    // A page that doesn't ask: its child says it, the page hears nothing.
+    h.page.send(frame::HELLO, &hello());
+    // (The new child hears the HELLO first: its DESKTOP has passed the parent once its OFFER's ACK is back.)
+    h.activate();
+    assert!(h.page.next(frame::DESKTOP, 300).is_none(), "not asked");
 }

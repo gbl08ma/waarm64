@@ -1,13 +1,13 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–4 done (jobs 1–3 and the mid-track review's fixes); the next session starts at job 4.
+Loops 1–5 done (jobs 1–4 and the mid-track review's fixes); the next loop is job 5.
 
 ## State
 
 The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEWED 16 (bit 6), LEASE 17 / LEASED 18
-(bit 7); free from 19 and bit 10 (bit 3 reserved for text/html, 8 and 9 for session kinds). The binary is 165,008
-bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
+(bit 7), DESKTOP 19 (bit 10); free from 20 and bit 11 (bit 3 reserved for text/html, 8 and 9 for session kinds). The
+binary is 165,904 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
 
 - **Job 1, the screen's size:** the page sends the size it asks the guest's display for (DISPLAY, at each change and
   each agent HELLO). Wayland: `agent/src/outputs.rs` (wlr-output-management custom mode; sway, wlroots). X11 sessions:
@@ -22,6 +22,11 @@ bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each ag
   card connected (`web/app/net-settled.ts`, fed by the page network's `onChange`), then asks the agent (LEASE:
   `agent/src/lease.rs`, busctl's RenewLink by ifindex for networkd, nmcli for NetworkManager), else flaps the connected
   cards (`Run.netLinks` → web/devices.ts `flap`, 7 s). The user's design. devices.md "The network after a restore".
+- **Job 4, the desktop's state (loop 5; for the tests only, the user's decision):** the session child says DESKTOP
+  (none, Wayland's once its compositor's globals are known, X11's once an X server took it); the root keeps it and says
+  it to a page with `CAP.DESKTOP`, which every page says (so the child runs wherever seat0 has an active session). The
+  page: `AgentLink.desktop`, `body[data-desktop]` (`tests/page-desktop.ts`), which the sway and X11 page tests wait on.
+  Nothing the user sees changed. devices.md "The desktop's state".
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real
@@ -29,14 +34,9 @@ bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each ag
 
 ## Next
 
-1. **Job 4, decided by the user (2026-11-13): for the tests only.** The agent says when a graphical session is up for
-   seat0's user (the session child's compositor connected, or its X server set up; down when it goes): the page exposes
-   it (`window.__agent`, a `data-` attribute) for the tests' waits. **Nothing the user sees changes:** not the status
-   bar's state ("Running", "Booting", "Powered off"), not the boot card. The session child must run for it on machines
-   that don't share the clipboard (a third job beside clip and resize, or always where the page has a screen).
-2. Job 5 (fstrim on demand), then 6, 7, 8 as the kickoff orders them; ask the user what a job does to the guest where
+1. Job 5 (fstrim on demand), then 6, 7, 8 as the kickoff orders them; ask the user what a job does to the guest where
    the kickoff leaves it open (job 6: whether the layout's disk write stays).
-3. The track's end: an out-of-context review over the whole track, `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`,
+2. The track's end: an out-of-context review over the whole track, `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`,
    `ci-net.sh`, `ci-graphics.sh`; then PLAN.md's row, the kickoff and this handover deleted.
 
 ## Found (worth not re-discovering)

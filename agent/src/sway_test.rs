@@ -1040,6 +1040,7 @@ fn sets_sways_output_to_the_pages_size_without_the_clipboard() {
     let jobs = session::Jobs {
         clip: false,
         resize: true,
+        desktop: false,
     };
     let child = std::thread::spawn(move || session::serve_for(theirs, runtime, 0x0100_0000, jobs));
     let mut page = Page {
@@ -1078,6 +1079,55 @@ fn sets_sways_output_to_the_pages_size_without_the_clipboard() {
         "left as the user set it"
     );
     // Without the clipboard's job: no data device, so no SESSION, and the page's offer isn't taken.
+    assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
+    assert!(
+        page.next(frame::DESKTOP, 0).is_none(),
+        "the state not asked for"
+    );
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+}
+
+#[test]
+fn says_when_sways_session_is_up_and_when_it_goes() {
+    if !have("sway") {
+        eprintln!("SKIPPED: no sway (docs/devenv.md)");
+        return;
+    }
+    let mut sway = Sway::start("desktop");
+    let (mine, theirs) = socketpair(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    let runtime = sway.dir.to_str().unwrap().to_owned();
+    // The state alone: no clipboard, no size.
+    let jobs = session::Jobs {
+        clip: false,
+        resize: false,
+        desktop: true,
+    };
+    let child = std::thread::spawn(move || session::serve_for(theirs, runtime, 0x0100_0000, jobs));
+    let mut page = Page {
+        fd: mine,
+        reader: frame::Reader::default(),
+        frames: Vec::new(),
+    };
+    assert_eq!(
+        page.next(frame::DESKTOP, 5000).as_deref(),
+        Some(&[frame::desktop::WAYLAND][..]),
+        "up once the compositor's globals are known"
+    );
+    assert!(page.next(frame::DESKTOP, 300).is_none(), "said once");
+    let _ = sway.sway.kill();
+    let _ = sway.sway.wait();
+    assert_eq!(
+        page.next(frame::DESKTOP, 5000).as_deref(),
+        Some(&[frame::desktop::NONE][..]),
+        "down when it goes"
+    );
     assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
