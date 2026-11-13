@@ -379,3 +379,49 @@ fn an_inotify_overflow_is_a_change() {
     ));
     assert!(crate::session::socket_event(ReadFlags::QUEUE_OVERFLOW, ""));
 }
+
+#[test]
+fn a_child_for_the_screens_size_hears_the_hello_and_the_size_first() {
+    let mut h = Harness::start("display");
+    let size = |w: u32, hh: u32| [w.to_le_bytes(), hh.to_le_bytes()].concat();
+    h.page.send(
+        frame::HELLO,
+        &hello_with(frame::cap::TIME | frame::cap::DISPLAY),
+    );
+    let a =
+        frame::Hello::decode(&h.page.next(frame::HELLO, 2000).expect("the agent's HELLO")).unwrap();
+    assert_ne!(
+        a.caps & frame::cap::DISPLAY,
+        0,
+        "the agent follows the size"
+    );
+    h.page.send(frame::DISPLAY, &size(1024, 768));
+    h.page.send(frame::DISPLAY, &[0; 8]); // no size: not kept
+    // The session comes: a child for the size alone, which hears the page's HELLO and the size before anything else.
+    let uid = rustix::process::getuid().as_raw();
+    h.logind(
+        "sessions/3",
+        &format!("UID={uid}\nCLASS=user\nSTATE=active\n"),
+    );
+    h.logind("seats/seat0", "IS_SEAT0=1\nACTIVE=3\n");
+    assert!(h.echoed(frame::HELLO, 3000), "the HELLO first");
+    assert!(h.echoed(frame::DISPLAY, 1000), "then the size");
+    assert!(!h.echoed(frame::DISPLAY, 300), "the empty size not passed");
+    h.page.send(frame::DISPLAY, &size(800, 600));
+    assert!(h.echoed(frame::DISPLAY, 1000), "a new size to the child");
+    // The page's HELLO again with the same jobs: to the same child, once.
+    h.page.send(
+        frame::HELLO,
+        &hello_with(frame::cap::TIME | frame::cap::DISPLAY),
+    );
+    assert!(h.echoed(frame::HELLO, 1000));
+    assert!(!h.echoed(frame::HELLO, 300), "once");
+    // Other jobs (the clipboard now, no size): a child started afresh (SESSION), which hears the HELLO, no size.
+    h.page.send(frame::HELLO, &hello());
+    assert!(
+        h.page.next(frame::SESSION, 2000).is_some(),
+        "the old child stopped"
+    );
+    assert!(h.echoed(frame::HELLO, 2000), "the new child's HELLO");
+    assert!(!h.echoed(frame::DISPLAY, 300), "no size for it");
+}

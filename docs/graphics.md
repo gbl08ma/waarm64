@@ -41,8 +41,8 @@ These bind the graphics work; changing one is the user's call (PLAN.md).
   WebGL2 in Chromium; **dEQP's pass lists are the correctness gate** (`scripts/ci-deqp.sh`, for every change that
   touches 3D).
 - **Guest pixels are CSS pixels by default**, scaled up crisply, with a HiDPI setting that sends device pixels and the
-  physical size in the EDID. Live resize is a guest agent's job, starting from the stock agents
-  ([plans/agent.md](plans/agent.md)).
+  physical size in the EDID. Live resize is the guest agent's job: it sets a wlroots compositor's outputs to the
+  page's size (devices.md "The guest's agent", "The screen's size").
 - **Real-GPU numbers come from headless Chromium on the Mac host** (the bench pages and `bench/gpu/sway-mac.sh`);
   nothing else on that host, and the x86_64 desktop stays off limits.
 - Chromium only, as everywhere in the project. Out of scope: multiple scanouts, ACPI.
@@ -131,9 +131,11 @@ why the device is as it is.
   |---|---|---|
   | fbcon (Debian 13, kernel 6.12) | A bigger mode is refused (the EDID's fallback keeps the console), a smaller one crops and the display bounces it | The page's size at boot; letterboxed or scaled after |
   | sway 1.12 (wlroots), pixman or GLES | The kernel lists the new preferred mode at once, but sway keeps its mode (wlroots seems to read an output's modes only when it connects), and `swaymsg output Virtual-1 mode WxH` falls back silently. `swaymsg -- output Virtual-1 mode --custom WxH` works: a new resource, the canvas follows | The page's size when sway starts |
-  | GNOME, KDE on Wayland; Xorg | Not measured | Expected: live for the first two, `xrandr --auto` for Xorg |
+  | KDE Plasma on Wayland (KWin) | Takes the new preferred mode the display event brings, live (a user's session since G1's display events; not measured here) | Live |
+  | GNOME on Wayland; Xorg | Not measured | Expected: live for GNOME, `xrandr --auto` for Xorg |
 
-  Live resize is a guest agent's job ([plans/agent.md](plans/agent.md)) or a desktop's own setting.
+  Live resize is the guest agent's job (devices.md "The guest's agent": wlr-output-management's custom mode, what
+  `swaymsg … mode --custom` asks for; X11 not yet, backlog) or a desktop's own setting.
 
 ### Console scrolling and the flush pacing
 

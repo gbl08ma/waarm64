@@ -462,7 +462,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (the Mac host; the dev VM composites in software), then a device worker the page creates (a top-level worker has
   animation frames; moving blk off that thread and G3's GPU worker want the same change) or drawing from the
   machine worker out of shared memory.
-- **virtio-gpu, not built or not measured in G1:** GNOME, KDE and Xorg sessions (sway is: graphics.md "The console and the display size"); a page test
+- **virtio-gpu, not built or not measured in G1:** GNOME and Xorg sessions (KDE follows the size by itself, a user's session; sway is: graphics.md "The console and the display size", and the agent resizes it); sway on DRM resized by the agent on the page (the page test's sway is headless; the request is the one `swaymsg … mode --custom` makes, measured on DRM in G1); a page test
   of the pointer through a letterboxed screen (checked by hand with sway); an overlay for a guest that warps its
   cursor (`MOVE_CURSOR` away from the pointer: none seen); sizes beyond 4088 pixels a side (a DisplayID block in the
   EDID); a display event at a fixed step beyond the test hook (`GpuOptions.resize`).
@@ -1609,7 +1609,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 132,696 bytes, ~82 KB gzipped (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 145,312 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
@@ -1630,7 +1630,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The plan's optional step 6** (plans/clipboard.md §6; each needs the user's OK): spice-vdagent's port
   (`com.redhat.spice.0`, a second port on the same device, for Xorg and GNOME guests that have it), GNOME on Wayland
   through the portal's Clipboard interface (a RemoteDesktop session the user consents to), and other agent jobs in the
-  same binary and connection (a ready signal, sway's resize: plans/agent.md).
+  same binary and connection (a ready signal: plans/agent.md; the BETTERAGENT track's).
+- **The screen's size under X11** (DISPLAY): the session child sets a wlroots compositor's outputs to the page's size
+  (devices.md "The guest's agent"), not an Xorg session's: RandR by hand (GetScreenResources, which probes the
+  connectors, the output's mode of the page's size, SetScreenSize, SetCrtcConfig), skipping Xwayland's outputs. GNOME
+  on Wayland unmeasured (expected to follow the display event itself, as a user's KDE session does). Under X11 a
+  desktop's own daemon (KDE's kscreen) may set the mode too: the agent asks for the same size, so they agree.
 
 ## Tests and tools
 

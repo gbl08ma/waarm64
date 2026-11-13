@@ -119,8 +119,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
 The guest agent is a program of ours the page starts in a `firmware` machine's guest at each boot (`MachineRecord.agent`,
 on unless `false`; a transient machine's `?agent=0` or `1`, which is over a stored machine's too). It isn't a device:
 it connects to the page over the machine's vsock (above, `AGENT_PORT`), so turning it on or off changes no machine's
-shape. It sets the guest's clock (TIME, below; frontend.md "The guest's clock") and, on a machine that shares the
-clipboard (`MachineRecord.clipboard`, `?clipboard=1`; what the page's HELLO says), shares it ([clipboard.md](clipboard.md)).
+shape. It sets the guest's clock (TIME, below; frontend.md "The guest's clock"), on a machine that shares the
+clipboard (`MachineRecord.clipboard`, `?clipboard=1`; what the page's HELLO says) shares it ([clipboard.md](clipboard.md)),
+and on one with virtio-gpu's screen sets the session's outputs to the page's size (DISPLAY, "The screen's size" below).
 The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__agent`), made by
 `web/app/areas/agent-actions.ts` for each run: frames (`web/agent-frame.ts`: a u32 length, a u8 type, the payload of at
 most 64 KiB and change) with at most `WINDOW` (256 KiB) in flight, from the device's `taken` counts. Each connection is
@@ -128,7 +129,7 @@ a stream of its own, begun at a frame: a restore resets the guest's transport (t
 agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 133 KB).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 145 KB).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
@@ -158,7 +159,8 @@ The root process is one thread blocked in `ppoll` with no timeout (but 1 ms tick
 below), on the connection, an inotify descriptor watching
 logind's `/run/systemd/seats` and `/run/systemd/sessions` (`IN_MOVED_TO`, `IN_DELETE`: logind renames each file into
 place; an `IN_Q_OVERFLOW` counts as a change) and `/proc/self/mountinfo` (POLLPRI when the mount table changes). Where
-the page's HELLO has `CAP.TEXT` or `CAP.IMAGE` (the machine shares the clipboard), it follows **the active session on seat0**
+the page's HELLO has `CAP.TEXT` or `CAP.IMAGE` (the machine shares the clipboard) or `CAP.DISPLAY` (the screen's size
+is followed), it follows **the active session on seat0**
 (`agent/src/logind.rs`): `seat0`'s `ACTIVE=`, that session's `UID=` and `CLASS=` (a user's, not a greeter's), whatever
 its `TYPE` (a user logged in on a tty who runs sway has `TYPE=tty`), once the user's runtime directory
 `/run/user/<uid>` is mounted (its owner the user: a `stat`, the agent's root having no `CAP_DAC_OVERRIDE`; root's
@@ -166,12 +168,15 @@ bare mount point is root's too, so root's directory counts as mounted once it is
 the mount is what the mount table's change says). For it the root process **forks a session child** (no exec), which closes the
 parent's descriptors, drops to the user (`setgroups` to none, `setresgid`, `setresuid` to the directory's gid and the
 uid) before it reads anything from the display, sets `PR_SET_PDEATHSIG`, and talks to the parent over a socketpair in
-the connection's own frames; the parent passes the clipboard's frames between the two (to the child the page's HELLO too;
-from the child only OFFER, REQUEST, DATA, ACK, MORE, SESSION) and answers them itself while there is no child (ACK
+the connection's own frames; the parent passes the clipboard's frames between the two (to the child the page's HELLO and
+DISPLAY too, and to a new child the last of each first: it starts after the connection's HELLO; from the child only
+OFFER, REQUEST, DATA, ACK, MORE, SESSION) and answers them itself while there is no child (ACK
 `NO_SESSION`, DATA `FAIL`). A new active session
 replaces the child (its socket closed, which ends it, then SIGKILL and reaped); a child that ends by itself (its runtime directory unmounted) isn't started again
 for the same session. Each child's serials and request ids start at a base of its own (the parent's count << 24), so
-a later child's never meet an earlier one's in the page. A HELLO without the clipboard's capabilities stops the child.
+a later child's never meet an earlier one's in the page. **Its jobs** (`session::Jobs`, from the HELLO: the clipboard,
+the screen's size) are fixed at its start: a HELLO with neither stops the child, one with other jobs starts it afresh
+(a child for the size alone binds no data-control and connects to no X server for the clipboard).
 Its tests (`agent/src/serve_test.rs`) run the root loop natively: a socketpair for the connection, a recorder for the
 clock, directories of their own for logind's and the runtime directories, a console of
 their own, and a child on a thread that echoes what it gets.
@@ -275,12 +280,30 @@ the Debian test image's Xvfb session.
   (its pastes need no page). The guest's selection is offered again under a new serial (unless paused): the new page
   never had it.
 
+**The screen's size** (DISPLAY; `agent/src/outputs.rs`): the page gives the link each size it asks the guest's display
+for (`web/app/areas/screen-view.ts` `onSent`, the settled window or the fixed size: the size virtio-gpu's display
+event says, devices.md "Display size and events"), and the link sends it at once and again at each agent's HELLO (a
+restored guest's session has its snapshot's size). On the child's Wayland connection, where the compositor has
+**wlr-output-management** (`zwlr_output_manager_v1`, bound at version 1: sway and other wlroots compositors), it learns
+the heads, their modes and the manager's serial; whenever the page's size is known and an enabled head's current mode
+isn't it, a configuration under the last serial enables each enabled head at a **custom mode** of that size (refresh
+0: the compositor's choice; the kernel's mode list isn't waited for, since sway keeps its own once an output is
+connected: graphics.md "The console and the display size") and disables the disabled ones, then applies. One is in
+flight at a time; `cancelled` (the state changed under the serial) asks again at the next `done`; `failed` is logged;
+either way a size asked once isn't asked again until the page's changes, so a mode the user sets in the session stays
+until the window changes. A new compositor (a new connection) takes the page's size at its start. No program of the
+guest's is run (no `swaymsg`, `wlr-randr`): a compositor without the protocol (KDE's KWin on Wayland, which follows the display event by
+itself: a user's session; GNOME's mutter, expected to, unmeasured) is left alone, logged once. X11 sessions: not yet (backlog). The
+native test (`agent/src/sway_test.rs`) runs a headless sway; `tests/page-clipboard.test.ts` the Debian image's
+headless sway as the page's window changes.
+
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME). The page's says the clipboard's three only on a machine that shares it (`pageCaps`), and the agent runs its session child only then |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen (`pageCaps`), and the agent runs its session child only for one of them |
+| DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

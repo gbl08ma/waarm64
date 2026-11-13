@@ -4,7 +4,7 @@
 
 use crate::clip::{HTML, PNG, TEXT};
 use crate::frame::{self, ack};
-use crate::session::{self, Where};
+use crate::session::{self, Jobs, Where};
 use crate::sway_test::Page;
 use crate::x11::{self, OWNER_WAIT};
 use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
@@ -166,6 +166,10 @@ impl Xvfb {
             runtime: runtime.to_str().unwrap().to_owned(),
             x11: session::X11_DIR.into(),
             display: Some(self.n),
+            jobs: Jobs {
+                clip: true,
+                resize: false,
+            },
         }
     }
 }
@@ -495,6 +499,10 @@ fn a_compositor_without_data_control_gives_way_to_x11() {
         runtime: runtime.to_str().unwrap().to_owned(),
         x11: session::X11_DIR.into(),
         display: None,
+        jobs: Jobs {
+            clip: true,
+            resize: false,
+        },
     };
     let child = std::thread::spawn(move || session::serve_at(theirs, w, 0x0300_0000));
     let mut page = Page {

@@ -15,6 +15,8 @@
 // - Images (plan §4.4): grim's screenshot copied as PNG reaches the host with grim's PPM's pixels, and isn't sent back;
 //   a JPEG arrives as a PNG of its pixels; Copy the screen and a 1.5 MB PNG of noise reach wl-paste byte for byte (and
 //   the noise back to the host); an offer past the 64 MiB cap is refused before any bytes cross.
+// - The screen's size (DISPLAY): the page's window resized, sway's output follows (wlr-output-management, no swaymsg),
+//   and a new sway takes the page's size at its start.
 // - What the agent and its session child cost while sway runs (plan §3.3's targets: no CPU time, no wakeups, VmRSS).
 // WAARM64_AGENT_IDLE=<s> sets the idle window (default 20 s).
 import assert from 'node:assert/strict';
@@ -166,6 +168,35 @@ async function guestHasImage(page: Page, want: string, what: string) {
     await page.waitForTimeout(500);
   }
 }
+type Size = { width: number; height: number };
+const CAP_DISPLAY = 1 << 5;
+/** Each size the page gives the agent, from now on (`window.__sizes`). */
+const recordSizes = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { __sizes: Size[]; __agent: { display(s: Size): boolean } };
+  w.__sizes = [];
+  const display = w.__agent.display.bind(w.__agent);
+  w.__agent.display = (s) => { w.__sizes.push(s); return display(s); };
+});
+/** What swaymsg says of sway's outputs (its JSON, its lines joined). */
+const outputs = (page: Page) =>
+  run(page, 'runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 swaymsg -s "$(ls /run/user/1000/sway-ipc.*.sock | head -1)" -t get_outputs');
+/** sway's output's mode (`WxH`), and what swaymsg said. */
+const outputSize = async (page: Page) => {
+  const said = await outputs(page);
+  // Piped, swaymsg says JSON: the output's `current_mode`.
+  const m = /"current_mode": \{[^}]*?"width": (\d+),\s*"height": (\d+)/.exec(said);
+  return { size: m ? `${m[1]}x${m[2]}` : undefined, said };
+};
+/** Waits until sway's output is `want` (a size, or `WxH`). */
+async function outputIs(page: Page, want: Size | string, what: string) {
+  const w = typeof want === 'string' ? want : `${want.width}x${want.height}`;
+  for (let i = 0; ; i++) {
+    const got = await outputSize(page);
+    if (got.size === w) return;
+    if (i > 30) assert.fail(`${what}: sway's output is ${got.size}, not ${w} (swaymsg says: ${got.said}); the agent says: ${await journal(page)}`);
+    await page.waitForTimeout(500);
+  }
+}
 /** Waits for sway's socket and the agent's session child on the compositor's data-control, in session `not` or later. */
 async function swayUp(page: Page, after = 0) {
   for (let i = 0; ; i++) {
@@ -206,6 +237,17 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   const props = await run(page, `loginctl show-session ${up.session} -p Type -p Seat -p Active -p Name`);
   for (const p of ['Type=tty', 'Seat=seat0', 'Active=yes', 'Name=user']) assert.ok(props.split(' ').includes(p), `session ${up.session}: ${props}`);
   await countWrites(page);
+
+  // The screen's size: each size the page asks the guest for goes to the agent too, and sway's output follows.
+  assert.ok(h.caps & CAP_DISPLAY, `the agent follows the screen's size (caps ${h.caps})`);
+  await recordSizes(page);
+  for (const [w, hh] of [[1200, 1000], [1600, 900]]) {
+    await page.setViewportSize({ width: w, height: hh });
+    const size = await page.waitForFunction(() => (window as unknown as { __sizes: Size[] }).__sizes.at(-1), null, { timeout: 10_000, polling: 100 }).then((x) => x.jsonValue() as Promise<Size>);
+    await outputIs(page, size, `the window at ${w}x${hh}`);
+    await page.evaluate(() => { (window as unknown as { __sizes: Size[] }).__sizes = []; });
+  }
+  const last = (await outputSize(page)).size!;
 
   // Guest to host: short text inline, then 200 KiB requested in DATA frames.
   await run(page, 'wlc wl-copy "$(printf "from the guest \\342\\230\\203")" >/dev/null 2>&1; echo copied');
@@ -288,9 +330,11 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   const images = () => page.evaluate(() => (window as unknown as { __images: number }).__images);
   const offersBefore = await offers();
   await run(page, 'wlc grim /tmp/s.png && wlc grim -t ppm /tmp/s.ppm && wlc wl-copy --type image/png </tmp/s.png >/dev/null 2>&1; echo copied');
-  const ppm = await run(page, 'head -c 15 /tmp/s.ppm | tr "\\n" " "; tail -c 1440000 /tmp/s.ppm | sha256sum | cut -c1-64');
-  const shot = await hostImage(page, (x) => x.width === 800, 'the screenshot');
-  assert.equal(ppm, `P6 800 600 255 ${shot.rgb}`, "the screenshot's pixels on the host (grim's PPM)");
+  // sway's screen is the page's size now (the agent's DISPLAY, above).
+  const [sw, sh] = last.split('x').map(Number);
+  const ppm = await run(page, `head -n 3 /tmp/s.ppm | tr "\\n" " "; tail -c ${sw * sh * 3} /tmp/s.ppm | sha256sum | cut -c1-64`);
+  const shot = await hostImage(page, (x) => x.width === sw, 'the screenshot');
+  assert.equal(ppm, `P6 ${sw} ${sh} 255 ${shot.rgb}`, "the screenshot's pixels on the host (grim's PPM)");
   assert.equal(await images(), 1);
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.waitForTimeout(2000);
@@ -400,6 +444,7 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   await run(page, 'pkill -x sway; echo stopped');
   const again = await swayUp(page, up.session);
   t.diagnostic(`sway again, session ${again.session}; its runs: ${await run(page, 'grep "^== sway" /tmp/sway.log')}`);
+  await outputIs(page, last, "the new sway at the page's size (its config says 800x600)");
   await guestHasText(page, 'host before sway again', "the host's text in the new session (SESSION)");
   await run(page, 'wlc wl-copy guest-after-sway-again >/dev/null 2>&1; echo copied');
   await hostHas(page, 'guest-after-sway-again', 'wl-copy with sway again');

@@ -3,11 +3,11 @@
 //! process connects to the page over vsock (src/vsock.rs), again whenever the connection ends (a restore resets the
 //! guest's transport): it answers the page's HELLO, sets the guest's clock from TIME, pastes TYPE's text on the
 //! foreground text console (src/console.rs), and holds PAUSE until RESUME. Where the page's HELLO says the clipboard is
-//! shared, it follows the active session on seat0 through logind's files (src/logind.rs), and for that session's user
-//! it forks a child (no exec) that drops to the user's ids before it reads
-//! anything from the display, and shares the user's Wayland clipboard (src/session.rs), or the X server's where Wayland
-//! has no data-control (src/x11.rs); the clipboard's frames pass
-//! between the connection and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout but
+//! shared or the screen's size is to be followed (DISPLAY), it follows the active session on seat0 through logind's
+//! files (src/logind.rs), and for that session's user it forks a child (no exec) that drops to the user's ids before it
+//! reads anything from the display, and shares the user's Wayland clipboard (src/session.rs), or the X server's where
+//! Wayland has no data-control (src/x11.rs), and sets the compositor's outputs to the page's size (src/outputs.rs); the
+//! clipboard's frames and DISPLAY pass between the connection and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout but
 //! while a paste is being typed (TYPE's text goes in bursts as the console's reader takes it, `console::Typist`, and
 //! the loop serves the rest meanwhile): an idle guest sees no CPU time from either (plan §3.3). The page hears what
 //! became of a paste (TYPED: typed, or why not: a console that shows a compositor's graphics gets none of it).
@@ -31,6 +31,7 @@ mod clip;
 mod console;
 mod frame;
 mod logind;
+mod outputs;
 mod rt;
 #[cfg(test)]
 mod serve_test;
@@ -54,7 +55,11 @@ use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
 use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
 
 /// What the agent says it can do (frame.rs `cap`).
-const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT | frame::cap::IMAGE | frame::cap::TIME;
+const CAPS: u32 = frame::cap::TYPE
+    | frame::cap::TEXT
+    | frame::cap::IMAGE
+    | frame::cap::TIME
+    | frame::cap::DISPLAY;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -136,13 +141,19 @@ struct Proc {
     reader: frame::Reader,
     out: Vec<u8>,
     key: logind::Active,
+    /// What it was started for (`Agent::jobs`): a child for other jobs is started afresh.
+    jobs: session::Jobs,
 }
 
 /// What lasts across the connections: the pause, the session tracking and its child.
 struct Agent {
     paths: logind::Paths,
-    /// The page shares the clipboard (its HELLO's `cap::TEXT`): the session child runs only then.
-    clipboard: bool,
+    /// The session child's jobs, from the page's HELLO: the clipboard (`cap::TEXT`, `cap::IMAGE`), the screen's size
+    /// (`cap::DISPLAY`); it runs only for one of them.
+    jobs: session::Jobs,
+    /// The page's HELLO, which each new child hears first, and its last DISPLAY (the size each new child takes).
+    hello: Option<Vec<u8>>,
+    display: Option<Vec<u8>>,
     /// Sets the guest's clock (CLOCK_REALTIME) to a time in nanoseconds since the epoch; the tests' records it.
     set_clock: fn(u64) -> Result<(), Errno>,
     /// TYPE's text, on its way to the foreground console.
@@ -178,7 +189,9 @@ impl Agent {
         .ok();
         let mut a = Agent {
             paths,
-            clipboard: false,
+            jobs: session::Jobs::default(),
+            hello: None,
+            display: None,
             set_clock,
             typist: console::Typist::new(console),
             #[cfg(test)]
@@ -240,11 +253,15 @@ impl Agent {
         changed
     }
 
-    /// Starts, stops or swaps the session child for the active session now (none while the clipboard isn't shared).
-    /// `port`: the connection, closed in a new child.
+    /// Starts, stops or swaps the session child for the active session now (none without a job for it: the clipboard
+    /// not shared, no screen to follow). `port`: the connection, closed in a new child.
     fn track(&mut self, port: RawFd) {
-        if !self.clipboard {
+        if !self.jobs.any() {
             return self.stop_child();
+        }
+        if self.child.as_ref().is_some_and(|c| c.jobs != self.jobs) {
+            self.stop_child();
+            self.exited = None;
         }
         self.watch();
         let want = logind::active(&self.paths);
@@ -346,6 +363,7 @@ impl Agent {
                 runtime: a.runtime,
                 x11: session::X11_DIR.into(),
                 display: a.display,
+                jobs: self.jobs,
             };
             session::run(theirs, at, base);
         }
@@ -367,7 +385,15 @@ impl Agent {
             reader: frame::Reader::default(),
             out: Vec::new(),
             key: a,
+            jobs: self.jobs,
         };
+        // What the child is to know first: the page's HELLO and the screen's size.
+        if let Some(h) = &self.hello {
+            frame::encode(frame::HELLO, h, &mut c.out);
+        }
+        if let Some(d) = &self.display {
+            frame::encode(frame::DISPLAY, d, &mut c.out);
+        }
         if self.paused {
             frame::encode(frame::PAUSE, &[], &mut c.out);
         }
@@ -546,14 +572,28 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
 impl Session<'_> {
     fn frame(&mut self, kind: u8, payload: &[u8]) {
         match kind {
-            // The page's HELLO (one at each connection): the agent's answers it. It says whether the clipboard is
-            // shared (the session child runs or stops); the child hears it too: its transfers in flight were the
-            // page's before.
+            // The page's HELLO (one at each connection): the agent's answers it. It says the session child's jobs (the
+            // child runs, stops, or starts afresh for other jobs); the child hears it too: its transfers in flight
+            // were the page's before. A child started for it hears it first (`started`).
             frame::HELLO => {
                 frame::hello_answer(payload, CAPS, &mut self.out);
                 if let Some(h) = frame::Hello::decode(payload) {
-                    self.agent.clipboard = h.caps & (frame::cap::TEXT | frame::cap::IMAGE) != 0;
+                    self.agent.jobs = session::Jobs::from_caps(h.caps);
+                    self.agent.hello = Some(payload.to_vec());
+                    if !self.agent.jobs.resize {
+                        self.agent.display = None;
+                    }
+                    let generation = self.agent.generation;
                     self.agent.track(self.port.as_raw_fd());
+                    if self.agent.generation == generation {
+                        self.agent.for_child(kind, payload);
+                    }
+                }
+            }
+            // The page's screen size: kept for the children to come, passed to this one.
+            frame::DISPLAY => {
+                if frame::decode_display(payload).is_some() {
+                    self.agent.display = Some(payload.to_vec());
                     self.agent.for_child(kind, payload);
                 }
             }

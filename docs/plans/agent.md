@@ -3,7 +3,8 @@
 **Status:** written at the exit of M8 graphics G1 (2026-10-02) from that step's brainstorm and
 measurements. Built since, with an agent of our own rather than the stock ones: the clipboard (the user's choice,
 2026-11-05, [clipboard.md](clipboard.md) §3.4; the CLIP track, [../clipboard.md](../clipboard.md)) and **the time after
-a resume** (the AGENT track, 2026-11-13: TIME, [../frontend.md](../frontend.md) "The guest's clock"), the agent on by
+a resume** (the AGENT track, 2026-11-13: TIME, [../frontend.md](../frontend.md) "The guest's clock"), and resize on
+wlroots compositors (the BETTERAGENT track: DISPLAY), the agent on by
 default on every firmware machine and over vsock ([../devices.md](../devices.md) "The guest's agent"). Its binary and
 connection are where the other jobs below can go too. The user decided on 2026-10-01 that G1 stays agent-free, that
 the agent is **its own later step**, that it **starts from the stock agents' protocols**
@@ -20,7 +21,7 @@ What G1 measured on our machine
 |---|---|---|
 | fbcon (DRM's fbdev emulation) | Nothing useful: its buffer has the size it was born with; a bigger mode is refused, a smaller one crops (the display bounces it). Right size at boot only | Nothing: the buffer's size is the kernel's. A userspace console on KMS (kmscon) is the guest's choice |
 | sway 1.12 (wlroots), `WLR_RENDERER=pixman` | The kernel lists the new mode; sway keeps its own (wlroots seems to read the modes only when an output connects) and `swaymsg output … mode WxH` falls back silently | Run `swaymsg -- output Virtual-1 mode --custom WxH` (measured: the screen follows), or speak wlr-output-management as `wlr-randr` does |
-| GNOME (mutter), KDE (kwin) on Wayland | Expected to follow (they key on the connector's `hotplug_mode_update`); not measured | Nothing needed, if so |
+| GNOME (mutter), KDE (kwin) on Wayland | Expected to follow (they key on the connector's `hotplug_mode_update`); KDE does (a user's session, 2026-11-13), GNOME not measured | Nothing needed for KDE |
 | Xorg (modesetting) | The mode list updates and nothing applies it | Run `xrandr --auto` in the user's session: spice-vdagent does |
 
 So of what was measured, nothing follows the page's size by itself, and what can follow needs someone

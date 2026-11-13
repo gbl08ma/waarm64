@@ -30,6 +30,9 @@ pub const TYPED: u8 = 12;
 /// The page's: the host's wall clock (`time`), for the guest's (the agent sets it: after a restore, a pause, the
 /// host's own sleep).
 pub const TIME: u8 = 13;
+/// The page's: the size of its screen (`display`), which the guest's session is to take (the session child sets its
+/// compositor's outputs, or the X server's, to it).
+pub const DISPLAY: u8 = 14;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -55,6 +58,8 @@ pub mod cap {
     pub const IMAGE: u32 = 1 << 2;
     /// TIME: the guest's clock set from the host's (the agent), or a page that sends it.
     pub const TIME: u32 = 1 << 4;
+    /// DISPLAY: the session's screen follows the page's size (the agent), or a page that sends it.
+    pub const DISPLAY: u32 = 1 << 5;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
@@ -131,6 +136,13 @@ pub fn hello_answer(payload: &[u8], caps: u32, out: &mut Vec<u8>) {
         .encode(),
         out,
     );
+}
+
+/// DISPLAY's payload: u32 width, u32 height (the guest's pixels); None if short or empty.
+pub fn decode_display(p: &[u8]) -> Option<(u32, u32)> {
+    let mut r = Fields(p);
+    let (w, h) = (r.u32()?, r.u32()?);
+    (w > 0 && h > 0).then_some((w, h))
 }
 
 /// TIME's payload: u64 nanoseconds since the Unix epoch, the host's wall clock as the page sent it; None if short.
@@ -474,6 +486,14 @@ mod tests {
         let t = 1_763_000_000_123_456_789u64;
         assert_eq!(decode_time(&t.to_le_bytes()), Some(t));
         assert_eq!(decode_time(&[1, 2, 3]), None);
+        // DISPLAY: the bytes tests/agent.test.ts "frames: TIME and SESSION" pins (1280x720; later fields ignored).
+        assert_eq!((DISPLAY, cap::DISPLAY), (14, 32));
+        assert_eq!(
+            decode_display(&[0, 5, 0, 0, 0xd0, 2, 0, 0, 9]),
+            Some((1280, 720))
+        );
+        assert_eq!(decode_display(&[0, 5, 0, 0, 0xd0, 2, 0]), None, "short");
+        assert_eq!(decode_display(&[0; 8]), None, "no size");
         // TYPED and its statuses: the numbers tests/agent.test.ts pins.
         assert_eq!(
             (

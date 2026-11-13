@@ -964,3 +964,121 @@ fn shares_images_both_ways_streamed_and_capped() {
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
 }
+
+impl Sway {
+    /// The size of sway's first output's current mode (`swaymsg -t get_outputs`).
+    fn output_size(&self) -> Option<(u32, u32)> {
+        let out = self
+            .wl("swaymsg")
+            .env("SWAYSOCK", self.ipc())
+            .args(["-r", "-t", "get_outputs"])
+            .output()
+            .ok()?;
+        let json = String::from_utf8(out.stdout).ok()?;
+        // `"current_mode": { "width": W, "height": H, ...` with sway's own spacing: read the two numbers after the key.
+        let at = json.find("\"current_mode\"")?;
+        let num = |key: &str| -> Option<u32> {
+            let k = json[at..].find(key)? + at + key.len();
+            let rest = json[k..].trim_start_matches([' ', ':', '\n']);
+            rest.split(|c: char| !c.is_ascii_digit())
+                .next()?
+                .parse()
+                .ok()
+        };
+        Some((num("\"width\"")?, num("\"height\"")?))
+    }
+
+    /// sway's IPC socket in its runtime directory.
+    fn ipc(&self) -> PathBuf {
+        std::fs::read_dir(&self.dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("sway-ipc."))
+            })
+            .expect("sway's IPC socket")
+    }
+
+    /// Waits up to `ms` for the output to be `size`.
+    fn output_becomes(&self, size: (u32, u32), ms: u64) -> bool {
+        let end = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < end {
+            if self.output_size() == Some(size) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+}
+
+fn display(w: u32, h: u32) -> Vec<u8> {
+    let mut p = w.to_le_bytes().to_vec();
+    p.extend_from_slice(&h.to_le_bytes());
+    p
+}
+
+#[test]
+fn sets_sways_output_to_the_pages_size_without_the_clipboard() {
+    if !have("sway") || !have("swaymsg") {
+        eprintln!("SKIPPED: no sway (docs/devenv.md)");
+        return;
+    }
+    let sway = Sway::start("resize");
+    assert_eq!(sway.output_size(), Some((640, 480)), "sway's own mode");
+    let (mine, theirs) = socketpair(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    let runtime = sway.dir.to_str().unwrap().to_owned();
+    let jobs = session::Jobs {
+        clip: false,
+        resize: true,
+    };
+    let child = std::thread::spawn(move || session::serve_for(theirs, runtime, 0x0100_0000, jobs));
+    let mut page = Page {
+        fd: mine,
+        reader: frame::Reader::default(),
+        frames: Vec::new(),
+    };
+    // A size before the compositor's outputs are known: taken once they are.
+    page.send(frame::DISPLAY, &display(1024, 768));
+    assert!(
+        sway.output_becomes((1024, 768), 5000),
+        "{:?}",
+        sway.output_size()
+    );
+    // The page's size changes: the output follows; the same size again asks nothing.
+    page.send(frame::DISPLAY, &display(800, 600));
+    assert!(
+        sway.output_becomes((800, 600), 5000),
+        "{:?}",
+        sway.output_size()
+    );
+    page.send(frame::DISPLAY, &display(800, 600));
+    // Someone else (the user, sway's config) sets another mode: the page's size isn't forced on it until it changes.
+    let st = sway
+        .wl("swaymsg")
+        .env("SWAYSOCK", sway.ipc())
+        .args(["--", "output", "*", "mode", "--custom", "1280x720"])
+        .output()
+        .unwrap();
+    assert!(st.status.success());
+    assert!(sway.output_becomes((1280, 720), 5000));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        sway.output_size(),
+        Some((1280, 720)),
+        "left as the user set it"
+    );
+    // Without the clipboard's job: no data device, so no SESSION, and the page's offer isn't taken.
+    assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+}

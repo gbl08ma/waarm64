@@ -65,6 +65,8 @@ export class ScreenView {
   #cursorToken = 0;
   /** The size last sent to the guest. */
   sent: Size | undefined;
+  /** Called with each size sent (the guest's agent hears it too: web/app/areas/agent-actions.ts). */
+  onSent?: (size: Size) => void;
   #sizeTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(machine: PageMachine) {
@@ -242,6 +244,7 @@ export class ScreenView {
         if (!run || (!now && this.sent?.width === w.width && this.sent.height === w.height)) return;
         this.sent = w;
         run.display.postMessage({ type: 'size', ...w } satisfies DisplayFromPage);
+        this.onSent?.(w);
       },
       now ? 0 : SIZE_DEBOUNCE_MS,
     );

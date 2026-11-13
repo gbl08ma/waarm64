@@ -36,6 +36,7 @@
 use crate::clip::{self, Hash};
 use crate::frame::{self, ack};
 use crate::log;
+use crate::outputs::{self, Outputs};
 use crate::prelude::*;
 use crate::rt::{self, Instant};
 use crate::wire::{Args, Conn, Msg};
@@ -102,7 +103,7 @@ const MAX_TYPES: usize = 32;
 
 /// What an object of ours is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Obj {
+pub(crate) enum Obj {
     Registry,
     /// The first roundtrip's callback: the globals are all known.
     Init,
@@ -118,12 +119,18 @@ enum Obj {
     DeadSource,
     /// Destroyed, until delete_id.
     Dead,
+    /// wlr-output-management's (src/outputs.rs): the manager, a head and a mode (the compositor's objects), a
+    /// configuration of ours.
+    OutManager,
+    Head,
+    Mode,
+    OutConfig,
 }
 
 /// The connection to the compositor and what is known of it.
-struct Wl {
-    conn: Conn,
-    objs: BTreeMap<u32, Obj>,
+pub(crate) struct Wl {
+    pub(crate) conn: Conn,
+    pub(crate) objs: BTreeMap<u32, Obj>,
     /// The types of offers the compositor has introduced.
     offers: BTreeMap<u32, Vec<String>>,
     next: u32,
@@ -135,17 +142,19 @@ struct Wl {
     selection: Option<u32>,
     /// The first roundtrip came: the globals are known (with no data-control among them, X11's way is tried).
     inited: bool,
+    /// Its outputs (wlr-output-management), for DISPLAY's size.
+    pub(crate) outputs: Outputs,
 }
 
 impl Wl {
-    fn id(&mut self, kind: Obj) -> u32 {
+    pub(crate) fn id(&mut self, kind: Obj) -> u32 {
         let id = self.next;
         self.next += 1;
         self.objs.insert(id, kind);
         id
     }
 
-    fn msg(&mut self, object: u32, opcode: u16) -> Msg<'_> {
+    pub(crate) fn msg(&mut self, object: u32, opcode: u16) -> Msg<'_> {
         Msg::new(&mut self.conn.out, object, opcode)
     }
 
@@ -240,11 +249,33 @@ impl Xfer {
 }
 
 /// Where a session's displays are: its runtime directory (Wayland's sockets), X11's sockets' directory (empty: none),
-/// and the display its session file names (`DISPLAY=`, an X11 session's).
+/// and the display its session file names (`DISPLAY=`, an X11 session's); and what the child is for.
 pub struct Where {
     pub runtime: String,
     pub x11: String,
     pub display: Option<u32>,
+    pub jobs: Jobs,
+}
+
+/// A session child's jobs, from the page's HELLO: the clipboard shared (`cap::TEXT`, `cap::IMAGE`), the screen's size
+/// followed (`cap::DISPLAY`).
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct Jobs {
+    pub clip: bool,
+    pub resize: bool,
+}
+
+impl Jobs {
+    pub fn from_caps(caps: u32) -> Jobs {
+        Jobs {
+            clip: caps & (frame::cap::TEXT | frame::cap::IMAGE) != 0,
+            resize: caps & frame::cap::DISPLAY != 0,
+        }
+    }
+
+    pub fn any(&self) -> bool {
+        self.clip || self.resize
+    }
 }
 
 /// X11's sockets.
@@ -283,6 +314,9 @@ struct Child {
     told: bool,
     /// Why the loop is to end (the parent or the runtime directory gone).
     stop: Option<&'static str>,
+    jobs: Jobs,
+    /// The page's screen size (DISPLAY), which the outputs are set to.
+    want: Option<(u32, u32)>,
 }
 
 #[derive(Clone, Copy)]
@@ -326,12 +360,31 @@ pub fn run(parent: OwnedFd, at: Where, base: u32) -> ! {
 }
 
 /// `run`'s loop, which returns why it ended (the tests run it on a thread of theirs): Wayland's only (no X11
-/// directory).
+/// directory), for the clipboard.
 #[cfg(test)]
 pub fn serve(
     parent: OwnedFd,
     runtime: String,
     base: u32,
+) -> Result<&'static str, (&'static str, Errno)> {
+    serve_for(
+        parent,
+        runtime,
+        base,
+        Jobs {
+            clip: true,
+            resize: false,
+        },
+    )
+}
+
+/// `serve` for `jobs`.
+#[cfg(test)]
+pub fn serve_for(
+    parent: OwnedFd,
+    runtime: String,
+    base: u32,
+    jobs: Jobs,
 ) -> Result<&'static str, (&'static str, Errno)> {
     serve_at(
         parent,
@@ -339,6 +392,7 @@ pub fn serve(
             runtime,
             x11: String::new(),
             display: None,
+            jobs,
         },
         base,
     )
@@ -395,6 +449,8 @@ pub fn serve_at(
         xfers: Vec::new(),
         told: false,
         stop: None,
+        jobs: at.jobs,
+        want: None,
     };
     c.connect(true);
     c.x_try(true, false);
@@ -626,6 +682,7 @@ impl Child {
                         device: None,
                         selection: None,
                         inited: false,
+                        outputs: Outputs::default(),
                     };
                     let registry = wl.id(Obj::Registry);
                     wl.msg(DISPLAY, op::GET_REGISTRY).object(registry).done();
@@ -663,7 +720,8 @@ impl Child {
 
     /// Whether the X server's clipboard is to be shared: no compositor, or one known to have no data-control.
     fn x_wanted(&self) -> bool {
-        !self.x11.is_empty()
+        self.jobs.clip
+            && !self.x11.is_empty()
             && self
                 .wl
                 .as_ref()
@@ -882,6 +940,14 @@ impl Child {
             frame::MORE => {
                 if let Some((id, n)) = frame::decode_more(p) {
                     self.page_more(id, n);
+                }
+            }
+            frame::DISPLAY if self.jobs.resize => {
+                if let Some(size) = frame::decode_display(p) {
+                    self.want = Some(size);
+                    if let Some(wl) = self.wl.as_mut() {
+                        wl.resize(size);
+                    }
                 }
             }
             _ => {}
@@ -1527,10 +1593,19 @@ impl Child {
                 if let Some(k) = MANAGERS.iter().position(|m| *m == iface) {
                     wl.managers[k] = Some(name);
                 }
+                if iface == outputs::MANAGER {
+                    wl.outputs.global = Some(name);
+                }
             }
             (Obj::Init, op::DONE) => {
                 wl.objs.insert(object, Obj::Dead);
                 wl.inited = true;
+                if self.jobs.resize {
+                    wl.bind_outputs();
+                }
+                if !self.jobs.clip {
+                    return;
+                }
                 let k = wl.managers.iter().position(Option::is_some);
                 let (Some(seat), Some(k)) = (wl.seat, k) else {
                     if !self.told {
@@ -1628,6 +1703,12 @@ impl Child {
                     self.host = None;
                 }
             }
+            (Obj::OutManager | Obj::Head | Obj::Mode | Obj::OutConfig, _) => {
+                wl.output_event(kind, object, opcode, a);
+                if let Some(size) = self.want {
+                    wl.resize(size);
+                }
+            }
             _ => {}
         }
     }
@@ -1705,6 +1786,10 @@ mod tests {
             runtime: dir.to_str().unwrap().to_owned(),
             x11: dir.join("x11").to_str().unwrap().to_owned(),
             display: Some(5),
+            jobs: Jobs {
+                clip: true,
+                resize: false,
+            },
         };
         let child = std::thread::spawn(move || serve_at(theirs, at, 0));
         let mut page = crate::sway_test::Page {

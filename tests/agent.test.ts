@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeTime, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, WINDOW } from '../web/app/agent-link.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
@@ -1099,6 +1099,61 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([...encodeHello({ version: 1, caps: CAP.TIME })], [1, 0, 16, 0, 0, 0]);
   assert.deepEqual([FRAME.SESSION, FRAME.TIME, CAP.TIME], [11, 13, 16]);
   assert.deepEqual(pageCaps(false), CAP.TIME);
+  // DISPLAY (agent/src/frame.rs `decode_display` pins the payload).
+  assert.deepEqual([FRAME.DISPLAY, CAP.DISPLAY], [14, 32]);
+  assert.deepEqual([...encodeDisplay(1280, 720)], [0, 5, 0, 0, 0xd0, 2, 0, 0]);
+  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DISPLAY);
+});
+
+test("the link: the screen's size (DISPLAY) at each agent's HELLO that says it can, and at each change; none to an agent without CAP.DISPLAY or from a page without it", async () => {
+  const run = async (caps: number) => {
+    const { port1, port2 } = channel();
+    const link = new AgentLink(port1, caps);
+    const sizes: string[] = [];
+    const reader = new FrameReader();
+    port2.onmessage = (e) => {
+      if (e.data.type !== 'data') return;
+      for (const f of reader.push(e.data.bytes)) {
+        if (f.type !== FRAME.DISPLAY) continue;
+        const v = new DataView(f.payload.buffer, f.payload.byteOffset, f.payload.byteLength);
+        sizes.push(`${v.getUint32(0, true)}x${v.getUint32(4, true)}`);
+      }
+      port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 30));
+    const hello = (conn: number, agentCaps: number) => {
+      port2.postMessage({ type: 'open', open: true, conn });
+      port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: agentCaps })) });
+    };
+    assert.equal(link.display({ width: 1024, height: 768 }), false, 'no agent yet');
+    hello(1, CAP.TIME | CAP.DISPLAY);
+    await settle();
+    const atHello = [...sizes];
+    link.display({ width: 800, height: 600 });
+    await settle();
+    // The agent connects again (a restore): the size again.
+    port2.postMessage({ type: 'open', open: false, conn: 1 });
+    hello(2, CAP.TIME | CAP.DISPLAY);
+    await settle();
+    const again = sizes.slice(atHello.length + 1);
+    // An agent without it (an older one): nothing.
+    port2.postMessage({ type: 'open', open: false, conn: 2 });
+    hello(3, CAP.TIME);
+    await settle();
+    const before = sizes.length;
+    assert.equal(link.display({ width: 640, height: 480 }), false);
+    await settle();
+    link.close();
+    port2.close();
+    return { atHello, sizes, again, older: sizes.length - before };
+  };
+  const on = await run(pageCaps(false, true));
+  assert.deepEqual(on.atHello, ['1024x768'], 'the size given before the HELLO, at it');
+  assert.deepEqual(on.sizes.slice(0, 2), ['1024x768', '800x600'], 'then the change');
+  assert.deepEqual(on.again, ['800x600'], 'the last size at the next HELLO');
+  assert.equal(on.older, 0, 'none to an agent without CAP.DISPLAY');
+  const off = await run(pageCaps(true));
+  assert.deepEqual(off.sizes, [], 'a page without CAP.DISPLAY (no virtio-gpu) sends none');
 });
 
 // ---- Images (docs/plans/clipboard.md §4.4).
@@ -1522,7 +1577,7 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   Date.now = () => now() + jump;
   t.after(() => { Date.now = now; });
   t.mock.timers.enable({ apis: ['setInterval'] });
-  const actions = new AgentActions();
+  const actions = new AgentActions(() => undefined);
   const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => ups++)!;
   assert.equal(link.caps, CAP.TIME);
   assert.equal(actions.syncClock(), false, 'no agent yet');

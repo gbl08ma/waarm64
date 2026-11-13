@@ -135,7 +135,8 @@ const messages = new Messages(machine, () => {
   if (screen.cursor) screen.setCursor(undefined);
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
-const agentActions = new AgentActions();
+const agentActions = new AgentActions(() => screen.sent);
+screen.onSent = (size) => agentActions.display(size);
 const usbView = new UsbView(
   machine,
   () => usbEntries.locks,

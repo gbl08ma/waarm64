@@ -4,7 +4,7 @@
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
 // ACK and MORE (step 3), the capability `CAP.TEXT`; SESSION and TYPED; `CAP.IMAGE` (step 5); TIME, `CAP.TIME` (the
-// guest's clock).
+// guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -35,6 +35,8 @@ export const FRAME = {
   TYPED: 12,
   /** The page's: the host's wall clock (`encodeTime`), for the guest's (the agent sets it). */
   TIME: 13,
+  /** The page's: the size of its screen (`encodeDisplay`), for the guest's session to take (the agent sets its outputs). */
+  DISPLAY: 14,
 } as const;
 
 /** TYPED's statuses. */
@@ -97,6 +99,8 @@ export const CAP = {
   IMAGE: 1 << 2,
   /** TIME: the guest's clock set from the host's (the agent), or a page that sends it. */
   TIME: 1 << 4,
+  /** DISPLAY: the guest's session follows the page's screen size (the agent), or a page that sends it. */
+  DISPLAY: 1 << 5,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 
@@ -252,6 +256,15 @@ export function encodeTime(ms: number): Uint8Array {
   const whole = Math.floor(Math.max(0, ms));
   const ns = BigInt(whole) * 1_000_000n + BigInt(Math.round((Math.max(0, ms) - whole) * 1e6));
   new DataView(b.buffer).setBigUint64(0, ns, true);
+  return b;
+}
+
+/** DISPLAY's payload: u32 width, u32 height (the guest's pixels, as the display's size says them). */
+export function encodeDisplay(width: number, height: number): Uint8Array {
+  const b = new Uint8Array(8);
+  const v = new DataView(b.buffer);
+  v.setUint32(0, width >>> 0, true);
+  v.setUint32(4, height >>> 0, true);
   return b;
 }
 

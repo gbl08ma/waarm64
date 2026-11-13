@@ -4,8 +4,8 @@
 // taken yet, so a guest that stops reading costs the page a queue of frames, not the device's memory.
 //
 // What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
-// page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it), TIME (`time`),
-// TYPE (`type`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it, DISPLAY on one
+// with a screen of virtio-gpu's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO), TYPE (`type`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
 // connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
 // clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
 // and `window.__clipboard`.
@@ -18,6 +18,7 @@
 import {
   CAP,
   decodeHello,
+  encodeDisplay,
   encodeFrame,
   encodeHello,
   encodeTime,
@@ -33,8 +34,12 @@ import type { AgentFromDevice, AgentToDevice } from '../vsock-device.ts';
 /** The most bytes in flight to the guest (sent to the device, not yet in the guest's buffers). */
 export const WINDOW = 256 << 10;
 
-/** What the page says it does (web/agent-frame.ts `CAP`): the clock always, the clipboard's frames where it is shared. */
-export const pageCaps = (clipboard: boolean) => CAP.TIME | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0);
+/**
+ * What the page says it does (web/agent-frame.ts `CAP`): the clock always, the clipboard's frames where it is shared,
+ * the screen's size where the guest's screen follows the page's (`display`: virtio-gpu's).
+ */
+export const pageCaps = (clipboard: boolean, display = false) =>
+  CAP.TIME | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0) | (display ? CAP.DISPLAY : 0);
 
 export class AgentLink {
   /** The guest's agent is connected. */
@@ -60,6 +65,8 @@ export class AgentLink {
   private port: MessagePort;
   /** What the page's HELLO says (`pageCaps`). */
   readonly caps: number;
+  /** The screen's size last given (`display`): said again at each agent's HELLO. */
+  private size?: { width: number; height: number };
 
   constructor(port: MessagePort, caps: number) {
     [this.port, this.caps] = [port, caps];
@@ -100,6 +107,20 @@ export class AgentLink {
     for (const p of typePayloads(text)) this.send(FRAME.TYPE, p);
     this.send(FRAME.TYPE);
     return true;
+  }
+
+  /**
+   * The page's screen size, which the agent sets the guest's session to (DISPLAY): now, if the agent said it can, and
+   * at each agent's HELLO (a restored guest's session has the size it was saved with). False: not sent now.
+   */
+  display(size: { width: number; height: number }): boolean {
+    this.size = { ...size };
+    return this.sendDisplay();
+  }
+
+  private sendDisplay() {
+    if (!this.size || !this.agent || !(this.agent.caps & CAP.DISPLAY) || !(this.caps & CAP.DISPLAY)) return false;
+    return this.send(FRAME.DISPLAY, encodeDisplay(this.size.width, this.size.height));
   }
 
   /** The toolbar's switch (plan §5): the agent stops until `resume`. */
@@ -176,6 +197,7 @@ export class AgentLink {
         const h = decodeHello(f.payload);
         if (h) {
           this.agent = h;
+          this.sendDisplay();
           for (const f of this.onHello) f(h);
         }
       }
