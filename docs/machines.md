@@ -342,6 +342,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
   whose generation hasn't moved since (still 1) instead (**reuse**).
 - **Import a file** copies it into the machine's snapshots after the header check (one of another shape is kept,
   orphaned).
+- **A template** (`template: true` in the header, set only by `tools/snapshot-template.ts`, never by the page): its
+  restore has the guest agent renew the guest's identity (devices.md "A template's identity").
 - The page's header is format 2: a stored machine's `name`, `shape`, `shapeHash` and URL disks' `urls`, and the pins
   in `disks`; `web/snapshot-file.ts`'s container and the core's state are as for any snapshot.
 

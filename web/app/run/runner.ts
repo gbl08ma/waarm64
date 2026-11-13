@@ -60,7 +60,7 @@ export type RunnerDeps = {
     keyboardKey(code: string, down: boolean): boolean;
   };
   /** A run's guest agent (web/app/areas/agent-actions.ts) and its clipboard sharing (none: not shared); `up` at each HELLO. */
-  agent: { begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined; end(): void };
+  agent: { begin(ch: AgentChannels, up: () => void): ClipboardShare | undefined; end(): void; renew(): void };
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
   /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */

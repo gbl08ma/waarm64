@@ -32,6 +32,7 @@ mod console;
 mod frame;
 mod logind;
 mod outputs;
+mod renew;
 mod rt;
 #[cfg(test)]
 mod serve_test;
@@ -59,7 +60,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::TEXT
     | frame::cap::IMAGE
     | frame::cap::TIME
-    | frame::cap::DISPLAY;
+    | frame::cap::DISPLAY
+    | frame::cap::RENEW;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -156,6 +158,12 @@ struct Agent {
     display: Option<Vec<u8>>,
     /// Sets the guest's clock (CLOCK_REALTIME) to a time in nanoseconds since the epoch; the tests' records it.
     set_clock: fn(u64) -> Result<(), Errno>,
+    /// RENEW's paths, and how the page's bytes reach the kernel's pool (the tests' records them).
+    renew: renew::Paths,
+    add_entropy: fn(&str, &[u8]) -> Result<(), Errno>,
+    /// RENEW's keys' helper, running; RENEWED's bits, once done, for the connection to send.
+    keygen: Option<renew::Keygen>,
+    renewed: Option<[u8; 2]>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
     /// The tests': a function on a thread in place of the forked child.
@@ -193,6 +201,10 @@ impl Agent {
             hello: None,
             display: None,
             set_clock,
+            renew: renew::Paths::default(),
+            add_entropy: renew::add_entropy,
+            keygen: None,
+            renewed: None,
             typist: console::Typist::new(console),
             #[cfg(test)]
             test_child: None,
@@ -340,6 +352,7 @@ impl Agent {
             close.extend(self.ino.as_ref().map(|f| f.as_raw_fd()));
             close.extend(self.mounts.as_ref().map(|f| f.as_raw_fd()));
             close.extend(self.typist.fd());
+            close.extend(self.keygen.as_ref().map(|k| k.pidfd.as_raw_fd()));
             for fd in close {
                 // SAFETY: the parent's descriptors, which this process (which never returns to their owners) no
                 // longer uses; their OwnedFds are never dropped here (session::run exits).
@@ -477,6 +490,7 @@ enum Tag {
     Ino,
     Mounts,
     Child,
+    Keygen,
 }
 
 fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
@@ -502,6 +516,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(m) = &s.agent.mounts {
             fds.push(PollFd::new(m, PollFlags::PRI));
             tags.push(Tag::Mounts);
+        }
+        if let Some(k) = &s.agent.keygen {
+            fds.push(PollFd::new(&k.pidfd, PollFlags::IN));
+            tags.push(Tag::Keygen);
         }
         if let Some(c) = &s.agent.child {
             let f = if c.out.is_empty() {
@@ -543,6 +561,12 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                     }
                 }
                 Tag::Ino => track |= s.agent.inotify(),
+                Tag::Keygen => {
+                    if let Some(k) = s.agent.keygen.take() {
+                        let (done, failed) = renew::keygen_done(k);
+                        s.agent.renewed = Some([done, failed]);
+                    }
+                }
                 Tag::Mounts => track = true,
                 Tag::Child => {
                     if revents.contains(PollFlags::OUT) {
@@ -556,6 +580,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         }
         if track {
             s.agent.track(port.as_raw_fd());
+        }
+        if let Some(r) = s.agent.renewed.take() {
+            frame::encode(frame::RENEWED, &r, &mut s.out);
         }
         if core::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
@@ -595,6 +622,14 @@ impl Session<'_> {
                 if frame::decode_display(payload).is_some() {
                     self.agent.display = Some(payload.to_vec());
                     self.agent.for_child(kind, payload);
+                }
+            }
+            // A template's copy made the guest's own (src/renew.rs); one renewal at a time.
+            frame::RENEW if self.agent.keygen.is_none() => {
+                let r = renew::renew(&self.agent.renew, payload, self.agent.add_entropy);
+                match r.keygen {
+                    Some(k) => self.agent.keygen = Some(k),
+                    None => self.agent.renewed = Some([r.done, r.failed]),
                 }
             }
             frame::TIME => {

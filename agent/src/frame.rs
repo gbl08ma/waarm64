@@ -33,6 +33,10 @@ pub const TIME: u8 = 13;
 /// The page's: the size of its screen (`display`), which the guest's session is to take (the session child sets its
 /// compositor's outputs, or the X server's, to it).
 pub const DISPLAY: u8 = 14;
+/// The page's: the guest restored from a template, to be made its own (src/renew.rs): the host's random bytes.
+pub const RENEW: u8 = 15;
+/// The agent's: what RENEW renewed and what failed (u8 bits each, `renew::what`).
+pub const RENEWED: u8 = 16;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -60,6 +64,8 @@ pub mod cap {
     pub const TIME: u32 = 1 << 4;
     /// DISPLAY: the session's screen follows the page's size (the agent), or a page that sends it.
     pub const DISPLAY: u32 = 1 << 5;
+    /// RENEW and RENEWED: a template's copy made the guest's own.
+    pub const RENEW: u32 = 1 << 6;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 

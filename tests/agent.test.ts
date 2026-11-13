@@ -12,8 +12,9 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
-import { AgentLink, pageCaps, WINDOW } from '../web/app/agent-link.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeTime, FRAME, RENEWED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
+import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
@@ -251,6 +252,8 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   // X11 (step 5): the private /tmp keeps the X server's sockets (read-only; none there is no failure).
   assert.match(unit, /^PrivateTmp=yes$/m);
   assert.match(unit, /^BindReadOnlyPaths=-\/tmp\/\.X11-unix$/m);
+  // RENEW (a template's restore): the machine id, the SSH host keys, systemd's random seed writable (none: no failure).
+  assert.match(unit, /^ReadWritePaths=-\/etc\/machine-id -\/etc\/ssh -\/var\/lib\/systemd\/random-seed$/m);
   assert.equal(c[2].data, '[Unit]\nWants=waarm64-agent.service\nAfter=waarm64-agent.service\n');
   for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
 });
@@ -1103,6 +1106,71 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([FRAME.DISPLAY, CAP.DISPLAY], [14, 32]);
   assert.deepEqual([...encodeDisplay(1280, 720)], [0, 5, 0, 0, 0xd0, 2, 0, 0]);
   assert.equal(pageCaps(false, true), CAP.TIME | CAP.DISPLAY);
+  // RENEW and RENEWED (agent/src/frame.rs, agent/src/renew.rs `what`).
+  assert.deepEqual([FRAME.RENEW, FRAME.RENEWED, CAP.RENEW], [15, 16, 64]);
+  assert.deepEqual([RENEWED.ENTROPY, RENEWED.MACHINE_ID, RENEWED.SEED, RENEWED.SSH], [1, 2, 4, 8]);
+});
+
+test("the link: RENEW once after a template's restore, at the first HELLO of an agent that renews (random bytes each time); RENEWED kept", async () => {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1, pageCaps(false));
+  const renews: Uint8Array[] = [];
+  const reader = new FrameReader();
+  port2.onmessage = (e) => {
+    if (e.data.type !== 'data') return;
+    renews.push(...reader.push(e.data.bytes).filter((f) => f.type === FRAME.RENEW).map((f) => f.payload));
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const hello = (conn: number, caps: number) => {
+    port2.postMessage({ type: 'open', open: true, conn });
+    port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+  };
+  link.renew(); // the worker's `template`, before the agent connects
+  hello(1, CAP.TIME); // an agent that doesn't renew: kept owed
+  await settle();
+  assert.equal(renews.length, 0);
+  port2.postMessage({ type: 'open', open: false, conn: 1 });
+  hello(2, CAP.TIME | CAP.RENEW);
+  await settle();
+  assert.equal(renews.length, 1, 'at the HELLO of one that does');
+  assert.equal(renews[0].length, RENEW_BYTES);
+  port2.postMessage({ type: 'data', conn: 2, bytes: encodeFrame(FRAME.RENEWED, new Uint8Array([RENEWED.ENTROPY | RENEWED.MACHINE_ID, RENEWED.SSH])) });
+  port2.postMessage({ type: 'open', open: false, conn: 2 });
+  hello(3, CAP.TIME | CAP.RENEW);
+  await settle();
+  assert.equal(renews.length, 1, 'once: not at the next HELLO');
+  assert.deepEqual(link.renewed, { done: RENEWED.ENTROPY | RENEWED.MACHINE_ID, failed: RENEWED.SSH });
+  link.renew(); // another template's restore in the same run: now, with other bytes
+  await settle();
+  assert.equal(renews.length, 2);
+  assert.notDeepEqual([...renews[1]], [...renews[0]]);
+  link.close();
+  port2.close();
+});
+
+test("a template (tools/snapshot-template.ts, web/snapshot-file.ts `asTemplate`): the header's flag set and dropped, the frames untouched", async () => {
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: '2026-11-13T00:00:00Z', name: 'demo ☃' });
+  await w.bytes('CORE', new Uint8Array(3000).map((_, i) => i * 7));
+  await w.end();
+  const file = new Blob(parts as BlobPart[]);
+  const read = async (b: Blob) => {
+    const s = await openSnapshot(b, { check: true });
+    const frames: string[] = [];
+    for await (const f of s.frames()) frames.push(`${f.tag}:${f.index}:${f.data.length}:${f.data[100]}`);
+    return { header: s.header, frames };
+  };
+  const plain = await read(file);
+  assert.equal(plain.header.template, undefined);
+  const t = await read(await asTemplate(file));
+  assert.equal(t.header.template, true);
+  assert.equal(t.header.name, 'demo ☃');
+  assert.deepEqual(t.frames, plain.frames);
+  const back = await read(await asTemplate(await asTemplate(file), false));
+  assert.equal(back.header.template, undefined);
+  assert.deepEqual(back.frames, plain.frames);
+  await assert.rejects(asTemplate(new Blob([new Uint8Array(40)])), /not-snapshot|snapshot/i);
 });
 
 test("the link: the screen's size (DISPLAY) at each agent's HELLO that says it can, and at each change; none to an agent without CAP.DISPLAY or from a page without it", async () => {

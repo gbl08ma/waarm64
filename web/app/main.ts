@@ -169,6 +169,7 @@ const runner = new Runner({
   agent: {
     begin: (ch, up) => clipboardActions.begin(agentActions.begin(ch, up), ch.clipboard),
     end: () => agentActions.end(),
+    renew: () => agentActions.renew(),
   },
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },
   later: {

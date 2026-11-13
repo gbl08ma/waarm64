@@ -129,7 +129,7 @@ a stream of its own, begun at a frame: a restore resets the guest's transport (t
 agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 151 KB).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 158 KB).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
@@ -309,13 +309,35 @@ CRTC is logged. A desktop's own daemon (KDE's kscreen) may set the same size too
 (`agent/src/x11_test.rs`) runs Xorg on the dummy driver (Xvfb's screen can't grow past the size it started with; the Debian
 image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn't measured (backlog).
 
+**A template's identity** (RENEW; `agent/src/renew.rs`): a snapshot flagged as a template (its header's `template:
+true`, set by `tools/snapshot-template.ts` with `web/snapshot-file.ts` `asTemplate`, which rewrites the header alone: an
+internal tool for demo images, never set by the page, whose own snapshots keep their identity) is one every visitor
+restores the same: the same kernel CRNG, machine id, random seed and SSH host keys in every copy. At its restore (not a
+resume) the worker says `template`, and the run's link sends RENEW with 64 random bytes once, at the first HELLO of an
+agent with `CAP.RENEW`. The root process: the bytes added to `/dev/random`'s input pool and credited (`RNDADDENTROPY`),
+then the CRNG reseeded (`RNDRESEEDCRNG`: added entropy otherwise reaches it only at its next periodic reseed); a new
+`/etc/machine-id` (version 4, written in place, its 0444 mode made writable for the write and back: root without
+`CAP_DAC_OVERRIDE`), what has read the old one (journald, networkd's DUID) keeping it until it restarts; systemd's
+random seed (`/var/lib/systemd/random-seed`, if there) new bytes of its length; and, where there are host keys
+(`/etc/ssh/ssh_host_<type>_key`) and `ssh-keygen` (the agent runs a guest program only where it exists), each key made
+again into `<key>.new` (`ssh-keygen -q -N "" -t <type>`, umask 022) and renamed over the old one and its `.pub`, so
+sshd never finds one missing, in a forked helper whose pidfd the root loop polls (an RSA key takes seconds of a
+vCPU). The new ids mix the page's bytes into `getrandom`'s too, should the reseed have failed. Not the hostname (the
+user's choice: it takes effect properly only after a restart). RENEWED says what was done. The unit's
+`ReadWritePaths=-/etc/machine-id -/etc/ssh -/var/lib/systemd/random-seed` lets it through `ProtectSystem=strict`, so a
+template must be taken from a guest booted by a page with it. Tests: `agent/src/serve_test.rs` (a fake ssh-keygen and
+the real one), `tests/agent.test.ts` (the link, `asTemplate`), `tests/page-template.test.ts` (Debian: the same snapshot
+unflagged keeps its identity, flagged gets a new machine id and seed; the test image has no sshd).
+
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
+| RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
+| RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

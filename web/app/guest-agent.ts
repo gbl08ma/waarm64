@@ -65,7 +65,10 @@ exec /run/waarm64/agent
  * the agent stops (CAP_KILL); they read the session's files in /run/user and the home (read-only). Its sockets are Unix
  * ones (the session's) and vsock (the page): no `PrivateNetwork`, whose namespace a kernel with vsock namespaces would
  * keep from the host's CID. The private /tmp keeps the host's X11 sockets' directory, bound in read-only (an X session's
- * child connects to its display's socket there; `-`: a guest without it starts all the same).
+ * child connects to its display's socket there; `-`: a guest without it starts all the same). What RENEW renews after a
+template's restore (agent/src/renew.rs) is writable through `ProtectSystem=strict`: the machine id, the SSH host keys'
+directory (ssh-keygen's new keys are renamed in), systemd's random seed (`-`: each may be missing); `/dev/random`'s
+RNDADDENTROPY and RNDRESEEDCRNG take CAP_SYS_ADMIN, which it has.
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/waarm64 is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -84,6 +87,7 @@ ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
 BindReadOnlyPaths=-/tmp/.X11-unix
+ReadWritePaths=-/etc/machine-id -/etc/ssh -/var/lib/systemd/random-seed
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

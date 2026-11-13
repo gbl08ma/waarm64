@@ -5,7 +5,8 @@
 //
 // What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
 // page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it, DISPLAY on one
-// with a screen of virtio-gpu's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO), TYPE (`type`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// with a screen of virtio-gpu's; RENEW needs only the agent's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO),
+// RENEW once after a template's restore (`renew`), TYPE (`type`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
 // connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
 // clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
 // and `window.__clipboard`.
@@ -18,6 +19,7 @@
 import {
   CAP,
   decodeHello,
+  decodeRenewed,
   encodeDisplay,
   encodeFrame,
   encodeHello,
@@ -40,6 +42,9 @@ export const WINDOW = 256 << 10;
  */
 export const pageCaps = (clipboard: boolean, display = false) =>
   CAP.TIME | (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE : 0) | (display ? CAP.DISPLAY : 0);
+
+/** RENEW's random bytes. */
+export const RENEW_BYTES = 64;
 
 export class AgentLink {
   /** The guest's agent is connected. */
@@ -67,6 +72,10 @@ export class AgentLink {
   readonly caps: number;
   /** The screen's size last given (`display`): said again at each agent's HELLO. */
   private size?: { width: number; height: number };
+  /** RENEW is owed (`renew`): sent at the next HELLO of an agent that renews. */
+  private renewing = false;
+  /** What the agent's RENEWED said (the tests read it). */
+  renewed?: { done: number; failed: number };
 
   constructor(port: MessagePort, caps: number) {
     [this.port, this.caps] = [port, caps];
@@ -116,6 +125,20 @@ export class AgentLink {
   display(size: { width: number; height: number }): boolean {
     this.size = { ...size };
     return this.sendDisplay();
+  }
+
+  /**
+   * The guest was restored from a template (web/app/worker.ts says so): its agent makes the guest's identity its own
+   * (RENEW, with the host's random bytes), once: now if the agent can, else at its next HELLO that says it can.
+   */
+  renew() {
+    this.renewing = true;
+    this.sendRenew();
+  }
+
+  private sendRenew() {
+    if (!this.renewing || !this.agent || !(this.agent.caps & CAP.RENEW)) return;
+    if (this.send(FRAME.RENEW, crypto.getRandomValues(new Uint8Array(RENEW_BYTES)))) this.renewing = false;
   }
 
   private sendDisplay() {
@@ -197,10 +220,12 @@ export class AgentLink {
         const h = decodeHello(f.payload);
         if (h) {
           this.agent = h;
+          this.sendRenew();
           this.sendDisplay();
           for (const f of this.onHello) f(h);
         }
       }
+      if (f.type === FRAME.RENEWED) this.renewed = decodeRenewed(f.payload);
       this.onFrame?.(f);
     }
     // Out of step (a frame's length that can't be): the connection reset, once, so the agent connects again.

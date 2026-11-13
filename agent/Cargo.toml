@@ -13,7 +13,7 @@ publish = false
 [dependencies]
 # The one dependency (plan §3.3, the user's choice): raw Linux syscalls, no libc wrapper. Without `std`: the agent is
 # `no_std` (src/rt.rs).
-rustix = { version = "1.1", default-features = false, features = ["alloc", "event", "fs", "net", "pipe", "process", "termios", "thread", "time"] }
+rustix = { version = "1.1", default-features = false, features = ["alloc", "event", "fs", "net", "pipe", "process", "rand", "termios", "thread", "time"] }
 
 
 # The binary has no unwinder (src/rt.rs), in every profile; the tests' harness unwinds whatever this says.

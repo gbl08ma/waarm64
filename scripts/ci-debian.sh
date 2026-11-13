@@ -16,7 +16,7 @@ step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 
 for name in debian edk2 linux-snd agent; do images/build.sh --check "$name" > /dev/null || { echo "ci-debian: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
 platform=()
-[ "${1:-}" = --platform ] && platform=(tests/page-usb-keyboard.test.ts tests/page-usb-gamepad.test.ts tests/page-clock.test.ts tests/page-clipboard.test.ts tests/page-clipboard-x11.test.ts)
+[ "${1:-}" = --platform ] && platform=(tests/page-usb-keyboard.test.ts tests/page-usb-gamepad.test.ts tests/page-clock.test.ts tests/page-clipboard.test.ts tests/page-clipboard-x11.test.ts tests/page-template.test.ts)
 export WAARM64_DISTROS=debian WAARM64_DEBIAN_SLOTS=${WAARM64_DEBIAN_SLOTS-2}
 step 'Debian on the page'
 node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-spill.test.ts tests/page-agent.test.ts "${platform[@]}"

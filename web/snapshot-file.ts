@@ -21,6 +21,32 @@ import { msg, MsgError, type Msg, type Params } from './msg.ts';
 
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
 export type SnapshotHeader = { format: 1; coreVersion: number; abi: number; created: string; [key: string]: unknown };
+/**
+ * The snapshot in `file` with its header's `template` set (or, `on` false, dropped): a template is a snapshot every
+ * visitor restores the same (a demo image's), whose restore has the guest's agent renew its identity (docs/devices.md
+ * "A template's identity"). Only the header changes (its length and CRC with it); the frames are the file's own.
+ */
+export async function asTemplate(file: Blob, on = true): Promise<Blob> {
+  const fixed = new DataView(await file.slice(0, 16).arrayBuffer());
+  const magic = new Uint8Array(fixed.buffer, 0, Math.min(8, fixed.byteLength));
+  if (fixed.byteLength < 16 || MAGIC.some((b, i) => magic[i] !== b)) throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
+  const len = fixed.getUint32(12, true);
+  const json = new Uint8Array(await file.slice(16, 16 + len).arrayBuffer());
+  const crc = new DataView(await file.slice(16 + len, 20 + len).arrayBuffer());
+  if (json.length !== len || crc.byteLength !== 4 || crc.getUint32(0, true) !== crc32(json)) throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
+  const header = JSON.parse(new TextDecoder().decode(json)) as Record<string, unknown>;
+  if (on) header.template = true;
+  else delete header.template;
+  const out = new TextEncoder().encode(JSON.stringify(header));
+  const head = new Uint8Array(20 + out.length);
+  const v = new DataView(head.buffer);
+  head.set(new Uint8Array(fixed.buffer, 0, 12));
+  v.setUint32(12, out.length, true);
+  head.set(out, 16);
+  v.setUint32(16 + out.length, crc32(out), true);
+  return new Blob([head, file.slice(20 + len)]);
+}
+
 /** Appends bytes to the output, in order. */
 export type Sink = (bytes: Uint8Array) => void | Promise<void>;
 /** A frame codec: id as in the frame header. Pluggable so another codec (an LZ in the core, id 2) can be added later. */

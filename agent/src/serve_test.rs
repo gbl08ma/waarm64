@@ -18,6 +18,14 @@ use std::time::{Duration, Instant};
 /// The clock the agent set (`Agent::set_clock`), every test's.
 static CLOCK: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
+/// The bytes the agent added to the kernel's pool (`Agent::add_entropy`), every test's.
+static ENTROPY: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+
+fn record_entropy(_random: &str, b: &[u8]) -> io::Result<()> {
+    ENTROPY.lock().unwrap().push(b.to_vec());
+    Ok(())
+}
+
 fn record_clock(ns: u64) -> io::Result<()> {
     CLOCK.lock().unwrap().push(ns);
     Ok(())
@@ -112,6 +120,13 @@ impl Harness {
             sessions: s("sessions"),
             users: s("users"),
         };
+        let renew = crate::renew::Paths {
+            random: s("random"),
+            machine_id: s("machine-id"),
+            seed: s("random-seed"),
+            ssh: s("ssh"),
+            keygen: vec![s("no-keygen"), s("ssh-keygen")],
+        };
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
         let (mine, theirs) = socketpair(
@@ -125,6 +140,8 @@ impl Harness {
             let mut a = Agent::new(paths, Box::new(FakeConsole(c)));
             a.test_child = Some(echo_child);
             a.set_clock = record_clock;
+            a.add_entropy = record_entropy;
+            a.renew = renew;
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -424,4 +441,148 @@ fn a_child_for_the_screens_size_hears_the_hello_and_the_size_first() {
     );
     assert!(h.echoed(frame::HELLO, 2000), "the new child's HELLO");
     assert!(!h.echoed(frame::DISPLAY, 300), "no size for it");
+}
+
+#[test]
+fn renews_a_templates_identity() {
+    use crate::renew::what;
+    use std::os::unix::fs::PermissionsExt;
+    let mut h = Harness::start("renew");
+    let r = |p: &str| h.root.join(p);
+    let old_id = "0123456789abcdef0123456789abcdef\n";
+    std::fs::write(r("machine-id"), old_id).unwrap();
+    std::fs::set_permissions(r("machine-id"), std::fs::Permissions::from_mode(0o444)).unwrap();
+    std::fs::write(r("random-seed"), [7u8; 512]).unwrap();
+    std::fs::create_dir(r("ssh")).unwrap();
+    for t in ["ed25519", "rsa"] {
+        std::fs::write(r(&format!("ssh/ssh_host_{t}_key")), "old").unwrap();
+        std::fs::write(r(&format!("ssh/ssh_host_{t}_key.pub")), "old pub").unwrap();
+    }
+    std::fs::write(r("ssh/sshd_config"), "kept").unwrap();
+    // ssh-keygen as the agent runs it: `-q -N "" -t <type> -f <out>`.
+    std::fs::write(
+        r("ssh-keygen"),
+        "#!/bin/sh\nwhile [ $# -gt 1 ]; do case $1 in -f) f=$2;; -t) t=$2;; esac; shift; done\necho \"new $t\" > \"$f\"; echo \"new $t pub\" > \"$f.pub\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(r("ssh-keygen"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    h.page.send(
+        frame::HELLO,
+        &hello_with(frame::cap::TIME | frame::cap::RENEW),
+    );
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::RENEW, 0, "the agent renews");
+    let bytes: Vec<u8> = (0..64u8).map(|i| i.wrapping_mul(37) ^ 0x5a).collect();
+    h.page.send(frame::RENEW, &bytes);
+    let done = h.page.next(frame::RENEWED, 10_000).expect("RENEWED");
+    assert_eq!(
+        done,
+        [what::ENTROPY | what::MACHINE_ID | what::SEED | what::SSH, 0],
+        "everything renewed, nothing failed"
+    );
+    assert!(
+        ENTROPY.lock().unwrap().contains(&bytes),
+        "the page's bytes to the kernel's pool"
+    );
+    let id = std::fs::read_to_string(r("machine-id")).unwrap();
+    assert!(
+        id != old_id && id.len() == 33 && id.ends_with('\n'),
+        "{id:?}"
+    );
+    assert!(
+        id[..32]
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    );
+    assert_eq!(&id[12..13], "4", "a version 4 id");
+    assert_eq!(
+        std::fs::metadata(r("machine-id"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o444,
+        "its mode kept"
+    );
+    let seed = std::fs::read(r("random-seed")).unwrap();
+    assert!(seed.len() == 512 && seed != [7u8; 512]);
+    for t in ["ed25519", "rsa"] {
+        assert_eq!(
+            std::fs::read_to_string(r(&format!("ssh/ssh_host_{t}_key"))).unwrap(),
+            format!("new {t}\n")
+        );
+        assert_eq!(
+            std::fs::read_to_string(r(&format!("ssh/ssh_host_{t}_key.pub"))).unwrap(),
+            format!("new {t} pub\n")
+        );
+        assert!(
+            !r(&format!("ssh/ssh_host_{t}_key.new")).exists(),
+            "renamed into place"
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(r("ssh/sshd_config")).unwrap(),
+        "kept"
+    );
+    // Without ssh-keygen: the keys left as they are, the rest renewed again.
+    std::fs::remove_file(r("ssh-keygen")).unwrap();
+    h.page.send(frame::RENEW, &bytes);
+    assert_eq!(
+        h.page.next(frame::RENEWED, 5000).expect("RENEWED"),
+        [what::ENTROPY | what::MACHINE_ID | what::SEED, 0]
+    );
+    assert_ne!(
+        std::fs::read_to_string(r("machine-id")).unwrap(),
+        id,
+        "a new id each time"
+    );
+    assert_eq!(
+        std::fs::read_to_string(r("ssh/ssh_host_rsa_key")).unwrap(),
+        "new rsa\n"
+    );
+}
+
+#[test]
+fn renews_ssh_host_keys_with_the_real_ssh_keygen() {
+    use crate::renew::what;
+    let Some(kg) = ["/usr/bin/ssh-keygen", "/bin/ssh-keygen"]
+        .into_iter()
+        .find(|p| std::path::Path::new(p).exists())
+    else {
+        eprintln!("SKIPPED: no ssh-keygen");
+        return;
+    };
+    let mut h = Harness::start("renew-ssh");
+    let r = |p: &str| h.root.join(p);
+    std::fs::create_dir(r("ssh")).unwrap();
+    for t in ["ed25519", "rsa"] {
+        std::fs::write(r(&format!("ssh/ssh_host_{t}_key")), "old").unwrap();
+        std::fs::write(r(&format!("ssh/ssh_host_{t}_key.pub")), "old pub").unwrap();
+    }
+    std::os::unix::fs::symlink(kg, r("ssh-keygen")).unwrap();
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    assert!(h.page.next(frame::HELLO, 2000).is_some());
+    h.page.send(frame::RENEW, &[9u8; 64]);
+    let done = h.page.next(frame::RENEWED, 60_000).expect("RENEWED");
+    // No machine id or seed in this test's directory: those not there are in neither.
+    assert_eq!(done, [what::ENTROPY | what::SSH, 0]);
+    for t in ["ed25519", "rsa"] {
+        let key = r(&format!("ssh/ssh_host_{t}_key"));
+        let out = std::process::Command::new(kg)
+            .arg("-l")
+            .arg("-f")
+            .arg(&key)
+            .output()
+            .unwrap();
+        let line = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        assert!(
+            out.status.success() && line.contains(&format!("({t})")),
+            "{t}: {line}"
+        );
+        let pubkey = std::fs::read_to_string(r(&format!("ssh/ssh_host_{t}_key.pub"))).unwrap();
+        assert!(pubkey.starts_with("ssh-"), "{pubkey}");
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the private half the owner's only");
+    }
 }

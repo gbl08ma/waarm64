@@ -329,14 +329,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md
   phase D's preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
   before a first-boot script, which then gives this copy its own identity and per-machine setup. Every visitor resumes
-  the same memory, so what must differ per visitor: SSH host keys, `/etc/machine-id` (and what derives from it: DHCP
-  DUID/IAID, journal), systemd's random seed, the hostname if it has one, the network card's MAC (a page-side choice),
-  any tailnet node key (the page's, host-side). **The kernel's RNG is the subtle one:** a resumed CRNG is the same in
-  every copy until reseeded; Linux reseeds on a VM generation ID change (`microsoft,vmgenid`, a device-tree binding
-  the kernel supports), so the snapshot's restore should give a new generation ID, and virtio-rng should feed fresh
-  entropy at once. The trigger: the script waits in the snapshot (on the serial console, a fw_cfg credential, or the
-  guest agent, which already connects again at every restore and sets the clock: docs/devices.md "The guest's agent")
-  and runs when the page signals the resume. The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
+  the same memory. **Built (BETTERAGENT):** a snapshot flagged as a template (`tools/snapshot-template.ts`) has the
+  guest agent renew the kernel's entropy (and force the CRNG's reseed), `/etc/machine-id`, systemd's random seed and
+  the SSH host keys at its restore (devices.md "A template's identity"); the hostname stays (the user's choice). Left:
+  what derives from the machine id in programs already running (systemd-networkd's DHCP DUID/IAID, journald's file
+  names: until they restart; the network job, BETTERAGENT job 3, reconfigures the link), the network card's MAC (a
+  page-side choice), any tailnet node key (the page's, host-side), and a VM generation ID (`microsoft,vmgenid`, which
+  the kernel reseeds on by itself: the agent's forced reseed stands in for it, and userspace generators that key on
+  the generation, the vDSO's `getrandom`, follow the reseed). The demo's per-machine setup script, if one is wanted,
+  can wait on the renewal (the agent's journal line `renew: done`). The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
   change under it (a chunked image's `id`, [remote-disks.md](remote-disks.md), makes that check exact; a whole file's
   URL doesn't). **How a visitor gets there** (the user's decision, 2026-10-23): an interstitial page first says what
   the project is, that it needs a host with enough memory and CPU, and that hundreds of MB will be downloaded; one
@@ -1609,7 +1610,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 150,872 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 158,064 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the

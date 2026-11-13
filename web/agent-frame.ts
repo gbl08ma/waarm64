@@ -4,7 +4,8 @@
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
 // ACK and MORE (step 3), the capability `CAP.TEXT`; SESSION and TYPED; `CAP.IMAGE` (step 5); TIME, `CAP.TIME` (the
-// guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size).
+// guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size); RENEW and RENEWED, `CAP.RENEW`
+// (a template's copy made the guest's own).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -37,7 +38,19 @@ export const FRAME = {
   TIME: 13,
   /** The page's: the size of its screen (`encodeDisplay`), for the guest's session to take (the agent sets its outputs). */
   DISPLAY: 14,
+  /** The page's: the guest was restored from a template (a snapshot flagged so): random bytes of the host's, to make its identity its own. */
+  RENEW: 15,
+  /** The agent's: what RENEW renewed and what failed (`decodeRenewed`, bits `RENEWED`). */
+  RENEWED: 16,
 } as const;
+
+/** RENEWED's bits (agent/src/renew.rs `what`). */
+export const RENEWED = { ENTROPY: 1, MACHINE_ID: 2, SEED: 4, SSH: 8 } as const;
+
+/** RENEWED's payload: u8 renewed, u8 failed (`RENEWED`'s bits each). */
+export function decodeRenewed(p: Uint8Array): { done: number; failed: number } | undefined {
+  return p.length < 2 ? undefined : { done: p[0], failed: p[1] };
+}
 
 /** TYPED's statuses. */
 export const TYPED = {
@@ -101,6 +114,8 @@ export const CAP = {
   TIME: 1 << 4,
   /** DISPLAY: the guest's session follows the page's screen size (the agent), or a page that sends it. */
   DISPLAY: 1 << 5,
+  /** RENEW and RENEWED: a template's copy made the guest's own (the agent's; the page sends RENEW to an agent that says it). */
+  RENEW: 1 << 6,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

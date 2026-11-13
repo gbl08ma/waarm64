@@ -63,6 +63,11 @@ export class AgentActions {
     this.#link?.display(size);
   }
 
+  /** The guest was restored from a template: its agent renews its identity (web/app/agent-link.ts `renew`). */
+  renew() {
+    this.#link?.renew();
+  }
+
   /** Sets the guest's clock to the browser's, under Preferences' switch; false: not sent (off, or no agent yet). */
   syncClock(): boolean {
     return clockSync() && !!this.#link?.time();

@@ -186,6 +186,8 @@ async function suspendedCopy(m: StartMessage): Promise<Blob | undefined> {
 /** The machine a snapshot (or a suspended copy) says, with its restore. */
 async function fromSnapshot(m: StartMessage, machine: Machine, snapshot: Blob, resume: boolean) {
   const r = await openRestore(snapshot, m, machine, resume, await codec());
+  // A template (web/snapshot-file.ts `asTemplate`): every visitor's copy is the same; the agent makes this one its own.
+  if (!resume && r.header.template === true) post({ type: 'template' });
   ramMiB = r.plan.ramMiB;
   serialTail = r.serial;
   return r;
