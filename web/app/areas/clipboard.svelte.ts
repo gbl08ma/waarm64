@@ -10,8 +10,11 @@ class Clipboard {
   share = $state.raw<ClipboardShare>();
   /** The browser's read permission, followed. */
   permission = $state<ReadPermission>('none');
-  /** Which of the menu's actions last failed: Send got no text or image, Type no text, Copy the screen no picture or no write. */
-  failed = $state<'send' | 'type' | 'screen'>();
+  /**
+   * Which of the menu's actions last failed: Send got no text or image, Type no text, Copy the screen no picture or no
+   * write, Copy the console's text no text (`console`) or a console that shows graphics (`graphics`).
+   */
+  failed = $state<'send' | 'type' | 'screen' | 'console' | 'graphics'>();
   readonly #changes = new Changes();
 
   /** The run's sharing (none: no sharing in this run): it gets the permission, and the menu follows it. */
@@ -39,6 +42,11 @@ class Clipboard {
   get canType() {
     this.#changes.track();
     return !!this.share?.canType;
+  }
+  /** The agent reads the text console's screen. */
+  get canCopy() {
+    this.#changes.track();
+    return !!this.share?.canCopy;
   }
   /** What became of the last Type (the agent's TYPED status: web/agent-frame.ts `TYPED`). */
   get typed() {

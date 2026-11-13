@@ -166,6 +166,12 @@ impl Harness {
         };
         let trim_table = s("mountinfo");
         let (environment, loadkeys) = (s("environment"), s("loadkeys"));
+        let screen = crate::screen::Paths {
+            tty: s("tty0"),
+            vcsu: s("vcsu"),
+            vcs: s("vcs"),
+            console: two_by_four,
+        };
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
         let (mine, theirs) = socketpair(
@@ -188,6 +194,7 @@ impl Harness {
             a.fitrim = record_trim;
             a.environment = environment;
             a.loadkeys_at = vec![loadkeys];
+            a.screen = screen;
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -873,6 +880,37 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
         h.page.next(frame::LEASED, 5000).as_deref(),
         Some(&[status::NO_CLIENT][..])
     );
+}
+
+/// The tests' foreground console: text, 2 rows of 4 columns.
+fn two_by_four(_: &str) -> io::Result<Option<crate::screen::Size>> {
+    Ok(Some((2, 4)))
+}
+
+#[test]
+fn copies_the_consoles_screen_paused_or_not() {
+    use crate::screen::status;
+    let mut h = Harness::start("copy");
+    let vcsu = h.root.join("vcsu");
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::COPY, 0, "the agent copies the console");
+    let ask = |h: &mut Harness| {
+        h.page.send(frame::COPY, &[]);
+        h.page.next(frame::COPIED, 2000)
+    };
+    // No console's nodes: none.
+    assert_eq!(ask(&mut h).as_deref(), Some(&[status::NO_CONSOLE][..]));
+    let cells: Vec<u8> = "ok  é☃  "
+        .chars()
+        .flat_map(|c| (c as u32).to_le_bytes())
+        .collect();
+    std::fs::write(&vcsu, cells).unwrap();
+    let want = [&[status::OK][..], "ok\né☃".as_bytes()].concat();
+    assert_eq!(ask(&mut h), Some(want.clone()));
+    // Paused (the clipboard's switch): the user's own copy all the same, as Copy the screen.
+    h.page.send(frame::PAUSE, &[]);
+    assert_eq!(ask(&mut h), Some(want));
 }
 
 #[test]

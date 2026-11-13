@@ -7,7 +7,8 @@
 // guest's clock); DISPLAY, `CAP.DISPLAY` (the guest's screen follows the page's size); RENEW and RENEWED, `CAP.RENEW`
 // (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore);
 // DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down); TRIM and TRIMMED, `CAP.TRIM` (the guest's
-// filesystems trimmed on the page's request); KEYMAP, `CAP.KEYMAP` (the machine's keyboard layout for the running session).
+// filesystems trimmed on the page's request); KEYMAP, `CAP.KEYMAP` (the machine's keyboard layout for the running session);
+// COPY and COPIED, `CAP.COPY` (the text console's screen as text, for the host's clipboard).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -56,6 +57,10 @@ export const FRAME = {
   TRIMMED: 21,
   /** The page's: the machine's keyboard layout (`encodeKeymap`), which the guest's running session is to have. */
   KEYMAP: 22,
+  /** The page's: the foreground text console's screen, as text, please. */
+  COPY: 23,
+  /** The agent's: a u8 status (`COPIED`), then the screen's UTF-8 text (`decodeCopied`). */
+  COPIED: 24,
 } as const;
 
 /** DESKTOP's states (agent/src/frame.rs `desktop`). */
@@ -86,6 +91,22 @@ export const TRIMMED = {
   /** A filesystem's trim failed (others may have been trimmed). */
   FAILED: 2,
 } as const;
+
+/** COPIED's statuses (agent/src/screen.rs `status`). */
+export const COPIED = {
+  /** The screen's text follows. */
+  OK: 0,
+  /** The guest's foreground console shows graphics (a compositor runs on it): no text. */
+  GRAPHICS: 1,
+  /** The guest has no text console (a kernel without virtual terminals). */
+  NO_CONSOLE: 2,
+  FAILED: 3,
+} as const;
+
+/** COPIED's payload: a u8 status (`COPIED`), then the screen's UTF-8 text. */
+export function decodeCopied(p: Uint8Array): { status: number; text: string } | undefined {
+  return p.length < 1 ? undefined : { status: p[0], text: new TextDecoder().decode(p.subarray(1)) };
+}
 
 /** RENEWED's bits (agent/src/renew.rs `what`). */
 export const RENEWED = { ENTROPY: 1, MACHINE_ID: 2, SEED: 4, SSH: 8 } as const;
@@ -167,6 +188,8 @@ export const CAP = {
   TRIM: 1 << 11,
   /** KEYMAP: the running session's layout set (the agent), or a page that sends it. */
   KEYMAP: 1 << 12,
+  /** COPY and COPIED: the text console's screen read for the host's clipboard (the agent's). */
+  COPY: 1 << 13,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

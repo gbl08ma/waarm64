@@ -52,6 +52,10 @@ pub const TRIMMED: u8 = 21;
 /// The page's: the machine's keyboard layout (src/keymap.rs `Keymap`: XKB's layout, model and variant, the console's
 /// keymap), which the running session is to have.
 pub const KEYMAP: u8 = 22;
+/// The page's: the foreground text console's screen, as text, please (src/screen.rs).
+pub const COPY: u8 = 23;
+/// The agent's: a u8 status (`screen::status`), then the screen's UTF-8 text (OK's).
+pub const COPIED: u8 = 24;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -89,6 +93,8 @@ pub mod cap {
     pub const TRIM: u32 = 1 << 11;
     /// KEYMAP: the running session's layout set (the agent), or a page that sends it.
     pub const KEYMAP: u32 = 1 << 12;
+    /// COPY and COPIED: the text console's screen read for the host's clipboard.
+    pub const COPY: u32 = 1 << 13;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 

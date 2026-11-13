@@ -1,13 +1,13 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–7 done (jobs 1–6 and the mid-track review's fixes); the next loop is job 7.
+Loops 1–8 done (jobs 1–7 and the mid-track review's fixes); the next loop is job 8.
 
 ## State
 
 The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEWED 16 (bit 6), LEASE 17 / LEASED 18
-(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11), KEYMAP 22 (bit 12); free from 23 and bit 13 (bit 3 reserved
-for text/html, 8 and 9 for session kinds). The binary is 178,304 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
+(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11), KEYMAP 22 (bit 12), COPY 23 / COPIED 24 (bit 13); free from
+25 and bit 14 (bit 3 reserved for text/html, 8 and 9 for session kinds). The binary is 179,672 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
 
 - **Job 1, the screen's size:** the page sends the size it asks the guest's display for (DISPLAY, at each change and
   each agent HELLO). Wayland: `agent/src/outputs.rs` (wlr-output-management custom mode; sway, wlroots). X11 sessions:
@@ -37,17 +37,23 @@ for text/html, 8 and 9 for session kinds). The binary is 178,304 bytes (`images/
   `/etc/environment`, then its last: `agent/src/keymap.rs`), the child through sway's IPC or `setxkbmap`, the root
   `loadkeys` (the unit got CAP_SYS_TTY_CONFIG). The boot's disk write stays. devices.md "The keyboard layout in the
   running session".
+- **Job 7, copying from a text console (loop 8):** the clipboard menu's Copy the console's text (`#clipboard-console`,
+  enabled with the agent's `CAP.COPY`, paused too) asks COPY; the root answers COPIED at once (`agent/src/screen.rs`:
+  `/dev/tty0`'s KDGETMODE and TIOCGWINSZ, then `/dev/vcsu`, or `/dev/vcs` where the console isn't UTF-8); the page
+  writes it as Copy the screen does (`areas/clipboard-actions.ts`). Read-only: nothing in the unit changed. The screen
+  only, no scrollback. devices.md "A text console's text".
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real
   ssh-keygen and sshd run in the native test); NetworkManager (a fake nmcli); the trim before an Export and at the
   storage-full notice (`TrimActions` with fakes; Debian runs only the storage bar's); the layout's X11 and console
-  paths (no setxkbmap or kbd in Debian's images).
+  paths (no setxkbmap or kbd in Debian's images); the console's text from a non-UTF-8 console (`/dev/vcs`).
 
 ## Next
 
-1. Job 7 (copying from a text console), then 8 as the kickoff orders it; ask the user what a job does to the guest
-   where the kickoff leaves it open. Job 6's decision (the user, 2026-11-13): the layout's disk write at
+1. Job 8 (the smaller jobs: the guest's address and OS name in the status bar, a power-off and reboot through logind,
+   a shared folder mounted when attached); ask the user what each does to the guest where the kickoff leaves it open.
+   Job 6's decision (the user, 2026-11-13): the layout's disk write at
    boot stays, by today's non-agent path, so it applies where the agent doesn't run (and to the greeter); the agent
    applies it in the running session on top: sway (its IPC), X11 (setxkbmap where installed), the consoles (loadkeys),
    only when the page's layout differs from what the session has (the boot's `/etc/environment`, then the agent's last).

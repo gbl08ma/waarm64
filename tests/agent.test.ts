@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
@@ -192,7 +192,7 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP | CAP.KEYMAP });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.COPY });
   sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
@@ -1124,6 +1124,52 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([...encodeKeymap({ layout: 'de', variant: 'neo', vc: 'de-latin1' })], [2, 100, 101, 5, 112, 99, 49, 48, 53, 3, 110, 101, 111, 9, ...new TextEncoder().encode('de-latin1')]);
   // DESKTOP and its states (agent/src/frame.rs `desktop`).
   assert.deepEqual([FRAME.DESKTOP, CAP.DESKTOP, DESKTOP.NONE, DESKTOP.WAYLAND, DESKTOP.X11], [19, 1024, 0, 1, 2]);
+  // COPY and COPIED (agent/src/screen.rs `status`): a status, then the screen's UTF-8; the page asks where it shares.
+  assert.deepEqual([FRAME.COPY, FRAME.COPIED, CAP.COPY], [23, 24, 8192]);
+  assert.deepEqual([COPIED.OK, COPIED.GRAPHICS, COPIED.NO_CONSOLE, COPIED.FAILED], [0, 1, 2, 3]);
+  assert.deepEqual(decodeCopied(new Uint8Array([0, 0x6f, 0x6b, 0x0a, 0xe2, 0x98, 0x83])), { status: COPIED.OK, text: 'ok\n☃' });
+  assert.deepEqual(decodeCopied(new Uint8Array([COPIED.GRAPHICS])), { status: COPIED.GRAPHICS, text: '' });
+  assert.equal(decodeCopied(new Uint8Array(0)), undefined);
+  assert.ok(pageCaps(true) & CAP.COPY && !(pageCaps(false) & CAP.COPY));
+});
+
+test("the link's COPY: none to an agent that doesn't copy; COPIED's status and text; undefined when the connection ends or nothing comes", async () => {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1, pageCaps(true));
+  const got: number[] = [];
+  let answer: Uint8Array | undefined;
+  port2.onmessage = (e) => {
+    if (e.data.type !== 'data') return;
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+    for (const f of new FrameReader().push(e.data.bytes)) {
+      got.push(f.type);
+      if (f.type === FRAME.COPY && answer) port2.postMessage({ type: 'data', conn: e.data.conn, bytes: encodeFrame(FRAME.COPIED, answer) });
+    }
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const hello = (conn: number, caps: number) => port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+  assert.equal(await link.copy(100), undefined, 'no agent');
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
+  hello(1, CAP.TYPE | CAP.TEXT);
+  await settle();
+  assert.equal(link.canCopy, false);
+  assert.equal(await link.copy(100), undefined, "an agent that doesn't copy");
+  assert.equal(got.includes(FRAME.COPY), false, 'not asked');
+  hello(1, CAP.TYPE | CAP.TEXT | CAP.COPY);
+  await settle();
+  assert.equal(link.canCopy, true);
+  answer = new Uint8Array([COPIED.OK, ...new TextEncoder().encode('root@deb:~# ☃')]);
+  assert.deepEqual(await link.copy(1000), { status: COPIED.OK, text: 'root@deb:~# ☃' });
+  answer = new Uint8Array([COPIED.GRAPHICS]);
+  assert.deepEqual(await link.copy(1000), { status: COPIED.GRAPHICS, text: '' });
+  // No answer: undefined at the wait's end, or at once when the connection ends.
+  answer = undefined;
+  assert.equal(await link.copy(50), undefined);
+  const pending = link.copy(10_000);
+  port2.postMessage({ type: 'open', open: false, conn: 1 });
+  assert.equal(await pending, undefined);
+  link.close();
+  port2.close();
 });
 
 test("the link: the guest's desktop as the agent says it (DESKTOP), none again when its connection ends or a new one opens", async () => {

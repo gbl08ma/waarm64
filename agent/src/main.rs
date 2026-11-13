@@ -36,6 +36,7 @@ mod logind;
 mod outputs;
 mod renew;
 mod rt;
+mod screen;
 #[cfg(test)]
 mod serve_test;
 mod session;
@@ -68,7 +69,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::LEASE
     | frame::cap::DESKTOP
     | frame::cap::TRIM
-    | frame::cap::KEYMAP;
+    | frame::cap::KEYMAP
+    | frame::cap::COPY;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -185,6 +187,8 @@ struct Agent {
     keymap: keymap::Current,
     environment: String,
     loadkeys_at: Vec<String>,
+    /// COPY's console (the tests' files).
+    screen: screen::Paths,
     loadkeys: Option<lease::Job>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
@@ -239,6 +243,7 @@ impl Agent {
             keymap: keymap::Current::default(),
             environment: "/etc/environment".into(),
             loadkeys_at: keymap::places("loadkeys"),
+            screen: screen::Paths::default(),
             loadkeys: None,
             typist: console::Typist::new(console),
             #[cfg(test)]
@@ -789,6 +794,11 @@ impl Session<'_> {
                     self.agent.for_child(kind, payload);
                     self.agent.load_console(&k);
                 }
+            }
+            // The foreground console's screen, as text (src/screen.rs): read at once (the kernel's copy of it).
+            frame::COPY => {
+                let copied = screen::copied(&self.agent.screen);
+                frame::encode(frame::COPIED, &copied, &mut self.out);
             }
             frame::TIME => {
                 if let Some(ns) = frame::decode_time(payload) {

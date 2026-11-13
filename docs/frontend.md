@@ -294,7 +294,9 @@ or "[Some of the text wasn't typed, as the guest's console didn't consume all of
 written to the host's clipboard (`write` with a promise, so the click's activation outlasts the read-back; `areas/clipboard-actions.ts`
 `screenPng`): a 3D machine's screen read back by its GPU worker (`grab`) and encoded in `web/app/png-worker.ts`, a 2D
 machine's from whoever draws it over the display port (`png`: virtio-gpu's scanout in the device worker,
-`gpu-present.ts` `scanoutPng`, or the framebuffer's canvas in the machine worker); a failure says "[The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation.](ui:clipboard:ClipboardMenu.screen.failed)". The permission is followed
+`gpu-present.ts` `scanoutPng`, or the framebuffer's canvas in the machine worker); a failure says "[The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation.](ui:clipboard:ClipboardMenu.screen.failed)"; and **[Copy the console's text](ui:clipboard:ClipboardMenu.console)**, enabled while the agent says `CAP.COPY` (paused too): the
+foreground text console's screen as text on the host's clipboard (COPY, devices.md "A text console's text"; written as
+Copy the screen's, with a promise), a console in graphics mode saying "[The guest's console shows graphics, not text. Copy the screen takes a picture of it instead.](ui:clipboard:ClipboardMenu.console.graphics)", any other failure "[The console's text wasn't copied. The guest may have no text console, or this web app ran into a browser limitation.](ui:clipboard:ClipboardMenu.console.failed)". The permission is followed
 (`watchReadPermission`: `navigator.permissions.query`, its `change` event; `none` in Firefox and Safari, which throw
 on the name). What the page does with it:
 - **Sync** (way 1): while the permission is `granted`, a focus of the page (`focus`, `visibilitychange` to visible,

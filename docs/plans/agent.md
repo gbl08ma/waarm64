@@ -29,8 +29,8 @@ inside the session to say so: resize is an agent's job after all (GNOME and KDE 
 rest of what a host wants from a guest:
 
 - **the clipboard**, both ways (built with our own agent, not a stock one: [../clipboard.md](../clipboard.md)), including text copied from a
-  text console (`/dev/vcsN` is readable by a root agent: only an agent of ours could offer that; not built: the
-  agent types into a console but doesn't copy from one);
+  text console (`/dev/vcsN` is readable by a root agent: only an agent of ours could offer that; built: COPY,
+  devices.md "A text console's text");
 - **the time after a resume** (a restored or suspended machine's clock lags until something sets it:
   backlog "Snapshots");
 - **a ready signal**, instead of matching a login prompt on the serial output (backlog "The page");

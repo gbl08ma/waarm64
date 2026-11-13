@@ -71,6 +71,22 @@
     "message": "The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation.",
     "note": "The toolbar's clipboard menu: a note after Copy the screen failed (the guest hadn't shown anything yet, or the browser refused the write)."
   },
+  "ClipboardMenu.console": {
+    "message": "Copy the console's text",
+    "note": "The toolbar's clipboard menu: button that puts the text the guest's text console shows now (its screen, not a picture of it) on the computer's clipboard. It needs the guest's program."
+  },
+  "ClipboardMenu.console.title": {
+    "message": "Put the text on the guest's text console's screen on your computer's clipboard, as text you can paste in other programs.",
+    "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.console."
+  },
+  "ClipboardMenu.console.failed": {
+    "message": "The console's text wasn't copied. The guest may have no text console, or this web app ran into a browser limitation.",
+    "note": "The toolbar's clipboard menu: a note after Copy the console's text failed (the guest's program couldn't read the console or didn't answer, or the browser refused the write)."
+  },
+  "ClipboardMenu.console.graphics": {
+    "message": "The guest's console shows graphics, not text. Copy the screen takes a picture of it instead.",
+    "note": "The toolbar's clipboard menu: a note after Copy the console's text found the guest's console showing graphics (a desktop runs on it). Copy the screen is ClipboardMenu.screen."
+  },
   "ClipboardMenu.failed": {
     "message": "Nothing was typed, because this web app couldn't get text from the clipboard.",
     "note": "The toolbar's clipboard menu: a note after Type the clipboard found no text (the clipboard had none, or the browser refused)."

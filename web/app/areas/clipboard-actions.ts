@@ -5,6 +5,7 @@ import type { DisplayFromPage } from '../../gpu-present.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import type { AgentLink } from '../agent-link.ts';
 import { ClipboardShare } from '../clipboard.ts';
+import { COPIED } from '../../agent-frame.ts';
 import { isPasteChord, onMac, PNG, watchReadPermission, type Host } from '../clipboard-host.ts';
 import type { Grab } from '../hooks.ts';
 import type { Page } from '../page.ts';
@@ -15,8 +16,11 @@ import { clipboard } from './clipboard.svelte.ts';
 
 type ClipboardPage = Pick<
   Page,
-  'clipboardAsk' | 'clipboardPause' | 'clipboardSend' | 'clipboardType' | 'clipboardScreen'
+  'clipboardAsk' | 'clipboardPause' | 'clipboardSend' | 'clipboardType' | 'clipboardScreen' | 'clipboardConsole'
 >;
+
+/** Text as a `ClipboardItem` takes it (no parameters). */
+const PLAIN = 'text/plain';
 
 /** The browser runs on a Mac: its paste chord is Cmd+V. */
 const MAC = onMac(navigator);
@@ -44,6 +48,8 @@ export class ClipboardActions {
   readonly #m: PageMachine;
   readonly #replies: { grabs: Replies<Grab>; screens: Replies<Blob | undefined> };
   readonly #canvas: () => HTMLCanvasElement;
+  /** The run's agent link (Copy the console's text asks it). */
+  #link?: AgentLink;
 
   constructor(
     m: PageMachine,
@@ -56,6 +62,7 @@ export class ClipboardActions {
   /** A run's sharing over its agent's link (none: no sharing, the machine has no agent or doesn't share), followed. */
   begin(link: AgentLink | undefined, on: boolean) {
     const share = on && link ? new ClipboardShare(link, clipboardHost()) : undefined;
+    this.#link = share && link;
     clipboard.follow(share);
     window.__clipboard = share; // the tests' hook
     return share;
@@ -154,6 +161,22 @@ export class ClipboardActions {
           await navigator.clipboard.write([new ClipboardItem({ [PNG]: png })]);
         } catch {
           clipboard.failed = 'screen'; // the menu says so
+        }
+      },
+      clipboardConsole: async () => {
+        // As Copy the screen: the promise form keeps the click's activation over the agent's answer.
+        clipboard.failed = undefined;
+        let failed: 'console' | 'graphics' = 'console';
+        const asked = clipboard.canCopy ? this.#link?.copy(10_000) : undefined;
+        const text = (asked ?? Promise.resolve(undefined)).then((c) => {
+          if (c?.status === COPIED.OK) return new Blob([c.text], { type: PLAIN });
+          if (c?.status === COPIED.GRAPHICS) failed = 'graphics';
+          throw new DOMException("no text from the guest's console", 'DataError');
+        });
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ [PLAIN]: text })]);
+        } catch {
+          clipboard.failed = failed; // the menu says so
         }
       },
     };

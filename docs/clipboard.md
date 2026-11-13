@@ -49,8 +49,9 @@ RESUME, TIME) is in devices.md "The guest's agent".
   stopped. Its menu has [Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow) (while `prompt`), the
   switch [Share the clipboard](ui:clipboard:ClipboardMenu.share),
   [Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send),
-  [Type the clipboard](ui:clipboard:ClipboardMenu.type) and [Copy the screen](ui:clipboard:ClipboardMenu.screen).
-  The menu stays open while Send, Type or Copy the screen runs: it closes when the action succeeds (for Type, when
+  [Type the clipboard](ui:clipboard:ClipboardMenu.type), [Copy the screen](ui:clipboard:ClipboardMenu.screen) and
+  [Copy the console's text](ui:clipboard:ClipboardMenu.console).
+  The menu stays open while Send, Type or a copy runs: it closes when the action succeeds (for Type, when
   the agent's TYPED says it was typed whole), and a failure keeps it open with its note, where the click was.
   frontend.md "The toolbar" has each item's behavior.
 
@@ -108,8 +109,10 @@ the pause drops it.
   offer unless its text is whole in the agent's cache, and offers the guest's selection again.
 - **Concealed copies** (password managers) can't be told apart by the page. The pause is for those.
 - **Several tabs** each run their own machine. Only the focused tab reads or writes the shared host clipboard.
-- **Not shared:** PRIMARY (the middle-click selection), and copying from a text console. The serial terminal has its
-  own copy and paste (xterm.js).
+- **A text console's text** isn't shared as a selection (a console has none the agent can see): the menu's
+  [Copy the console's text](ui:clipboard:ClipboardMenu.console) copies the foreground console's whole screen as text
+  (devices.md "A text console's text"). A console that shows graphics says "[The guest's console shows graphics, not text. Copy the screen takes a picture of it instead.](ui:clipboard:ClipboardMenu.console.graphics)".
+- **Not shared:** PRIMARY (the middle-click selection). The serial terminal has its own copy and paste (xterm.js).
 
 ## The guest's agent
 
@@ -145,7 +148,7 @@ credentials or vsock, and don't get the agent. The unit restarts on failure, 5 s
 
 | | Measured |
 |---|---|
-| The binary | **178,304 bytes** (the Podman build, 2026-11-13: with the screen's size under Wayland and X11, a template's renewal, the leases, the desktop's state, the trim and the keyboard layout (~10 KB: sway's IPC, the tool runner), devices.md "The guest's agent"; 132,696 with vsock and the clock, 130,064 on the console), ~83 KB gzipped by the page. It is `no_std` (`agent/src/rt.rs`): `core` and `alloc` on musl's `main`, `malloc`, `fork` and `exit`, an insertion sort for its few names (`core`'s sorts are ~3 KiB a type), and the unwind tables, which `panic=abort` never reads, dropped at the link (`agent/no-unwind.ld`, ~27 KiB). With `std` it was 449,264 bytes (~245 KB gzipped), ~320 KiB of it `std`'s (an empty `fn main` builds to 327,048). What's left: the agent's own code ~65 KiB, musl ~10 KiB, `core`'s formatting ~12 KiB (docs/backlog.md) |
+| The binary | **179,672 bytes** (the Podman build, 2026-11-13: with the screen's size under Wayland and X11, a template's renewal, the leases, the desktop's state, the trim, the keyboard layout (~10 KB: sway's IPC, the tool runner) and the console's text (~1.5 KB), devices.md "The guest's agent"; 132,696 with vsock and the clock, 130,064 on the console), ~114 KB gzipped by the page. It is `no_std` (`agent/src/rt.rs`): `core` and `alloc` on musl's `main`, `malloc`, `fork` and `exit`, an insertion sort for its few names (`core`'s sorts are ~3 KiB a type), and the unwind tables, which `panic=abort` never reads, dropped at the link (`agent/no-unwind.ld`, ~27 KiB). With `std` it was 449,264 bytes (~245 KB gzipped), ~320 KiB of it `std`'s (an empty `fn main` builds to 327,048). What's left: the agent's own code ~65 KiB, musl ~10 KiB, `core`'s formatting ~12 KiB (docs/backlog.md) |
 | The boot's fw_cfg read | Linux's `qemu_fw_cfg` reads the data register a byte at a time (`ioread8_rep`), so there is one MMIO exit per byte: 4–12 µs a byte. **332 ms for the `no_std` build's 81,680 bytes** (4.1 µs a byte), plus 32 ms of `gzip -dc` (`tests/page-agent.test.ts` logs both). With `std`, the 333 KiB console build had taken 4.1 s raw and 1.3 s gzipped (187 KiB, 7 µs a byte). The unit is `Type=simple` after the login prompt, so the boot doesn't wait for it, but it is a vCPU's time at every boot and every restart |
 | Idle | 0 ticks of CPU and 0 voluntary context switches over 20–60 s, for the agent and its session child, with sway and with Xvfb. One thread each, blocked in `ppoll` with no timeout. The two bounded exceptions are a paste being typed (1 ms steps) and a compositor's socket that refuses (25 tries, 200 ms apart) |
 | Memory | VmRSS **168 KiB** (the console agent); **328 KiB and 264 KiB** (the agent and its child with sway); **320 KiB and 424 KiB** (with X11). With `std`: 300, 572 and 516, 604 and 704. The unit's `MemoryMax=32M` is a cap for a bug, not a budget |

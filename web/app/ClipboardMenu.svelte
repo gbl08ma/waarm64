@@ -5,7 +5,8 @@
   browser's read permission missing, or the focus reads stopped), grey paused (the icon crossed out too). The
   menu: the permission's item (Allow… while `prompt`, how to allow it while `denied`), the switch (paused for the run),
   Send the clipboard to the guest, Type the clipboard (and what became of it: the agent's TYPED), Copy the screen (a PNG
-  of the display to the host's clipboard, with no agent: areas/clipboard-actions.ts `screenPng`). Logic is web/app/clipboard.ts's, through
+  of the display to the host's clipboard, with no agent: areas/clipboard-actions.ts `screenPng`), Copy the console's text (the
+  agent's COPY: the text console's screen as text, paused too; a console that shows graphics says so). Logic is web/app/clipboard.ts's, through
   `page`.
 -->
 <script lang="ts">
@@ -114,10 +115,22 @@
     title={t('clipboard:ClipboardMenu.screen.title')}
     onclick={() => thenClose(() => page.clipboardScreen())}>{t('clipboard:ClipboardMenu.screen')}</Button
   >
+  <Button
+    id="clipboard-console"
+    disabled={!c.canCopy}
+    title={t('clipboard:ClipboardMenu.console.title')}
+    onclick={() => thenClose(() => page.clipboardConsole())}>{t('clipboard:ClipboardMenu.console')}</Button
+  >
   {#if c.failed === 'send'}<Note tone="warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed.send')}</Note>
   {:else if c.failed === 'type'}<Note tone="warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed')}</Note>
   {:else if c.failed === 'screen'}<Note tone="warn" id="clipboard-failed">
       {t('clipboard:ClipboardMenu.screen.failed')}
+    </Note>
+  {:else if c.failed === 'console'}<Note tone="warn" id="clipboard-failed">
+      {t('clipboard:ClipboardMenu.console.failed')}
+    </Note>
+  {:else if c.failed === 'graphics'}<Note tone="warn" id="clipboard-graphics">
+      {t('clipboard:ClipboardMenu.console.graphics')}
     </Note>{/if}
   {#if c.typed === TYPED.NOT_TEXT}<Note tone="warn" id="clipboard-not-text">
       {t('clipboard:ClipboardMenu.notText')}

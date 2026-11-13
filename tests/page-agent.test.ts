@@ -4,7 +4,7 @@
 // `window.__agent`), here with `?clipboard=1`.
 // Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
 // console (a reader on tty1 writes what it gets to a file; a long paste arrives whole; none of it while tty1 is in
-// graphics mode, as under a compositor: TYPED says why), the toolbar's clipboard
+// graphics mode, as under a compositor: TYPED says why), COPY's text of tty1's screen (none in graphics mode), the toolbar's clipboard
 // button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), a trim
 // from the Machines page's storage bar (a deleted file's blocks out of the overlay, its files compacted), the
 // page carrying on when the agent stops, and the connection itself without the agent: perl connected to the agent's
@@ -22,7 +22,7 @@ import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
-import { CAP, FRAME, TRIMMED, TYPED } from '../web/agent-frame.ts';
+import { CAP, COPIED, FRAME, TRIMMED, TYPED } from '../web/agent-frame.ts';
 import { words } from './words.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
@@ -62,7 +62,7 @@ async function run(page: Page, cmd: string, ms = 60_000) {
   return re.exec(await terminal(page))![1].trim();
 }
 type Hello = { version: number; caps: number };
-type Link = { open: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
+type Link = { open: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; copy(ms: number): Promise<{ status: number; text: string } | undefined>; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
 const link = <T>(page: Page, f: (l: Link) => T) => page.evaluate(`(${f})(window.__agent)`) as Promise<T>;
 const isOpen = (page: Page, open: boolean) =>
   page.waitForFunction((want) => (window as unknown as { __agent?: Link }).__agent?.open === want, open, { timeout: 120_000, polling: 100 });
@@ -83,7 +83,7 @@ async function share(page: Page, on: boolean) {
 const typed = (page: Page) => run(page, 'sha256sum </tmp/typed | cut -c1-64; stat -c %s /tmp/typed').then((s) => s.split(/\s+/));
 const TYPE = 5;
 
-test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing idle, types on the console, pauses; the page carries on without it; the connection echoes', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
+test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing idle, types on the console, copies its screen, pauses; the page carries on without it; the connection echoes', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -201,6 +201,8 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
   assert.equal(await kdMode(1), 'mode 1');
   assert.equal(await link(page, (l) => l.type('under graphics\n')), true);
   assert.equal(await typedSaid(1), TYPED.NOT_TEXT);
+  // COPY under graphics: no text, and the page hears why.
+  assert.deepEqual(await page.evaluate(() => (window as unknown as { __agent: Link }).__agent.copy(10_000)), { status: COPIED.GRAPHICS, text: '' });
   await page.waitForTimeout(1000);
   assert.deepEqual(await typed(page), [sha(wantResumed), String(Buffer.byteLength(wantResumed))], 'nothing typed in graphics mode');
   assert.equal(await kdMode(0), 'mode 0');
@@ -213,6 +215,13 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
     if (i > 20) assert.fail(`back in text mode tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantText)}`);
     await page.waitForTimeout(500);
   }
+
+  // COPY: tty1's screen as text (vcsu, UTF-8 whole), its lines without their trailing blanks, no blank rows at its end.
+  // Characters the console's font has: vcsu's first read builds its copy from the glyphs (a snowman came back ■).
+  await run(page, `printf '\\033[H\\033[2Jcopy marker \\303\\251 \\303\\237\\nsecond   \\n' >/dev/tty1; echo written`);
+  const copied = await page.evaluate(() => (window as unknown as { __agent: Link }).__agent.copy(10_000));
+  assert.equal(copied?.status, COPIED.OK, JSON.stringify(copied));
+  assert.equal(copied.text, 'copy marker é ß\nsecond', JSON.stringify(copied));
 
   // The agent stopped: the page hears its connection end, the link refuses, the machine runs on.
   await run(page, 'systemctl stop waarm64-agent; echo stopped');

@@ -138,6 +138,7 @@ export type Page = {
   clipboardSend(): Promise<void>;
   clipboardType(): Promise<void>;
   clipboardScreen(): Promise<void>;
+  clipboardConsole(): Promise<void>;
 };
 /** The page's actions: given by web/app/main.ts (`providePage`) before the components mount. */
 export let page: Page;

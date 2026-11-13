@@ -5,7 +5,7 @@
 // asks, which headless Chromium answers with a denial; denied: how to allow it; granted, by the test, updating the
 // button at once); sync with the permission (the host's copy offered on `clipboardchange`, which Chromium fires);
 // the switch saying PAUSE and RESUME, nothing offered while paused and nothing sent by the resume; Send the clipboard
-// to the guest and Type the clipboard; Copy the screen (the framebuffer the guest drew, as a PNG on the host's
+// to the guest, Type the clipboard and Copy the console's text (COPY, the agent's COPIED); Copy the screen (the framebuffer the guest drew, as a PNG on the host's
 // clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker
 // (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's switches: the agent's, on by default, and
 // the clipboard's under it, off for a machine that hasn't it, its note, ticking it asks for the permission, neither
@@ -17,7 +17,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
-import { CAP, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
+import { CAP, COPIED, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
 import { pageCaps } from '../web/app/agent-link.ts';
 import { TEXT } from '../web/app/clipboard-host.ts';
 import { plain, t } from '../web/i18n.ts';
@@ -77,7 +77,7 @@ async function guestReads(page: Page, n: number): Promise<Frame[]> {
   const bytes = new Uint8Array(await page.evaluate((n) => (window as unknown as { __stubGot: number[] }).__stubGot.splice(0, n), n));
   return new FrameReader().push(bytes);
 }
-const HELLO = encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | CAP.TEXT }));
+const HELLO = encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | CAP.TEXT | CAP.COPY }));
 /** The size of the page's frame offering `text` inline. */
 const offerSize = (text: string) => encodeFrame(FRAME.OFFER, encodeOffer({ serial: 0, types: [{ type: TEXT, size: Buffer.byteLength(text) }], inline: new TextEncoder().encode(text) })).length;
 const inline = (f: Frame) => new TextDecoder().decode(decodeOffer(f.payload)!.inline);
@@ -105,7 +105,7 @@ async function boot(page: Page, query: string) {
   await stub(page);
 }
 
-test("the toolbar's clipboard button: only with the setting; waiting, sharing, paused; the read permission's states; sync, the switch, Send and Type", { skip, timeout: 180_000 }, async () => {
+test("the toolbar's clipboard button: only with the setting; waiting, sharing, paused; the read permission's states; sync, the switch, Send, Type, Copy the console's text", { skip, timeout: 180_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -121,6 +121,7 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await menu(page, true);
   assert.equal(await page.isDisabled('#clipboard-send'), true);
   assert.equal(await page.isDisabled('#clipboard-type'), true);
+  assert.equal(await page.isDisabled('#clipboard-console'), true);
   assert.equal(await page.isVisible('#clipboard-waiting'), true);
   await menu(page, false);
 
@@ -206,6 +207,28 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await page.waitForFunction(() => !(document.getElementById('clipboard-menu') as HTMLDetailsElement).open, undefined, { timeout: 10_000 });
   await later;
 
+  // Copy the console's text: COPY, the "agent's" COPIED with the screen's text, on the host's clipboard as text; a
+  // console that shows graphics says so, in the menu the click left open.
+  await menu(page, true);
+  await page.click('#clipboard-console');
+  assert.deepEqual((await guestReads(page, 5)).map((f) => f.type), [FRAME.COPY]);
+  const screenText = 'root@buildroot:~# ls\nété ☃';
+  await guestWrites(page, encodeFrame(FRAME.COPIED, new Uint8Array([COPIED.OK, ...new TextEncoder().encode(screenText)])));
+  await page.waitForFunction((s) => navigator.clipboard.readText().then((t) => t === s), screenText, { timeout: 10_000, polling: 100 })
+    .catch(async () => assert.fail(`the host's clipboard has ${JSON.stringify(await page.evaluate(() => navigator.clipboard.readText()))}`));
+  await page.waitForFunction(() => !(document.getElementById('clipboard-menu') as HTMLDetailsElement).open, undefined, { timeout: 10_000 });
+  // The host's clipboard changed: sharing offers it to the guest, as any copy on the host (dropped here).
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { (window as unknown as { __stubGot: number[] }).__stubGot.length = 0; });
+  await menu(page, true);
+  await page.click('#clipboard-console');
+  await guestReads(page, 5);
+  await guestWrites(page, encodeFrame(FRAME.COPIED, new Uint8Array([COPIED.GRAPHICS])));
+  await page.waitForSelector('#clipboard-graphics', { timeout: 10_000 });
+  assert.equal(await page.textContent('#clipboard-graphics'), t('clipboard:ClipboardMenu.console.graphics'));
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), screenText, 'the clipboard kept');
+  await menu(page, false);
+
   // The "agent's" connection ends: waiting again.
   await openPort(page, false);
   await waitButton(page, (x) => x.state === 'waiting', 'the connection ended');
@@ -214,8 +237,8 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await openPort(page);
   assert.deepEqual((await guestReads(page, opening.reduce((n, f) => n + 5 + f.payload.length, 0))).map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
   await guestWrites(page, HELLO);
-  const [atHello] = await guestReads(page, offerSize(during));
-  assert.equal(inline(atHello), during);
+  const [atHello] = await guestReads(page, offerSize(screenText));
+  assert.equal(inline(atHello), screenText, "the host's clipboard now: the console's text");
 
   // Copy the screen: a PNG of the framebuffer (640×480, the console's text on it) on the host's clipboard, no agent
   // needed (the connection ended: waiting).

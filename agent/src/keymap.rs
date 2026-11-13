@@ -351,7 +351,10 @@ mod tests {
         want.extend_from_slice(b"pc105");
         want.extend_from_slice(&[3, b'n', b'e', b'o', 9]);
         want.extend_from_slice(b"de-latin1");
-        assert_eq!(Keymap::decode(&want), Some(km("de", "pc105", "neo", "de-latin1")));
+        assert_eq!(
+            Keymap::decode(&want),
+            Some(km("de", "pc105", "neo", "de-latin1"))
+        );
     }
 
     #[test]

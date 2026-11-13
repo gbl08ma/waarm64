@@ -421,12 +421,27 @@ against headless sway (`sway_test.rs`: sway compiles the keymap at each command,
 German and `intl` only on US: the layout read back without a keyboard), the link and the actions (`tests/agent.test.ts`),
 and on Debian's sway (`tests/page-clipboard.test.ts`, the same probe).
 
+**A text console's text** (COPY; `agent/src/screen.rs`, `web/app/areas/clipboard-actions.ts`): the clipboard menu's
+[Copy the console's text](ui:clipboard:ClipboardMenu.console) asks the agent for the foreground virtual terminal's screen
+(COPY), and writes COPIED's text to the host's clipboard (as Copy the screen, with a promise, so the click's activation
+outlasts the answer; paused too, the user's own copy). The root reads it as it is now: `/dev/tty0` (the foreground
+console) says its mode (KDGETMODE: graphics, a compositor's, has no text) and its size (TIOCGWINSZ: vcsa's header has
+it in a byte each, too small past 255 columns); `/dev/vcsu` (the foreground's minor) its cells, a u32 code point each,
+or `/dev/vcs` (a byte a cell; past ASCII U+FFFD) where the console isn't in UTF-8 mode (vcsu says ENODATA). The nodes
+are root's (0620), so nothing in the unit changed. Each row loses its trailing blanks, the rows after the last with text
+go, a NUL or control cell is a space; at most 64 KiB of UTF-8 (cut between characters). The screen only, not the
+scrollback. A character the console's font lacks may come back as the glyph it was shown with (a snowman as ■ on
+Debian): the kernel builds vcsu's copy of a console from its glyphs at the first read, and keeps the characters
+themselves only from then on. Tests: the rows' rules and the files' paths (`agent/src/screen.rs`, `serve_test.rs`), the frames and the
+link (`tests/agent.test.ts`), the menu with the test's agent (`tests/page-clipboard-ui.test.ts`), and on Debian's tty1
+(`tests/page-agent.test.ts`: UTF-8 text in, its lines back; graphics mode refused).
+
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always). The page's says the clipboard's three only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
@@ -436,6 +451,8 @@ to the side that offers, request ids to the side that requests:
 | TRIM (20) | none | the page's, to an agent whose HELLO has `CAP.TRIM`: the guest's filesystems trimmed ("Disk space handed back" above) |
 | TRIMMED (21) | u8 status: 0 trimmed, 1 no filesystem takes it, 2 one failed | the agent's, when the trim's child ended (`AgentLink.trim`'s answer) |
 | KEYMAP (22) | XKB's layout, model, variant, the console's keymap: a u8 length and the bytes each | the page's, to an agent whose HELLO has `CAP.KEYMAP`: at each agent's HELLO and when the setting is saved while the machine runs ("The keyboard layout in the running session" above) |
+| COPY (23) | none | the page's, to an agent whose HELLO has `CAP.COPY`: the foreground text console's screen, please ("A text console's text" above) |
+| COPIED (24) | u8 status: 0 the text follows, 1 the console shows graphics, 2 no text console, 3 reading failed; then (0) the screen's UTF-8 | the agent's answer to COPY, at once (`AgentLink.copy`) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

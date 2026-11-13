@@ -80,7 +80,7 @@ export type ShareState = 'sharing' | 'paused' | 'waiting';
 
 /** The page's clipboard sharing for one machine's link. */
 export class ClipboardShare {
-  /** Called when what the toolbar shows changes: `state`, `permission`, `stopped`, `canType`. */
+  /** Called when what the toolbar shows changes: `state`, `permission`, `stopped`, `canType`, `canCopy`. */
   onChange?: () => void;
   /** The browser's read permission (`setPermission`). */
   permission: ReadPermission = 'none';
@@ -191,6 +191,14 @@ export class ClipboardShare {
   /** The agent pastes on the console (TYPE) and sharing isn't paused: "Type the clipboard". */
   get canType() {
     return !this.link.paused && this.link.open && !!this.link.agent && (this.link.agent.caps & CAP.TYPE) !== 0;
+  }
+
+  /**
+   * The agent reads the text console's screen (COPY: web/app/areas/clipboard-actions.ts asks the link), paused or not
+   * (the user's own copy, as Copy the screen's).
+   */
+  get canCopy() {
+    return this.link.open && ((this.link.agent?.caps ?? 0) & CAP.COPY) !== 0;
   }
 
   /** The guest's newest copy waits to be written to the host's clipboard. */
