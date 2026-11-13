@@ -953,19 +953,23 @@ fn sets_an_x_servers_screen_to_the_pages_size_without_the_clipboard() {
     // Wider but shorter than now: the screen grown in one side, then sized to the mode.
     page.send(frame::DISPLAY, &size(1024, 576));
     assert!(x.screen_becomes((1024, 576), 10_000), "{:?}", x.screen());
-    // The made mode again: found, not made twice.
+    // The made mode again: made once more (the last was deleted when the screen left it).
     page.send(frame::DISPLAY, &size(1200, 904));
     assert!(x.screen_becomes((1200, 904), 10_000), "{:?}", x.screen());
-    let modes = x.cmd("xrandr").output().unwrap().stdout;
-    let made = String::from_utf8_lossy(&modes)
-        .lines()
-        .filter(|l| l.trim_start().starts_with("1200x904 "))
-        .count();
-    assert_eq!(
-        made,
-        1,
-        "one mode of 1200x904: {}",
-        String::from_utf8_lossy(&modes)
+    // Another made size, then one of the output's own: the modes made are deleted once left (review 5).
+    page.send(frame::DISPLAY, &size(1000, 704));
+    assert!(x.screen_becomes((1000, 704), 10_000), "{:?}", x.screen());
+    page.send(frame::DISPLAY, &size(800, 600));
+    assert!(x.screen_becomes((800, 600), 10_000), "{:?}", x.screen());
+    let modes = String::from_utf8_lossy(&x.cmd("xrandr").output().unwrap().stdout).into_owned();
+    let has = |m: &str| {
+        modes
+            .lines()
+            .any(|l| l.trim_start().starts_with(&format!("{m} ")))
+    };
+    assert!(
+        !has("1200x904") && !has("1000x704"),
+        "no mode made is left: {modes}"
     );
     assert!(page.next(frame::SESSION, 300).is_none(), "no clipboard");
     drop(page);

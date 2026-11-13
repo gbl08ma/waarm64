@@ -22,12 +22,18 @@ mod minor {
     pub const GET_SCREEN_RESOURCES: u8 = 8;
     pub const GET_OUTPUT_INFO: u8 = 9;
     pub const CREATE_MODE: u8 = 16;
+    pub const DESTROY_MODE: u8 = 17;
     pub const ADD_OUTPUT_MODE: u8 = 18;
+    pub const DELETE_OUTPUT_MODE: u8 = 19;
     pub const SET_CRTC_CONFIG: u8 = 21;
 }
 
 /// The core's GetGeometry.
 const GET_GEOMETRY: u8 = 14;
+/// A size whose SetCrtcConfig is refused for a stale time (the configuration changed under the run: the display event's
+/// probe, which the page's DISPLAY races) is tried again this many times.
+const RETRIES: u8 = 3;
+
 /// SetCrtcConfig's rotation: none.
 const ROTATE_0: u16 = 1;
 
@@ -66,6 +72,9 @@ struct Run {
     xwayland: bool,
     /// The root's size now.
     screen: Option<(u16, u16)>,
+    /// The output and the mode the run set; whether it made the mode.
+    set: Option<(u32, u32)>,
+    made: bool,
 }
 
 #[derive(Default)]
@@ -80,6 +89,11 @@ pub struct Randr {
     asked: Option<(u32, u32)>,
     run: Option<Run>,
     told: bool,
+    /// Tries again of the size asked (`RETRIES`).
+    tries: u8,
+    /// The mode made last (and its output), deleted once the screen is set to another: each size the window had would
+    /// otherwise leave one behind.
+    made: Option<(u32, u32)>,
 }
 
 impl Randr {
@@ -88,6 +102,17 @@ impl Randr {
             on,
             ..Default::default()
         }
+    }
+
+    /// SetCrtcConfig answered `status` (not Success): true if the size is to be asked again (InvalidConfigTime or
+    /// InvalidTime, `RETRIES` times at most), as Wayland's `cancelled` is.
+    fn refused(&mut self, status: u8) -> bool {
+        if matches!(status, 1 | 2) && self.tries < RETRIES {
+            self.tries += 1;
+            self.asked = None;
+            return true;
+        }
+        false
     }
 }
 
@@ -115,6 +140,9 @@ impl X {
     pub fn resize(&mut self, size: (u32, u32)) {
         if !self.randr.on {
             return;
+        }
+        if self.randr.want != Some(size) {
+            self.randr.tries = 0;
         }
         self.randr.want = Some(size);
         self.randr_go();
@@ -215,6 +243,9 @@ impl X {
                 self.req(major, minor::ADD_OUTPUT_MODE, None, |q| {
                     q.u32(output).u32(mode)
                 });
+                if let Some(run) = self.randr.run.as_mut() {
+                    run.made = true;
+                }
                 self.randr_set(output, crtc, mode);
             }
             Step::Crtc => {
@@ -227,8 +258,14 @@ impl X {
                             None,
                         );
                     }
+                    self.randr.tries = 0;
+                    self.forget_made();
+                    self.randr_end(None);
+                } else if self.randr.refused(status) {
+                    // Its state changed under the run: asked again, from the resources.
                     self.randr_end(None);
                 } else {
+                    self.randr.tries = 0;
                     self.randr_end(Some(&format!("SetCrtcConfig's status {status}")));
                 }
             }
@@ -396,11 +433,34 @@ impl X {
         }
     }
 
-    /// The screen grown if the mode doesn't fit it, the CRTC set, the screen made the mode's size.
-    fn randr_set(&mut self, output: u32, crtc: u32, mode: u32) {
+    /// The CRTC set (the run's `set`): the mode made before deleted if the screen left it, this run's kept as made.
+    fn forget_made(&mut self) {
         let Some(run) = self.randr.run.as_ref() else {
             return;
         };
+        let (set, made) = (run.set, run.made);
+        if let Some((output, old)) = self.randr.made
+            && set.is_some_and(|(_, m)| m != old)
+        {
+            let major = self.randr.major.unwrap();
+            self.req(major, minor::DELETE_OUTPUT_MODE, None, |q| {
+                q.u32(output).u32(old)
+            });
+            self.req(major, minor::DESTROY_MODE, None, |q| q.u32(old));
+            self.randr.made = None;
+        }
+        if made {
+            self.randr.made = set;
+        }
+    }
+
+    /// The screen grown if the mode doesn't fit it, the CRTC set, the screen made the mode's size.
+    fn randr_set(&mut self, output: u32, crtc: u32, mode: u32) {
+        let Some(run) = self.randr.run.as_mut() else {
+            return;
+        };
+        run.set = Some((output, mode));
+        let run = &*run;
         let (w, h) = (run.size.0 as u16, run.size.1 as u16);
         let (sw, sh) = run.screen.unwrap_or((w, h));
         let config_time = run.config_time;
@@ -440,6 +500,26 @@ impl X {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_crtc_refused_for_a_stale_config_time_is_tried_again_a_few_times() {
+        let mut r = Randr::new(true);
+        r.want = Some((1024, 768));
+        r.asked = Some((1024, 768));
+        // InvalidConfigTime (1), InvalidTime (2): the configuration changed under the run (the display event's probe).
+        for _ in 0..RETRIES {
+            assert!(r.refused(1), "tried again");
+            assert_eq!(r.asked, None);
+            r.asked = Some((1024, 768));
+        }
+        assert!(!r.refused(2), "not past RETRIES");
+        assert_eq!(r.asked, Some((1024, 768)));
+        // Failed (3): not tried again.
+        let mut r = Randr::new(true);
+        r.asked = Some((800, 600));
+        assert!(!r.refused(3));
+        assert_eq!(r.asked, Some((800, 600)));
+    }
 
     #[test]
     fn timings_are_a_modes() {

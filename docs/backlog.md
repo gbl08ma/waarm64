@@ -1610,7 +1610,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 158,064 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 160,744 bytes (132,696 before the screen's size, BETTERAGENT), ~82 KB gzipped then (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
@@ -1632,6 +1632,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`com.redhat.spice.0`, a second port on the same device, for Xorg and GNOME guests that have it), GNOME on Wayland
   through the portal's Clipboard interface (a RemoteDesktop session the user consents to), and other agent jobs in the
   same binary and connection (a ready signal: plans/agent.md; the BETTERAGENT track's).
+- **A template saved or suspended before its agent renewed it** (the BETTERAGENT review's finding 4): its snapshot or
+  suspended copy isn't flagged, so the renewal owed is lost; the page's save could carry `template: true` while the
+  run's link still owes RENEW (`web/app/worker-snapshot.ts`'s header).
 - **The screen's size on Xorg's modesetting over virtio-gpu, not measured** (devices.md "The guest's agent", "Under
   X11"): the agent's RandR is tested on Xorg's dummy driver only; the Debian test image has Xvfb, whose RandR can't set
   a mode. A user-made mode on KMS (virtio-gpu takes any size up to its maximum) and the probe after the display event

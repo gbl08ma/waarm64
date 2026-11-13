@@ -129,7 +129,7 @@ a stream of its own, begun at a frame: a restore resets the guest's transport (t
 agent connects again; nothing of a connection is kept in a snapshot.
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 158 KB).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 161 KB).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/waarm64/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
@@ -298,14 +298,19 @@ itself: a user's session; GNOME's mutter, expected to, unmeasured) is left alone
 
 **Under X11** (`agent/src/x11/randr.rs`, RandR 1.2 by hand on the child's X connection; no `xrandr`): only for an X11
 session, one with no Wayland compositor (the child connects to the session's X server for the size alone if the
-clipboard isn't shared; Xwayland's outputs, `XWAYLAND*`, are the compositor's and left alone). For a size not asked
+clipboard isn't shared). Under a Wayland compositor (one without data-control, whose Xwayland shares the clipboard)
+the connection does no RandR (`session::x_jobs`): Xwayland's screen is the compositor's, and since Xwayland 21.1 its
+outputs take the compositor's names, so `XWAYLAND*`, also skipped, doesn't tell it. For a size not asked
 yet: GetScreenResources (the server probes its outputs, so a kernel's mode of the new size after the display event is
 found), GetOutputInfo of each output, GetGeometry of the root; the first connected output with a CRTC; its own mode of
 the page's size, else the server's (AddOutputMode), else one made (CreateMode named `WxH`, CVT-like timings at 60 Hz:
 the virtual GPU reads none; a mode of that name but another size is someone's own and stops it). Then SetScreenSize to
 hold the CRTC if the mode doesn't fit the screen now, SetCrtcConfig (0,0, no rotation, the one output), SetScreenSize to
-the mode (its millimetres at 96 dpi); one run at a time, a size that came meanwhile after it; an error or a refused
-CRTC is logged. A desktop's own daemon (KDE's kscreen) may set the same size too. The native test
+the mode (its millimetres at 96 dpi); one run at a time, a size that came meanwhile after it. A CRTC refused for a
+stale time (`InvalidConfigTime`, `InvalidTime`: the configuration changed under the run, as the display event's probe
+does, which the page's DISPLAY races) is asked again from the resources, three times at most; other refusals and
+errors are logged. The mode made last is deleted (DeleteOutputMode, DestroyMode) once the screen is set to another, so
+the window's sizes don't pile up. A desktop's own daemon (KDE's kscreen) may set the same size too. The native test
 (`agent/src/x11_test.rs`) runs Xorg on the dummy driver (Xvfb's screen can't grow past the size it started with; the Debian
 image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn't measured (backlog).
 
@@ -313,8 +318,9 @@ image's X11 page test sees it set smaller); Xorg's modesetting on virtio-gpu isn
 true`, set by `tools/snapshot-template.ts` with `web/snapshot-file.ts` `asTemplate`, which rewrites the header alone: an
 internal tool for demo images, never set by the page, whose own snapshots keep their identity) is one every visitor
 restores the same: the same kernel CRNG, machine id, random seed and SSH host keys in every copy. At its restore (not a
-resume) the worker says `template`, and the run's link sends RENEW with 64 random bytes once, at the first HELLO of an
-agent with `CAP.RENEW`. The root process: the bytes added to `/dev/random`'s input pool and credited (`RNDADDENTROPY`),
+resume) the worker says `template`, and the run's link owes RENEW (64 random bytes) until the agent's RENEWED: sent at
+the HELLO of an agent with `CAP.RENEW`, once a connection (a connection that ends before RENEWED sends it again at the
+next; the agent renews once at a time, so a RENEW during the keys' helper is the same renewal's). The root process: the bytes added to `/dev/random`'s input pool and credited (`RNDADDENTROPY`),
 then the CRNG reseeded (`RNDRESEEDCRNG`: added entropy otherwise reaches it only at its next periodic reseed); a new
 `/etc/machine-id` (version 4, written in place, its 0444 mode made writable for the write and back: root without
 `CAP_DAC_OVERRIDE`), what has read the old one (journald, networkd's DUID) keeping it until it restarts; systemd's
@@ -322,7 +328,10 @@ random seed (`/var/lib/systemd/random-seed`, if there) new bytes of its length; 
 (`/etc/ssh/ssh_host_<type>_key`) and `ssh-keygen` (the agent runs a guest program only where it exists), each key made
 again into `<key>.new` (`ssh-keygen -q -N "" -t <type>`, umask 022) and renamed over the old one and its `.pub`, so
 sshd never finds one missing, in a forked helper whose pidfd the root loop polls (an RSA key takes seconds of a
-vCPU). The new ids mix the page's bytes into `getrandom`'s too, should the reseed have failed. Not the hostname (the
+vCPU); then each sshd listener (a process named `sshd` whose parent isn't one, found in `/proc`) gets SIGHUP and
+re-executes itself: since OpenSSH 9.8 the listener loads the host keys only at its start and at SIGHUP and hands them
+to each connection, so without it the copy went on serving the template's keys (the BETTERAGENT review's finding 1,
+measured with OpenSSH 10.5; a socket-activated `sshd -i` reads them each time). The new ids mix the page's bytes into `getrandom`'s too, should the reseed have failed. Not the hostname (the
 user's choice: it takes effect properly only after a restart). RENEWED says what was done. The unit's
 `ReadWritePaths=-/etc/machine-id -/etc/ssh -/var/lib/systemd/random-seed` lets it through `ProtectSystem=strict`, so a
 template must be taken from a guest booted by a page with it. Tests: `agent/src/serve_test.rs` (a fake ssh-keygen and

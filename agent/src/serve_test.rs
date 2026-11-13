@@ -126,6 +126,7 @@ impl Harness {
             seed: s("random-seed"),
             ssh: s("ssh"),
             keygen: vec![s("no-keygen"), s("ssh-keygen")],
+            proc: "/proc".into(),
         };
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
@@ -560,6 +561,73 @@ fn renews_ssh_host_keys_with_the_real_ssh_keygen() {
         std::fs::write(r(&format!("ssh/ssh_host_{t}_key.pub")), "old pub").unwrap();
     }
     std::os::unix::fs::symlink(kg, r("ssh-keygen")).unwrap();
+    // A running sshd serving the old keys (made real first), unprivileged on a port of its own.
+    let sshd = std::path::Path::new("/usr/sbin/sshd").exists() && have_keyscan();
+    let mut server = None;
+    let port = 23000 + (std::process::id() % 2000) as u16;
+    if sshd {
+        for t in ["ed25519", "rsa"] {
+            let key = r(&format!("ssh/ssh_host_{t}_key"));
+            let _ = std::fs::remove_file(&key);
+            let _ = std::fs::remove_file(r(&format!("ssh/ssh_host_{t}_key.pub")));
+            let st = std::process::Command::new(kg)
+                .args(["-q", "-N", "", "-t", t, "-f"])
+                .arg(&key)
+                .status()
+                .unwrap();
+            assert!(st.success());
+        }
+        let cfg = format!(
+            "Port {port}\nListenAddress 127.0.0.1\nHostKey {}\nPidFile {}\nUsePAM no\n",
+            r("ssh/ssh_host_ed25519_key").display(),
+            r("sshd.pid").display()
+        );
+        std::fs::write(r("sshd_config"), cfg).unwrap();
+        server = Some(
+            std::process::Command::new("timeout")
+                .args(["120", "/usr/sbin/sshd", "-D", "-e", "-f"])
+                .arg(r("sshd_config"))
+                .stderr(std::fs::File::create(r("sshd.log")).unwrap())
+                .spawn()
+                .unwrap(),
+        );
+    } else {
+        eprintln!("SKIPPED (the served keys): no sshd or ssh-keyscan");
+    }
+    let served = |port: u16| {
+        let out = std::process::Command::new("timeout")
+            .args([
+                "10",
+                "ssh-keyscan",
+                "-p",
+                &port.to_string(),
+                "-t",
+                "ed25519",
+                "127.0.0.1",
+            ])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find(|l| !l.starts_with('#'))
+            .and_then(|l| l.split_whitespace().nth(2))
+            .map(str::to_owned)
+    };
+    let before = sshd.then(|| {
+        let end = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(k) = served(port) {
+                break k;
+            }
+            assert!(
+                std::time::Instant::now() < end,
+                "sshd didn't serve: {}",
+                std::fs::read_to_string(r("sshd.log")).unwrap_or_default()
+            );
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    });
     h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
     assert!(h.page.next(frame::HELLO, 2000).is_some());
     h.page.send(frame::RENEW, &[9u8; 64]);
@@ -585,4 +653,31 @@ fn renews_ssh_host_keys_with_the_real_ssh_keygen() {
         let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "the private half the owner's only");
     }
+    // The running sshd serves the new key (it was told to load them: review 1).
+    if let (Some(before), Some(mut server)) = (before, server) {
+        let on_disk = std::fs::read_to_string(r("ssh/ssh_host_ed25519_key.pub")).unwrap();
+        let new = on_disk.split_whitespace().nth(1).unwrap().to_owned();
+        assert_ne!(new, before);
+        let end = std::time::Instant::now() + Duration::from_secs(10);
+        let mut now = served(port);
+        while now.as_deref() != Some(&new) && std::time::Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(200));
+            now = served(port);
+        }
+        let _ = server.kill();
+        let _ = server.wait();
+        assert_eq!(
+            now.as_deref(),
+            Some(new.as_str()),
+            "the running sshd serves the new key, not {before}"
+        );
+    }
+}
+
+fn have_keyscan() -> bool {
+    std::process::Command::new("ssh-keyscan")
+        .arg("-h")
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
 }

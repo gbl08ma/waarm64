@@ -749,7 +749,8 @@ impl Child {
             }
             let home = x11::home_of(self.uid);
             let cookie = x11::cookie(n, &procs, home.as_deref());
-            match X::connect(&self.x11, n, cookie.as_deref(), self.uid, self.jobs) {
+            let jobs = x_jobs(self.jobs, self.wl.is_some());
+            match X::connect(&self.x11, n, cookie.as_deref(), self.uid, jobs) {
                 Ok(mut x) => {
                     if let Some(size) = self.want {
                         x.resize(size);
@@ -1724,6 +1725,16 @@ impl Child {
     }
 }
 
+/// What an X connection is for: the child's jobs, but the screen's size only where no Wayland compositor is connected
+/// (an X11 session). Under a compositor (one without data-control, whose Xwayland shares the clipboard) the X server is
+/// Xwayland, whose screen is the compositor's; its outputs' names (the compositor's, since Xwayland 21.1) don't say so.
+pub fn x_jobs(jobs: Jobs, compositor: bool) -> Jobs {
+    Jobs {
+        clip: jobs.clip,
+        resize: jobs.resize && !compositor,
+    }
+}
+
 /// Whether an inotify event on the runtime directory may be a compositor's socket coming (events lost to an
 /// overflow may have been).
 pub fn socket_event(events: ReadFlags, name: &str) -> bool {
@@ -1739,6 +1750,23 @@ pub fn is_socket_name(n: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_x_server_under_a_compositor_is_xwaylands_and_its_screen_left_alone() {
+        let both = Jobs {
+            clip: true,
+            resize: true,
+        };
+        assert_eq!(x_jobs(both, false), both, "an X11 session: both");
+        assert_eq!(
+            x_jobs(both, true),
+            Jobs {
+                clip: true,
+                resize: false
+            },
+            "under a compositor (one without data-control): the clipboard only"
+        );
+    }
 
     #[test]
     fn finds_the_compositors_socket() {

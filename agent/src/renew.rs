@@ -45,6 +45,8 @@ pub struct Paths {
     pub ssh: String,
     /// Where `ssh-keygen` may be, first found first.
     pub keygen: Vec<String>,
+    /// Where the processes are (sshd's listeners are found there).
+    pub proc: String,
 }
 
 impl Default for Paths {
@@ -61,6 +63,7 @@ impl Default for Paths {
             ]
             .map(String::from)
             .to_vec(),
+            proc: "/proc".into(),
         }
     }
 }
@@ -354,8 +357,9 @@ fn run_keygen(keygen: &[u8], ty: &[u8], out: &[u8]) -> bool {
     }
 }
 
-/// The keys' helper ended (its pidfd readable): reaped; what was renewed and failed in all.
-pub fn keygen_done(k: Keygen) -> (u8, u8) {
+/// The keys' helper ended (its pidfd readable): reaped, and, if the keys were made, sshd's listeners told to load them;
+/// what was renewed and failed in all.
+pub fn keygen_done(k: Keygen, paths: &Paths) -> (u8, u8) {
     let ok = loop {
         match waitpid(Some(k.pid), WaitOptions::empty()) {
             Ok(Some((_, st))) => break st.exit_status() == Some(0),
@@ -365,6 +369,11 @@ pub fn keygen_done(k: Keygen) -> (u8, u8) {
     };
     let _ = k.pidfd.as_fd();
     let (done, failed) = if ok {
+        let n = reload_sshd(&paths.proc);
+        log(
+            &format!("renew: the SSH host keys made again; {n} sshd listener(s) told to load them"),
+            None,
+        );
         (k.done | what::SSH, k.failed)
     } else {
         log("renew: the SSH host keys: ssh-keygen failed", None);
@@ -375,6 +384,46 @@ pub fn keygen_done(k: Keygen) -> (u8, u8) {
         None,
     );
     (done, failed)
+}
+
+/// A process's name and its parent's pid (`/proc/<pid>/stat`: the name between the parentheses, then the state and
+/// the parent).
+fn stat_of(proc: &str, pid: &str) -> Option<(String, String)> {
+    let s = crate::rt::read_text(format!("{proc}/{pid}/stat")).ok()?;
+    let (open, close) = (s.find('(')?, s.rfind(')')?);
+    let name = s.get(open + 1..close)?.to_owned();
+    let ppid = s.get(close + 1..)?.split_whitespace().nth(1)?.to_owned();
+    Some((name, ppid))
+}
+
+/// SIGHUP to each sshd listener (a process named `sshd` whose parent isn't one: before OpenSSH 9.8 a connection's
+/// process is an `sshd` too, its parent the listener), which re-executes itself and loads the host keys again: since
+/// 9.8 the listener reads them only at its start and at SIGHUP, and hands them to each connection, so without it a
+/// template's copy would go on serving the template's keys. A socket-activated sshd (`sshd -i` per connection) reads
+/// them each time and has no listener. How many were told.
+pub fn reload_sshd(proc: &str) -> usize {
+    let Ok(pids) = crate::rt::dir_names(proc) else {
+        return 0;
+    };
+    let mut n = 0;
+    for pid in pids
+        .iter()
+        .filter(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
+    {
+        let Some((name, ppid)) = stat_of(proc, pid) else {
+            continue;
+        };
+        if name != "sshd" || stat_of(proc, &ppid).is_some_and(|(p, _)| p == "sshd") {
+            continue;
+        }
+        let Some(p) = pid.parse().ok().and_then(Pid::from_raw) else {
+            continue;
+        };
+        if rustix::process::kill_process(p, Signal::HUP).is_ok() {
+            n += 1;
+        }
+    }
+    n
 }
 
 #[cfg(test)]

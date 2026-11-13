@@ -1135,11 +1135,17 @@ test("the link: RENEW once after a template's restore, at the first HELLO of an 
   await settle();
   assert.equal(renews.length, 1, 'at the HELLO of one that does');
   assert.equal(renews[0].length, RENEW_BYTES);
-  port2.postMessage({ type: 'data', conn: 2, bytes: encodeFrame(FRAME.RENEWED, new Uint8Array([RENEWED.ENTROPY | RENEWED.MACHINE_ID, RENEWED.SSH])) });
+  // The connection ends before RENEWED (the agent restarted, a reset; review 4): owed still, sent at the next HELLO.
   port2.postMessage({ type: 'open', open: false, conn: 2 });
-  hello(3, CAP.TIME | CAP.RENEW);
+  hello(4, CAP.TIME | CAP.RENEW);
   await settle();
-  assert.equal(renews.length, 1, 'once: not at the next HELLO');
+  assert.equal(renews.length, 2, 'again: no RENEWED came');
+  renews.shift();
+  port2.postMessage({ type: 'data', conn: 4, bytes: encodeFrame(FRAME.RENEWED, new Uint8Array([RENEWED.ENTROPY | RENEWED.MACHINE_ID, RENEWED.SSH])) });
+  port2.postMessage({ type: 'open', open: false, conn: 4 });
+  hello(5, CAP.TIME | CAP.RENEW);
+  await settle();
+  assert.equal(renews.length, 1, 'once RENEWED came: not at the next HELLO');
   assert.deepEqual(link.renewed, { done: RENEWED.ENTROPY | RENEWED.MACHINE_ID, failed: RENEWED.SSH });
   link.renew(); // another template's restore in the same run: now, with other bytes
   await settle();

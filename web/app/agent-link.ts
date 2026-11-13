@@ -72,8 +72,12 @@ export class AgentLink {
   readonly caps: number;
   /** The screen's size last given (`display`): said again at each agent's HELLO. */
   private size?: { width: number; height: number };
-  /** RENEW is owed (`renew`): sent at the next HELLO of an agent that renews. */
+  /**
+   * RENEW is owed (`renew`) until the agent's RENEWED: sent at the HELLO of an agent that renews, once a connection (one
+   * that ends before RENEWED, a reset or the agent's restart, sends it again at the next).
+   */
   private renewing = false;
+  private renewSent = false;
   /** What the agent's RENEWED said (the tests read it). */
   renewed?: { done: number; failed: number };
 
@@ -133,12 +137,13 @@ export class AgentLink {
    */
   renew() {
     this.renewing = true;
+    this.renewSent = false;
     this.sendRenew();
   }
 
   private sendRenew() {
-    if (!this.renewing || !this.agent || !(this.agent.caps & CAP.RENEW)) return;
-    if (this.send(FRAME.RENEW, crypto.getRandomValues(new Uint8Array(RENEW_BYTES)))) this.renewing = false;
+    if (!this.renewing || this.renewSent || !this.agent || !(this.agent.caps & CAP.RENEW)) return;
+    this.renewSent = this.send(FRAME.RENEW, crypto.getRandomValues(new Uint8Array(RENEW_BYTES)));
   }
 
   private sendDisplay() {
@@ -203,6 +208,7 @@ export class AgentLink {
     this.queue = [];
     this.inflight = 0;
     this.resetting = false;
+    this.renewSent = false;
     if (!open) this.conn = 0;
     if (open) {
       this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: this.caps }));
@@ -225,7 +231,10 @@ export class AgentLink {
           for (const f of this.onHello) f(h);
         }
       }
-      if (f.type === FRAME.RENEWED) this.renewed = decodeRenewed(f.payload);
+      if (f.type === FRAME.RENEWED) {
+        this.renewed = decodeRenewed(f.payload);
+        this.renewing = false;
+      }
       this.onFrame?.(f);
     }
     // Out of step (a frame's length that can't be): the connection reset, once, so the agent connects again.

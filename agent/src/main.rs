@@ -563,7 +563,7 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                 Tag::Ino => track |= s.agent.inotify(),
                 Tag::Keygen => {
                     if let Some(k) = s.agent.keygen.take() {
-                        let (done, failed) = renew::keygen_done(k);
+                        let (done, failed) = renew::keygen_done(k, &s.agent.renew);
                         s.agent.renewed = Some([done, failed]);
                     }
                 }
