@@ -35,6 +35,7 @@ out-of-context reviews (after loops 8 and 19), their findings fixed in loops 9 a
 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | bounded at ~0.3% of a browser now; likely a finding |
 | JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
+| Devices: the MMIO read's cost (not in docs/backlog.md; from BETTERAGENT loop 10, 2026-11-13) | ~0.29 µs a read under the JIT, measured through fw_cfg's data register on Debian (1.44 M byte reads in 414 ms, 1.66 M in 481 ms: `tests/page-agent.test.ts`'s fw_cfg diagnostic, docs/clipboard.md "What it costs"). Unmeasured: how much is the exit from compiled code and the dispatch to the device (`core/src/fw_cfg.rs` is in the core), and whether a fast path for hot registers is worth it. Every MMIO read pays it (virtio's registers, the UART, trapped GIC registers); the agent's delivery no longer does much (74 ms in 4 KiB pieces, ~31 ms of it reads) |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: keep
