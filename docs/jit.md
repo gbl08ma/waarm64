@@ -758,15 +758,26 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   double go to the shadow when the next instruction in the block that names the register reads it as a scalar FP
   operand a shadow serves (`Func::scalar_next`: arithmetic, a scalar store), else to the v128 (`v128.load64_zero`,
   no lane op, which integer NEON code reads); scalar stores take the shadow when it holds the value; DUP's scalar
-  form of a single or double extracts into the shadow. Where states meet, `Regs::merge` keeps a register
-  shadow-only only when every side holds it in that shadow alone (or not at all) and all are dirty or all clean (a
-  clean side's `Cpu` upper bits aren't known to be zero), else as a v128; conforming builds or loads what the target
-  holds. A failure chain's segment stores each register from the form it had at its site (recorded with the
+  form of a single or double extracts into the shadow (the next use of each register after each instruction comes
+  from one backward pass over the block, `emit::scalar_uses`, made at its first single or double load: built for
+  every block it cost Alpine's boot 7% of its emit time). Where states meet, `Regs::merge` keeps a register
+  shadow-only when every side holds it in that shadow alone or not at all: dirty when every side holds it dirty so,
+  else clean (a clean or absent side's `Cpu` upper bits aren't known to be zero), the edges where it is dirty storing
+  the shadow and the zeros above it; anything else is a v128. A member's incoming state merges only its real
+  predecessors: the head's includes the function's entry (nothing held, the `Cpu`'s values), so a loop-carried
+  scalar is clean in its shadow at the head (the back-edge stores it, two stores and no lane op) and never dirty
+  there, which would zero the upper bits of a register the first iteration leaves before writing. Conforming builds
+  or loads what the target holds; a target dirty in a shadow alone must be so on the edge (`conform` asserts it), and
+  a region whose entry states don't settle in four emissions makes those clean (`Regs::loose`), a form any edge
+  conforms to. No register is held in both shadows without its v128 (`Regs::sound`). A failure chain's segment stores each register from the form it had at its site (recorded with the
   segment), and a site joins the chain only while those forms still hold; one that writes such a register with more
-  bits than its shadow (a reload from the `Cpu` would lose them) starts a new chain, as a group's leader does with
-  any SIMD&FP span (not reached by the tests: only a device access `Vm::fast` retires and still reports would). Cost
+  bits than its shadow (a reload from the `Cpu` would lose them) starts a new chain, a group's leader counting the
+  span's SIMD&FP loads and their widths (not reached by the tests: only a device access `Vm::fast` retires and still
+  reports would). Cost
   of a scalar FADD on shadowed operands: the op and one lane op (its result's move to a general register for the
-  check), where it was the op and five (two extracts, that move, `movi` and `ins`); the FP guest +9% on the Mac (`bench/boot/REPORT.md` "PERF loop 23").
+  check), where it was the op and five (two extracts, that move, `movi` and `ins`); the FP guest +9% on the Mac (`bench/boot/REPORT.md` "PERF loop 23"). A reduction
+  loop (`ldr d1, [x0], #8; fadd d0, d0, d1; subs; b.ne`): no lane op from the loop on, where a head holding V0 and V1
+  as v128s took six (PERF loop 24).
 - **Peepholes in the encoder** (`wasm::Code`): a `local.set N` followed by `local.get N` is one
   `local.tee N` (1.4% of the wasm: HOST and scratch read at once), and an `add`, `sub`, `or` or
   `xor` of a just-pushed `i32/i64.const 0` drops both (an access's address at offset 0, `ADD #0`).

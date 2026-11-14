@@ -827,12 +827,19 @@ pub fn module(
         };
         let (mut entry, mut flags) = settle(&first);
         if n > 1 {
+            let mut settled = false;
             for _ in 0..4 {
                 let next = settle(&emit_region(&env, r, plain, &entry, &flags));
                 if next == (entry.clone(), flags.clone()) {
+                    settled = true;
                     break;
                 }
                 (entry, flags) = next;
+            }
+            if !settled {
+                // Edges may not have what an entry holds dirty in a shadow
+                // alone: made clean, a form every edge conforms to.
+                entry = entry.iter().map(|s| s.loose()).collect();
             }
         }
         let mut x = emit_region(&env, r, plain, &entry, &flags);
@@ -955,7 +962,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     c.plain = plain;
     c.nzcv = e.nzcv;
     c.page = (head & 0xfff) as i64;
+    // Each member's merged incoming state, over the edges seen so far
+    // (`reached`): the head's starts with the function's entry, where
+    // nothing is held and the `Cpu` holds every register (a merge with it
+    // keeps no register dirty in a shadow alone, whose upper bits it would
+    // zero: docs/jit.md "Scalar shadows").
     let mut into = vec![emit::Regs::default(); n];
+    let mut reached = vec![false; n];
+    reached[0] = true;
     let mut flags = vec![In::Unset; n];
     let mut dead = vec![false; n];
     let mut bad = false;
@@ -1004,7 +1018,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         for (k, &j) in ents.iter().enumerate() {
             c.local_get(E).i32_const(k as i32 + 1).op(0x46).if_(); // i32.eq
             emit::enter_at(&mut c, r.blocks[j].va.wrapping_sub(head) as i64);
-            into[j] = into[j].merge(here, 0);
+            into[j] = if reached[j] {
+                into[j].merge(here, 0)
+            } else {
+                here
+            };
+            reached[j] = true;
             flags[j] = flags[j].merge(In::Mem);
             c.conform(entry[j]);
             // Member j's label, from inside the two `if`s.
@@ -1022,7 +1041,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         c.fp_ok = false;
         c.fpa_ok = false;
         c.fp16_ok = false;
-        c.words.clone_from(&b.words);
+        c.new_block(&b.words);
         c.plan.clone_from(&e.plans[i]);
         c.enter_flags(match fin[i] {
             In::Lazy(k, sf) => Some((k, sf)),
@@ -1125,7 +1144,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             }
             c.hint(true).if_();
             let (here, fl) = (c.regs, c.flags);
-            into[j] = into[j].merge(here, 0);
+            into[j] = if reached[j] {
+                into[j].merge(here, 0)
+            } else {
+                here
+            };
+            reached[j] = true;
             let lazy = c.lazy();
             flags[j] = flags[j].merge(lazy.map_or(In::Mem, |(k, sf)| In::Lazy(k, sf)));
             if store(j, lazy) {
@@ -2036,6 +2060,57 @@ mod tests {
         let keys: Vec<u64> = r.blocks.iter().map(|b| b.key & !3).collect();
         assert_eq!(keys, [0x1ff8, 0x1000]);
         assert_eq!(r.entries(), [] as [usize; 0]);
+    }
+
+    /// A loop-carried scalar stays in its shadow across the head (docs/jit.md
+    /// "Scalar shadows"): clean there, since the function's entry reaches it
+    /// with the `Cpu`'s value, so the back-edge stores the shadow and the
+    /// zeros above it, with no lane op in the loop.
+    #[test]
+    fn a_loop_carried_scalar_keeps_its_shadow() {
+        // 0x100: ldr d1, [x0], #8; fadd d0, d0, d1; subs x2, x2, #1; b.ne 0x100
+        // 0x110: ret
+        let words = [0xfc408401, 0x1e612800, 0xf1000442, 0x54ffffa1, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!(r.back_edges(), 1);
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            &Config::DEFAULT,
+            false,
+            crate::cpu::FEATURES,
+            None,
+        );
+        assert_eq!(e.inl, [4]);
+        // From the loop on: v128.const, the splats and the lanes' extracts
+        // and replaces (0xfd 0x0c to 0x22).
+        let lp = e.bytes.windows(2).position(|w| w == [0x03, 0x40]).unwrap();
+        let lane = |w: &[u8]| w[0] == 0xfd && (0x0c..=0x22).contains(&w[1]);
+        let ops = e.bytes[lp..].windows(2).filter(|w| lane(w)).count();
+        assert_eq!(ops, 0, "lane ops from the loop on");
+        // V0's shadow is loaded before the loop (and again only after the
+        // FADD's helper, in its slow arm); the back-edge stores it, the
+        // shadow and the zeros above (f64.store, i64.store of 0).
+        let v = core::mem::offset_of!(crate::cpu::Cpu, v) as u32;
+        let memarg = |op: u8, align: u8, off: u32| {
+            let mut b = vec![op, align];
+            let mut x = off;
+            while x >= 0x80 {
+                b.push(x as u8 | 0x80);
+                x >>= 7;
+            }
+            b.push(x as u8);
+            b
+        };
+        let load = memarg(0x2b, 3, v);
+        let first = e.bytes.windows(load.len()).position(|w| w == load);
+        assert!(first.is_some_and(|k| k < lp), "V0's f64.load at {first:?}");
+        let mut back = memarg(0x39, 3, v);
+        back.extend([0x20, 0, 0x42, 0]);
+        back.extend(memarg(0x37, 3, v + 8));
+        assert!(has(&e.bytes[lp..], &back));
     }
 
     /// A hot word's check runs before the entries' prologue (`emit::tier_up`

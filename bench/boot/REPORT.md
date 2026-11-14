@@ -4490,3 +4490,85 @@ CI: `scripts/ci.sh` (754 s), `scripts/ci-jit.sh` (96 s) and `scripts/ci-fp.sh` (
 
 **Not done:** FEAT_FP16's scalar forms in the f32 shadows (backlog: only if FP16 is ever advertised); FMADD's
 operands still splat a shadow-only register (one `dup` each: n-body's eight FMADDs take most of the 76).
+
+## PERF loop 24: loop 23's review fixed (2026-11-14)
+
+The out-of-context review of loop 23's scalar shadows (`review/perf-loop23`, static) found no wrong guest value and
+five findings. Raw: `results/perf24/` (the Mac's JSON: `perf24fp-*` the FP guest, `perf24-*` and `perf24b-*` the
+gates).
+
+**1. A dirty shadow-only register never survived a merge** (performance): true. Each member's merge started from
+`Regs::default()`, and the default is a real state (not held, clean), so "both sides dirty in one shadow" never
+held. The review's trap is also real: at a loop head the default stands for the function's entry, where the `Cpu`
+holds the upper bits. *Test first*: "JIT vs interpreter, regions: scalar shadows across loop heads and joins"
+(`tests/jit-diff.test.ts`): V registers with random upper halves, a head that leaves before the loop writes d0 (its
+`cbz`, or its `ldr d1, [x0], #8` faulting with x0 outside RAM), the review's reduction loop, and three joins (one
+side writes d0, the other nothing, an s0 or a d0), a vector reader (`umov` of both halves) after each. It passes on
+main; the careless fix (every member's merge starting from its first edge, the head's too) fails it in programs 0
+and 2 (V0's upper half zeroed: `Cpu` byte 312, or x3 from `umov`). *Fix*: a member's state merges only its real
+predecessors (`reached` in `emit_region`), the head's starting from the function's entry explicitly; and
+`Regs::merge` keeps a register shadow-only when each side holds it in that shadow alone or not at all, **dirty only
+when both are dirty so, else clean** (the edges where it is dirty store the shadow and the zeros above). The head
+then holds a loop-carried scalar clean in its shadow: the back-edge stores it (two stores, no lane op), where it
+built a v128 and the next reader extracted lane 0 again. Planted: that merge keeping a dirty side's dirt (the
+scalar-FP region and loop tests and the new test fail). *Lane ops* (`a_loop_carried_scalar_keeps_its_shadow`, a unit
+test in `block.rs` on the review's loop): **6 → 0** from the loop on (both V0 and V1 were v128s at the head). *The
+FP guest* (`bench/interp/ab-mac.sh perf24fp 3`, `jit_fp_mips`, M4, Chrome for Testing 157.0.8103.78, base · the
+exact entry merge with loop 23's rule · this rule, each round), MIPS:
+
+| | round 1 | round 2 | round 3 | median |
+|---|---|---|---|---|
+| base | 3,512 | 3,503 | 3,493 | **3,503** |
+| exact entry merge | 3,468 | 3,486 | 3,492 | 3,486 |
+| clean shadows at heads | 3,484 | 3,462 | 3,471 | **3,471** (−0.9%) |
+
+No gain: the FP guest has no loop-carried scalar in a register (n-body's inner loop keeps its sums in memory,
+Horner's polynomial is FMLA .2D), and the changed regions trade lane ops for stores and spills (TurboFan's code of
+the region at 0x1045c: `mov` 311 → 294, `movi` 13 → 0, `str` 1,568 → 1,657, `ldur` 763 → 843; of 0x10470 and
+0x1051c fewer moves and stores). The new arm is slower in each round, under the ~1% floor. Kept for the reductions it serves
+(the lane-op count above) and because the merge is now exact; a guest with reductions would decide it.
+
+**2. `conform` wrong for one target shape, the settle loop may end unsettled** (latent): true, and reachable once
+1 is fixed (a member after a forward join can be dirty in a shadow alone). A target dirty in a shadow alone is right
+only from an edge that holds it so in the same shadow; `conform` now `debug_assert`s that (the native tests compile
+the loop regions with it), and a region whose entry states don't settle in four emissions makes those registers
+clean (`Regs::loose`), a form any edge conforms to (stores, then loads from the `Cpu`). No test makes a region that
+doesn't settle (none known); `merged_shadow_forms` covers `loose`.
+
+**3. `merge`'s f32/f64 precedence** (latent): the state it would mishandle (both shadows, no v128) never occurs, as
+the review says. `Regs::only` now returns each shadow alone with no precedence, `merge` uses it, `Regs::sound` (no
+register in both shadows without its v128) is asserted in `merge` and `reload`, and `reload`'s branch for "the other
+shadow alone" is gone: where this side holds the other shadow clean (`conform` stored it if dirty) the `Cpu` holds
+the value, so it loads lane 0 as from nothing. Unit test `merged_shadow_forms` (each pair of side forms; the two
+shadows merge to a v128).
+
+**4. Group leaders split the chain on any SIMD&FP span** (performance): true, and cheap: the leader now passes the
+span's SIMD&FP loads and their widest per-register write (`span_vloads`) to `chain_open`, as a single access does.
+Not reached by the tests, as loop 23 found for the rule itself (only a device access `Vm::fast` retires and still
+reports writes more than its shadow); no planted bug can fail a test. Effect: FP regions' code a little smaller
+(the FP guest's modules 68,411 → 68,409 bytes).
+
+**5. `scalar_next` quadratic** (compile time): true. It is a table now, made by one backward pass over the block
+(`scalar_uses`, decoded once a word), equal to the forward scan (`next_scalar_uses` compares the two on random
+blocks; planted, a pass that doesn't clear on another use fails it). Built eagerly for every block, the table cost the
+gates: same code (Alpine's modules 12,120,141 bytes in both arms) but `emitNs` 174 → 187 ms in Alpine's boot and
+242 → 259 ms in Alpine's userspace, and the boot +0.8% (3,924 → 3,957 ms, `perf24-*`, base first each round). Built
+at a block's first single or double load instead, `emitNs` is back to the base's (175-178 against 175, 242-246
+against 242-245).
+
+**The gates** (`bench/interp/ab-mac.sh perf24b 3`, the final arm first each round, so no order favors it), ms:
+
+| | final | base |
+|---|---|---|
+| `alpine_jit_total` | 4,328 · 4,002 · 3,962; **4,002** | 3,950 · 3,956 · 3,957; **3,956** |
+| `alpine_user_jit_total` | 10,662 · 10,756 · 10,665; **10,665** | 10,760 · 10,610 · 10,617; **10,617** (+0.5%) |
+
+The boot's first round is the session's first boot (its `compileNs` 58 ms where every other run took 50-51), and
+the code both arms make is byte-identical with the same emit time from round 2, so we read the boot's +1.2% as host
+noise, not the change. Alpine's userspace is within the floor. The same `emitNs` counter may explain loops 21 and 23's
+slightly slower gates. **Size:** `emit_region` 18,293 → 18,892 bytes (`tools/wasm-sizes.ts`; 19,192 with the eager
+table), `access` for `ldst_fp` 9,078 → 9,171, `scalar_uses` 2,308 new; the core 9,391,681 → 9,418,141 bytes.
+**Memory:** nothing at run time; while compiling, 8 bytes a word for the block being emitted, only in blocks with a
+single or double load.
+
+No step count moved. CI: `scripts/ci.sh` (784 s), `scripts/ci-jit.sh` (102 s) and `scripts/ci-fp.sh` (504 s) pass.

@@ -16,7 +16,7 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 23)
+## State (2026-11-14, after loop 24)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
@@ -29,7 +29,9 @@ I8MM, FCMA, FP16, FHM, BF16. Dropped with findings in docs: slot size/count, the
 SUBS's carry as a field, NZCV in a local, ADRP+ADD, misaligned stores, CCMP's kind, LSE2, LSE min/max inline, ISB
 inline in parallel, the shared cache's leftovers, the SMP leftovers (ISB cost, WFE sleep, an exit's parts). Three
 out-of-context reviews (after loops 8, 19 and 21), their findings fixed in loops 9, 20 and 22. Loop 23 added a
-register form (`Regs`'s shadows, every merge, chain and fallback): an out-of-context review of it comes next.
+register form (`Regs`'s shadows, every merge, chain and fallback); loop 24 fixed its review's five findings (merges
+over real predecessors only, a loop-carried scalar clean in its shadow at the head: no FP guest gain, the gates
+level once the scalar-use table was made lazily).
 
 ## Still open (the queue: the first is next; by expected gain)
 

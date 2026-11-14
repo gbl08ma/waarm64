@@ -136,8 +136,8 @@ const PSTATE: usize = offset_of!(Cpu, pstate);
 /// zero-extended when dirty (a scalar write zeroes the rest), and the `Cpu`'s
 /// value when clean. A vector reader of a shadow-only register builds the
 /// v128 (dirty) or loads it (clean); a store of one writes the shadow and
-/// zeros above it (a dirty one has nothing else). With both shadows and no
-/// v128, the f64 is the one stored.
+/// zeros above it (a dirty one has nothing else). No register is held in
+/// both shadows without its v128 ([`Regs::sound`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Regs {
     valid: u64,
@@ -156,30 +156,51 @@ impl Regs {
     /// (step 8): every register held on either side, dirty if dirty on
     /// either; each edge conforms to it ([`Func::conform`]). Registers in
     /// `plain` never have a local. A V register stays shadow-only when each
-    /// side holds it in that shadow alone or not at all, and both are dirty
-    /// or both clean (a clean side's `Cpu` value isn't known to be the shadow
-    /// zero-extended); else it is held as a v128, with the shadows both sides
-    /// hold.
+    /// side holds it in that shadow alone or not at all; it is dirty (the
+    /// shadow zero-extended) only when both sides hold it dirty so, else
+    /// clean (a clean or absent side's `Cpu` value isn't known to be the
+    /// shadow zero-extended): an edge where it is dirty stores it, the shadow
+    /// with zeros above. A loop-carried scalar then stays in its shadow
+    /// across the head, which the function's entry also reaches. Any other
+    /// register is held as a v128, with the shadows both sides hold.
     pub fn merge(self, o: Regs, plain: u64) -> Regs {
+        debug_assert!(self.sound() && o.sound());
         let (ha, hb) = (self.held(), o.held());
-        let agree = !(self.dirty ^ o.dirty);
-        let only =
-            |s: u64, t: u64| (s & !self.valid | !ha) & (t & !o.valid | !hb) & (ha | hb) & agree;
-        let (o32, o64) = (only(self.s32, o.s32), only(self.s64, o.s64));
+        let ((a32, a64), (b32, b64)) = (self.only(), o.only());
+        let only = |s: u64, t: u64| (s | !ha) & (t | !hb) & (ha | hb);
+        let (o32, o64) = (only(a32, b32), only(a64, b64));
         let valid = (ha | hb) & !(o32 | o64);
+        let dirty = (self.dirty | o.dirty) & valid | self.dirty & o.dirty & (o32 | o64);
         Regs {
             valid: valid & !plain,
-            dirty: (self.dirty | o.dirty) & !plain,
+            dirty: dirty & !plain,
             s32: (o32 | self.s32 & o.s32 & valid) & !plain,
             s64: (o64 | self.s64 & o.s64 & valid) & !plain,
         }
     }
 
-    /// The V registers held in a shadow alone: `(s32 only, s64)`, the f64
-    /// counting where both are held.
+    /// The V registers held in a shadow alone: `(s32, s64)`.
     fn only(self) -> (u64, u64) {
         let so = !self.valid;
-        (self.s32 & so & !self.s64, self.s64 & so)
+        (self.s32 & so, self.s64 & so)
+    }
+
+    /// No register is held in both shadows without its v128 (every writer
+    /// of a shadow alone clears the other; a reader of the other width
+    /// takes the shadow's bits or the `Cpu`'s without holding them).
+    fn sound(self) -> bool {
+        self.s32 & self.s64 & !self.valid == 0
+    }
+
+    /// `self` with no register dirty in a shadow alone (made clean: each
+    /// edge into it stores such a register first): a state any edge can
+    /// conform to, for a region whose entry states didn't settle.
+    pub fn loose(self) -> Regs {
+        let (o32, o64) = self.only();
+        Regs {
+            dirty: self.dirty & !(o32 | o64),
+            ..self
+        }
     }
 }
 
@@ -307,6 +328,9 @@ pub struct Func {
     /// has read and written so far ([`access`]).
     pub words: Vec<u32>,
     pub plan: Vec<Role>,
+    /// [`scalar_uses`] of `words` once a load asks (emptied with each new
+    /// block: [`Func::new_block`]).
+    scalar: Vec<(u32, u32)>,
     group: Option<Open>,
     /// [`close`] emits a group's span again (a spill arm).
     replay: bool,
@@ -594,42 +618,23 @@ impl Func {
     /// `esize` bits as a scalar FP operand a shadow serves without lane ops
     /// (arithmetic, a store), so a load into Vt goes to its shadow; any other
     /// use, or none in the block, keeps the v128 (a vector reader of a shadow
-    /// pays to build it). Only a hint: either form is exact.
-    fn scalar_next(&self, t: u32, esize: u32) -> bool {
-        use Op::*;
-        for &w in self.words.iter().skip(self.at + 1) {
-            let op = crate::decode::decode(w);
-            let (d, n, m, a) = (
-                bits(w, 4, 0),
-                bits(w, 9, 5),
-                bits(w, 20, 16),
-                bits(w, 14, 10),
-            );
-            let ty = if bits(w, 23, 22) == 1 { 64 } else { 32 };
-            match op {
-                FADD_float | FSUB_float | FMUL_float | FDIV_float | FNMUL_float
-                    if n == t || m == t =>
-                {
-                    return ty == esize && bits(w, 23, 22) < 2;
-                }
-                FSQRT_float | FABS_float | FNEG_float if n == t => {
-                    return ty == esize && bits(w, 23, 22) < 2;
-                }
-                STR_imm_fpsimd_1 | STR_imm_fpsimd_2 | STUR_fpsimd | STR_reg_fpsimd if d == t => {
-                    return !bit(w, 23) && 8 << bits(w, 31, 30) == esize;
-                }
-                STP_LDP_fpsimd | STNP_LDNP_fpsimd if !bit(w, 22) && (d == t || a == t) => {
-                    return 32 << bits(w, 31, 30) == esize;
-                }
-                _ => {}
-            }
-            // Any other SIMD&FP instruction or load/store naming Vt: its own use.
-            let simd = bits(w, 28, 25) & 7 == 7 || bits(w, 27, 25) & 5 == 4 && bit(w, 26);
-            if simd && (d == t || n == t || m == t || a == t) {
-                return false;
-            }
+    /// pays to build it). Only a hint: either form is exact. From
+    /// [`scalar_uses`]'s table of the block, made at its first such load.
+    fn scalar_next(&mut self, t: u32, esize: u32) -> bool {
+        if self.scalar.is_empty() {
+            self.scalar = scalar_uses(&self.words);
         }
-        false
+        self.scalar
+            .get(self.at)
+            .is_some_and(|&(m32, m64)| (if esize == 64 { m64 } else { m32 }) & 1 << t != 0)
+    }
+
+    /// Starts a block's `words`; its [`scalar_uses`] are made when a load
+    /// first asks.
+    pub fn new_block(&mut self, words: &[u32]) {
+        self.words.clear();
+        self.words.extend_from_slice(words);
+        self.scalar.clear();
     }
 
     /// Pushes Vn.
@@ -947,7 +952,11 @@ impl Func {
 
     /// Brings the register state to `to` on an edge into a region block
     /// (step 8): writes back what is dirty here but not there, and loads
-    /// what is valid there but not here.
+    /// what is valid there but not here. A register `to` holds dirty in a
+    /// shadow alone (the shadow zero-extended) must be so here, in the same
+    /// shadow: nothing else makes its upper bits zero. [`Regs::merge`] makes
+    /// that form only where every edge has it, and a region whose states
+    /// didn't settle drops it ([`Regs::loose`]).
     pub fn conform(&mut self, to: Regs) {
         let mut d = self.regs.dirty & !to.dirty;
         while d != 0 {
@@ -956,6 +965,13 @@ impl Func {
             self.store_cpu(n);
         }
         self.regs.dirty &= to.dirty;
+        let ((t32, t64), (h32, h64)) = (to.only(), self.regs.only());
+        let dirty = self.regs.dirty & !self.plain;
+        debug_assert!(
+            to.dirty & (t32 & !(h32 & dirty) | t64 & !(h64 & dirty)) == 0,
+            "an edge into a dirty shadow-only form it doesn't hold: {:?} to {to:?}",
+            self.regs
+        );
         self.reload(to);
     }
 
@@ -1057,6 +1073,7 @@ impl Func {
     /// v128 built from a dirty shadow or loaded, a shadow extracted from the
     /// v128 or loaded (where this side is clean: [`Regs`]).
     fn reload(&mut self, to: Regs) {
+        debug_assert!(to.sound());
         let mut m = to.valid & !self.regs.valid;
         while m != 0 {
             let n = m.trailing_zeros();
@@ -1084,11 +1101,9 @@ impl Func {
                     self.c.local_get(l);
                     // f64x2/f32x4.extract_lane 0
                     self.c.simd_lane(if e == 64 { 0x21 } else { 0x1f }, 0);
-                } else if (self.regs.s32 | self.regs.s64) & 1 << n != 0 {
-                    // The other shadow alone: `merge` keeps none such.
-                    self.shadow_lane(k, e, 0);
-                    self.c.op(if e == 64 { 0xbf } else { 0xbe }); // f64/f32.reinterpret
                 } else {
+                    // Not held, or clean in the other shadow (`conform`
+                    // stored it): the `Cpu` holds it.
                     debug_assert_eq!(self.regs.dirty & 1 << n, 0);
                     self.load_shadow(k, e);
                 }
@@ -3565,10 +3580,16 @@ fn lead(
         // through its helper): the helper runs the leader if FP is off.
         fp_guard(c, cx, i, k);
     }
-    // A member's write isn't known here: any V register a segment stores
-    // from a shadow starts a new chain.
-    c.vzx = 0;
-    c.chain_open(written | if fp { !0 << 32 } else { 0 });
+    // The span's SIMD&FP loads and the bytes each writes: a segment storing
+    // one of those registers from a shadow narrower than that starts a new
+    // chain.
+    let (vw, vz) = if fp {
+        span_vloads(&c.words[k..=last])
+    } else {
+        (0, 0)
+    };
+    c.vzx = vz;
+    c.chain_open(written | vw);
     let arr = read + if write { 16 } else { 0 };
     c.local_get(ADDR);
     if lo != 0 {
@@ -3865,6 +3886,80 @@ fn shape(i: u32) -> Option<Shape> {
         _ => return None,
     };
     Some(s)
+}
+
+/// The V registers a group's span (`words`) loads into, and the most bytes
+/// one of its SIMD&FP loads writes into each of its registers, zero-extended
+/// ([`Func::chain_open`]'s `vzx`).
+fn span_vloads(words: &[u32]) -> (u64, u32) {
+    let (mut vw, mut vz) = (0, 0);
+    for &w in words {
+        if let Some(s) = shape(w).filter(|s| s.fp && !s.write) {
+            let pair = matches!(
+                crate::decode::decode(w),
+                Op::STP_LDP_fpsimd | Op::STNP_LDNP_fpsimd
+            );
+            vw |= vbit(bits(w, 4, 0)) | if pair { vbit(bits(w, 14, 10)) } else { 0 };
+            vz = vz.max(if pair { s.len / 2 } else { s.len });
+        }
+    }
+    (vw, vz)
+}
+
+/// How instruction `w` (`op`) uses Vt, if it names it: as a scalar FP operand of
+/// `Some(esize)` bits a shadow serves without lane ops (arithmetic, a
+/// store), or `Some(0)` for any other use of a SIMD&FP instruction or
+/// load/store ([`Func::scalar_next`]).
+fn scalar_use(w: u32, op: Op, t: u32) -> Option<u32> {
+    use Op::*;
+    let (d, n, m, a) = (
+        bits(w, 4, 0),
+        bits(w, 9, 5),
+        bits(w, 20, 16),
+        bits(w, 14, 10),
+    );
+    let ty = if bits(w, 23, 22) == 1 { 64 } else { 32 };
+    let arith = if bits(w, 23, 22) < 2 { ty } else { 0 };
+    match op {
+        FADD_float | FSUB_float | FMUL_float | FDIV_float | FNMUL_float if n == t || m == t => {
+            return Some(arith);
+        }
+        FSQRT_float | FABS_float | FNEG_float if n == t => return Some(arith),
+        STR_imm_fpsimd_1 | STR_imm_fpsimd_2 | STUR_fpsimd | STR_reg_fpsimd if d == t => {
+            return Some(if bit(w, 23) { 0 } else { 8 << bits(w, 31, 30) });
+        }
+        STP_LDP_fpsimd | STNP_LDNP_fpsimd if !bit(w, 22) && (d == t || a == t) => {
+            return Some(32 << bits(w, 31, 30));
+        }
+        _ => {}
+    }
+    let simd = bits(w, 28, 25) & 7 == 7 || bits(w, 27, 25) & 5 == 4 && bit(w, 26);
+    (simd && (d == t || n == t || m == t || a == t)).then_some(0)
+}
+
+/// For each instruction of a block, the V registers whose next use after it
+/// is as a single's and as a double's scalar operand ([`scalar_use`]): one
+/// backward pass, where a scan from each load was quadratic in the block.
+pub fn scalar_uses(words: &[u32]) -> Vec<(u32, u32)> {
+    let mut out = vec![(0, 0); words.len()];
+    let (mut m32, mut m64) = (0u32, 0u32);
+    for (k, &w) in words.iter().enumerate().rev() {
+        out[k] = (m32, m64);
+        let op = crate::decode::decode(w);
+        for t in [
+            bits(w, 4, 0),
+            bits(w, 9, 5),
+            bits(w, 20, 16),
+            bits(w, 14, 10),
+        ] {
+            if let Some(e) = scalar_use(w, op, t) {
+                let b = 1 << t;
+                m32 = if e == 32 { m32 | b } else { m32 & !b };
+                m64 = if e == 64 { m64 | b } else { m64 & !b };
+            }
+        }
+    }
+    out
 }
 
 /// Whether a block has the two accesses a group needs ([`plan`]).
@@ -4987,6 +5082,107 @@ mod tests {
         el1: true,
         ..FLAT
     };
+
+    /// [`Regs::merge`]'s shadow forms (docs/jit.md "Scalar shadows"): V0 in
+    /// each pair of side forms, the merged form.
+    #[test]
+    fn merged_shadow_forms() {
+        let b = vbit(0);
+        let (none, v128) = (
+            Regs::default(),
+            Regs {
+                valid: b,
+                dirty: b,
+                ..Regs::default()
+            },
+        );
+        let s = |w: u32, dirty: bool| Regs {
+            s32: if w == 32 { b } else { 0 },
+            s64: if w == 64 { b } else { 0 },
+            dirty: if dirty { b } else { 0 },
+            ..Regs::default()
+        };
+        // Dirty in one shadow on both sides: kept so (the shadow zero-extended).
+        assert_eq!(s(64, true).merge(s(64, true), 0), s(64, true));
+        assert_eq!(s(32, true).merge(s(32, true), 0), s(32, true));
+        // Against a clean side or the function's entry (not held): clean in
+        // the shadow, the dirty edge storing it.
+        assert_eq!(s(64, true).merge(none, 0), s(64, false));
+        assert_eq!(none.merge(s(64, true), 0), s(64, false));
+        assert_eq!(s(32, false).merge(s(32, true), 0), s(32, false));
+        // The two shadows, or a v128: a v128, dirty if either side is.
+        assert_eq!(s(32, true).merge(s(64, true), 0), v128);
+        assert_eq!(
+            s(64, false).merge(s(32, false), 0),
+            Regs {
+                valid: b,
+                ..Regs::default()
+            }
+        );
+        let both = Regs { s64: b, ..v128 };
+        assert_eq!(s(64, true).merge(both, 0), both);
+        assert_eq!(s(64, true).merge(v128, 0), v128);
+        assert_eq!(s(64, true).merge(s(64, true), b), none);
+        // Loosened: clean in the shadow; a v128 stays dirty.
+        assert_eq!(s(64, true).loose(), s(64, false));
+        assert_eq!(both.loose(), both);
+        assert!(
+            !Regs {
+                s32: b,
+                s64: b,
+                ..Regs::default()
+            }
+            .sound()
+        );
+    }
+
+    /// [`scalar_uses`] gives, after each instruction, the V registers whose
+    /// next use is a scalar operand of each size.
+    #[test]
+    fn next_scalar_uses() {
+        // ldr d1, [x9]; ldr s2, [x9]; fadd d5, d5, d1; str s2, [x9]; ldr d3, [x9];
+        // add v3.2d, v3.2d, v3.2d; ldr d4, [x9] (a load's or store's base, an
+        // X register, and any field of the word, count as naming a V register
+        // of that number: only a hint).
+        let w = [
+            0xfd400121, 0xbd400122, 0x1e6128a5, 0xbd000122, 0xfd400123, 0x4ee38463, 0xfd400124,
+        ];
+        let u = scalar_uses(&w);
+        assert_eq!(u[0], (0, 0b100010));
+        assert_eq!(u[1], (0b100, 0b100010));
+        assert_eq!(u[2], (0b100, 0));
+        assert_eq!(u[3], (0, 0));
+        assert_eq!(u[4], (0, 0));
+        // The backward pass agrees with a scan forward from each instruction,
+        // on blocks of the words it cares about with few registers.
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rand = || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x as u32
+        };
+        let pool = [
+            0x1e612800, 0x1e212800, 0x1e61c000, 0xfd400000, 0xbd000000, 0x2d000000, 0x4ee08400,
+        ];
+        for _ in 0..200 {
+            let w: Vec<u32> = (0..24)
+                .map(|_| pool[rand() as usize % pool.len()] | (rand() & 0x0003_7c63))
+                .collect();
+            let u = scalar_uses(&w);
+            for at in 0..w.len() {
+                for t in 0..32 {
+                    let next = w[at + 1..]
+                        .iter()
+                        .find_map(|&v| scalar_use(v, decode(v), t));
+                    let (m32, m64) = u[at];
+                    assert_eq!(next == Some(32), m32 & 1 << t != 0, "{w:x?} at {at}, V{t}");
+                    assert_eq!(next == Some(64), m64 & 1 << t != 0, "{w:x?} at {at}, V{t}");
+                }
+            }
+        }
+        assert_eq!(u[6], (0, 0));
+    }
 
     #[test]
     fn groups_of_accesses() {

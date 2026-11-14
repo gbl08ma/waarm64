@@ -1289,6 +1289,43 @@ for (const [suffix, pool] of [['', [...ALU, ...Object.values(MEMORY)]], [' with 
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SEQS} programs differ`);
 });
 
+// Scalar shadows where region edges meet (docs/jit.md "Scalar shadows"), on V registers whose upper bits are set:
+// a loop head entered from the function, where the `Cpu` holds them, and left before the loop writes the register
+// (by its cbz, or by its load's failure: x0 outside RAM); a join of a side that writes the shadow with one that
+// doesn't, or writes the other shadow, or the same one; a vector reader after each.
+test('JIT vs interpreter, regions: scalar shadows across loop heads and joins', () => {
+  const UMOV3 = 0x4e183c03, UMOV4 = 0x4e083c04; // umov x3, v0.d[1]; umov x4, v0.d[0]
+  const FADD = 0x1e612800, FMUL = 0x1e610800, FSUBD = 0x1e613800, FSUBS = 0x1e213800; // d0 = d0 op d1; s0 = s0 - s1
+  const progs = [
+    [0xb4000085, FADD, 0xd10004a5, 0x17fffffd, UMOV3, UMOV4, BRK], // cbz x5, out; fadd; sub x5; b head
+    [0xfc408401, FADD, 0xf1000442, 0x54ffffa1, UMOV3, UMOV4, BRK], // ldr d1, [x0], #8; fadd; subs x2; b.ne head
+    [0xfc408401, 0xb4000062, FADD, 0x17fffffd, UMOV3, BRK], // ldr d1, [x0], #8; cbz x2, out; fadd; b head
+    ...[0x910004c6, FSUBS, FSUBD].map((c) => [0xb4000065, FMUL, 0x14000002, c, UMOV3, UMOV4, BRK]), // cbz x5, c; fmul; b join; c: ...
+  ];
+  const { ex, jit, ca32, cb32, cpus, run, counts, data } = setup(4 * PROG * progs.length);
+  progs.forEach((p, k) => {
+    ca32.set(p, PROG * k);
+    cb32.set(p, PROG * k);
+  });
+  const failures: string[] = [];
+  for (let s = 0; s < 64 * STATES; s++) {
+    const k = s % progs.length;
+    const [a, b] = cpus();
+    for (let r = 0; r < 32; r++) a[r] = BigInt(rand32() % 4);
+    a[0] = rand32() % 4 === 0 ? 1n << 40n : BigInt(data + 8 * (rand32() % 64));
+    a[32] = BigInt(4 * PROG * k); // PC
+    a[33] = 0n;
+    const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 66);
+    for (let r = 0; r < 64; r++) va[r] = r % 2 === 0 ? fpPlain(true) : rand64() | 1n;
+    [va[64], va[65]] = [0n, 16n]; // FPCR the default, FPSR.IXC set
+    new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
+    const what = run(BigInt(1 + (rand32() % 40)), true);
+    if (what) failures.push(`program ${k}, x0 ${a[0].toString(16)} x2 ${a[2]} x5 ${a[5]}: ${what} differs`);
+  }
+  console.log(`scalar shadows: ${progs.length} programs, ${counts()}`);
+  assert.deepEqual(failures.slice(0, 20), [], `${failures.length} runs differ`);
+});
+
 // Spill memories (docs/spill-memories.md "The JIT's spill arm"): the load and store classes with
 // the MMU on, at EL1, the registers mostly addresses around a data area in spill memory 1 (whose
 // pages the JIT reaches in an inline arm) or in spill memory 2 (the helper's), on an interpreter
