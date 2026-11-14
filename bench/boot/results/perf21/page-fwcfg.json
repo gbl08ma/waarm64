@@ -1,0 +1,7 @@
+{
+  "what": "tests/page-agent.test.ts's fw_cfg diagnostic: the agent's 108,409-byte gzip read from fw_cfg in 26 pieces of 4 KiB by Debian 13 on the page (Chromium headless, the dev VM), WAARM64_AGENT_IDLE=1; the arms alternated in one session, 2026-11-14",
+  "chromium": "155.0.8059.84",
+  "ms": { "base": [78.2, 75.5], "mmio": [45.6] },
+  "ms_earlier_same_build_mmio": [44.3],
+  "ns_per_byte": { "base": [721, 696], "mmio": [421, 408] }
+}

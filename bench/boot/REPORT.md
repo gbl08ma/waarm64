@@ -4305,3 +4305,80 @@ with its test, failing on `9dd6119b`.
    `queryScheduler`'s comment.
 
 No step count moved. CI: `scripts/ci.sh`, `ci-jit.sh`, `ci-graphics.sh` and `ci-debian.sh` pass.
+
+## PERF loop 21: the MMIO read's cost (2026-11-14)
+
+The handover's "Next": an MMIO read cost ~0.29 µs under the JIT on Debian (fw_cfg's data register, docs/clipboard.md
+"What it costs"), unbroken down. Raw: `results/perf21/` (`mmio.c` and `run.ts`, the micro-benchmark; `micro/` its
+JSON; `gates/` the Mac screen's; `page-fwcfg.json` the Debian check).
+
+**The micro-benchmark** (`results/perf21/mmio.c`): bare metal, the MMU on as Linux has it (48-bit VAs, four levels,
+the register's page a 4 KiB Device-nGnRE page at level 3, as `ioremap` maps it), 250,000 iterations of 8 `ldr w2`
+of one register, timed by the host (`run.ts`: Node 26.7.0 on the dev VM, one vCPU, parallel SMP and realtime, the
+page's mode, JIT), less the same loop on RAM (~90-130 ms, noisy): 2M reads.
+
+**Where a read's ~0.21 µs went** (Node's `--cpu-prof` at 50 µs, PL011's FR; the shares of the vCPU thread's time):
+- **the run loop and re-entry, ~30%**: the helper's `Exit::Fault(Bus)` ended the block and the chunk; `run_cpu`'s
+  iteration (the atomics, the chunk's set-up), `jit::steps`' dispatch of the next block (a block per entry point
+  after each read), `handle_par`, `publish_cpu`, `drain`, the counter's u128 division;
+- **three table walks, ~20-30%**: a page with no RAM was never cached in the TLB, so the helper's try walked
+  (`Mmu::miss`: `walk`, then `Mem::host_spill` looking for a spill memory), `Io`'s run walked again, and `Io::pa`
+  walked a third time for the PA;
+- **the interpreter twice, ~25%**: the helper's try (`jit_exec_mmu`: decode, `ldst::exec`) and `Io`'s run
+  (`interp::step_bus`: fetch, decode, `ldst::exec`);
+- the platform's lock and `refresh` (`spis`, `Gicv3::signaled` for every vCPU), ~5%; the device itself (PL011's
+  `read`, `Io::dev_read`), ~3%; the compiled loop, the rest.
+
+**What was built** (no rearchitecting: both reuse what's there):
+1. **Device pages in the TLB** (core/src/mmu.rs): a walk that ends on a PA with no RAM fills the data array's entry
+   with memory index `MMIO` (0xff, the tag's bits 10:3 zero), the PA as its "host address", Device or not as the walk
+   said. `Mmu::miss`'s look for spill and Device entries finds it, checks the alignment, and returns the bus fault;
+   `Io::pa` reads the PA from it (`Mmu::mmio_pa`). Fills, flushes, nG and block marks, `low_global`: as RAM's.
+2. **Device accesses finished in the helper** (core/src/vm/parallel.rs `Vm::fast`, the existing fast completions,
+   parallel SMP in realtime mode): `Exit::Fault(Bus)` runs `io` under the platform's lock as `handle_par` would, and the
+   block goes on, unless that left a `DEVICE` exit, a full TX ring, a fault or an unmasked IRQ on the line: then its
+   outcome waits in `jit::State::io` and `handle_par` takes it instead of running the access again.
+
+| per read, µs (rounds 1-3, the arms alternated) | base | 1: device entries | 1 + 2 |
+|---|---|---|---|
+| PL011 FR | 0.24 · 0.21 · 0.21 | 0.14 · 0.16 · 0.15 | 0.09 · 0.08 · 0.08 |
+| GICD_CTLR | 0.23 · 0.21 · 0.20 | 0.16 · 0.15 · 0.14 | 0.09 · 0.07 · 0.08 |
+
+(Each round's median of 3 runs less its RAM loop's; an earlier session with fewer arms: 0.214, 0.157, 0.091.) The rounds
+don't overlap: **about −60% a read** (0.21 → 0.08 µs).
+
+**Debian on the page** (`tests/page-agent.test.ts`'s fw_cfg diagnostic, the agent's 108,409-byte gzip read in 26
+pieces, Chromium 155.0.8059.84 headless on the dev VM, the arms swapped in `target/` and alternated): base 78.2 and
+75.5 ms (721, 696 ns a byte), new 45.6 ms (421) and 44.3 in the run before (408): **−41%**, ~32 ms of a vCPU at every
+boot.
+
+**What's left of a read** (~85 ns; the new arm's profile): the interpreter twice (the helper's try and `Io`'s run:
+`jit_exec_mmu` and `vm::io` the largest two), the lock and `refresh` ~15%, the device ~5%. Tried: handing `Io` the
+helper's word instead of fetching it again: no difference (273-280 against 277-292 ms), dropped. Not built: an access
+compiled to a device call (the slow arm reading the PA from the device entry and calling a per-size helper without the
+decode, ~30-40 ns): a new slow-arm form on every load and store (code size the Mac ranks) and a second copy of `Io`'s
+dispatch, for a cost that nothing we run pays often (Debian's fw_cfg read, ~100K reads a boot, is the largest; virtio's
+registers are a few reads a request). Not needed either: inline JIT code reading a device. The exit to the run loop was
+the cost, not the helper call; the device's own work is a few ns.
+
+**The screen** (`bench/interp/ab-mac.sh perf21 3`, the JIT gates, M4, macOS, Chrome for Testing 157.0.8103.78,
+base then the new arm each round), ms:
+
+| | base | new |
+|---|---|---|
+| `alpine_jit_total` | 3,910 · 3,922 · 3,936; **3,922** | 3,924 · 3,958 · 3,952; **3,952** (+0.8%) |
+| `alpine_user_jit_total` | 10,516 · 10,586 · 10,636; **10,586** | 10,590 · 10,657 · 10,645; **10,645** (+0.6%) |
+
+The rounds overlap and the differences are under the ~1% floor: no regression shown (the gates run deterministic,
+where only the device entries apply). **Size:** `Mmu::miss` 1,088 → 1,195 bytes, `Vm::io_par` 341 new (`tools/wasm-sizes.ts`;
+the core 9,319,175 → 9,321,984 bytes). **Memory:** none (the entries are the TLB's own slots; `State::io` is a few
+words a vCPU).
+
+**Checks:** tests/baremetal/mmio.c (new; QEMU agrees, `oracle.sh`): fw_cfg's data register read 140K times through
+an aliased 4 KiB Device page (the bytes in order), the page remapped and flushed, misaligned and empty-page accesses
+from compiled code, an SPI made pending by a store taken before the next instruction; `mmu::tests::
+device_pages_are_cached_as_the_bus` (no second walk, `mmio_pa`, the fetch array left empty, alignment, a TLBI).
+Planted, each failing: the PA from the entry wrong (mmio.c, natively and in wasm); the IRQ check dropped (mmio.c's
+check 30, 5 of 5 runs); faults finished in place (mmio.c's check 21); `DEVICE` exits finished in place (the parallel
+USB test, testusb against Gadget Zero, timed out). No step count moved.
+CI: `scripts/ci.sh` (778 s), `scripts/ci-jit.sh` and `scripts/ci-debian.sh` pass.

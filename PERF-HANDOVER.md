@@ -16,12 +16,14 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-10, after loop 20 `9be5a0f7`)
+## State (2026-11-14, after loop 21)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
 −1.9%); the JIT's wasm size cuts (−6% wasm) and one budget counter (Lua −1.7%); virgl's `spin` query poll
-(glquery 15 → 280 frames/s); FEAT_RDM and FEAT_LRCPC2 advertised. Built but off by default (measured slower):
+(glquery 15 → 280 frames/s); FEAT_RDM and FEAT_LRCPC2 advertised; device pages in the TLB and MMIO finished in the
+JIT's helper (loop 21: a read 0.21 → 0.08 µs, Debian's fw_cfg read of the agent 77 → 45 ms; a device call compiled
+into the slow arm measured out as not worth its code). Built but off by default (measured slower):
 I8MM, FCMA, FP16, FHM, BF16. Dropped with findings in docs: slot size/count, the dispatcher in `interpret`,
 SUBS's carry as a field, NZCV in a local, ADRP+ADD, misaligned stores, CCMP's kind, LSE2, LSE min/max inline, ISB
 inline in parallel, the shared cache's leftovers, the SMP leftovers (ISB cost, WFE sleep, an exit's parts). Two
@@ -31,7 +33,6 @@ out-of-context reviews (after loops 8 and 19), their findings fixed in loops 9 a
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** Devices: the MMIO read's cost (not in docs/backlog.md; from BETTERAGENT loop 10, 2026-11-13) | ~0.29 µs a read under the JIT, measured through fw_cfg's data register on Debian (1.44 M byte reads in 414 ms, 1.66 M in 481 ms: `tests/page-agent.test.ts`'s fw_cfg diagnostic, docs/clipboard.md "What it costs"). Unmeasured: how much is the exit from compiled code and the dispatch to the device (`core/src/fw_cfg.rs` is in the core), and whether a fast path for hot registers is worth it. Every MMIO read pays it (virtio's registers, the UART, trapped GIC registers); the agent's delivery no longer does much (74 ms in 4 KiB pieces, ~31 ms of it reads) |
 | JIT: scalar FP in f64/f32 locals | FP guest and FP-heavy guests only (0.5% of a browser's compiled instructions) |
 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | bounded at ~0.3% of a browser now; likely a finding |
 | JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |

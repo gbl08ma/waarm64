@@ -593,6 +593,68 @@ fn device_memory_faults_misaligned_accesses() {
 }
 
 #[test]
+fn device_pages_are_cached_as_the_bus() {
+    // A page with no RAM behind it (a device's registers, or nothing) is cached in the data arrays as one with
+    // `MMIO`'s index: the next access goes to the bus without a walk, the entry gives the PA (`mmio_pa`), the
+    // fetch array isn't filled, misaligned accesses to Device memory still fault, and a TLBI drops the entry.
+    const DEV: u64 = 2 << 2;
+    let mut p = Pt::new();
+    let mmio = RAM as u64 + 0x5000;
+    p.map(0x4000, 3, mmio | PAGE | DEV);
+    p.map(0x6000, 3, (mmio + 0x1000) | PAGE); // Normal memory, nothing there
+    let c = cpu();
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    let bus = |r: Result<u64, Fault>| r.map_err(|f| (f.addr, f.access, f.kind));
+    for k in 0..3 {
+        assert_eq!(
+            bus(b.read(&c, 0x4008, 4)),
+            Err((0x4008, Access::Read, FaultKind::Bus))
+        );
+        assert_eq!(
+            b.write(&c, 0x400c, 4, 1)
+                .map_err(|f| (f.addr, f.access, f.kind)),
+            Err((0x400c, Access::Write, FaultKind::Bus))
+        );
+        assert_eq!(
+            bus(b.read(&c, 0x6002, 4)),
+            Err((0x6002, Access::Read, FaultKind::Bus))
+        );
+        assert_eq!(
+            b.tlb.as_ref().unwrap().stats.walks,
+            3,
+            "walks after round {k}"
+        );
+    }
+    assert_eq!(b.mmio_pa(0x4ff8, 1, Use::Read), Some(mmio + 0xff8));
+    assert_eq!(b.mmio_pa(0x4010, 1, Use::Write), Some(mmio + 0x10));
+    assert_eq!(b.mmio_pa(0x6000, 1, Use::Read), Some(mmio + 0x1000));
+    assert_eq!(b.mmio_pa(0x5000, 1, Use::Read), None);
+    assert_eq!(b.mmio_pa(0x4000, 0, Use::Read), None); // EL0's array
+    assert!(b.fast(&c, 0x4008, 4, Use::Read).is_none());
+    // Device memory: misaligned faults on the entry too; Normal memory goes to the bus.
+    assert_eq!(
+        bus(b.read(&c, 0x400a, 4)),
+        Err((0x400a, Access::Read, FaultKind::Align))
+    );
+    assert_eq!(
+        bus(b.read(&c, 0x6001, 4)),
+        Err((0x6001, Access::Read, FaultKind::Bus))
+    );
+    // A fetch walks (no entry) and faults on the bus; maintenance finds no RAM.
+    assert_eq!(b.fetch(&c, 0x4000).map_err(|f| f.kind), Err(FaultKind::Bus));
+    assert_eq!(b.maint(&c, 0x4000, false), Ok(None));
+    assert_eq!(b.mmio_pa(0x4000, 1, Use::Exec), None);
+    // Remapped and flushed: the new PA.
+    p.map(0x4000, 3, (mmio + 0x2000) | PAGE | DEV);
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    b.flush_va(0x4000);
+    assert_eq!(b.mmio_pa(0x4000, 1, Use::Read), None);
+    assert!(b.read(&c, 0x4000, 4).is_err());
+    assert_eq!(b.mmio_pa(0x4004, 1, Use::Read), Some(mmio + 0x2004));
+}
+
+#[test]
 fn cache_maintenance_first_keeps_a_device_page_device() {
     // DC CVAC (the read array) or DC IVAC (the write array) on a Device page
     // before any data access fills its entry: that entry is still a Device

@@ -378,8 +378,16 @@ The table is `core/src/interp/sys.rs`.
   loop.
 - **Device pages in the TLB:** their entries have tag bit 11 (`DEVICE`, above the inverted memory index) cleared,
   so the exact compares of every fast path (the interpreters', the JIT's inline arms, spill memories' included)
-  miss them and `Mmu::miss` finds the entry and checks the alignment. MMIO already went that way; RAM mapped as
-  Device (no guest of ours does: virtio-gpu's window is mapped cached) pays a call per access.
+  miss them and `Mmu::miss` finds the entry and checks the alignment. RAM mapped as Device (no guest of ours does:
+  virtio-gpu's window is mapped cached) pays a call per access.
+- **Pages with no RAM behind them** (a device's registers, or nothing) are cached too, in the data arrays (not the
+  instruction array), as memory index `MMIO` (0xff, past every spill memory's: the tag's bits 10:3 all zero) with the
+  PA as the "host address": `Mmu::miss` finds the entry, checks the alignment (Device memory) and returns the bus
+  fault without a walk, and `vm::Io` takes the PA from the same entry (`Mmu::mmio_pa`) instead of walking again. They
+  are filled, flushed and counted (nG, blocks, `low_global`) as RAM's are. Before (PERF loop 21) every MMIO access
+  walked the tables three times (the first try, `Io`'s retry, `Io::pa`), a fifth to a third of its cost
+  (`bench/boot/REPORT.md` "PERF loop 21"). tests/baremetal/mmio.c and `mmu::tests::device_pages_are_cached_as_the_bus`
+  check it.
 - **With the MMU off**, a VA past the 40-bit PA size is an address size fault at level 0, not an external abort
   (`mmu::flat_fault`, on a failed access's way out; `AT` reports it too). TBI isn't applied there.
 

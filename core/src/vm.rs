@@ -41,7 +41,7 @@ use crate::interp::debug::{self, Kind};
 use crate::interp::{self, Exit, platform, sys, take_exception, take_irq};
 use crate::jit;
 use crate::mem::{Access, Fault, FaultKind, Mem};
-use crate::mmu::{Bus, Mmu, Vcpu, walk};
+use crate::mmu::{Bus, Mmu, Use, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
 use crate::pl031::Pl031;
 use crate::virtio::{self, DevShared, DeviceEntry, Transport};
@@ -1723,16 +1723,13 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
     }
 }
 
+/// [`io`]'s outcome: the instruction's result, whether the console's TX ring
+/// was full, and a `DEVICE` exit's value.
+pub(crate) type IoOut = (Result<(), Exit>, bool, Option<u64>);
+
 /// Runs the instruction at `vcpu`'s PC again through [`Io`], after it hit a
-/// non-RAM address: its result, whether the console's TX ring was full, and
-/// a `DEVICE` exit's value.
-fn io(
-    vcpu: &mut Vcpu,
-    mem: &Mem,
-    p: &mut Platform,
-    shared: &Shared,
-    time: Time,
-) -> (Result<(), Exit>, bool, Option<u64>) {
+/// non-RAM address.
+fn io(vcpu: &mut Vcpu, mem: &Mem, p: &mut Platform, shared: &Shared, time: Time) -> IoOut {
     let mut io = Io {
         mmu: Mmu::new(mem, Some(&mut vcpu.tlb)),
         gic: &mut p.gic,
@@ -1789,10 +1786,14 @@ struct Io<'a> {
 }
 
 impl Io<'_> {
-    /// The physical address of `va`, which translated (the access reached the bus).
-    fn pa(&self, c: &Cpu, va: u64) -> u64 {
+    /// The physical address of `va`, which translated (the access reached the bus): from the
+    /// device page's TLB entry its miss filled, else a walk.
+    fn pa(&self, c: &Cpu, va: u64, el: u64, u: Use) -> u64 {
         if c.sctlr_el1 & sctlr::M == 0 {
             return va;
+        }
+        if let Some(pa) = self.mmu.mmio_pa(va, el, u) {
+            return pa;
         }
         walk(c, self.mmu.mem, va).map_or(u64::MAX, |w| w.pa)
     }
@@ -1907,7 +1908,7 @@ impl Bus for Io<'_> {
         match self.mmu.read_el(c, va, size, el) {
             Err(f) if f.kind == FaultKind::Bus => {
                 watch(c, va, size, el, Kind::Load)?;
-                let pa = self.pa(c, va);
+                let pa = self.pa(c, va, el, Use::Read);
                 self.dev_read(pa, size).ok_or(f)
             }
             r => r,
@@ -1918,7 +1919,7 @@ impl Bus for Io<'_> {
         match self.mmu.write_el(c, va, size, val, el) {
             Err(f) if f.kind == FaultKind::Bus => {
                 watch(c, va, size, el, Kind::Store)?;
-                let pa = self.pa(c, va);
+                let pa = self.pa(c, va, el, Use::Write);
                 self.dev_write(pa, size, val).ok_or(f)
             }
             r => r,
@@ -1939,7 +1940,7 @@ impl Bus for Io<'_> {
         match self.mmu.read_atomic(c, va, size) {
             Err(f) if f.kind == FaultKind::Bus => {
                 watch(c, va, size, c.el(), Kind::Load)?;
-                let pa = self.pa(c, va);
+                let pa = self.pa(c, va, c.el(), Use::Read);
                 self.dev_read(pa, size).ok_or(f)
             }
             r => r,
@@ -1950,7 +1951,7 @@ impl Bus for Io<'_> {
         match self.mmu.write_atomic(c, va, size, val) {
             Err(f) if f.kind == FaultKind::Bus => {
                 watch(c, va, size, c.el(), Kind::Store)?;
-                let pa = self.pa(c, va);
+                let pa = self.pa(c, va, c.el(), Use::Write);
                 self.dev_write(pa, size, val).ok_or(f)
             }
             r => r,

@@ -49,13 +49,19 @@
 // flush by VA (most of Linux's: the user pages it unmaps) drops the page's.
 
 use crate::cpu::{Cpu, sctlr};
-use crate::mem::{Access, Fault, FaultKind, Host, Mem};
+use crate::mem::{Access, Fault, FaultKind, Host, MEM_SHIFT, Mem};
 
 pub const TLB_ENTRIES: usize = 16384;
 /// In a TLB entry's tag, bit 11 cleared (above the inverted memory index, bits
 /// 10:3): a Device page's entry, which every fast path misses, so that
 /// [`Mmu::miss`] checks the alignment of each access to it.
 const DEVICE: u64 = 1 << 11;
+/// The memory index of a device's page in a data entry (no RAM: the "host address" is
+/// the PA, [`Tlb::mmio_pa`]): [`Mmu::miss`] sends the access to the bus without a walk.
+/// Above every spill memory's ([`crate::mem::MAX_SPILL`]).
+const MMIO: u64 = 0xff;
+/// The tag's memory index bits, all zero for a device's page ([`MMIO`], inverted).
+const MMIO_BITS: u64 = 0x7f8;
 /// Entries an index holds, one per array: six used, a power of two for the
 /// JIT's shift and mask.
 pub const TLB_SLOTS: usize = 8;
@@ -843,6 +849,14 @@ impl<'a> Mmu<'a> {
         Mmu { mem, tlb }
     }
 
+    /// The PA of `va` in a device's page, from its entry in the TLB (array `u` of `el`) if it has one
+    /// ([`MMIO`]): the access that missed just filled it, unless that took the walk without a TLB.
+    pub fn mmio_pa(&self, va: u64, el: u64, u: Use) -> Option<u64> {
+        let e = self.tlb.as_ref()?.e[index(va)].0[3 * el as usize + u as usize];
+        ((e.tag ^ (va | 0xfff)) & !0xff8 == 0 && e.tag & MMIO_BITS == 0)
+            .then(|| va.wrapping_add(e.addend) & ((1 << MEM_SHIFT) - 1))
+    }
+
     /// Host address for `len` bytes at `va`, which must not cross a page.
     #[inline(always)]
     fn host(
@@ -922,6 +936,10 @@ impl<'a> Mmu<'a> {
                 if e.tag & DEVICE == 0 && device_check && misaligned {
                     return Err(fault(FaultKind::Align));
                 }
+                // A device's page: the access goes to the bus (`vm::Io`), with no walk.
+                if e.tag & MMIO_BITS == 0 {
+                    return Err(fault(FaultKind::Bus));
+                }
                 return Ok(Host(va.wrapping_add(e.addend)));
             }
             t.stats.misses += 1;
@@ -944,10 +962,19 @@ impl<'a> Mmu<'a> {
         if let Some(t) = &mut self.tlb {
             t.stats.walks += 1;
         }
-        let p = self
-            .mem
-            .host(w.pa, len, access)
-            .map_err(|f| Fault { addr: va, ..f })?;
+        // Not RAM: a device's page, if anything is there (`vm::Io` finds out). Its data entries
+        // ([`MMIO`]) send the next access to the bus without a walk.
+        let p = self.mem.host(w.pa, len, access);
+        let mmio = matches!(
+            p,
+            Err(Fault {
+                kind: FaultKind::Bus,
+                ..
+            })
+        ) && u != Use::Exec;
+        if p.is_err() && !mmio {
+            return p.map_err(|f| Fault { addr: va, ..f });
+        }
         // In parallel SMP a TLB that holds nothing in the TTBR0 half but its
         // current ASID's lets a TLBI IS for another ASID skip waiting for its
         // vCPU (vm/parallel.rs `broadcast`). The first global entry there
@@ -972,6 +999,21 @@ impl<'a> Mmu<'a> {
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             return self.miss(c, va, len, split, access, u, el);
         }
+        if mmio {
+            if let Some(t) = &mut self.tlb {
+                let page = Host(MMIO << MEM_SHIFT | w.pa & !0xfff);
+                t.fill(
+                    3 * el as usize + u as usize,
+                    va,
+                    page,
+                    w.ng,
+                    w.level,
+                    device,
+                );
+            }
+            return Err(fault(FaultKind::Bus));
+        }
+        let p = p.map_err(|f| Fault { addr: va, ..f })?;
         // A tagged PC (TBI) never fills the instruction TLB, so it misses
         // every fast path that finds code by VA (the JIT's transfer cache, the
         // block interpreter's next block) and reaches the dispatcher, which

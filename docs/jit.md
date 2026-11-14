@@ -667,6 +667,25 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   until the dispatcher's catch-up. In the desktop guest (2026-10-22, `bench/imgdecode/README.md`) a vDSO `clock_gettime` went
   from 660 to ~250 ns (13.5 natively) and `isb; mrs cntvct_el0` from 613 to ~200 ns; Firefox showing images reads
   the counter ~12K times a second and takes ~37K such resyncs.
+- **Device accesses** (parallel SMP in realtime mode, through `fast` as above): a load or store whose helper
+  (`jit_exec_mmu`, `jit_exec_flat`, `jit_exec_span`) met a page with no RAM (`Exit::Fault(Bus)`) is run there and
+  then through `vm::Io`, as the run loop would (`Vm::io_par`: the platform's lock, the device, `refresh` of the
+  lines), and the block goes on, unless that leaves the run loop something to do: a `DEVICE` exit (a virtio or xHCI
+  doorbell), a full TX ring, a fault (nothing there, a watchpoint), or an IRQ on the vCPU's line with IRQs unmasked
+  (taken before the next instruction, as when the access ended the chunk). Then the outcome goes to
+  `jit::State::io`, the helper reports the exit, and the run loop's `Exit::Fault(Bus)` takes it from there instead of
+  running the access again (`debug_assert`ed empty at each chunk). With the TLB's device entries (docs/cpu.md "Pages
+  with no RAM behind them") an MMIO read under the JIT went from ~0.21 to ~0.09 µs in a bare-metal loop (PL011's FR,
+  GICD_CTLR, a 4 KiB Device page at level 3) and Debian's fw_cfg read of the agent from 76-78 to 44-46 ms (0.70 →
+  0.41 µs a byte; bench/boot/REPORT.md "PERF loop 21"). tests/baremetal/mmio.c checks the reads' order, the faults
+  from compiled code and the IRQ (planted: each condition dropped fails it or the parallel USB test).
+  **What's left of a read** (~90 ns, Node's profile): the interpreter twice (the helper's try, which decodes and finds
+  the device entry, and `Io`'s run, which fetches and decodes the word again: passing the helper's word instead
+  measured nothing), the lock and `refresh` (~15%), the device's own work (PL011's `read` ~5%). An access compiled to
+  a device call (the PA from the device entry in the slow arm, a helper per size that skips the decode) would save
+  the decodes, perhaps 30-40 ns, for a new slow-arm form on every load and store (code size) and a second copy of
+  `Io`'s dispatch; not built: at ~0.1 µs a read, nothing we run reads devices often enough (Debian's fw_cfg read,
+  ~100K reads at boot, is the most) for it to show.
 - **Counter reads compiled inline** (parallel SMP in realtime mode, `emit::counter`): a block with an `MRS` of
   CNTVCT_EL0 or CNTPCT_EL0 imports the host clock (`env.now_ms`, web/vm.ts's `jitHost` passes the core's own) and
   computes `Vm::now`'s reading from the vCPU's `jit::State::counter` (the clock's start, ticks a ms, the ticks it

@@ -463,6 +463,7 @@ impl Vm {
             if self.realtime() {
                 v.jit.counter = self.counter();
             }
+            debug_assert!(v.jit.io.is_none(), "a device access's outcome left over");
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }
@@ -495,7 +496,11 @@ impl Vm {
     /// hook is set only then), its ASID published, and no IRQ to take; an ISB
     /// also not while its JIT table is behind the cache. A timer
     /// that comes due meanwhile is seen at the chunk's end, as anywhere else
-    /// in a chunk. Returns false (nothing changed) otherwise.
+    /// in a chunk; and a device access, under the platform's lock, as the run
+    /// loop would (`io_par`), when that leaves the run loop nothing to do: no
+    /// `DEVICE` exit, no full TX ring, no fault, no IRQ to take (docs/jit.md
+    /// "Device accesses"). Returns false (nothing changed, but a device
+    /// access's outcome is left in `State::io`) otherwise.
     fn fast(&self, c: usize, v: &mut Vcpu, insn: u32, e: Exit) -> bool {
         use crate::decode::{Op, decode};
         match e {
@@ -534,6 +539,22 @@ impl Vm {
                 }
                 fence(Ordering::SeqCst);
                 true
+            }
+            // A device access, run as the run loop would, in the block: done unless it has more
+            // for the run loop to do (a `DEVICE` exit, a full TX ring, a fault, an IRQ to take now),
+            // which then takes its outcome from `State::io`.
+            Exit::Fault(Fault {
+                kind: FaultKind::Bus,
+                ..
+            }) => {
+                let out = self.io_par(c, v);
+                let irq = v.cpu.pstate & PSTATE_I == 0
+                    && self.shared.cpus[c].par.irq.load(Ordering::SeqCst);
+                if matches!(out, (Ok(()), _, None)) && !irq {
+                    return true;
+                }
+                v.jit.io = Some(out);
+                false
             }
             _ => false,
         }
@@ -642,16 +663,11 @@ impl Vm {
                 kind: FaultKind::Bus,
                 ..
             }) => {
-                let mut pl = self.plat_of(c);
-                let (r, tx_full, device) = io(
-                    v,
-                    &self.mem,
-                    &mut pl,
-                    &self.shared,
-                    Time::Clock(&self.clock),
-                );
-                self.refresh(&mut pl);
-                drop(pl);
+                // Run already, by the JIT's helper (`fast`).
+                let (r, tx_full, device) = match v.jit.io.take() {
+                    Some(out) => out,
+                    None => self.io_par(c, v),
+                };
                 match r {
                     Ok(()) => {
                         own.steps += 1;
@@ -668,6 +684,20 @@ impl Vm {
             e => self.exception_par(c, v, own, e),
         }
         None
+    }
+
+    /// [`io`] for vCPU `c`, under the platform's lock, and the lines it changed.
+    fn io_par(&self, c: usize, v: &mut Vcpu) -> IoOut {
+        let mut pl = self.plat_of(c);
+        let out = io(
+            v,
+            &self.mem,
+            &mut pl,
+            &self.shared,
+            Time::Clock(&self.clock),
+        );
+        self.refresh(&mut pl);
+        out
     }
 
     fn exception_par(&self, c: usize, v: &mut Vcpu, own: &mut Own, e: Exit) {

@@ -28,7 +28,9 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 - **Device MMIO never touches the interpreter's fast copies:** an access to a non-RAM PA faults
   there, and the run loop re-executes that one instruction on a third `Bus`, `vm::Io`, which sends
   it to the device (handlers read before they write registers, so the retry is exact). The JIT
-  reaches the same path: a helper that hits a non-RAM PA reports `Exit::Fault(Bus)`.
+  reaches the same path: a helper that hits a non-RAM PA reports `Exit::Fault(Bus)`, which parallel SMP's realtime
+  run loop finishes in the helper (docs/jit.md "Device accesses"). A device page's translation is cached in the TLB
+  (docs/cpu.md "Pages with no RAM behind them"), so neither try walks the tables.
 
 ## Boot (`core/src/boot.rs`, `core/src/fdt.rs`)
 
