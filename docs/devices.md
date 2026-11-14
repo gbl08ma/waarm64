@@ -484,9 +484,13 @@ Save and restart of its settings; another machine opened) asks the guest to shut
 question says so), with a dialog meanwhile ([Shutting down](ui:machine:power-actions.shuttingDown.title)) whose one
 button, [Power off now](ui:machine:power-actions.shuttingDown.now), cuts the power (not focused; Esc does nothing: the
 button is the way out); the dialog goes when the guest's power-off ends the run (looked at every 200 ms). A request the
-toolbar made already counts as asked; an agent that connects again meanwhile (the guest isn't shutting down after all)
-is asked once more. Refused or unanswered, the user is asked whether to power off at once: Cancel keeps the machine
-running and the change isn't made (`PowerActions.powerOff` and `stopCleanly` say so to their callers: the Machines
+toolbar made already counts as asked; an agent that connects again meanwhile (a HELLO with POWER: the guest isn't
+shutting down after all) is asked once more. The agent's connection ending clears the toolbar's sign too
+(`agentShown.canPower(false)`), but that is the shutdown stopping the agent before the guest powers off, so with no
+agent connected the wait goes on (taking it as "came back" once asked again, got no agent, and put the question below
+up over a guest that was shutting down). Refused or unanswered, the user is asked whether to power off at once: the
+guest powering off while that question is open takes it down and the change goes on as after a clean stop; Cancel
+keeps the machine running and the change isn't made (`PowerActions.powerOff` and `stopCleanly` say so to their callers: the Machines
 page's edit, the export, the settings, the switch stop there). No agent that can: the hard stop, which the change's
 question said. Stops that drop the running guest's state (a disk's reset, a snapshot's restore, changes
 imported, another disk booted) stay hard. Tests: the commands (`agent/src/power.rs`, `serve_test.rs`: busctl's method, refused, shutdown

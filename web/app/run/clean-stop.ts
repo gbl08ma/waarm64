@@ -3,9 +3,11 @@
 // (web/app/run/soft-power.ts), with a dialog meanwhile whose one button powers off at once (`dialog`), so the disk the
 // change works on is the guest's clean one, not a power cut's. The dialog goes when the guest's power-off ends the run,
 // or at its button (Esc doesn't take it down: the button is the way out). A request the toolbar made already counts
-// as asked; an agent that connects again meanwhile (the guest isn't shutting down after all) is asked once more.
-// Refused, unanswered, or no agent that can: the user is asked whether to power off at once (`hard`), and a No leaves
-// the machine running and the change undone. The user's design, 2026-11-14.
+// as asked; an agent that connects again meanwhile (its HELLO: the guest isn't shutting down after all) is asked once
+// more. The agent's connection ending clears the pending sign too, but that is the shutdown stopping the agent before
+// the guest powers off: the wait goes on. Refused, unanswered, or no agent that can: the user is asked whether to power
+// off at once (`hard`), and a No leaves the machine running and the change undone; the guest powering off while that
+// question is open takes it down, and the stop goes on as a clean one. The user's design, 2026-11-14.
 
 /** How often the wait looks whether the guest's power-off has stopped the machine. */
 export const POLL_MS = 200;
@@ -15,14 +17,14 @@ export type CleanStopDeps = {
   soft(): Promise<boolean>;
   /** A request is pending (the toolbar's, or this one's; an agent that connected again cleared it). */
   pending(): boolean;
-  /** The run's agent can (its HELLO has `CAP.POWER`). */
+  /** The run's agent can (connected, and its HELLO has `CAP.POWER`; false once its connection ends). */
   canSoft(): boolean;
   /** The guest still runs (its power-off, or a reboot's reset, ends it). */
   up(): boolean;
   /** The dialog meanwhile: `skipped` resolves at its Power off now; `close` takes it down. */
   dialog(): { skipped: Promise<void>; close(): void };
-  /** Whether to power off at once, the guest not having taken it (`agent`: it was asked; false: no agent that can). */
-  hard(agent: boolean): Promise<boolean>;
+  /** Whether to power off at once, the guest not having taken it (`agent`: it was asked); `close` takes it down. */
+  hard(agent: boolean): { answer: Promise<boolean>; close(): void };
   /** The run stopped (the hard stop's; a run the guest powered off only goes). */
   stop(): Promise<void>;
   poll?: number;
@@ -48,8 +50,9 @@ export async function stopCleanly(d: CleanStopDeps): Promise<CleanStop> {
   let taken = await Promise.race([ask(), skip.then(() => false)]);
   while (taken && !cut() && d.up()) {
     await new Promise((r) => setTimeout(r, d.poll ?? POLL_MS));
-    // Cleared while the guest runs on: its agent came back, so it isn't shutting down. Asked once more.
-    if (!cut() && d.up() && !d.pending()) {
+    // Cleared while the guest runs on, with an agent that can: its agent came back (a HELLO), so it isn't shutting
+    // down. Asked once more. Cleared with no agent connected: the shutdown stopped it; the guest's power-off is waited for.
+    if (!cut() && d.up() && !d.pending() && d.canSoft()) {
       taken = at.again && (await Promise.race([d.soft(), skip.then(() => false)]));
       at.again = false;
     }
@@ -63,7 +66,25 @@ export async function stopCleanly(d: CleanStopDeps): Promise<CleanStop> {
 }
 
 async function hardOr(d: CleanStopDeps, agent: boolean): Promise<CleanStop> {
-  if (agent && !(await d.hard(true))) return 'kept';
+  if (agent) {
+    const q = d.hard(true);
+    const off = { now: false, done: false };
+    // The guest may still power off while the question is open (it was slow to): then there's nothing left to ask.
+    const watch = (async () => {
+      while (!off.done && d.up()) await new Promise((r) => setTimeout(r, d.poll ?? POLL_MS));
+      if (off.done) return;
+      off.now = true;
+      q.close();
+    })();
+    const yes = await q.answer;
+    off.done = true;
+    await watch;
+    if (off.now || !d.up()) {
+      await d.stop();
+      return 'clean';
+    }
+    if (!yes) return 'kept';
+  }
   await d.stop();
   return 'hard';
 }
