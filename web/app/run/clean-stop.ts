@@ -4,8 +4,8 @@
 // change works on is the guest's clean one, not a power cut's. The dialog goes when the guest's power-off ends the run,
 // or at its button (Esc doesn't take it down: the button is the way out). A request the toolbar made already counts
 // as asked; an agent that connects again meanwhile (its HELLO: the guest isn't shutting down after all) is asked once
-// more. The agent's connection ending clears the pending sign too, but that is the shutdown stopping the agent before
-// the guest powers off: the wait goes on. Refused, unanswered, or no agent that can: the user is asked whether to power
+// more. The agent's connection ending is the shutdown stopping the agent before the guest powers off (it leaves the
+// pending sign, web/app/areas/agent-shown.ts): the wait goes on. Refused, unanswered, or no agent that can: the user is asked whether to power
 // off at once (`hard`), and a No leaves the machine running and the change undone; the guest powering off while that
 // question is open takes it down, and the stop goes on as a clean one. The user's design, 2026-11-14.
 

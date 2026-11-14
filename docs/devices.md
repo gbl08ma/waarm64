@@ -487,10 +487,10 @@ question says so), with a dialog meanwhile ([Shutting down](ui:machine:power-act
 button, [Power off now](ui:machine:power-actions.shuttingDown.now), cuts the power (not focused; Esc does nothing: the
 button is the way out); the dialog goes when the guest's power-off ends the run (looked at every 200 ms). A request the
 toolbar made already counts as asked; an agent that connects again meanwhile (a HELLO with POWER: the guest isn't
-shutting down after all) is asked once more. The agent's connection ending clears the toolbar's sign too
-(`agentShown.canPower(false)`), but that is the shutdown stopping the agent before the guest powers off, so with no
-agent connected the wait goes on (taking it as "came back" once asked again, got no agent, and put the question below
-up over a guest that was shutting down). Refused or unanswered, the user is asked whether to power off at once: the
+shutting down after all) is asked once more. The agent's connection ending is the shutdown stopping the agent before the guest
+powers off: it leaves the sign (above), and only a sign cleared with an agent that can connected counts as "came back",
+so the wait goes on (taking an end as one once asked again, got no agent, and put the question below up over a guest
+that was shutting down). Refused or unanswered, the user is asked whether to power off at once: the
 guest powering off while that question is open takes it down and the change goes on as after a clean stop; Cancel
 keeps the machine running and the change isn't made (`PowerActions.powerOff` and `stopCleanly` say so to their callers: the Machines
 page's edit, the export, the settings, the switch stop there). No agent that can: the hard stop, which the change's
