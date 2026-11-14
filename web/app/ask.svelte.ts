@@ -40,6 +40,17 @@ export function answer(ok: boolean, text = '') {
   next();
 }
 
+/** Takes question `q` down, shown or queued, as a Cancel (a question already answered stays answered). */
+function takeDown(q: Question | undefined) {
+  if (!q) return;
+  if (asking.current === q) answer(false);
+  else {
+    const i = queue.indexOf(q);
+    if (i >= 0) queue.splice(i, 1);
+    q.resolve(false);
+  }
+}
+
 export const ask = {
   /** OK or Cancel. */
   confirm: (text: string, o: Options = {}) =>
@@ -63,6 +74,23 @@ export const ask = {
       danger: false,
       value: '',
     }).then(() => undefined),
+  /** OK or Cancel, which the caller can also take down (`close`: as a Cancel, `answer` false). */
+  closableConfirm(text: string, o: Options = {}): { answer: Promise<boolean>; close(): void } {
+    let q: Question | undefined;
+    const answer = show(
+      {
+        kind: 'confirm',
+        title: o.title ?? t('common:ask.confirmTitle'),
+        text,
+        ok: o.ok ?? t('common:ask.ok'),
+        cancel: o.cancel ?? t('common:ask.cancel'),
+        danger: o.danger ?? false,
+        value: '',
+      },
+      (shown) => (q = shown),
+    ) as Promise<boolean>;
+    return { answer, close: () => takeDown(q) };
+  },
   /**
    * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning, not focused) resolves `skipped`; Esc
    * does nothing (Ask.svelte: taken down, it would leave no way to cut the wait short).
@@ -83,15 +111,7 @@ export const ask = {
     );
     return {
       skipped: answered.then((ok) => (ok ? undefined : new Promise<void>(() => undefined))),
-      close() {
-        if (!q) return;
-        if (asking.current === q) answer(false);
-        else {
-          const i = queue.indexOf(q);
-          if (i >= 0) queue.splice(i, 1);
-          q.resolve(false);
-        }
-      },
+      close: () => takeDown(q),
     };
   },
   /** A line of text, or undefined if cancelled. */

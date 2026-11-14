@@ -155,7 +155,7 @@ export class PowerActions {
           ok: t('machine:power-actions.shuttingDown.now'),
         }),
       hard: () =>
-        ask.confirm(t('machine:power-actions.shuttingDown.refused'), {
+        ask.closableConfirm(t('machine:power-actions.shuttingDown.refused'), {
           title: t('machine:power-actions.powerOff.title'),
           ok: t('machine:power-actions.powerOff.ok'),
           danger: true,
