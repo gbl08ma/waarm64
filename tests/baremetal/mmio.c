@@ -2,7 +2,7 @@
 // JIT, completed in the helper without leaving the block (docs/jit.md "Device accesses"): fw_cfg's data register,
 // whose every read moves its offset, read in a loop through 4 KiB Device pages at a VA that isn't the PA; the entry
 // remapped by a TLBI; a misaligned access and a hole after the entry is cached; an SPI made pending by a store, taken
-// before the next instruction.
+// before the next instruction, and with a writeback whose base an earlier site's failure segment also stores.
 // flash
 #include "lib.h"
 
@@ -108,6 +108,19 @@ int main(void) {
     check(seen == (u64)k + 1, 30);
 #endif
     while (n_irq != (u64)k + 1)
+      ;
+  }
+  // The same store with a writeback, after a load from RAM while the base was already dirty in compiled code (the base
+  // is then stored by the RAM load's failure segment too, which must not write the pre-store base over the post-index's
+  // once the access retired in the helper and left the IRQ for the run loop: PERF loop 22).
+  for (int k = 0; k < 20000; k++) {
+    u64 base, seen;
+    __asm__ volatile("mov x9, %2\nldr %1, [%3]\nstr %w4, [x9], #4\nmov %0, x9"
+                     : "=&r"(base), "=&r"(seen)
+                     : "r"(A_GICD + 0x204), "r"(&n_irq), "r"(1 << 8)
+                     : "x9", "memory");
+    check(base == A_GICD + 0x208, 31);
+    while (n_irq != (u64)k + 20001)
       ;
   }
   __asm__ volatile("msr daifset, #2; isb");

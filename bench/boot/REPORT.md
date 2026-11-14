@@ -4382,3 +4382,51 @@ Planted, each failing: the PA from the entry wrong (mmio.c, natively and in wasm
 check 30, 5 of 5 runs); faults finished in place (mmio.c's check 21); `DEVICE` exits finished in place (the parallel
 USB test, testusb against Gadget Zero, timed out). No step count moved.
 CI: `scripts/ci.sh` (778 s), `scripts/ci-jit.sh` and `scripts/ci-debian.sh` pass.
+
+## PERF loop 22: the review of loop 21 (2026-11-14)
+
+The out-of-context review of loop 21 (`review/perf-loop21`, static) had three findings; each checked against the code.
+Raw: `results/perf22/` (the micro-benchmark's JSON).
+
+1. **A device access `fast` ran but left for the run loop lost its result to a stale register store: real.** The
+   failure chain of a load or store (`emit::fallback_arm`) assumed an arm whose helper reports an exit retired
+   nothing; since loop 21 `Vm::fast` runs the access through `Io` (destination written, PC advanced) and still
+   reports the exit when it leaves a `DEVICE` exit, a full TX ring, a fault or an unmasked IRQ. An earlier site's
+   segment of the same chain then stored its locals, the pre-access value of this access's destination or writeback
+   base among them, over what `Io` wrote. **Test** (tests/baremetal/mmio.c, new case): `mov x9, <GICD_ISPENDR1>;
+   ldr x, [ram]; str w, [x9], #4` with IRQs unmasked, 20,000 times: the store makes SPI 40 pending, so `fast` runs it
+   and leaves the IRQ to the run loop; x9 must be the post-index base. It failed before the fix in parallel SMP under
+   the JIT (check 31, the first run). **Fix:** `fallback_arm` reloads from the `Cpu`, in the helper's failure branch,
+   the registers the instruction writes that an earlier segment stores (`written & ch.cum`), as the span path already
+   did. That is right whether or not the access retired (the `Cpu` holds them either way: stored before the call, or
+   clean), costs nothing on the fast path, and emits code only where a chain holds such a register; loop 21's
+   in-place completions stay as they were. The planted bug is the code before the fix (the test fails; restored, it
+   passes 5 of 5 runs, JIT and JIT-check).
+2. **In-place device accesses no longer bound other vCPUs' DSB waits and the run loop's due work: real, latency
+   only.** Before loop 21 each device access ended the chunk, so the run loop's top drained queued TLBIs and ticked
+   the xHCI's due completions about once per access; now a loop polling a register did so once per chunk (32768
+   steps, about a millisecond of polling at ~0.08 µs a read). **Fix** (cheap, so taken over a line of docs): the
+   device arm declines, before running anything, while `par.pending` is set (as the ISB/DSB arm does) or the xHCI's
+   completions are due (`xhci_due` reached; the clock is read only while a TD waits). The timers' lines and IRQs
+   arriving after the access stay at the chunk's end, as for any code that doesn't exit (docs/jit.md "Device
+   accesses"). No test: a latency bound, not a result.
+3. **Small things: real.** `MMIO`'s doc linked `Tlb::mmio_pa` (it is `Mmu::mmio_pa`); `fallback_chain`'s doc, the
+   span path's comment and `jit::Fast`'s now say what the failure arms do. The RAM regions' page alignment, which a
+   device entry covering a whole page assumes, is asserted: `Mem::at` (every VM's memory 0), `with_spill` and
+   `with_window` (each region and memory 0 before them); every RAM size we use was already whole pages.
+
+**The micro-benchmark** (loop 21's `results/perf21/run.ts` and `mmio.c`, N = 250,000 iterations of 8 reads; Node
+26.7.0 on the dev VM, one vCPU, parallel SMP and realtime, JIT; base = main at 5b2e0a41, new = this loop; arms
+alternated, 3 runs each a round), medians in ms:
+
+| | base r1 · r2 · r3 | new r1 · r2 · r3 |
+|---|---|---|
+| RAM (the loop's own cost, noisy) | 95.2 · 99.9 · 104.7 | 89.1 · 91.1 · 92.5 |
+| PL011 FR | 239.3 · 240.5 · 237.1 | 239.3 · 241.4 · 240.7 |
+| GICD_CTLR | 242.5 · 241.7 · 241.6 | 242.7 · 246.6 · 243.0 |
+
+Even: the device rounds overlap or differ under ~1% (GICD's r2 is one slow run of three), ~0.07 µs a read both ways
+(the loop's fast path doesn't change: the reload is on the failure branch, and the arm adds an atomic load).
+
+No step count moved. CI: `scripts/ci.sh` (767 s), `scripts/ci-jit.sh` (105 s), `scripts/ci-debian.sh` and
+`scripts/ci-usb.sh` pass.

@@ -16,7 +16,7 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 21)
+## State (2026-11-14, after loop 22)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
@@ -26,8 +26,8 @@ JIT's helper (loop 21: a read 0.21 → 0.08 µs, Debian's fw_cfg read of the age
 into the slow arm measured out as not worth its code). Built but off by default (measured slower):
 I8MM, FCMA, FP16, FHM, BF16. Dropped with findings in docs: slot size/count, the dispatcher in `interpret`,
 SUBS's carry as a field, NZCV in a local, ADRP+ADD, misaligned stores, CCMP's kind, LSE2, LSE min/max inline, ISB
-inline in parallel, the shared cache's leftovers, the SMP leftovers (ISB cost, WFE sleep, an exit's parts). Two
-out-of-context reviews (after loops 8 and 19), their findings fixed in loops 9 and 20.
+inline in parallel, the shared cache's leftovers, the SMP leftovers (ISB cost, WFE sleep, an exit's parts). Three
+out-of-context reviews (after loops 8, 19 and 21), their findings fixed in loops 9, 20 and 22.
 
 ## Still open (the queue: the first is next, the user's choice 2026-11-14; the rest by expected gain)
 

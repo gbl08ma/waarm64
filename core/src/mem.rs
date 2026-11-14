@@ -259,6 +259,13 @@ struct PairLock(AtomicU32);
 unsafe impl Sync for Mem {}
 unsafe impl Send for Mem {}
 
+/// Whether `phys..phys + size` is whole 4 KiB pages: a page past a region's
+/// end has no RAM behind it, and the TLB caches such a page whole as a
+/// device's (docs/cpu.md "Pages with no RAM behind them").
+fn paged(phys: u64, size: u64) -> bool {
+    phys.is_multiple_of(4096) && size.is_multiple_of(4096)
+}
+
 impl Mem {
     /// # Safety
     /// `base..base + size` must stay valid for reads and writes for the life of the
@@ -316,8 +323,9 @@ impl Mem {
         }
     }
 
-    /// Places the RAM at guest physical address `phys`.
+    /// Places the RAM at guest physical address `phys` (whole pages).
     pub fn at(self, phys: u64) -> Self {
+        assert!(paged(phys, self.size), "guest RAM in whole pages");
         Mem { phys, ..self }
     }
 
@@ -328,10 +336,14 @@ impl Mem {
     /// memory `k + 1` holds `spill[k].size` bytes for the life of the `Mem`.
     pub unsafe fn with_spill(self, spill: &[Spill]) -> Self {
         assert!(spill.len() <= MAX_SPILL, "too many spill memories");
+        assert!(
+            spill.is_empty() || paged(self.phys, self.size),
+            "memory 0 before spill memories: whole pages"
+        );
         let mut end = self.phys + self.size;
         for s in spill {
             assert!(
-                s.phys >= end && s.off + s.size <= 1 << 32,
+                s.phys >= end && s.off + s.size <= 1 << 32 && paged(s.phys, s.size),
                 "spill memory {s:?}"
             );
             end = s.phys + s.size;
@@ -349,6 +361,8 @@ impl Mem {
     pub unsafe fn with_window(self, w: Spill) -> Self {
         assert!(
             w.phys >= self.phys + self.size
+                && paged(self.phys, self.size)
+                && paged(w.phys, w.size)
                 && w.off + w.size <= 1 << 32
                 && self.spill.first().is_none_or(|s| {
                     s.phys >= w.phys + w.size && s.off >= w.off + w.size && s.base == w.base

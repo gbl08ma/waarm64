@@ -57,7 +57,7 @@ pub const TLB_ENTRIES: usize = 16384;
 /// [`Mmu::miss`] checks the alignment of each access to it.
 const DEVICE: u64 = 1 << 11;
 /// The memory index of a device's page in a data entry (no RAM: the "host address" is
-/// the PA, [`Tlb::mmio_pa`]): [`Mmu::miss`] sends the access to the bus without a walk.
+/// the PA, [`Mmu::mmio_pa`]): [`Mmu::miss`] sends the access to the bus without a walk.
 /// Above every spill memory's ([`crate::mem::MAX_SPILL`]).
 const MMIO: u64 = 0xff;
 /// The tag's memory index bits, all zero for a device's page ([`MMIO`], inverted).

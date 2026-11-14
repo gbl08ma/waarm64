@@ -674,7 +674,15 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   doorbell), a full TX ring, a fault (nothing there, a watchpoint), or an IRQ on the vCPU's line with IRQs unmasked
   (taken before the next instruction, as when the access ended the chunk). Then the outcome goes to
   `jit::State::io`, the helper reports the exit, and the run loop's `Exit::Fault(Bus)` takes it from there instead of
-  running the access again (`debug_assert`ed empty at each chunk). With the TLB's device entries (docs/cpu.md "Pages
+  running the access again (`debug_assert`ed empty at each chunk). Such an exit has retired the instruction, so a
+  load's or store's failure arm (`emit::fallback_arm`) reloads from the `Cpu` the registers it writes that an earlier
+  site's segment of the same chain stores from its locals (else the pre-access value of a destination or a writeback
+  base would overwrite the access's; PERF loop 22, tests/baremetal/mmio.c's writeback case; code only where the chain
+  has such a register, nothing on the fast path). Not in place either while another vCPU's TLBI IS waits for this
+  one's drain (`par.pending`) or the xHCI's completions are due: the run loop's top does both, and a loop polling a
+  register would hold them a chunk. What is left to the chunk's end, as for any code that doesn't exit: the timers'
+  lines (`drive_timers`) and other vCPUs' IRQs arriving after the access, at most a chunk (32768 steps, about a
+  millisecond of polling) late. With the TLB's device entries (docs/cpu.md "Pages
   with no RAM behind them") an MMIO read under the JIT went from ~0.21 to ~0.09 µs in a bare-metal loop (PL011's FR,
   GICD_CTLR, a 4 KiB Device page at level 3) and Debian's fw_cfg read of the agent from 76-78 to 44-46 ms (0.70 →
   0.41 µs a byte; bench/boot/REPORT.md "PERF loop 21"). tests/baremetal/mmio.c checks the reads' order, the faults

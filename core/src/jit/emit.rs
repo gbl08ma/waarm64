@@ -3262,8 +3262,8 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
     *ch.segs.last_mut().expect("a segment") = d;
     ch.cum |= d;
     // Earlier sites' segments store their registers from the locals: those
-    // the span wrote hold what the helper left in the `Cpu` (a single access's
-    // arm has retired nothing when it leaves; here it may have).
+    // the span wrote take what the helper left in the `Cpu` (as a single
+    // access's arm does, `fallback_arm`).
     let stale = written & ch.cum;
     for from in (g.first..=g.last).step_by(SPAN_WORDS) {
         let to = (from + SPAN_WORDS).min(g.last + 1);
@@ -3704,7 +3704,10 @@ fn fallback_with(
 /// retired count, the segment storing the dirty registers no earlier site's
 /// stores (and the chain the lazy flags). The helper reads and writes no
 /// other register, and the run loop takes its exception after the block
-/// returns, so the rest stay in their locals on both arms.
+/// returns, so the rest stay in their locals on both arms. A helper that
+/// reports an exit may still have retired the instruction (a device access
+/// `Vm::fast` ran, its exit left for the run loop): the registers it writes
+/// that an earlier segment stores are reloaded from the `Cpu` on the way.
 fn fallback_chain(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u64) {
     let fast = c.regs;
     c.else_();
@@ -3730,9 +3733,22 @@ fn fallback_arm(c: &mut Func, cx: &Ctx, i: u32, here: i64, written: u64, fast: R
     let d = dirty & !ch.cum;
     *ch.segs.last_mut().expect("a segment") = d;
     ch.cum |= d;
+    // Earlier sites' segments store their registers from the locals: those
+    // this instruction writes take what the helper left in the `Cpu`, which
+    // holds them (stored above, or clean) unless the access retired there and
+    // left an exit for the run loop (`Vm::fast`'s device accesses).
+    let stale = written & ch.cum;
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, here);
     c.call(cx.helper).hint(false).if_();
+    let regs = c.regs;
+    let mut m = stale;
+    while m != 0 {
+        let n = m.trailing_zeros();
+        m &= m - 1;
+        c.load(n);
+    }
+    c.regs = regs;
     // The chain stores lazy flags on the way (its sites share them).
     c.touched.get_or_insert(true);
     if let Flags::Lazy { stored, .. } = &mut c.flags {

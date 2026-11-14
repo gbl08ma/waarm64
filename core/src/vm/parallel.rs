@@ -499,8 +499,10 @@ impl Vm {
     /// in a chunk; and a device access, under the platform's lock, as the run
     /// loop would (`io_par`), when that leaves the run loop nothing to do: no
     /// `DEVICE` exit, no full TX ring, no fault, no IRQ to take (docs/jit.md
-    /// "Device accesses"). Returns false (nothing changed, but a device
-    /// access's outcome is left in `State::io`) otherwise.
+    /// "Device accesses"), not while another vCPU waits for this one's drain
+    /// or the xHCI's completions are due. Returns false otherwise: nothing
+    /// changed, but a device access run here leaves its outcome in `State::io`
+    /// (it retired: the JIT's failure arms reload what it wrote).
     fn fast(&self, c: usize, v: &mut Vcpu, insn: u32, e: Exit) -> bool {
         use crate::decode::{Op, decode};
         match e {
@@ -547,6 +549,15 @@ impl Vm {
                 kind: FaultKind::Bus,
                 ..
             }) => {
+                // Not while another vCPU's TLBI IS waits for this one's drain, or the xHCI's
+                // completions are due (the run loop's top does both): a loop polling a register
+                // would hold them a chunk.
+                let due = self.shared.xhci_due.load(Ordering::Relaxed);
+                if self.shared.cpus[c].par.pending.load(Ordering::SeqCst)
+                    || due != u64::MAX && self.ns() >= due
+                {
+                    return false;
+                }
                 let out = self.io_par(c, v);
                 let irq = v.cpu.pstate & PSTATE_I == 0
                     && self.shared.cpus[c].par.irq.load(Ordering::SeqCst);

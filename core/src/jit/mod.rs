@@ -109,8 +109,9 @@ pub struct Counter {
 /// [`State::fast`]: `f(ctx, cpu, vcpu, insn, exit)` finishes `exit`, which
 /// the helper raised for `insn` (its PC is the interpreter's: on the
 /// instruction unless the exit retired it), and returns true, or returns false
-/// and changes nothing (but a device access's, whose outcome it leaves in
-/// [`State::io`]).
+/// and changes nothing, but a device access's, which may have retired, its
+/// outcome left in [`State::io`] (the emitter's failure arms reload the
+/// registers it writes: `emit::fallback_arm`).
 #[derive(Clone, Copy)]
 pub struct Fast {
     pub f: unsafe fn(*const (), usize, &mut Vcpu, u32, Exit) -> bool,

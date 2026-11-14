@@ -384,7 +384,9 @@ The table is `core/src/interp/sys.rs`.
   instruction array), as memory index `MMIO` (0xff, past every spill memory's: the tag's bits 10:3 all zero) with the
   PA as the "host address": `Mmu::miss` finds the entry, checks the alignment (Device memory) and returns the bus
   fault without a walk, and `vm::Io` takes the PA from the same entry (`Mmu::mmio_pa`) instead of walking again. They
-  are filled, flushed and counted (nG, blocks, `low_global`) as RAM's are. Before (PERF loop 21) every MMIO access
+  are filled, flushed and counted (nG, blocks, `low_global`) as RAM's are. An entry covers its whole page, so every
+  RAM region is whole 4 KiB pages (`Mem::at`, `with_spill` and `with_window` assert it): a partial page's RAM would
+  go to the bus once its non-RAM part was cached. Before (PERF loop 21) every MMIO access
   walked the tables three times (the first try, `Io`'s retry, `Io::pa`), a fifth to a third of its cost
   (`bench/boot/REPORT.md` "PERF loop 21"). tests/baremetal/mmio.c and `mmu::tests::device_pages_are_cached_as_the_bus`
   check it.
