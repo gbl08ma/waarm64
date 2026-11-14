@@ -98,7 +98,9 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   queue count ≤ 8, QueueNumMax ≤ 1024, config length ≤ 256); index = transport slot, one DT node
   each, in slot order (QEMU fills from the top of its window; we fill from slot 0).
 - Host side: `{devices: [{type: 'blk', url, overlay?, file?}, {type: 'net', adapter}, …]}`
-  (`web/vm.ts` `DeviceSpec`; `guestDevices` and `testDevices` build the tests' sets).
+  (`web/vm.ts` `DeviceSpec`; `guestDevices` and `testDevices` build the tests' sets). A `MessagePort` (or canvas) a
+  spec carries must be in `web/devices.ts`'s transfer list (the `specs.flatMap` beside `DeviceSpec`'s transfer), or
+  every machine with that device fails to start with a DataCloneError.
 
 ## Devices
 
@@ -492,6 +494,15 @@ without logind, no tool), the link and `SoftPower`'s rules (`tests/agent-power.t
 (`tests/clean-stop.test.ts`), and on Debian
 (`tests/page-power.test.ts`: refused under `systemd-inhibit --mode=block`, then Restart reboots the guest itself and
 Power off shuts it down to `off`, no question asked).
+
+**The forked helpers** (lease, trim, power, loadkeys, the keys' ssh-keygen; `lease::spawn`, `rt::close_inherited`):
+each closes every descriptor past stderr first (`close_range`), and the session child all but its socket
+(`rt::close_inherited_but`): a helper that kept the page's connection open held it for as long as it ran (in the tests,
+other tests' sockets too: a `ci.sh` flaked that way). A helper whose pidfd can't be had is killed before it is reaped
+(`lease::adopt`). A guest tool is checked from inside the unit, on Debian, not only natively: the sandbox's
+`RestrictAddressFamilies=AF_UNIX AF_VSOCK` breaks tools that use netlink (networkctl, even with an index;
+`if_nametoindex`), while D-Bus tools (busctl, nmcli) work. Piped, `swaymsg` prints JSON (`current_mode` there), not
+its human format.
 
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
