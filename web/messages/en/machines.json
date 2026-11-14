@@ -1217,19 +1217,19 @@
   },
   "SettingsTab.ncpus": {
     "message": "vCPUs",
-    "note": "Machines page, Settings tab: the label of the processor count menu."
+    "note": "Machines page, Settings tab: the label of the processor count slider."
   },
   "SettingsTab.ram": {
     "message": "RAM",
-    "note": "Machines page, Settings tab: the label of the memory size menu."
+    "note": "Machines page, Settings tab: the label of the memory size slider."
   },
   "SettingsTab.ram.title": {
     "message": "The sum of the split below",
-    "note": "Machines page, Settings tab: tooltip of the RAM menu while it is disabled, the memory split being set by hand."
+    "note": "Machines page, Settings tab: tooltip of the RAM slider while it is disabled, the memory split being set by hand."
   },
   "SettingsTab.mib": {
     "message": "{{n}} MiB",
-    "note": "Machines page, Settings tab: an option of the RAM and JIT cache menus. {{n}}: the size, MiB."
+    "note": "Machines page, Settings tab: the value shown beside the RAM and JIT cache sliders. {{n}}: the size, MiB."
   },
   "RamSplit.split": {
     "message": "Memory split (advanced)",
@@ -1257,15 +1257,15 @@
   },
   "SettingsTab.jit": {
     "message": "JIT cache",
-    "note": "Machines page, Settings tab: the label of the JIT cache size menu."
+    "note": "Machines page, Settings tab: the label of the JIT cache size slider."
   },
   "SettingsTab.jit.title": {
     "message": "The most compiled guest code this emulator keeps before it starts over. The browser uses several times this much memory for it. A smaller cache saves memory; a larger one keeps more of a big program's code, such as a web browser's, compiled.",
-    "note": "Machines page, Settings tab: tooltip of the JIT cache menu."
+    "note": "Machines page, Settings tab: tooltip of the JIT cache slider."
   },
   "SettingsTab.jit.default": {
     "message": "Default ({{n}} MiB)",
-    "note": "Machines page, Settings tab: the first option of the JIT cache menu: the page's default. {{n}}: its size, MiB."
+    "note": "Machines page, Settings tab: the value shown beside the JIT cache slider at the page's default. {{n}}: its size, MiB."
   },
   "SettingsTab.display": {
     "message": "Display",

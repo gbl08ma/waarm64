@@ -74,8 +74,8 @@ worker failure (`no3d`, which a switch clears): as that machine would run once o
 
 | Field | Address | Record (stored) | Settings (transient) | Default |
 | --- | --- | --- | --- | --- |
-| vCPUs | `?ncpus=N` | `ncpus` | the Machine menu's last (one it offers) | `min(4, cores − 2)` |
-| RAM, its split | `?ram=MiB`, `?split=a,b,…` (over `?ram=`; `?ram=` alone drops the record's split) | `ramMiB`, `ramSplit` | the Machine menu's last | the machine's |
+| vCPUs | `?ncpus=N` | `ncpus` | the Machine menu's last (one its slider stops at) | `min(4, cores − 2)` |
+| RAM, its split | `?ram=MiB`, `?split=a,b,…` (over `?ram=`; `?ram=` alone drops the record's split) | `ramMiB`, `ramSplit` | the Machine menu's last (one its slider stops at) | the machine's |
 | The JIT's budget | `?jitmb=MiB` | `jitMiB` | `jitMiB` (the memory signal's choice) | the core's |
 | 3D or 2D | `?gpu=virgl`, `?gpu=2d` (`virgl-null`: 2D on the page) | `display` | the Machine menu's Graphics | 3D; 2D without WebGL2 or once the GPU worker failed; none with `?display=simple` |
 | Vulkan | `?gpu=vulkan` (on only; 2D takes it off) | `vulkan` | — | off; only beside 3D |
@@ -416,7 +416,7 @@ address opens it, so a reload keeps it): **[Back to the machine](ui:machines:Mac
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
 Open in this tab (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
-- **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
+- **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs and RAM on sliders (`ui/Slider.svelte`: notches at the suggested values, the value beside; `machine.ts` `CPU_SLIDER`, `RAM_SLIDER`: 1 to 8 vCPUs; 256 MiB to 16 GiB in 64 MiB steps, a notch every 512 MiB that a pointer snaps to within 128 MiB, the arrow keys stepping past it; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
   the first holds at most 1,536 MiB: Venus's arena and window come first in memory 1) that the guest sees
   as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
   is), **[Memory split (advanced)](ui:machines:RamSplit.split)**, closed unless the machine has one: *[Set the split myself](ui:machines:RamSplit.split.custom)* starts from the
@@ -1338,10 +1338,10 @@ black around the canvas), Serial terminal, or Both (side by side; stacked below 
 The view chosen last is remembered per browser (`localStorage` `waarm64.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
 it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs; its **[JIT cache](ui:machines:SettingsTab.jit)**, beside the RAM, is
-the code cache's budget: Default (320 MiB) or 64 to 512 MiB, `MachineRecord.jitMiB`, in its definition and carried by
+the code cache's budget: a slider from 32 to 512 MiB in 32 MiB steps (`JIT_SLIDER`, notches at 64, 128, 160, 256, 320 and 512), its default (320 MiB) reading Default and saved as none, `MachineRecord.jitMiB`, in its definition and carried by
 its shape outside the hash, so changing it restarts the machine but orphans no snapshot); a transient
-machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
-(512 MiB to 16 GiB; past 3071 MiB the note under it says how much becomes NUMA nodes) and
+machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count and the RAM on the same sliders as Settings
+(256 MiB to 16 GiB; past 3071 MiB the note under it says how much becomes NUMA nodes) and
 applies them with a confirmed restart; both are remembered per browser too (`ncpus`, `ramMiB`),
 with `?ncpus=` and `?ram=` over them (and `?split=2560,1024`, a split set by hand, MiB, memory 0 first, its sum the RAM). Defaults: `min(4, cores − 2)` vCPUs and the machine's RAM
 (1 GiB). The page's memory check (`hostMemoryGiB`) warns in the confirmation when the device

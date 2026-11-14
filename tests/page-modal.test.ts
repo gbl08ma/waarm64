@@ -108,9 +108,9 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.waitFor();
   const id = await m.getAttribute('data-selected');
   await m.locator('[data-field=name]').fill('Workbench');
-  await m.locator('[data-field=ncpus]').selectOption('2');
-  await m.locator('[data-field=ram]').selectOption('1024');
-  await m.locator('[data-field=jit]').selectOption({ label: t('machines:SettingsTab.mib', { n: 128 }) });
+  await m.locator('[data-field=ncpus]').fill('2');
+  await m.locator('[data-field=ram]').fill('1024');
+  await m.locator('[data-field=jit]').fill('128');
   await m.locator('[data-field=display]').selectOption('2d');
   // The keyboard layout: a new machine follows the browser, with its note; none set, no note; "Match this browser" answers either way.
   assert.equal(await m.locator('[data-field=keyboard] option:checked').textContent(), t('machines:KeyboardField.keyboard.follow'));
@@ -354,9 +354,9 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   await page.click('#machines-open');
   await modal(page).locator('[data-action=new-machine]').click();
   const m = modal(page).locator('section.machine[data-selected]');
-  await m.locator('[data-field=ram]').selectOption('2048');
+  await m.locator('[data-field=ram]').fill('2048');
   assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 2 GiB');
-  await m.locator('[data-field=ram]').selectOption('4096');
+  await m.locator('[data-field=ram]').fill('4096');
   assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }, { whole: true }));
   // The advanced section, closed: set by hand, it starts from the automatic split; the RAM is then its sum.
   assert.equal(await m.locator('[data-ram-split]').getAttribute('open'), null);

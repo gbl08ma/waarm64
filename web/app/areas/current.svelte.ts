@@ -9,8 +9,6 @@ export type MachineSize = {
   gpu: '3d' | '2d';
   /** It has Vulkan (Venus's window and arena move its split). */
   vulkan: boolean;
-  cpuChoices: number[];
-  ramChoices: number[];
   /** Why the graphics can't be chosen (no WebGL2, the address says), if they can't. */
   gpuLock: string;
 };
@@ -30,8 +28,6 @@ const NO_SIZE: MachineSize = {
   split: undefined,
   gpu: '3d',
   vulkan: false,
-  cpuChoices: [],
-  ramChoices: [],
   gpuLock: '',
 };
 

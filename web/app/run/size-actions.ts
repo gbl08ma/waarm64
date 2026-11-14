@@ -6,7 +6,7 @@ import { ask } from '../ask.svelte.ts';
 import type { MachineSize } from '../areas/current.svelte.ts';
 import { isLive, power } from '../areas/power.svelte.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
-import { JIT_DEFAULT_MIB, RAM_CHOICES } from '../machine.ts';
+import { JIT_DEFAULT_MIB } from '../machine.ts';
 import { updateMachine } from '../machines.ts';
 import { remember, settings } from '../settings.ts';
 import { currentShape } from '../snapshots.ts';
@@ -14,7 +14,7 @@ import type { DiskRecord, MachineRecord } from '../shape.ts';
 import { cpuFeatures, gpuAsked, jitParam, params, query, simpleDisplay } from './knobs.ts';
 import { memoryWarning } from './memory-signal.ts';
 import type { Messages } from './messages.ts';
-import { CPU_CHOICES, type PageMachine } from './page-machine.svelte.ts';
+import type { PageMachine } from './page-machine.svelte.ts';
 import type { PowerActions } from './power-actions.ts';
 import type { Runner } from './runner.ts';
 import { addressFor, asRun, effectiveDisplay, resolveMachine } from './config.ts';
@@ -28,8 +28,6 @@ export function sizeOf(m: PageMachine): MachineSize {
     gpu: m.want3d ? '3d' : '2d',
     // A machine with Vulkan keeps Venus's window and arena in memory 0: its split (the toolbar's note) moves.
     vulkan: m.want3d && m.wantsVulkan(),
-    cpuChoices: [...new Set([...CPU_CHOICES, m.ncpus])].sort((a, b) => a - b),
-    ramChoices: [...new Set([...RAM_CHOICES, m.ramMiB])].sort((a, b) => a - b),
     gpuLock: !m.webgl2
       ? t('toolbar:size-actions.gpuLock.noWebgl2')
       : gpuAsked

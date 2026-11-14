@@ -49,6 +49,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Note`: fine print, `tone` `dim`/`warn`/`error`/`ok`, `size` `sm`/`md`, `inline` for a row's small line.
    - `Field` in `Fields`: a label, its control, a button beside it (`after`), a note; in a `Fields` grid the rows line
      up, elsewhere the label sits over the control.
+   - `Slider`: a number on a slider, notches under it at the suggested values (a pointer snaps to one nearby), the
+     value in words beside it (a machine's vCPUs, RAM, JIT cache).
    - `Check`, `Radio`: a checkbox or a radio button and its words (`ref` binds Check's box).
    - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line).
    - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more

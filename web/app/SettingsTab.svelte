@@ -8,6 +8,7 @@
   import Field from './ui/Field.svelte';
   import Fields from './ui/Fields.svelte';
   import Note from './ui/Note.svelte';
+  import Slider from './ui/Slider.svelte';
   import DeviceSwitches from './DeviceSwitches.svelte';
   import KeyboardField from './KeyboardField.svelte';
   import RamSplit from './RamSplit.svelte';
@@ -15,25 +16,22 @@
   import UsbSwitch from './UsbSwitch.svelte';
   import { t, text } from '../i18n.ts';
   import type { Editing } from './machine-edit.svelte.ts';
-  import { JIT_CHOICES, JIT_DEFAULT_MIB, numaNote, RAM_CHOICES } from './machine.ts';
+  import { CPU_SLIDER, JIT_DEFAULT_MIB, JIT_SLIDER, numaNote, RAM_SLIDER } from './machine.ts';
 
   type Props = { edit: Editing };
   let { edit }: Props = $props();
   const d = $derived(edit.draft);
 
-  const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
   /** This browser offers WebGPU (a Vulkan machine's renderer draws on it; without it, Vulkan programs draw nothing). */
   const hasWebgpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
 
-  /** The sizes offered, the one set among them. */
-  const ramChoices = $derived([...new Set([...RAM_CHOICES, d.ramMiB])].sort((a, b) => a - b));
-  /** The JIT's budgets: the page's default (undefined), then the sizes, the one set among them. */
-  const jitChoices = $derived([
-    undefined,
-    ...[...new Set([...JIT_CHOICES, ...(d.jitMiB ? [d.jitMiB] : [])])].sort((a, b) => a - b),
-  ]);
-  const jitLabel = (n: number | undefined) =>
-    n ? t('machines:SettingsTab.mib', { n }) : t('machines:SettingsTab.jit.default', { n: JIT_DEFAULT_MIB });
+  const cpuLabel = (n: number) => String(n);
+  const mibLabel = (n: number) => t('machines:SettingsTab.mib', { n });
+  /** The page's default budget reads as such; a machine left at it keeps none of its own (it follows the default). */
+  const jitLabel = (n: number) =>
+    n === JIT_DEFAULT_MIB ? t('machines:SettingsTab.jit.default', { n }) : t('machines:SettingsTab.mib', { n });
+  const jitGet = () => d.jitMiB ?? JIT_DEFAULT_MIB;
+  const jitSet = (n: number) => (d.jitMiB = n === JIT_DEFAULT_MIB ? undefined : n);
   const numa = $derived(numaNote(d.ramMiB, d.ramSplit, !!d.vulkan));
 
   /** What turning Vulkan on or off says: it orphans the snapshots, or this browser can't draw what it renders. */
@@ -53,26 +51,30 @@
 <Fields oninput={edit.touch} onchange={edit.touch}>
   <Field label={t('machines:SettingsTab.name')}><input bind:value={d.name} data-field="name" /></Field>
   <Field label={t('machines:SettingsTab.ncpus')}>
-    <select bind:value={d.ncpus} data-field="ncpus">
-      {#each CPU_CHOICES as n (n)}<option value={n}>{n}</option>{/each}
-    </select>
+    <Slider bind:value={d.ncpus} field="ncpus" --slider-value-w="15ch" {...CPU_SLIDER} label={cpuLabel} />
   </Field>
   <Field label={t('machines:SettingsTab.ram')}>
-    <select
+    <Slider
       bind:value={d.ramMiB}
-      data-field="ram"
+      field="ram"
+      --slider-value-w="15ch"
+      {...RAM_SLIDER}
+      label={mibLabel}
       disabled={!!d.ramSplit}
       title={d.ramSplit ? t('machines:SettingsTab.ram.title') : ''}
-    >
-      {#each ramChoices as n (n)}<option value={n}>{t('machines:SettingsTab.mib', { n })}</option>{/each}
-    </select>
+    />
   </Field>
   {#if numa}<Note tone="warn" data-numa>{text(numa)}</Note>{/if}
   <RamSplit {edit} />
   <Field label={t('machines:SettingsTab.jit')}>
-    <select bind:value={d.jitMiB} data-field="jit" title={t('machines:SettingsTab.jit.title')}>
-      {#each jitChoices as n (n)}<option value={n}>{jitLabel(n)}</option>{/each}
-    </select>
+    <Slider
+      bind:value={jitGet, jitSet}
+      field="jit"
+      --slider-value-w="15ch"
+      {...JIT_SLIDER}
+      label={jitLabel}
+      title={t('machines:SettingsTab.jit.title')}
+    />
   </Field>
   <Field label={t('machines:SettingsTab.display')}>
     <select bind:value={d.display} data-field="display">
