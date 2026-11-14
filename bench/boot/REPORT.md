@@ -4572,3 +4572,54 @@ table), `access` for `ldst_fp` 9,078 → 9,171, `scalar_uses` 2,308 new; the cor
 single or double load.
 
 No step count moved. CI: `scripts/ci.sh` (784 s), `scripts/ci-jit.sh` (102 s) and `scripts/ci-fp.sh` (504 s) pass.
+
+## PERF loop 25: do loops 21-24 add up on the gates? (2026-11-14)
+
+Loops 21, 23 and 24 each measured the JIT gates slower in every round by 0.4-0.8%, under the floor; the question was
+whether the sum is a regression. Raw: `results/perf25/` (the Mac's JSON; `perf25a-*`, `perf25b-*`, `perf25c-*` the
+three rounds).
+
+**The arms:** base = 36c399a1 (just before loop 21, built in `../waarm64-base`: the core 9,319,175 bytes, as loop
+21's base), new = e7575694 (loop 24; f64ff188 after it touches only the page: 9,418,983 bytes, the same file as loop
+24's final arm). Checked by size (`tools/wasm-sizes.ts`): `Mmu::miss` 1,088 → 1,195, `Vm::io_par` absent → 341,
+`emit_region` 17,112 → 18,892, `Func::chain_open` 731 → 839, `scalar_uses` absent → 2,308.
+
+**The screen** (`bench/interp/ab-mac.sh`, one round a call, base first in rounds 1 and 3, new first in round 2;
+M4, macOS, Chrome for Testing 157.0.8103.78; the harness's median of 5 boots, 3 userspace runs, 8 placements):
+
+| | base r1 · r2 · r3; median | new r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total`, ms | 3,851 · 3,933 · 3,950; **3,933** | 3,935 · 3,948 · 3,954; **3,948** (+0.4%) |
+| `alpine_user_jit_total`, ms | 10,539 · 10,619 · 10,607; **10,607** | 10,659 · 10,580 · 10,655; **10,655** (+0.5%) |
+| `jit_fp_mips`, MIPS | 3,222 · 3,209 · 3,215; **3,215** | 3,441 · 3,472 · 3,465; **3,465** (+7.8%) |
+
+The gates' rounds overlap (the boot's new 3,935 under base's 3,950; userspace's new 10,580 under base's 10,607 and
+10,619) and the sums are under the ~1% floor: **the four loops don't add up to a regression shown**. The base's
+first round is the session's first boots and the fastest of it (3,851). The arm run first in a session's first
+round is an outlier in every screen since loop 21: fast in loops 21, 23 and 24's first (3,910, 3,865, 3,861, the
+base each time, which made those screens read the new arm slower), slow in loop 24's second (4,328, the new arm).
+Without round 1 the boot is +0.4% and +0.1%. The FP guest keeps loop 23's gain.
+
+**The counters** (the same in every round of an arm, but for the emitter's time):
+
+| | base | new |
+|---|---|---|
+| Alpine's boot: `emitNs`, ms | 167.9 · 169.0 · 170.2 | 176.3 · 176.1 · 175.9 (+6-8) |
+| Alpine's boot: modules' bytes | 12,102,464 | 12,120,141 (+0.15%) |
+| Alpine's boot: `compileNs`, ms | 51.6 · 50.2 · 51.2 | 50.1 · 51.0 · 50.7 |
+| Alpine's boot: TLB misses | 580,302 | 520,646 (the device pages, loop 21) |
+| userspace: `emitNs`, ms | 233.6 · 234.7 · 233.4 | 242.8 · 243.4 · 244.2 (+9-10) |
+| userspace: bytes | 16,596,829 | 16,623,681 (+0.16%) |
+| userspace: `compileNs`, ms | 76.7 · 77.8 · 76.2 | 77.1 · 77.5 · 77.1 |
+
+Dispatches (5,775,582; 9,808,548), helper kinds, blocks and modules are equal in both arms. From the earlier loops'
+committed JSON, which loop moved what: the bytes moved in loop 22 (`fallback_arm`'s reloads: loop 23's base,
+c0b88ae0, already makes 12,120,141), the emitter's time in loop 23 (~170 → ~175 ms, the shadows' bookkeeping; loop
+24's lazy table brought its own eager +12 ms back out); loop 21 moved neither. **Where the rest is:** the emitter's
++6-8 ms is ~0.2% of the boot and +9-10 ms ~0.1% of userspace, run on the vCPU's thread at compile; the code's
++0.15% bytes may cost a little in V8's compile (`compileNs` level) or at run time; together they are of the size
+of the medians' 0.4-0.5%, which is under what this screen resolves. Nothing to fix at that size: a cheaper
+`emit_region` bookkeeping for blocks without scalar FP would be the place to look if a later loop stacks more there.
+
+Also: `bench/run-mac.sh` bounds its Mac side now (`perl -e 'alarm'`, `MAC_TIMEOUT`, 580 s by default), so a hung
+run no longer outlives the local `timeout`. No step count moved. CI: `scripts/ci.sh` (783 s) passes.

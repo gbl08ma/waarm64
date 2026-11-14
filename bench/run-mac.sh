@@ -4,7 +4,7 @@
 # explicit bounds checks this Linux arm64 VM's carry (docs/v8.md "Bounds checks"). The pages, the
 # wasm core and the Alpine images are copied to ~/waarm64-bench there (~600 MB), the packages installed there; it
 # needs Node, npm and the Chromium that Playwright installed. Nothing else on the host is touched.
-#   [WASM=core.wasm] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
+#   [WASM=core.wasm] [MAC_TIMEOUT=s, the Mac side's bound, 580] bench/run-mac.sh <name> [bench/run.ts args]   -> bench/results/local/mac/<name>.json
 # e.g. bench/run-mac.sh user-default --page bench/boot/index.html --only alpine_user_jit
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,6 +24,6 @@ rsync -a --exclude '*defconfig' --exclude 'System.map' target/images/linux targe
 rsync -a target/bench/coremark.bin target/bench/coremark-linux "$HOST:$DEST/target/bench/"
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WAARM64_TAILSCALE=0 && \
   export CHROMIUM=\"$MAC_CHROME\" && \
-  node --disable-warning=ExperimentalWarning bench/run.ts --out bench/results/local/$name.json $*"
+  perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/run.ts --out bench/results/local/$name.json $*"
 mkdir -p bench/results/local/mac
 rsync -a "$HOST:$DEST/bench/results/local/$name.json" bench/results/local/mac/

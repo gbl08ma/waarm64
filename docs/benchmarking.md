@@ -210,7 +210,7 @@ at 160 MiB against 98.6% at 320 in all six sessions of 320, the A/A within 0.1 p
   benchmark: [v8.md](v8.md)). For what a macOS user gets, and before ranking work by a profile
   taken here, run the page on the Mac host's Chromium: `bench/run-mac.sh <name> --page
   bench/boot/index.html --only alpine_user_jit` (it copies the pages, the core and the Alpine and
-  Buildroot images to `~/waarm64-bench` there; `WASM=` picks a core; results land in
+  Buildroot images to `~/waarm64-bench` there; `WASM=` picks a core; the Mac side's run is bounded by `MAC_TIMEOUT`, 580 s by default; results land in
   `bench/results/local/mac/`). `--config bounds-checks` there shows the checks' cost on one machine.
 - Benchmarks run in the dev VM on the M4. Keep the `oracle` VM idle, check `ps` for leftover
   experiments first, and don't rebuild or edit served sources while a benchmark runs.

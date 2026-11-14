@@ -16,7 +16,7 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 24)
+## State (2026-11-14, after loop 25)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
@@ -31,7 +31,10 @@ inline in parallel, the shared cache's leftovers, the SMP leftovers (ISB cost, W
 out-of-context reviews (after loops 8, 19 and 21), their findings fixed in loops 9, 20 and 22. Loop 23 added a
 register form (`Regs`'s shadows, every merge, chain and fallback); loop 24 fixed its review's five findings (merges
 over real predecessors only, a loop-carried scalar clean in its shadow at the head: no FP guest gain, the gates
-level once the scalar-use table was made lazily).
+level once the scalar-use table was made lazily). Loop 25 checked that loops 21-24 together don't regress the gates: 36c399a1 against
+e7575694 on the Mac, Alpine's boot +0.4%, its userspace +0.5%, the rounds overlapping (the emitter +6-10 ms, the
+code +0.15% from loop 22's reloads; the FP guest +7.8%); a session's first-round arm is an outlier either way, so
+alternate which arm goes first.
 
 ## Still open (the queue: the first is next; by expected gain)
 
