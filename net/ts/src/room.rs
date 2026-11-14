@@ -62,6 +62,11 @@ pub const SUFFIX: &str = "p2p.internal";
 pub const KIND: u32 = 26354;
 /// A WireGuard handshake initiation's type and size.
 const INITIATION: (u8, usize) = (1, 148);
+
+fn is_initiation(p: &[u8]) -> bool {
+    p.first() == Some(&INITIATION.0) && p.len() == INITIATION.1
+}
+
 /// A peer let in by a handshake alone is forgotten this long without data that decrypts.
 const TRIAL: Duration = Duration::from_secs(20);
 /// At most this many peers come in on trial a second by our call backs, and as many by handshakes
@@ -187,6 +192,21 @@ pub struct Room {
     pub lookup: [u8; 32],
     /// The WireGuard pre-shared key of every pair in the room.
     pub psk: [u8; 32],
+    /// The key of a lookup's MAC (lookup.rs): checked before anything costly.
+    pub lookup_mac: [u8; 32],
+    /// The key of a handshake initiation's proof of the room ([`Room::prove`]).
+    pub proof: [u8; 32],
+}
+
+/// The first 16 bytes of BLAKE2s over `key` and then `parts` (BLAKE2 is a sound MAC with the
+/// key in front: no length extension).
+pub(crate) fn mac16(key: &[u8; 32], parts: &[&[u8]]) -> [u8; 16] {
+    let mut h = Blake2s256::new();
+    h.update(key);
+    for p in parts {
+        h.update(p);
+    }
+    h.finalize()[..16].try_into().unwrap()
 }
 
 fn hash(label: &str, id: &str) -> [u8; 32] {
@@ -251,7 +271,33 @@ impl Room {
             salt: hash("waarm64 room tag salt v1", id),
             lookup: hash("waarm64 room lookup key v1", id),
             psk: hash("waarm64 room psk v1", id),
+            lookup_mac: hash("waarm64 room lookup mac v1", id),
+            proof: hash("waarm64 room handshake proof v1", id),
         }
+    }
+
+    /// Writes the room's proof into a WireGuard handshake initiation's `mac2` (its last 16 bytes,
+    /// which WireGuard leaves zero without a cookie and ts_tunnel requires zero): a MAC under a key
+    /// from the room's ID over everything before it, so a node answers only a member's initiation
+    /// (in IKpsk2 an initiation needs only the responder's public key: the pre-shared key enters
+    /// at the response). A cookie WireGuard wrote is overwritten: ts_tunnel never asks for one.
+    pub fn prove(&self, initiation: &mut [u8]) {
+        let n = initiation.len() - 16;
+        let m = mac16(&self.proof, &[&initiation[..n]]);
+        initiation[n..].copy_from_slice(&m);
+    }
+
+    /// Whether an initiation carries the room's proof; if so it's cleared, as WireGuard wants it.
+    pub fn check_proof(&self, initiation: &mut [u8]) -> bool {
+        let n = initiation.len() - 16;
+        let m = mac16(&self.proof, &[&initiation[..n]]);
+        // A plain comparison: the nanoseconds it varies by are lost behind DERP and the worker, and
+        // all a sender sees is whether a response ever comes.
+        if initiation[n..] != m {
+            return false;
+        }
+        initiation[n..].fill(0);
+        true
     }
 
     /// A node's address in the room: the /48 and the first 80 bits of its key.
@@ -520,6 +566,9 @@ pub struct Client {
     by_addr: BTreeMap<[u8; 16], PeerId>,
     next_peer: u32,
     next_rtc: u32,
+    /// The WebRTC connections set up or open, and whose they are (a peer's `Rtc::Connecting` or
+    /// `Rtc::Open` and nothing else): a channel's message finds its peer without a scan.
+    rtcs: BTreeMap<u32, PeerId>,
     home: usize,
     relays: Vec<Relay>,
     /// The home region's probes while it is chosen: (connection, region), and until when.
@@ -628,6 +677,7 @@ impl Client {
             by_addr: BTreeMap::new(),
             next_peer: 1,
             next_rtc: 1,
+            rtcs: BTreeMap::new(),
             relays,
             probes: Vec::new(),
             probe_until: None,
@@ -1273,6 +1323,12 @@ impl Client {
         if self.state != State::Running || !self.tags().iter().any(|t| t == x) {
             return;
         }
+        // Only a member's lookup goes further: an outsider's junk under our tag (anyone who saw a
+        // lookup to us can publish under the tag) costs a BLAKE2s and takes no budget.
+        let Ok(b) = b64().decode(content) else { return };
+        if !lookup::authentic(&self.room, x, &b) {
+            return;
+        }
         // A copy of an event opened already (through another relay): dropped before the budget.
         let mut h = Blake2s256::new();
         h.update(x.as_bytes());
@@ -1297,7 +1353,6 @@ impl Client {
         }
         self.opened.insert(seen);
         self.opened_order.push_back((seen, now));
-        let Ok(b) = b64().decode(content) else { return };
         let Some(l) = Lookup::open(&self.room, &self.private, &self.public, x, &b) else {
             return;
         };
@@ -1505,7 +1560,10 @@ impl Client {
         self.event(v);
     }
 
-    fn on_relay_packet(&mut self, r: usize, src: [u8; 32], packet: Vec<u8>, now: Instant) {
+    fn on_relay_packet(&mut self, r: usize, src: [u8; 32], mut packet: Vec<u8>, now: Instant) {
+        if !self.proven(&mut packet) {
+            return;
+        }
         let known = self.wg.peer_id(NodePublicKey::from_bytes(src));
         let id = match known {
             Some(id) => {
@@ -1517,10 +1575,7 @@ impl Client {
                 id
             }
             None => {
-                if src == self.public
-                    || packet.first() != Some(&INITIATION.0)
-                    || packet.len() != INITIATION.1
-                {
+                if src == self.public || !is_initiation(&packet) {
                     return;
                 }
                 // A member we don't know calls: the one a lookup of ours waits on, or (incoming
@@ -1866,10 +1921,7 @@ impl Client {
 
     /// How many WebRTC connections are set up or open.
     fn rtc_count(&self) -> usize {
-        self.peers
-            .values()
-            .filter(|p| matches!(p.rtc, Rtc::Connecting { .. } | Rtc::Open { .. }))
-            .count()
+        self.rtcs.len()
     }
 
     /// The page's description or candidate `d` of attempt `o` from the peer.
@@ -1910,6 +1962,7 @@ impl Client {
         self.rtc_made(id, now);
         let rtc = self.next_rtc;
         self.next_rtc += 1;
+        self.rtcs.insert(rtc, id);
         self.peers.get_mut(&id).unwrap().rtc = Rtc::Connecting {
             id: rtc,
             attempt: o,
@@ -1931,6 +1984,7 @@ impl Client {
             _ => return,
         };
         p.rtc = Rtc::Idle { next: None };
+        self.rtcs.remove(&rtc);
         self.actions.push_back(Action::RtcClose { rtc });
         if open {
             self.path_event(id, false);
@@ -1995,6 +2049,7 @@ impl Client {
         self.rtc_made(id, now);
         let rtc = self.next_rtc;
         self.next_rtc += 1;
+        self.rtcs.insert(rtc, id);
         let p = self.peers.get_mut(&id).unwrap();
         p.attempt += 1;
         p.rtc = Rtc::Connecting {
@@ -2005,11 +2060,19 @@ impl Client {
         self.actions.push_back(Action::RtcOpen { rtc, offer: true });
     }
 
+    /// The tests' check that `rtcs` is the peers' connections, no more, no less.
+    #[cfg(test)]
+    fn check_rtcs(&self) {
+        let from_peers: BTreeMap<u32, PeerId> = self
+            .peers
+            .keys()
+            .filter_map(|id| self.rtc_id(*id).map(|rtc| (rtc, *id)))
+            .collect();
+        assert_eq!(self.rtcs, from_peers, "rtcs out of step with the peers");
+    }
+
     fn peer_of_rtc(&self, rtc: u32) -> Option<PeerId> {
-        self.peers
-            .iter()
-            .find(|(id, _)| self.rtc_id(**id) == Some(rtc))
-            .map(|(id, _)| *id)
+        self.rtcs.get(&rtc).copied()
     }
 
     /// The page's local description or candidate (JSON) of connection `rtc`, for the peer.
@@ -2062,13 +2125,29 @@ impl Client {
         let Some(id) = self.peer_of_rtc(rtc) else {
             return;
         };
+        let mut data = data.to_vec();
+        if !self.proven(&mut data) {
+            return;
+        }
         if matches!(self.peers[&id].rtc, Rtc::Connecting { .. }) {
             self.rtc_open(rtc, now); // its first message can come before its open event
         }
         if let Rtc::Open { unanswered, .. } = &mut self.peers.get_mut(&id).unwrap().rtc {
             *unanswered = None;
         }
-        self.peer_packet(id, false, data.to_vec(), now);
+        self.peer_packet(id, false, data, now);
+    }
+
+    /// Whether a peer's WireGuard packet may go in: anything but a handshake initiation, or an
+    /// initiation with the room's proof (cleared for WireGuard), whoever it's from. So an
+    /// outsider who has only a node's name gets nothing answered, and takes no trial's place.
+    fn proven(&self, packet: &mut [u8]) -> bool {
+        match packet.first() {
+            Some(&t) if t == INITIATION.0 => {
+                packet.len() == INITIATION.1 && self.room.check_proof(packet)
+            }
+            _ => true,
+        }
     }
 
     /// Sends WireGuard's packets: on a peer's data channel when it's open, else through the relay
@@ -2078,11 +2157,16 @@ impl Client {
         to_peers: impl IntoIterator<Item = (PeerId, Vec<PacketMut>)>,
         now: Instant,
     ) {
-        for (id, packets) in to_peers {
+        for (id, mut packets) in to_peers {
             let Some(p) = self.peers.get_mut(&id) else {
                 continue;
             };
             let (key, via) = (p.key, p.via);
+            for pkt in &mut packets {
+                if is_initiation(pkt.as_ref()) {
+                    self.room.prove(pkt.as_mut());
+                }
+            }
             if let Some(init) = packets
                 .iter()
                 .rev()
@@ -2238,6 +2322,8 @@ impl Client {
     }
 
     pub fn tick(&mut self, now: Instant) {
+        #[cfg(test)]
+        self.check_rtcs();
         if self.state == State::Failed {
             return;
         }

@@ -1482,33 +1482,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   and say so in its `hello`, so the others stop too); the menu could say how many active connections are direct (the
   peers' `path` is there), for the cases gathering does work but ICE doesn't (a router that doesn't hairpin, mDNS
   dropped between two machines of one LAN).
-- **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md); from the out-of-context review of R2–R3, 2026-11-10):
-  `peer_of_rtc` scans every peer for each data-channel message, and `tick` counts the open channels for each peer
-  (~1,000 lookups a packet at the 1,024-peer cap with 64 channels; unmeasured: a map from rtc to peer would end it). A
-  failed offer's backoff is skipped when the peer goes idle (the next packet offers at once). A public room's name
-  typed by hand is matched by its bytes (an NFC and an NFD "Café", or another case, are other rooms, silently; the page
-  could NFC-normalize what it writes into a link). `isPrivateRoom` labels any ID ending in a hyphen and 26 base32
-  letters as private, a public name typed that way too (cosmetic). The tests' Nostr relay waits forever on a frame
-  whose declared length never comes, and keeps every event with `keep` on (fine for its tests).
-  From the review of 2026-11-12: an outsider who sees lookups to a node (a subscription to kind 26354 with no tag
-  filter, on the link's public relays) can flood its tag through **every** relay of the link with distinct junk past
-  each relay's 128-a-second budget, and keep members' lookups to it out for the rest of that hour (copies and a flood
-  through some relays are handled). A cheap check before the X25519 would end it: a MAC under the room's lookup key
-  over the content (a change of the lookup's form), or NIP-13 proof of work on lookups; relays' own rate limits help
-  meanwhile.
-  The unasked handshakes' trial budget (16 a second) is open to anyone with a node's name, not only members: an
-  IKpsk2 initiation needs only the responder's public key (the pre-shared key enters at the response), so fresh keys'
-  valid initiations are answered, charged and kept on trial 20 s each, and members' unasked handshakes (a member
-  that still has a session after we forgot it, a peer reloading with packets in flight) are refused while that goes
-  on. Mitigations: charge the budget only once a trial confirms (its data decrypts, which takes the pre-shared key),
-  and cap the trial peers not yet confirmed apart, dropping the oldest first.
-  Another tab's ephemeral room connections are invisible to this one (they live in that page's memory): Delete or New
-  name of a stored connection whose `waarm64-room` entry another tab's ephemeral connection shares (made with "another
-  connection's key") forgets the entry, as `sharesKey` can't see that one, and its next start makes a new key under
-  the orphaned entry, which nothing deletes later (the key changes without the user asking); and a key pasted in one
-  tab from another tab's ephemeral connection isn't found as that one's (`holderOf`), so it gets an entry of its own
-  (the key's lock still holds between them, named by the key). A shared registry of ephemeral connections' entries
-  (a BroadcastChannel census, or the entries' users counted in `waarm64-room`) would close both.
+- **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md)): `isPrivateRoom` labels any ID ending in a hyphen
+  and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
+  a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

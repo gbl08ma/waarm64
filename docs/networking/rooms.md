@@ -76,8 +76,8 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 - **The global public room** (the user, 2026-11-12): one public room, `global` (web/room.ts `GLOBAL_ROOM`) on the
   default relays, the wizard's first choice for a room, which skips the name and the link and has both switches on.
   It's suggested, not joined by default. It's safe because a name stays unguessable and a lookup to a name is sealed
-  to its target; what a public room still allows (anyone can flood lookups or fill a node's trial budget) is
-  [backlog.md](../backlog.md) "Rooms' loose ends".
+  to its target; what a public room still allows (any member, so anyone, can flood lookups or fill a node's trial
+  budget) is [plans/networking-p2p.md](../plans/networking-p2p.md) "Spam".
 - **Incoming connections on by default** (the user, 2026-11-10): reaching a node already takes the room and its
   name, which nothing lists. Off, members can't open connections to the guest; the guest's own flows still get their
   replies.
@@ -122,6 +122,9 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read, without
   the parts that were the defaults (`Link::encode`), so a link copied from the menu follows the defaults as they change.
 - **The global public room** is the link `waarm64-room:global`: a bare ID, so the defaults, as they change.
+- **An ID is matched by its bytes**, as the page writes it: trimmed and in Unicode's NFC (web/room.ts `roomLink`, for
+  a typed name, a pasted link and a private room's alike), so a name typed with a composed "é" and one with "e" and a
+  combining accent are one room. Case still counts ("Café" and "café" are two rooms), as in the name shown.
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
   of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
@@ -160,7 +163,8 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   nothing versioning the field; accepted while rooms are pre-release), the time and a random nonce, sealed with ChaCha20-Poly1305 to the
   target's own key when the dialer knows it (an X25519 box from an ephemeral key; a name the resolver answered, or
   `known` keys) and with the room's lookup key otherwise; both mix in the lookup key, the tag is the associated
-  data, and both look alike (106 bytes: 32 of an ephemeral key or of random bytes, then the ciphertext; the target
+  data, and both look alike (122 bytes: 32 of an ephemeral key or of random bytes, then the ciphertext, then a 16-byte
+  MAC over the tag and those bytes under a key of the room's, `lookup::authentic`; the target checks the MAC, then
   tries the seal first). Again after 1 s and 3 s; at 6 s the waiting packets get ICMPv6 address unreachable (type 1, code 3, from the
   room's `::53`), as does anything to that address for 5 s more. At most 64 lookups wait at once (past that, the
   guest's packet gets the ICMPv6 at once) and 8 go out a second (more wait for room, first sends before resends; a send
@@ -179,11 +183,13 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   oldest let go first; a reloaded target forgets them, so a relay may replay a recent lookup to it, which costs one
   unwanted call back that the dialer refuses unless it takes incoming connections), a region outside the link, its
   own key, and 1,024 peers at most. An event's copies (the same tag and content, one through each relay) are opened
-  once: one remembered for 10 s (8,192 at most) is dropped before anything else. Events under our tags are opened (an
-  X25519 and up to two decryptions) at most 128 a second through each relay, the rest dropped unread: anyone who sees a
-  lookup to the node (a subscription to the kind with no tag filter gets every room's) can publish junk under its tag
-  for the rest of that hour, so junk through some of the link's relays doesn't keep out a lookup through the others
-  (one flooding every relay of the link still can: [backlog.md](../backlog.md) "Rooms' loose ends"). Call backs are 16 a second; past that they wait their turn (first come first
+  once: one remembered for 10 s (8,192 at most) is dropped before anything else. Anyone who sees a lookup to the node
+  (a subscription to the kind with no tag filter gets every room's) can publish junk under its tag for the rest of that
+  hour, so an event's MAC is checked first (one BLAKE2s): an outsider's junk is dropped there and costs nothing more.
+  Events whose MAC holds (a member's) are opened (an X25519 and up to two decryptions) at most 128 a second through
+  each relay, the rest dropped unread, so a member's junk through some of the link's relays doesn't keep out a lookup
+  through the others (a member flooding every relay of the link still can: in a public room anyone,
+  [plans/networking-p2p.md](../plans/networking-p2p.md) "Spam"). Call backs are 16 a second; past that they wait their turn (first come first
   served, a key's later lookup only updating its region; 64 at most, so served within 4 s, before the dialer gives
   up; more are dropped), so a crowd of dialers gets in at that rate. When each dials the other at once, only the lower
   key calls back (crossed handshakes each abandon their own for the other's in `ts_tunnel`, and neither completes). A
@@ -203,11 +209,15 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   know that starts a handshake is let in **on trial** (incoming connections, on by default) and forgotten 20 s after it
   came in unless its data decrypted, which only the room's key allows; 16 such a second, a budget apart from call
   backs', charged only once WireGuard answered the handshake (its MAC1 right), so junk that isn't a handshake can't use
-  it up. A valid initiation can, though: in IKpsk2 the pre-shared key enters only at the response, so an initiation
-  needs nothing but the responder's public key, which its name carries. Anyone with a node's name (not only a member)
-  can send it 16 initiations a second from fresh keys, each answered and let in on trial for 20 s (up to 320 at once),
-  and the node refuses members' unasked handshakes meanwhile (call backs keep their own budget; [backlog.md](../backlog.md)
-  "Rooms' loose ends"). DERP proves a packet's sender, so a peer's packets go back through the region its last one came
+  it up. **Every handshake initiation carries the room's proof** (`Room::prove`): in IKpsk2 the pre-shared key enters
+  only at the response, so an initiation alone needs nothing but the responder's public key, which its name carries;
+  the sender writes a MAC under a key of the room's over the initiation into its `mac2` (the cookie's field, which
+  WireGuard leaves zero without a cookie, and ts_tunnel 0.6.1 refuses non-zero: it never asks for cookies), and the
+  receiver checks it before anything else and clears it for WireGuard (`proven`, on both paths, a known peer's too).
+  So an outsider with a node's name gets nothing answered and takes no trial's place; a member can still send 16
+  initiations a second from fresh keys, each let in on trial for 20 s (up to 320 at once), and the node refuses other
+  members' unasked handshakes meanwhile (call backs keep their own budget; in a public room a member is anyone:
+  [plans/networking-p2p.md](../plans/networking-p2p.md) "Spam"). DERP proves a packet's sender, so a peer's packets go back through the region its last one came
   from (our response to its new initiation too). A peer is forgotten after 3 minutes without the
   guests' traffic, or 30 s after we sent it the guest's packets with nothing back (the next packet looks it up again;
   past two of WireGuard's passive keepalives, each 9 to 11 s after the data it answers, so a guest's one-way traffic
@@ -295,7 +305,7 @@ no room); ephemeral kind 26354 accepted and forwarded; filters by a single-lette
 connection for dead and reconnects); `created_at` within the relay's tolerance of the dialer's clock (some public
 relays refuse events dated ahead, so a clock off by most of an hour may hold only on a room's own relays). A member
 holds one connection and one subscription a relay, renewed every minute (one REQ; after the hour's turn, a CLOSE and
-a REQ under a new subscription ID); a lookup is one event of ~550 bytes on the wire, forwarded to one subscriber (a
+a REQ under a new subscription ID); a lookup is one event of ~570 bytes on the wire, forwarded to one subscriber (a
 tag is one node's), again after 1 s and 3 s only while no call back comes, at most 8 lookups a second a member. A
 thousand members: 17 REQs a second steady, 2.8 KB/s in; each new pair a second, one event (bench/net/REPORT.md "Rooms
 at scale"). The relays' own terms (rate limits, proof of work, payment) decide how far public relays carry a room.
@@ -320,14 +330,15 @@ the user's two machines on one network went direct once the browser allowed it (
 `cargo test -p waarm64_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
 to a key on the same region, fake Nostr relays and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
 and misdirected lookups, the trial rate, incoming off and its flows, two regions, the hour's turn and a clock 40
-minutes off, a forged lookup that doesn't move a live peer and one that names another region, a reloaded peer
+minutes off, a forged lookup that doesn't move a live peer and one that names another region, outsiders' initiations without the
+room's proof and their junk lookups (neither charged to a budget), a reloaded peer
 called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a lookup's
 copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
 cases; BIP-340's first vector); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
 NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
-RFC 6455 server, no dependency); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room
+RFC 6455 server, no dependency; a message past 1 MiB closes the connection, `events` keeps the last 65,536); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room
 by its link on the rig's derper and that relay, by address and by name, relay only, incoming off); `tests/room-link.test.ts` (the page's link and
-key checks against link.rs's); `tests/connections.test.ts`'s and `tests/network.test.ts`'s room cases;
+key checks against link.rs's); `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key) and `tests/network.test.ts`'s room cases;
 `tests/net-live.test.ts` (the key's lock); `tests/page-connections.test.ts` (the global room in the wizard); and, in
 `scripts/ci-net.sh`, `tests/page-room.test.ts` (two Debian guests in one Chromium: Create, Join by link, the wizard's
 refusals, the resolver asked directly and through resolved, pings both ways by name; ~2 min) and
@@ -352,6 +363,9 @@ logs every candidate (`KEY=` picks the role).
   pings between two machines in Europe. A link without regions now takes all of the map's and probes them ("DERP").
   A region's wire meaning changed then from an index to a map ID, so pages from before 2026-11-11 and after don't
   reach each other in a room (accepted while rooms were pre-release).
+- **Lookups and initiations changed form on 2026-11-14** (the lookup's MAC, the initiation's proof): pages from before
+  and after don't reach each other in a room (accepted: rooms had only testers then). Both close what an outsider with
+  a node's name could do; nothing a member can do changed.
 - **SDP's size doesn't constrain signalling over DERP**, but for the record (Chromium 153, 2026-11-10): with both
   pages ours, a data-channel-only remote description rebuilds from 47 bytes per side (the ufrag, 3; the password, 18;
   a SHA-1 fingerprint, 20, which Chromium checks against the remote certificate like SHA-256; a public IPv4

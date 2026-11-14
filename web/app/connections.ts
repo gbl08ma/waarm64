@@ -7,6 +7,7 @@
 // Lock (`connectionLock`, web/app/locks.ts). DOM-free: Node's tests run it over a memory store.
 import { t } from '../i18n.ts';
 import { newTailcatIdentity, type TailcatIdentity } from '../tailcat.ts';
+import { RoomEntries } from './room-entries.ts';
 import { newRoomIdentity, parseRoomLink, roomName, type RoomIdentity } from '../room.ts';
 import { DEFAULT_CONTROL, parseControlURL, type NetworkSettings } from './network.ts';
 import { newId, uniqueName } from './shape.ts';
@@ -190,6 +191,8 @@ export class Connections {
   private store: Store;
   private state: ConnectionState;
   private memory = new Map<string, Connection>();
+  /** This page's ephemeral room connections' holds on stored entries (web/app/room-entries.ts). */
+  private entries = new RoomEntries();
 
   constructor(store: Store, state: ConnectionState = memoryState()) {
     [this.store, this.state] = [store, state];
@@ -246,6 +249,7 @@ export class Connections {
       created: Date.now(),
     };
     await this.put(c);
+    await this.entries.hold(c);
     return c;
   }
 
@@ -302,6 +306,7 @@ export class Connections {
     const eph = this.memory.get(id);
     if (eph) {
       this.memory.delete(id);
+      this.entries.release(id);
       // An ephemeral room connection may use a stored one's kept key: the last to go forgets it.
       if (eph.room && !eph.room.identity && !(await this.sharesKey(eph)))
         await this.state.forgetRoom(eph.room.identityKey);
@@ -321,18 +326,25 @@ export class Connections {
    */
   async newRoomKey(c: Connection & { room: RoomConnection }) {
     const r = { ...c.room };
-    if (c.ephemeral) return this.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
+    if (c.ephemeral) {
+      this.entries.release(c.id); // its key is its own now
+      return this.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
+    }
     delete r.identity; // never in a stored record (one written before may have it)
     const shared = await this.sharesKey(c);
     await this.put({ ...c, room: { ...r, identityKey: shared ? `${c.id}.${Date.now()}` : r.identityKey } });
     if (!shared) await this.state.forgetRoom(r.identityKey);
   }
 
-  /** Whether another room connection (stored, or this page's ephemeral one) uses room connection `c`'s kept key. */
+  /**
+   * Whether another room connection uses room connection `c`'s kept key: a stored one, this page's ephemeral one, or
+   * another tab's ephemeral one (`RoomEntries`).
+   */
   async sharesKey(c: Connection): Promise<boolean> {
-    return (await this.list()).some(
-      (x) => x.id !== c.id && x.room?.identityKey === c.room?.identityKey && !x.room?.identity,
-    );
+    const k = c.room?.identityKey;
+    if (!k || c.room?.identity) return false;
+    if ((await this.list()).some((x) => x.id !== c.id && x.room?.identityKey === k && !x.room.identity)) return true;
+    return this.entries.elsewhere(k);
   }
 }
 

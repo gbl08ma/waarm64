@@ -59,3 +59,29 @@ test('the relay forwards by kind and tag, and stores nothing', { timeout: 20_000
     await relay.close();
   }
 });
+
+test('a frame declaring more than a megabyte closes the connection, not waited on', { timeout: 20_000 }, async () => {
+  const relay = await startNostrRelay();
+  try {
+    const { connect } = await import('node:net');
+    const { port } = new URL(relay.url);
+    const s = connect(Number(port), '127.0.0.1');
+    await new Promise((r) => s.once('connect', r));
+    const key = Buffer.alloc(16).toString('base64');
+    s.write(`GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    const closed = new Promise<void>((r) => s.once('close', () => r()));
+    s.on('data', () => {});
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(relay.clients(), 1);
+    // A masked text frame of 2^40 bytes, declared; its first bytes only.
+    const head = Buffer.alloc(14);
+    head[0] = 0x81;
+    head[1] = 0x80 | 127;
+    head.writeBigUInt64BE(1n << 40n, 2);
+    s.write(Buffer.concat([head, Buffer.alloc(64)]));
+    await Promise.race([closed, new Promise((_, no) => setTimeout(() => no(new Error('still open')), 2000))]);
+    assert.equal(relay.clients(), 0);
+  } finally {
+    await relay.close();
+  }
+});
