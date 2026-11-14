@@ -1295,6 +1295,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     for it.
   - `?display=simple` runs (the tests') are another shape than the same machine on the page, so their snapshots show
     as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, machines.md §1).
+  - **A resizing guest of our own** (the user's idea, 2026-11-14; not scheduled, kept out of the loops for now). It
+    would go with growing a disk's size (Resize… on a writable disk: an overlay's own size, or a stored disk's or a
+    ramdisk's; proposed, not built yet), whose guest side is planned as the agent's job at the next boot: it grows the
+    partition that ends last (GPT or MBR, then `BLKPG_RESIZE_PARTITION`) and grows a mounted ext4, btrfs or xfs online.
+    The alternative: a small Buildroot image of ours that only resizes, booted with the disk attached read-write. It
+    doesn't depend on an unknown guest (no agent, no systemd, a guest that never boots again, a kernel or filesystem the
+    agent doesn't know), and it can do what an online grow can't: an unmounted filesystem, `e2fsck` before
+    `resize2fs`, LVM and LUKS with the standard tools (`growpart`/`sfdisk`, `resize2fs`, `btrfs`, `xfs_growfs`,
+    `pvresize`/`lvextend`, `cryptsetup resize`), with the result reported to the page (the serial console or the
+    vsock). The Resize dialog would offer both: this image now, or the guest at its next boot. Either needs the disk
+    free: its machines off, and since a tab runs one machine, the image runs in place of the user's machine or in
+    another tab (the overlay's or the stored disk's Web Lock already makes that safe). To weigh: the image's size and
+    hosting (built in `images/`, fetched like the agent or served with the page), its boot time under the JIT (the
+    Buildroot boot is seconds), and its tests (the native and page tests on Debian's layout, plus LVM and LUKS
+    images).
 - **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): GNOME and
   KDE untested, and the agent's live layout doesn't reach them (devices.md "The keyboard layout in the running
   session": GNOME through the user's dconf `org.gnome.desktop.input-sources`, KDE through `kxkbrc` and its reload
