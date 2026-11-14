@@ -112,8 +112,11 @@
       runner.fail(t('machines:MachinesPage.otherTab'));
       return false;
     }
-    const sure = await ask.confirm(t('machines:MachinesPage.powerOff.confirm', { name: m.name }), {
-      ok: t('machines:MachinesPage.powerOff.ok'),
+    // The guest asked to shut down first where its agent can (the page's powerOff: web/app/run/clean-stop.ts).
+    const soft = power.canSoft;
+    const question = soft ? 'machines:MachinesPage.powerOff.confirm.soft' : 'machines:MachinesPage.powerOff.confirm';
+    const sure = await ask.confirm(t(question, { name: m.name }), {
+      ok: t(soft ? 'machines:MachinesPage.powerOff.ok.soft' : 'machines:MachinesPage.powerOff.ok'),
       danger: true,
     });
     if (!sure) return false;

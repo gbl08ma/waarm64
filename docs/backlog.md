@@ -1640,7 +1640,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   each console's vcsu once at its start (the kernel keeps the characters from then on), not measured.
 - **The clean power-off, the rest of it** (devices.md "Power off and restart from the guest"): `shutdown now`, the
   path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool); the
-  Machines page's Power off stays a hard one (it asks its own question; the toolbar's soft one could serve it too).
+  Machines screen's clean stops (clean-stop.ts) run on Debian only through tests that cut them short (`answerAsks`
+  clicks Power off now).
 - **The track review's deferred findings** (BETTERAGENT's end, 2026-11-14; `review/betteragent-agent`,
   `review/betteragent-page`): the session child's `sway_run` connects to sway's IPC blocking (a sway hung with its
   backlog full holds the child's loop; `setxkbmap` up to 5 s, each `sway_run` wait up to 2 s); a RandR run's late
@@ -1650,7 +1651,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   its IP) or one the user disconnected, not renew it (`nmcli device reapply` or a DHCP renewal call may fit better:
   measure on a NetworkManager guest); the full compaction after a trim runs in one synchronous loop on the device
   worker, holding the net, console and input devices too (measured at 47 MiB only: measure a GiB, slice it if long);
-  a disk's export waits up to ~6 min for the trim and compactions with no way to skip them (a product call); a
+  a disk's export, asked first, then waits up to ~4 min for the trim and compaction with no way to skip them (the
+  guest's shutdown after them has its Power off now: the user's decision, 2026-11-14); a
   restored machine's agent that crashes stays gone for the run (a restore fetches no binary, so the unit's restart
   finds no `agent.000`, and says "this kernel has no qemu_fw_cfg?", wrongly).
 - **Restarts read the binary again:** each of the unit's restarts (at most 5 in 10 minutes) gunzips it out of fw_cfg

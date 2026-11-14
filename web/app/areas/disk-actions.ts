@@ -148,15 +148,18 @@ export class DiskActions {
     if (
       isLive(power.state) &&
       m.stored?.record.id !== id &&
-      !(await ask.confirm(t('machine:disk-actions.switch.confirm'), {
-        title: t('machine:disk-actions.switch.title'),
-        ok: t('machine:disk-actions.switch.ok'),
-        danger: true,
-      }))
+      !(await ask.confirm(
+        t(power.canSoft ? 'machine:disk-actions.switch.confirm.soft' : 'machine:disk-actions.switch.confirm'),
+        {
+          title: t('machine:disk-actions.switch.title'),
+          ok: t('machine:disk-actions.switch.ok'),
+          danger: true,
+        },
+      ))
     )
       return;
     await pw.exclusively(async () => {
-      await runner.stop();
+      await pw.stopCleanly();
       runner.d.net.machineOff();
       const next = await loadStored(m.store, id);
       [m.stored, m.storedError, m.chosen] = [next, undefined, undefined];

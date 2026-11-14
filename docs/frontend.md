@@ -391,7 +391,9 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 **Questions** are the page's own dialogs, not the browser's `confirm`, `alert` and `prompt`: `ask.confirm`,
 `ask.alert` and `ask.prompt` (`ask.svelte.ts`) queue a question and resolve when it's answered; `Ask.svelte` shows the
 first in a modal `<dialog id="ask">` (a title, the text, OK and Cancel with the action's own words; one that loses
-data has its OK drawn as a warning; Esc is Cancel). Clicking OK is a user activation, so a file picker or a permission
+data has its OK drawn as a warning; Esc is Cancel). `ask.wait` is a wait its caller ends (`close`), with one button
+drawn as a warning (`skipped`): the guest's clean shutdown before a change (devices.md "Power off and restart from the
+guest"). Clicking OK is a user activation, so a file picker or a permission
 request after it still works. Tests answer them by clicking (`tests/page-ask.ts` `answerAsks`).
 
 **The message bar** (under the toolbar) says what stops a machine (below, "Errors") and what happened: it has a close

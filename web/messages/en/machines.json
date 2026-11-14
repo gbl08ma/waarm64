@@ -1574,5 +1574,13 @@
   "PreferencesPane.shaderBudget.note": {
     "message": "Machines with Vulkan keep the shaders they translate, so that a program's next start, on any machine, translates nothing again. When the space is full, those used least recently go first. In use, they take about this much memory too. A change takes effect at the next start of a machine.",
     "note": "Machines page, Preferences: the note under Space for Vulkan's shaders."
+  },
+  "MachinesPage.powerOff.confirm.soft": {
+    "message": "Shut {{name}} down to make this change? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
+    "note": "Text of the question asked before an edit on the Machines page that needs the machine off, when its guest's agent (the page's program in the guest) can shut it down cleanly. {{name}} is the machine's name."
+  },
+  "MachinesPage.powerOff.ok.soft": {
+    "message": "Shut down",
+    "note": "The confirm button of the question asked before an edit that needs the machine off, when its guest can shut down cleanly."
   }
 }

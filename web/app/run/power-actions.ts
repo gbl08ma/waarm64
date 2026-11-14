@@ -9,6 +9,7 @@ import { needsDisk } from './page-disks.ts';
 import { loadStored, type PageMachine } from './page-machine.svelte.ts';
 import type { Runner } from './runner.ts';
 import { SoftPower } from './soft-power.ts';
+import { stopCleanly } from './clean-stop.ts';
 import type { AgentLink } from '../agent-link.ts';
 
 export type PowerDeps = {
@@ -120,11 +121,30 @@ export class PowerActions {
     await this.restart();
   }
 
-  /** Stops the machine like pulling the plug. */
-  powerOff() {
+  /** Stops the machine like pulling the plug, or (`cleanly`, the Machines page's) asking the guest first. */
+  powerOff(o: { cleanly?: boolean } = {}) {
     return this.exclusively(async () => {
-      await this.#d.runner.stop();
+      await (o.cleanly ? this.stopCleanly() : this.#d.runner.stop());
       this.#d.messages.setState('off');
+    });
+  }
+
+  /**
+   * Stops the running machine for a change that keeps its disk (web/app/run/clean-stop.ts): the guest asked to shut
+   * down first where its agent can, a dialog meanwhile whose button powers off at once. Called within `exclusively`.
+   */
+  stopCleanly() {
+    const run = this.#d.machine.run;
+    return stopCleanly({
+      soft: () => this.#soft.request('off'),
+      canSoft: () => !!this.#d.agent.link?.canPower,
+      up: () => !!run?.live() && isLive(power.state),
+      dialog: () =>
+        ask.wait(t('machine:power-actions.shuttingDown'), {
+          title: t('machine:power-actions.shuttingDown.title'),
+          ok: t('machine:power-actions.shuttingDown.now'),
+        }),
+      stop: () => this.#d.runner.stop(),
     });
   }
   /**

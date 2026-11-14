@@ -167,9 +167,9 @@ export class DiskExport {
     const running = isLive(power.state);
     if (
       running &&
-      !(await ask.confirm(t('disks:disk-export.save.confirm'), {
+      !(await ask.confirm(t(power.canSoft ? 'disks:disk-export.save.confirm.soft' : 'disks:disk-export.save.confirm'), {
         title: t('disks:disk-export.save.title'),
-        ok: t('disks:disk-export.save.ok'),
+        ok: t(power.canSoft ? 'disks:disk-export.save.ok.soft' : 'disks:disk-export.save.ok'),
         danger: true,
       }))
     )
@@ -179,7 +179,8 @@ export class DiskExport {
         messages.stateText(msg('disks:disk-export.trimming'));
         await this.#trim();
       }
-      await runner.stop();
+      // The guest shut down before its disk is saved (where its agent can): the file gets a clean disk.
+      await pw.stopCleanly();
       messages.setState('off');
       messages.stateText(msg('disks:disk-export.saving'));
       try {

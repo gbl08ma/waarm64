@@ -476,9 +476,16 @@ the guest), no tool, no answer in time (each said in the message bar), or no age
 (or restart), which asks first, and acts only if the run it asked about is still the machine's (the guest's own reboot
 may have started another meanwhile). A request given up on isn't withdrawn: logind can't take one back, so the guest
 may still shut down after the page's question. The page never
-forces on its own. The Machines page's Power off, and the stops the page makes itself (a disk's export, a restore, a
-size change), stay hard. Tests: the commands (`agent/src/power.rs`, `serve_test.rs`: busctl's method, refused, shutdown
-without logind, no tool), the link and `SoftPower`'s rules (`tests/agent-power.test.ts`), and on Debian
+forces on its own. **The Machines screen's stops** (`web/app/run/clean-stop.ts`; the user's design, 2026-11-14): a
+change that keeps the machine's disk (a disk's export, after its trim; the Machines page's Power off before an edit;
+Save and restart of its settings; another machine opened) asks the guest to shut down first where its agent can (its
+question says so), with a dialog meanwhile ([Shutting down](ui:machine:power-actions.shuttingDown.title)) whose one
+button, [Power off now](ui:machine:power-actions.shuttingDown.now), cuts the power; the dialog goes when the guest's
+power-off ends the run (looked at every 200 ms), and refused or unanswered, the hard stop follows at once (the change
+was asked for already). Stops that drop the running guest's state (a disk's reset, a snapshot's restore, changes
+imported, another disk booted) stay hard. Tests: the commands (`agent/src/power.rs`, `serve_test.rs`: busctl's method, refused, shutdown
+without logind, no tool), the link and `SoftPower`'s rules (`tests/agent-power.test.ts`), the clean stop's
+(`tests/clean-stop.test.ts`), and on Debian
 (`tests/page-power.test.ts`: refused under `systemd-inhibit --mode=block`, then Restart reboots the guest itself and
 Power off shuts it down to `off`, no question asked).
 

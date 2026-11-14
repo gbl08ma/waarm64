@@ -4,7 +4,7 @@
 import { t } from '../i18n.ts';
 
 export type Question = {
-  kind: 'confirm' | 'alert' | 'prompt';
+  kind: 'confirm' | 'alert' | 'prompt' | 'wait';
   title: string;
   text: string;
   ok: string;
@@ -20,9 +20,11 @@ type Options = { title?: string; ok?: string; cancel?: string; danger?: boolean 
 export const asking = $state({ current: undefined as Question | undefined, serial: 0 });
 const queue: Question[] = [];
 
-function show(q: Omit<Question, 'resolve'>) {
+function show(q: Omit<Question, 'resolve'>, shown?: (q: Question) => void) {
   return new Promise<boolean | string | undefined>((resolve) => {
-    queue.push({ ...q, resolve });
+    const full = { ...q, resolve };
+    shown?.(full);
+    queue.push(full);
     if (!asking.current) next();
   });
 }
@@ -61,6 +63,37 @@ export const ask = {
       danger: false,
       value: '',
     }).then(() => undefined),
+  /**
+   * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning) resolves `skipped`; Esc only takes the
+   * dialog down (the wait goes on without it).
+   */
+  wait(text: string, o: Options = {}): { skipped: Promise<void>; close(): void } {
+    let q: Question | undefined;
+    const answered = show(
+      {
+        kind: 'wait',
+        title: o.title ?? t('common:ask.title'),
+        text,
+        ok: o.ok ?? t('common:ask.ok'),
+        cancel: '',
+        danger: true,
+        value: '',
+      },
+      (shown) => (q = shown),
+    );
+    return {
+      skipped: answered.then((ok) => (ok ? undefined : new Promise<void>(() => undefined))),
+      close() {
+        if (!q) return;
+        if (asking.current === q) answer(false);
+        else {
+          const i = queue.indexOf(q);
+          if (i >= 0) queue.splice(i, 1);
+          q.resolve(false);
+        }
+      },
+    };
+  },
   /** A line of text, or undefined if cancelled. */
   prompt: (text: string, value = '', o: Options = {}) =>
     show({

@@ -100,7 +100,14 @@ export class SizeActions {
     if (
       running &&
       !(await ask.confirm(
-        memoryWarning(t('machine:size-actions.settings.confirm', { name: next.name }), next.ramMiB, next.ncpus, jit),
+        memoryWarning(
+          t(power.canSoft ? 'machine:size-actions.settings.confirm.soft' : 'machine:size-actions.settings.confirm', {
+            name: next.name,
+          }),
+          next.ramMiB,
+          next.ncpus,
+          jit,
+        ),
         {
           title: t('machine:size-actions.settings.title'),
           ok: t('machine:size-actions.settings.ok'),
@@ -110,7 +117,7 @@ export class SizeActions {
     )
       return;
     await this.#power.exclusively(async () => {
-      await this.#runner.stop();
+      await this.#power.stopCleanly();
       s.record = await updateMachine(m.store, next);
       m.onRecord();
       m.takeSize();

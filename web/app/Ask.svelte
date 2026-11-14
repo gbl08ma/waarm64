@@ -40,8 +40,10 @@
       <p class="ask-text">{q.text}</p>
       {#if q.kind === 'prompt'}<input bind:this={input} bind:value={text} spellcheck="false" autocomplete="off" />{/if}
       <div class="buttons">
-        {#if q.kind !== 'alert'}<Button type="button" data-answer="cancel" onclick={() => answer(false)}
-            >{q.cancel}</Button
+        {#if q.kind !== 'alert' && q.kind !== 'wait'}<Button
+            type="button"
+            data-answer="cancel"
+            onclick={() => answer(false)}>{q.cancel}</Button
           >{/if}
         <Button type="submit" data-answer="ok" variant={q.danger ? 'danger' : 'primary'} bind:ref={okButton}
           >{q.ok}</Button

@@ -1078,5 +1078,13 @@
   "DisksPane.delete.ok": {
     "message": "Delete",
     "note": "Machines page, Disks pane: the confirm button of the question before a disk is deleted."
+  },
+  "disk-export.save.confirm.soft": {
+    "message": "Shut the machine down to save its disk? Its unused space is freed first, then the guest is asked to shut down; you will be able to power it off forcibly, if needed. The machine will be started again afterwards.",
+    "note": "Text of the question asked before saving the running machine's disk to a file, when its guest's agent (the page's program in the guest) can shut it down cleanly."
+  },
+  "disk-export.save.ok.soft": {
+    "message": "Shut down and save",
+    "note": "The confirm button of the question asked before saving the running machine's disk, when its guest can shut down cleanly."
   }
 }

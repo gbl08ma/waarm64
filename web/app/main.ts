@@ -270,7 +270,7 @@ const page: Page = {
     pageWindow.closeMachines();
     return disks.switchMachine(id);
   },
-  powerOff: () => powerActions.powerOff(),
+  powerOff: () => powerActions.powerOff({ cleanly: true }),
   powerOffAsked: () => powerActions.powerOffAsked(),
   saveDisk: (mode, compress, target) => diskExport.save(mode, compress, target),
   trimDisks: () => trimActions.asked(),

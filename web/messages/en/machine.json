@@ -530,5 +530,25 @@
   "soft-power.noTool": {
     "message": "The guest has no way to shut itself down that the page knows.",
     "note": "Message bar notice when the toolbar's Power off or Restart asked the guest and its agent found neither systemd-logind nor the shutdown command. The page then asks whether to power off or restart at once."
+  },
+  "power-actions.shuttingDown": {
+    "message": "The guest is shutting down. The change goes on once it has powered off.",
+    "note": "Text of the dialog shown while the guest shuts down before a change on the Machines page (a disk's export, new settings, another machine opened, an edit that needs the machine off), when the guest's agent (the page's program in the guest) asked it to. It closes by itself once the guest powered off."
+  },
+  "power-actions.shuttingDown.title": {
+    "message": "Shutting down",
+    "note": "Title of the dialog shown while the guest shuts down before a change on the Machines page."
+  },
+  "power-actions.shuttingDown.now": {
+    "message": "Power off now",
+    "note": "The one button (drawn as a warning) of the dialog shown while the guest shuts down: it powers the machine off at once, like pulling the plug, without waiting for the guest."
+  },
+  "disk-actions.switch.confirm.soft": {
+    "message": "Open the other machine? This one's guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
+    "note": "Text of the question asked before opening another machine while this one runs, when its guest's agent (the page's program in the guest) can shut it down cleanly."
+  },
+  "size-actions.settings.confirm.soft": {
+    "message": "Restart {{name}} with its new settings? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
+    "note": "Text of the question asked by the Settings tab's Save and restart while the machine runs, when its guest's agent can shut it down cleanly. {{name}} is the machine's name."
   }
 }
