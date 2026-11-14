@@ -1,0 +1,38 @@
+compress: ok 282228 376935
+binarytrees: stretch 16383
+binarytrees: 649904 8191
+fannkuch: 1616 22
+nbody: -0.169075164 -0.169078071
+spectralnorm: 1.274222587
+churn: 1048 files
+sqlite: 199899 9995245378
+sqlite: 997 101
+sqlite: 85715 2470168
+boot: 3.64 s, 2115M steps, 580 MIPS, dispatches 4.97M (1 per 425), interpreted 142.69M, TLB misses 335K, flushes 27945, regions 5292 (22029 blocks, 398 tier-ups) in 293 modules, 10.6 MB, 51 ms installing
+init: 0.09 s, 63M steps, 718 MIPS, dispatches 0.11M (1 per 596), interpreted 2.75M, TLB misses 9K, flushes 755, regions 151 (582 blocks, 8 tier-ups) in 5 modules, 0.3 MB, 1 ms installing
+compress: 1.60 s, 2036M steps, 1271 MIPS, dispatches 1.07M (1 per 1904), interpreted 16.61M, TLB misses 360K, flushes 4314, regions 775 (2712 blocks, 84 tier-ups) in 90 modules, 1.5 MB, 11 ms installing
+lua: 2.54 s, 3209M steps, 1265 MIPS, dispatches 1.12M (1 per 2865), interpreted 8.32M, TLB misses 19K, flushes 5696, regions 396 (1231 blocks, 25 tier-ups) in 60 modules, 0.6 MB, 6 ms installing
+churn: 0.89 s, 538M steps, 604 MIPS, dispatches 0.88M (1 per 612), interpreted 15.05M, TLB misses 165K, flushes 16413, regions 792 (3987 blocks, 29 tier-ups) in 17 modules, 2.1 MB, 8 ms installing
+sqlite: 2.08 s, 2142M steps, 1029 MIPS, dispatches 1.20M (1 per 1778), interpreted 18.01M, TLB misses 56K, flushes 9709, regions 778 (2844 blocks, 29 tier-ups) in 75 modules, 1.5 MB, 10 ms installing
+shutdown: 0.47 s, 323M steps, 686 MIPS, dispatches 0.46M (1 per 700), interpreted 5.61M, TLB misses 122K, flushes 7566, regions 219 (790 blocks, 9 tier-ups) in 6 modules, 0.4 MB, 2 ms installing
+
+== boot
+  helper calls: XD8 15.66M, XD15 11.13M, XD9 4.70M, XD12 2.08M, XD10 1.73M, XD19 1.57M, XD14 1.54M, XD16 1.13M
+
+== init
+  helper calls: XD8 4.39M, XD9 0.09M, XD15 0.07M, XD13 0.04M, XD10 0.03M, XD14 0.03M, XD19 0.03M, XD12 0.02M
+
+== compress
+  helper calls: XD8 26.62M, XD9 2.31M, XD10 2.11M, XD14 2.07M, XD19 2.00M, XD15 0.50M, MRS 0.34M, STRx_LDRx_imm_2 0.30M
+
+== lua
+  helper calls: XD8 134.13M, XD15 2.37M, XD9 1.98M, XD14 1.83M, XD10 1.80M, XD19 1.80M, MRS 0.52M, MSR_reg 0.21M
+
+== churn
+  helper calls: XD15 5.42M, XD8 4.25M, XD9 1.39M, XD10 0.92M, XD19 0.82M, XD14 0.80M, XD16 0.43M, XD13 0.34M
+
+== sqlite
+  helper calls: XD8 66.47M, XD15 4.04M, STRx_LDRx_imm_2 3.07M, XD9 1.73M, XD10 1.37M, STP_LDP_gen 1.31M, XD19 1.20M, XD14 1.11M
+
+== shutdown
+  helper calls: XD8 5.24M, XD15 2.74M, XD9 0.76M, XD10 0.52M, XD19 0.46M, XD14 0.45M, XD16 0.25M, XD13 0.19M

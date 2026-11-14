@@ -277,6 +277,24 @@ the interpreter's own code.
     flushes: user pages it unmaps) clears that page's entries (its VAs fill 1024 consecutive
     slots). Each of these mattered: dropping everything on every flush made boot 6% and process
     churn 7% slower (bench/boot/REPORT.md "M8: a VA-keyed cache for indirect transfers").
+  - **A flush by VA scans those 1024 slots (16 KiB) only for a page that instruction fetches
+    translated** (`Tlb::xpages`, PERF loop 28): eight 4096-bit maps (by EL, global or nG, VA half) of
+    the pages `Mmu::miss` translated for a fetch, cached or not, a page number folded to 12 bits.
+    Every entry is filled for a fetch the instruction TLB translated (the dispatcher's key, the miss
+    function's TLB probe), and a TLB entry came from such a miss, so the maps hold every page the
+    live entries are for. The nG maps of an EL are cleared with its nG entries when its transfer
+    cache's go too (`flush_ng`, the EL's `xng`), every map by a flush of everything; a bump alone
+    (blocks dropped, a flush by VA in a half with block entries) clears none, as the TLB's entries
+    stay and fill the cache again without a walk. Of the 60,054 flushes by VA in Alpine's boot and
+    userspace benchmark 99.95% cleared nothing (they're for data pages); with the maps 1.8% scan
+    (a scan ~0.4 µs in Node: ~10 ms of the boot's 3.6 s, 0.27%, and ~0.5% of the churn and shutdown
+    phases before; under the gates' floor on the Mac: bench/boot/REPORT.md "PERF loop 28"). 4 KiB a vCPU.
+  - **What reaches the miss function** (PERF loop 28, a diagnostic core, Alpine's userspace run in Node): a probe
+    misses 23% of the time in the boot, 25% in the churn phase, 13% at shutdown and 1.5-8% in the compute phases; of
+    the boot's 3.2M misses through a probe 2.1M find a zeroed entry (a target not entered yet), 0.95M another VA's
+    and 0.13M an older generation. Most calls in the compute phases (compress 2.0M of 2.3M, Lua 1.8M of 2.0M) come
+    instead from host returns that land elsewhere than the call's continuation ([Calls](#calls)), whose entry was
+    valid; a by-VA link whose check failed is rare (5,700 in the boot).
   - The stale-code checker, which needs the key, is called with `u64::MAX` on a hit
     (`jit_check` then computes the key from the PC).
 - **Inside a region:** members are nested wasm `block`s; an edge to a later member is a `br`
@@ -315,7 +333,9 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   a block not compiled), and every caller returns it in turn, unwinding to the dispatcher. A returned one moves
   `acc`/`left` as if the callee's steps were the caller's, and if the PC is the call's continuation (the instruction
   after the BL/BLR) the region runs on there; if it isn't (a longjmp, a coroutine switch), the PC's block is found
-  through the transfer cache's miss function (with the MMU off, the block returns).
+  through the transfer cache's miss function (with the MMU off, the block returns). That isn't rare: 10-16% of the host
+  returns in Alpine's userspace phases (~1 per 1,000-2,000 instructions), at a host depth under 8, nearly none of them
+  a region's mispredicted internal return (PERF loop 28, a diagnostic core; docs/backlog.md has the follow-up).
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
   function (`Region::entries`; none in a loop region, whose members sit inside the `loop`), because a return also
   reaches it from outside, at depth 0 after anything that unwound the host frames. Only a member where the head's
@@ -1296,6 +1316,11 @@ fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lis
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **A host return elsewhere absorbed in the caller's frame** (PERF loop 28; `bench/boot/REPORT.md` "PERF loop 28"):
+  a `loop` around the call, the mismatch host-calling the miss function (depth + 1) and checking the continuation
+  again, instead of tail-calling it in the caller's frame, so a lost frame couldn't make every outer return miss too.
+  The returns elsewhere stayed as many (compress 2.0M → 1.4M, Lua 1.8M → 2.3M): they aren't such a cascade. Making a
+  probe's miss inside a guest call a host call (it's a tail call) changed nothing either.
 - **X registers sharing locals** (PERF loop 27, 2026-11-14; `bench/boot/REPORT.md` "PERF loop 27"): Liftoff's
   zero-fill (~2.8% of Alpine's boot, ~1.7% of its userspace on the Mac, loop 26) is linear in a function's locals,
   half of them X registers held from first use to the write-back. Estimated with a diagnostic core, not built: if

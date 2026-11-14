@@ -1,0 +1,43 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index dbc35796..270f3f92 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -1800,7 +1800,7 @@ impl Table {
+ 
+     /// The helper calls so far by instruction class, most frequent first,
+     /// one `<Op> <calls>` per line, NUL-terminated.
+-    pub fn helper_report(&mut self) -> *const u8 {
++    pub fn helper_report(&mut self, d: &[u64]) -> *const u8 {
+         let mut ops: Vec<(u64, crate::decode::Op)> = self
+             .helper_ops
+             .iter()
+@@ -1810,6 +1810,9 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        for (i, n) in d.iter().enumerate() {
++            self.report.push_str(&format!("XD{i} {n}\n"));
++        }
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 70438963..6eb3ad59 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -459,11 +459,12 @@ pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
+ #[unsafe(no_mangle)]
+ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+     // SAFETY: guaranteed by the caller.
+-    unsafe { &mut *v }
+-        .jit
++    let v = unsafe { &mut *v };
++    let d = v.tlb.stats.diag;
++    v.jit
+         .cache
+         .as_deref_mut()
+-        .map_or(core::ptr::null(), |j| j.table.helper_report())
++        .map_or(core::ptr::null(), |j| j.table.helper_report(&d))
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument

@@ -46,7 +46,9 @@
 // (one per EL), or one page's. Dropping the nG entries drops an EL's only if
 // its instruction TLB may hold nG ones, so Linux's kernel entries (global)
 // survive context switches as its TLB entries do (the user's, nG, don't); a
-// flush by VA (most of Linux's: the user pages it unmaps) drops the page's.
+// flush by VA (most of Linux's: the user pages it unmaps) drops the page's,
+// scanning its slots only if instruction fetches translated it (`Tlb::xpages`:
+// nearly all of those flushes are for data pages).
 
 use crate::cpu::{Cpu, sctlr};
 use crate::mem::{Access, Fault, FaultKind, Host, MEM_SHIFT, Mem};
@@ -158,12 +160,34 @@ pub struct Tlb {
     /// the EL's transfer cache entries were last dropped: a flush by VA
     /// there drops them all, as the block's other pages may have some.
     xblk: [[bool; 2]; 2],
+    /// Pages the EL's instruction fetches translated (`Mmu::miss`), hashed
+    /// ([`xpage_bit`]), by EL, global or nG and VA half
+    /// (`[(el * 2 + ng) * 2 + half]`): a superset of the pages the EL's live
+    /// transfer cache entries are for, whose entries are filled only for a
+    /// fetch the instruction TLB translated. A flush by VA scans the
+    /// transfer cache only for a page with a bit set. The nG maps are cleared
+    /// with the EL's nG entries (when its transfer cache's are dropped), all
+    /// of them with every entry.
+    xpages: [[u64; XPAGE_BITS / 64]; 8],
     /// The write entries it filled for pages of the watched window (`mem::Watch`), `nwatched` of them; their pages
     /// may be written without a miss until [`Tlb::unwatch`] drops them. At the end: JIT code reaches nothing here.
     watched: [Watched; WATCHED],
     nwatched: u32,
     /// The watch's generation this TLB last caught up with (`Tlb::catch_up`).
     pub watch_gen: u32,
+}
+
+/// Bits in each of `Tlb::xpages`' maps.
+const XPAGE_BITS: usize = 4096;
+
+/// The word and bit of `va`'s page in a `Tlb::xpages` map: its page number
+/// (TBI's top byte aside) folded to 12 bits, so that 16 MiB of consecutive
+/// pages never share one.
+#[inline]
+fn xpage_bit(va: u64) -> (usize, u64) {
+    let p = (va & VA_PAGE) >> 12;
+    let h = (p ^ p >> 12 ^ p >> 24) as usize & (XPAGE_BITS - 1);
+    (h / 64, 1 << (h % 64))
 }
 
 /// The most watched write entries a TLB records; the next drops them all first.
@@ -250,7 +274,28 @@ impl Tlb {
         self.rblk.fill(0);
         self.ng_len = 0;
         self.xng = [false; 2];
+        self.xpages = [[0; XPAGE_BITS / 64]; 8];
         self.low_global = false;
+    }
+
+    /// Records that EL `el`'s instruction fetches translated `va`'s page
+    /// (global unless `ng`), whether or not its entry is cached: the
+    /// transfer cache may get entries for it from now on.
+    #[inline]
+    fn fetched(&mut self, el: usize, va: u64, ng: bool) {
+        let (w, b) = xpage_bit(va);
+        self.xpages[(el * 2 + ng as usize) * 2 + (va >> 55 & 1) as usize][w] |= b;
+        if ng {
+            self.xng[el] = true;
+        }
+    }
+
+    /// Whether the transfer cache may hold entries for `va`'s page.
+    #[inline]
+    fn xpage(&self, va: u64) -> bool {
+        let (w, b) = xpage_bit(va);
+        let half = (va >> 55 & 1) as usize;
+        (0..4).any(|m| self.xpages[m * 2 + half][w] & b != 0)
     }
 
     /// Drops every nG entry: the global ones match any ASID.
@@ -260,6 +305,8 @@ impl Tlb {
         for el in 0..2 {
             if core::mem::take(&mut self.xng[el]) {
                 self.bump_el(el);
+                self.xpages[(el * 2 + 1) * 2] = [0; XPAGE_BITS / 64];
+                self.xpages[(el * 2 + 1) * 2 + 1] = [0; XPAGE_BITS / 64];
             }
         }
         if n <= NG_SLOTS {
@@ -380,11 +427,15 @@ impl Tlb {
     /// Drops the page holding `va` from every array, whatever its top byte (TBI).
     pub(crate) fn flush_va(&mut self, va: u64) {
         self.stats.flushes += 1;
-        // The page's VAs fill 1024 consecutive transfer cache slots.
-        let first = (va >> 2) as usize & (XC_ENTRIES - 1) & !1023;
-        for x in &mut self.xc[first..first + 1024] {
-            if (x.tag ^ va) & VA_PAGE == 0 {
-                *x = Xc::default();
+        // The page's VAs fill 1024 consecutive transfer cache slots, which
+        // hold none of its entries unless instruction fetches translated it
+        // (most of Linux's flushes are for data pages).
+        if self.xpage(va) {
+            let first = (va >> 2) as usize & (XC_ENTRIES - 1) & !1023;
+            for x in &mut self.xc[first..first + 1024] {
+                if (x.tag ^ va) & VA_PAGE == 0 {
+                    *x = Xc::default();
+                }
             }
         }
         for a in 0..TLB_SLOTS {
@@ -961,6 +1012,10 @@ impl<'a> Mmu<'a> {
         let device = w.device() && u != Use::Exec;
         if let Some(t) = &mut self.tlb {
             t.stats.walks += 1;
+            // Before any return below that hands out the translation, cached or not.
+            if u == Use::Exec {
+                t.fetched(el as usize & 1, va, w.ng);
+            }
         }
         // Not RAM: a device's page, if anything is there (`vm::Io` finds out). Its data entries
         // ([`MMIO`]) send the next access to the bus without a walk.

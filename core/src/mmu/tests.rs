@@ -869,7 +869,11 @@ fn transfer_cache_entries_die_with_their_generation() {
     t.xc_fill(0x2000, 2, 7, 4);
     t.flush_all();
     assert!(!live(t, 0x1000, 3) && !live(t, 0x2000, 2));
-    // A flush by VA drops its page's entries, whatever their top byte (TBI).
+    // A flush by VA drops its page's entries, whatever their top byte (TBI),
+    // once instruction fetches translated it (as they had for any entry).
+    t.fetched(1, 0x1000, false);
+    t.fetched(0, 0x1000, false);
+    t.fetched(1, 0x5000, false);
     t.xc_fill(0x1000, 3, 7, 4);
     t.xc_fill(0x1ffc, 2, 7, 4);
     t.xc_fill(0x2000, 2, 7, 4);
@@ -897,6 +901,82 @@ fn transfer_cache_entries_die_with_their_generation() {
     t.xc_fill(0x1000, 3, 7, 4);
     t.bump();
     assert_eq!((t.xgen, t.xc[0x400].to), ([1, 1], 0));
+}
+
+/// A flush by VA scans the transfer cache only for a page that instruction
+/// fetches translated (`Tlb::xpages`), by EL, global or nG and VA half: the
+/// nG pages' marks go with the nG entries, the global ones' with everything,
+/// and neither with the transfer cache's entries alone (the TLB's may fill
+/// them again without a walk).
+#[test]
+fn a_flush_by_va_scans_the_transfer_cache_for_fetched_pages() {
+    const HI: u64 = 0xffff_0000_0000_3000;
+    let mut p = Pt::new();
+    p.map(0x1000, 3, 0x9000 | PAGE); // global, EL1
+    p.map(0x2000, 3, 0xa000 | PAGE | AP_EL0_RW | PXN | 1 << 11); // EL0, nG
+    p.map(HI, 3, 0xb000 | PAGE);
+    p.map(0x4000, 3, 0xc000 | PAGE | 1 << 11); // nG, EL1
+    let el0 = Cpu {
+        pstate: M_EL0T,
+        ..cpu()
+    };
+    let mut v = Vcpu::new(cpu());
+    let live = |t: &Tlb, va: u64, regime: u64| {
+        let e = t.xc[(va >> 2) as usize & (XC_ENTRIES - 1)];
+        e.tag == va | regime && e.to >> 48 == t.xgen[regime as usize & 1]
+    };
+    // Fetched, filled, flushed: gone.
+    let fetch = |v: &mut Vcpu, c: &Cpu, va: u64| {
+        Mmu::new(&p.r.mem, Some(&mut v.tlb)).fetch(c, va).unwrap();
+    };
+    fetch(&mut v, &cpu(), 0x1000);
+    fetch(&mut v, &el0, 0x2000);
+    fetch(&mut v, &cpu(), HI);
+    v.tlb.xc_fill(0x1000, 3, 7, 4);
+    v.tlb.xc_fill(0x2004, 2, 7, 4);
+    v.tlb.xc_fill(HI, 3, 7, 4);
+    v.tlb.flush_va(0x2000);
+    v.tlb.flush_va(HI);
+    assert!(live(&v.tlb, 0x1000, 3));
+    assert!(!live(&v.tlb, 0x2004, 2) && !live(&v.tlb, HI, 3));
+    // A page no fetch translated (a data page) isn't scanned: an entry there
+    // (which nothing fills) stays.
+    v.tlb.xc_fill(0x7000, 3, 7, 4);
+    v.tlb.flush_va(0x7000);
+    assert!(live(&v.tlb, 0x7000, 3));
+    // The other half's page of the same number isn't fetched either.
+    v.tlb.xc_fill(0x3000, 3, 7, 4);
+    v.tlb.flush_va(0x3000);
+    assert!(live(&v.tlb, 0x3000, 3));
+    v.tlb.flush_all();
+    // Dropping the nG entries keeps the global page's mark (its TLB entry
+    // stays, and fills the transfer cache again without a walk), also where
+    // they were EL1's and its transfer cache entries went with them.
+    fetch(&mut v, &cpu(), 0x1000);
+    fetch(&mut v, &cpu(), 0x4000);
+    fetch(&mut v, &el0, 0x2000);
+    let was = v.tlb.xgen;
+    v.tlb.flush_ng();
+    assert!(v.tlb.xgen[0] != was[0] && v.tlb.xgen[1] != was[1]);
+    fetch(&mut v, &cpu(), 0x1000); // a TLB hit
+    v.tlb.xc_fill(0x1000, 3, 7, 4);
+    v.tlb.flush_va(0x1000);
+    assert!(!live(&v.tlb, 0x1000, 3));
+    // Dropping blocks (the transfer cache's entries, not the TLB's) keeps
+    // the nG page's.
+    fetch(&mut v, &el0, 0x2000);
+    v.tlb.bump();
+    fetch(&mut v, &el0, 0x2000); // a TLB hit
+    v.tlb.xc_fill(0x2004, 2, 7, 4);
+    v.tlb.flush_va(0x2000);
+    assert!(!live(&v.tlb, 0x2004, 2));
+    // Its fetch again, then the nG entries dropped: its mark goes, as its
+    // entry and the transfer cache's do.
+    fetch(&mut v, &el0, 0x2000);
+    v.tlb.flush_ng();
+    v.tlb.xc_fill(0x2004, 2, 7, 4); // what nothing fills now
+    v.tlb.flush_va(0x2000);
+    assert!(live(&v.tlb, 0x2004, 2));
 }
 
 /// FEAT_E0PD: TCR_EL1.E0PD1 (E0PD0) makes every EL0 access to the TTBR1

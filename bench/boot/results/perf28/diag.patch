@@ -1,0 +1,215 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index c6b99c50..83fb4c38 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -1280,6 +1280,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             },
+             Next::None => {
+                 if op == Some(Op::RET) {
++                    if r.returns_to(i).is_some() {
++                        c.local_get(emit::DEPTH).if_();
++                        emit::dbump(&mut c, 6);
++                        c.end();
++                    }
++                    c.local_get(emit::DEPTH).if_();
++                    emit::dbump(&mut c, 7);
++                    c.end();
+                     emit::ret_up(&mut c, len);
+                 }
+                 if e.jc && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
+@@ -1340,6 +1348,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+     // returns to the caller's continuation (docs/jit.md "Calls").
+     let to_miss = |c: &mut emit::Func| {
+         let miss = emit::To::Func(e.miss(b.key), 0);
++        emit::dbump(c, 18);
+         emit::transfer(c, x, len, e.bt, miss, 0);
+     };
+     let Some(&(f, tlen, entry)) = f else {
+@@ -1404,6 +1413,7 @@ fn call(
+     cont(c);
+     if e.jc && b.key & KEY_MMU != 0 {
+         let miss = emit::To::Func(e.miss(b.key), 0);
++        emit::dbump(c, 19);
+         emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
+     }
+     c.ret(len);
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index c1b03150..974cdc88 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -1967,6 +1967,11 @@ pub fn unreturned(c: &mut Func) {
+ 
+ /// The transfer cache probe of [`indirect`], for the VA in `ADDR` and an i32
+ /// condition on the stack: the entry's tag, its generation and its length.
++pub fn dbump(c: &mut Func, i: u32) {
++    let o = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, stats) + offset_of!(crate::mmu::TlbStats, diag)) as u32 + 8 * i;
++    c.local_get(VCPU).local_get(VCPU).i64_load(o).i64_const(1).i64_add().i64_store(o);
++}
++
+ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: Xfer) {
+     const TO: u32 = BASE; // i64 scratch
+     // The entry, `vcpu + XC + ((va >> 2) & (XC_ENTRIES - 1)) * 16`.
+@@ -1985,6 +1990,7 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
+     c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
+     c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
+     c.op(GE_U).op(AND).hint(true).if_();
++    dbump(c, 8);
+     if let Some(chk) = check {
+         c.local_get(VCPU).i64_const(-1).call(chk);
+     }
+@@ -2032,6 +2038,25 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) ->
+     const JCE: u32 = HOST; // i32 scratch
+     let mut c = Func::default();
+     let (arr, base, phys) = tlb;
++    dbump(&mut c, 9);
++    // Why it missed: the entry's tag and generation.
++    c.local_get(VCPU).i64_load(PC).local_set(ADDR);
++    xc_entry(&mut c);
++    c.i64_load(XC_LO).local_set(KEY);
++    c.local_get(KEY).op(EQZ + WC).if_();
++    dbump(&mut c, 12);
++    c.else_();
++    c.local_get(KEY).local_get(ADDR).i64_const(regime as i64).op(OR + W).op(EQ + WC).if_();
++    c.local_get(TLBE).i64_load(XC_LO + 8).i64_const(48).op(SHR_U + W);
++    c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).if_();
++    dbump(&mut c, 14);
++    c.else_();
++    dbump(&mut c, 11);
++    c.end();
++    c.else_();
++    dbump(&mut c, 13);
++    c.end();
++    c.end();
+     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+     c.local_get(ADDR);
+@@ -2064,6 +2089,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) ->
+         .op(GE_U)
+         .op(AND);
+     c.hint(true).if_();
++    dbump(&mut c, 10);
+     // The entry: tag, then idx | len << 32 | gen << 48.
+     xc_entry(&mut c);
+     c.local_get(ADDR)
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index dbc35796..3ac44301 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -1800,7 +1800,7 @@ impl Table {
+ 
+     /// The helper calls so far by instruction class, most frequent first,
+     /// one `<Op> <calls>` per line, NUL-terminated.
+-    pub fn helper_report(&mut self) -> *const u8 {
++    pub fn helper_report(&mut self, d: &[u64]) -> *const u8 {
+         let mut ops: Vec<(u64, crate::decode::Op)> = self
+             .helper_ops
+             .iter()
+@@ -1810,6 +1810,9 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        for (i, n) in d.iter().enumerate() {
++            self.report.push_str(&format!("XD{i} {n}\n"));
++        }
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+@@ -2291,6 +2294,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+         let r = key.map_or(Err(1), |k| jit.enter(k, pc, mem));
+         if vr.tlb.xdrops != jit.table.drops {
+             vr.tlb.xdrops = jit.table.drops;
++            vr.tlb.stats.diag[7] += 1;
+             vr.tlb.bump();
+         }
+         if let Ok((idx, len)) = r
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 70438963..6eb3ad59 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -459,11 +459,12 @@ pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
+ #[unsafe(no_mangle)]
+ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+     // SAFETY: guaranteed by the caller.
+-    unsafe { &mut *v }
+-        .jit
++    let v = unsafe { &mut *v };
++    let d = v.tlb.stats.diag;
++    v.jit
+         .cache
+         .as_deref_mut()
+-        .map_or(core::ptr::null(), |j| j.table.helper_report())
++        .map_or(core::ptr::null(), |j| j.table.helper_report(&d))
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument
+diff --git a/core/src/mmu.rs b/core/src/mmu.rs
+index b91e9ece..07361e7f 100644
+--- a/core/src/mmu.rs
++++ b/core/src/mmu.rs
+@@ -211,6 +211,16 @@ pub struct TlbStats {
+     /// Whole-TLB, nG and by-VA invalidations (TLBI, ASID and MMU-enable
+     /// changes).
+     pub flushes: u64,
++    pub diag: [u64; 20],
++}
++
++#[inline(always)]
++pub fn dns() -> u64 {
++    #[cfg(target_arch = "wasm32")]
++    // SAFETY: a host function.
++    return (unsafe { crate::vm::now_ms() } * 1e6) as u64;
++    #[cfg(not(target_arch = "wasm32"))]
++    0
+ }
+ 
+ impl Tlb {
+@@ -243,6 +253,7 @@ impl Tlb {
+     }
+ 
+     pub(crate) fn flush_all(&mut self) {
++        self.stats.diag[6] += 1;
+         self.stats.flushes += 1;
+         self.bump();
+         self.e.fill(Slots::default());
+@@ -257,8 +268,10 @@ impl Tlb {
+     pub(crate) fn flush_ng(&mut self) {
+         let n = self.ng_len as usize;
+         self.stats.flushes += 1;
++        self.stats.diag[4] += 1;
+         for el in 0..2 {
+             if core::mem::take(&mut self.xng[el]) {
++                self.stats.diag[5] += 1;
+                 self.bump_el(el);
+             }
+         }
+@@ -382,11 +395,22 @@ impl Tlb {
+         self.stats.flushes += 1;
+         // The page's VAs fill 1024 consecutive transfer cache slots.
+         let first = (va >> 2) as usize & (XC_ENTRIES - 1) & !1023;
++        self.stats.diag[0] += 1;
++        let t0 = dns();
++        let mut cl = 0;
+         for x in &mut self.xc[first..first + 1024] {
+             if (x.tag ^ va) & VA_PAGE == 0 {
+                 *x = Xc::default();
++                cl += 1;
+             }
+         }
++        let t1 = dns();
++        let t2 = dns();
++        self.stats.diag[15] += t1 - t0;
++        self.stats.diag[16] += t2 - t1;
++        self.stats.diag[1] += cl;
++        self.stats.diag[2] += (cl != 0) as u64;
++        
+         for a in 0..TLB_SLOTS {
+             if (self.e[index(va)].0[a].tag ^ va) & VA_PAGE == 0 {
+                 self.drop_slot(index(va) * TLB_SLOTS + a);
+@@ -397,6 +421,7 @@ impl Tlb {
+         let hi = (va >> 55 & 1) as usize;
+         for el in 0..2 {
+             if self.xblk[el][hi] {
++                self.stats.diag[3] += 1;
+                 self.bump_el(el);
+             }
+         }

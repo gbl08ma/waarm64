@@ -4735,3 +4735,59 @@ other held register shares its local (falling back to one local each), failure c
 drop; then regions (live-in masks on the entry states, the settled emission's conflicts) for the rest. Out of
 proportion to ~0.1-0.4%. No core change; no step count moved. CI: `scripts/ci.sh` passes but for `tests/usb-keyboard.test.ts`'s glue
 case, a fixed 20 ms wait under load that passes alone (docs/backlog.md "Tests and tools").
+
+## PERF loop 28: the transfer cache's costs, counted (2026-11-14)
+
+The backlog's "The transfer cache's costs in kernel-heavy phases" (a miss costs a call to the shared miss function, a
+TLBI by VA a 16 KiB scan; M8 put both at ~0.7% of the boot from samples). Counted first with a diagnostic core
+(`results/perf28/diag.patch`: counters in `TlbStats`, `jit_helper_report` printing them, the scan timed with the host
+clock) in `bench/boot/userprof.ts` (Alpine's userspace benchmark in Node, its boot the first phase, `churn` the
+fork/exec phase). Raw: `results/perf28/` (README).
+
+**The flushes by VA** (per phase: boot 24,316, compress 1,026, Lua 5,658, churn 12,882, SQLite 9,688, shutdown
+6,328): **99.95% cleared nothing** (boot: 11 cleared any of 45 entries; the run: 60,054 flushes, 124 entries), being
+for data pages. A scan took ~0.4 µs (wasm, Node, the dev VM): 10 ms of the boot's 3.64 s (0.27%), 0.56% of churn,
+0.53% of shutdown, 0.03-0.18% of the compute phases, ~0.2% of the whole run. The nG drops (boot 3,596, 2,755 of them
+bumping an EL) and the rest are cheap.
+
+**The miss function** (calls per phase): boot 4.70M (probes hit 15.7M, missed 23%), compress 2.31M (8%), Lua
+1.98M (1.5%), churn 1.39M (25%), SQLite 1.73M (2.5%), shutdown 0.76M (13%). Through a probe the boot's misses are
+2.08M zeroed entries (a target not entered yet), 0.95M another VA's, 0.13M an older generation: little to save but
+the conflicts, and 65,536 entries measured as 16,384 in M8. But most calls outside the boot don't come from a probe:
+**host returns that land elsewhere than the call's continuation** (boot 1.57M, compress 2.00M, Lua 1.80M, churn
+0.82M, SQLite 1.20M, shutdown 0.46M: 10-16% of the host returns of the userspace phases), whose entry was valid; a
+by-VA link whose check failed is rare (boot 5,747, compress 67,648). Bucketed further (`diag-depth-marks.json`):
+all at a host depth under 8, and nearly none (boot 13,675) a region's mispredicted internal return. Two changes
+tried on that, neither kept: a probe's miss inside a guest call made a host call (it's a tail call), no change
+(`diag-miss-call-marks.json`); a loop around the call that host-calls the miss function at the mismatch and checks the
+continuation again, so a lost frame can't make every outer return miss (`diag-with-call-loop.patch`): compress
+2.00M → 1.38M, Lua 1.80M → 2.34M, so they aren't such a cascade. Their cause is the backlog's new entry.
+
+**Built: a flush by VA scans only a page that instruction fetches translated** (`Tlb::xpages`, docs/jit.md
+"Linking"): eight 4096-bit maps by EL, global or nG and VA half, set in `Mmu::miss` for every fetch it translates
+(cached or not), the nG ones cleared with the EL's nG entries when its transfer cache entries go, all of them by a
+flush of everything, none by a bump alone (the TLB's entries fill the cache again without a walk). Counted
+(`fix-counts-marks.json`): 1,058 of the 60,054 flushes scan (1.8%; the boot 652 of 24,316, 475 of them of the 3,408
+in the kernel's half, whose map holds the kernel's text). Memory: 4 KiB a vCPU. Arms by size (`tools/wasm-sizes.ts`):
+`Tlb::flush_va` 2,835 → 2,971 bytes, `Mmu::miss` 1,195 → 1,313, `flush_ng` 730 → 768.
+
+`bench/interp/ab-mac.sh` on the Mac (M4, Chrome for Testing 157.0.8103.78), base c283763f, base first in rounds 1 and
+3, fix first in round 2, ms:
+
+| | base r1 · r2 · r3; median | fix r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,872.7 · 3,979.0 · 3,921.3; **3,921.3** | 3,888.2 · 3,896.3 · 3,925.5; **3,896.3** (−0.6%) |
+| `alpine_user_jit_total` | 10,488.4 · 10,602.1 · 10,609.8; **10,602.1** | 10,532.3 · 10,553.5 · 10,589.9; **10,553.5** (−0.5%) |
+
+The rounds overlap: within the floor, as the counts bound it (~0.27% of the boot). Kept: it costs nothing the gates
+see and takes the scans out of the kernel-heavy phases where they were ~0.5%.
+
+**Tests**: `tests/baremetal/xcache.c` (2 vCPUs): a page of code remapped under a BLR between three callees, each
+remap followed by a TLBI (VAE1, VALE1, VAAE1, ASIDE1, VMALLE1; global through an ASIDE1 after an nG page ran at EL1,
+then a VAE1; after an IC IALLU, which keeps the TLB's entry), the call right after the TLBI the compiled loop's; then
+CPU 1 calling while CPU 0 remaps with each IS form. Its image is mapped by pages: a block entry in the half makes every
+flush by VA there drop the EL's whole transfer cache, which hid planted bugs. `mmu::tests` "a flush by VA scans the
+transfer cache for fetched pages". Planted, each failing both: never scanning; dropping the nG entries clearing the
+global maps; a bump clearing them; global fetches not marked. Skipping the IS by-VA flushes on the other vCPUs fails
+the bare-metal test too. `isb.bin` came out of `build.sh` different (the clang here), rebuilt with the others. No step
+count moved. CI: `scripts/ci.sh` (794 s) and `scripts/ci-jit.sh` pass.

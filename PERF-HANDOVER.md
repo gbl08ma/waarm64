@@ -16,7 +16,7 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 27)
+## State (2026-11-14, after loop 28)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
@@ -39,13 +39,18 @@ function fill that didn't, and doubling every fill cost Alpine's boot 2.8% and u
 fills cost about that (ten times the old ~0.3% bound); a filled function's 21 locals are half X registers. Loop 27
 estimated sharing X-register locals before building it (no code kept; docs/jit.md "Tried and not kept"): a
 diagnostic core's call-weighted fill turns fall 3.7% with single blocks shared (~0.1% of the boot) and 14.9% with
-non-looped regions too (at best ~0.4%; userspace ~0.25%), under the floor; the entry left the backlog.
+non-looped regions too (at best ~0.4%; userspace ~0.25%), under the floor; the entry left the backlog. Loop 28
+counted the transfer cache's costs: 99.95% of the flushes by VA cleared nothing (data pages), their 16 KiB scans
+~0.27% of the boot and ~0.5% of churn and shutdown in Node; a flush by VA now scans only a page instruction fetches
+translated (`Tlb::xpages`, 4 KiB a vCPU; 1.8% scan), the gates −0.6%/−0.5% on the Mac within the floor, kept. Most
+miss-function calls outside the boot are host returns that land elsewhere than the call's continuation (10-16% of
+the userspace phases' host returns): the backlog's new entry, in the Next row.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
+| **Next:** JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the 320 MiB budget session, V8's per-function overhead; host returns that land elsewhere (loop 28's follow-up) | measure before building |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
 
