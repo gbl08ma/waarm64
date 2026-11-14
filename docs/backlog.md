@@ -1696,17 +1696,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   string grows with each rebuild in the same tree and moves its guest's step count (469 steps for `linux-snd` from `#2`
   to `#1`); `linux-snd` pins `KBUILD_BUILD_VERSION=1`, `linux-gpu` (at `#2`) doesn't, so a rebuild would move `gpu`'s
   steps. Pin it in the commit that next rebuilds it (with the step change and the user's OK).
-- **Firefox and Safari compatibility pass** (moved out of M8 by the user, 2026-09-28; Chromium
-  stays the target): the user checks Firefox by hand (never automated here); WebKit could run
-  through Playwright. Matters most once the page is publicly hosted. **Found so far (the user's
-  check, 2026-09-29):** in Firefox the core runs and the kernel boots, but Debian doesn't find its
-  root filesystem and drops to the initramfs emergency shell, so /dev/vda (virtio-blk) doesn't
-  work there. Unverified suspects: the virtio-blk backend's disk path in the device worker
-  (range reads by synchronous XHR in a worker with `responseType = 'arraybuffer'`; qcow2's
-  compressed clusters through `DecompressionStream`), the overlay's OPFS sync access handles in
-  a nested worker (and now its Web Lock), or the device worker's doorbell (`Atomics.waitAsync`
-  on shared memory). The serial log (Save serial log) from Firefox would show whether virtio-blk
-  probed at all and what the first failing request was.
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
