@@ -12,7 +12,7 @@ use crate::cpu::{
     Cpu, DAIF, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_DIT, PSTATE_I, PSTATE_SS, SPSR_IL, sctlr,
 };
 use crate::decode::Op;
-use crate::mem::{Access, Fault, FaultKind};
+use crate::mem::{Access, Fault, FaultKind, Host};
 use crate::mmu::{self, Bus, Use};
 
 /// ISS CV = 1, COND = 0xE (AL): the condition fields for trapped AArch64
@@ -311,15 +311,29 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             }
             // Normal memory only: on what isn't RAM, an alignment fault, as on
             // hardware (never the run loop's `io`, which would store to a device).
+            // A block that is zero already isn't stored to (the permission is still
+            // a write's): nothing changes, and RAM the guest never touched stays
+            // untouched on the host, where a store would commit it (a wasm memory
+            // can't give pages back). The guest's allocator zeroes every page it
+            // hands out with DC ZVA (Linux's `init_on_alloc`), the balloon's hints
+            // all of its free memory (docs/devices.md "balloon").
             let a = c.reg(rt) & !63;
-            for k in 0..8 {
-                m.write(c, a + 8 * k, 8, 0).map_err(|f| match f.kind {
+            let h = m
+                .host_aligned(c, a, 64, Access::Write)
+                .map_err(|f| match f.kind {
                     FaultKind::Bus => Fault {
                         kind: FaultKind::Align,
                         ..f
                     },
                     _ => f,
                 })?;
+            let word = |k: u64| Host(h.0 + 8 * k);
+            // SAFETY: `host_aligned` found 64 aligned bytes of RAM at `h`.
+            if (0..8).any(|k| unsafe { m.mem().load(word(k), 8) } != 0) {
+                for k in 0..8 {
+                    // SAFETY: as above.
+                    unsafe { m.mem().store(word(k), 8, 0) };
+                }
             }
         }
         // No caches to maintain, but the address must translate (and, from

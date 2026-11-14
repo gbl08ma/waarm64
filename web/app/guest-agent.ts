@@ -96,6 +96,8 @@ directory (ssh-keygen's new keys are renamed in), systemd's random seed (`-`: ea
 RNDADDENTROPY and RNDRESEEDCRNG take CAP_SYS_ADMIN, which it has. KEYMAP's `loadkeys` (the consoles' keymap,
 agent/src/keymap.rs) takes CAP_SYS_TTY_CONFIG (KDSKBENT). POWER's request to logind (agent/src/power.rs) takes
 CAP_SYS_BOOT: logind grants a power-off to a caller that has it (else polkit decides, and a guest may have none).
+DROP (agent/src/drop.rs) writes `/proc/sys/vm/drop_caches`, the one file of `/proc/sys` writable through
+`ProtectKernelTunables` (the deeper path's mount wins).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/waarm64 is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -114,7 +116,7 @@ ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
 BindReadOnlyPaths=-/tmp/.X11-unix
-ReadWritePaths=-/etc/machine-id -/etc/ssh -/var/lib/systemd/random-seed
+ReadWritePaths=-/etc/machine-id -/etc/ssh -/var/lib/systemd/random-seed -/proc/sys/vm/drop_caches
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

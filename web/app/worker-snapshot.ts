@@ -12,6 +12,12 @@ import type { Machine } from './machine.ts';
 import { header, type Session } from './worker-header.ts';
 import { post, progress, state, throttled } from './worker-post.ts';
 
+/**
+ * How long the guest may take to hand over its free memory before a save (the balloon's hint, web/balloon.ts): its
+ * allocator takes every free block, zeroing it. Past it the save goes on (the guest's blocks come back after it).
+ */
+export const HINT_MS = 10_000;
+
 /** The tail of the serial output a snapshot carries, so a restored terminal isn't empty. */
 export const TAIL = 4096;
 
@@ -101,6 +107,17 @@ async function output(id: number, handle?: FileSystemFileHandle, keep?: string):
 }
 
 /**
+ * The guest's free memory handed over (zeroed, held by its balloon driver until `release`), right before the pause, so
+ * that the snapshot leaves it out: how long it took and its bytes (undefined: no balloon's hint).
+ */
+async function hint(r: Running, id: number) {
+  progress(id, msg('snapshots:worker-snapshot.phase.freeing'), 0);
+  const t0 = performance.now();
+  const h = await r.vm.hint(HINT_MS).catch(() => undefined);
+  return h && { hintMs: performance.now() - t0, hinted: h.bytes };
+}
+
+/**
  * Pauses the machine, writes its snapshot to `sink` (a stored disk written in place left out unless `whole`) and
  * resumes it, also on an error. The guest's clock stands still meanwhile: the page has the agent set it after.
  */
@@ -149,13 +166,21 @@ export async function saveSnapshot(
   try {
     const lz = await r.codec();
     out = await output(id, handle, keep);
-    const t0 = performance.now();
-    const w = await pausedWrite(r, id, out.sink, lz, { whole });
-    const pausedMs = performance.now() - t0;
+    let hinted;
+    let w;
+    let pausedMs;
+    try {
+      hinted = await hint(r, id);
+      const t0 = performance.now();
+      w = await pausedWrite(r, id, out.sink, lz, { whole });
+      pausedMs = performance.now() - t0;
+    } finally {
+      r.vm.release(); // the guest's free memory back to it, the save done or not
+    }
     progress(id, msg('snapshots:worker-snapshot.phase.finishing'), 1);
     await out.close();
     const { bytes, stateMs, blobBytes, pins } = w;
-    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins });
+    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted });
   } catch (err) {
     fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
   } finally {
@@ -212,6 +237,8 @@ export async function suspend(r: Running | undefined, id: number) {
   let closing = false;
   try {
     const lz = await r.codec();
+    // A restored machine's balloon gives the hinted memory back (web/balloon.ts `restore`); a failed suspend here.
+    await hint(r, id);
     progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
     if (!(await r.vm.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
     paused = true;
@@ -223,6 +250,7 @@ export async function suspend(r: Running | undefined, id: number) {
     state('suspended', { note: msg('machine:worker-snapshot.suspended', { size: bytes }) });
   } catch (err) {
     if (paused && !closing) r.vm.resume();
+    if (!closing) r.vm.release();
     fail(new MsgError('machine:worker-snapshot.suspend.failed', {}, { cause: err }));
   } finally {
     snapshotting = false;

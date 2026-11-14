@@ -9,7 +9,7 @@
 import { CAP, DESKTOP, type GuestOs } from '../../agent-frame.ts';
 import { AgentLink, pageCaps } from '../agent-link.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
-import { clockSync } from '../settings.ts';
+import { clockSync, dropCaches } from '../settings.ts';
 import type { ClipboardShare } from '../clipboard.ts';
 import type { AgentChannels } from '../run/start-message.ts';
 
@@ -37,6 +37,9 @@ const DESKTOP_WORDS: Record<number, string> = {
   [DESKTOP.WAYLAND]: 'wayland',
   [DESKTOP.X11]: 'x11',
 };
+
+/** How long the guest's caches may take to drop before a snapshot goes on without (a `sync` of what it hasn't written). */
+export const DROP_WAIT_MS = 15_000;
 
 /** How often the page compares the wall clock with `performance.now()`. */
 export const SLEEP_CHECK_MS = 10_000;
@@ -128,6 +131,14 @@ export class AgentActions {
   /** The guest was restored from a template: its agent renews its identity (web/app/agent-link.ts `renew`). */
   renew() {
     this.#link?.renew();
+  }
+
+  /**
+   * Has the guest drop its clean caches (DROP), right before a snapshot or Suspend, under Preferences' switch; resolves
+   * once it did, or failed, or the agent can't (none, no `CAP.DROP`), or `DROP_WAIT_MS` passed.
+   */
+  async dropCaches(): Promise<void> {
+    if (dropCaches()) await this.#link?.dropCaches(DROP_WAIT_MS);
   }
 
   /** Sets the guest's clock to the browser's, under Preferences' switch; false: not sent (off, or no agent yet). */

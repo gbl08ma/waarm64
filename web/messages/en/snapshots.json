@@ -695,6 +695,10 @@
     "message": "Restoring the machine",
     "note": "Line on the boot card and the machine's state in the status bar while a snapshot's machine is made."
   },
+  "worker-snapshot.phase.freeing": {
+    "message": "Freeing the guest's unused memory",
+    "note": "The machine's state in the status bar right before a snapshot or Suspend pauses the machine: the guest hands its free memory over, so the snapshot leaves it out."
+  },
   "worker-snapshot.phase.pausing": {
     "message": "Pausing the machine",
     "note": "The machine's state in the status bar when a snapshot or Suspend pauses the machine."

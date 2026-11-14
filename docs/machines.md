@@ -382,7 +382,10 @@ copy stale.
 The Machines page (`MachinesPage.svelte` and its panes and tabs, `#machines` in the address), its tabs, wizards and storage footer:
 [frontend.md](frontend.md) "The Machines page". `web/app/machines.ts` is what it does to the records (make, copy,
 delete, edit, attach, detach, reorder; refused while the machine runs), `web/app/disks.ts` what it does with disks and
-their overlays.
+their overlays. Preferences (`PreferencesPane.svelte`, this browser's, `web/app/settings.ts`): leaving the page
+warns, the guest drops its caches before a snapshot (devices.md "The caches dropped before a snapshot"), the guest's
+clock is set after a restore (frontend.md "The guest's clock"), the on-screen keyboard's modifiers, Vulkan's shader
+budget, the status bar.
 
 ## 8. Where the code is
 

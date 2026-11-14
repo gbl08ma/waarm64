@@ -1968,9 +1968,16 @@ pub fn hot<B: Fast, const RICH: bool>(
                     if p as usize & 7 != 0 {
                         break 'run SLOW;
                     }
-                    for k in 0..8 {
-                        // SAFETY: `fast_in` found 64 bytes of RAM at `p`, aligned (checked).
-                        unsafe { mem::store_aligned(p.add(8 * k), 8, 0) };
+                    // A block that is zero already isn't stored to (`interp::sys`'s DC ZVA).
+                    // SAFETY: `fast_in` found 64 bytes of RAM at `p`, aligned (checked).
+                    let any = (0..8).fold(0, |a, k| {
+                        a | unsafe { mem::load_aligned(p.add(8 * k), 8) }.unwrap_or(1)
+                    });
+                    if any != 0 {
+                        for k in 0..8 {
+                            // SAFETY: as above.
+                            unsafe { mem::store_aligned(p.add(8 * k), 8, 0) };
+                        }
                     }
                 }
                 K::Fp => {

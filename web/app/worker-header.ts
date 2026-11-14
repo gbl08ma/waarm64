@@ -65,12 +65,14 @@ function slotsOf(h: SnapshotHeader, m: StartMessage, machine: Machine, name: str
       msg('snapshots:worker-header.devicesUnknown', { name }),
       new MsgError('snapshots:worker-header.devicesUnknown.cause', { machine: machine.title }),
     );
-  // A snapshot from before the clock device (virtio-rtc) or the notify socket (virtio-vsock) is made without it: neither
-  // holds state the guest needs, and the rest is the same.
+  // A snapshot from before the clock device (virtio-rtc), the notify socket (virtio-vsock) or the balloon is made
+  // without it: none holds state the guest needs, and the rest is the same.
   const without = (...k: string[]) => all.filter((s) => !k.includes(s.kind));
-  const here = [all, without('clock'), without('vsock'), without('clock', 'vsock')].find(
-    (l) => kinds.join() === l.map((s) => s.kind).join(),
-  );
+  const lists = [[], ['clock'], ['vsock'], ['clock', 'vsock']].flatMap((k) => [
+    without(...k),
+    without(...k, 'balloon'),
+  ]);
+  const here = lists.find((l) => kinds.join() === l.map((s) => s.kind).join());
   if (!here)
     throw failure(
       'snapshot',

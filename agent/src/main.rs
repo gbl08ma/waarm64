@@ -29,6 +29,7 @@ mod prelude {
 
 mod clip;
 mod console;
+mod drop;
 mod frame;
 mod keymap;
 mod lease;
@@ -74,7 +75,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::KEYMAP
     | frame::cap::COPY
     | frame::cap::OS
-    | frame::cap::POWER;
+    | frame::cap::POWER
+    | frame::cap::DROP;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -186,6 +188,10 @@ struct Agent {
     fitrim: trim::Fitrim,
     trimming: Option<lease::Job>,
     trimmed: Option<u8>,
+    /// DROP's kernel switch (the tests' is a file), its child, and DROPPED's status once done.
+    drop: drop::Paths,
+    dropping: Option<lease::Job>,
+    dropped: Option<u8>,
     /// KEYMAP: the layout the session has and the page's that differs (for the children); the boot's file of it
     /// (the tests' is theirs); the consoles' `loadkeys`, running.
     keymap: keymap::Current,
@@ -252,6 +258,9 @@ impl Agent {
             fitrim: trim::fitrim,
             trimming: None,
             trimmed: None,
+            drop: drop::Paths::default(),
+            dropping: None,
+            dropped: None,
             keymap: keymap::Current::default(),
             environment: "/etc/environment".into(),
             loadkeys_at: keymap::places("loadkeys"),
@@ -575,6 +584,7 @@ enum Tag {
     Keygen,
     Lease,
     Trim,
+    Drop,
     Loadkeys,
     Power,
 }
@@ -620,6 +630,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.powering {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Power);
+        }
+        if let Some(j) = &s.agent.dropping {
+            fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
+            tags.push(Tag::Drop);
         }
         if let Some(j) = &s.agent.loadkeys {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
@@ -673,6 +687,11 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                 Tag::Trim => {
                     if let Some(j) = s.agent.trimming.take() {
                         s.agent.trimmed = Some(trim::done(j));
+                    }
+                }
+                Tag::Drop => {
+                    if let Some(j) = s.agent.dropping.take() {
+                        s.agent.dropped = Some(drop::done(j));
                     }
                 }
                 Tag::Power => {
@@ -737,6 +756,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         }
         if let Some(st) = s.agent.trimmed.take() {
             frame::encode(frame::TRIMMED, &[st], &mut s.out);
+        }
+        if let Some(st) = s.agent.dropped.take() {
+            frame::encode(frame::DROPPED, &[st], &mut s.out);
         }
         if let Some(st) = s.agent.powered.take() {
             frame::encode(frame::POWERED, &[st], &mut s.out);
@@ -836,6 +858,14 @@ impl Session<'_> {
                     }
                 }
             }
+            // The caches dropped before a snapshot (src/drop.rs). One run at a time, as TRIM's.
+            frame::DROP if self.agent.dropping.is_none() => match drop::spawn(&self.agent.drop) {
+                Ok(j) => self.agent.dropping = Some(j),
+                Err(e) => {
+                    log("drop: fork", Some(e));
+                    self.agent.dropped = Some(drop::status::FAILED);
+                }
+            },
             // The machine's layout: the session's, where it hasn't it (src/keymap.rs): the child's to set in the
             // compositor or the X server, the consoles' here.
             frame::KEYMAP => {

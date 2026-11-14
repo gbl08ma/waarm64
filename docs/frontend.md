@@ -678,7 +678,11 @@ whose 3D state would add 64 MiB or more (the GPU worker's count of its resources
 `VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md "Snapshots with 3D in use"); the
 same for a stored machine's kept snapshot. **Before anything touches the machine** (that question, the picker, the USB
 ports emptied, the guest's input held), Snapshot, a kept snapshot and Suspend ask the worker whether a device
-would refuse it now (`snapshot-check`: Vulkan in use, a video decoding), and say the failure at once if so. The worker pauses it (`vm.pause()`), writes the file with
+would refuse it now (`snapshot-check`: Vulkan in use, a video decoding), and say the failure at once if so. Then, with
+the guest's input held, the guest's free memory is handed over so the file leaves it out (the state line: [Freeing the
+guest's unused memory](ui:snapshots:worker-snapshot.phase.freeing)): the guest agent drops the guest's caches under
+Preferences' switch (devices.md "The caches dropped before a snapshot"), then the worker has the balloon's hint taken
+(devices.md "balloon": tens of ms; `hintMs` and `hinted` in `data-snapshot`), and gives the memory back after the save. The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for

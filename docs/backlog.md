@@ -341,11 +341,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the blocks freed, so a trim of GBs can hold the guest's I/O for seconds; the full one after the agent's trim too).
   The page's Debian doesn't mount with `discard`: without the guest agent the user runs `fstrim`, or waits for
   `fstrim.timer` (with it: devices.md "Disk space handed back").
-- **The storage-full test hung once** (`tests/page-quota.test.ts`, `scripts/ci-machines.sh` 2026-11-13): Debian's ext4
-  aborted its journal at the full storage (as the test's header says it does at times), and the guest's `dd` then never
-  returned within 300 s, where it usually fails with I/O errors; the test alone passed right after. Since BETTERAGENT's
-  trim the storage-full notice also has the agent trim and the page compact the overlays (devices.md "Disk space handed
-  back"): not yet known whether that path plays a part. Next: the agent's journal and the device worker's at a repeat.
 - **A handle read back off the record:** in an off-the-record profile (Incognito; Playwright's `newContext`), Chromium 153
   dies reading a record that holds a `FileSystemHandle` from IndexedDB (storing it is fine; on a disk profile all is):
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
@@ -1840,3 +1835,11 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   swapchain takes the prime blit. Seen with Mesa 26.2.5 (Arch's `vulkan-virtio`) in our desktop guest. Fix: compare the
   DRM render node's major and minor (`VK_EXT_physical_device_drm`, which Venus fills from the virtgpu device) when the
   device isn't on PCI.
+- **WebAssembly's memory-control proposal would let the emulator give guest memory back to the host** (a note in its
+  favour for the proposal's champions, not a bug; [Overview](https://github.com/WebAssembly/memory-control/blob/main/proposals/memory-control/Overview.md)):
+  a wasm memory can't shrink or decommit pages, so guest RAM the guest has freed stays committed in the browser for the
+  tab's life, zeroed or not (no browser drops zero pages: the user's question, 2026-11-14). Its `memory.discard` would
+  let the balloon's free page reporting ([devices.md](devices.md) "balloon") hand the reported blocks back to the host
+  instead of only zeroing them, so a guest's RSS would follow what it uses, as a KVM guest's does with
+  `MADV_DONTNEED`. Worth a comment on the proposal's repository with our use case and numbers (Debian's snapshot
+  after a dropped page cache: 450 MB, 203 MB with half the free memory zeroed).

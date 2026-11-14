@@ -216,7 +216,7 @@ export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds only some machines have (their record's switches; the notify socket, a `firmware` machine's). */
-type OptionalKind = 'mouse' | 'touch' | 'clock' | '9p' | 'vsock';
+type OptionalKind = 'mouse' | 'touch' | 'clock' | '9p' | 'vsock' | 'balloon';
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | OptionalKind | 'blk';
 /** The vCPUs' optional features: web/cpu-features.ts's table (`CPU_DEFAULT` the ones a machine has unless turned off). */
@@ -224,8 +224,8 @@ export { CPU_DEFAULT, CPU_FEATURES, type CpuFeature };
 /**
  * The features and devices the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and
  * suspended machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's
- * `cpu`) and devices (the notify socket, `vsock`, on every `firmware` machine since: a snapshot from before restores
- * without it, web/app/worker-header.ts `slotsOf`), whatever the machine's are now, so the hash needn't tell them apart.
+ * `cpu`) and devices (the notify socket, `vsock`, on every `firmware` machine since, and the balloon, on every machine
+ * since: a snapshot from before restores without them, web/app/worker-header.ts `slotsOf`), whatever the machine's are now, so the hash needn't tell them apart.
  */
 const UNHASHED_CPU: CpuFeature[] = ['sha3'];
 export const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));
@@ -235,7 +235,8 @@ export const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.
  * (machines.md §4.1), so that a device kind added later is appended after them only on machines
  * that have it. The network adapters are where the one card was (docs/networking/adapters.md §4). `attachment` is the disk's
  * index in the machine's list, `adapter` the adapter's. The notify socket (`vsock`, unless false: every `firmware`
- * machine has it) is after the disks: it moved no machine's disks (their slots, the firmware's boot entries).
+ * machine has it) is after the disks: it moved no machine's disks (their slots, the firmware's boot entries). The
+ * balloon (unless false: every machine has it; web/balloon.ts) is last, after it.
  */
 export function slots(m: {
   nets: number;
@@ -245,6 +246,7 @@ export function slots(m: {
   clock?: boolean;
   shares?: boolean;
   vsock?: boolean;
+  balloon?: boolean;
   attachments: unknown[];
 }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
@@ -260,6 +262,7 @@ export function slots(m: {
     ...(m.shares ? [{ kind: '9p' as const }] : []),
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
     ...(m.vsock === false ? [] : [{ kind: 'vsock' as const }]),
+    ...(m.balloon === false ? [] : [{ kind: 'balloon' as const }]),
   ];
 }
 
@@ -305,7 +308,7 @@ export const hashed = (s: Shape): Shape => ({
   ...s,
   jitMiB: undefined,
   cpu: hashedCpu(s.cpu),
-  devices: s.devices.filter((k) => k !== 'vsock'),
+  devices: s.devices.filter((k) => k !== 'vsock' && k !== 'balloon'),
 });
 
 /**

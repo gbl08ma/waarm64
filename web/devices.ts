@@ -5,6 +5,7 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { msg, msgOf, type Msg, type WireError } from './msg.ts';
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
+import { balloon, balloonEntry, type Balloon } from './balloon.ts';
 import { vsockDevice, vsockEntry, type VsockSpec } from './vsock-device.ts';
 import { p9, type P9Files } from './9p.ts';
 import { folders9p, type FolderSpec } from './9p-folders.ts';
@@ -60,6 +61,7 @@ export type DeviceSpec =
   | GpuSpec
   | SndSpec
   | { type: 'clock' }
+  | { type: 'balloon' }
   | VsockSpec;
 
 export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][]; swap?: string };
@@ -213,6 +215,8 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'rng': return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
     // virtio-rtc (web/clock.ts): no features (no alarms), the requestq alone; no config space.
     case 'clock': return { entry: [BigInt(CLOCK_ID), 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
+    // Free page reporting and hinting (web/balloon.ts): never inflated.
+    case 'balloon': return balloonEntry();
     // systemd's notify socket and the guest agent's port (web/vsock-device.ts): a virtio-vsock, the guest's CID 3.
     case 'vsock': return vsockEntry();
     case 'blk': {
@@ -1087,6 +1091,8 @@ export class Devices {
   private signal: number;
   private wakes: number[];
   private backends: Backend[];
+  /** The balloon's backend, if the machine has one (`hint`). */
+  private balloon?: Balloon;
   private epochs: number[];
   /** The xHCI's devices (web/usb.ts). */
   readonly usb?: Usb;
@@ -1125,6 +1131,7 @@ export class Devices {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
         case 'clock': return clock(ctx, deterministic);
+        case 'balloon': return (this.balloon = balloon(ctx));
         case 'vsock': return vsockDevice(ctx, d);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
@@ -1173,6 +1180,19 @@ export class Devices {
       this.epochs = shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
       this.backends.forEach((b, i) => { if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]); });
     }
+  }
+
+  /**
+   * The balloon's free page hint (web/balloon.ts), right before a snapshot or a suspend: resolves once the guest said
+   * STOP (it holds every free block it could take, zeroed) or after `ms`; undefined without a balloon whose driver hints.
+   */
+  hint(ms: number) {
+    return this.balloon?.hint(ms) ?? Promise.resolve(undefined);
+  }
+
+  /** The hinted blocks given back to the guest (DONE), after the save. */
+  release() {
+    this.balloon?.release();
   }
 
   /** Device `i`'s changed blocks (4 KiB each, ascending) if it is a disk with an overlay, for a snapshot. */

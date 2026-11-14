@@ -6,7 +6,7 @@
 // What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
 // page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it, DISPLAY on one
 // with a screen of virtio-gpu's; RENEW needs only the agent's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO),
-// RENEW once after a template's restore (`renew`), LEASE after a restore (`lease`), TRIM (`trim`), COPY (`copy`), POWER (`power`), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the guest's OS as it names it (`os`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// RENEW once after a template's restore (`renew`), LEASE after a restore (`lease`), TRIM (`trim`), DROP (`dropCaches`), COPY (`copy`), POWER (`power`), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the guest's OS as it names it (`os`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
 // connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
 // clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
 // and `window.__clipboard`.
@@ -107,7 +107,7 @@ export class AgentLink {
   private renewSent = false;
   /** What the agent's RENEWED said (the tests read it). */
   renewed?: { done: number; failed: number };
-  /** The answers awaited (`lease`'s LEASED, `trim`'s TRIMMED, `copy`'s COPIED, `power`'s POWERED): their payload, or `gone` when the connection ends first. */
+  /** The answers awaited (`lease`'s LEASED, `trim`'s TRIMMED, `dropCaches`'s DROPPED, `copy`'s COPIED, `power`'s POWERED): their payload, or `gone` when the connection ends first. */
   private waiting: { type: number; done: (payload?: Uint8Array | 'gone') => void }[] = [];
   /** `hello`'s waiters, which the run's end (`close`) settles. */
   private helloWaits: ((h: Hello | undefined) => void)[] = [];
@@ -215,6 +215,15 @@ export class AgentLink {
    */
   trim(ms: number): Promise<number | undefined> {
     return this.ask(FRAME.TRIM, CAP.TRIM, FRAME.TRIMMED, ms).then(first);
+  }
+
+  /**
+   * The guest's clean caches dropped (DROP: right before a snapshot, so the memory they held is free for the balloon's
+   * hints): DROPPED's status, or undefined if the agent can't (no `CAP.DROP`), the connection ends first, or nothing
+   * comes within `ms`.
+   */
+  dropCaches(ms: number): Promise<number | undefined> {
+    return this.ask(FRAME.DROP, CAP.DROP, FRAME.DROPPED, ms).then(first);
   }
 
   /** Whether the agent said it reads the text console's screen (its HELLO has COPY). */

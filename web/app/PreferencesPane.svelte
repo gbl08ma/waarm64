@@ -1,6 +1,6 @@
 <!--
   The Machines page's Preferences (docs/machines.md §7): this browser's, for every machine. Leaving the page warns, the
-  guest's clock catches up after a pause, the on-screen keyboard's modifiers, the shaders' cache budget, and the status
+  guest drops its caches before a snapshot, the guest's clock catches up after a pause, the on-screen keyboard's modifiers, the shaders' cache budget, and the status
   bar's elements (StatusEditor.svelte).
 -->
 <script lang="ts">
@@ -23,6 +23,7 @@
 
   let warnOnLeave = $state(leaveWarning());
   let setClock = $state(settings().clockSync !== false);
+  let dropCaches = $state(settings().dropCaches !== false);
   let shaderMiB = $state(settings().shaderMiB ?? CACHE_BUDGET / 2 ** 20);
   const DEFAULT_SHADER_MIB = CACHE_BUDGET / 2 ** 20;
   /** The budgets offered, the one set among them. */
@@ -51,6 +52,14 @@
       note={t('machines:PreferencesPane.leaveWarning.note')}
     >
       {t('machines:PreferencesPane.leaveWarning')}
+    </Check>
+    <Check
+      bind:checked={dropCaches}
+      onchange={() => remember({ dropCaches })}
+      field="drop-caches"
+      note={t('machines:PreferencesPane.dropCaches.note')}
+    >
+      {t('machines:PreferencesPane.dropCaches')}
     </Check>
     <Check
       bind:checked={setClock}

@@ -2758,10 +2758,18 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             } else {
                 Guard::Bits(offset_of!(Cpu, sctlr_el1) as u32, crate::cpu::sctlr::DZE)
             };
+            // A block that is zero already isn't stored to (`interp::sys`'s DC ZVA: RAM
+            // the guest never touched stays uncommitted on the host).
             access(c, cx, i, here, 64, true, &[guard], 0, |c, off| {
+                c.local_get(HOST).ram(LOAD_U[3], 0, off);
+                for k in 1..8 {
+                    c.local_get(HOST).ram(LOAD_U[3], 0, off + 8 * k).op(OR + W);
+                }
+                c.op(EQZ + WC).op(EQZ).if_();
                 for k in 0..8 {
                     c.local_get(HOST).i64_const(0).ram(STORE[3], 0, off + 8 * k);
                 }
+                c.end();
             });
         }
         _ => return false,

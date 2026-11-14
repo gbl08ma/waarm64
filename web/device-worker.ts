@@ -8,6 +8,7 @@
 // the worker.
 import { CLOSE_MS, Devices, stateBuffers, type DevicesInit } from './devices.ts';
 import { toWire, type Msg, type WireError } from './msg.ts';
+import type { Hinted } from './balloon.ts';
 import { registerUsbOpener } from './usb.ts';
 import { webHidOpener, type WebHidLike } from './webhid.ts';
 import { webUsbOpener, type WebUsbLike } from './webusb.ts';
@@ -24,6 +25,8 @@ export type ToDeviceWorker =
   | { type: 'written'; id: number; device: number }
   | { type: 'blocks'; id: number; device: number; blocks: number[] }
   | { type: 'compact'; id: number; measure?: boolean }
+  | { type: 'hint'; id: number; ms: number }
+  | { type: 'release' }
   | { type: 'close' };
 /** Device worker → owner. */
 export type FromDeviceWorker =
@@ -35,7 +38,7 @@ export type FromDeviceWorker =
   | { type: 'drained' }
   | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
   | { type: 'refusal'; refused?: WireError }
-  | { type: 'disk'; id: number; written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; error?: string }
+  | { type: 'disk'; id: number; written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; hinted?: Hinted; error?: string }
   | { type: 'closed'; stats?: unknown };
 
 // The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).
@@ -86,6 +89,15 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
       (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
     );
   }
+  else if (e.data.type === 'hint') {
+    // The balloon's free page hint before a snapshot (web/balloon.ts), answered when the guest said STOP or the wait ended.
+    const id = e.data.id;
+    devices!.hint(e.data.ms).then(
+      (hinted) => self.postMessage({ type: 'disk', id, hinted } satisfies FromDeviceWorker),
+      (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
+    );
+  }
+  else if (e.data.type === 'release') devices!.release();
   else if (e.data.type === 'close') {
     // What the backends hold back (a shared folder's write sessions) lands first, bounded: a host that doesn't answer doesn't keep the page.
     void Promise.race([devices?.drain().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_MS))]).then(() => {

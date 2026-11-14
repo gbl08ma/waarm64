@@ -208,7 +208,7 @@ async function save(page: Page, name: string) {
   const path = join(dir, name);
   await download.saveAs(path);
   await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
-  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
+  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number; hintMs?: number; hinted?: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, ...info };
 }
@@ -431,7 +431,9 @@ for (let run = 1; run <= RUNS; run++) {
     await onSerial(page, 'echo waarm64-kept-$((6*7)) >/root/waarm64-mark && echo disk-kept-$((6*7)) >/root/snapmark && sync && SNAPVAR=ram-kept-$((6*7)) && echo sy""nced\n');
     await shows(page, /synced/);
     const saved = await save(page, 'debian.waarm64snap');
-    console.log(`# debian snapshot: ${(saved.bytes / 1e6).toFixed(1)} MB, machine paused ${saved.pausedMs.toFixed(0)} ms`);
+    console.log(`# debian snapshot: ${(saved.bytes / 1e6).toFixed(1)} MB, machine paused ${saved.pausedMs.toFixed(0)} ms, ${((saved.hinted ?? 0) / 2 ** 20).toFixed(0)} MiB hinted in ${saved.hintMs?.toFixed(0)} ms`);
+    // The balloon's hint ran before the pause (web/balloon.ts): most of the guest's free memory handed over, then back.
+    assert.ok((saved.hinted ?? 0) > 256 << 20, `the guest handed over its free memory (${saved.hinted} bytes)`);
     assert.equal(await stateOf(page), 'running');
     await onSerial(page, 'echo sti""ll-$((6*7))\n');
     await shows(page, /still-42/);
@@ -497,6 +499,11 @@ for (let run = 1; run <= RUNS; run++) {
     await shows(p2, /sy""nced\s*synced/);
     await onSerial(p2, 'clear; echo var=[$SNAPVAR]; sync; echo 3 >/proc/sys/vm/drop_caches; cat /root/snapmark; echo re""ad\n');
     await shows(p2, /var=\[ram-kept-42\][^]*?disk-kept-42\s*read/);
+    // The restored guest's balloon driver held the hinted memory: its backend said DONE at the start, so it's free again.
+    await onSerial(p2, "clear; echo ==fr\"\"ee $(awk '/MemFree/{print int($2/1024)}' /proc/meminfo)\n");
+    await shows(p2, /==free \d+/);
+    const free = Number(/==free (\d+)/.exec(await terminal(p2))![1]);
+    assert.ok(free > 256, `the restored guest has its free memory back (${free} MiB free)`);
     // And the disk takes writes: a new file, synced, read back from the disk.
     await onSerial(p2, 'echo after-$((6*7)) >/root/after && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/after && echo wr""itten\n');
     await shows(p2, /after-42[^]*?written/);

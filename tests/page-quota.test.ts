@@ -2,8 +2,8 @@
 // lowered through the DevTools protocol (`Storage.overrideQuotaForOrigin`, which OPFS's sync handles obey: they throw
 // `QuotaExceededError` or come back short), the guest writes past it, its writes fail (I/O errors), and the page says
 // the storage is full, once, while the machine runs on. Whether the guest's writes land again once there's room isn't
-// checked here: a refused write of its own (journald's) aborts ext4's journal at times, and the root filesystem then
-// fails everything not cached (EIO) until a restart; tests/devices.test.ts checks the telling again. `estimate()`
+// checked here: a refused write of its own (journald's, the boot's written back late) aborts ext4's journal, and the root
+// filesystem then fails everything not cached (EIO) until a restart, so the boot's writes are synced first; tests/devices.test.ts checks the telling again. `estimate()`
 // doesn't report the override (it still says the profile's quota), so only the words are checked, not the numbers. The remote
 // disk's block cache is off (`diskcache=0`): the quota is the overlay's. Opt-in with WAARM64_DISTROS=debian
 // (scripts/ci-machines.sh); one Debian boot.
@@ -86,6 +86,10 @@ test('the storage full under a running guest: its writes fail, and the page says
     await type(page, 'root\n');
     await shows(page, /root@\S+:~# /);
 
+    // The boot's own writes landed first (the AppArmor cache, systemd's timer stamps): written back while the storage is
+    // full, they abort ext4's journal and the shell fails everything after (that was the test's hang at times, and every
+    // time once the balloon's driver moved the boot's timing, 2026-11-14).
+    assert.equal((await sh(page, 'sync')).status, 0);
     // Past the quota: dd's direct writes fail with I/O errors (not ENOSPC: the guest's filesystem has room).
     const fill = await sh(page, 'dd if=/dev/urandom of=/root/fill bs=1M count=1024 oflag=direct conv=fsync', 300_000);
     assert.notEqual(fill.status, 0, `dd: ${fill.out}`);

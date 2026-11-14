@@ -9,7 +9,8 @@
 // DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down); TRIM and TRIMMED, `CAP.TRIM` (the guest's
 // filesystems trimmed on the page's request); KEYMAP, `CAP.KEYMAP` (the machine's keyboard layout for the running session);
 // COPY and COPIED, `CAP.COPY` (the text console's screen as text, for the host's clipboard); OS, `CAP.OS` (the guest's
-// OS named, for the status bar); POWER and POWERED, `CAP.POWER` (the guest powers off or reboots itself).
+// OS named, for the status bar); POWER and POWERED, `CAP.POWER` (the guest powers off or reboots itself); DROP and
+// DROPPED, `CAP.DROP` (the guest's caches dropped before a snapshot).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -68,6 +69,10 @@ export const FRAME = {
   POWER: 26,
   /** The agent's: a u8 status (`POWERED`), whether the guest took POWER. */
   POWERED: 27,
+  /** The page's: the guest's kernel is to drop its clean caches (right before a snapshot: docs/devices.md "balloon"). */
+  DROP: 28,
+  /** The agent's: a u8 status (`DROPPED`), what became of DROP. */
+  DROPPED: 29,
 } as const;
 
 /** LEASE's payload (agent/src/lease.rs `decode`): a u8 count, then the MACs (6 bytes each) of the cards to renew. */
@@ -130,6 +135,14 @@ export const TRIMMED = {
   NONE: 1,
   /** A filesystem's trim failed (others may have been trimmed). */
   FAILED: 2,
+} as const;
+
+/** DROPPED's statuses (agent/src/drop.rs `status`). */
+export const DROPPED = {
+  /** The caches were dropped. */
+  DROPPED: 0,
+  /** The kernel's switch couldn't be written. */
+  FAILED: 1,
 } as const;
 
 /** COPIED's statuses (agent/src/screen.rs `status`). */
@@ -234,6 +247,8 @@ export const CAP = {
   OS: 1 << 14,
   /** POWER and POWERED: the guest powers off or reboots itself on the page's request (the agent's). */
   POWER: 1 << 15,
+  /** DROP and DROPPED: the guest's caches dropped on the page's request (the agent's). */
+  DROP: 1 << 16,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

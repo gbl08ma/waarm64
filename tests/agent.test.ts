@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, DROPPED, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
@@ -260,7 +260,7 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   assert.match(unit, /^PrivateTmp=yes$/m);
   assert.match(unit, /^BindReadOnlyPaths=-\/tmp\/\.X11-unix$/m);
   // RENEW (a template's restore): the machine id, the SSH host keys, systemd's random seed writable (none: no failure).
-  assert.match(unit, /^ReadWritePaths=-\/etc\/machine-id -\/etc\/ssh -\/var\/lib\/systemd\/random-seed$/m);
+  assert.match(unit, /^ReadWritePaths=-\/etc\/machine-id -\/etc\/ssh -\/var\/lib\/systemd\/random-seed -\/proc\/sys\/vm\/drop_caches$/m);
   assert.equal(c[2].data, '[Unit]\nWants=waarm64-agent.service\nAfter=waarm64-agent.service\n');
   for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
 });
@@ -1869,6 +1869,42 @@ test("a focus read still reading its image when a paste chord's text comes: the 
   await Promise.all([first, second]);
   const after = take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
   assert.deepEqual(after.map((o) => new TextDecoder().decode(o.inline)), ['later'], "the older image's offer sent after the text's");
+});
+
+test("the caches dropped before a snapshot (web/app/areas/agent-actions.ts `dropCaches`): DROP to an agent that says CAP.DROP, answered by DROPPED, under Preferences' switch", async (t) => {
+  const { AgentActions } = await import('../web/app/areas/agent-actions.ts');
+  const g = globalThis as unknown as { location?: unknown; localStorage?: unknown; window?: unknown; document?: unknown };
+  const saved = { location: g.location, localStorage: g.localStorage, window: g.window, document: g.document };
+  g.document = { body: { dataset: {} } };
+  let search = '';
+  g.location = { get search() { return search; } };
+  g.localStorage = { getItem: () => null, setItem: () => undefined };
+  g.window = {};
+  t.after(() => Object.assign(g, saved));
+  const { port1, port2 } = channel();
+  let drops = 0;
+  const reader = new FrameReader();
+  port2.onmessage = (e) => {
+    if (e.data.type !== 'data') return;
+    for (const f of reader.push(e.data.bytes)) {
+      if (f.type !== FRAME.DROP) continue;
+      drops++;
+      port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.DROPPED, new Uint8Array([DROPPED.DROPPED])) });
+    }
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+  };
+  const actions = new AgentActions(() => undefined, () => undefined);
+  actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => undefined);
+  await actions.dropCaches(); // no agent yet: nothing to ask
+  port2.postMessage({ type: 'open', open: true, conn: 1 });
+  port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.DROP })) });
+  await new Promise((r) => setTimeout(r, 30));
+  await actions.dropCaches();
+  assert.equal(drops, 1, 'DROP sent, DROPPED awaited');
+  search = '?dropcaches=0';
+  await actions.dropCaches();
+  assert.equal(drops, 1, 'off: nothing sent');
+  actions.end();
 });
 
 test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HELLO and on `syncClock`, under Preferences' switch; again when the wall clock moves away from performance.now() (the host slept)", async (t) => {

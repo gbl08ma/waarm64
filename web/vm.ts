@@ -1122,6 +1122,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** The disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts; `measure`: only their sizes): their files' bytes before and after. */
     compact: (measure = false) => devices.compact(measure),
     /**
+     * The balloon's free page hint (web/balloon.ts), with the machine running, right before a snapshot or a suspend:
+     * the guest holds its free memory, zeroed, once it resolves (after `ms` at most); undefined without a balloon whose
+     * driver hints. `release` gives it back after the save.
+     */
+    hint: (ms: number) => devices.hint(ms),
+    release: () => devices.release(),
+    /**
      * Why a snapshot would be refused now, or undefined, asked of the devices while the machine runs: a snapshot checks
      * it before it touches the machine (its input, the pause). `snapshot()` decides again.
      */
@@ -1679,6 +1686,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
       compact: (measure?: boolean) => d.compact(measure),
+      hint: (ms: number) => d.hint(ms),
+      release: () => d.release(),
       output: () => text, flush: async () => { if (failed) throw failed; },
       close: async () => {
         closed = true;
@@ -1705,6 +1714,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
       compact: (measure?: boolean) => d.compact(measure),
+      hint: (ms: number) => d.hint(ms),
+      release: () => d.release(),
       output: () => text, flush: async () => {}, close: async () => (d.close(), d.stats()),
     };
   }
@@ -1718,7 +1729,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
   const asked = new Map<number, (m: DiskAnswer) => void>();
   let askId = 0;
-  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: number[] } | { type: 'compact'; measure?: boolean }) => new Promise<DiskAnswer>((resolve, reject) => {
+  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: number[] } | { type: 'compact'; measure?: boolean } | { type: 'hint'; ms: number }) => new Promise<DiskAnswer>((resolve, reject) => {
     const id = askId++;
     asked.set(id, (a) => {
       asked.delete(id);
@@ -1777,6 +1788,9 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     written: async (i: number) => (await ask({ type: 'written', device: i })).written,
     blocks: async (i: number, blocks: number[]) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
     compact: async (measure?: boolean) => (await ask({ type: 'compact', measure })).compacted ?? { before: 0, after: 0 },
+    // Bounded here too: a worker that closes meanwhile answers nothing.
+    hint: async (ms: number) => (closing ? undefined : (await Promise.race([ask({ type: 'hint', ms }), new Promise<Partial<DiskAnswer>>((r) => setTimeout(() => r({}), ms + 2000))])).hinted),
+    release: () => { if (!closing) worker.postMessage({ type: 'release' } satisfies ToDeviceWorker); },
     kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
     flush: () => new Promise<void>((resolve) => {

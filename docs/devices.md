@@ -384,6 +384,16 @@ user sees changes:** not the status bar's state, not the boot card. Tests: the c
 `body[data-desktop]` (`tests/agent.test.ts`), and on Debian the sway and X11 page tests' waits (down and up again
 across a new session).
 
+**The caches dropped before a snapshot** (DROP; `agent/src/drop.rs`, `AgentActions.dropCaches`; the user's choice,
+2026-11-14): under Preferences' [Drop the guest's disk caches before a snapshot](ui:machines:PreferencesPane.dropCaches)
+(`settings().dropCaches`, on by default; `?dropcaches=1` or `0` decides for the page), a snapshot (to a file or kept)
+and Suspend first have the agent drop the guest's clean caches, so the memory they held is free when the balloon's hint
+takes it ("balloon" below): in a forked child, a `sync`, then `3` written to `/proc/sys/vm/drop_caches` (the page cache,
+dentries and inodes; the one file of `/proc/sys` the unit makes writable through `ProtectKernelTunables`:
+`ReadWritePaths`, the deeper mount wins). The page waits for DROPPED 15 s at most (`DROP_WAIT_MS`), the state line saying
+[Freeing the guest's unused memory](ui:snapshots:worker-snapshot.phase.freeing). The guest reads its files from its disk
+again afterwards. Tests: `serve_test.rs` (the switch written, FAILED without it).
+
 **Disk space handed back** (TRIM; `web/app/areas/trim-actions.ts`, `agent/src/trim.rs`; the user's choice,
 2026-11-13): a guest deletes files and its disks' overlays keep their blocks until it trims (blk below: a `discard`
 mount, or `fstrim.timer` once a week). The page has the agent trim them at three times: the Machines page's storage
@@ -515,7 +525,7 @@ to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
@@ -530,6 +540,8 @@ to the side that offers, request ids to the side that requests:
 | OS (25) | the pretty name, ID, VERSION_ID: a u8 length and UTF-8 each (at most 255 bytes, cut between characters) | the agent's, after its HELLO to a page whose HELLO has `CAP.OS` ("The guest's OS" above) |
 | POWER (26) | u8: 0 power off, 1 reboot | the page's, to an agent whose HELLO has `CAP.POWER` ("Power off and restart from the guest" above); one at a time, a second while one runs answered by its POWERED |
 | POWERED (27) | u8 status: 0 taken, 1 refused (an inhibitor) or failed, 2 no tool, 3 busy (an earlier request still runs) | the agent's, when its tool ended (`AgentLink.power`'s answer; the connection's end first: `gone`) |
+| DROP (28) | none | the page's, to an agent whose HELLO has `CAP.DROP` (bit 16), right before a snapshot or Suspend ("The caches dropped before a snapshot" above) |
+| DROPPED (29) | u8 status: 0 dropped, 1 the kernel's switch couldn't be written | the agent's, when the child ended (`AgentLink.dropCaches`'s answer) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |
@@ -642,6 +654,40 @@ clock ENODEV, a short request EINVAL, each as the 8-byte head alone (an OK respo
 takes any other size as an error). Deterministic runs read a fixed time (2026-09-01). It is checked against the
 driver's formats (`tests/clock.test.ts`), not yet against a running driver (backlog "Snapshots"). Machines have it as
 a device kind of their own (docs/frontend.md "The guest's clock").
+
+### balloon (ID 5): free memory left out of snapshots
+
+`{type: 'balloon'}` (`web/balloon.ts`; Linux's `virtio_balloon`, a module Debian's udev loads), on every machine of the
+page (after the notify socket: web/app/shape.ts `slots`, out of the shape's hash, and a snapshot from before restores
+without it: web/app/worker-header.ts `slotsOf`). It never inflates (`num_pages` stays 0): it is there for what the guest
+says of its free memory, so that a snapshot, which leaves zero pages out (platform.md "The snapshot file"), leaves that
+memory out too. Features FREE_PAGE_HINT (3) and REPORTING (5), not PAGE_POISON (without it Linux turns reporting off only
+in a guest that poisons or zeroes what it frees, whose free pages are what they are already); four queues of 128,
+compacted as virtio-mmio's Linux numbers them (inflateq 0, deflateq 1, then free_page_vq and reporting_vq where their
+features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint_cmd_id`).
+- **Free page reporting**, all the time: the guest hands over free blocks (2 MiB and up, ~2 s after they were freed, a
+  sixteenth of a free list per pass, so a large free takes tens of seconds) and keeps them aside until the request
+  completes. The backend zeroes each page of them that isn't zero (`zeroPages`) and only reads the others.
+- **Free page hinting**, right before a snapshot or a suspend (the machine worker's `hint`, `HINT_MS` = 10 s at most:
+  web/app/worker-snapshot.ts; `Vm.hint` → the device worker → `Devices.hint`): the backend writes a new command id (from
+  2) into the config, the driver allocates every free 4 MiB block it can get, sends their addresses after the id, and
+  ends with STOP: then the save pauses the machine. The guest holds the blocks until DONE (`release`, after the save; the
+  backend of a machine restored from it says DONE at its start, as the saved config's id is a hint's), or until its
+  shrinker gives some back under memory pressure, so the device **never writes them** (a block the shrinker gave back may
+  be the guest's again before its request is seen): they are zero because the guest's allocator zeroes what it hands out
+  (`init_on_alloc`, Debian's and Arch's default). A guest without it gains nothing; one without the driver, or before it
+  probed, isn't asked (no FEATURES_OK).
+- **Committing nothing:** a wasm memory can't give pages back, so a store of zeros to guest RAM the guest never touched
+  commits it on the host for the tab's life. Reporting only reads a page that is zero; the allocator's zeroing is
+  `DC ZVA`, which doesn't store over a zero block (cpu.md "ID registers and identification"; measured: 738 MiB hinted on an idle Debian,
+  Chromium's RSS unmoved but for the file's download).
+- Measured (Debian 13, 960 MiB, 2 vCPUs, 2026-11-14, one run each): after a boot 87 MB; the page cache filled
+  (650 MiB, `find /usr … cat`) 378 MB, or 126 MB with the agent's DROP first (122 MB again), against 452 MB and 450 MB
+  without the balloon (drop_caches alone frees pages with their old bytes). The hint took 10–45 ms; the guest has its
+  memory back after the save and after a restore of it (`free`: 846 MiB).
+- Not done: inflating the balloon (the page has no use for it: a wasm memory can't shrink), its statistics queue.
+  Giving the reported pages back to the browser needs WebAssembly's memory-control proposal (backlog "Upstream
+  reports").
 
 ### blk (ID 2)
 - Features `SEG_MAX` = 126, `RO` (or `FLUSH` when writable: an overlay, or a ramdisk); one queue of 128. `IN`, `GET_ID`,

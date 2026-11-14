@@ -118,6 +118,7 @@ const sound: Maker = (_slot, m) => ({
 const MAKERS: Record<DeviceKind, Maker> = {
   rng: () => ({ type: 'rng' }),
   clock: () => ({ type: 'clock' }),
+  balloon: () => ({ type: 'balloon' }),
   vsock: (_slot, m) => ({ type: 'vsock', port: m.ports.notify, agent: m.ports.agent }),
   '9p': shares,
   blk: disk,

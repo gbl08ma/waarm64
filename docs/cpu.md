@@ -196,7 +196,11 @@ match it step for step.
   writing code, which is what the JIT's invalidation relies on ([jit.md](jit.md)); IminLine = 9
   (2 KiB lines, the largest: an IC drops its whole page, so guests issue 2 a page, [jit.md](jit.md)
   "Invalidation and the stale-code checker"); DminLine, CWG and ERG 64 bytes.
-- `DCZID_EL0.BS` = 4: `DC ZVA` zeroes 64 bytes, as on the M4 (QEMU's `max` uses 512).
+- `DCZID_EL0.BS` = 4: `DC ZVA` zeroes 64 bytes, as on the M4 (QEMU's `max` uses 512). A block that is zero already
+  isn't stored to (the interpreter's paths and the JIT's: eight loads, then the stores only if one isn't zero; the
+  permission checked is still a write's): Linux zeroes every page it hands out with it (`init_on_alloc`), and a store
+  of zeros to RAM the guest never touched commits it on the host for good (devices.md "balloon"; `tests/core-wasm.test.ts`
+  "DC ZVA leaves zero blocks unwritten": 256 MiB zeroed, the process grows by far less, in every mode).
 - `CLIDR_EL1` = 0 (no caches, so set/way operations are NOPs).
 - The unnamed part of the ID space reads as zero.
 - Linux derives the hwcaps (and `/proc/cpuinfo`, and userspace's `getauxval`) from these.

@@ -289,6 +289,7 @@ export type FromWorker =
   | { type: 'snapshot-chunk'; id: number; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
+  /** `hintMs`, `hinted`: how long the guest took to hand over its free memory before the pause (web/balloon.ts), and its bytes (none: no balloon's hint). */
   | {
       type: 'snapshot-done';
       id: number;
@@ -297,6 +298,8 @@ export type FromWorker =
       stateMs: number;
       blobBytes: number;
       pins: SnapshotDisk[];
+      hintMs?: number;
+      hinted?: number;
     }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
   | { type: 'snapshot-error'; id: number; error: WireError }

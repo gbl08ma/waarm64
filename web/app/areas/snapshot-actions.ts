@@ -29,8 +29,11 @@ export type SnapshotDeps = Core & {
   askBytes(r: Run, post: (gpu: Worker, id: number) => void): Promise<number>;
   /** The error a snapshot or a suspend would end with now for a device's reason (the worker's `snapshot-check`), or none. */
   refusal(r: Run, what: 'snapshot' | 'suspend'): Promise<unknown>;
-  /** The guest agent sets the guest's clock (web/app/areas/agent-actions.ts): a save's pause held it still. */
-  syncClock(): void;
+  /**
+   * The guest agent (web/app/areas/agent-actions.ts): it sets the guest's clock (a save's pause held it still), and has
+   * the guest drop its clean caches right before a save (Preferences' switch: its memory is free for the balloon's hint).
+   */
+  agent: { syncClock(): void; dropCaches(): Promise<void> };
 };
 
 export const SNAPSHOT_SUFFIX = '.waarm64snap';
@@ -62,6 +65,11 @@ export class SnapshotActions {
    */
   #holdInput(r: Run) {
     r.input.hold(true);
+  }
+  /** Right before a save (input held): the guest's caches dropped, under Preferences' switch, said as the save's first phase. */
+  async #dropCaches() {
+    this.#progress(msg('snapshots:worker-snapshot.phase.freeing'), 0);
+    await this.#d.agent.dropCaches();
   }
   /** A save's phase in the state's words: with how far it is while that's known. */
   readonly #progress = (phase: Msg, f: number) =>
@@ -106,7 +114,7 @@ export class SnapshotActions {
   #over(r: Run, unplugged: Unplugged) {
     power.saving = false;
     r.input.hold(false);
-    if (r.live()) this.#d.syncClock();
+    if (r.live()) this.#d.agent.syncClock();
     void this.#d.plugBack(r, unplugged);
   }
   /** Says a snapshot was saved, if the machine runs on. */
@@ -169,14 +177,15 @@ export class SnapshotActions {
     const parts: Blob[] = [];
     try {
       this.#holdInput(r);
+      await this.#dropCaches();
       const done = await this.#write(r, { type: 'snapshot', handle, whole: o.whole }, (data) => {
         parts.push(new Blob([data as Uint8Array<ArrayBuffer>]));
       });
       if (!handle) download(new Blob(parts), suggestedName);
       parts.length = 0;
-      const { bytes, pausedMs, stateMs, blobBytes } = done;
-      // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes.
-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes });
+      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted } = done;
+      // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes, the balloon's hint.
+      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted });
       this.#saved(r, 'file', handle?.name ?? suggestedName, done);
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.noFile'));
@@ -203,6 +212,7 @@ export class SnapshotActions {
       await askPersist();
       const done = await m.store.writing(async () => {
         this.#holdInput(r);
+        await this.#dropCaches();
         const done = await this.#write(r, { type: 'snapshot', keep: snapshotPath(s.record.id, id) });
         const pins = done.pins.map(({ slot, overlay, generation, blocks, ram }: SnapshotDisk) => ({
           slot,
@@ -225,8 +235,8 @@ export class SnapshotActions {
         });
         return done;
       });
-      const { bytes, pausedMs, stateMs, blobBytes } = done;
-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, id });
+      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted } = done;
+      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, id });
       this.#saved(r, 'kept', name, done);
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.nothingKept'));
@@ -247,6 +257,11 @@ export class SnapshotActions {
     if (!unplugged || !this.#ready(r)) return;
     power.saving = true;
     this.#holdInput(r);
+    await this.#dropCaches();
+    if (!r.live()) {
+      power.saving = false;
+      return;
+    }
     r.save(
       { type: 'suspend' },
       {

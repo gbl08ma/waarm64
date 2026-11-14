@@ -947,6 +947,14 @@
     "message": "Ask before leaving this web app while a machine runs",
     "note": "Machines page, Preferences: the label of a box."
   },
+  "PreferencesPane.dropCaches": {
+    "message": "Drop the guest's disk caches before a snapshot",
+    "note": "Machines page, Preferences: the label of a box. Disk caches: the copies of files the guest's kernel keeps in its memory."
+  },
+  "PreferencesPane.dropCaches.note": {
+    "message": "Right before a snapshot or Suspend, the guest agent has the guest's kernel drop the copies of files it keeps in memory, so the snapshot leaves that memory out and takes less space. The guest reads those files from its disk again afterwards, so it may be slower for a while. Only machines that run the guest agent (their Settings tab) drop their caches.",
+    "note": "Machines page, Preferences: the note under Drop the guest's disk caches before a snapshot. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent."
+  },
   "PreferencesPane.clockSync.note": {
     "message": "The guest agent sets the guest's clock to your computer's when a snapshot is restored, after the pause of a snapshot or Suspend, and when your computer wakes from sleep. Only machines that run the guest agent (their Settings tab) can have their clock set. When this is off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.",
     "note": "Machines page, Preferences: the note under Set the guest's clock after a restore. The guest agent: the small program the emulator starts in the guest, the Settings tab's Run the guest agent."

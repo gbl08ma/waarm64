@@ -330,7 +330,8 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   backends' (`Backend.save`/`restore` in `web/devices.ts`: the deterministic rng's position; a
   virtio-gpu's resource table, scanout and cursor, whose pixels come back from the restored RAM,
   [devices.md](devices.md) "virtio-gpu"; 9p's in-memory tree refuses to be saved: [shares.md](shares.md) §6) with the serial input the guest hadn't been given, and
-  RAM in 1 MiB chunks without their zero pages, compressed by the core's LZ (`web/lz.ts`, an
+  RAM in 1 MiB chunks without their zero pages (the guest's free memory zero by then: the balloon's hint, devices.md
+  "balloon"), compressed by the core's LZ (`web/lz.ts`, an
   instance of the core of its own). A restore creates the VM without booting it, fills RAM from
   the file, has the core restore its state, starts the backends with theirs and serves the
   doorbell once. A parallel VM is paused first ("Pausing a VM").

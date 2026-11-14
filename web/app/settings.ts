@@ -29,6 +29,7 @@ export type Settings = {
   mouseLockMode?: LockMode;
   leaveWarning?: boolean;
   clockSync?: boolean;
+  dropCaches?: boolean;
   statusBar?: Item[];
   statusFullscreen?: boolean;
   osk?: { x: number; y: number; w: number; wc?: number; layout?: Layout };
@@ -46,6 +47,15 @@ export const leaveWarning = () => settings().leaveWarning !== false;
 export const clockSync = () => {
   const q = new URLSearchParams(location.search).getAll('clocksync').at(-1);
   return q !== undefined ? q !== '0' : settings().clockSync !== false;
+};
+/**
+ * Preferences: the guest agent has the guest drop its clean caches right before a snapshot or Suspend (on unless turned
+ * off; `?dropcaches=1` or `0` decides for the page, the last one if there are several), so the memory they held is free
+ * and the snapshot leaves it out (docs/frontend.md "Snapshots"). The guest reads its files from its disk again after.
+ */
+export const dropCaches = () => {
+  const q = new URLSearchParams(location.search).getAll('dropcaches').at(-1);
+  return q !== undefined ? q !== '0' : settings().dropCaches !== false;
 };
 const SETTINGS = 'waarm64.settings';
 export const settings = (): Settings => {

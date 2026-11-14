@@ -165,6 +165,7 @@ impl Harness {
             net: s("net"),
         };
         let trim_table = s("mountinfo");
+        let drop_caches = s("drop_caches");
         let (environment, loadkeys) = (s("environment"), s("loadkeys"));
         let screen = crate::screen::Paths {
             tty: s("tty0"),
@@ -200,6 +201,7 @@ impl Harness {
                 mountinfo: trim_table,
             };
             a.fitrim = record_trim;
+            a.drop = crate::drop::Paths { drop_caches };
             a.environment = environment;
             a.loadkeys_at = vec![loadkeys];
             a.screen = screen;
@@ -1040,6 +1042,30 @@ fn trims_each_filesystem_and_says_what_became_of_it() {
     std::fs::remove_file(r("boot/unsupported")).unwrap();
     assert_eq!(ask(&mut h).as_deref(), Some(&[status::FAILED][..]));
     assert_eq!(trims("root"), 3);
+}
+
+#[test]
+fn drops_the_caches_and_says_what_became_of_it() {
+    use crate::drop::status;
+    let mut h = Harness::start("drop");
+    let file = h.root.join("drop_caches");
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::DROP, 0, "the agent drops the caches");
+    // No kernel switch to write (a sandbox without it): FAILED.
+    h.page.send(frame::DROP, &[]);
+    assert_eq!(
+        h.page.next(frame::DROPPED, 5000).as_deref(),
+        Some(&[status::FAILED][..])
+    );
+    // The switch: `3` written to it (the page cache, dentries and inodes).
+    std::fs::write(&file, "").unwrap();
+    h.page.send(frame::DROP, &[]);
+    assert_eq!(
+        h.page.next(frame::DROPPED, 5000).as_deref(),
+        Some(&[status::DROPPED][..])
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "3\n");
 }
 
 #[test]

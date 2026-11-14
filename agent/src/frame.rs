@@ -63,6 +63,10 @@ pub const OS: u8 = 25;
 pub const POWER: u8 = 26;
 /// The agent's: a u8 status (`power::status`), whether the guest took POWER.
 pub const POWERED: u8 = 27;
+/// The page's: the guest's kernel is to drop its clean caches (src/drop.rs), right before a snapshot.
+pub const DROP: u8 = 28;
+/// The agent's: a u8 status, what became of DROP (`drop::status`).
+pub const DROPPED: u8 = 29;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -106,6 +110,8 @@ pub mod cap {
     pub const OS: u32 = 1 << 14;
     /// POWER and POWERED: the guest powers off or reboots itself on the page's request.
     pub const POWER: u32 = 1 << 15;
+    /// DROP and DROPPED: the guest's caches dropped on the page's request (before a snapshot).
+    pub const DROP: u32 = 1 << 16;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 

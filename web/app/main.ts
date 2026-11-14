@@ -241,7 +241,7 @@ const snapshots = new SnapshotActions({
   ...core,
   emptyPorts: (r, what) => usbRun.emptyPorts(r, what),
   plugBack: (r, was) => usbRun.plugBack(r, was),
-  syncClock: () => agentActions.syncClock(),
+  agent: agentActions,
   askBytes: (r, post) => {
     const gpu = r.gpu;
     return gpu ? replies.bytes.ask((id) => post(gpu, id), { ms: 1000, fallback: 0 }) : Promise.resolve(0);

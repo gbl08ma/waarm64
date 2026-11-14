@@ -246,6 +246,42 @@ for (const jit of [0, 4, 2]) {
   });
 }
 
+// DC ZVA doesn't store over a block that is zero already (docs/devices.md "balloon"): the guest's allocator zeroes every
+// page it hands out with it, and a store of zeros to RAM the guest never touched would make the host commit it (the
+// balloon's free page hints take all of the guest's free memory that way). A loop zeroes 256 MiB of fresh RAM: the
+// process grows by far less; a word planted in it is zeroed, with its block. Under the interpreter, the block
+// interpreter, the JIT and JIT-stress (the slow path's TLB misses, the inline path's hits).
+for (const jit of [0, 4, 1, 2]) {
+  test(`DC ZVA leaves zero blocks unwritten (jit ${jit})`, () => {
+    const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
+    const imports = coreImports(mem);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), imports);
+    imports.jit.bind(instance);
+    const ex = instance.exports as Record<string, (...a: (number | bigint)[]) => number>;
+    const [CODE, SPAN] = [1 << 20, 256 << 20];
+    const RAM = CODE + SPAN;
+    const ram = mem.grow(RAM / 65536) * 65536;
+    // loop: dc zva, x7; add x7, x7, #64; subs x8, x8, #1; b.ne loop; b .
+    new Uint32Array(mem.buffer, ram, 5).set([0xd50b7427, 0x910100e7, 0xf1000508, 0x54ffffa1, 0x14000000]);
+    const planted = ram + CODE + (100 << 20) + 0x48;
+    new BigUint64Array(mem.buffer, planted, 1)[0] = 0x5a5an;
+    const cfg = mem.grow(1) * 65536;
+    new BigUint64Array(mem.buffer, cfg, 32).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 0n, 0n, BigInt(jit)]);
+    const vm = ex.vm_new(ram, BigInt(RAM), cfg);
+    assert.notEqual(vm, 0);
+    const x = new BigUint64Array(mem.buffer, ex.vm_cpu(vm, 0), 32);
+    const blocks = SPAN / 64;
+    [x[7], x[8]] = [0x4000_0000n + BigInt(CODE), BigInt(blocks)];
+    const before = process.memoryUsage().rss;
+    ex.vm_run(vm, BigInt(4 * blocks + 16));
+    const grew = process.memoryUsage().rss - before;
+    assert.equal(x[8], 0n, 'the loop ran to its end');
+    assert.ok(new BigUint64Array(mem.buffer, planted - 8, 8).every((v) => v === 0n), "the planted word's block was zeroed");
+    assert.ok(grew < 64 << 20, `the process grew by ${(grew / 2 ** 20).toFixed(0)} MiB zeroing 256 MiB of zeros`);
+    ex.vm_free(vm);
+  });
+}
+
 // The page's split of a machine's RAM: memory 0 as large as the heap's floor leaves (1 MiB kept for the scratch page and
 // fw_cfg's files), then spill memories of up to 4 GiB; and the checks on a split a user sets.
 test('guest RAM splits into memory 0 and spill memories', () => {
