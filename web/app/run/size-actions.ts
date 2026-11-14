@@ -117,7 +117,7 @@ export class SizeActions {
     )
       return;
     await this.#power.exclusively(async () => {
-      await this.#power.stopCleanly();
+      if (!(await this.#power.stopCleanly())) return; // kept running: the settings unsaved
       s.record = await updateMachine(m.store, next);
       m.onRecord();
       m.takeSize();

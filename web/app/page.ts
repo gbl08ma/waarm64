@@ -28,7 +28,8 @@ export type Page = {
   openDisk(): Promise<void>;
   /** Opens stored machine `id` on this page. */
   openMachine(id: string): Promise<void>;
-  powerOff(): Promise<void>;
+  /** True: it is off now (false: it runs on: another stop under way, or the user kept it running). */
+  powerOff(): Promise<boolean>;
   /** The toolbar's Power off: asks, then stops the machine like pulling the plug. */
   powerOffAsked(): Promise<void>;
   /** Saves a disk to a file: the page's own (transient machine), or a stored disk with one of its overlays. */

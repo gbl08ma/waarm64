@@ -175,12 +175,18 @@ export class DiskExport {
     )
       return;
     await pw.exclusively(async () => {
+      const was = power.stateText;
       if (running) {
         messages.stateText(msg('disks:disk-export.trimming'));
         await this.#trim();
       }
-      // The guest shut down before its disk is saved (where its agent can): the file gets a clean disk.
-      await pw.stopCleanly();
+      // The guest shut down before its disk is saved (where its agent can): the file gets a clean disk. Kept running
+      // (the guest refused, the user said no): no file.
+      if (running && !(await pw.stopCleanly())) {
+        power.stateText = was;
+        return;
+      }
+      if (!running) await runner.stop();
       messages.setState('off');
       messages.stateText(msg('disks:disk-export.saving'));
       try {

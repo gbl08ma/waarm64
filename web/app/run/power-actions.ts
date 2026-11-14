@@ -35,13 +35,15 @@ export class PowerActions {
 
   /**
    * Runs `f` (a stop, then maybe a start) unless another is running: a second Restart click, or one
-   * during a disk reset, would start a machine beside the one being started, with nothing to stop it.
+   * during a disk reset, would start a machine beside the one being started, with nothing to stop it. False: another
+   * was running (`f` didn't run).
    */
-  async exclusively(f: () => Promise<void>) {
-    if (power.busy) return;
+  async exclusively(f: () => Promise<void>): Promise<boolean> {
+    if (power.busy) return false;
     power.switching = true;
     try {
       await f();
+      return true;
     } finally {
       power.switching = false;
     }
@@ -76,8 +78,8 @@ export class PowerActions {
   }
 
   /** Stops the machine and starts a new one (which resumes a suspended machine, unless `resume` is false): a stored machine as its record is now. */
-  restart(resume = true) {
-    return this.exclusively(async () => {
+  async restart(resume = true): Promise<void> {
+    await this.exclusively(async () => {
       const { runner, terminal } = this.#d;
       await runner.stop();
       if (!(await this.reloadStored())) return;
@@ -121,22 +123,30 @@ export class PowerActions {
     await this.restart();
   }
 
-  /** Stops the machine like pulling the plug, or (`cleanly`, the Machines page's) asking the guest first. */
-  powerOff(o: { cleanly?: boolean } = {}) {
-    return this.exclusively(async () => {
-      await (o.cleanly ? this.stopCleanly() : this.#d.runner.stop());
-      this.#d.messages.setState('off');
+  /**
+   * Stops the machine like pulling the plug, or (`cleanly`, the Machines page's) asking the guest first. True: it is
+   * off now; false: it runs on (another stop or start was under way, or the user kept it running).
+   */
+  async powerOff(o: { cleanly?: boolean } = {}): Promise<boolean> {
+    let off = false;
+    const ran = await this.exclusively(async () => {
+      off = o.cleanly ? await this.stopCleanly() : (await this.#d.runner.stop(), true);
+      if (off) this.#d.messages.setState('off');
     });
+    return ran && off;
   }
 
   /**
    * Stops the running machine for a change that keeps its disk (web/app/run/clean-stop.ts): the guest asked to shut
-   * down first where its agent can, a dialog meanwhile whose button powers off at once. Called within `exclusively`.
+   * down first where its agent can, a dialog meanwhile whose button powers off at once; the guest not taking it, the
+   * user asked whether to power off at once. Called within `exclusively`. False: the user kept it running (the
+   * change is to be dropped).
    */
-  stopCleanly() {
+  async stopCleanly(): Promise<boolean> {
     const run = this.#d.machine.run;
-    return stopCleanly({
+    const r = await stopCleanly({
       soft: () => this.#soft.request('off'),
+      pending: () => !!power.soft,
       canSoft: () => !!this.#d.agent.link?.canPower,
       up: () => !!run?.live() && isLive(power.state),
       dialog: () =>
@@ -144,8 +154,15 @@ export class PowerActions {
           title: t('machine:power-actions.shuttingDown.title'),
           ok: t('machine:power-actions.shuttingDown.now'),
         }),
+      hard: () =>
+        ask.confirm(t('machine:power-actions.shuttingDown.refused'), {
+          title: t('machine:power-actions.powerOff.title'),
+          ok: t('machine:power-actions.powerOff.ok'),
+          danger: true,
+        }),
       stop: () => this.#d.runner.stop(),
     });
+    return r !== 'kept';
   }
   /**
    * The toolbar's Power off: asked of the guest first (web/app/run/soft-power.ts); else (or a second Power off

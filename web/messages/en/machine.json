@@ -550,5 +550,9 @@
   "size-actions.settings.confirm.soft": {
     "message": "Restart {{name}} with its new settings? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
     "note": "Text of the question asked by the Settings tab's Save and restart while the machine runs, when its guest's agent can shut it down cleanly. {{name}} is the machine's name."
+  },
+  "power-actions.shuttingDown.refused": {
+    "message": "The guest didn't shut down (the message bar says why). Power off the machine now, like pulling the plug? Unsaved work in the guest will be lost. Cancel keeps it running, and the change isn't made.",
+    "note": "Question asked before a change on the Machines page (a disk's export, new settings, another machine opened, an edit that needs the machine off) when the guest was asked to shut down and refused or didn't answer."
   }
 }

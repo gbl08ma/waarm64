@@ -159,7 +159,7 @@ export class DiskActions {
     )
       return;
     await pw.exclusively(async () => {
-      await pw.stopCleanly();
+      if (!(await pw.stopCleanly())) return; // kept running: this machine stays
       runner.d.net.machineOff();
       const next = await loadStored(m.store, id);
       [m.stored, m.storedError, m.chosen] = [next, undefined, undefined];

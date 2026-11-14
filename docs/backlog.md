@@ -1641,7 +1641,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The clean power-off, the rest of it** (devices.md "Power off and restart from the guest"): `shutdown now`, the
   path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool); the
   Machines screen's clean stops (clean-stop.ts) run on Debian only through tests that cut them short (`answerAsks`
-  clicks Power off now).
+  clicks Power off now); their wait dialog queues behind a question already open (an alert fired just before), so
+  Power off now shows only once that one is answered (review/betteragent-loop13, low).
 - **The track review's deferred findings** (BETTERAGENT's end, 2026-11-14; `review/betteragent-agent`,
   `review/betteragent-page`): the session child's `sway_run` connects to sway's IPC blocking (a sway hung with its
   backlog full holds the child's loop; `setxkbmap` up to 5 s, each `sway_run` wait up to 2 s); a RandR run's late

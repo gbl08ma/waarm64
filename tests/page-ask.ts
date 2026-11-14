@@ -3,7 +3,7 @@
 // what to do: false clicks Cancel, a string types it into a prompt and clicks OK, anything else clicks OK.
 import type { Page } from 'playwright-core';
 
-export type Question = { kind: 'confirm' | 'alert' | 'prompt'; text: string };
+export type Question = { kind: 'confirm' | 'alert' | 'prompt' | 'wait'; text: string };
 let names = 0;
 
 /** Answers every question the page asks from now on (call it before `goto`; it also takes over a page already loaded). */

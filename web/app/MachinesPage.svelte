@@ -120,9 +120,10 @@
       danger: true,
     });
     if (!sure) return false;
-    await page.powerOff();
+    // Nothing stopped (another stop or start under way, the user kept it running): no edit.
+    const off = await page.powerOff();
     await records.reread();
-    return true;
+    return off;
   }
 </script>
 

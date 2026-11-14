@@ -64,8 +64,8 @@ export const ask = {
       value: '',
     }).then(() => undefined),
   /**
-   * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning) resolves `skipped`; Esc only takes the
-   * dialog down (the wait goes on without it).
+   * A wait the caller ends (`close`): its one button (`ok`, drawn as a warning, not focused) resolves `skipped`; Esc
+   * does nothing (Ask.svelte: taken down, it would leave no way to cut the wait short).
    */
   wait(text: string, o: Options = {}): { skipped: Promise<void>; close(): void } {
     let q: Question | undefined;

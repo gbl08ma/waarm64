@@ -13,7 +13,8 @@
   $effect(() => {
     if (q && !dialog.open) dialog.showModal();
     else if (!q && dialog.open) dialog.close();
-    if (q) queueMicrotask(() => (q.kind === 'prompt' ? input?.select() : okButton?.focus()));
+    // A wait's one button cuts the power: not focused (an Enter meant for the question before mustn't press it).
+    if (q && q.kind !== 'wait') queueMicrotask(() => (q.kind === 'prompt' ? input?.select() : okButton?.focus()));
   });
 </script>
 
@@ -24,7 +25,8 @@
   data-kind={q?.kind}
   oncancel={(e) => {
     e.preventDefault();
-    answer(false);
+    // A wait has no Cancel: its button, or its end, is the way out (taken down, it would leave no way to cut it short).
+    if (q?.kind !== 'wait') answer(false);
   }}
   aria-labelledby="ask-title"
 >
