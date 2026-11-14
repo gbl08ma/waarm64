@@ -40,12 +40,17 @@ function sourceOf(s: Source) {
   return { source: 'ram' as const, size: s.ramdisk, swap: s.swap };
 }
 
-/** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
+/**
+ * A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back), at
+ * the size the guest sees (a grown overlay's, past its source's: docs/machines.md §4.5).
+ */
 function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
   const s = d.source;
+  const from: ReturnType<typeof sourceOf> & { size?: number } = sourceOf(s);
   return {
     type: 'blk',
-    ...sourceOf(s),
+    ...from,
+    ...(d.size !== undefined && d.size > (from.size ?? 0) ? { size: d.size } : {}),
     overlay: 'ramdisk' in s ? undefined : d.overlay,
     identity: d.identity,
     serial: d.serial,

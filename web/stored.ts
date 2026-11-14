@@ -130,7 +130,7 @@ export async function mergeOverlay(diskPath: string, overlayPath: string, identi
   const files = await openOverlay(diskPath, identity);
   try {
     const m = readMeta(files.meta);
-    if (!writeMeta(files.meta, { generation: m.generation + 1, merging: overlayPath })) throw new MsgError('disks:stored.stateWriteFailed');
+    if (!writeMeta(files.meta, { ...m, generation: m.generation + 1, merging: overlayPath })) throw new MsgError('disks:stored.stateWriteFailed');
     return await copyIn(files, overlayPath, size, makeRoom);
   } finally {
     files.close();

@@ -10,6 +10,7 @@ import { makeRoom } from '../diskcache.ts';
 import { openSnapshot } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
+import type { OverlaySizes } from './disk-size.ts';
 import {
   adaptersOf,
   canonical,
@@ -30,13 +31,13 @@ import {
 import { overlayDir, snapshotPath, type Store } from './store.ts';
 import { msg, MsgError, t, type Msg } from '../i18n.ts';
 
-/** The machine's shape and its hash as it would run now (its disks by id). */
+/** The machine's shape and its hash as it would run now (its disks and overlays by id: an overlay's own size counts, §4.5). */
 export async function currentShape(
   m: MachineRecord,
   disks: (id: string) => DiskRecord | undefined,
-  opts: { display?: Display | 'none'; cpu?: CpuFeature[]; vulkan?: boolean } = {},
+  opts: { display?: Display | 'none'; cpu?: CpuFeature[]; vulkan?: boolean; overlays?: OverlaySizes } = {},
 ): Promise<{ shape: Shape; hash: string }> {
-  const shape = shapeOf(m, disks, { display: opts.display, cpu: opts.cpu ?? CPU_DEFAULT, vulkan: opts.vulkan });
+  const shape = shapeOf(m, disks, { ...opts, cpu: opts.cpu ?? CPU_DEFAULT });
   return { shape, hash: await shapeHash(shape) };
 }
 
@@ -71,6 +72,8 @@ type Step = {
   attachment: string;
   disk: DiskRecord;
   action: 'keep' | 'reuse' | 'fork' | 'fork-whole';
+  /** The disk's size as the snapshot saw it (a grown overlay's: its fork is as grown, §4.5). */
+  size: number;
   /** A kept overlay's generation (as pinned), or the reused fork's. */
   generation?: number;
   reuse?: string;
@@ -91,7 +94,7 @@ async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }): Prom
   const a = at === undefined ? undefined : r.m.attachments[at];
   const d = a && r.disks.get(a.disk);
   if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${r.m.name} doesn't have`);
-  const step = { slot: p.slot, attachment: a.id, disk: d };
+  const step = { slot: p.slot, attachment: a.id, disk: d, size: p.size || d.size };
   const keep: Step = { ...step, action: 'keep', generation: p.generation };
   const pinned = async () => (await overlayMeta(p.overlay)).generation === p.generation;
   if (p.overlay.startsWith('disks/')) {
@@ -107,7 +110,7 @@ async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }): Prom
 /** A disk whose overlay moved on: an earlier fork attached again, or a new fork (`replaceable`: the attached overlay). */
 async function forkStep(
   r: Restoring,
-  step: Pick<Step, 'slot' | 'attachment' | 'disk'>,
+  step: Pick<Step, 'slot' | 'attachment' | 'disk' | 'size'>,
   attached?: string,
 ): Promise<Step> {
   const reuse = await earlierFork(r.store, step.disk, r.snap.key);
@@ -139,7 +142,7 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
     action: 'write',
     overlay: overlayDir(overlay),
     identity: identityOf(s.disk),
-    size: s.disk.size,
+    size: s.size,
     whole,
   });
   if (s.action === 'reuse') {
@@ -148,7 +151,7 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
   }
   if (replace && s.action === 'fork' && a.overlay) return write(a.overlay);
   // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
-  const o = await createOverlay(r.store, s.disk, r.snap.name, { snapshot: r.snap.key, generation: 1 });
+  const o = await createOverlay(r.store, s.disk, r.snap.name, { snapshot: r.snap.key, generation: 1 }, s.size);
   a.overlay = o.id;
   a.inPlace = undefined;
   return write(o.id, s.action === 'fork-whole');

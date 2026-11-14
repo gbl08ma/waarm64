@@ -3,7 +3,10 @@
 // (a suspended machine's too); a restore keeps an overlay at its pinned generation, or writes the file's blocks into
 // another one (a fork), never into the one it pins unless asked (the default, a replace); a swap ramdisk's first page.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import type { DeviceSpec } from '../web/devices.ts';
 import { lzCodec } from '../web/lz.ts';
@@ -92,6 +95,48 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   await (await bootVm(module, { ...o, devices: devices(), restore: r3.restore })).close();
   assert.equal(await byteAt(name, 1), 0x11, 'replaced');
   assert.equal((await overlayMeta(name)).generation, 3, 'a replaced overlay goes on from its generation (2), never back to one a snapshot pinned');
+});
+
+// A grown overlay (docs/machines.md §4.5): over an image smaller than the guest's size, the device opens it at that
+// size (the spec's, as the page gives it), a snapshot pins that size, and a restore's fork keeps it in its meta.
+test("a grown overlay over a smaller image: the device opens it at the guest's size, a snapshot pins it, a fork keeps it", async () => {
+  const module = await compileCore(WASM);
+  const codec = await lzCodec(module);
+  const dir = mkdtempSync(join(tmpdir(), 'waarm64-grown-'));
+  try {
+    const img = join(dir, 'base.img');
+    writeFileSync(img, new Uint8Array(SIZE).fill(0x33));
+    const GROWN = 4 * SIZE;
+    const name = `grown-${process.pid}`;
+    const image = { size: SIZE, format: 'raw' as const, read: async (_o: number, len: number) => new Uint8Array(len).fill(0x33) };
+    // A block past the image's end, written as a machine would have.
+    const f = await openOverlay(name, 'grown-disk');
+    assert.ok(await overlay(image, f.data, f.map, f.meta, GROWN).write(GROWN - 4096, new Uint8Array(4096).fill(0x44)));
+    f.close();
+    const devices = (): DeviceSpec[] => [{ type: 'blk', url: pathToFileURL(img).href, size: GROWN, overlay: name, identity: 'grown-disk' }];
+    const o: BootOptions = { ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };
+    const vm = await bootVm(module, { ...o, devices: devices() });
+    await vm.runAsync(10_000);
+    await vm.settle();
+    const parts: Uint8Array[] = [];
+    await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+    await vm.close();
+    const file = new Blob(parts as BlobPart[]);
+    const { header } = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices() });
+    const [pin] = header.disks as { size: number; blocks: number }[];
+    assert.deepEqual([pin.size, pin.blocks], [GROWN, 1], 'pinned at the grown size, with the block past the image');
+    const fork = `${name}-fork`;
+    const r = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices(), plan: [{ slot: 0, action: 'write', overlay: fork, identity: 'grown-disk', size: GROWN }] });
+    await (await bootVm(module, { ...o, devices: devices(), restore: r.restore })).close();
+    assert.equal((await overlayMeta(fork)).size, GROWN, "the fork's own size");
+    const g = await openOverlay(fork, 'grown-disk');
+    const d = overlay(image, g.data, g.map, g.meta); // as the next start opens it
+    assert.equal(d.size, GROWN);
+    assert.deepEqual([(await d.read(0, 1))![0], (await d.read(SIZE, 1))![0], (await d.read(GROWN - 1, 1))![0]], [0x33, 0, 0x44]);
+    g.close();
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });
 
 // A swap ramdisk (web/app/guest-swap.ts): the device writes the swap area's first page over the empty ramdisk at its

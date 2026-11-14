@@ -5,6 +5,7 @@ import { params } from './knobs.ts';
 import { diskOf, type PageMachine, type Stored } from './page-machine.svelte.ts';
 import type { StartDisk } from '../protocol.ts';
 import { swapLabel } from '../guest-swap.ts';
+import { sizeSeen } from '../disk-size.ts';
 import { newId, serialOf, type DiskRecord } from '../shape.ts';
 import { diskDir, machineDir, overlayDir } from '../store.ts';
 import { diskSource, identityOf, refreshOverlay, refreshStored } from '../disks.ts';
@@ -106,10 +107,14 @@ async function storedDisks(m: PageMachine, s: Stored): Promise<{ disks: StartDis
       // A stored disk written in place is its own overlay, over zeros (web/stored.ts).
       if (d.kind === 'stored' && a.inPlace && !a.readOnly)
         return { ...base, source: { blank: d.size }, overlay: diskDir(d.id) };
+      const overlay = a.readOnly || d.kind === 'ramdisk' || !a.overlay ? undefined : a.overlay;
+      // Through a grown overlay the guest sees its own size (docs/machines.md §4.5), as the shape says.
+      const size = overlay ? sizeSeen(d, a, await m.store.get('overlays', overlay)) : d.size;
       return {
         ...base,
         source: (await sourceOf(m, d)).source,
-        overlay: a.readOnly || d.kind === 'ramdisk' || !a.overlay ? undefined : overlayDir(a.overlay),
+        overlay: overlay && overlayDir(overlay),
+        ...(size > d.size ? { size } : {}),
       };
     }),
   );

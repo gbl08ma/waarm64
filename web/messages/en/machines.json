@@ -443,6 +443,38 @@
     "message": "It's attached to {{machines}}. Detach it first.",
     "note": "Error details: the cause under the headline machines:store.diskAttached, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: as that entry's note says."
   },
+  "resize.failed": {
+    "message": "Couldn't resize the disk",
+    "note": "Error headline in the Resize dialog (Machines page, Disks: a stored disk's, a ramdisk's or an overlay's Resize…) when the resize is refused; its details are the line under it (one of the machines:resize.* causes)."
+  },
+  "resize.gone": {
+    "message": "The disk or overlay no longer exists. It may have been deleted in another tab.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. The disk or overlay being resized was deleted meanwhile."
+  },
+  "resize.notResizable": {
+    "message": "Only a disk stored in this browser, a ramdisk or an overlay can be resized. A disk read from a URL or a file, or a blank disk, grows through its overlays.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. Resize was asked of a disk that can't grow by itself."
+  },
+  "resize.unaligned": {
+    "message": "The new size, {{size}} bytes, isn't a multiple of {{sector}} bytes.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{size}}: the size asked for, bytes; {{sector}}: the multiple sizes are made of (512)."
+  },
+  "resize.notLarger": {
+    "message": "{{size, bytes}} isn't larger than the disk's size now, {{now, bytes}}. A disk can only grow.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{size}}: the size asked for; {{now}}: the size now (both as KiB, MiB or GiB)."
+  },
+  "resize.running_one": {
+    "message": "{{machines}} uses it and is running. Power it off first.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: the running machine's name; {{count}}: 1."
+  },
+  "resize.running_other": {
+    "message": "{{machines}} use it and are running. Power them off first.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: the running machines' names, comma-separated; {{count}}: how many."
+  },
+  "resize.inUse": {
+    "message": "A machine or a task (an export, a merge) has it open. Wait for it to finish, or power the machine off.",
+    "note": "Error details: the cause under the headline machines:resize.failed, on the line under it in the same place; what happened, and what the user can do if anything. The overlay's or stored disk's lock is held by something other than a machine the store knows is running (an export, a machine stopping)."
+  },
   "urlcheck.corsHint": {
     "message": "CORS headers for this web app's origin: `Access-Control-Allow-Origin` with this origin or *, `Access-Control-Expose-Headers: Content-Range, Content-Length, ETag`, and `Range` allowed in its answers to OPTIONS",
     "note": "What a server must send for CORS, placed in the URL problems urlcheck.noAnswer and urlcheck.noPiece. Header names in backquotes stay as they are."

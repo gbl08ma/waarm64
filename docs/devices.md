@@ -787,13 +787,17 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,
   n = slot n − 1, 0xffffffff = zeros without a slot), `meta` its **generation** (a u64, bumped and flushed before
   the first change of each opening: a write, a discard or a zeroing; an opening that only reads leaves it, so "the
-  overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3) and, for a stored
-  disk, the overlay being merged into it, `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
+  overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3), for a stored
+  disk the overlay being merged into it, and the overlay's **own size** (a u64 at 32: a grown overlay's,
+  docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage. **Few OPFS calls:** a sync-handle
   call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
   consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
   from the request's bytes in one write with their map entries in one more; only a block a write covers in part is
   read-modify-write.
+  **Its size** is the largest of the base's, its own (`meta`) and the spec's `size` (the guest's, from the page):
+  past the base's end it reads as zeros until written (`grown`), and its map grows as blocks there are written
+  (the capacity the guest sees is the spec's `size`).
   **What the guest discards leaves the overlay:** the whole blocks of a discard that the overlay
   holds become zeros without slots (never the base's bytes again: QEMU's qcow2 does the same over
   a backing file; blocks it doesn't hold stay the base's), a `WRITE_ZEROES`'s whole blocks too,
@@ -814,7 +818,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
   overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
   Overlay names are OPFS paths: a stored machine's are `overlays/<id>` (docs/machines.md §2), a transient one's
-  (the tests' `?machine=`) are single names as before; `overlayMeta(name)` reads the generation without opening it.
+  (the tests' `?machine=`) are single names as before; `overlayMeta(name)` reads the generation (and own size) without opening it, `writeOwnSize(name, size)` grows it (a writable stream, from a page too: docs/machines.md §4.5).
 - **Stored disks** (`web/stored.ts`, docs/machines.md §4.4): an image copied into the browser is the same
   block store over nothing, in `disks/<id>/` (`importImage`: a qcow2's virtual bytes, compressed clusters inflated,
   or a raw file's, zero blocks left out; `storedEstimate` bounds what it takes from a qcow2's allocated clusters).

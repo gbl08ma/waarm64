@@ -457,7 +457,7 @@
   },
   "changes.otherSize": {
     "message": "These changes are for a disk of {{size}} bytes, made over {{backing}}, but {{label}} has {{baseSize}} bytes. Import them into the disk they were made over.",
-    "note": "Error (message bar) of Import changes… when the changes file is for a disk of another size. {{size}} is the size it records (bytes), {{backing}} its backing file's name, {{label}} the disk's name, {{baseSize}} the disk's size (bytes)."
+    "note": "Error (message bar) of Import changes… when the changes file is for a disk of another size (smaller than the disk: a larger one is a grown disk's, and is taken). {{size}} is the size it records (bytes), {{backing}} its backing file's name, {{label}} the disk's name, {{baseSize}} the disk's size (bytes)."
   },
   "changes.checkingBase": {
     "message": "Checking the base image",

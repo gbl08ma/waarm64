@@ -3,6 +3,7 @@
 // sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
 // tests use it alike. web/app/store.ts keeps these records; web/app/shape-diff.ts says how two shapes differ.
 import { CPU_DEFAULT, CPU_FEATURES, type CpuFeature } from '../cpu-features.ts';
+import { sizeSeen, type GrowMark, type OverlaySizes } from './disk-size.ts';
 
 /** The most disks a machine has (docs/machines.md §4.1: room left of the core's 32 transports for devices to come). */
 export const MAX_DISKS = 16;
@@ -34,7 +35,10 @@ export type DiskRecord = {
   kind: DiskKind;
   /** Its name on the page (a file's, a URL's last part, or the user's). */
   name: string;
-  /** What the guest sees, bytes (a qcow2's virtual size; a multiple of 512). */
+  /**
+   * What the guest sees, bytes (a qcow2's virtual size; a multiple of 512): a stored disk's and a ramdisk's as grown
+   * (docs/machines.md §4.5; their identity keeps the size they were made with); an overlay may be larger (its own size).
+   */
   size: number;
   /** The image's format where it has one (a stored, blank or ramdisk disk is the block store's own). */
   format?: 'raw' | 'qcow2' | 'iso';
@@ -47,6 +51,8 @@ export type DiskRecord = {
   sha256?: string;
   /** `stored`: the store's generation (its `meta`, as the page last read it): written in place or merged into, it moves (§4.4). */
   generation?: number;
+  /** `stored`: a grow pending in the guest (its partition and filesystem, at its next start: §4.5). */
+  grow?: GrowMark;
   created: number;
 };
 
@@ -312,7 +318,8 @@ export const hashed = (s: Shape): Shape => ({
 });
 
 /**
- * A machine's shape, from its record and its disks' (by id). `cpu`: the vCPUs' features (all,
+ * A machine's shape, from its record and its disks' (by id), and its overlays' (by id: `overlays`, their own sizes,
+ * §4.5; without it every disk is its base's size). `cpu`: the vCPUs' features (all,
  * unless the page turned one off for development). `display`: what the machine runs with when it
  * differs from its record's (a 3D machine on a browser without WebGL2 runs 2D; `none`: the page's
  * `?display=simple`).
@@ -320,7 +327,7 @@ export const hashed = (s: Shape): Shape => ({
 export function shapeOf(
   m: MachineRecord,
   disks: (id: string) => DiskRecord | undefined,
-  opts: { cpu?: CpuFeature[]; display?: Display | 'none'; vulkan?: boolean } = {},
+  opts: { cpu?: CpuFeature[]; display?: Display | 'none'; vulkan?: boolean; overlays?: OverlaySizes } = {},
 ): Shape {
   const display = opts.display ?? m.display;
   // Vulkan needs 3D (`vulkan`: what the machine runs with when the page asks for it beside its record's).
@@ -351,7 +358,7 @@ export function shapeOf(
       return [
         {
           slot,
-          size: d.size,
+          size: sizeSeen(d, a, a.overlay ? opts.overlays?.(a.overlay) : undefined),
           readOnly: a.readOnly,
           serial: serialOf(a.id),
           identity: d.identity,

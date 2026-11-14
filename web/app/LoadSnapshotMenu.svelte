@@ -20,11 +20,11 @@
   const machine = $derived(records.machines.find((m) => m.id === current.id));
   // Read while the menu is open, again when the records change.
   $effect(() => {
-    const [m, disks] = [machine, records.disks];
+    const [m, disks, overlays] = [machine, records.disks, records.overlays];
     if (!open || !m) return;
     let shown = true;
     void page
-      .shapeNow(m, disks)
+      .shapeNow(m, disks, overlays)
       .catch(() => undefined)
       .then((n) => {
         if (shown) now = n;

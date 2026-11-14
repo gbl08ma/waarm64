@@ -245,6 +245,11 @@ export type StartDisk = {
   identity?: string;
   /** What the guest's GET_ID gets (default `waarm64-blk`). */
   serial?: string;
+  /**
+   * Its size as the guest sees it where that is larger than the source's (a grown overlay: docs/machines.md §4.5);
+   * absent: the source's.
+   */
+  size?: number;
   /** The machine's own image (`MachineSpec.disk`): a snapshot's header names no disk for it (`disk: null`). */
   own?: true;
 };

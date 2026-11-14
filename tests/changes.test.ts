@@ -123,7 +123,11 @@ test('a different base, a different size and a qcow2 without our checksum are re
   other[SIZE - 1] ^= 1;
   const said = (key: string, params?: Record<string, unknown>) => (e: unknown) => msgOf(e)?.key === key && Object.entries(params ?? {}).every(([k, v]) => (v instanceof RegExp ? v.test(String(msgOf(e)?.params?.[k])) : msgOf(e)?.params?.[k] === v));
   await assert.rejects(load('guarded', file, other), said('disks:changes.otherBase', { backing: 'base.img', hash: /^[0-9a-f]{12}$/, label: 'the page disk', baseHash: /^[0-9a-f]{12}$/ }));
-  await assert.rejects(load('guarded', file, base.subarray(0, SIZE - 4096)), said('disks:changes.otherSize', { size: SIZE, label: 'the page disk', baseSize: SIZE - 4096 }));
+  // A base smaller than the changes may be a grown overlay's (docs/machines.md §4.5): its hash tells it isn't this one's.
+  await assert.rejects(load('guarded', file, base.subarray(0, SIZE - 4096)), said('disks:changes.otherBase', { backing: 'base.img', label: 'the page disk' }));
+  const larger = new Uint8Array(SIZE + 4096);
+  larger.set(base);
+  await assert.rejects(load('guarded', file, larger), said('disks:changes.otherSize', { size: SIZE, label: 'the page disk', baseSize: SIZE + 4096 }));
   await assert.rejects(load('guarded', base, base), said('disks:changes.notChanges'));
   // A changes file from before the hash was of slices ("WAM1": the whole file's SHA-256) has no hash we check.
   const old = Buffer.from(file);

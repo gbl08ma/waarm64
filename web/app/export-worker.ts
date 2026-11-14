@@ -45,7 +45,8 @@ async function exportDisk(r: ExportRequest) {
     : undefined;
   let out: FileSystemWritableFileStream | undefined;
   try {
-    const disk = files ? overlay(base, files.data, files.map) : undefined;
+    // With its meta: a grown overlay is exported at its own size (docs/machines.md §4.5; a changes file larger than its backing file).
+    const disk = files ? overlay(base, files.data, files.map, files.meta) : undefined;
     out = r.handle ? await r.handle.createWritable() : undefined;
     const sink = sinkTo(out);
     if (r.mode === 'changes' && !disk) throw new MsgError('disks:export-worker.noChanges');

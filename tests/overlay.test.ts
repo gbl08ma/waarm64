@@ -2,7 +2,7 @@
 // in-memory files shaped like OPFS sync access handles.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { memFile, overlay, readMeta, writeMeta } from '../web/overlay.ts';
+import { encodeMeta, grown, lockOverlay, memFile, openOverlay, overlay, overlayMeta, readMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -306,11 +306,11 @@ test("the overlay's generation moves once per opening, before its first change, 
   assert.ok(d.discard(8192, 4096));
   assert.equal(readMeta(meta).generation, 3, 'a discard is a change');
   // The merging marker shares the file and survives a bump.
-  assert.ok(writeMeta(meta, { generation: 3, merging: 'c00000000001' }));
+  assert.ok(writeMeta(meta, { generation: 3, merging: 'c00000000001', size: 0 }));
   d = overlay(base, data, map, meta);
   assert.ok(await d.write(0, new Uint8Array(512)));
-  assert.deepEqual(readMeta(meta), { generation: 4, merging: 'c00000000001' });
-  assert.deepEqual(readMeta(memFile()), { generation: 0, merging: '' });
+  assert.deepEqual(readMeta(meta), { generation: 4, merging: 'c00000000001', size: 0 });
+  assert.deepEqual(readMeta(memFile()), { generation: 0, merging: '', size: 0 });
 });
 
 test('writes the storage refuses at random (growing data or map, short or thrown) fail alone: what the overlay reads is what its files say, each block old or new', async () => {
@@ -366,3 +366,80 @@ async function refusedAtRandom(seed: bigint) {
     model.set(now);
   }
 }
+
+test('a grown overlay (its own size in its meta): past its base it reads zeros, takes writes, zeroings and discards to its end, and keeps them reopened', async () => {
+  const baseSize = 3 * 4096 + 1024; // a last block that isn't whole
+  const size = 16 * 4096;
+  const baseBytes = Uint8Array.from({ length: baseSize }, (_, k) => 1 + (k % 251));
+  const base = openDisk((off, len) => baseBytes.slice(off, off + len), baseSize);
+  const [data, map, meta] = [memFile(), memFile(), memFile()];
+  assert.ok(writeMeta(meta, { generation: 0, merging: '', size }));
+  let d = overlay(base, data, map, meta);
+  assert.equal(d.size, size, "its meta's size");
+  const whole = (await d.read(0, size))!;
+  assert.equal(Buffer.compare(whole.subarray(0, baseSize), baseBytes), 0, 'the base, where it is');
+  assert.ok(whole.subarray(baseSize).every((x) => x === 0), 'zeros past it');
+  assert.equal(await d.read(size - 512, 1024), undefined, 'nothing past its end');
+  // A write across the base's old end, one at the grown end, a zeroing and a discard past the base.
+  assert.ok(await d.write(baseSize - 100, new Uint8Array(200).fill(0xaa)));
+  assert.ok(await d.write(size - 4096, new Uint8Array(4096).fill(0xbb)));
+  assert.ok(await d.write(8 * 4096, new Uint8Array(3 * 4096).fill(0xcc)));
+  assert.ok(await d.zero(9 * 4096, 4096));
+  assert.ok(d.discard(10 * 4096, 4096));
+  assert.ok(map.getSize() >= 16 * 4, 'the map grew to the blocks past the base');
+  const want = new Uint8Array(size);
+  want.set(baseBytes);
+  want.fill(0xaa, baseSize - 100, baseSize + 100);
+  want.fill(0xbb, size - 4096);
+  want.fill(0xcc, 8 * 4096, 9 * 4096);
+  assert.equal(readMeta(meta).size, size, 'a change keeps the size');
+  d = overlay(base, data, map, meta); // reopened
+  assert.equal(d.size, size);
+  assert.equal(Buffer.compare((await d.read(0, size))!, want), 0, 'reopened, it reads what was written');
+  assert.deepEqual(d.written(), [3, 8, 9, 10, 15]);
+  // Without a meta, the guest's size given grows it the same way; a size under the base's is the base's.
+  assert.equal(overlay(base, data, map, undefined, size).size, size);
+  assert.equal(Buffer.compare((await overlay(base, data, map, undefined, size).read(0, size))!, want), 0);
+  assert.equal(overlay(base, memFile(), memFile(), undefined, 4096).size, baseSize);
+});
+
+test("a meta file of 32 bytes (from before sizes) reads as no size of its own, and a change keeps its generation and merging", async () => {
+  const meta = memFile();
+  const old = encodeMeta({ generation: 5, merging: 'c00000000001', size: 0 }).subarray(0, 32);
+  meta.write(old, { at: 0 });
+  assert.equal(meta.getSize(), 32);
+  assert.deepEqual(readMeta(meta), { generation: 5, merging: 'c00000000001', size: 0 });
+  const base = openDisk((off, len) => new Uint8Array(len), 8192);
+  const d = overlay(base, memFile(), memFile(), meta);
+  assert.equal(d.size, 8192, "the base's");
+  assert.ok(await d.write(0, new Uint8Array(512).fill(1)));
+  assert.deepEqual(readMeta(meta), { generation: 6, merging: 'c00000000001', size: 0 });
+});
+
+test('writeOwnSize gives an overlay its size (made if it has no files yet), its generation as it was; a disk grown reads zeros past its base', async () => {
+  const name = `overlays/grown-${process.pid}`;
+  const f = await openOverlay(name, 'grown-base');
+  const base = openDisk((off, len) => new Uint8Array(len).fill(7), 8192);
+  assert.ok(await overlay(base, f.data, f.map, f.meta).write(0, new Uint8Array(4096).fill(1)));
+  f.close();
+  const release = await lockOverlay(name);
+  await writeOwnSize(name, 65536);
+  release();
+  assert.deepEqual(await overlayMeta(name), { generation: 1, merging: '', size: 65536 });
+  const g = await openOverlay(name, 'grown-base');
+  const d = overlay(base, g.data, g.map, g.meta);
+  assert.equal(d.size, 65536);
+  assert.deepEqual([...(await d.read(4096 - 1, 3))!], [1, 7, 7]);
+  assert.ok((await d.read(8192, 65536 - 8192))!.every((x) => x === 0));
+  g.close();
+  // An overlay without files yet (a record the page made, a machine never opened).
+  const fresh = `overlays/grown-fresh-${process.pid}`;
+  await writeOwnSize(fresh, 1 << 20);
+  assert.equal((await overlayMeta(fresh)).size, 1 << 20);
+  const h = await openOverlay(fresh, 'fresh-base');
+  assert.equal(overlay(base, h.data, h.map, h.meta).size, 1 << 20);
+  h.close();
+  const z = grown(base, 3 * 4096);
+  assert.deepEqual([...(await z.read(8192 - 2, 4))!], [7, 7, 0, 0]);
+  assert.equal(grown(base, 4096), base, 'not smaller');
+});

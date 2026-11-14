@@ -248,11 +248,12 @@ export async function readSnapshot(
             continue;
           }
           // Its generation goes on from where it was (a replace never takes an overlay back to a generation an older
-          // snapshot pinned): emptied, it starts one past its old one, and the writes below move nothing further.
+          // snapshot pinned): emptied, it starts one past its old one, and the writes below move nothing further. Its
+          // size is the disk's as the snapshot saw it (a grown overlay's fork is as grown: docs/machines.md §4.5).
           const was = (await overlayMeta(t.name)).generation;
           await removeOverlay(t.name);
           const files = await openOverlay(t.name, t.identity);
-          if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '' })))) throw await full();
+          if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size })))) throw await full();
           // Whole blocks are written, so the base is never read; no meta: its generation is set.
           const disk = overlay({ size: t.size, format: 'raw', read: async () => undefined }, files.data, files.map);
           open.set(slot, { disk, close: files.close, size: t.size });

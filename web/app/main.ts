@@ -280,7 +280,7 @@ const page: Page = {
   resetDisk: () => disks.reset(),
   saveSettings: (m) => sizes.saveSettings(m),
   applySize: (n, r, g) => sizes.apply(n, r, g),
-  shapeNow: (m, d) => sizes.shapeNow(m, d),
+  shapeNow: (m, d, o) => sizes.shapeNow(m, d, o),
   setView: (v) => pageWindow.setView(v),
   showLog: () => {
     pageWindow.showLog();

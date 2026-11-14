@@ -88,9 +88,45 @@ export function withRoom(makeRoom?: () => Promise<boolean>) {
   return async (w: () => boolean | Promise<boolean>) => (await w()) || (room && (room = await makeRoom!().catch(() => false)) && (await w()));
 }
 
-/** An overlay's `meta` file: its generation (u64 LE at 0) and, for a stored disk, the overlay being merged into it (`merging`: its id, or empty). */
-export type Meta = { generation: number; merging: string };
-const META_SIZE = 32;
+/**
+ * An overlay's `meta` file: its generation (u64 LE at 0), for a stored disk the overlay being merged into it
+ * (`merging`: its id, or empty; 24 bytes at 8), and the overlay's own size (`size`, u64 LE at 32: a grown overlay's,
+ * docs/machines.md §4.5; 0 for none: the base's). A meta of 32 bytes, from before sizes, has none.
+ */
+export type Meta = { generation: number; merging: string; size: number };
+const META_SIZE = 40;
+/** A meta file's bytes (`writeMeta`'s). */
+export function encodeMeta(m: Meta) {
+  const b = new Uint8Array(META_SIZE);
+  const v = new DataView(b.buffer);
+  v.setBigUint64(0, BigInt(m.generation), true);
+  b.set(new TextEncoder().encode(m.merging).subarray(0, 24), 8);
+  v.setBigUint64(32, BigInt(m.size), true);
+  return b;
+}
+
+/**
+ * The size a disk opened over `base` has: its own `size` where that is larger. Past `base`'s end it reads as zeros (an
+ * overlay grown past its base, docs/machines.md §4.5); `base` itself where it isn't larger.
+ */
+export function grown(base: Disk, size: number): Disk {
+  if (size <= base.size) return base;
+  return {
+    size,
+    format: base.format,
+    read: async (off, len) => {
+      if (off < 0 || len < 0 || off + len > size) return undefined;
+      if (off + len <= base.size) return base.read(off, len);
+      const out = new Uint8Array(len);
+      if (off < base.size) {
+        const head = await base.read(off, base.size - off);
+        if (!head) return undefined;
+        out.set(head);
+      }
+      return out;
+    },
+  };
+}
 
 /**
  * `f` with a write the storage refuses as a short count, as the overlay checks for: Chromium's sync handles come back
@@ -114,33 +150,46 @@ export function shortOnFull(f: SyncFile): SyncFile {
   };
 }
 
-/** Reads a `meta` file (an empty one is generation 0, nothing merging). */
+/** Reads a `meta` file (an empty one is generation 0, nothing merging, no size of its own). */
 export function readMeta(f: SyncFile): Meta {
   const b = new Uint8Array(META_SIZE);
   const n = f.read(b, { at: 0 });
-  if (n < 8) return { generation: 0, merging: '' };
+  if (n < 8) return { generation: 0, merging: '', size: 0 };
   const v = new DataView(b.buffer);
   const merging = new TextDecoder().decode(b.subarray(8, 8 + Math.min(24, Math.max(0, n - 8)))).replace(/\0+$/, '');
-  return { generation: Number(v.getBigUint64(0, true)), merging };
+  return { generation: Number(v.getBigUint64(0, true)), merging, size: n >= META_SIZE ? Number(v.getBigUint64(32, true)) : 0 };
 }
 
 /** Writes a `meta` file, durably (flushed). False on a failed write. */
 export function writeMeta(f: SyncFile, m: Meta) {
-  const b = new Uint8Array(META_SIZE);
-  new DataView(b.buffer).setBigUint64(0, BigInt(m.generation), true);
-  b.set(new TextEncoder().encode(m.merging).subarray(0, 24), 8);
-  if (f.write(b, { at: 0 }) !== META_SIZE) return false;
+  if (f.write(encodeMeta(m), { at: 0 }) !== META_SIZE) return false;
   f.flush();
   return true;
 }
 
+/** A {@link SyncFile} that reads `bytes` (and writes nothing). */
+const bytesFile = (bytes: Uint8Array): SyncFile => ({
+  read: (buf, { at }) => {
+    const n = Math.max(0, Math.min(buf.length, bytes.length - at));
+    buf.set(bytes.subarray(at, at + n));
+    return n;
+  },
+  write: () => 0,
+  getSize: () => bytes.length,
+  truncate() {},
+  flush() {},
+});
+
 /**
  * The overlay over `base` in `data` and `mapFile`. With `meta`, its generation is bumped before the first change
  * (a write, a discard or a zeroing) this opening makes; `generation()` says it. `epoch()` makes the next change bump it
- * again: a snapshot pins the generation it saw, so a change after it must move it (web/snapshot.ts).
+ * again: a snapshot pins the generation it saw, so a change after it must move it (web/snapshot.ts). Its size is the
+ * largest of `base`'s, its meta's own (a grown overlay's, docs/machines.md §4.5) and `size` (the guest's, as the page
+ * gave it): past `base`'s end it reads as zeros until written, and its map grows as blocks there are.
  */
-export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile): WritableDisk & { generation(): number; epoch(): void } {
+export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile, size = 0): WritableDisk & { generation(): number; epoch(): void } {
   [data, mapFile, meta] = [shortOnFull(data), shortOnFull(mapFile), meta && shortOnFull(meta)];
+  base = grown(base, Math.max(size, meta ? readMeta(meta).size : 0));
   const blocks = Math.ceil(base.size / BLOCK);
   const map = new Uint32Array(blocks);
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 }); // the host is little-endian, as the file
@@ -211,7 +260,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
 
   const held = (b: number) => map[b] !== 0 && map[b] !== ZERO;
 
-  let gen = meta ? readMeta(meta) : { generation: 0, merging: '' };
+  let gen = meta ? readMeta(meta) : { generation: 0, merging: '', size: 0 };
   let bumped = false;
   /** Before the first change: the generation moves on, on disk, so a snapshot pinning the old one knows. */
   const bump = () => {
@@ -413,6 +462,9 @@ const inMemory = new Map<string, { data: SyncFile; map: SyncFile; meta: SyncFile
 
 type LockMode = 'exclusive' | 'shared';
 
+/** The Web Lock whoever opens overlay (or stored disk) `name`'s files holds (`lockOverlay`). */
+export const overlayLock = (name: string) => `waarm64-overlay:${name}`;
+
 /** How long an opener waits for the overlay's previous holder (another machine, closing or in another tab). */
 export const OVERLAY_WAIT_MS = 10_000;
 
@@ -429,7 +481,7 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: Lock
   const held = new Promise<void>((resolve) => { release = resolve; });
   try {
     await new Promise<void>((granted, reject) => {
-      navigator.locks.request(`waarm64-overlay:${name}`, { mode, signal: AbortSignal.timeout(ms) }, () => {
+      navigator.locks.request(overlayLock(name), { mode, signal: AbortSignal.timeout(ms) }, () => {
         granted();
         return held;
       }).catch(reject);
@@ -603,19 +655,47 @@ export async function dropSuspend(name: string) {
   }
 }
 
-/** Overlay `name`'s meta (generation, merging), read from a page or a worker without opening it; zeros without one. */
+/** Overlay `name`'s meta (generation, merging, own size), read from a page or a worker without opening it; zeros without one. */
 export async function overlayMeta(name: string): Promise<Meta> {
   if (!(await hasOpfs())) {
     const o = inMemory.get(name);
-    return o ? readMeta(o.meta) : { generation: 0, merging: '' };
+    return o ? readMeta(o.meta) : { generation: 0, merging: '', size: 0 };
   }
   try {
     const file = await (await (await opfsDir(name)).getFileHandle('meta')).getFile();
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    return readMeta({ read: (buf, { at }) => { const n = Math.max(0, Math.min(buf.length, bytes.length - at)); buf.set(bytes.subarray(at, at + n)); return n; }, write: () => 0, getSize: () => bytes.length, truncate() {}, flush() {} });
+    return readMeta(bytesFile(new Uint8Array(await file.arrayBuffer())));
   } catch (e) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;
-    return { generation: 0, merging: '' };
+    return { generation: 0, merging: '', size: 0 };
+  }
+}
+
+/**
+ * Gives overlay `name` its own size `size` (docs/machines.md §4.5: a grown overlay; its generation and the rest of its
+ * meta as they were), made with its directory if it has none yet. The caller holds the overlay's lock (`lockOverlay`:
+ * no machine has it open). From a page or a worker (a writable stream, not a sync handle).
+ */
+export async function writeOwnSize(name: string, size: number) {
+  if (!(await hasOpfs())) {
+    const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: '' };
+    inMemory.set(name, o);
+    if (!writeMeta(o.meta, { ...readMeta(o.meta), size })) throw await storageFullError();
+    return;
+  }
+  try {
+    const handle = await (await opfsDir(name, true)).getFileHandle('meta', { create: true });
+    const was = readMeta(bytesFile(new Uint8Array(await (await handle.getFile()).arrayBuffer())));
+    const out = await handle.createWritable();
+    try {
+      await out.write(encodeMeta({ ...was, size }) as Uint8Array<ArrayBuffer>);
+      await out.close();
+    } catch (e) {
+      await out.abort().catch(() => undefined); // the failure thrown is the one to report
+      throw e;
+    }
+  } catch (e) {
+    if ((e as DOMException)?.name === 'QuotaExceededError') throw await storageFullError();
+    throw e;
   }
 }
 

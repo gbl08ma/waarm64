@@ -263,10 +263,12 @@ export class PageMachine {
       jitMiB: config.jitMiB ?? 0,
       devices: { ...d, netConfig: config.guest.netConfig },
     });
+    const overlays = await this.store.all('overlays'); // their own sizes (§4.5)
     const { shape, hash } = await currentShape(record, (id) => s.disks.get(id), {
       display: config.display,
       cpu: config.cpu,
       vulkan: config.vulkan,
+      overlays: (id) => overlays.find((o) => o.id === id),
     });
     const urls: Record<number, string> = {};
     for (const x of shape.disks) {

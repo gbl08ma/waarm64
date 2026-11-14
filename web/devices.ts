@@ -48,6 +48,8 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * every start: `swapHeader`). `serial` is what GET_ID answers (default
  * `waarm64-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
  * is a disk kept in the browser (web/stored.ts: its OPFS directory, `disks/<id>`, read under its overlay; `size` given);
+ * a `size` larger than the image's (a grown overlay, docs/machines.md §4.5) is what the guest sees, the image read as
+ * zeros past its end;
  * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source). A `url` disk is
  * read through a block cache whose blocks are kept in OPFS (web/diskcache.ts) unless `keep` is false.
  */
@@ -850,9 +852,10 @@ export async function fileSource(url: string): Promise<Source> {
 /**
  * A virtio-blk device over `src`, writable through `files` (an overlay) or by `src` itself (a ramdisk). `onFull`: a write
  * the browser's storage refused (a short write, `QuotaExceededError`) failed the guest's request, told once until a
- * write lands again (a ramdisk says so through its own `onFull`).
+ * write lands again (a ramdisk says so through its own `onFull`). `size`: the disk's size as the guest sees it (the
+ * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too).
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void): Backend {
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void, size?: number): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
@@ -868,7 +871,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     pool = typeof Worker === 'function' ? inflatePool() : undefined; // Node has none
     concurrent &&= !!s.readAsync;
     base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size, pool, concurrent ? (off, len) => (len === 0 ? Promise.resolve(new Uint8Array(0)) : s.readAsync!(off, len)) : undefined);
-    rw = files && overlay(base, files.data, files.map, files.meta);
+    rw = files && overlay(base, files.data, files.map, files.meta, size);
   }
   const disk: Disk = rw ?? base;
   const io = ctx.io ?? new Float64Array(2); // bytes read, written (completed requests)
@@ -1135,7 +1138,7 @@ export class Devices {
         case 'vsock': return vsockDevice(ctx, d);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull);
+          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull, d.size);
         }
         case 'net': return net(ctx, d);
         case '9p': return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);

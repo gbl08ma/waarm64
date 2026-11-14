@@ -4,7 +4,7 @@
 // to be the one it was made over. Workers only in a browser (sync access handles, synchronous reads).
 import type { Source } from './devices.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
-import { openOverlay, overlay, removeOverlay, storageFullError, withRoom } from './overlay.ts';
+import { openOverlay, overlay, readMeta, removeOverlay, storageFullError, withRoom, writeMeta } from './overlay.ts';
 import { openDisk, readChanges } from './qcow2.ts';
 import { isZero } from './qcow2-write.ts';
 
@@ -54,7 +54,8 @@ export async function loadChanges(o: {
   if (!c) throw new MsgError('disks:changes.notChanges');
   if (!c.hash) throw new MsgError('disks:changes.notOurs', { backing: c.backingName });
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : o.base.read(off, len)), o.base.size);
-  if (c.size !== base.size) throw new MsgError('disks:changes.otherSize', { size: c.size, backing: c.backingName, label: o.label, baseSize: base.size });
+  // A changes file may be larger than its base (a grown overlay's export, docs/machines.md §4.5): the overlay takes its size.
+  if (c.size < base.size) throw new MsgError('disks:changes.otherSize', { size: c.size, backing: c.backingName, label: o.label, baseSize: base.size });
   const hash = await hashSource(o.base, (done) => progress(msg('disks:changes.checkingBase'), done, o.base.size));
   if (hash !== c.hash) {
     throw new MsgError('disks:changes.otherBase', { backing: c.backingName, hash: c.hash.slice(0, 12), label: o.label, baseHash: hash.slice(0, 12) });
@@ -62,6 +63,7 @@ export async function loadChanges(o: {
   await removeOverlay(o.overlay);
   const files = await openOverlay(o.overlay, o.identity);
   try {
+    if (c.size > base.size && !writeMeta(files.meta, { ...readMeta(files.meta), size: c.size })) throw await storageFullError();
     const disk = overlay(base, files.data, files.map, files.meta);
     const lands = withRoom(o.makeRoom);
     const total = Math.ceil(c.size / 4096);

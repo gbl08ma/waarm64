@@ -5,6 +5,7 @@ import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
 import type { Folder, NewFolder } from './folders.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
+import type { OverlayRecord } from './store.ts';
 import type { EntryView } from './usb-live.ts';
 import type { MachinesTab } from './areas/machines-nav.svelte.ts';
 import type { LockMode } from '../input.ts';
@@ -43,8 +44,12 @@ export type Page = {
   saveSettings(m: MachineRecord): Promise<void>;
   /** A transient machine's size from the Machine menu. */
   applySize(ncpus: number, ramMiB: number, gpu: '3d' | '2d'): Promise<void>;
-  /** A machine's shape as it would run on this page now, over the browser's `disks`. */
-  shapeNow(m: MachineRecord, disks: Map<string, DiskRecord>): Promise<{ shape: Shape; hash: string }>;
+  /** A machine's shape as it would run on this page now, over the browser's `disks` and `overlays` (their own sizes). */
+  shapeNow(
+    m: MachineRecord,
+    disks: Map<string, DiskRecord>,
+    overlays: readonly OverlayRecord[],
+  ): Promise<{ shape: Shape; hash: string }>;
   setView(v: View): void;
   showLog(): void;
   fullscreen(): void;

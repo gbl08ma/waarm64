@@ -41,11 +41,11 @@
   /** The machine's shape now (an orphaned snapshot's differs), read again with the records. */
   let now = $state<{ shape: Shape; hash: string } | undefined>();
   $effect(() => {
-    const [m, disks] = [machine, records.disks];
+    const [m, disks, overlays] = [machine, records.disks, records.overlays];
     if (!m) return;
     let shown = true;
     void page
-      .shapeNow(m, disks)
+      .shapeNow(m, disks, overlays)
       .catch(() => undefined)
       .then((n) => {
         if (shown) now = n;

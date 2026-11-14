@@ -12,6 +12,7 @@ import { MsgError } from '../msg.ts';
 import type { Connection } from './connections.ts';
 import type { Folder } from './folders.ts';
 import { idbRecords, memoryFiles, memoryRecords, opfsFiles } from './store-backends.ts';
+import type { GrowMark } from './disk-size.ts';
 import { isId, type DiskIdentity, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
 
 /**
@@ -32,6 +33,13 @@ export type OverlayRecord = {
   created: number;
   modified: number;
   fork?: { snapshot: string; generation: number };
+  /**
+   * Its own size, bytes (machines.md §4.5: a grown overlay; its meta file's, which the device worker reads): the guest
+   * sees the larger of it and its disk's. Absent: none of its own.
+   */
+  size?: number;
+  /** A grow pending in the guest (its partition and filesystem, at its next start: §4.5). */
+  grow?: GrowMark;
 };
 
 /**

@@ -11,6 +11,7 @@ import { updateMachine } from '../machines.ts';
 import { remember, settings } from '../settings.ts';
 import { currentShape } from '../snapshots.ts';
 import type { DiskRecord, MachineRecord } from '../shape.ts';
+import type { OverlayRecord } from '../store.ts';
 import { cpuFeatures, gpuAsked, jitParam, params, query, simpleDisplay } from './knobs.ts';
 import { memoryWarning } from './memory-signal.ts';
 import type { Messages } from './messages.ts';
@@ -135,7 +136,7 @@ export class SizeActions {
    * counts for the page's machine only: a switch chooses 3D again). For the page's machine, the shape its next
    * start's snapshots carry (`PageMachine.about`).
    */
-  shapeNow(r: MachineRecord, disks: Map<string, DiskRecord>) {
+  shapeNow(r: MachineRecord, disks: Map<string, DiskRecord>, overlays: readonly OverlayRecord[]) {
     const m = this.#m;
     const own = m.stored?.record.id === r.id;
     const resolved = resolveMachine(addressFor(query(), own), r, settings(), {
@@ -151,6 +152,12 @@ export class SizeActions {
       refused: own && !!m.no3d,
       vulkan: resolved.vulkan,
     });
-    return currentShape(asRun(r, resolved), (id) => disks.get(id), { display, cpu: cpuFeatures(), vulkan });
+    const byId = new Map(overlays.map((o) => [o.id, o]));
+    return currentShape(asRun(r, resolved), (id) => disks.get(id), {
+      display,
+      cpu: cpuFeatures(),
+      vulkan,
+      overlays: (id) => byId.get(id),
+    });
   }
 }

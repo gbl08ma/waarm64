@@ -74,7 +74,7 @@ Since decided (the user, 2026-10-17):
 | **Machine** | id, name, vCPUs, RAM MiB (and `ramSplit` when set by hand), display (2D/3D) and Vulkan beside 3D, the JIT cache budget (`jitMiB`), the keyboard layout, the network adapters and their connections (networking/adapters.md), the USB controller (`usb`) and remembered USB devices (`usbDevices`), the mouse, touchscreen and clock switches, clipboard sharing (`clipboard`, off by default: plans/clipboard.md §5), shared folders (`shares`, the switch; `folders`, the attached folders with their own Read-only; `sharesMount` and `sharesPath`, how the page mounts them in the guest: shares.md §1), the attachments in slot order with the overlay chosen per read-write one | IndexedDB `machines` |
 | **Disk** (a base) | id, kind (`url`, `file`, `stored`, `blank`, `ramdisk`), name, size, the identity (§3.1), the kind's data: a URL; a `FileSystemFileHandle` (IndexedDB can hold one, JSON can't); the hash where something computed it | IndexedDB `disks` |
 | **Attachment** | the disk, read-only or not, written in place or not, the overlay chosen, the virtio serial (`waarm64-<attachment id>`, answered to `GET_ID`) | in the machine |
-| **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes; its `data`, `map`, `meta` and `base` files | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |
+| **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes, its own size and grow mark when grown (§4.5); its `data`, `map`, `meta` and `base` files | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |
 | **Variable store** | the EFI flash bank (1 MiB), **per machine** (its boot entries are the machine's, e.g. after an install from an ISO onto a blank disk) | OPFS `machines/<id>/flash` |
 | **Snapshot** | id, name, created, size, the shape and its hash, the pins (§5.1); the `WAARMSNP` file | OPFS `machines/<id>/snapshots/<id>`, its record in IndexedDB `snapshots` |
 | **Suspended copy** | a snapshot without the overlays' blocks (§5.3) | OPFS `machines/<id>/suspend` |
@@ -294,6 +294,46 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 - **Exports** of a stored disk are whole-disk ones (qcow2 or raw, compressed or not); "changes only" applies to its
   overlays.
 
+### 4.5 Growing a disk
+
+Writable disks aren't qcow2 files: an image is a read-only base under an overlay, and a stored disk is the overlay's
+format itself (§4.4). So growing one is a size in a record, and for an overlay in its `meta` too (the user's design,
+2026-11-14: RESIZE-KICKOFF.md; the page's Resize… is the next step of the track).
+- **An overlay** (over a URL, file, blank or stored disk) has a **size of its own** (`OverlayRecord.size`, and the
+  u64 at 32 in its `meta`, which the device worker reads at its opening: devices.md "blk"); absent, or a 32-byte
+  `meta` from before sizes: none. Per overlay, not per disk: overlays are a base's named variants (rule 3), and a
+  blank disk's identity holds its size.
+- **A stored disk's** and **a ramdisk's** size is their record's, grown (`DiskRecord.size`); their identity keeps
+  the size they were made with (an overlay's `base` file records it, so a grown stored disk keeps its overlays). A
+  stored disk's block store needs nothing: blocks past its old end read as zeros, and its map grows as they're
+  written. A URL's, a file's or a blank disk itself doesn't grow; its overlays do.
+- **What the guest sees** (`sizeSeen`, web/app/disk-size.ts): through an overlay, the larger of its own size and its
+  disk's; read-only, written in place or a ramdisk, the disk's. The shape's disk size is that (`shapeOf`'s
+  `overlays`, the page's `shapeNow` and `about` pass the records), and so is the start's (`StartDisk.size` where it's
+  past the source's, then `BlkSpec.size`: the device's capacity, and the overlay opened at it over a smaller image,
+  reading zeros past its end). **So a resize orphans the snapshots** of the machines whose disk grows, as any shape
+  edit does (rule 7), and a suspended copy no longer resumes.
+- **Grow only, whole sectors, its machines off** (web/app/resize.ts): `resizeCosts(store, target, size)` says what a
+  resize does, for the confirmation: the size now, the machines whose disk grows (an overlay's: those that have it
+  chosen; a stored disk's or a ramdisk's: those that attach it, unless their overlay is as large already), those of
+  them running, and their kept snapshots made at the size now (orphaned by it). `resize(store, target, size, { grow })`
+  refuses (`MsgError`s, `machines:resize.*`) a size that isn't larger or isn't a multiple of 512 (`SECTOR`: the blk
+  device's sector, and QEMU's rule for a qcow2's virtual size), a URL, file or blank disk itself, a machine using it
+  running, and the overlay's or stored disk's lock held (a machine the records don't show running, an export, a merge:
+  the lock Merge into the disk takes); it then writes an overlay's `meta` (`writeOwnSize`, a writable stream: from the
+  page) and its record, or the disk's record, under that lock.
+- **The grow mark** (`GrowMark`, `{ from, to }`, on the overlay's or stored disk's record, not an attachment's:
+  whichever machine boots it next does it): `grow` sets it (`from` stays the size before the first resize the guest
+  hasn't followed), a resize without it clears it, `growMark`/`clearGrowMark` read and clear it. A ramdisk gets none
+  (empty at every start). Nothing consumes it yet: the guest agent's GROW is the track's next loops.
+- **What follows the size:** a restore's fork takes the size the snapshot had (its record's `size`, the plan's, which
+  the worker writes into the fork's `meta`); exports open the overlay with its `meta`, so a whole disk's qcow2 or raw
+  is the grown size and a changes-only qcow2 may be larger than its backing file; Import changes takes a changes file
+  larger than its base (the base's hash still decides) into an overlay of that size; Merge into the disk of a grown
+  overlay grows the stored disk first (its mark with it), so a merge resumed at the next opening copies at that size.
+- **Not yet:** a definition carries each attachment's disk size, not its overlay's (a machine made from it has the
+  disk's size).
+
 ## 5. Snapshots
 
 The file's format, what the core saves and the page's toolbar and header fields: [platform.md](platform.md)
@@ -333,7 +373,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
   differs (the notice points to Create a machine like it). Then per writable disk (`planRestore`, web/app/snapshots.ts; the page
   passes the plan to the worker as `start.plan`): the attached overlay is the pinned one at the pinned generation →
   **keep** (nothing written: the restore is RAM and state); otherwise → **fork**: a new overlay named after the
-  snapshot gets its blocks and is attached, and the old overlay stays as it was. The confirmation says which disks
+  snapshot gets its blocks and is attached (at the size the snapshot had: §4.5), and the old overlay stays as it was. The confirmation says which disks
   fork, and offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost). A
   ramdisk takes the snapshot's blocks. Transient machines have no plan: a restore replaces their overlays.
 - **The plan is made twice:** once for the confirmation, while the guest may still run, and again once the machine
@@ -406,7 +446,7 @@ budget, the status bar.
 ## 9. Tests
 
 docs/testing.md's "Machines as the unit" row: the store's ordering and sweep, the shape's hash, the ramdisk, stored
-disks (import, export under `qemu-img compare`, merge and its resume), the generation and its epoch, the restore's
+disks (import, export under `qemu-img compare`, merge and its resume), growing a disk (tests/resize.test.ts), the generation and its epoch, the restore's
 plan, the Machines page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
 several disks, a stored Debian, kept snapshots, forks, Suspend on pins, orphaning.
 

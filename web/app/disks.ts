@@ -45,12 +45,16 @@ export async function inUse(path: string) {
   return [...(held.held ?? []), ...(held.pending ?? [])].some((l) => l.name === `waarm64-overlay:${path}`);
 }
 
-/** A new, empty overlay of disk `d` (its files are made when a machine first opens it). */
+/**
+ * A new, empty overlay of disk `d` (its files are made when a machine first opens it). `size`: its own size where it is
+ * larger than the disk's (a grown overlay's fork, §4.5: the restore's worker writes it into its meta with the blocks).
+ */
 export async function createOverlay(
   store: Store,
   d: DiskRecord,
   name: string,
   fork?: OverlayRecord['fork'],
+  size?: number,
 ): Promise<OverlayRecord> {
   const now = Date.now();
   const o: OverlayRecord = {
@@ -63,6 +67,7 @@ export async function createOverlay(
     created: now,
     modified: now,
     fork,
+    ...(size !== undefined && size > d.size ? { size } : {}),
   };
   await store.put('overlays', o);
   return o;
@@ -157,6 +162,7 @@ export async function loadChangesInto(
       bytes: await overlayBytes(overlayDir(id)),
       created: now,
       modified: now,
+      ...(meta.size > d.size ? { size: meta.size } : {}), // changes exported from a grown overlay (§4.5)
     };
     await store.put('overlays', o);
     return o;
@@ -247,16 +253,27 @@ export async function mergeIntoDisk(store: Store, overlay: string) {
     for (const a of m.attachments) if (a.overlay === o.id) a.overlay = undefined;
     await store.put('machines', { ...m, modified: Date.now() });
   }
+  const size = await growForMerge(store, d, o);
   await store.forget('overlays', o.id); // the record only: the worker deletes the files once their blocks are in the disk
   const r = await job({
     type: 'merge',
     disk: diskDir(d.id),
     overlay: overlayDir(o.id),
     identity: identityOf(d),
-    size: d.size,
+    size,
   });
   await refreshStored(store, d.id);
   return r.blocks ?? 0;
+}
+
+/**
+ * A grown overlay grows its stored disk to its size before it is merged (§4.5; its grow mark goes with it), so that a
+ * merge resumed at the disk's next opening copies at that size. The size merged at.
+ */
+async function growForMerge(store: Store, d: DiskRecord, o: OverlayRecord) {
+  const size = Math.max(d.size, o.size ?? 0);
+  if (size > d.size) await store.put('disks', { ...d, size, ...(o.grow ? { grow: o.grow } : {}) });
+  return size;
 }
 
 /** What a merge of `overlay` deletes: the disk's other overlays (with their sizes). */

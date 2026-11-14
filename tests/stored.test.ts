@@ -64,14 +64,14 @@ test('a merge writes the overlay into the stored disk, moves its generation and 
   let src = await openStored(disk, size);
   assert.ok(same(src.read(0, size), want));
   src.close();
-  assert.deepEqual(await overlayMeta(disk), { generation: genBefore + 1, merging: '' });
+  assert.deepEqual(await overlayMeta(disk), { generation: genBefore + 1, merging: '', size: 0 });
   await assert.rejects(openOverlay('overlays/test-merge-1', undefined, undefined, { readOnly: true }), /no overlay/, 'the overlay is gone');
 
   // Interrupted after the mark: the store names the overlay; the next opening (a machine's, an export's) finishes it.
   const disk2 = 'disks/test-merge-2';
   f = await openStoredForWriting(disk2, 'stored', size);
   await importImage(bufferSource(image), f);
-  writeMeta(f.meta, { generation: readMeta(f.meta).generation + 1, merging: 'overlays/test-merge-2' });
+  writeMeta(f.meta, { ...readMeta(f.meta), generation: readMeta(f.meta).generation + 1, merging: 'overlays/test-merge-2' });
   f.close();
   // The overlay over disk2 (written against its bytes).
   {
