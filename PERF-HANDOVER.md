@@ -44,6 +44,7 @@ bound: a candidate loop if the track takes it on, not in the queue below.
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
+| **Next:** JIT: share X-register locals (Liftoff's zero-fill; PERF loop 26) | measured bound: today's fills cost ~2.8% of Alpine's boot, ~1.7% of its userspace (Mac; doubling every fill moved them that much). 49% of functions fill (>12 locals or a non-i32/i64), 21 locals each, 10.6 of them X registers; a liveness pass over a block, then regions, to share locals between X registers whose ranges don't overlap; ~0.13% of the boot a local fewer, a function at ≤12 i32/i64 locals loses its whole fill. Large; build it in steps, the block-level pass first |
 | JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
