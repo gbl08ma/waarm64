@@ -26,7 +26,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Machines page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk wizard, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
+| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
 | `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
@@ -429,13 +429,15 @@ Duplicate, Export the definition, Delete; then tabs:
   clock device, clipboard sharing, shared folders) warns under it only when the machine has snapshots, while the note under Save always says it. The three are peripherals the guest sees: absent on machines made before
   them (off, so their shapes and snapshots stay as they were), on for new ones.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
-  disk its overlays (switch, New empty, **[Overlays…](ui:disks:Disks.overlaysButton)**), **[Export](ui:disks:ExportMenu.label)** (a menu, `ExportMenu.svelte`: changes only, the
-  whole disk as qcow2 or raw, compressed or not; a machine on this page running from it stops while the file is
-  written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
+  disk its overlays (switch, New empty, **[Overlays…](ui:disks:Disks.overlaysButton)**), **[Export…](ui:disks:ExportButton.label)** (`ExportButton.svelte`, opening the Export wizard,
+  `ExportWizard.svelte` over `ExportSteps.svelte`: first [Changes only](ui:disks:ExportSteps.changes) or
+  [Whole disk](ui:disks:ExportSteps.whole), then the format, each explained: compressed or uncompressed qcow2, the
+  whole disk also raw; the format's choice saves, Back returns to the first step; a machine on this page running from
+  it stops while the file is written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
   to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. Overlays… opens the disk's
   **Overlays** dialog (`Overlays.svelte`, also from the Disks pane below): every overlay of the disk with what it holds,
   when it was made and the machines that write to it; Rename, Delete (a machine that wrote to it is left without one,
-  and makes a new one at its next boot), Merge into the disk (a stored disk) and Export each. [Add a disk…](ui:disks:Disks.add) opens a
+  and makes a new one at its next boot), Merge into the disk (a stored disk) and Export… each (the Export wizard's steps take the dialog's place, the list being the step before them: Back from the first returns to it). [Add a disk…](ui:disks:Disks.add) opens a
   wizard (`AddDisk.svelte`; what it makes is `add-disk.ts`): the source first (**a disk already in this browser**, a file read where it is, a file
   copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already
   in this browser is one another machine has or one detached (Detach keeps the disk and its overlays, and says so):
@@ -1407,10 +1409,12 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   session: backlog). **Reset disk** resets the chosen disk's overlay.
 - The disk is identified by name, size and modification time, not by content (a hash of a
   multi-GB file would block the boot): two different files with all three equal share an overlay.
-- Saving the disk (loop 5): a disk's **Export** menu on the Machines page's Disks tab: *Changes
-  only*, a qcow2 holding the blocks the machine wrote with the image as its backing file;
-  *Whole disk* as qcow2 (zero clusters left out) or raw; the qcow2s are compressed unless the
-  menu's [Compress the qcow2](ui:disks:ExportMenu.compress) is unticked (remembered in the page's settings). The file goes where the user picks
+- Saving the disk (loop 5): a disk's [Export…](ui:machines:PagePane.export) on the Machines page's Disks tab opens the Export wizard:
+  [Changes only](ui:disks:ExportSteps.changes), a qcow2 holding the blocks the machine wrote with the image as its
+  backing file, or [Whole disk](ui:disks:ExportSteps.whole); then the format,
+  [Compressed qcow2](ui:disks:ExportSteps.compressed), [Uncompressed qcow2](ui:disks:ExportSteps.qcow2) (the whole
+  disk's with zero clusters left out) or, the whole disk only, [Raw image](ui:disks:ExportSteps.raw). Nothing is
+  remembered: each export chooses. The file goes where the user picks
   (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
   handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
   collects a Blob). **Never over the running disk:** a save dialog empties the file it hands over

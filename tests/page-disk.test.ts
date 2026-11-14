@@ -89,12 +89,17 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page); // "Boot mydisk.qcow2? The machine restarts…"
+  /** Export… of the machine's disk, its wizard's two steps (`mode`: changes, qcow2 or raw; compressed). */
+  const exportAs = async (mode: string) => {
+    await page.locator('.machines [data-action=export]').click();
+    await page.locator(`#export [data-export=${mode === 'changes' ? 'changes' : 'whole'}]`).click();
+    await page.locator(`#export [data-save=${mode === 'raw' ? 'raw' : 'compressed'}]`).click();
+  };
   /** Export › `mode` of the machine's disk (its Disks tab on the Machines page), then back to the machine. */
   const exportDisk = async (mode: string) => {
     await page.locator('#machines-open').click();
     await page.locator('.machines [data-tab=disks]').click();
-    await page.locator('.machines [id^=export-] summary').click();
-    await page.locator(`.machines [data-save=${mode}]`).click();
+    await exportAs(mode);
   };
   const back = () => page.locator('[data-action=back]').click();
   const pick = async () => {
@@ -202,8 +207,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page.evaluate(() => {
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2', { create: true });
   });
-  await page.locator('.machines [id^=export-] summary').click();
-  await page.locator('.machines [data-save=changes]').click();
+  await exportAs('changes');
   await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:disk-export.saved.changes', { name: 'picked.qcow2' }, { start: true }).source, { timeout: 120_000 });
   await back();
   const picked = Buffer.from(await page.evaluate(async () => {

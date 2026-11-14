@@ -1,7 +1,7 @@
 <!--
   A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached;
   per writable disk its overlays (switch, new empty; Overlays… opens the disk's overlays, Overlays.svelte: rename, delete,
-  merge into a stored disk, export each), export (the changes or the whole disk) and import (a changes file becomes a new
+  merge into a stored disk, export each), export (the Export wizard: the changes or the whole disk) and import (a changes file becomes a new
   overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
 <script lang="ts">
@@ -14,7 +14,7 @@
   import Icon from './ui/Icon.svelte';
   import Note from './ui/Note.svelte';
   import MoveButtons from './MoveButtons.svelte';
-  import ExportMenu from './ExportMenu.svelte';
+  import ExportButton from './ExportButton.svelte';
   import Overlays from './Overlays.svelte';
   import { ask } from './ask.svelte.ts';
   import { msg, MsgError, t, text } from '../i18n.ts';
@@ -193,8 +193,7 @@
               title={t('disks:Disks.overlaysButton.title')}
               data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</Button
             >{/if}
-          {#if a.overlay && overlays.some((x) => x.id === a.overlay)}<ExportMenu
-              id={a.id}
+          {#if a.overlay && overlays.some((x) => x.id === a.overlay)}<ExportButton
               disk={d}
               overlay={a.overlay}
               changes={d.kind !== 'blank'}
@@ -221,7 +220,7 @@
               title={t('disks:Disks.overlaysButton.title')}
               data-action="disk-overlays">{t('disks:Disks.overlaysButton')}</Button
             >{/if}
-          <ExportMenu id={a.id} disk={d} overlay={undefined} changes={false} />
+          <ExportButton disk={d} overlay={undefined} changes={false} />
         </div>
       {/if}
     </Card>

@@ -1,22 +1,21 @@
 <!--
   The Machines page's pane of the page's own machine, a transient one (a test's `?machine=`): its disk (export its
-  changes or the whole disk, import changes, reset it) and its snapshots. Logic is the areas' (disk-*.ts, snapshot-*.ts), through `page`.
+  changes or the whole disk through the Export wizard, import changes, reset it) and its snapshots. Logic is the areas' (disk-*.ts, snapshot-*.ts), through `page`.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
-  import Check from './ui/Check.svelte';
   import Icon from './ui/Icon.svelte';
-  import Menu from './ui/Menu.svelte';
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
+  import ExportWizard from './ExportWizard.svelte';
   import Snapshots from './Snapshots.svelte';
   import T from './T.svelte';
   import { PAGE } from './machines-panes.ts';
   import type { Act } from './actions.svelte.ts';
   import { openPicker } from './file-pickers.ts';
   import { t } from '../i18n.ts';
-  import { remember, settings } from './settings.ts';
   import type { Store } from './store.ts';
+  import type { ExportMode } from './export.ts';
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
@@ -31,13 +30,9 @@
   ] as const;
   const tab = $derived(machinesNav.tab === 'snapshots' ? 'snapshots' : 'disks');
 
-  // Its export's options.
-  let compress = $state(settings().compress ?? true);
-  let exportOpen = $state(false);
-  const save = (mode: 'changes' | 'qcow2' | 'raw') => {
-    exportOpen = false;
-    inBar(() => page.saveDisk(mode, mode !== 'raw' && compress));
-  };
+  /** The Export wizard is open. */
+  let exporting = $state(false);
+  const save = (mode: ExportMode, compress: boolean) => inBar(() => page.saveDisk(mode, compress));
 </script>
 
 <Pane
@@ -56,51 +51,15 @@
       </div>
       {#if current.hasOverlay}
         <div class="row">
-          <Menu
-            id="save"
+          <Button
             icon="download"
+            id="save"
+            data-action="export"
             title={t('machines:PagePane.export.title')}
-            label={t('machines:PagePane.export')}
-            bind:open={exportOpen}
-            align="left"
-            variant="bordered"
+            onclick={() => (exporting = true)}
           >
-            <Button
-              variant="item"
-              data-save="changes"
-              title={t('machines:PagePane.export.changes.title')}
-              onclick={() => save('changes')}
-            >
-              {t('machines:PagePane.export.changes')}
-            </Button>
-            <Button
-              variant="item"
-              data-save="qcow2"
-              title={t('machines:PagePane.export.qcow2.title')}
-              onclick={() => save('qcow2')}
-            >
-              {t('machines:PagePane.export.qcow2')}
-            </Button>
-            <Button
-              variant="item"
-              data-save="raw"
-              title={t('machines:PagePane.export.raw.title')}
-              onclick={() => save('raw')}
-            >
-              {t('machines:PagePane.export.raw')}
-            </Button>
-            <Check
-              id="save-compress"
-              bind:checked={compress}
-              onchange={() => remember({ compress })}
-              title={t('machines:PagePane.export.compress.title')}
-            >
-              {t('machines:PagePane.export.compress')}
-            </Check>
-            <Note>
-              <T k="machines:PagePane.export.hint">{#snippet code(words: string)}<code>{words}</code>{/snippet}</T>
-            </Note>
-          </Menu>
+            {t('machines:PagePane.export')}
+          </Button>
           <Button
             icon="upload"
             onclick={() => openPicker('changes')}
@@ -124,6 +83,11 @@
     <Snapshots {store} {act} />
   {/if}
 </Pane>
+{#if exporting}<ExportWizard name={disk} changes {save} close={() => (exporting = false)}>
+    {#snippet hint()}<T k="machines:PagePane.export.hint"
+        >{#snippet code(words: string)}<code>{words}</code>{/snippet}</T
+      >{/snippet}
+  </ExportWizard>{/if}
 
 <style>
   .disk {

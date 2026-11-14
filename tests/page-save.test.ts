@@ -46,10 +46,15 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   // The disk's actions are on the Machines page: this page's machine, its Disks tab.
   await page.locator('#machines-open').click();
 
-  const save = async (mode: string, name: string) => {
+  /** Export… through its wizard: the changes or the whole disk, then `format` (compressed, qcow2 or raw). */
+  const save = async (mode: string, name: string, format = mode === 'raw' ? 'raw' : 'compressed') => {
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 120_000 }),
-      (async () => { await page.locator('#save summary').click(); await page.locator(`[data-save=${mode}]`).click(); })(),
+      (async () => {
+        await page.locator('#save').click();
+        await page.locator(`#export [data-export=${mode === 'changes' ? 'changes' : 'whole'}]`).click();
+        await page.locator(`#export [data-save=${format}]`).click();
+      })(),
     ]);
     assert.equal(download.suggestedFilename(), name);
     const path = join(dir, name);
@@ -64,22 +69,15 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   const raw = await save('raw', 'rootfs.ext4.img');
   assert.ok(readFileSync(raw).equals(readFileSync(image)), 'the raw export is the image, byte for byte');
 
-  // Compressed unless the menu's box is unticked (it is remembered); either way the same disk.
+  // Compressed or not, as chosen; either way the same disk.
   const whole = await save('qcow2', 'rootfs.ext4.qcow2');
   qemu('check', whole);
   assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', whole, image), /Images are identical/);
   const packed = statSync(whole).size;
-  await page.locator('#save summary').click();
-  await page.locator('#save-compress').uncheck();
-  await page.locator('#save summary').click();
-  await save('qcow2', 'rootfs.ext4.qcow2');
+  await save('qcow2', 'rootfs.ext4.qcow2', 'qcow2');
   qemu('check', whole);
   assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', whole, image), /Images are identical/);
   assert.ok(packed < 0.8 * statSync(whole).size, `compressed ${packed} bytes, not compressed ${statSync(whole).size}`);
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings')!).compress), false);
-  await page.locator('#save summary').click();
-  await page.locator('#save-compress').check();
-  await page.locator('#save summary').click();
 
   symlinkSync(image, join(dir, 'rootfs.ext4'));
   const changes = await save('changes', 'rootfs.ext4-changes.qcow2');

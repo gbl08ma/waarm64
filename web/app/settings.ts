@@ -1,4 +1,4 @@
-// Settings remembered per browser (the view, whether saved disks are compressed, the sound's volume, a transient
+// Settings remembered per browser (the view, the sound's volume, a transient
 // machine's size and the connection its network adapter has, the mouse lock, the Preferences: the status bar's elements and Vulkan's shader store's budget among them). Storage can be off or throw: then nothing is remembered.
 import type { NetworkSettings } from './network.ts';
 import type { View } from './areas/screen.svelte.ts';
@@ -17,7 +17,6 @@ export type Settings = {
   view?: View;
   net?: NetworkSettings;
   transientNet?: string;
-  compress?: boolean;
   screen?: string;
   hidpi?: boolean;
   gpu?: '3d' | '2d';

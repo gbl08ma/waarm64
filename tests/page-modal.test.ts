@@ -142,11 +142,30 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await disk(page, 1);
   await addDisk(page, 'ramdisk', { size: '32' });
   await disk(page, 2);
-  // A disk with an overlay (New empty) has an Export menu: its choices are there (the menu's open state starts unset).
+  // A disk with an overlay (New empty) has Export…, a wizard: the changes or the whole disk, then the format (raw for the
+  // whole disk only), Back between them; a blank disk has no changes of its own and starts at the format.
+  const exporting = page.locator('#export');
+  const saves = async () => exporting.locator('[data-save]').evaluateAll((els) => els.map((e) => e.getAttribute('data-save')));
+  await m.locator('[data-attachment]').nth(0).getByRole('button', { name: t('disks:Disks.newEmpty') }).click();
+  await m.locator('[data-attachment]').nth(0).locator('[data-action=export]').click();
+  assert.match((await exporting.locator('h2').textContent())!, words('disks:ExportSteps.title', {}, { whole: true }));
+  assert.equal(await exporting.locator('[data-action=export-back]').count(), 0);
+  await exporting.locator('[data-export=changes]').click();
+  assert.equal(await exporting.locator('h2').textContent(), t('disks:ExportSteps.title.changes'));
+  assert.deepEqual(await saves(), ['compressed', 'qcow2']);
+  await exporting.locator('[data-action=export-back]').click();
+  await exporting.locator('[data-export=whole]').click();
+  assert.equal(await exporting.locator('h2').textContent(), t('disks:ExportSteps.title.whole'));
+  assert.deepEqual(await saves(), ['compressed', 'qcow2', 'raw']);
+  await exporting.locator('[data-action=export-cancel]').click();
+  await exporting.waitFor({ state: 'detached' });
   await m.locator('[data-attachment]').nth(1).getByRole('button', { name: t('disks:Disks.newEmpty') }).click();
-  await m.locator('[data-attachment]').nth(1).locator('[id^=export-] summary').click();
-  await m.locator('[data-attachment]').nth(1).locator('[data-save=qcow2]').waitFor();
-  await m.locator('[data-attachment]').nth(1).locator('[id^=export-] summary').click();
+  await m.locator('[data-attachment]').nth(1).locator('[data-action=export]').click();
+  assert.equal(await exporting.locator('h2').textContent(), t('disks:ExportSteps.title.whole'));
+  assert.deepEqual(await saves(), ['compressed', 'qcow2', 'raw']);
+  assert.equal(await exporting.locator('[data-action=export-back]').count(), 0);
+  await page.keyboard.press('Escape');
+  await exporting.waitFor({ state: 'detached' });
 
   const record = () => page.evaluate(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -465,6 +484,13 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   await dialog.locator(`[data-overlay="${ids.second}"] [data-action=delete-overlay]`).click();
   await dialog.locator(`[data-overlay="${ids.second}"]`).waitFor({ state: 'detached' });
   assert.equal(await dialog.locator('[data-overlay]').count(), 1);
+  // Export… takes the dialog's place (a blank disk's: straight to the format) and Back returns to the list.
+  await dialog.locator(`[data-overlay="${ids.first}"] [data-action=export]`).click();
+  assert.equal(await dialog.locator('h2').textContent(), t('disks:ExportSteps.title.whole'));
+  assert.equal(await dialog.locator('[data-save]').count(), 3);
+  assert.equal(await dialog.locator('[data-overlay]').count(), 0);
+  await dialog.locator('[data-action=export-back]').click();
+  await dialog.locator(`[data-overlay="${ids.first}"]`).waitFor();
   await dialog.locator('[data-action=close-overlays]').click();
   await dialog.waitFor({ state: 'detached' });
   // Attached: B, full, says so and can't take it; A takes it.

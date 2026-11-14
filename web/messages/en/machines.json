@@ -1097,47 +1097,15 @@
   },
   "PagePane.export.title": {
     "message": "Save the disk, or just the changes made to it, to a file",
-    "note": "Machines page, the page's own machine, Disks tab: tooltip of the Export menu."
+    "note": "Machines page, the page's own machine, Disks tab: tooltip of the Export… button."
   },
   "PagePane.export": {
-    "message": "Export",
-    "note": "Machines page, the page's own machine, Disks tab: the menu that saves its disk to a file."
-  },
-  "PagePane.export.changes.title": {
-    "message": "A qcow2 containing just the changes over the base image, which it names as its backing file. Keep the base image beside it; without it, this file is useless.",
-    "note": "Machines page, Export menu: tooltip of Changes only (qcow2)."
-  },
-  "PagePane.export.changes": {
-    "message": "Changes only (qcow2)",
-    "note": "Machines page, Export menu: an item that saves only what the machine wrote."
-  },
-  "PagePane.export.qcow2.title": {
-    "message": "The whole disk as a qcow2, without its empty space",
-    "note": "Machines page, Export menu: tooltip of Whole disk (qcow2)."
-  },
-  "PagePane.export.qcow2": {
-    "message": "Whole disk (qcow2)",
-    "note": "Machines page, Export menu: an item that saves the whole disk as a qcow2."
-  },
-  "PagePane.export.raw.title": {
-    "message": "The whole disk as a raw image",
-    "note": "Machines page, Export menu: tooltip of Whole disk (raw)."
-  },
-  "PagePane.export.raw": {
-    "message": "Whole disk (raw)",
-    "note": "Machines page, Export menu: an item that saves the whole disk as a raw image."
-  },
-  "PagePane.export.compress.title": {
-    "message": "Compress the qcow2's clusters (deflate), as qemu-img convert -c does. The file is about half the size and takes longer to write.",
-    "note": "Machines page, Export menu: tooltip of Compress the qcow2. The command stays as it is."
-  },
-  "PagePane.export.compress": {
-    "message": "Compress the qcow2",
-    "note": "Machines page, Export menu: the label of a box that compresses the qcow2 files it writes."
+    "message": "Export…",
+    "note": "Machines page, the page's own machine, Disks tab: the button that opens the Export wizard, which saves its disk to a file."
   },
   "PagePane.export.hint": {
     "message": "Exporting will forcibly power off the machine. After the file is written, the machine will be started again. For a clean disk, shut the guest down first (<code>poweroff</code>).",
-    "note": "Machines page, Export menu: the hint at its bottom. <code>…</code> wraps a guest command, shown as code (it stays as it is)."
+    "note": "Export wizard opened from the page's own machine (Machines page): the small note under the formats. <code>…</code> wraps a guest command, shown as code (it stays as it is)."
   },
   "PagePane.importChanges.title": {
     "message": "Import a changes file made from this disk with Export › Changes only (qcow2). Its changes replace the ones kept in this browser.",
