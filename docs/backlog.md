@@ -1643,9 +1643,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **`tests/usb-keyboard.test.ts`'s glue case waits a fixed 20 ms** for the `usb-state` answer over a MessageChannel:
-  under `scripts/ci.sh`'s load it once found none (2026-11-14, PERF loop 27's run, a docs-only change; alone it passes
-  in ~100 ms). Wait for the message instead of a timeout.
 - [B] **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
   case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two

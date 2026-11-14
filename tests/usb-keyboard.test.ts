@@ -98,6 +98,17 @@ test('the keyboard takes LEDs, idle, protocol and GET_REPORT', async () => {
   assert.deepEqual(bytes(poll(d).r), [0, 0, 0, 0, 0, 0, 0, 0]);
 });
 
+// Waits for a message's effect (bounded): a fixed wait failed under CI's load. A short settle follows, so a message
+// that shouldn't come still has its time to show up in the exact checks after it.
+async function until(cond: () => boolean, what: string, ms = 5000) {
+  const end = performance.now() + ms;
+  while (!cond()) {
+    if (performance.now() > end) assert.fail(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  await new Promise((r) => setTimeout(r, 20));
+}
+
 test('the page\'s usb-key messages reach the keyboard through the glue', async () => {
   const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
   const channel = new MessageChannel();
@@ -106,15 +117,15 @@ test('the page\'s usb-key messages reach the keyboard through the glue', async (
   channel.port2.onmessage = (e) => answers.push(e.data);
   try {
     channel.port2.postMessage({ type: 'usb-attach', connector: 3, device: { api: 'virtual', kind: 'keyboard' } });
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => answers.length > 0, 'the attach\'s answer');
     assert.deepEqual(answers, [{ type: 'usb-state', connector: 3, state: 'attached', device: { api: 'virtual', kind: 'keyboard' }, speed: 'full' }]);
     const kbd = (usb as unknown as { plugged: { dev: UsbKeyboard }[] }).plugged[3].dev;
     channel.port2.postMessage({ type: 'usb-key', connector: 3, code: 'MetaLeft', down: true });
     channel.port2.postMessage({ type: 'usb-key', connector: 3, code: 'KeyQ', down: true });
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => kbd.report()[2] === 0x14, 'KeyQ in the report');
     assert.deepEqual(bytes({ code: 'success', actual: 8, data: kbd.report() }), [0x08, 0, 0x14, 0, 0, 0, 0, 0]);
     channel.port2.postMessage({ type: 'usb-key', connector: 3, code: '', down: false });
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => kbd.report().every((b) => b === 0), 'the keys released');
     assert.deepEqual([...kbd.report()], [0, 0, 0, 0, 0, 0, 0, 0]);
     assert.equal(answers.length, 1, 'keys get no answer');
     // The guest's LEDs (SET_REPORT) go to the page: Caps Lock on, then the same again (no message), then off.
@@ -122,7 +133,7 @@ test('the page\'s usb-key messages reach the keyboard through the glue', async (
     await control(kbd, 0x21, 0x09, 0x0200, 0, 1, new Uint8Array([0x02]));
     await control(kbd, 0x21, 0x09, 0x0200, 0, 1, new Uint8Array([0x02]));
     await control(kbd, 0x21, 0x09, 0x0200, 0, 1, new Uint8Array([0x00]));
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => answers.length >= 3, 'the LEDs\' messages');
     assert.deepEqual(answers.slice(1), [{ type: 'usb-leds', connector: 3, leds: 2 }, { type: 'usb-leds', connector: 3, leds: 0 }]);
   } finally {
     usb.close();
