@@ -944,7 +944,23 @@ starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 
 **The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
 they change (`cursor`; its moves as `cursor-at`, which the page uses only under the mouse lock: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
-a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels, followed by the same cursor cut to its top-left 32 CSS pixels: Chromium skips a cursor over 32×32 where its image would reach past the page's edge, which made the guest's cursor vanish in the last 64 pixels), again whenever the scale changes. A cursor the guest
+a blob (`image-set(url(…) <dpr>x) hotX hotY, …, none`; at most 128×128 device pixels, its transparent right and bottom
+margins trimmed, the hotspot in whole CSS pixels as CSS has it, transparent pixels before the image putting it exactly
+on the guest's), again whenever the scale changes. **Chromium shows an image cursor only while it lies inside the
+page's view**: blink's `EventHandler::SelectCursor` skips, for the list's next entry, an image whose box (the pointer
+less the hotspot, the image's size, in device pixels) reaches past the visual viewport; up to Chromium 155 only an
+image over 32×32 CSS pixels (so a copy cut to 32 pixels after it once kept the cursor up to the edge), from 156 any
+image, which made the guest's cursor vanish in the last ~32 pixels of the page. So by an edge the list has the cursor
+cut there (`web/app/areas/cursor-fit.ts`, the pointer followed over the canvas): the cuts for where the pointer is and
+may be by its next move (Chromium picks the cursor for a move before the page hears of it, then again 20 ms after the
+style changes), in 2-device-pixel steps, least cut first, the whole cursor ahead of them; the cursor is cut no more
+than a step short of the edge. The model assumes layout in device pixels (a screen's scale factor): under the
+browser's zoom Chromium's box is the image's size over the zoom, so zoomed in the cut comes a little early, zoomed out
+(below 100%) the cursor can still drop by an edge. `tests/page-cursor.test.ts` checks the list against 156's rule at
+each pixel up to the right edge and observes Chromium's own pick (the size of `WidgetHost.SetCursor`'s mojo message in
+a trace: an image's bitmap travels with it), at 1x; `tests/cursor-fit.test.ts` puts the lists through the rule at
+every edge for whole and fractional densities (headless Chromium's emulated density leaves the layout in CSS pixels,
+unlike a screen's: there the box is twice too big at 2x, so it can't stand in for one). A cursor the guest
 never set leaves the page's own pointer (EDK2's screens and a console with no mouse driver keep one); one it hid is
 `none`; a virtio reset goes back to never set (`GpuHooks.cursorReset`), and so does the machine stopping (off, suspended,
 crashed: the page's pointer is back over its last screen); a restored snapshot sends its cursor again.

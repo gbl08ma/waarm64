@@ -6,6 +6,7 @@ import { flushSync } from 'svelte';
 import { mouse } from './mouse.svelte.ts';
 import { screen } from './screen.svelte.ts';
 import { settings } from '../settings.ts';
+import { cursorBox, cursorCuts, cutImage, cutKey, type CursorBox, type CutImage } from './cursor-fit.ts';
 import type { PageMachine } from '../run/page-machine.svelte.ts';
 
 /** The guest's cursor (virtio-gpu's cursor queue): its image (null: hidden by the guest), hotspot and place. */
@@ -18,18 +19,14 @@ const SIZE_MIN = { width: 640, height: 480 };
 const SIZE_MAX = 4088; // 4095 down to a multiple of 8
 const SIZE_DEBOUNCE_MS = 300;
 
-/** A cursor image drawn at `size` device pixels (kept to `keep`), and its hotspot. */
-function render(draw: OffscreenCanvas, c: GuestCursor, size: number, keep = size) {
-  const k = size / 64;
-  const out = new OffscreenCanvas(keep, keep);
+/** `cut` of a cursor drawn at `size` device pixels, as a blob, and its CSS entry's hotspot (web/app/areas/cursor-fit.ts). */
+function render(draw: OffscreenCanvas, size: number, im: CutImage) {
+  const out = new OffscreenCanvas(im.width, im.height);
   const ctx = out.getContext('2d');
   if (!ctx) return Promise.reject(new Error('no 2D context'));
-  ctx.imageSmoothingEnabled = !Number.isInteger(k);
-  ctx.drawImage(draw, 0, 0, size, size);
-  return out.convertToBlob().then((blob) => {
-    const hot = (n: number) => Math.min(keep - 1, Math.round(n * k));
-    return { url: URL.createObjectURL(blob), at: `${hot(c.hotX)} ${hot(c.hotY)}` };
-  });
+  ctx.imageSmoothingEnabled = !Number.isInteger(size / 64);
+  ctx.drawImage(draw, im.padX - im.cut.left, im.padY - im.cut.top, size, size);
+  return out.convertToBlob().then((blob) => ({ url: URL.createObjectURL(blob), at: `${im.cssHotX} ${im.cssHotY}` }));
 }
 const imageOf = (c: GuestCursor & { image: ArrayBuffer }) =>
   new ImageData(new Uint8ClampedArray(c.image.slice(0)), 64, 64);
@@ -61,8 +58,14 @@ export class ScreenView {
   /** Device pixels per guest pixel, as `fit` drew it. */
   #scale = 1;
   cursor: GuestCursor | undefined;
-  #cursorUrls: string[] = [];
-  #cursorToken = 0;
+  /** The guest's cursor as the CSS cursor draws it (`showCursor`): its image at `size` device pixels, its box. */
+  #cursorArt: { draw: OffscreenCanvas; size: number; box: CursorBox } | undefined;
+  /** Its images by cut (`cutKey`), made as the pointer nears an edge; the list on the canvas, by their keys. */
+  #cursorImages = new Map<string, Promise<{ url: string; at: string }>>();
+  #cursorList = '';
+  /** The host's pointer over the canvas, CSS pixels (the viewport's), as the last move left it. */
+  #pointer: { x: number; y: number } | undefined;
+  #followed = new WeakSet<HTMLCanvasElement>();
   /** The size last sent to the guest. */
   sent: Size | undefined;
   /** Called with each size sent (the guest's agent hears it too: web/app/areas/agent-actions.ts). */
@@ -78,6 +81,16 @@ export class ScreenView {
   attach(els: ScreenElements) {
     const first = !this.#els;
     this.#els = els;
+    // Where the pointer is, for the cursor's cuts by the edges (`#fitCursor`): a move that changes no cut costs a little arithmetic.
+    const follow = (e: PointerEvent) => {
+      this.#pointer = { x: e.clientX, y: e.clientY };
+      this.#fitCursor();
+    };
+    if (!this.#followed.has(els.canvas)) {
+      this.#followed.add(els.canvas);
+      els.canvas.addEventListener('pointermove', follow, { passive: true });
+      els.canvas.addEventListener('pointerover', follow, { passive: true });
+    }
     if (!first) return;
     new ResizeObserver(() => {
       this.fit();
@@ -164,34 +177,63 @@ export class ScreenView {
   // scale is whole; Chromium takes cursor images up to 128×128 device pixels, so a bigger one is capped. `none` is the
   // guest hiding it.
   showCursor() {
-    const token = ++this.#cursorToken;
     const c = this.cursor;
     this.#drawLockCursor();
+    this.#cursorArt = undefined;
+    this.#cursorList = '';
+    this.#dropCursorImages();
     if (c?.image === undefined || !c.image) {
       this.canvas.style.cursor = c?.image === null ? 'none' : '';
       return;
     }
+    const image = imageOf({ ...c, image: c.image });
     const draw = new OffscreenCanvas(64, 64);
-    draw.getContext('2d')?.putImageData(imageOf({ ...c, image: c.image }), 0, 0);
-    // Chromium drops a cursor over 32×32 CSS pixels for the next one in the list when its image would reach past the
-    // page's edge (so a page can't draw over the browser's UI): the guest's cursor then vanished in the last 64
-    // pixels, so the same cursor cut to its top-left 32 pixels follows it (a cursor's drawing is in the corner by its hotspot).
+    draw.getContext('2d')?.putImageData(image, 0, 0);
     const size = Math.min(128, Math.max(1, Math.round(64 * this.#scale)));
-    const small = Math.floor(32 * devicePixelRatio);
-    Promise.all([render(draw, c, size), size > small ? render(draw, c, size, small) : undefined]).then(
-      ([big, little]) => {
-        const urls = [big.url, little?.url];
-        if (token !== this.#cursorToken) {
-          for (const u of urls) if (u) URL.revokeObjectURL(u);
-          return;
-        }
-        for (const u of this.#cursorUrls) URL.revokeObjectURL(u);
-        this.#cursorUrls = urls.filter((u) => u !== undefined);
-        const one = (r: { url: string; at: string }) => `-webkit-image-set(url(${r.url}) ${devicePixelRatio}x) ${r.at}`;
-        this.canvas.style.cursor = [one(big), little && one(little), 'none'].filter(Boolean).join(', ');
+    this.#cursorArt = { draw, size, box: cursorBox(image.data, c.hotX, c.hotY, size) };
+    this.#fitCursor();
+  }
+  // Chromium shows an image cursor only while it lies inside the page's view, else the list's next entry
+  // (web/app/areas/cursor-fit.ts): by an edge the list has the cursor cut there too, for where the pointer is and may be
+  // by its next move, least cut first; made again as the pointer moves, the images kept by cut.
+  #fitCursor() {
+    const art = this.#cursorArt;
+    if (!art) return;
+    const dpr = devicePixelRatio;
+    const vv = visualViewport;
+    const view = vv
+      ? { x: vv.offsetLeft, y: vv.offsetTop, width: vv.width, height: vv.height }
+      : { x: 0, y: 0, width: innerWidth, height: innerHeight };
+    const cuts = cursorCuts(art.box, this.#pointer, view, dpr);
+    const list = cuts.map(cutKey).join(' ');
+    if (list === this.#cursorList) return;
+    this.#cursorList = list;
+    const images = cuts.map((cut) => {
+      const key = cutKey(cut);
+      let im = this.#cursorImages.get(key);
+      if (!im) this.#cursorImages.set(key, (im = render(art.draw, art.size, cutImage(art.box, cut, dpr))));
+      return im;
+    });
+    Promise.all(images).then(
+      (shown) => {
+        if (art !== this.#cursorArt || list !== this.#cursorList) return;
+        const one = (r: { url: string; at: string }) => `-webkit-image-set(url(${r.url}) ${dpr}x) ${r.at}`;
+        this.canvas.style.cursor = [...shown.map(one), 'none'].join(', ');
+        if (this.#cursorImages.size > 64) this.#dropCursorImages(new Set(list.split(' ')));
       },
       () => undefined, // not drawn: the cursor stays as it was
     );
+  }
+  /** Forget the cursor's images (all but `keep`'s keys), their blob URLs revoked once made. */
+  #dropCursorImages(keep = new Set<string>()) {
+    for (const [key, im] of this.#cursorImages) {
+      if (keep.has(key)) continue;
+      this.#cursorImages.delete(key);
+      im.then(
+        (r) => URL.revokeObjectURL(r.url),
+        () => undefined,
+      );
+    }
   }
 
   // While the screen holds the mouse (docs/frontend.md "Mouse lock") the browser hides the pointer, the CSS cursor
