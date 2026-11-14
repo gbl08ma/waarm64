@@ -976,27 +976,68 @@ fn a_member_comes_in_by_its_lookup_unless_incoming_is_off() {
     assert_eq!(n.got(1), [b"reply 2".to_vec()]);
 }
 
-#[test]
-fn a_handshake_without_the_rooms_key_lets_nobody_in() {
-    let mut other = config(1);
-    other.link.id = "another room".into();
-    let mut n = Net::new(vec![other, config(2)]);
-    // Node 0 is another room's: its handshake goes to node 1's key by hand.
-    let to = n.nodes[1].c.room.addr(&public(2));
-    let from = n.addr(0);
-    let mut p = udp(from, to, 9, b"in?");
+/// Node `from` starts a handshake with key `to` by hand (no lookup), its guest's packet `b` waiting.
+fn handshake_by_hand(n: &mut Net, from: usize, to: [u8; 32], b: &[u8]) {
+    let dst = n.nodes[from].c.room.addr(&to);
+    let mut p = udp(n.nodes[from].c.addr, dst, 9, b);
     pad(&mut p);
     let now = n.now;
-    let id = n.nodes[0].c.add_peer(public(2), false, 0, now);
-    let r = n.nodes[0].c.wg.send(now, [(id, vec![PacketMut::from(p)])]);
-    n.nodes[0].c.send_to_peers(r.to_peers, now);
-    n.advance(Duration::from_secs(19));
-    assert_eq!(n.nodes[1].c.peers.len(), 1, "on trial");
-    n.advance(Duration::from_secs(2));
-    assert!(n.nodes[1].c.peers.is_empty(), "forgotten after 20 s");
+    let id = n.nodes[from].c.add_peer(to, false, 0, now);
+    let r = n.nodes[from]
+        .c
+        .wg
+        .send(now, [(id, vec![PacketMut::from(p)])]);
+    n.nodes[from].c.send_to_peers(r.to_peers, now);
+}
+
+#[test]
+fn a_handshake_without_the_rooms_key_lets_nobody_in() {
+    // Nodes 0..32 are another room's, with node 1's name: their initiations lack the room's proof.
+    let outsiders = 2 * TRIALS_PER_SECOND;
+    let mut cfgs: Vec<Config> = (0..outsiders)
+        .map(|k| {
+            let mut c = config(10 + k as u8);
+            c.link.id = "another room".into();
+            c
+        })
+        .collect();
+    cfgs.extend([config(2), config(3)]);
+    let mut n = Net::new(cfgs);
+    let (target, member) = (outsiders, outsiders + 1);
+    for k in 0..outsiders {
+        handshake_by_hand(&mut n, k, public(2), b"in?");
+    }
+    n.run();
+    let t = &n.nodes[target].c;
+    assert!(t.peers.is_empty(), "nobody on trial");
+    assert!(t.trials_in.is_empty(), "nothing charged to the budget");
+    // A member's unasked handshake in the same second still gets in.
+    handshake_by_hand(&mut n, member, public(2), b"member");
+    n.run();
+    assert_eq!(n.got(target), [b"member".to_vec()]);
     n.advance(Duration::from_secs(120));
-    assert!(n.got(1).is_empty());
-    assert!(!n.nodes[1].events.iter().any(|e| e["type"] == "peer"));
+    assert!(
+        n.nodes[..outsiders]
+            .iter()
+            .all(|o| o.c.peers.values().all(|p| !p.confirmed))
+    );
+}
+
+#[test]
+fn an_initiation_carries_the_rooms_proof() {
+    let room = Room::derive("r");
+    let mut init = [5u8; 148];
+    init[0] = 1;
+    room.prove(&mut init);
+    let mut copy = init;
+    assert!(room.check_proof(&mut copy));
+    assert_eq!(copy[132..], [0; 16], "cleared for WireGuard");
+    assert_eq!(copy[..132], init[..132]);
+    let mut copy = init;
+    assert!(!Room::derive("r2").check_proof(&mut copy));
+    let mut copy = init;
+    copy[40] ^= 1;
+    assert!(!room.check_proof(&mut copy), "over the initiation's bytes");
 }
 
 #[test]
@@ -1718,28 +1759,51 @@ fn a_forgotten_peers_channel_closes_before_it_says_gone() {
     assert_eq!(kinds, ["peer", "path", "path", "peer-gone"]);
 }
 
+/// Junk under `tag`, different for each `k` (copies of one are opened once): a member's (the
+/// room's MAC holds, nothing opens) or an outsider's.
+fn junk(room: &Room, tag: &str, k: u32, member: bool) -> Value {
+    let mut junk = [7u8; lookup::SIZE];
+    junk[..4].copy_from_slice(&k.to_le_bytes());
+    if member {
+        let m = lookup::mac(room, tag, &junk[..lookup::SIZE - 16]);
+        junk[lookup::SIZE - 16..].copy_from_slice(&m);
+    }
+    nostr::Author::random()
+        .unwrap()
+        .event(KIND, tag, &b64().encode(junk), T0)
+}
+
 #[test]
 fn junk_under_our_tag_is_opened_only_within_a_budget() {
     let mut n = Net::new(configs(&[2]));
     let room = n.nodes[0].c.room.clone();
     let target = n.addr(0);
     let tag = room.tag_for(&target, T0 / 3600);
-    // Each different (copies of one are opened once).
-    for k in 0..LOOKUP_EVENTS_PER_SECOND as u32 {
-        let mut junk = [7u8; lookup::SIZE];
-        junk[..4].copy_from_slice(&k.to_le_bytes());
-        let e = nostr::Author::random()
-            .unwrap()
-            .event(KIND, &tag, &b64().encode(junk), T0);
-        n.forward(&e);
-    }
-    n.run();
     let good = |nonce: u8| Lookup {
         key: public(1),
         region: INLINE_REGION,
         time: T0,
         nonce: [nonce; 16],
     };
+    // An outsider's (it saw a lookup to us, so it has the tag) costs no budget.
+    for k in 0..10 * LOOKUP_EVENTS_PER_SECOND as u32 {
+        n.forward(&junk(&room, &tag, k, false));
+    }
+    n.run();
+    assert!(n.nodes[0].c.lookups_in.iter().all(|w| w.is_empty()));
+    n.inject(&good(3), &room, None, target, T0 / 3600);
+    assert_eq!(
+        n.nodes[0].c.peers.len(),
+        1,
+        "an outsider's flood keeps nobody out"
+    );
+    let id = n.nodes[0].c.by_addr[&room.addr(&public(1))];
+    n.nodes[0].c.forget(id);
+    n.advance(Duration::from_millis(1001));
+    // A member's is opened, within the budget.
+    for k in 0..LOOKUP_EVENTS_PER_SECOND as u32 {
+        n.forward(&junk(&room, &tag, k, true));
+    }
     n.inject(&good(1), &room, None, target, T0 / 3600);
     assert!(n.nodes[0].c.peers.is_empty(), "past the second's budget");
     n.advance(Duration::from_millis(1001));
@@ -1794,12 +1858,7 @@ fn junk_through_one_relay_doesnt_block_lookups_through_the_others() {
     let target = n.addr(0);
     let tag = room.tag_for(&target, T0 / 3600);
     for k in 0..300u32 {
-        let mut junk = [7u8; lookup::SIZE];
-        junk[..4].copy_from_slice(&k.to_le_bytes());
-        let e = nostr::Author::random()
-            .unwrap()
-            .event(KIND, &tag, &b64().encode(junk), T0);
-        n.forward_on(&e, Some("wss://nostr0.test"));
+        n.forward_on(&junk(&room, &tag, k, true), Some("wss://nostr0.test"));
     }
     n.run();
     let l = lookup(1, 1);

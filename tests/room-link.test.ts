@@ -53,6 +53,14 @@ test("a pasted link with raw non-ASCII decodes as link.rs does, and a derper's p
   const room = (s: string) => { const r = parseRoomLink(s); return 'room' in r ? r.room.id : r.error.key; };
   assert.equal(room('waarm64-room:café%20lan'), 'café lan');
   assert.equal(room('waarm64-room:é%4142'), 'éA42');
+  // Unicode's two spellings of "é" (composed, and "e" with a combining accent) are one room, by link or by name; case
+  // still counts.
+  const nfd = 'cafe\u0301 lan';
+  assert.deepEqual(parseRoomLink(nfd), parseRoomLink('café lan'));
+  assert.deepEqual(roomLink({ id: nfd, nostr: [], derp: [] }), { link: 'waarm64-room:caf%C3%A9%20lan' });
+  assert.equal(room('waarm64-room:cafe%CC%81%20lan'), 'café lan');
+  assert.match(privateRoomId(nfd), /^café lan-/);
+  assert.notDeepEqual(parseRoomLink('Café lan'), parseRoomLink('café lan'));
   const err = (r: ReturnType<typeof roomLink>) => ('error' in r ? r.error.key : 'ok');
   assert.equal(err(roomLink({ id: 'a', nostr: [], derp: ['derp.example:99999'] })), 'network:room.badDerp');
   assert.equal(err(roomLink({ id: 'a', nostr: [], derp: ['[::1]:65536'] })), 'network:room.badDerp');

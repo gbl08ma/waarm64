@@ -20,8 +20,11 @@ and findings are [networking/rooms.md](../networking/rooms.md); their loose ends
   connected.
 - **IPv4 between guests.** Key-derived IPv4 addresses would collide (32 bits); a per-node mapping would need state
   nobody keeps.
-- **Spam** in public rooms, the global one most of all: any member can flood lookups or fill a node's trial budget
-  (backlog.md "Rooms' loose ends"). Proof of work on lookups (NIP-13) and relays' own rate limits are the directions.
+- **Spam** in public rooms, the global one most of all: any member (in a public room, anyone) can flood a node's
+  lookups through every relay of the link (128 a second each) or fill its trial budget with fresh keys (16 a second),
+  keeping other members' lookups and unasked handshakes out while it goes on (rooms.md "Finding a peer", "The tunnel
+  and the guest's side"; an outsider with only a node's name can't: lookups carry the room's MAC, initiations its
+  proof). Proof of work on lookups and fresh keys (NIP-13's form) and relays' own rate limits are the directions.
 - **Who's here on the page**: a directory stays the participants' own (they operate it and agree on its identity,
   which can't come from the room's ID, or every member would hold its private key); the page could list it if the
   user gives it that identity's name, through a small protocol such directories would speak.

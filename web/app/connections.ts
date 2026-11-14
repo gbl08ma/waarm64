@@ -123,6 +123,21 @@ async function roomKeyLock(key: string): Promise<string> {
   return `waarm64-room-key:#${Array.from(h.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/**
+ * The lock an ephemeral room connection holds (shared) while it uses a stored entry of `waarm64-room` (`keyOf` a stored
+ * connection): its tab's memory is the only record of it, so this is how other tabs see that the entry is in use (Delete
+ * and New name keep it then). Named by the entry (a connection's id, no secret).
+ */
+const roomEntryLock = (identityKey: string) => `waarm64-room-entry:${identityKey}`;
+
+/** How many hold `lock` now, in every tab (0 without Web Locks: Node's tests may lack them). */
+async function holders(lock: string): Promise<number> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
+  if (!globalThis.navigator?.locks) return 0;
+  const q = await navigator.locks.query();
+  return (q.held ?? []).filter((l) => l.name === lock).length;
+}
+
 /** A connection's default name: Tailscale, a Headscale's host, tailcat, This computer, or a room's name. */
 export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet' | 'room'>): string {
   if (c.kind === 'tailcat') return 'tailcat';
@@ -190,6 +205,8 @@ export class Connections {
   private store: Store;
   private state: ConnectionState;
   private memory = new Map<string, Connection>();
+  /** This page's ephemeral room connections that use a stored entry: each one's `roomEntryLock`, and its release. */
+  private entries = new Map<string, { lock: string; release: () => void }>();
 
   constructor(store: Store, state: ConnectionState = memoryState()) {
     [this.store, this.state] = [store, state];
@@ -246,7 +263,30 @@ export class Connections {
       created: Date.now(),
     };
     await this.put(c);
+    if (ephemeral && c.room && !c.room.identity) await this.holdEntry(c.id, c.room.identityKey);
     return c;
+  }
+
+  /** Ephemeral connection `id` uses stored entry `identityKey`: its lock, held until it goes (or its tab does). */
+  private async holdEntry(id: string, identityKey: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
+    if (!globalThis.navigator?.locks) return;
+    const lock = roomEntryLock(identityKey);
+    let release!: () => void;
+    const kept = new Promise<void>((resolve) => (release = resolve));
+    // Shared, and nothing takes it exclusively: granted at once.
+    await new Promise<void>((granted) => {
+      void navigator.locks.request(lock, { mode: 'shared' }, () => {
+        granted();
+        return kept;
+      });
+    });
+    this.entries.set(id, { lock, release });
+  }
+
+  private releaseEntry(id: string) {
+    this.entries.get(id)?.release();
+    this.entries.delete(id);
   }
 
   /**
@@ -302,6 +342,7 @@ export class Connections {
     const eph = this.memory.get(id);
     if (eph) {
       this.memory.delete(id);
+      this.releaseEntry(id);
       // An ephemeral room connection may use a stored one's kept key: the last to go forgets it.
       if (eph.room && !eph.room.identity && !(await this.sharesKey(eph)))
         await this.state.forgetRoom(eph.room.identityKey);
@@ -321,18 +362,27 @@ export class Connections {
    */
   async newRoomKey(c: Connection & { room: RoomConnection }) {
     const r = { ...c.room };
-    if (c.ephemeral) return this.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
+    if (c.ephemeral) {
+      this.releaseEntry(c.id); // its key is its own now
+      return this.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
+    }
     delete r.identity; // never in a stored record (one written before may have it)
     const shared = await this.sharesKey(c);
     await this.put({ ...c, room: { ...r, identityKey: shared ? `${c.id}.${Date.now()}` : r.identityKey } });
     if (!shared) await this.state.forgetRoom(r.identityKey);
   }
 
-  /** Whether another room connection (stored, or this page's ephemeral one) uses room connection `c`'s kept key. */
+  /**
+   * Whether another room connection uses room connection `c`'s kept key: a stored one, this page's ephemeral one, or
+   * another tab's ephemeral one (by its `roomEntryLock`: more holders than this page's own).
+   */
   async sharesKey(c: Connection): Promise<boolean> {
-    return (await this.list()).some(
-      (x) => x.id !== c.id && x.room?.identityKey === c.room?.identityKey && !x.room?.identity,
-    );
+    const k = c.room?.identityKey;
+    if (!k || c.room?.identity) return false;
+    if ((await this.list()).some((x) => x.id !== c.id && x.room?.identityKey === k && !x.room.identity)) return true;
+    const lock = roomEntryLock(k);
+    const mine = [...this.entries.values()].filter((e) => e.lock === lock).length;
+    return (await holders(lock)) > mine;
   }
 }
 

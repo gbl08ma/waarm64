@@ -9,7 +9,9 @@
 //! address or hour. It's a hint, not a proof: the WireGuard handshake decides. The seal uses the
 //! WireGuard node key itself, with a label of its own (rooms.md "Decisions": no second key). Both kinds look
 //! alike to a relay: 32 bytes (the ephemeral key, or random bytes whose first 12 are the nonce),
-//! then the ciphertext; the target tries the seal first.
+//! then the ciphertext, then a MAC under a key from the room's ID over the tag and those bytes,
+//! which the target checks before anything costly (an outsider's junk under its tag costs one
+//! BLAKE2s and uses up no budget); then it tries the seal first.
 
 use blake2::{Blake2s256, Digest};
 use chacha20poly1305::{
@@ -18,11 +20,22 @@ use chacha20poly1305::{
 };
 use x25519_dalek::{X25519_BASEPOINT_BYTES, x25519};
 
-use super::Room;
+use super::{Room, mac16};
 
 const PLAIN: usize = 32 + 2 + 8 + 16;
-/// A lookup's bytes, either kind.
-pub const SIZE: usize = 32 + PLAIN + 16;
+/// A lookup's bytes, either kind: the head, the ciphertext and its tag, the room's MAC.
+pub const SIZE: usize = 32 + PLAIN + 16 + 16;
+
+/// The room's MAC of a lookup's `body` (all but the MAC) under `tag`.
+pub fn mac(room: &Room, tag: &str, body: &[u8]) -> [u8; 16] {
+    mac16(&room.lookup_mac, &[tag.as_bytes(), &[0], body])
+}
+
+/// Whether `b` is a lookup a member of the room made under `tag` (its MAC holds): cheap, before
+/// [`Lookup::open`]'s X25519.
+pub fn authentic(room: &Room, tag: &str, b: &[u8]) -> bool {
+    b.len() == SIZE && b[SIZE - 16..] == mac(room, tag, &b[..SIZE - 16])
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lookup {
@@ -81,7 +94,7 @@ impl Lookup {
         let mut rnd = [0u8; 32];
         getrandom::fill(&mut rnd).expect("randomness");
         let aad = tag.as_bytes();
-        match to {
+        let mut b = match to {
             Some(to) => {
                 let eph = x25519(rnd, X25519_BASEPOINT_BYTES);
                 let k = seal_key(&room.lookup, &x25519(rnd, *to), &eph, to);
@@ -109,7 +122,10 @@ impl Lookup {
                     .unwrap();
                 [&rnd[..], &ct].concat()
             }
-        }
+        };
+        let m = mac(room, tag, &b);
+        b.extend_from_slice(&m);
+        b
     }
 
     /// A lookup for the node with key pair (`private`, `public`) under `tag`, if it is one.
@@ -121,10 +137,10 @@ impl Lookup {
         b: &[u8],
     ) -> Option<Lookup> {
         let aad = tag.as_bytes();
-        if b.len() != SIZE {
+        if !authentic(room, tag, b) {
             return None;
         }
-        let (head, ct) = b.split_at(32);
+        let (head, ct) = b[..SIZE - 16].split_at(32);
         let eph: [u8; 32] = head.try_into().unwrap();
         let k = seal_key(&room.lookup, &x25519(*private, eph), &eph, public);
         let plain = ChaCha20Poly1305::new(&k.into())
@@ -167,8 +183,19 @@ mod tests {
             assert_eq!(Lookup::open(&room, &tp, &tq, &tag, &b), Some(l.clone()));
             assert_eq!(Lookup::open(&room, &tp, &tq, "another tag", &b), None);
             assert_eq!(Lookup::open(&Room::derive("r2"), &tp, &tq, &tag, &b), None);
+            assert!(authentic(&room, &tag, &b));
+            assert!(!authentic(&room, "another tag", &b));
+            assert!(!authentic(&Room::derive("r2"), &tag, &b));
             let mut bad = b.clone();
             *bad.last_mut().unwrap() ^= 1;
+            assert!(!authentic(&room, &tag, &bad), "the MAC");
+            assert_eq!(Lookup::open(&room, &tp, &tq, &tag, &bad), None);
+            // A member can make one that passes the MAC and doesn't open (the budget's for those).
+            let mut bad = b.clone();
+            bad[SIZE - 17] ^= 1;
+            let m = mac(&room, &tag, &bad[..SIZE - 16]);
+            bad[SIZE - 16..].copy_from_slice(&m);
+            assert!(authentic(&room, &tag, &bad));
             assert_eq!(Lookup::open(&room, &tp, &tq, &tag, &bad), None);
         }
         // Sealed to the key: another node of the room can't read it, even under the same tag.

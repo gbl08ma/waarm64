@@ -23,7 +23,7 @@ export type RelayStats = {
 
 export type NostrRelay = {
   url: string;
-  /** Every event published, in order. */
+  /** Every event published, in order (the last `MAX_KEPT`). */
   events: Event[];
   /** While true, published events are dropped (a relay that doesn't forward). */
   drop: boolean;
@@ -34,6 +34,11 @@ export type NostrRelay = {
 };
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+/** A message (a frame, or a fragmented message's frames) past this closes the connection: a client that declares a
+ * larger length isn't waited on while its bytes pile up. A lookup is ~550 bytes, a REQ less. */
+const MAX_MESSAGE = 1 << 20;
+/** `events` keeps at most this many with `keep` on, the oldest let go first. */
+const MAX_KEPT = 65_536;
 
 function frame(op: number, payload: Buffer): Buffer {
   const n = payload.length;
@@ -59,6 +64,7 @@ function serve(socket: Duplex, onText: (s: string) => void, onClose: () => void,
       if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); at = 4; }
       else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); at = 10; }
       if (!masked) return close(); // clients mask (RFC 6455 §5.1)
+      if (len > MAX_MESSAGE - parts.reduce((n, p) => n + p.length, 0)) return close();
       if (buf.length < at + 4 + len) return;
       const mask = buf.subarray(at, at + 4);
       const p = Buffer.from(buf.subarray(at + 4, at + 4 + len));
@@ -130,7 +136,7 @@ export async function startNostrRelay(port = 0, keep = true): Promise<NostrRelay
         if (idOf(e) !== e.id) return c.send(JSON.stringify(['OK', e.id, false, 'invalid: the id']));
         c.send(JSON.stringify(['OK', e.id, true, '']));
         stats.eventsIn++;
-        if (keep) relay.events.push(e);
+        if (keep && relay.events.push(e) > MAX_KEPT) relay.events.shift();
         if (relay.drop) return;
         for (const o of clients) {
           for (const [sub, filters] of o.subs) {

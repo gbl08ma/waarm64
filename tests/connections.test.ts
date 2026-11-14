@@ -108,6 +108,38 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
   assert.deepEqual(forgot, [`room:${pub.id}`, `room:${priv.id}`], 'a key of its own is forgotten; an ephemeral one\'s own is in memory');
 });
 
+test("rooms: another tab's ephemeral connection on a stored one's key keeps it through Delete and New name", async () => {
+  // Two Connections on one store: two tabs (Node's Web Locks are the process's, as a browser's are the origin's).
+  const s = store();
+  const { forgot, state } = fakeState();
+  const [tab1, tab2] = [new Connections(s, state), new Connections(s, state)];
+  const link = 'waarm64-room:lobby';
+  const stored = await tab1.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  const eph = await tab2.create({ kind: 'room', ephemeral: true, room: { link: 'waarm64-room:other', incoming: true, relayOnly: false, keyOf: stored.id } });
+  assert.equal(eph.room!.identityKey, stored.id);
+  assert.equal(await tab1.sharesKey(stored), true, "tab 1 sees tab 2's");
+  assert.equal(await tab2.sharesKey(eph), true);
+  // New name in tab 1: its own entry from now on; tab 2's keeps the old one.
+  await tab1.newRoomKey(stored as typeof stored & { room: NonNullable<typeof stored.room> });
+  assert.deepEqual(forgot, [], 'shared: kept');
+  const renamed = (await tab1.get(stored.id))!;
+  assert.notEqual(renamed.room!.identityKey, stored.id);
+  assert.equal(await tab1.sharesKey(renamed), false);
+  assert.equal(await tab2.sharesKey(eph), false, 'only its own hold on it now');
+  // Delete in tab 1 forgets only its new entry; the last one using the old entry, in tab 2, forgets that.
+  await tab1.delete(stored.id);
+  assert.deepEqual(forgot, [`room:${renamed.room!.identityKey}`]);
+  await tab2.delete(eph.id);
+  assert.deepEqual(forgot, [`room:${renamed.room!.identityKey}`, `room:${stored.id}`]);
+  // And Delete with tab 2's still running keeps the entry.
+  const again = await tab1.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  const eph2 = await tab2.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false, keyOf: again.id } });
+  await tab1.delete(again.id);
+  assert.equal(forgot.length, 2, 'in use by tab 2: kept');
+  await tab2.delete(eph2.id);
+  assert.deepEqual(forgot.at(-1), `room:${again.id}`);
+});
+
 test('rooms: a pasted key is kept as the new connection\'s, or is the connection\'s that has it', async () => {
   const { rooms, state } = fakeState();
   const conns = new Connections(store(), state);

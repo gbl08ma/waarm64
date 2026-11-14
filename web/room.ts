@@ -290,7 +290,7 @@ export function base32(b: Uint8Array): string {
 }
 
 /** A private room's ID for the name `name`: only those given its link can guess it. */
-export const privateRoomId = (name: string) => `${name.trim()}-${base32(crypto.getRandomValues(new Uint8Array(16)))}`;
+export const privateRoomId = (name: string) => `${roomId(name)}-${base32(crypto.getRandomValues(new Uint8Array(16)))}`;
 
 /** Whether a room's ID has a private room's suffix (the only form the page takes as private). */
 export const isPrivateRoom = (id: string) => PRIVATE.test(id);
@@ -328,9 +328,13 @@ function dec(s: string): string | undefined {
  * number, which link.rs refuses). */
 const DERP = /^(?!-\d+$)(\d+|(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?)$/;
 
+/** A room's ID as the page writes it: trimmed, and in Unicode's NFC, so a name typed with a composed "é" and one with
+ * "e" and a combining accent are one room (an ID is matched by its bytes; case still counts). */
+const roomId = (id: string) => id.trim().normalize('NFC');
+
 /** Checks a room's parts and writes its link, or says what's wrong. */
 export function roomLink(l: RoomLink): { link: string } | { error: Msg } {
-  const id = l.id.trim();
+  const id = roomId(l.id);
   if (!id) return { error: msg('network:room.noName') };
   if (new TextEncoder().encode(id).length > ROOM_MAX_ID) return { error: msg('network:room.longName', { max: ROOM_MAX_ID }) };
   const nostr = l.nostr.map((n) => n.trim()).filter((n) => n);
@@ -365,7 +369,7 @@ export function parseRoomLink(input: string): { link: string; room: RoomLink } |
     }
   }
   const l = roomLink(room);
-  return 'error' in l ? l : { link: l.link, room: { ...room, id: room.id.trim() } };
+  return 'error' in l ? l : { link: l.link, room: { ...room, id: roomId(room.id) } };
 }
 
 /** What starts a room connection's client: its link, its switches and its kept identity. */
