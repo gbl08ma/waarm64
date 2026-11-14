@@ -12,8 +12,9 @@ import type { Reach6Options } from './reach6.ts';
 export type NetMap = {
   name: string;
   addresses: string[];
-  /** `routes`: the subnets a peer routes (approved by the tailnet's admin). */
-  peers: { id: string; name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean; routes?: string[] }[];
+  /** `routes`: the subnets a peer routes (approved by the tailnet's admin); `direct`: a room's, whether its packets take a
+   * direct (WebRTC) path rather than the relay. */
+  peers: { id: string; name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean; routes?: string[]; direct?: boolean }[];
   /** Whether the peers' subnet routes are installed. */
   acceptRoutes?: boolean;
   mtu: number;

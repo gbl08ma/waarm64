@@ -432,13 +432,20 @@ test('a room connection: its link and switches go to the room client; the view s
     room: { name, link: room.link, incoming: false, relayOnly: true },
   };
   rooms[0].setState('Running', nm); // i18n-ignore
-  assert.deepEqual(net.view(), { phase: 'connected', address: 'fd12:3456:789a:1:2:3:4:5', exitNodes: [], internet: false, room: { name, link: room.link, incoming: false }, text: t('network:network-view.room'), details: [t('network:network-view.room.connections', { count: 1 })] });
+  assert.deepEqual(net.view(), { phase: 'connected', address: 'fd12:3456:789a:1:2:3:4:5', exitNodes: [], internet: false, room: { name, link: room.link, incoming: false }, text: t('network:network-view.room'), details: [t('network:network-view.room.connectionsDirect', { count: 1, direct: 0 })] });
   assert.equal(primaryOf([net.view(), { phase: 'connected', internet: true }]), 1, 'a room beside a way to the internet is never the default way out');
+  // How many of the connections are direct; none, and the count alone.
+  const two = [{ ...nm.peers[0], direct: true }, { ...nm.peers[0], id: 'nodekey:02', direct: false }];
+  rooms[0].setState('Running', { ...nm, peers: two }); // i18n-ignore
+  assert.deepEqual(net.view().details, [t('network:network-view.room.connectionsDirect', { count: 2, direct: 1 })]);
+  rooms[0].setState('Running', { ...nm, peers: [] }); // i18n-ignore
+  assert.deepEqual(net.view().details, [t('network:network-view.room.connections', { count: 0 })]);
+  rooms[0].setState('Running', nm); // i18n-ignore
   // A browser that makes no direct paths says so, unless the connection is relay only anyway.
   rooms[0].setState('Running', { ...nm, room: { ...nm.room!, relayOnly: false, directBlocked: true } }); // i18n-ignore
-  assert.deepEqual(net.view().details, [t('network:network-view.room.connections', { count: 1 }), t('network:network-view.room.directBlocked')]);
+  assert.deepEqual(net.view().details, [t('network:network-view.room.connectionsDirect', { count: 1, direct: 0 }), t('network:network-view.room.directBlocked')]);
   rooms[0].setState('Running', { ...nm, room: { ...nm.room!, directBlocked: true } }); // i18n-ignore
-  assert.deepEqual(net.view().details, [t('network:network-view.room.connections', { count: 1 })], 'relay only: nothing to say');
+  assert.deepEqual(net.view().details, [t('network:network-view.room.connectionsDirect', { count: 1, direct: 0 })], 'relay only: nothing to say');
   rooms[0].emit({ type: 'error', error: toWire(new Error('the relay closed')) });
   assert.equal(net.view().phase, 'error');
   await net.disconnect();

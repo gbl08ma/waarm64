@@ -765,11 +765,19 @@
   },
   "network-view.room.connections_one": {
     "message": "{{count}} active connection",
-    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
+    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now, shown as 0 (with one or more, network.room.connectionsDirect says how many are direct). The room may have many more members: nobody can count them, by design."
   },
   "network-view.room.connections_other": {
     "message": "{{count}} active connections",
-    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
+    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now, shown as 0 (with one or more, network.room.connectionsDirect says how many are direct). The room may have many more members: nobody can count them, by design."
+  },
+  "network-view.room.connectionsDirect_one": {
+    "message": "{{count}} active connection ({{direct}} direct)",
+    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip), when there is at least one: how many members of the room this machine exchanges traffic with now ({{count}}), and how many of those its packets reach directly, over WebRTC ({{direct}}), rather than through the room's relay. The room may have many more members: nobody can count them, by design. With none, network.room.connections is shown."
+  },
+  "network-view.room.connectionsDirect_other": {
+    "message": "{{count}} active connections ({{direct}} direct)",
+    "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip), when there is at least one: how many members of the room this machine exchanges traffic with now ({{count}}), and how many of those its packets reach directly, over WebRTC ({{direct}}), rather than through the room's relay. The room may have many more members: nobody can count them, by design. With none, network.room.connections is shown."
   },
   "network-view.room.directBlocked": {
     "message": "This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.",

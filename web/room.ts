@@ -410,6 +410,8 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   let me: { name?: string; link?: string; address6: number[] } | undefined;
   let directBlocked = false;
   const peers = new Map<string, { name: string; address6: number[] }>();
+  /** The peers whose packets take a direct path (a `path` event may come before the peer's `peer`). */
+  const direct = new Set<string>();
   let resolveRunning: (n: NetMap) => void = () => {};
   const map = (): NetMap | undefined => {
     if (!lease || !me) return undefined;
@@ -417,7 +419,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       name: me.name ?? '', via: 'room', mtu: lease.mtu, exitNode: '', domains: lease.domains ?? [],
       addresses: lease.address6 ? [`${v6text(lease.address6)}/128`] : [],
       dns: (lease.dns6 ?? []).map(v6text),
-      peers: [...peers.entries()].map(([key, p]) => ({ id: key, name: p.name, addresses: [`${v6text(p.address6)}/128`], exitNodeOption: false })),
+      peers: [...peers.entries()].map(([key, p]) => ({ id: key, name: p.name, addresses: [`${v6text(p.address6)}/128`], exitNodeOption: false, direct: direct.has(key) })),
       room: { name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked },
     };
   };
@@ -441,8 +443,13 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       if (ev.type === 'self') me = ev;
       else if (ev.type === 'lease') lease = ev.lease;
       else if (ev.type === 'peer') peers.set(ev.key, { name: ev.name ?? '', address6: ev.address6 });
-      else if (ev.type === 'peer-gone') peers.delete(ev.key);
-      else if (ev.type === 'direct') directBlocked = ev.blocked;
+      else if (ev.type === 'path') {
+        if (ev.path === 'direct') direct.add(ev.key);
+        else direct.delete(ev.key);
+      } else if (ev.type === 'peer-gone') {
+        peers.delete(ev.key);
+        direct.delete(ev.key);
+      } else if (ev.type === 'direct') directBlocked = ev.blocked;
       else return;
       changed();
     },
