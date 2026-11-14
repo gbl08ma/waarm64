@@ -147,6 +147,49 @@ test('the soft power-off (web/app/run/soft-power.ts): asked of an agent that can
   for (const l of [g.link, p.link, q.link]) l.close();
 });
 
+test("the soft power-off through the run's agent (web/app/areas/agent-actions.ts, agent-shown.ts): the agent stopped by the shutdown leaves the sign, an agent that connects again clears it, the run's end clears it", async (t) => {
+  const { AgentActions } = await import('../web/app/areas/agent-actions.ts');
+  const { agentShown } = await import('../web/app/areas/agent-shown.ts');
+  const g = globalThis as unknown as { location?: unknown; localStorage?: unknown; window?: unknown; document?: unknown };
+  const saved = { location: g.location, localStorage: g.localStorage, window: g.window, document: g.document };
+  Object.assign(g, { document: { body: { dataset: {} } }, location: { search: '' }, localStorage: { getItem: () => null, setItem: () => undefined }, window: {} });
+  const c = new MessageChannel();
+  open.push(c.port1, c.port2);
+  const reader = new FrameReader();
+  c.port2.onmessage = (e) => {
+    if (e.data.type !== 'data') return;
+    c.port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+    for (const f of reader.push(e.data.bytes))
+      if (f.type === FRAME.POWER) c.port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.POWERED, new Uint8Array([POWERED.TAKEN])) });
+  };
+  let conn = 1;
+  const connect = () => {
+    c.port2.postMessage({ type: 'open', open: true, conn });
+    c.port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.POWER })) });
+  };
+  const power = { canSoft: false, soft: undefined as 'off' | 'reboot' | undefined };
+  const actions = new AgentActions(() => undefined, () => undefined, agentShown(power, {}));
+  // Its sleep check's timer ended should an assertion fail, then the globals back.
+  t.after(() => (actions.end(), Object.assign(g, saved)));
+  const run = { link: actions.begin({ agent: { port1: c.port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => {}) };
+  const soft = new SoftPower(run, power, { notify: () => undefined });
+  connect();
+  await settle();
+  assert.equal(power.canSoft, true);
+  assert.equal(await soft.request('off'), true, 'taken');
+  // systemd stops the agent on the way down: the guest still runs, and is still shutting down.
+  c.port2.postMessage({ type: 'open', open: false, conn });
+  await settle();
+  assert.deepEqual([power.soft, power.canSoft], ['off', false], 'the sign stays past the connection\'s end');
+  conn = 2;
+  connect(); // the agent started again: the guest isn't shutting down
+  await settle();
+  assert.deepEqual([power.soft, power.canSoft], [undefined, true]);
+  assert.equal(await soft.request('reboot'), true);
+  actions.end();
+  assert.deepEqual([power.soft, power.canSoft], [undefined, false], "the run's end clears it");
+});
+
 test("the status bar's Guest OS: the agent's name for it, nothing before", () => {
   const live = { state: 'running', stateText: '', now: 0, mouseLock: false, mouseLocked: false, keyboardLocked: false, keysFocused: false, mic: 'idle', disks: [], nets: [] } satisfies Live;
   assert.deepEqual(render({ kind: 'os' }, undefined, live), []);

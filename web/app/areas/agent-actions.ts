@@ -14,9 +14,13 @@ import type { ClipboardShare } from '../clipboard.ts';
 import type { AgentChannels } from '../run/start-message.ts';
 
 type Size = { width: number; height: number };
-/** Where the page shows what the agent says (web/app/areas/agent-shown.ts: the status bar's OS, the toolbar's power). */
-export type AgentShown = { os(os: GuestOs | undefined): void; canPower(can: boolean): void };
-const NOT_SHOWN: AgentShown = { os: () => undefined, canPower: () => undefined };
+/**
+ * Where the page shows what the agent says (web/app/areas/agent-shown.ts: the status bar's OS, the toolbar's power):
+ * `canPower` at each HELLO and connection's end, `ended` at the run's end (a pending power-off or reboot ends with it,
+ * not with the connection: the guest's shutdown stops the agent first, web/app/run/soft-power.ts).
+ */
+export type AgentShown = { os(os: GuestOs | undefined): void; canPower(can: boolean): void; ended(): void };
+const NOT_SHOWN: AgentShown = { os: () => undefined, canPower: () => undefined, ended: () => undefined };
 
 /** What a run asks of its agent (web/app/run/runner.ts): its link begun and ended; a restore's renewals (`template`: its identity too). */
 export type RunAgent = {
@@ -100,7 +104,7 @@ export class AgentActions {
     window.__agent = undefined;
     delete document.body.dataset.desktop;
     this.#shown.os(undefined);
-    this.#shown.canPower(false);
+    this.#shown.ended();
   }
 
   /** The screen's size the guest is asked for now (a new window size, settled): the agent's session takes it too. */
