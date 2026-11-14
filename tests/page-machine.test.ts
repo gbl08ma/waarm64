@@ -44,8 +44,8 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   assert.equal(await page.locator('#machine-cpus').inputValue(), '1');
   assert.equal(await page.locator('#machine-ram').inputValue(), '256');
   await page.locator('#machine-menu summary').click();
-  await page.selectOption('#machine-cpus', '2');
-  await page.selectOption('#machine-ram', '512');
+  await page.fill('#machine-cpus', '2');
+  await page.fill('#machine-ram', '512');
   await page.click('#machine-apply');
   await statusShows(page, sized(2, 512));
 

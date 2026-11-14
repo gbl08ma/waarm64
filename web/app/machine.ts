@@ -165,10 +165,36 @@ export type MachineName = keyof typeof MACHINES;
 /** The default vCPU count: the host's cores minus two (the page and the device worker), at most 4. */
 export const defaultCpus = (cores: number) => Math.max(1, Math.min(4, cores - 2));
 
+/** A slider's range (ui/Slider.svelte): from, to, its step, the suggested values and how near them a pointer snaps. */
+export type SliderRange = {
+  min: number;
+  max: number;
+  step: number;
+  notches: number[];
+  snap?: number;
+  /** Positions that stand for another value: [position, value]. */
+  stands?: [number, number][];
+};
+
+/** The vCPUs a machine's slider offers (a transient machine's Machine menu, a stored one's Settings). */
+export const CPU_SLIDER: SliderRange = { min: 1, max: 8, step: 1, notches: [1, 2, 3, 4, 5, 6, 7, 8] };
 /**
- * The RAM the page offers, MiB (a transient machine's Machine menu, a stored one's Settings). Up to
- * `MEMORY0_MIB` it all lives in memory 0, beside the core; past it the rest goes to spill memories, which the guest
- * sees as NUMA nodes (docs/spill-memories.md). 3 GiB isn't offered: it would spill 1 MiB.
+ * The RAM a machine's slider offers, MiB (the Machine menu, Settings): 256 MiB to 16 GiB in 64 MiB steps, a notch
+ * every 512 MiB that a pointer snaps to; its 3 GiB is 3071 MiB (`MEMORY0_MIB`). Up to `MEMORY0_MIB` it all lives in memory 0, beside the core; past it the
+ * rest goes to spill memories, which the guest sees as NUMA nodes (docs/spill-memories.md).
+ */
+export const RAM_SLIDER: SliderRange = {
+  min: 256,
+  max: 16384,
+  step: 64,
+  notches: Array.from({ length: 32 }, (_, i) => 512 * (i + 1)),
+  snap: 128,
+  // 3 GiB is memory 0 as large as it goes, 3071 MiB: 3072 would put 1 MiB in a NUMA node of its own.
+  stands: [[Math.ceil(MAX_MEMORY0_RAM / 2 ** 20 / 64) * 64, MAX_MEMORY0_RAM / 2 ** 20]],
+};
+/**
+ * The RAM sizes the page suggests in its words, MiB (a smaller one when the host's memory is short:
+ * run/memory-signal.ts). 3 GiB isn't one: it would spill 1 MiB.
  */
 export const RAM_CHOICES = [512, 1024, 1536, 2048, 2560, 4096, 6144, 8192, 12288, 16384];
 /** The most RAM memory 0 holds, MiB (web/ram.ts `MAX_MEMORY0_RAM`). */
@@ -226,8 +252,17 @@ export const hostMemoryGiB = (ramMiB: number, ncpus: number, jitMiB = JIT_DEFAUL
 
 /** The JIT's code cache budget when a machine sets none, MiB (the core's `jit::MAX_BYTES`, docs/jit.md "Memory"). */
 export const JIT_DEFAULT_MIB = 320;
-/** The budgets a stored machine's Settings offer, MiB (past ~320 MiB a browser's code fills the cache's 262,144 slots first). */
-export const JIT_CHOICES = [64, 128, 160, 256, 320, 512];
+/**
+ * The budgets a stored machine's Settings offer, MiB, in 32 MiB steps, notches at the suggested ones (past ~320 MiB a
+ * browser's code fills the cache's 262,144 slots first).
+ */
+export const JIT_SLIDER: SliderRange = {
+  min: 32,
+  max: 512,
+  step: 32,
+  notches: [64, 128, 160, 256, 320, 512],
+  snap: 16,
+};
 /**
  * What a JIT budget adds to `hostMemoryGiB`'s rule, GiB. The rule was measured with up to 160 MiB of budget (a
  * mixed load, and Firefox's pages session at 160: renderer 4.6-4.7 GiB median with 2.5 GiB of RAM on 4 vCPUs, the

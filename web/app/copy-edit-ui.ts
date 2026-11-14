@@ -7,7 +7,7 @@ import { copyEdits, copyEditor } from '../i18n.ts';
 import { changed } from './copy-edit.ts';
 
 /** The attributes whose words the user reads. */
-const ATTRS = ['title', 'aria-label', 'placeholder', 'alt', 'aria-description', 'label'];
+const ATTRS = ['title', 'aria-label', 'placeholder', 'alt', 'aria-description', 'aria-valuetext', 'label'];
 /** The messages in each text node, and in each element's attributes (by attribute). */
 const inText = new WeakMap<Text, number[]>();
 const inAttrs = new WeakMap<Element, Map<string, number[]>>();

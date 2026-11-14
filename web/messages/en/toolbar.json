@@ -317,19 +317,19 @@
   },
   "SizeMenu.size.cpus": {
     "message": "Processors",
-    "note": "Label of the vCPU count dropdown in the toolbar's Machine menu."
+    "note": "Label of the vCPU count slider in the toolbar's Machine menu."
   },
   "SizeMenu.size.cpu_one": {
     "message": "{{count}} vCPU",
-    "note": "A choice of the Processors dropdown in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
+    "note": "The value beside the Processors slider in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
   },
   "SizeMenu.size.cpu_other": {
     "message": "{{count}} vCPUs",
-    "note": "A choice of the Processors dropdown in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
+    "note": "The value beside the Processors slider in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
   },
   "SizeMenu.size.ram": {
     "message": "Memory",
-    "note": "Label of the RAM size dropdown in the toolbar's Machine menu (its choices are sizes in MiB or GiB)."
+    "note": "Label of the RAM size slider in the toolbar's Machine menu (its value is shown in MiB or GiB)."
   },
   "SizeMenu.size.gpu.title": {
     "message": "3D gives the guest OpenGL ES through this browser's WebGL2 (virgl). 2D is a plain framebuffer.",

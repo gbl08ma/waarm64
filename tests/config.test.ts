@@ -37,7 +37,8 @@ const TABLE: Row[] = [
   // The size.
   ['transient: the default size', '', undefined, {}, { ncpus: 4, ramMiB: 2048, ramSplit: undefined, jitMiB: 0 }],
   ['transient: the size chosen last', '', undefined, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }],
-  ['transient: a remembered size not offered', '', undefined, { ncpus: 5, ramMiB: 1000 }, { ncpus: 4, ramMiB: 2048 }],
+  ['transient: a remembered 3071 MiB (the slider\'s 3 GiB)', '', undefined, { ncpus: 2, ramMiB: 3071 }, { ncpus: 2, ramMiB: 3071 }],
+  ['transient: a remembered size not offered', '', undefined, { ncpus: 9, ramMiB: 1000 }, { ncpus: 4, ramMiB: 2048 }],
   ['transient: the address over the settings', 'ncpus=3&ram=3072&jitmb=96', undefined, { ncpus: 2, ramMiB: 4096, jitMiB: 64 }, { ncpus: 3, ramMiB: 3072, jitMiB: 96 }],
   ['stored: its record, not the settings', '', OFF, { ncpus: 6, ramMiB: 4096, jitMiB: 64 }, { ncpus: 2, ramMiB: 1024, jitMiB: 0 }],
   ['stored: its own JIT budget', '', record({ jitMiB: 160 }), { jitMiB: 64 }, { jitMiB: 160 }],

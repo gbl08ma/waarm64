@@ -184,7 +184,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await page.locator('#machines-open').click();
   const m = page.locator('.machines section.machine[data-selected]');
   await m.locator('[data-tab=settings]').click();
-  await m.locator('[data-field=ram]').selectOption('2048');
+  await m.locator('[data-field=ram]').fill('2048');
   await m.locator('[data-action=save]').click(); // asks whether to orphan the snapshots, then to restart
   await page.waitForFunction(() => document.body.dataset.state === 'loading' || document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 50 });
   await m.locator('[data-tab=snapshots]').click();

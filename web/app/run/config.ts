@@ -2,7 +2,7 @@
 // from the address, the record, the browser's settings and what this browser can do. Pure (no `location`, no storage): tests/config.test.ts runs it
 // in Node.
 import { keyboardSetting } from '../keyboard.ts';
-import { defaultCpus, RAM_CHOICES, ramSplitError } from '../machine.ts';
+import { CPU_SLIDER, defaultCpus, RAM_SLIDER, ramSplitError, type SliderRange } from '../machine.ts';
 import type { Settings } from '../settings.ts';
 import type { Display, MachineRecord } from '../shape.ts';
 
@@ -34,11 +34,11 @@ export function effectiveDisplay(o: {
 export const wants3d = (o: { gpu: boolean; simple: boolean; asked?: Display; record?: Display; setting?: Display }) =>
   o.gpu && !o.simple && (o.asked ?? o.record ?? o.setting ?? '3d') === '3d';
 
-/** The vCPU counts the Machine menu offers. */
-export const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
-
-/** A size kept in the settings, if it is one of the choices (0: none). */
-const kept = (n: number | undefined, choices: number[]) => (n && choices.includes(n) ? n : 0);
+/** A size kept in the settings, if its slider stops at it (0: none). */
+const kept = (n: number | undefined, r: SliderRange) =>
+  n && ((n >= r.min && n <= r.max && Number.isInteger((n - r.min) / r.step)) || r.stands?.some(([, v]) => v === n))
+    ? n
+    : 0;
 
 /** The devices a machine may have or not, and the guest's network settings (`MachineRecord`'s switches). */
 export type DeviceSwitches = {
@@ -100,8 +100,8 @@ function resolveSize(
   /** The address's number for `k`; 0 (absent, not a number): unset. */
   const asked = (k: string) => Number(q.get(k)) || 0;
   const first = (...n: (number | undefined)[]) => n.find((x) => !!x) ?? 0;
-  const ncpus = first(asked('ncpus'), record?.ncpus, kept(s.ncpus, CPU_CHOICES), defaultCpus(env.cores));
-  const ramMiB = first(asked('ram'), record?.ramMiB, kept(s.ramMiB, RAM_CHOICES), env.ramMiB);
+  const ncpus = first(asked('ncpus'), record?.ncpus, kept(s.ncpus, CPU_SLIDER), defaultCpus(env.cores));
+  const ramMiB = first(asked('ram'), record?.ramMiB, kept(s.ramMiB, RAM_SLIDER), env.ramMiB);
   const jitMiB = first(Math.max(0, Math.round(asked('jitmb'))), record ? record.jitMiB : s.jitMiB);
   // `?split=3071,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own.
   const split = q.get('split')?.split(',').map(Number);
