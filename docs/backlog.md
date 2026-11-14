@@ -1616,8 +1616,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   clicks Power off now); their wait dialog queues behind a question already open (an alert fired just before), so
   Power off now shows only once that one is answered (review/betteragent-loop13, low). No Debian test lets the
   shutdown run to its end, which is how the agent's connection ending mid-shutdown went unseen (it re-asked and put
-  the power-off question up; fixed in clean-stop.ts with unit tests): a test that waits for `off` through the dialog
-  would cover it (~1 min on Debian).
+  the power-off question up; fixed in clean-stop.ts with unit tests), and how the wait dialog staying open after the
+  power-off went unseen (the unit tests fake the dialog; `ask`'s `close` compared the question with Svelte's proxy of it
+  and never took it down: fixed, `tests/page-ask.test.ts`): a test that waits for `off` through the dialog, and for
+  the dialog to go, would cover both (~1 min on Debian).
 - **The track review's deferred findings** (BETTERAGENT's end, 2026-11-14; `review/betteragent-agent`,
   `review/betteragent-page`): the session child's `sway_run` connects to sway's IPC blocking (a sway hung with its
   backlog full holds the child's loop; `setxkbmap` up to 5 s, each `sway_run` wait up to 2 s); a RandR run's late
