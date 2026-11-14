@@ -1466,9 +1466,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **A room without direct paths, the rest** ([networking/rooms.md](networking/rooms.md): the cause of the user's tries of
   2026-11-11 was ungoogled-chromium using no UDP for WebRTC, which the status line now says): a blocked browser still
   makes a connection for each offer, and its peers keep offering, every 30 s doubling to 5 min (it could go relay only
-  and say so in its `hello`, so the others stop too); the menu could say how many active connections are direct (the
-  peers' `path` is there), for the cases gathering does work but ICE doesn't (a router that doesn't hairpin, mDNS
-  dropped between two machines of one LAN).
+  and say so in its `hello`, so the others stop too). Where gathering works but ICE doesn't (a router that doesn't
+  hairpin, mDNS dropped between two machines of one LAN), the menu's count says none of the connections is direct, but
+  not why.
 - **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md)): `isPrivateRoom` labels any ID ending in a hyphen
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.

@@ -213,11 +213,12 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     assert.match(raw, /^12 34 85 80 00 01 00 01 /, `the room's resolver answers the AAAA itself (its id, NOERROR, one answer): ${raw}`);
     const resolved = await run(b, `getent ahosts ${nameA} | head -1`, 60_000);
     assert.match(resolved, new RegExp(`^${a6.split('/')[0]}\\s`), `the room's resolver answers the name with its address: ${resolved}; ${await run(b, `resolvectl query ${nameA}; resolvectl query -t AAAA ${nameA.split('.').slice(1).join('.')}; ip -6 route; ping -6 -c 1 -W 3 ${a6.split('/')[0].replace(/:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+$/, '::53')}`, 60_000)}`);
-    // By name, through the relay first and then directly: the first ping waits for the lookup and its call back.
+    // By name, through the relay first and then directly (the menu counts the direct one): the first ping waits for the
+    // lookup and its call back.
     const ping = await run(b, `ping -6 -c 4 -W 10 ${nameA} | tail -2`, 120_000);
     assert.match(ping, / 0% packet loss/, `B pings A by name: ${ping}`);
-    await menuSays(a, words('network:network-view.room.connections', { count: 1 }), 30_000);
-    await menuSays(b, words('network:network-view.room.connections', { count: 1 }), 30_000);
+    await menuSays(a, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
+    await menuSays(b, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
     const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
     assert.equal(await a.locator('#net-room-link-copy').getAttribute('aria-label'), t('common:ValueField.copy'));
