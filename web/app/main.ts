@@ -16,6 +16,7 @@ import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
 import { agentShown } from './areas/agent-shown.ts';
+import { status } from './areas/status.svelte.ts';
 import { LeaseActions } from './areas/lease-actions.ts';
 import { compactor, TrimActions } from './areas/trim-actions.ts';
 import { keyboardFollow, runLayout } from './areas/keyboard-follow.ts';
@@ -143,7 +144,7 @@ const messages = new Messages(machine, () => {
   if (screen.cursor) screen.setCursor(undefined);
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
-const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown);
+const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(power, status));
 const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,

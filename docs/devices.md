@@ -473,7 +473,9 @@ the machine stops ([Powered off](ui:machine:messages.state.off)). A second Power
 asked first (the question says the guest is on its way). Taken, the sign stays until the run ends: the guest's PSCI power-off stops the machine (state `off`),
 its reset starts a new run (frontend.md "Starting and stopping"). The agent may be stopped by the shutdown before
 POWERED leaves: the connection's end is taken as the request taken, and an agent that connects again (a HELLO: it was
-restarted, the guest isn't shutting down) clears the sign. Refused, busy (a request the page gave up on still runs in
+restarted, the guest isn't shutting down) clears the sign. The connection's end hides only the capability, not the sign
+(`web/app/areas/agent-shown.ts`: the run's end, `ended`, clears both): systemd stops the agent on every shutdown, so a
+sign cleared there went back to Running seconds before the power-off (fixed 2026-11-14, `tests/agent-power.test.ts`). Refused, busy (a request the page gave up on still runs in
 the guest), no tool, no answer in time (each said in the message bar), or no agent that can: today's hard power-off
 (or restart), which asks first, and acts only if the run it asked about is still the machine's (the guest's own reboot
 may have started another meanwhile). A request given up on isn't withdrawn: logind can't take one back, so the guest
