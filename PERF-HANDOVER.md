@@ -16,24 +16,25 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 22)
+## State (2026-11-14, after loop 23)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
 −1.9%); the JIT's wasm size cuts (−6% wasm) and one budget counter (Lua −1.7%); virgl's `spin` query poll
 (glquery 15 → 280 frames/s); FEAT_RDM and FEAT_LRCPC2 advertised; device pages in the TLB and MMIO finished in the
 JIT's helper (loop 21: a read 0.21 → 0.08 µs, Debian's fw_cfg read of the agent 77 → 45 ms; a device call compiled
-into the slow arm measured out as not worth its code). Built but off by default (measured slower):
+into the slow arm measured out as not worth its code); scalar FP in f32/f64 shadows of the V registers (loop 23: the
+FP guest +9% on the Mac, the gates within the floor). Built but off by default (measured slower):
 I8MM, FCMA, FP16, FHM, BF16. Dropped with findings in docs: slot size/count, the dispatcher in `interpret`,
 SUBS's carry as a field, NZCV in a local, ADRP+ADD, misaligned stores, CCMP's kind, LSE2, LSE min/max inline, ISB
 inline in parallel, the shared cache's leftovers, the SMP leftovers (ISB cost, WFE sleep, an exit's parts). Three
-out-of-context reviews (after loops 8, 19 and 21), their findings fixed in loops 9, 20 and 22.
+out-of-context reviews (after loops 8, 19 and 21), their findings fixed in loops 9, 20 and 22. Loop 23 added a
+register form (`Regs`'s shadows, every merge, chain and fallback): an out-of-context review of it comes next.
 
-## Still open (the queue: the first is next, the user's choice 2026-11-14; the rest by expected gain)
+## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| JIT: scalar FP in f64/f32 locals | FP guest and FP-heavy guests only (0.5% of a browser's compiled instructions) |
 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | bounded at ~0.3% of a browser now; likely a finding |
 | JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |

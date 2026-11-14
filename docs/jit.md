@@ -743,7 +743,30 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
   order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, FT's f64s 97..=99 and
   113..=117 (the double FMA's exact product and sums), PMULL's i64s 100..=112, FZOK 118, VT 119–122,
-  FPOK 123, VTMP 124, TAKEN 125; past `DEPTH` (128) FP16's HOK 129 and HT 130..=137, SUM 138.
+  FPOK 123, VTMP 124, TAKEN 125; past `DEPTH` (128) FP16's HOK 129 and HT 130..=137, SUM 138, the V registers'
+  scalar shadows (f64 139..=170, f32 171..=202) and a scalar result's FR (f64) 203 and FR32 (f32) 204. A function
+  that declares more than 128 of them takes two-byte indices for every local (padded LEB128, `compact_locals`).
+- **Scalar shadows** (PERF loop 23, `Regs`'s `s32`/`s64`): a V register can also live in an f32 or f64 local that
+  holds its lane 0, so scalar FP reads and writes it with no lane op (on the M4 these paths are bound by the SIMD
+  pipes: "What the checks cost"). Scalar results go to the shadow alone (`Func::vset_f`: the v128 dropped), and a
+  shadow-only register is the shadow zero-extended when dirty (a scalar write zeroes the rest), the `Cpu`'s value
+  when clean. Readers: `vlanef` takes the shadow as it is (from the v128 it extracts once and keeps the shadow too);
+  `vlane` reads a shadow-only register's lanes without changing the state (tests in branches read lanes); a vector
+  reader builds the v128 from a dirty shadow (`v128.const 0` and `replace_lane`, two lane ops, kept) or loads a clean
+  one; the FMA forms take a splat of the shadow (`vget_lo`: one op, lane 0 being all they read). A store of a
+  shadow-only register is the shadow's `f64.store` (or `f32.store`) and zeros above it. SIMD&FP loads of a single or
+  double go to the shadow when the next instruction in the block that names the register reads it as a scalar FP
+  operand a shadow serves (`Func::scalar_next`: arithmetic, a scalar store), else to the v128 (`v128.load64_zero`,
+  no lane op, which integer NEON code reads); scalar stores take the shadow when it holds the value; DUP's scalar
+  form of a single or double extracts into the shadow. Where states meet, `Regs::merge` keeps a register
+  shadow-only only when every side holds it in that shadow alone (or not at all) and all are dirty or all clean (a
+  clean side's `Cpu` upper bits aren't known to be zero), else as a v128; conforming builds or loads what the target
+  holds. A failure chain's segment stores each register from the form it had at its site (recorded with the
+  segment), and a site joins the chain only while those forms still hold; one that writes such a register with more
+  bits than its shadow (a reload from the `Cpu` would lose them) starts a new chain, as a group's leader does with
+  any SIMD&FP span (not reached by the tests: only a device access `Vm::fast` retires and still reports would). Cost
+  of a scalar FADD on shadowed operands: the op and one lane op (its result's move to a general register for the
+  check), where it was the op and five (two extracts, that move, `movi` and `ins`); the FP guest +9% on the Mac (`bench/boot/REPORT.md` "PERF loop 23").
 - **Peepholes in the encoder** (`wasm::Code`): a `local.set N` followed by `local.get N` is one
   `local.tee N` (1.4% of the wasm: HOST and scratch read at once), and an `add`, `sub`, `or` or
   `xor` of a just-pushed `i32/i64.const 0` drops both (an access's address at offset 0, `ADD #0`).
@@ -980,9 +1003,10 @@ interpreter's; the helper runs the instruction otherwise.
   - the exponent range test is the bits shifted left once (the sign gone) less the range's start,
     unsigned below its length: three ops a lane (doubles: the sign flip of the signed compare folded
     into the subtraction's constant), where shift, mask, subtract and compare took four (five);
-  - scalar arithmetic (FADD … FSQRT) reads its operands as floats (`f64x2.extract_lane 0`: one op,
-    where the bits through a general register took two) and their bits again only in branches: the
-    zero clause's operand test when the result is zero, FZ's test;
+  - scalar arithmetic (FADD … FSQRT) reads its operands as floats (from their scalar shadows, "Scalar
+    shadows" above, or `f64x2.extract_lane 0`: one op, where the bits through a general register took two)
+    and their bits again only in branches: the zero clause's operand test when the result is zero, FZ's
+    test; its result goes to the destination's shadow;
   - by element, FMLA's factor is the element in every lane, so both halves' products take one
     promoted copy;
   - without FZ, the lane tests' FZ branch passes the mask through (VTMP) instead of clearing no lanes
@@ -1103,8 +1127,8 @@ interpreter's; the helper runs the instruction otherwise.
   back), (m ^ s) - s orders them with ±0 alike (the compares), FACGE/FACGT compare magnitudes; no NaN operand (∞ is
   fine), HOK, no FPOK. FABS, FNEG and the FMOVs (register, immediate, general, vector immediate) are bits. Vector,
   AdvSIMD scalar (lane 0, the rest cleared) and scalar (ftype 3) forms share the code; 8H takes both singles' halves,
-  4H and scalars one (the unused lanes ORed into the masks; a scalar form costs a vector's: scalar f32 locals would be
-  cheaper, [backlog.md](backlog.md)). Cost: FADD 8H about 50 lane ops (two widened operands, 16; the operand test, 4;
+  4H and scalars one (the unused lanes ORed into the masks; a scalar form costs a vector's: in the f32 shadows
+  ("Scalar shadows") it would be about a third, [backlog.md](backlog.md)). Cost: FADD 8H about 50 lane ops (two widened operands, 16; the operand test, 4;
   the op, 2; the result test, 10; the narrowing, 17) where a single FADD 4S is about 5, so per element half precision
   here is 4-5× single's: code that keeps halves in memory and converts once wins (an axpy, 27%), code that computes
   in halves loses (a GEMM tile 2×; bench/boot/REPORT.md "PERF loop 10"). **FMLAL/FMLSL(2)** (FEAT_FHM): the halves of Vn and Vm (the low or,

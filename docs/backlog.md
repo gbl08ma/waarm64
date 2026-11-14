@@ -156,16 +156,10 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   (since cut to two ops an operand, which left its frames even: `bench/interp/REPORT.md` "FZ's operand tests and
   vector FMUL's zero clause"; `jit_fz_mips` is a shader-like kernel under FZ).
   By gain against work:
-  - **Scalar FP in f64 and f32 locals** (a scalar shadow per V register): a scalar FADD is still five lane ops for
-    one (two lane extracts, the result's move to a general register for its check, `movi` and `ins` to write it
-    back zero-extended); n-body and Horner (~40% of the FP guest) could keep their values in float locals and
-    build the v128 only for a vector reader, the flush being stores (no lane op). Needs locals past 128: two-byte
-    indices (the TLB memo's patch has them, [jit.md](jit.md) "Tried and not kept"). Counted 2026-10-20: inline
-    scalar FP is 0.5% of the instructions compiled in Firefox's pages session (14,500 of 2.9 M) and none to speak of
-    in Alpine's userspace benchmark (30), so it's for the FP guest and FP-heavy guests, not the ranking workloads.
-    FEAT_FP16's scalar forms (ftype 3, `emit/half.rs`) run a whole vector's widening and narrowing for one half (a
-    `_Float16` Horner 2.1× slower than its single code, PERF loop 10): in scalar f32 ops they'd be about a third, if
-    FP16 is ever advertised.
+  - **FEAT_FP16's scalar forms in the f32 shadows** (ftype 3, `emit/half.rs`): they run a whole vector's widening
+    and narrowing for one half (a `_Float16` Horner 2.1× slower than its single code, PERF loop 10); in scalar f32
+    ops on the shadows single and double FP use since PERF loop 23 ([jit.md](jit.md) "Scalar shadows") they'd be
+    about a third. Only if FP16 is ever advertised (it measured slower: off by default).
   - **The single FMA's midpoint test** (the emulated arm only: the fused arm has none, so this now reaches only hosts
     without FMA3 or relaxed SIMD; not worth doing for them): folded into the result's mask and reduction, with the
     round-to-odd redo in the failure arm before the helper; saves a reduction (two lane ops), not the test.

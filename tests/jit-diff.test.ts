@@ -1011,6 +1011,9 @@ const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immedi
 const FP16 = Object.keys(CLASSES).filter((n) => HALF_LANES.test(n)).map((n) => CLASSES[n]);
 const BF16 = Object.keys(CLASSES).filter((n) => BF_LANES.test(n)).map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
+// Scalar FP among its loads and stores and the vector readers and writers of its registers (PERF loop 23: scalar
+// shadows, docs/jit.md): results kept in f32/f64 locals, built into the v128 for a vector reader, flushed as stores.
+const SCALAR_FP = [...['FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional select'].map((n) => CLASSES[n]), ...['FP data processing, 2 sources', 'FP data processing, 3 sources'].map((n) => CLASSES[n]), ...['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'SIMD&FP load/store, unsigned offset'].map((n) => MEMORY[n]), ...['AdvSIMD three same', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD FP three same', 'AdvSIMD scalar x indexed element'].map((n) => CLASSES[n])];
 const ALU = ['PC-relative (ADR, ADRP)', 'add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);
 const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean; sha?: boolean; vec?: boolean }> = {
@@ -1024,6 +1027,7 @@ const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; ae
   'AES rounds and NEON': { pool: [CLASSES['AES'], CLASSES['AdvSIMD three same'], CLASSES['AdvSIMD copy (DUP, INS, UMOV, SMOV)'], MEMORY['SIMD&FP load/store, unsigned offset']], helpers: false, aes: true },
   // V registers whole FP lanes of one size most of the time, so the vector fast paths (and their fallbacks) run.
   'NEON, FP and V helpers': { pool: [...NEON, ...VMEM], helpers: false, vec: true },
+  'scalar FP, its loads and stores, vector readers': { pool: [...SCALAR_FP, ...ALU.slice(0, 3)], helpers: false, vec: true },
   // FEAT_FP16 and FEAT_FHM (ABI 65) among NEON and V loads and stores, half lanes most of the time.
   'FP16, FHM and NEON': { pool: [...FP16, ...FP16, ...NEON.slice(0, 6), ...VMEM], helpers: false, vec: true },
   // FEAT_BF16 (ABI 66) among NEON and V loads and stores, bfloat16 lanes most of the time.
@@ -1154,9 +1158,8 @@ function branchTo(k: number, to: number) {
   }
 }
 
-test('JIT vs interpreter, regions: branches between blocks', () => {
+for (const [suffix, pool] of [['', [...ALU, ...Object.values(MEMORY)]], [' with scalar FP', [...ALU, ...SCALAR_FP, ...SCALAR_FP]]] as [string, [number, number][]][]) test(`JIT vs interpreter, regions: branches between blocks${suffix}`, () => {
   const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * PROG * SEQS);
-  const pool = [...ALU, ...Object.values(MEMORY)];
   const draw = () => {
     if (rand32() % 6 === 0) return pick(HELPERS)(pick(REGS.slice(0, 5)), pick(REGS)) >>> 0;
     for (;;) {
@@ -1217,9 +1220,8 @@ test('JIT vs interpreter, regions: branches between blocks', () => {
 // back-edge (sub + cbnz, subs + b.ne, or a random b.cond), after an optional
 // prefix and before a brk; runs of up to 400 steps stop at any iteration, and
 // the region's budget check on the back-edge is what stops it there.
-test('JIT vs interpreter, regions: loops', () => {
+for (const [suffix, pool] of [['', [...ALU, ...Object.values(MEMORY)]], [' with scalar FP', [...ALU, ...SCALAR_FP, ...SCALAR_FP]]] as [string, [number, number][]][]) test(`JIT vs interpreter, regions: loops${suffix}`, () => {
   const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * PROG * SEQS);
-  const pool = [...ALU, ...Object.values(MEMORY)];
   const draw = () => {
     if (rand32() % 8 === 0) return pick(HELPERS)(pick(REGS.slice(0, 5)), pick(REGS)) >>> 0;
     for (;;) {

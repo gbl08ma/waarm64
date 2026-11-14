@@ -4430,3 +4430,63 @@ Even: the device rounds overlap or differ under ~1% (GICD's r2 is one slow run o
 
 No step count moved. CI: `scripts/ci.sh` (767 s), `scripts/ci-jit.sh` (105 s), `scripts/ci-debian.sh` and
 `scripts/ci-usb.sh` pass.
+
+## PERF loop 23: scalar FP in f32 and f64 shadows (2026-11-14)
+
+The backlog's "Scalar FP in f64 and f32 locals": a scalar FADD was the op and five lane ops (two lane extracts, the
+result's move to a general register for its check, `movi` and `ins` to write it back zero-extended), and on the M4
+these paths are bound by the SIMD pipes (docs/jit.md "What the checks cost"). Raw: `results/perf23/` (the Mac's
+JSON, `perf23fp-*` the FP guest, `perf23-*` the gates; `vm-*-fp.json` the dev VM's FP guest).
+
+**Counts** (the FP guest, `bench/interp/guest-fp.c`, clang -O2): its scalar FP is n-body's inner loop (42 words: 3
+FSUB, 5 FMUL, 3 FNMUL, FADD, FSQRT, FDIV, 8 FMADD, 11 LDR d, 6 STR d), Horner's reduction (16 FADD d and 8 `mov d, v.d[1]`
+an iteration; the polynomial itself is FMLA .2D) and `convert`'s second loop (LDR s, SCVTF s, FMADD s, STR s, 256
+times a round). Before: arithmetic six lane ops (with the op), a fused FMADD four (`madd`, `umov`, `movi`, `ins`), a
+LDR d none (`v128.load64_zero`), a STR d one (`umov`). With shadows, on operands in shadows: arithmetic two (the op,
+`fmov` of its result for the check), FMADD four to six (a `dup` a shadow-only operand, `madd`, `umov`, `fmov`), loads
+and stores none. n-body's loop: about 116 lane ops an iteration to about 76. TurboFan's code of that loop
+(`tools/v8code.ts --guest fp`): `mov` between lanes and general registers 159 → 70, `movi` 22 → 7, `fmov` 14 → 73,
+`dup` 0 → 8, its size 8,770 → 10,953 lines (the failure segments store a shadow as two stores, `f64.store` and the
+zeros above it, where a v128 was one). The FP guest's wasm 65,839 → 68,411 bytes (+3.9%).
+
+**Built** (docs/jit.md "Scalar shadows"): `Regs` gains `s32`/`s64`, an f32 and an f64 local per V register holding
+lane 0 (locals 139-202, past 128: the two-byte indices `compact_locals` already had); scalar results go to the
+shadow alone, readers take it without lane ops, a vector reader builds the v128 from a dirty shadow, stores write the
+shadow and zeros. Region merges keep a register shadow-only only when every side holds it so and all are dirty or all
+clean; failure chains record each register's form per segment. SIMD&FP loads of singles and doubles go to the shadow
+when the next instruction naming the register is a scalar FP arithmetic or store (else the v128, which integer NEON
+reads with no lane op); DUP's scalar form of a single or double extracts into the shadow.
+
+**The FP guest** (`bench/interp/ab-mac.sh perf23fp 3`, `jit_fp_mips`, M4, macOS, Chrome for Testing 157.0.8103.78,
+base then the new arm each round; the harness's median over eight placements), MIPS:
+
+| | round 1 | round 2 | round 3 |
+|---|---|---|---|
+| base | 3,259 | 3,215 | 3,200 |
+| shadows | 3,510 | 3,523 | 3,497 |
+
+**+8.9%** (median 3,215 → 3,510), the rounds far apart. On the dev VM (Chromium, one run each): 2,725 → 2,863 MIPS.
+
+**The gates** (`bench/interp/ab-mac.sh perf23 3`, the same session), ms:
+
+| | base | shadows |
+|---|---|---|
+| `alpine_jit_total` | 3,865 · 3,940 · 3,946; **3,940** | 3,928 · 3,966 · 3,972; **3,966** (+0.7%) |
+| `alpine_user_jit_total` | 10,547 · 10,620 · 10,606; **10,606** | 10,610 · 10,646 · 10,652; **10,646** (+0.4%) |
+
+The rounds overlap and the differences are under the ~1% floor: no regression shown, though the new arm was the
+slower in each round (neither guest runs scalar FP to speak of; the core's emitter is bigger: next line). **Size:**
+`float::inline` 32,977 → 33,572 bytes, `Func::chain_open` 731 → 844 (`tools/wasm-sizes.ts`); the core 9,324,318 →
+9,391,668 bytes. **Memory:** none at run time beyond the code (the locals are a function's frame; the FP guest's
+modules +3.9%).
+
+**Checks:** the differential test's new "scalar FP, its loads and stores, vector readers" sequences (both FMA arms)
+and the region and loop programs with scalar FP. Planted, each failing: the zeros above a stored shadow left out
+(six tests), a dirty shadow's v128 built as a splat (four), merges keeping a shadow-only register where one side is
+clean (the region and loop tests). Not reached by any test: a failure site that writes more bits of a register a
+segment stores from its shadow than the shadow holds (only a 16-byte device access `Vm::fast` retires and still
+reports would); the rule that starts a new chain there stays as a guard. No step count moved.
+CI: `scripts/ci.sh` (754 s), `scripts/ci-jit.sh` (96 s) and `scripts/ci-fp.sh` (436 s) pass.
+
+**Not done:** FEAT_FP16's scalar forms in the f32 shadows (backlog: only if FP16 is ever advertised); FMADD's
+operands still splat a shadow-only register (one `dup` each: n-body's eight FMADDs take most of the 76).

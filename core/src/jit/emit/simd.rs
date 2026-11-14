@@ -1554,6 +1554,18 @@ fn moves(c: &mut Func, i: u32, op: Op) -> bool {
             if op == DUP_elt_2 && size == 3 && !q {
                 return false;
             }
+            // The scalar form of a single or double (`mov d0, v1.d[1]`, a
+            // reduction's): the lane into Vd's shadow, one lane op, where a
+            // scalar reader takes it with none (docs/jit.md "Scalar shadows").
+            if op == DUP_elt_1 && size >= 2 {
+                let esize = 8 << size;
+                c.vset_f(rd, esize, |c| {
+                    c.vget(rn);
+                    // f64x2/f32x4.extract_lane
+                    c.simd_lane(if esize == 64 { 0x21 } else { 0x1f }, index);
+                });
+                return true;
+            }
             // The scalar form (DUP_elt_1) keeps the element alone.
             let (s, keep) = (
                 dup(size, index),

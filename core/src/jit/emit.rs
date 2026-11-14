@@ -34,7 +34,7 @@ mod simd_lane;
 use core::mem::offset_of;
 use core::ops::{Deref, DerefMut};
 
-use super::wasm::{Code, F64, I32, I64, V128};
+use super::wasm::{Code, F32, F64, I32, I64, V128};
 use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::sys::DCZID_BS;
@@ -99,6 +99,20 @@ pub const FT: [u32; 8] = [97, 98, 99, 113, 114, 115, 116, 117];
 /// (between the register locals and SHA's, and after SHA's).
 const VREGS: core::ops::RangeInclusive<u32> = 49..=79;
 const VREG_LAST: u32 = 96;
+/// The V registers' scalar shadows ([`Regs`]): Vn's f64 at `SH64 + n`, its f32
+/// at `SH32 + n`, past the rest (indices are one byte until `Func::locals`).
+const SH64: u32 = 139;
+const SH32: u32 = 171;
+/// A scalar FP result before its write (f64, f32): the fast arm's, so the
+/// destination's shadow keeps its value until the result passes its check.
+pub const FR: u32 = 203;
+pub const FR32: u32 = 204;
+const _: () = assert!(SUM < SH64 && FR32 < 256);
+
+/// Vn's scalar shadow of `esize` bits (32 or 64).
+fn shadow(n: u32, esize: u32) -> u32 {
+    if esize == 64 { SH64 + n } else { SH32 + n }
+}
 
 /// Vn's bit in a register mask ([`Regs`]).
 pub fn vbit(n: u32) -> u64 {
@@ -113,22 +127,59 @@ const PSTATE: usize = offset_of!(Cpu, pstate);
 /// Which register locals hold the register's value (`valid`), and which of
 /// those are newer than the `Cpu` (`dirty`); bit 31 is SP, bits 32..=63 are
 /// V0..=V31 ([`vbit`]).
+///
+/// A V register can also be held in its scalar shadows (`s32`, `s64`: an f32
+/// or f64 local, [`SH32`], [`SH64`]), which scalar FP reads and writes
+/// without lane ops (docs/jit.md "Scalar shadows"): a shadow holds lane 0 of
+/// the register's value at its width. With the v128 local valid too, that is
+/// all it says; without it (shadow-only), the register is the shadow
+/// zero-extended when dirty (a scalar write zeroes the rest), and the `Cpu`'s
+/// value when clean. A vector reader of a shadow-only register builds the
+/// v128 (dirty) or loads it (clean); a store of one writes the shadow and
+/// zeros above it (a dirty one has nothing else). With both shadows and no
+/// v128, the f64 is the one stored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Regs {
     valid: u64,
     dirty: u64,
+    s32: u64,
+    s64: u64,
 }
 
 impl Regs {
+    /// The registers held in some local.
+    pub fn held(self) -> u64 {
+        self.valid | self.s32 | self.s64
+    }
+
     /// The state a region block entered from both `self` and `o` starts in
-    /// (step 8): every register valid on either side, dirty if dirty on
+    /// (step 8): every register held on either side, dirty if dirty on
     /// either; each edge conforms to it ([`Func::conform`]). Registers in
-    /// `plain` never have a local.
+    /// `plain` never have a local. A V register stays shadow-only when each
+    /// side holds it in that shadow alone or not at all, and both are dirty
+    /// or both clean (a clean side's `Cpu` value isn't known to be the shadow
+    /// zero-extended); else it is held as a v128, with the shadows both sides
+    /// hold.
     pub fn merge(self, o: Regs, plain: u64) -> Regs {
+        let (ha, hb) = (self.held(), o.held());
+        let agree = !(self.dirty ^ o.dirty);
+        let only =
+            |s: u64, t: u64| (s & !self.valid | !ha) & (t & !o.valid | !hb) & (ha | hb) & agree;
+        let (o32, o64) = (only(self.s32, o.s32), only(self.s64, o.s64));
+        let valid = (ha | hb) & !(o32 | o64);
         Regs {
-            valid: (self.valid | o.valid) & !plain,
+            valid: valid & !plain,
             dirty: (self.dirty | o.dirty) & !plain,
+            s32: (o32 | self.s32 & o.s32 & valid) & !plain,
+            s64: (o64 | self.s64 & o.s64 & valid) & !plain,
         }
+    }
+
+    /// The V registers held in a shadow alone: `(s32 only, s64)`, the f64
+    /// counting where both are held.
+    fn only(self) -> (u64, u64) {
+        let so = !self.valid;
+        (self.s32 & so & !self.s64, self.s64 & so)
     }
 }
 
@@ -267,6 +318,13 @@ pub struct Func {
     pub nzcv_used: bool,
     /// `acc` is `SUM - left` ([`SUM`]).
     pub sum: bool,
+    /// The instruction being emitted (its index in `words`).
+    pub at: usize,
+    /// The bytes a SIMD&FP load about to call [`access`] writes into each of
+    /// its V registers, zero-extended (0: a write that may set more, or none):
+    /// what [`Func::chain_open`] needs of a register a segment stores from a
+    /// shadow.
+    vzx: u32,
 }
 
 /// Load and store failure exits that share their write-backs (docs/jit.md
@@ -284,10 +342,15 @@ pub struct Func {
 /// the return stores once; [`Func::chain_close`] ends it at the block's end.
 #[derive(Clone, Default)]
 struct Chain {
-    /// Each segment's registers, outermost first.
-    segs: Vec<u64>,
+    /// Each segment's registers, outermost first, and of those the V
+    /// registers it stores from their f32 or their f64 shadow ([`Regs::only`]):
+    /// the form they were in at its site.
+    segs: Vec<(u64, u64, u64)>,
     /// Their union.
     cum: u64,
+    /// The union of the segments' shadow forms.
+    o32: u64,
+    o64: u64,
     /// The kind and size of the lazy flags every site has, stored once on the
     /// way to the return from the flag locals, which hold the setter of the
     /// failing site's (setters of one kind and size share them); none if the
@@ -324,8 +387,10 @@ impl Func {
                 || crypto::I32_LOCALS.contains(&i)
             {
                 I32
-            } else if FT.contains(&i) {
+            } else if FT.contains(&i) || (SH64..SH64 + 32).contains(&i) || i == FR {
                 F64
+            } else if (SH32..SH32 + 32).contains(&i) || i == FR32 {
+                F32
             } else if i == VTMP
                 || VT.contains(&i)
                 || HT.contains(&i)
@@ -372,6 +437,27 @@ impl Func {
 
     /// Stores register `n`'s local to the `Cpu`.
     fn store_cpu(&mut self, n: u32) {
+        let (o32, o64) = self.regs.only();
+        self.store_as(n, o32 & 1 << n != 0, o64 & 1 << n != 0);
+    }
+
+    /// Stores register `n` to the `Cpu` from its local, or (a V register
+    /// dirty in a shadow alone) from its f32 or f64 shadow, zeros above it.
+    fn store_as(&mut self, n: u32, s32: bool, s64: bool) {
+        if s32 || s64 {
+            let (k, off) = (n - 32, V + 16 * (n - 32));
+            self.c
+                .local_get(VCPU)
+                .local_get(shadow(k, if s64 { 64 } else { 32 }));
+            if s64 {
+                self.c.memarg(0x39, 3, off); // f64.store
+            } else {
+                self.c.memarg(0x38, 2, off); // f32.store
+                self.c.local_get(VCPU).i32_const(0).memarg(0x36, 2, off + 4); // i32.store
+            }
+            self.c.local_get(VCPU).i64_const(0).i64_store(off + 8);
+            return;
+        }
         let l = self.local[n as usize / 32][n as usize % 32];
         self.c.local_get(VCPU).local_get(l);
         if n < 32 {
@@ -390,13 +476,46 @@ impl Func {
         l
     }
 
-    /// Pushes register `n` (31 is SP) as an i64; from 32, V register n − 32
-    /// as a v128.
-    fn reg(&mut self, n: u32) {
+    /// Loads register `n` from the `Cpu` into its local, or into its f32 or
+    /// f64 shadow (a V register).
+    fn load_as(&mut self, n: u32, s32: bool, s64: bool) {
+        if !(s32 || s64) {
+            self.load(n);
+            return;
+        }
+        let (k, e) = (n - 32, if s64 { 64 } else { 32 });
+        self.load_shadow(k, e);
+        self.c.local_set(shadow(k, e));
+        let m = if s64 {
+            &mut self.regs.s64
+        } else {
+            &mut self.regs.s32
+        };
+        *m |= 1 << n;
+    }
+
+    /// Pushes lane 0 of Vk's value in the `Cpu` as an f32 or f64 (`esize`).
+    fn load_shadow(&mut self, k: u32, esize: u32) {
+        self.c.local_get(VCPU);
+        if esize == 64 {
+            self.c.memarg(0x2b, 3, V + 16 * k); // f64.load
+        } else {
+            self.c.memarg(0x2a, 2, V + 16 * k); // f32.load
+        }
+    }
+
+    /// Counts a read of register `n` ([`Func::read`] and the rest).
+    fn note_read(&mut self, n: u32) {
         self.reused |= self.read & 1 << n;
         self.read |= 1 << n;
         self.ireads |= 1 << n;
         self.sreads |= 1 << n;
+    }
+
+    /// Pushes register `n` (31 is SP) as an i64; from 32, V register n − 32
+    /// as a v128 (built from its shadow if it is dirty in one alone).
+    fn reg(&mut self, n: u32) {
+        self.note_read(n);
         if self.plain & 1 << n != 0 {
             self.load_cpu(n);
         } else if self.regs.valid & 1 << n != 0 {
@@ -404,10 +523,113 @@ impl Func {
             self.c.local_get(l);
         } else {
             let l = self.local(n);
-            self.load_cpu(n);
+            if !self.build(n) {
+                self.load_cpu(n);
+            }
             self.c.local_tee(l);
             self.regs.valid |= 1 << n;
         }
+    }
+
+    /// Pushes V register `n` − 32 as a v128 from its shadow, zero-extended, if
+    /// it is dirty in one alone (true); else nothing (false).
+    fn build(&mut self, n: u32) -> bool {
+        let (o32, o64) = self.regs.only();
+        if (o32 | o64) & self.regs.dirty & 1 << n == 0 {
+            return false;
+        }
+        let s64 = o64 & 1 << n != 0;
+        self.c.v128_const(0);
+        self.c.local_get(shadow(n - 32, if s64 { 64 } else { 32 }));
+        // f64x2/f32x4.replace_lane 0
+        self.c.simd_lane(if s64 { 0x22 } else { 0x20 }, 0);
+        true
+    }
+
+    /// Whether Vn's `esize`-bit shadow holds its lane 0.
+    pub fn has_shadow(&self, n: u32, esize: u32) -> bool {
+        let m = if esize == 64 {
+            self.regs.s64
+        } else {
+            self.regs.s32
+        };
+        m & vbit(n) != 0 && self.plain & vbit(n) == 0
+    }
+
+    /// Pushes Vn as a v128 whose lane 0 (of `esize` bits) is Vn's, the rest
+    /// any value: a splat of its shadow where it is in one alone (one lane op,
+    /// where building the register takes two), else Vn.
+    pub fn vget_lo(&mut self, n: u32, esize: u32) {
+        let b = 32 + n;
+        if self.regs.valid & 1 << b == 0 && self.has_shadow(n, esize) {
+            self.note_read(b);
+            self.c.local_get(shadow(n, esize));
+            self.c.simd(if esize == 64 { 0x14 } else { 0x13 }); // f64x2/f32x4.splat
+        } else {
+            self.reg(b);
+        }
+    }
+
+    /// Vn = the f32 or f64 (`esize` 32 or 64) `value` pushes, zero-extended:
+    /// into its shadow alone (the v128 dropped), so a scalar reader takes it
+    /// as it is and a flush stores it with no lane op ([`Regs`]).
+    pub fn vset_f(&mut self, n: u32, esize: u32, value: impl FnOnce(&mut Func)) {
+        let b = 32 + n;
+        value(self);
+        self.c.local_set(shadow(n, esize));
+        self.reused |= 1 << b;
+        self.swrites |= 1 << b;
+        self.regs.valid &= !(1 << b);
+        self.regs.s32 &= !(1 << b);
+        self.regs.s64 &= !(1 << b);
+        if esize == 64 {
+            self.regs.s64 |= 1 << b;
+        } else {
+            self.regs.s32 |= 1 << b;
+        }
+        self.regs.dirty |= 1 << b;
+    }
+
+    /// Whether the next instruction of the block that names Vt reads its low
+    /// `esize` bits as a scalar FP operand a shadow serves without lane ops
+    /// (arithmetic, a store), so a load into Vt goes to its shadow; any other
+    /// use, or none in the block, keeps the v128 (a vector reader of a shadow
+    /// pays to build it). Only a hint: either form is exact.
+    fn scalar_next(&self, t: u32, esize: u32) -> bool {
+        use Op::*;
+        for &w in self.words.iter().skip(self.at + 1) {
+            let op = crate::decode::decode(w);
+            let (d, n, m, a) = (
+                bits(w, 4, 0),
+                bits(w, 9, 5),
+                bits(w, 20, 16),
+                bits(w, 14, 10),
+            );
+            let ty = if bits(w, 23, 22) == 1 { 64 } else { 32 };
+            match op {
+                FADD_float | FSUB_float | FMUL_float | FDIV_float | FNMUL_float
+                    if n == t || m == t =>
+                {
+                    return ty == esize && bits(w, 23, 22) < 2;
+                }
+                FSQRT_float | FABS_float | FNEG_float if n == t => {
+                    return ty == esize && bits(w, 23, 22) < 2;
+                }
+                STR_imm_fpsimd_1 | STR_imm_fpsimd_2 | STUR_fpsimd | STR_reg_fpsimd if d == t => {
+                    return !bit(w, 23) && 8 << bits(w, 31, 30) == esize;
+                }
+                STP_LDP_fpsimd | STNP_LDNP_fpsimd if !bit(w, 22) && (d == t || a == t) => {
+                    return 32 << bits(w, 31, 30) == esize;
+                }
+                _ => {}
+            }
+            // Any other SIMD&FP instruction or load/store naming Vt: its own use.
+            let simd = bits(w, 28, 25) & 7 == 7 || bits(w, 27, 25) & 5 == 4 && bit(w, 26);
+            if simd && (d == t || n == t || m == t || a == t) {
+                return false;
+            }
+        }
+        false
     }
 
     /// Pushes Vn.
@@ -418,6 +640,68 @@ impl Func {
     /// Pushes lane `lane` of Vn's `esize`-bit lanes (32 or 64) as an i32 or
     /// i64: from its local, or with a scalar load if Vn has none (`plain`).
     pub fn vlane(&mut self, n: u32, esize: u32, lane: u32) {
+        let b = 32 + n;
+        if self.plain & 1 << b == 0
+            && self.regs.valid & 1 << b == 0
+            && (self.regs.s32 | self.regs.s64) & 1 << b != 0
+        {
+            // In a shadow alone: from it, with no state change (a test in a
+            // branch reads lanes too).
+            self.note_read(b);
+            self.shadow_lane(n, esize, lane);
+            return;
+        }
+        self.vlane_held(n, esize, lane);
+    }
+
+    /// [`Func::vlane`] of a V register held in a shadow alone: the shadow's
+    /// bits, zero-extended (dirty), or the `Cpu`'s lane (clean).
+    fn shadow_lane(&mut self, n: u32, esize: u32, lane: u32) {
+        let b = 32 + n;
+        {
+            if lane == 0 && self.has_shadow(n, esize) {
+                self.c.local_get(shadow(n, esize));
+                self.c.op(if esize == 64 { 0xbd } else { 0xbc }); // i64/i32.reinterpret
+            } else if self.regs.dirty & 1 << b != 0 {
+                // The shadow zero-extended.
+                let s64 = self.regs.s64 & 1 << b != 0;
+                let (w, at) = (if s64 { 64 } else { 32 }, esize * lane);
+                if at >= w {
+                    if esize == 64 {
+                        self.c.i64_const(0);
+                    } else {
+                        self.c.i32_const(0);
+                    }
+                } else {
+                    self.c.local_get(shadow(n, w));
+                    if s64 {
+                        self.c.op(0xbd); // i64.reinterpret
+                        if esize == 32 {
+                            if at > 0 {
+                                self.c.i64_const(at as i64).op(SHR_U + W);
+                            }
+                            self.c.i32_wrap_i64();
+                        }
+                    } else {
+                        self.c.op(0xbc); // i32.reinterpret
+                        if esize == 64 {
+                            self.c.i64_extend_i32_u();
+                        }
+                    }
+                }
+            } else {
+                let off = V + 16 * n + esize / 8 * lane;
+                self.c.local_get(VCPU);
+                if esize == 64 {
+                    self.c.i64_load(off);
+                } else {
+                    self.c.i32_load(off);
+                }
+            }
+        }
+    }
+
+    fn vlane_held(&mut self, n: u32, esize: u32, lane: u32) {
         let b = 32 + n;
         if self.plain & 1 << b != 0 {
             self.reused |= self.read & 1 << b;
@@ -441,6 +725,30 @@ impl Func {
     /// integer took two), or loaded if Vn has no local.
     pub fn vlanef(&mut self, n: u32, esize: u32) {
         let b = 32 + n;
+        if self.has_shadow(n, esize) {
+            self.note_read(b);
+            self.c.local_get(shadow(n, esize));
+            return;
+        }
+        if self.plain & 1 << b == 0 && self.regs.valid & 1 << b == 0 {
+            // In the other shadow alone (its bits, no state change), or not
+            // held: loaded into the shadow (the `Cpu` holds it).
+            if (self.regs.s32 | self.regs.s64) & 1 << b != 0 {
+                self.vlane(n, esize, 0);
+                self.c.op(if esize == 64 { 0xbf } else { 0xbe }); // f64/f32.reinterpret
+                return;
+            }
+            self.note_read(b);
+            self.load_shadow(n, esize);
+            self.c.local_tee(shadow(n, esize));
+            let m = if esize == 64 {
+                &mut self.regs.s64
+            } else {
+                &mut self.regs.s32
+            };
+            *m |= 1 << b;
+            return;
+        }
         if self.plain & 1 << b != 0 {
             self.reused |= self.read & 1 << b;
             self.read |= 1 << b;
@@ -451,9 +759,17 @@ impl Func {
                 self.c.memarg(0x2a, 2, V + 16 * n); // f32.load
             }
         } else {
+            // Kept in the shadow too: a scalar reader again takes it as it is.
             self.reg(b);
             // f64x2/f32x4.extract_lane 0
             self.c.simd_lane(if esize == 64 { 0x21 } else { 0x1f }, 0);
+            self.c.local_tee(shadow(n, esize));
+            let m = if esize == 64 {
+                &mut self.regs.s64
+            } else {
+                &mut self.regs.s32
+            };
+            *m |= 1 << b;
         }
     }
 
@@ -479,6 +795,8 @@ impl Func {
         self.c.local_set(l);
         self.regs.valid |= 1 << n;
         self.regs.dirty |= 1 << n;
+        self.regs.s32 &= !(1 << n);
+        self.regs.s64 &= !(1 << n);
     }
 
     /// Writes the dirty registers back to the `Cpu`.
@@ -497,6 +815,8 @@ impl Func {
     pub fn forget(&mut self, mask: u64) {
         debug_assert_eq!(self.regs.dirty & mask, 0);
         self.regs.valid &= !mask;
+        self.regs.s32 &= !mask;
+        self.regs.s64 &= !mask;
     }
 
     /// A new flag setter replaces the current one.
@@ -636,13 +956,13 @@ impl Func {
             self.store_cpu(n);
         }
         self.regs.dirty &= to.dirty;
-        self.reload(to.valid);
+        self.reload(to);
     }
 
     /// Opens a load's or store's failure segment, before its fast path's `if`
     /// ([`Chain`]): in the open chain if every register it stores is still
     /// valid, else in a new one.
-    fn chain_open(&mut self) {
+    fn chain_open(&mut self, written: u64) {
         let flags = match self.flags {
             Flags::Lazy {
                 kind,
@@ -652,7 +972,20 @@ impl Func {
             } => Some((kind, sf)),
             _ => None,
         };
-        if !matches!(&self.chain, Some(ch) if ch.cum & !self.regs.valid == 0 && ch.flags == flags) {
+        // The registers the chain stores must be in the form its segments
+        // store them from; and one this instruction writes that a segment
+        // stores from a shadow must come back exactly in it (a failure
+        // reloads it from the `Cpu`): a zero-extended write that fits.
+        let (o32, o64) = self.regs.only();
+        let fits = |ch: &Chain| {
+            let v = ch.cum & !(ch.o32 | ch.o64);
+            let z = self.vzx;
+            let wide = written
+                & (if z == 0 || z > 4 { ch.o32 } else { 0 }
+                    | if z == 0 || z > 8 { ch.o64 } else { 0 });
+            v & !self.regs.valid == 0 && ch.o32 & !o32 == 0 && ch.o64 & !o64 == 0 && wide == 0
+        };
+        if !matches!(&self.chain, Some(ch) if fits(ch) && ch.flags == flags) {
             self.chain_close();
             self.c.block();
             self.chain = Some(Chain {
@@ -662,7 +995,7 @@ impl Func {
         }
         self.c.block_t(I32);
         if let Some(ch) = &mut self.chain {
-            ch.segs.push(0);
+            ch.segs.push((0, 0, 0));
         }
     }
 
@@ -676,13 +1009,13 @@ impl Func {
             return;
         };
         self.c.br(ch.segs.len() as u32);
-        for &d in ch.segs.iter().rev() {
+        for &(d, s32, s64) in ch.segs.iter().rev() {
             self.c.end();
             let mut d = d;
             while d != 0 {
                 let n = d.trailing_zeros();
                 d &= d - 1;
-                self.store_cpu(n);
+                self.store_as(n, s32 & 1 << n != 0, s64 & 1 << n != 0);
             }
         }
         if let Some((kind, sf)) = ch.flags {
@@ -720,13 +1053,52 @@ impl Func {
         self.group.is_some()
     }
 
-    /// Loads the registers in `mask` whose locals aren't valid.
-    fn reload(&mut self, mask: u64) {
-        let mut m = mask & !self.regs.valid;
+    /// Brings each register `to` holds into the locals it holds it in: the
+    /// v128 built from a dirty shadow or loaded, a shadow extracted from the
+    /// v128 or loaded (where this side is clean: [`Regs`]).
+    fn reload(&mut self, to: Regs) {
+        let mut m = to.valid & !self.regs.valid;
         while m != 0 {
             let n = m.trailing_zeros();
             m &= m - 1;
-            self.load(n);
+            let l = self.local(n);
+            if !self.build(n) {
+                self.load_cpu(n);
+            }
+            self.c.local_set(l);
+            self.regs.valid |= 1 << n;
+        }
+        for e in [64, 32] {
+            let (want, have) = if e == 64 {
+                (to.s64, self.regs.s64)
+            } else {
+                (to.s32, self.regs.s32)
+            };
+            let mut m = want & !have;
+            while m != 0 {
+                let n = m.trailing_zeros();
+                m &= m - 1;
+                let k = n - 32;
+                if self.regs.valid & 1 << n != 0 {
+                    let l = self.local[1][k as usize];
+                    self.c.local_get(l);
+                    // f64x2/f32x4.extract_lane 0
+                    self.c.simd_lane(if e == 64 { 0x21 } else { 0x1f }, 0);
+                } else if (self.regs.s32 | self.regs.s64) & 1 << n != 0 {
+                    // The other shadow alone: `merge` keeps none such.
+                    self.shadow_lane(k, e, 0);
+                    self.c.op(if e == 64 { 0xbf } else { 0xbe }); // f64/f32.reinterpret
+                } else {
+                    debug_assert_eq!(self.regs.dirty & 1 << n, 0);
+                    self.load_shadow(k, e);
+                }
+                self.c.local_set(shadow(k, e));
+                if e == 64 {
+                    self.regs.s64 |= 1 << n;
+                } else {
+                    self.regs.s32 |= 1 << n;
+                }
+            }
         }
     }
 }
@@ -809,6 +1181,8 @@ pub const ZERO_GLOBAL: u32 = 0;
 pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
     use Op::*;
     c.ireads = 0;
+    c.at = k;
+    c.vzx = 0;
     c.pc_in_addr = false;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
@@ -2483,6 +2857,9 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     }
     let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
     fp_guard(c, cx, i, k);
+    if load && len <= 8 {
+        c.vzx = len;
+    }
     match op {
         LDR_lit_fpsimd => {
             pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
@@ -2590,8 +2967,20 @@ const V128_STORE: u8 = 11;
 const V128_LOAD32_ZERO: u8 = 92;
 const V128_LOAD64_ZERO: u8 = 93;
 
-/// Vt = the `len` bytes at the host address (+ `off`), zero-extended to 128 bits.
+/// Vt = the `len` bytes at the host address (+ `off`), zero-extended to 128 bits:
+/// a single or double into Vt's shadow when a scalar reader comes next
+/// ([`Func::scalar_next`]).
 fn vload(c: &mut Func, t: u32, off: u32, len: u32) {
+    if matches!(len, 4 | 8) && c.scalar_next(t, 8 * len) {
+        return c.vset_f(t, 8 * len, |c| {
+            c.local_get(HOST);
+            if len == 8 {
+                c.ram(0x2b, 0, off); // f64.load
+            } else {
+                c.ram(0x2a, 0, off); // f32.load
+            }
+        });
+    }
     match len {
         16 | 8 | 4 => {
             let op =
@@ -2912,6 +3301,10 @@ fn vstore(c: &mut Func, t: u32, off: u32, len: u32) {
             c.vget(t);
             c.ram_simd(V128_STORE, 0, off);
         }
+        8 | 4 if c.has_shadow(t, 8 * len) => {
+            c.vlanef(t, 8 * len);
+            c.ram(if len == 8 { 0x39 } else { 0x38 }, 0, off); // f64/f32.store
+        }
         8 => {
             c.vlane(t, 64, 0);
             c.ram(STORE[3], 0, off);
@@ -3056,7 +3449,8 @@ fn access(
             return;
         }
     }
-    c.chain_open();
+    c.chain_open(written);
+    c.vzx = 0;
     let off = match cx.bus {
         Bus::Flat { base, phys, size } => {
             c.local_get(ADDR);
@@ -3171,7 +3565,10 @@ fn lead(
         // through its helper): the helper runs the leader if FP is off.
         fp_guard(c, cx, i, k);
     }
-    c.chain_open();
+    // A member's write isn't known here: any V register a segment stores
+    // from a shadow starts a new chain.
+    c.vzx = 0;
+    c.chain_open(written | if fp { !0 << 32 } else { 0 });
     let arr = read + if write { 16 } else { 0 };
     c.local_get(ADDR);
     if lo != 0 {
@@ -3257,10 +3654,14 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
         c.store_cpu(n);
     }
     let dirty = c.regs.dirty;
+    let (o32, o64) = c.regs.only();
     let ch = c.chain.as_mut().expect("the leader opens a chain");
     let d = dirty & !ch.cum;
-    *ch.segs.last_mut().expect("a segment") = d;
+    *ch.segs.last_mut().expect("a segment") = (d, d & o32, d & o64);
     ch.cum |= d;
+    ch.o32 |= d & o32;
+    ch.o64 |= d & o64;
+    let (c32, c64) = (ch.o32, ch.o64);
     // Earlier sites' segments store their registers from the locals: those
     // the span wrote take what the helper left in the `Cpu` (as a single
     // access's arm does, `fallback_arm`).
@@ -3281,7 +3682,7 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
         while m != 0 {
             let n = m.trailing_zeros();
             m &= m - 1;
-            c.load(n);
+            c.load_as(n, c32 & 1 << n != 0, c64 & 1 << n != 0);
         }
         c.local_get(HOST).i32_const(from as i32).op(ADD);
         c.br(2 + cx.spill);
@@ -3292,7 +3693,7 @@ fn close(c: &mut Func, cx: &Ctx, g: Open, here: i64) {
         *stored = true;
     }
     c.forget(written);
-    c.reload(fast.valid);
+    c.reload(fast);
     for _ in 0..cx.spill {
         c.end();
     }
@@ -3691,7 +4092,7 @@ fn fallback_with(
     c.end();
     post(c);
     c.forget(written);
-    c.reload(fast.valid);
+    c.reload(fast);
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
     c.regs = fast;
     c.end();
@@ -3729,10 +4130,14 @@ fn fallback_arm(c: &mut Func, cx: &Ctx, i: u32, here: i64, written: u64, fast: R
         c.store_cpu(n);
     }
     let dirty = c.regs.dirty;
+    let (o32, o64) = c.regs.only();
     let ch = c.chain.as_mut().expect("access opens a chain");
     let d = dirty & !ch.cum;
-    *ch.segs.last_mut().expect("a segment") = d;
+    *ch.segs.last_mut().expect("a segment") = (d, d & o32, d & o64);
     ch.cum |= d;
+    ch.o32 |= d & o32;
+    ch.o64 |= d & o64;
+    let (c32, c64) = (ch.o32, ch.o64);
     // Earlier sites' segments store their registers from the locals: those
     // this instruction writes take what the helper left in the `Cpu`, which
     // holds them (stored above, or clean) unless the access retired there and
@@ -3746,7 +4151,7 @@ fn fallback_arm(c: &mut Func, cx: &Ctx, i: u32, here: i64, written: u64, fast: R
     while m != 0 {
         let n = m.trailing_zeros();
         m &= m - 1;
-        c.load(n);
+        c.load_as(n, c32 & 1 << n != 0, c64 & 1 << n != 0);
     }
     c.regs = regs;
     // The chain stores lazy flags on the way (its sites share them).
@@ -3759,7 +4164,7 @@ fn fallback_arm(c: &mut Func, cx: &Ctx, i: u32, here: i64, written: u64, fast: R
     c.i32_const((here / 4) as i32).br(depth);
     c.end();
     c.forget(written);
-    c.reload(fast.valid);
+    c.reload(fast);
     c.regs = fast;
 }
 

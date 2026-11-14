@@ -5,7 +5,8 @@
 //! operation gives the interpreter's result and leaves FPSR as it is.
 //! Anything else runs the helper. FABS and FNEG are bit operations, inline
 //! always. Operands are the V registers' low 32 or 64 bits ([`Func::vlane`]),
-//! results go back zero-extended. Callers run [`super::fp_guard`] first.
+//! results go back zero-extended, into the destination's scalar shadow
+//! ([`Func::vset_f`]). Callers run [`super::fp_guard`] first.
 
 use core::mem::offset_of;
 
@@ -152,10 +153,12 @@ fn exp_in(c: &mut Func, f: F, l: u32, lo: i64) {
     }
 }
 
-/// Vd = the integer in local `r` of format `f`, zero-extended to 128 bits.
+/// Vd = the integer in local `r` of format `f`, zero-extended to 128 bits:
+/// into Vd's shadow ([`Func::vset_f`]), one move where the v128 took two lane ops.
 fn put(c: &mut Func, f: F, rd: u32, r: u32) {
-    c.vset_scalar(rd, f.esize(), |c| {
+    c.vset_f(rd, f.esize(), |c| {
         c.local_get(r);
+        f.to_float(c);
     });
 }
 
@@ -758,6 +761,9 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.op(f.neg());
                 }
             }
+            // The float kept for the write (no move back from its bits).
+            let fr = if f.d { super::FR } else { super::FR32 };
+            c.local_tee(fr);
             f.to_int(c);
             c.local_set(r);
             // FPOK, then FSQRT: a fast result (√ of a negative is a NaN); the
@@ -799,7 +805,11 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             under_fz(c, |c| {
                 bits(c, op == FSQRT_float, &|c, ls| no_denormal(c, f, ls));
             });
-            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
+            guarded(c, cx, i, k, vbit(rd), |c| {
+                c.vset_f(rd, f.esize(), |c| {
+                    c.local_get(fr);
+                })
+            });
         }
         // FMA: the exact product, its sum with the addend rounded to odd, then
         // the final rounding (docs/jit.md "Floating point"). Single precision:
@@ -819,9 +829,10 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float if cx.fma => {
             fpa_guard(c);
             let (o1, o0) = (bit(i, 21), bit(i, 15));
-            c.vget(rn);
-            c.vget(rm);
-            c.vget(ra);
+            // Lane 0 is all the op reads of them.
+            for n in [rn, rm, ra] {
+                c.vget_lo(n, f.esize());
+            }
             if o1 {
                 c.simd(if f.d { op::F64X2_NEG } else { op::F32X4_NEG });
             }
