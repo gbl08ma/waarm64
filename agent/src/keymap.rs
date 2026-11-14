@@ -24,11 +24,13 @@ pub struct Keymap {
 }
 
 /// A name the agent passes on (to sway's command parser, to a tool's argument): XKB's and kbd's names are of these
-/// characters, and nothing else may reach a command line (a `;` would be another sway command).
+/// characters, and nothing else may reach a command line (a `;` or a `,` would be another sway command; a leading
+/// `-` an option of loadkeys or setxkbmap). One layout at a time: XKB's lists (`us,de`) aren't the page's.
 fn plain(s: &str) -> bool {
     s.len() <= 64
+        && !s.starts_with('-')
         && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"_-+.,:()".contains(&b))
+            .all(|b| b.is_ascii_alphanumeric() || b"_-+.:()".contains(&b))
 }
 
 impl Keymap {

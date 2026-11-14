@@ -570,6 +570,28 @@ fn applies_the_pages_layout_where_the_session_hasnt_it() {
     assert!(h.echoed(frame::HELLO, 3000), "the new child");
     assert!(h.echoed(frame::KEYMAP, 1000), "and the layout");
     assert_eq!(loaded(), "-q pt-latin1\n", "loaded once");
+    // Two layouts while loadkeys runs (a slow one): the consoles end with the last (review L2).
+    std::fs::write(
+        r("loadkeys"),
+        format!(
+            "#!/bin/sh\nsleep 0.3\necho \"$*\" >> {}\n",
+            r("loaded").display()
+        ),
+    )
+    .unwrap();
+    h.page.send(frame::KEYMAP, &km("fr", "", "fr-latin1"));
+    std::thread::sleep(Duration::from_millis(50));
+    h.page.send(frame::KEYMAP, &km("it", "", "it"));
+    let end = Instant::now() + Duration::from_secs(5);
+    while !loaded().ends_with("-q it\n") && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(loaded(), "-q pt-latin1\n-q fr-latin1\n-q it\n");
+    // Names a command line would read otherwise: sway's other separator, an option for loadkeys (review L3).
+    while h.echoed(frame::KEYMAP, 300) {} // the two above, the child's
+    h.page.send(frame::KEYMAP, &km("us,exit", "", ""));
+    h.page.send(frame::KEYMAP, &km("us", "", "-h"));
+    assert!(!h.echoed(frame::KEYMAP, 300), "dropped");
 }
 
 #[test]
@@ -758,10 +780,14 @@ fn renews_ssh_host_keys_with_the_real_ssh_keygen() {
     });
     h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
     assert!(h.page.next(frame::HELLO, 2000).is_some());
+    // A key of a type this ssh-keygen can't make (as DSA's under OpenSSH 10): it fails alone, and the others are still
+    // served (sshd told to load them).
+    std::fs::write(r("ssh/ssh_host_bogus_key"), "old").unwrap();
     h.page.send(frame::RENEW, &[9u8; 64]);
     let done = h.page.next(frame::RENEWED, 60_000).expect("RENEWED");
-    // No machine id or seed in this test's directory: those not there are in neither.
-    assert_eq!(done, [what::ENTROPY | what::SSH, 0]);
+    // No machine id or seed in this test's directory: those not there are in neither. The SSH keys: renewed and failed
+    // (some of them each).
+    assert_eq!(done, [what::ENTROPY | what::SSH, what::SSH]);
     for t in ["ed25519", "rsa"] {
         let key = r(&format!("ssh/ssh_host_{t}_key"));
         let out = std::process::Command::new(kg)
@@ -828,6 +854,11 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
     {
         std::fs::create_dir_all(r(&format!("net/{n}"))).unwrap();
         std::fs::write(r(&format!("net/{n}/ifindex")), format!("{}\n", k + 2)).unwrap();
+        std::fs::write(
+            r(&format!("net/{n}/address")),
+            format!("52:54:00:00:00:{k:02x}\n"),
+        )
+        .unwrap();
         if dev {
             std::fs::create_dir(r(&format!("net/{n}/device"))).unwrap();
         }
@@ -867,6 +898,41 @@ fn renews_the_leases_with_the_network_manager_that_runs() {
     // refuses (Debian 13: "Address family not supported by protocol").
     let m = "call org.freedesktop.network1 /org/freedesktop/network1 org.freedesktop.network1.Manager RenewLink i";
     assert_eq!(calls(), format!("{m} 2\n{m} 3\n"), "networkd first");
+    // A card whose renewal fails: the others are renewed all the same (FAILED said).
+    std::fs::remove_file(r("calls")).unwrap();
+    std::fs::write(
+        r("busctl"),
+        format!(
+            "#!/bin/sh\necho \"$*\" >> {}\n[ \"$7\" = 2 ] && exit 1\nexit 0\n",
+            r("calls").display()
+        ),
+    )
+    .unwrap();
+    h.page.send(frame::LEASE, &[]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::FAILED][..])
+    );
+    assert_eq!(
+        calls(),
+        format!("{m} 2\n{m} 3\n"),
+        "each card, past a failure"
+    );
+    tool("busctl", 0);
+    // The cards the page has connected, by their MACs: those only (review M2); one the guest hasn't: none renewed.
+    std::fs::remove_file(r("calls")).unwrap();
+    h.page.send(frame::LEASE, &[1, 0x52, 0x54, 0, 0, 0, 1]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::RENEWED][..])
+    );
+    assert_eq!(calls(), format!("{m} 3\n"), "eth1 alone");
+    h.page.send(frame::LEASE, &[1, 2, 0, 0, 0, 0, 9]);
+    assert_eq!(
+        h.page.next(frame::LEASED, 5000).as_deref(),
+        Some(&[status::NO_CLIENT][..])
+    );
+    assert_eq!(calls(), format!("{m} 3\n"), "none of the guest's");
     // NetworkManager alone: each card connected again.
     std::fs::remove_dir(r("netif-links")).unwrap();
     std::fs::remove_file(r("calls")).unwrap();
@@ -1097,4 +1163,17 @@ fn powers_off_or_reboots_as_asked_and_says_if_taken() {
     // A request it doesn't know: no answer.
     h.page.send(frame::POWER, &[7]);
     assert!(h.page.next(frame::POWERED, 300).is_none());
+    // One while another runs (a busctl that takes its time): BUSY at once, then the first's answer.
+    std::fs::write(r("busctl"), "#!/bin/sh\nsleep 0.5\nexit 0\n").unwrap();
+    std::fs::create_dir(r("logind")).unwrap();
+    h.page.send(frame::POWER, &[frame::power::OFF]);
+    h.page.send(frame::POWER, &[frame::power::REBOOT]);
+    assert_eq!(
+        h.page.next(frame::POWERED, 5000).as_deref(),
+        Some(&[status::BUSY][..])
+    );
+    assert_eq!(
+        h.page.next(frame::POWERED, 5000).as_deref(),
+        Some(&[status::TAKEN][..])
+    );
 }

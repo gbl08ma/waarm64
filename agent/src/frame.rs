@@ -200,11 +200,14 @@ pub fn hello_answer(payload: &[u8], caps: u32, out: &mut Vec<u8>) {
     );
 }
 
-/// DISPLAY's payload: u32 width, u32 height (the guest's pixels); None if short or empty.
+/// The largest side DISPLAY takes (past any screen's; RandR's sizes are u16, wlr-output-management's i32).
+pub const MAX_SIDE: u32 = 16384;
+
+/// DISPLAY's payload: u32 width, u32 height (the guest's pixels), each at most `MAX_SIDE`; None if short or empty.
 pub fn decode_display(p: &[u8]) -> Option<(u32, u32)> {
     let mut r = Fields(p);
     let (w, h) = (r.u32()?, r.u32()?);
-    (w > 0 && h > 0).then_some((w, h))
+    (w > 0 && h > 0).then_some((w.min(MAX_SIDE), h.min(MAX_SIDE)))
 }
 
 /// TIME's payload: u64 nanoseconds since the Unix epoch, the host's wall clock as the page sent it; None if short.
@@ -567,6 +570,9 @@ mod tests {
         );
         assert_eq!(decode_display(&[0, 5, 0, 0, 0xd0, 2, 0]), None, "short");
         assert_eq!(decode_display(&[0; 8]), None, "no size");
+        // A size past any screen's: clamped (RandR's are u16, wlr-output-management's i32; review L6).
+        let huge = [u32::MAX.to_le_bytes(), 70_000u32.to_le_bytes()].concat();
+        assert_eq!(decode_display(&huge), Some((MAX_SIDE, MAX_SIDE)));
         // TYPED and its statuses: the numbers tests/agent.test.ts pins.
         assert_eq!(
             (

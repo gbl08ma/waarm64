@@ -75,12 +75,14 @@ export class TrimActions {
     link?.onHello.push((h) => {
       this.#shown.canTrim = (h.caps & CAP.TRIM) !== 0;
     });
+    link?.onClose.push(() => (this.#shown.canTrim = false));
     return link;
   }
 
-  /** The run ended. */
+  /** The run ended: its trim (cut short by its link's close) isn't the next run's to join. */
   end() {
     this.#shown.canTrim = false;
+    this.#running = undefined;
   }
 
   /** The guest's filesystems trimmed, then the overlays compacted (where anything was trimmed). */
@@ -93,8 +95,12 @@ export class TrimActions {
     // The overlays' size before the trim: its discards may compact them already (past half free).
     const was = link?.agent && link.agent.caps & CAP.TRIM ? await this.#compact(COMPACT_WAIT_MS, true) : undefined;
     const status = await link?.trim(TRIM_WAIT_MS);
+    // The run's own overlays only (one that ended meanwhile has a new run's worker in its place).
+    const ours = this.#agent.link === link;
     const now =
-      status === TRIMMED.TRIMMED || status === TRIMMED.FAILED ? await this.#compact(COMPACT_WAIT_MS) : undefined;
+      ours && (status === TRIMMED.TRIMMED || status === TRIMMED.FAILED)
+        ? await this.#compact(COMPACT_WAIT_MS)
+        : undefined;
     const r: Trimmed = now ? { status, before: was?.before ?? now.before, after: now.after } : { status };
     if (typeof window !== 'undefined') window.__trimmed = r; // the tests' hook
     return r;

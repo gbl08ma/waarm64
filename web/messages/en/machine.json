@@ -518,5 +518,17 @@
   "soft-power.refused.reboot": {
     "message": "The guest refused to restart: a program is holding it off.",
     "note": "Message bar notice when the toolbar's Restart asked the guest to restart and the guest refused (a program inhibits it). The page then asks whether to restart at once."
+  },
+  "soft-power.busy": {
+    "message": "The guest is still working on an earlier request to shut down or restart.",
+    "note": "Message bar notice when the toolbar's Power off or Restart asked the guest while an earlier request (one the page gave up waiting for) still runs in it. The page then asks whether to power off or restart at once."
+  },
+  "soft-power.noAnswer": {
+    "message": "The guest didn't answer the request to shut down or restart.",
+    "note": "Message bar notice when the toolbar's Power off or Restart asked the guest (through its agent, the page's program in the guest) and no answer came within 15 seconds. The page then asks whether to power off or restart at once."
+  },
+  "soft-power.noTool": {
+    "message": "The guest has no way to shut itself down that the page knows.",
+    "note": "Message bar notice when the toolbar's Power off or Restart asked the guest and its agent found neither systemd-logind nor the shutdown command. The page then asks whether to power off or restart at once."
   }
 }

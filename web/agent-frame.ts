@@ -70,6 +70,14 @@ export const FRAME = {
   POWERED: 27,
 } as const;
 
+/** LEASE's payload (agent/src/lease.rs `decode`): a u8 count, then the MACs (6 bytes each) of the cards to renew. */
+export function encodeLease(macs: string[]): Uint8Array {
+  const out = new Uint8Array(1 + 6 * macs.length);
+  out[0] = macs.length;
+  macs.forEach((m, i) => out.set(m.split(':').map((h) => parseInt(h, 16)), 1 + 6 * i));
+  return out;
+}
+
 /** POWER's requests (agent/src/frame.rs `power`). */
 export const POWER = { OFF: 0, REBOOT: 1 } as const;
 
@@ -81,6 +89,8 @@ export const POWERED = {
   REFUSED: 1,
   /** The guest has no tool for it (neither logind with busctl nor `shutdown`). */
   NO_TOOL: 2,
+  /** An earlier request is still running in the guest (one asked before and given up on). */
+  BUSY: 3,
 } as const;
 
 /** The guest's OS as its os-release names it: the pretty name, ID and VERSION_ID. */

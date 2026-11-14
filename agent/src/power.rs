@@ -19,6 +19,8 @@ pub mod status {
     pub const REFUSED: u8 = 1;
     /// Neither logind with busctl nor `shutdown` is here.
     pub const NO_TOOL: u8 = 2;
+    /// An earlier request is still running (one the page gave up waiting for): this one isn't taken.
+    pub const BUSY: u8 = 3;
 }
 
 /// logind's flag (systemd's src/basic/login-util.h): inhibitors hold for root too.

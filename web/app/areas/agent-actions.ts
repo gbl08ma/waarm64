@@ -74,6 +74,7 @@ export class AgentActions {
     desktop(link.desktop);
     link.onDesktop = desktop;
     link.onOs = (os) => this.#shown.os(os);
+    link.onClose.push(() => this.#shown.canPower(false));
     if (size) link.display(size);
     link.onHello.push(
       up,

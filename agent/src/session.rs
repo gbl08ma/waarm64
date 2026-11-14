@@ -862,8 +862,9 @@ impl Child {
         }
     }
 
-    /// The X server's connection ends: if its clipboard was shared, the page hears SESSION. A server that refused us
-    /// (its setup not done) is tried again by the retries, the first time.
+    /// The X server's connection ends: if its clipboard was shared, the page hears SESSION. One that served is tried
+    /// again at once; a server that refused us, or failed the clipboard's setup (an error, no XFIXES: each connection
+    /// would fail the same), is tried again by the retries, the first time.
     fn x_disconnect(&mut self, why: &str) {
         let Some(x) = self.x.take() else { return };
         log(&format!("session: {why} (:{})", x.display), None);
@@ -873,7 +874,7 @@ impl Child {
             self.guest = None;
             self.probe = None;
         }
-        if x.ready || x.is_set_up() {
+        if x.did_its_job() {
             self.x_try(true, false);
         } else if !self.x_refused.contains(&x.display) {
             self.x_refused.push(x.display);

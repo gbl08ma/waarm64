@@ -23,7 +23,7 @@ use crate::prelude::*;
 use rustix::fd::{AsFd, OwnedFd};
 use rustix::fs::{Mode, OFlags, open};
 use rustix::io::{Errno, write};
-use rustix::process::{Pid, PidfdFlags, Signal, WaitOptions, pidfd_open, waitpid};
+use rustix::process::{Pid, Signal, WaitOptions, pidfd_open, waitpid};
 
 /// RENEWED's bits.
 pub mod what {
@@ -145,23 +145,18 @@ pub fn machine_id(bytes: &[u8; 16]) -> String {
 }
 
 /// `bytes` written over the file at `path` (it must exist), in place; a read-only mode made writable for it and back.
+/// Written over the old bytes, then cut to its length (not truncated first: a write that fails, a full filesystem's,
+/// would leave an empty machine id, which systemd takes for a first boot; over a small file's own blocks it needs
+/// none of the filesystem's free ones).
 fn overwrite(path: &str, bytes: &[u8]) -> Result<(), Errno> {
     let st = rustix::fs::stat(path)?;
     let mode = Mode::from_raw_mode(st.st_mode) & Mode::from_raw_mode(0o7777);
-    let fd = match open(
-        path,
-        OFlags::WRONLY | OFlags::TRUNC | OFlags::CLOEXEC,
-        Mode::empty(),
-    ) {
+    let fd = match open(path, OFlags::WRONLY | OFlags::CLOEXEC, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::ACCESS) => {
             // Its owner (root) may change its mode without CAP_DAC_OVERRIDE, which the agent hasn't.
             rustix::fs::chmod(path, mode | Mode::WUSR)?;
-            let fd = open(
-                path,
-                OFlags::WRONLY | OFlags::TRUNC | OFlags::CLOEXEC,
-                Mode::empty(),
-            );
+            let fd = open(path, OFlags::WRONLY | OFlags::CLOEXEC, Mode::empty());
             let _ = rustix::fs::chmod(path, mode);
             fd?
         }
@@ -175,6 +170,7 @@ fn overwrite(path: &str, bytes: &[u8]) -> Result<(), Errno> {
             Err(e) => return Err(e),
         }
     }
+    rustix::fs::ftruncate(&fd, bytes.len() as u64)?;
     rustix::fs::fsync(&fd)
 }
 
@@ -270,8 +266,13 @@ unsafe extern "C" {
     fn umask(mask: u32) -> u32;
 }
 
+/// The helper's exit statuses: every key made; none; some (others failed: those made are in place all the same).
+const KEYS_ALL: i32 = 0;
+const KEYS_NONE: i32 = 1;
+const KEYS_SOME: i32 = 2;
+
 /// The keys' helper: forked, it makes each key again (`ssh-keygen`, one at a time) and renames it into place; it exits
-/// with 0 if all were made.
+/// with `KEYS_ALL`, `KEYS_SOME` or `KEYS_NONE`.
 fn spawn_keygen(keygen: &str, keys: &[(String, String)]) -> Result<(Pid, OwnedFd), Errno> {
     // Everything the helper needs, made before the fork (it allocates nothing it can't).
     let keygen = cstr(keygen);
@@ -293,7 +294,7 @@ fn spawn_keygen(keygen: &str, keys: &[(String, String)]) -> Result<(Pid, OwnedFd
         crate::rt::close_inherited();
         // SAFETY: umask has no preconditions. The public halves are for everyone to read, as ssh-keygen makes them.
         unsafe { umask(0o022) };
-        let mut ok = true;
+        let (mut made_any, mut failed_any) = (false, false);
         for (path, ty, tmp, ctmp) in &jobs {
             let _ = rustix::fs::unlink(tmp.as_str());
             let _ = rustix::fs::unlink(format!("{tmp}.pub").as_str());
@@ -304,14 +305,17 @@ fn spawn_keygen(keygen: &str, keys: &[(String, String)]) -> Result<(Pid, OwnedFd
                 )
                 .is_ok()
                 && rustix::fs::rename(tmp.as_str(), path.as_str()).is_ok();
-            ok &= made;
+            made_any |= made;
+            failed_any |= !made;
         }
-        crate::rt::exit(if ok { 0 } else { 1 });
+        crate::rt::exit(match (made_any, failed_any) {
+            (_, false) => KEYS_ALL,
+            (true, true) => KEYS_SOME,
+            (false, true) => KEYS_NONE,
+        });
     }
     let pid = Pid::from_raw(pid).ok_or(Errno::INVAL)?;
-    let pidfd = pidfd_open(pid, PidfdFlags::empty()).inspect_err(|_| {
-        let _ = waitpid(Some(pid), WaitOptions::empty());
-    })?;
+    let pidfd = crate::lease::adopt(pid, pidfd_open)?;
     Ok((pid, pidfd))
 }
 
@@ -358,27 +362,41 @@ fn run_keygen(keygen: &[u8], ty: &[u8], out: &[u8]) -> bool {
     }
 }
 
-/// The keys' helper ended (its pidfd readable): reaped, and, if the keys were made, sshd's listeners told to load them;
-/// what was renewed and failed in all.
+/// The keys' helper ended (its pidfd readable): reaped, and, if any key was made, sshd's listeners told to load them
+/// (a key that failed leaves the others new on disk: unloaded, the template's would be served still); what was
+/// renewed and failed in all (SSH in both when some keys failed).
 pub fn keygen_done(k: Keygen, paths: &Paths) -> (u8, u8) {
-    let ok = loop {
+    let status = loop {
         match waitpid(Some(k.pid), WaitOptions::empty()) {
-            Ok(Some((_, st))) => break st.exit_status() == Some(0),
+            Ok(Some((_, st))) => break st.exit_status(),
             Err(Errno::INTR) => {}
-            _ => break false,
+            _ => break None,
         }
     };
     let _ = k.pidfd.as_fd();
-    let (done, failed) = if ok {
+    let (made, failed) = match status {
+        Some(KEYS_ALL) => (true, false),
+        Some(KEYS_SOME) => (true, true),
+        _ => (false, true),
+    };
+    if made {
         let n = reload_sshd(&paths.proc);
         log(
             &format!("renew: the SSH host keys made again; {n} sshd listener(s) told to load them"),
             None,
         );
-        (k.done | what::SSH, k.failed)
+    }
+    if failed {
+        log(
+            "renew: the SSH host keys: ssh-keygen failed for some or all",
+            None,
+        );
+    }
+    let done = if made { k.done | what::SSH } else { k.done };
+    let failed = if failed {
+        k.failed | what::SSH
     } else {
-        log("renew: the SSH host keys: ssh-keygen failed", None);
-        (k.done, k.failed | what::SSH)
+        k.failed
     };
     log(
         &format!("renew: done (renewed {done:#x}, failed {failed:#x})"),
@@ -430,6 +448,27 @@ pub fn reload_sshd(proc: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overwrites_in_place_then_cuts_to_length() {
+        let dir =
+            std::env::temp_dir().join(format!("waarm64-agent-overwrite-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("machine-id");
+        let p = f.to_str().unwrap();
+        std::fs::write(&f, "0123456789abcdef0123456789abcdef\nand more\n").unwrap();
+        overwrite(p, b"fedcba9876543210fedcba9876543210\n").unwrap();
+        assert_eq!(
+            std::fs::read(&f).unwrap(),
+            b"fedcba9876543210fedcba9876543210\n"
+        );
+        // A write that fails (`/dev/full`: ENOSPC) leaves what was there (nothing truncated first; review L9).
+        let full = dir.join("full");
+        std::os::unix::fs::symlink("/dev/full", &full).unwrap();
+        assert_eq!(overwrite(full.to_str().unwrap(), b"x\n"), Err(Errno::NOSPC));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_machine_id_is_a_v4_ids_hex() {

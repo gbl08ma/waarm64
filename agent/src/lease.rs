@@ -60,8 +60,9 @@ pub struct Job {
     pub pidfd: OwnedFd,
 }
 
-/// The network cards: `/sys/class/net`'s links with a device, sorted.
-pub fn cards(net: &str) -> Vec<String> {
+/// The network cards: `/sys/class/net`'s links with a device, sorted; of those, the ones whose MAC is in `macs` (none
+/// given: all of them).
+pub fn cards(net: &str, macs: &[[u8; 6]]) -> Vec<String> {
     let Ok(mut names) = crate::rt::dir_names(net) else {
         return Vec::new();
     };
@@ -69,7 +70,34 @@ pub fn cards(net: &str) -> Vec<String> {
     names
         .into_iter()
         .filter(|n| n != "lo" && rustix::fs::stat(format!("{net}/{n}/device").as_str()).is_ok())
+        .filter(|n| {
+            macs.is_empty()
+                || crate::rt::read_text(format!("{net}/{n}/address"))
+                    .ok()
+                    .and_then(|a| parse_mac(a.trim()))
+                    .is_some_and(|m| macs.contains(&m))
+        })
         .collect()
+}
+
+/// A MAC as sysfs writes it (`52:54:00:12:34:56`).
+fn parse_mac(s: &str) -> Option<[u8; 6]> {
+    let mut out = [0u8; 6];
+    let mut parts = s.split(':');
+    for b in &mut out {
+        *b = u8::from_str_radix(parts.next()?, 16).ok()?;
+    }
+    parts.next().is_none().then_some(out)
+}
+
+/// LEASE's payload: a u8 count, then that many MACs (6 bytes each), the cards the page has connected; empty (a page
+/// before it said them): every card. None: not one.
+pub fn decode(p: &[u8]) -> Option<Vec<[u8; 6]>> {
+    let Some((&n, rest)) = p.split_first() else {
+        return Some(Vec::new());
+    };
+    let rest = rest.get(..6 * n as usize)?;
+    Some(rest.as_chunks::<6>().0.to_vec())
 }
 
 fn found(list: &[String]) -> Option<&String> {
@@ -78,8 +106,8 @@ fn found(list: &[String]) -> Option<&String> {
 }
 
 /// The commands that renew the cards' leases with the network manager that runs here; None if none the agent knows.
-pub fn commands(p: &Paths) -> Option<Vec<Vec<String>>> {
-    let cards = cards(&p.net);
+pub fn commands(p: &Paths, macs: &[[u8; 6]]) -> Option<Vec<Vec<String>>> {
+    let cards = cards(&p.net, macs);
     if cards.is_empty() {
         return None;
     }
@@ -154,14 +182,26 @@ pub fn spawn(cmds: &[Vec<String>]) -> Result<Job, Errno> {
     if pid == 0 {
         let _ = rustix::process::set_parent_process_death_signal(Some(Signal::KILL));
         crate::rt::close_inherited();
-        let ok = argvs.iter().all(|a| run(a));
+        // Each of them, whatever became of the ones before (a card the manager doesn't renew fails alone).
+        let ok = argvs.iter().filter(|a| !run(a)).count() == 0;
         crate::rt::exit(if ok { 0 } else { 1 });
     }
     let pid = Pid::from_raw(pid).ok_or(Errno::INVAL)?;
-    let pidfd = pidfd_open(pid, PidfdFlags::empty()).inspect_err(|_| {
-        let _ = waitpid(Some(pid), WaitOptions::empty());
-    })?;
+    let pidfd = adopt(pid, pidfd_open)?;
     Ok(Job { pid, pidfd })
+}
+
+/// A forked helper's pidfd, which the loop hears its end on (`open`: `pidfd_open`; the tests' fails). Without one
+/// (descriptors run out) the helper is killed before it is reaped: waiting for it to end would hold the loop for as
+/// long as it runs (a whole trim, a key's making).
+pub fn adopt(
+    pid: Pid,
+    open: fn(Pid, PidfdFlags) -> Result<OwnedFd, Errno>,
+) -> Result<OwnedFd, Errno> {
+    open(pid, PidfdFlags::empty()).inspect_err(|_| {
+        let _ = rustix::process::kill_process(pid, Signal::KILL);
+        let _ = waitpid(Some(pid), WaitOptions::empty());
+    })
 }
 
 /// One command (its argv, NUL-terminated strings, the first the program's path) in a child; whether it exited with 0.
@@ -205,5 +245,33 @@ pub fn done(j: Job) -> u8 {
     } else {
         crate::log("lease: the network manager's tool failed", None);
         status::FAILED
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A helper whose pidfd can't be had (descriptors run out): killed and reaped at once, not waited for (review L5).
+    #[test]
+    #[allow(clippy::zombie_processes)] // `adopt` reaps it
+    fn a_helper_without_its_pidfd_is_killed_not_waited_for() {
+        let child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let pid = Pid::from_raw(child.id() as i32).unwrap();
+        let t = std::time::Instant::now();
+        let r = adopt(pid, |_, _| Err(Errno::MFILE));
+        assert_eq!(r.err(), Some(Errno::MFILE));
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(5),
+            "waited {:?}",
+            t.elapsed()
+        );
+        assert!(
+            rustix::fs::stat(format!("/proc/{}", child.id()).as_str()).is_err(),
+            "reaped"
+        );
     }
 }

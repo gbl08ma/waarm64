@@ -194,6 +194,8 @@ struct Agent {
     /// COPY's console (the tests' files).
     screen: screen::Paths,
     loadkeys: Option<lease::Job>,
+    /// The consoles' keymap asked for while `loadkeys` ran: loaded next.
+    loadkeys_next: Option<String>,
     /// OS's file (the tests' is theirs).
     os: os::Paths,
     /// POWER's tools, the request's run, and POWERED's status once done.
@@ -255,6 +257,7 @@ impl Agent {
             loadkeys_at: keymap::places("loadkeys"),
             screen: screen::Paths::default(),
             loadkeys: None,
+            loadkeys_next: None,
             os: os::Paths::default(),
             power: power::Paths::default(),
             powering: None,
@@ -404,18 +407,10 @@ impl Agent {
         }
         if pid == 0 {
             // The child: none of the parent's descriptors but its socket (the port above all: the page must see it
-            // close when the parent goes), then the user's ids before anything from the display is read.
-            let mut close = vec![port, mine.as_raw_fd()];
-            close.extend(self.ino.as_ref().map(|f| f.as_raw_fd()));
-            close.extend(self.mounts.as_ref().map(|f| f.as_raw_fd()));
-            close.extend(self.typist.fd());
-            close.extend(self.keygen.as_ref().map(|k| k.pidfd.as_raw_fd()));
-            close.extend(self.leasing.as_ref().map(|j| j.pidfd.as_raw_fd()));
-            for fd in close {
-                // SAFETY: the parent's descriptors, which this process (which never returns to their owners) no
-                // longer uses; their OwnedFds are never dropped here (session::run exits).
-                unsafe { rustix::io::close(fd) };
-            }
+            // close when the parent goes; the helpers' pidfds, the console, …), then the user's ids before anything
+            // from the display is read. The parent's OwnedFds are never dropped here (session::run exits).
+            rt::close_inherited_but(theirs.as_raw_fd());
+            let _ = port;
             core::mem::forget(mine);
             let (uid, gid) = logind::ids(&a);
             let dropped = rustix::thread::set_thread_groups(&[])
@@ -476,14 +471,23 @@ impl Agent {
 
     /// A frame for the child; false if there is none (the frame is the parent's to answer).
     /// The text consoles' keymap (`loadkeys`, where kbd is there and the layout names one), in a forked child.
+    /// One at a time: a keymap asked for meanwhile is loaded when the running one ends (the last asked).
     fn load_console(&mut self, k: &keymap::Keymap) {
-        if k.vc.is_empty() || self.loadkeys.is_some() {
+        if k.vc.is_empty() {
             return;
         }
+        if self.loadkeys.is_some() {
+            self.loadkeys_next = Some(k.vc.clone());
+            return;
+        }
+        self.load_vc(k.vc.clone());
+    }
+
+    fn load_vc(&mut self, vc: String) {
         let Some(tool) = keymap::found(&self.loadkeys_at) else {
             return;
         };
-        match lease::spawn(&[vec![tool, "-q".into(), k.vc.clone()]]) {
+        match lease::spawn(&[vec![tool, "-q".into(), vc]]) {
             Ok(j) => self.loadkeys = Some(j),
             Err(e) => log("keymap: fork", Some(e)),
         }
@@ -701,6 +705,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                             None,
                         );
                     }
+                    if let Some(vc) = s.agent.loadkeys_next.take() {
+                        s.agent.load_vc(vc);
+                    }
                 }
                 Tag::Keygen => {
                     if let Some(k) = s.agent.keygen.take() {
@@ -798,7 +805,10 @@ impl Session<'_> {
             }
             // The machine restored and its connections up: the guest's leases renewed (src/lease.rs); one run at a time.
             frame::LEASE if self.agent.leasing.is_none() => {
-                match lease::commands(&self.agent.lease) {
+                let Some(macs) = lease::decode(payload) else {
+                    return;
+                };
+                match lease::commands(&self.agent.lease, &macs) {
                     None => {
                         log(
                             "lease: no network manager the agent knows (networkd, NetworkManager) with its tool",
@@ -860,6 +870,8 @@ impl Session<'_> {
                     },
                 }
             }
+            // A request while one runs: said so (its own answer, not the earlier one's later).
+            frame::POWER => self.agent.powered = Some(power::status::BUSY),
             // The foreground console's screen, as text (src/screen.rs): read at once (the kernel's copy of it).
             frame::COPY => {
                 let copied = screen::copied(&self.agent.screen);

@@ -12,7 +12,7 @@ use crate::lease::Job;
 use crate::prelude::*;
 use rustix::fs::{Mode, OFlags};
 use rustix::io::Errno;
-use rustix::process::{PidfdFlags, Signal, WaitOptions, pidfd_open, waitpid};
+use rustix::process::{Signal, WaitOptions, pidfd_open, waitpid};
 
 /// TRIMMED's statuses.
 pub mod status {
@@ -181,9 +181,7 @@ pub fn spawn(p: &Paths, fitrim: Fitrim) -> Result<Job, Errno> {
         crate::rt::exit(trim_all(p, fitrim) as i32);
     }
     let pid = rustix::process::Pid::from_raw(pid).ok_or(Errno::INVAL)?;
-    let pidfd = pidfd_open(pid, PidfdFlags::empty()).inspect_err(|_| {
-        let _ = waitpid(Some(pid), WaitOptions::empty());
-    })?;
+    let pidfd = crate::lease::adopt(pid, pidfd_open)?;
     Ok(Job { pid, pidfd })
 }
 

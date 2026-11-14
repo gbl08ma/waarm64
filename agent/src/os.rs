@@ -76,6 +76,38 @@ pub fn names(text: &str) -> [String; 3] {
     ]
 }
 
+/// The largest os-release read (they are a few hundred bytes).
+const MOST: u64 = 64 << 10;
+
+/// A small regular file's text (bytes that aren't UTF-8 replaced): os-release is root's to write, but whatever the path
+/// leads to (a FIFO, a device, a huge file) mustn't hold or fill the agent's one loop. Opened without blocking (a FIFO
+/// with no writer would wait), then only a regular file of at most `MOST` bytes is read.
+fn small_text(path: &str) -> Option<String> {
+    use rustix::fs::{FileType, Mode, OFlags};
+    let fd = rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .ok()?;
+    let st = rustix::fs::fstat(&fd).ok()?;
+    if FileType::from_raw_mode(st.st_mode) != FileType::RegularFile || st.st_size as u64 > MOST {
+        return None;
+    }
+    let mut out = vec![0u8; st.st_size as usize];
+    let mut at = 0;
+    while at < out.len() {
+        match rustix::io::read(&fd, &mut out[at..]) {
+            Ok(0) => break,
+            Ok(n) => at += n,
+            Err(rustix::io::Errno::INTR) => {}
+            Err(_) => return None,
+        }
+    }
+    out.truncate(at);
+    Some(String::from_utf8_lossy(&out).into_owned())
+}
+
 /// A string as the frames carry it: a u8 length (at most 255 bytes, cut between characters), then its UTF-8.
 fn push_str(s: &str, out: &mut Vec<u8>) {
     let mut n = s.len().min(255);
@@ -92,7 +124,7 @@ pub fn payload(p: &Paths) -> Vec<u8> {
     let text = p
         .files
         .iter()
-        .find_map(|f| crate::rt::read_text(f.as_str()).ok())
+        .find_map(|f| small_text(f))
         .unwrap_or_default();
     let mut out = Vec::new();
     for s in names(&text) {
@@ -104,6 +136,11 @@ pub fn payload(p: &Paths) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    unsafe extern "C" {
+        #[link_name = "mkfifo"]
+        fn libc_mkfifo(path: *const core::ffi::c_char, mode: u32) -> i32;
+    }
 
     #[test]
     fn reads_os_release_as_a_shell_would() {
@@ -152,6 +189,21 @@ mod tests {
         let got = payload(&p);
         assert_eq!(got[0], 254, "the é not cut in two");
         assert_eq!(&got[255..], b"\x03etc\x011");
+        // Not UTF-8: read all the same (replaced), not passed over for /usr/lib's (review, loop 11).
+        std::fs::write(&etc, b"PRETTY_NAME=\"A\xffB\"\nID=etc\n").unwrap();
+        assert_eq!(&payload(&p)[..6], "\x05A\u{FFFD}B".as_bytes());
+        // A FIFO (no writer: a blocking open would wait for one) or a file past the cap: /usr/lib's, at once.
+        std::fs::remove_file(&etc).unwrap();
+        let fifo = std::ffi::CString::new(etc.to_str().unwrap()).unwrap();
+        // SAFETY: a NUL-terminated path.
+        assert_eq!(unsafe { libc_mkfifo(fifo.as_ptr(), 0o644) }, 0);
+        assert_eq!(payload(&p), b"\x05Linux\x03lib\x00", "the FIFO passed over");
+        std::fs::remove_file(&etc).unwrap();
+        std::fs::File::create(&etc)
+            .unwrap()
+            .set_len(1 << 30)
+            .unwrap();
+        assert_eq!(payload(&p), b"\x05Linux\x03lib\x00", "too large");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

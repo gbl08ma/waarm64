@@ -1250,7 +1250,7 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   };
   const run = async (link: AgentLink | undefined, connected: Promise<number[]>) => {
     const flaps: number[] = [];
-    const a = new LeaseActions({ whenConnected: () => connected, link: () => link, flap: (i) => flaps.push(i), waits: { grace: 50, agent: 100, leased: 200 } });
+    const a = new LeaseActions({ whenConnected: () => connected.then((k) => k.map((index) => ({ index, mac: `52:54:00:00:00:0${index}` }))), link: () => link, flap: (i) => flaps.push(i), waits: { grace: 50, agent: 100, leased: 200 } });
     return { a, flaps, done: a.restored() };
   };
   // The agent renews: no flap.

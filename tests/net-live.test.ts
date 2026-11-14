@@ -526,7 +526,7 @@ test("a room's key: an ephemeral connection and a stored one on its key, in two 
 
 test("NetSettled's `when` (a restore's lease renewal waits for it): pending while none connects; once one has, when every adapter settled or after the grace", async () => {
   const p = pageOn('nl-when', 'M');
-  const settled = new NetSettled(() => p.net.views().map((v) => v.view.phase));
+  const settled = new NetSettled(() => p.net.views().map((v) => ({ phase: v.view.phase, mac: v.mac })));
   p.hooks.change = () => settled.changed();
   const a = await tailnet(p.net);
   const b = await p.net.conns.create({ kind: 'tailcat', tailcat: { exit: 'tcEXIT', serve: false, relay: '' } });
@@ -534,7 +534,7 @@ test("NetSettled's `when` (a restore's lease renewal waits for it): pending whil
   await p.net.autoconnect();
   const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
   let got: number[] | undefined;
-  void settled.when(150).then((k) => { got = k; });
+  void settled.when(150).then((k) => { got = k.map((c) => c.index); });
   await tick(250);
   assert.equal(got, undefined, 'none connected: pending, past the grace too');
   p.all[0].set('Running', netmap()); // i18n-ignore
@@ -542,9 +542,10 @@ test("NetSettled's `when` (a restore's lease renewal waits for it): pending whil
   assert.equal(got, undefined, 'the other still connecting: within the grace');
   await tick(200);
   assert.deepEqual(got, [0], 'the grace over: the one connected');
+  assert.equal((await settled.when(10))[0].mac, p.net.views()[0].mac, 'with its MAC');
   // Both settle: at once.
   let now: number[] | undefined;
-  void settled.when(10_000).then((k) => { now = k; });
+  void settled.when(10_000).then((k) => { now = k.map((c) => c.index); });
   await tick();
   assert.equal(now, undefined);
   p.all[1].fail('no server');
@@ -555,7 +556,7 @@ test("NetSettled's `when` (a restore's lease renewal waits for it): pending whil
   let over = false;
   p.net.ports('m2', adapters(a, undefined)); // another machine: its client starts afresh
   await p.net.autoconnect();
-  void settled.when(50, () => over).then((k) => { late = k; });
+  void settled.when(50, () => over).then((k) => { late = k.map((c) => c.index); });
   over = true;
   p.all.at(-1)!.set('Running', netmap()); // i18n-ignore
   await tick(100);

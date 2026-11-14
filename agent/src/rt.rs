@@ -29,14 +29,28 @@ pub fn exit(code: i32) -> ! {
 /// (the page's connection above all: a copy kept open would outlive the agent's own close of it). `close_range`
 /// (Linux 5.9; the agent's guests have systemd 256, so 6.x): one call, nothing to list.
 pub fn close_inherited() {
+    close_range(3, u32::MAX);
+}
+
+/// Closes every file descriptor past stderr but `keep`: the session child's first step (its socket to the parent
+/// kept), so that it holds none of the root's (the page's connection, the helpers' pidfds, whatever comes later).
+pub fn close_inherited_but(keep: i32) {
+    let keep = keep as u32;
+    if keep > 3 {
+        close_range(3, keep - 1);
+    }
+    close_range(keep.saturating_add(1).max(3), u32::MAX);
+}
+
+fn close_range(first: u32, last: u32) {
     unsafe extern "C" {
         fn syscall(n: core::ffi::c_long, ...) -> core::ffi::c_long;
     }
     /// `__NR_close_range`: the same number on every architecture (asm-generic's, and x86's).
     const CLOSE_RANGE: core::ffi::c_long = 436;
-    // SAFETY: close_range takes two descriptor numbers and flags, and closes only the child's own copies; nothing in
-    // the child uses them after this.
-    unsafe { syscall(CLOSE_RANGE, 3u32, u32::MAX, 0u32) };
+    // SAFETY: close_range takes two descriptor numbers and flags, and closes only this process's own copies; its
+    // callers use none of them after this.
+    unsafe { syscall(CLOSE_RANGE, first, last, 0u32) };
 }
 
 /// Writes all of `bytes` to stderr (the journal's), as far as it takes them.
@@ -274,5 +288,45 @@ pub mod bare {
         let _ = core::fmt::write(&mut Stderr, format_args!("waarm64-agent: {info}\n"));
         // SAFETY: `abort` takes nothing and doesn't return.
         unsafe { abort() }
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    /// In a forked child: descriptors past stderr closed but the one kept (the child says which stayed open through
+    /// its exit status).
+    #[test]
+    fn closes_all_but_the_one_kept() {
+        use std::os::fd::AsRawFd;
+        let files: Vec<std::fs::File> = (0..4)
+            .map(|_| std::fs::File::open("/dev/null").unwrap())
+            .collect();
+        let fds: Vec<i32> = files.iter().map(|f| f.as_raw_fd()).collect();
+        let keep = fds[1];
+        unsafe extern "C" {
+            fn fork() -> i32;
+        }
+        // SAFETY: the child only closes, checks descriptors and exits (`_exit`): nothing that takes a lock.
+        let pid = unsafe { fork() };
+        if pid == 0 {
+            super::close_inherited_but(keep);
+            let open = |fd: i32| {
+                // SAFETY: a descriptor number, only asked about.
+                rustix::io::fcntl_getfd(unsafe { rustix::fd::BorrowedFd::borrow_raw(fd) }).is_ok()
+            };
+            let ok = open(keep) && fds.iter().filter(|&&f| f != keep).all(|&f| !open(f)) && open(2);
+            super::exit(if ok { 0 } else { 1 });
+        }
+        let (_, st) = rustix::process::waitpid(
+            rustix::process::Pid::from_raw(pid),
+            rustix::process::WaitOptions::empty(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            st.exit_status(),
+            Some(0),
+            "the kept one open, the others closed"
+        );
     }
 }

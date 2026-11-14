@@ -90,7 +90,7 @@ usb.follow({ on: () => machine.has('usb'), running: () => !!machine.run?.usb && 
 
 // The network and the folders are made first (their menus show them), and the sound.
 // The page's network settling (a restored guest renews its leases then: web/app/areas/lease-actions.ts).
-const netSettled = new NetSettled(() => net.views().map((v) => v.view.phase));
+const netSettled = new NetSettled(() => net.views().map((v) => ({ phase: v.view.phase, mac: v.mac })));
 const net: PageNetwork = new PageNetwork({
   store,
   onChange: () => netSettled.changed(),

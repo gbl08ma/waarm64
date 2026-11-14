@@ -759,6 +759,11 @@ impl X {
         self.set_up
     }
 
+    /// The connection served what it was for: the clipboard's watch up, or (without the clipboard) the setup done.
+    pub fn did_its_job(&self) -> bool {
+        self.ready || (self.set_up && !self.clip)
+    }
+
     pub fn pending(&self) -> bool {
         !self.out.is_empty()
     }

@@ -130,7 +130,10 @@ The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__age
 `web/app/areas/agent-actions.ts` for each run: frames (`web/agent-frame.ts`: a u32 length, a u8 type, the payload of at
 most 64 KiB and change) with at most `WINDOW` (256 KiB) in flight, from the device's `taken` counts. Each connection is
 a stream of its own, begun at a frame: a restore resets the guest's transport (the device's TRANSPORT_RESET), and the
-agent connects again; nothing of a connection is kept in a snapshot.
+agent connects again; nothing of a connection is kept in a snapshot. Its asks (LEASE, TRIM, COPY, POWER) are answered by
+type, an answer each: one that gave up still has its answer coming, which the next ask of its type doesn't take (a
+COPY's stale screen); a connection's end and the run's (the link's `close`) settle them, and its `onClose` listeners
+take down what the page shows the agent can do (the storage bar's trim, Power off's clean shutdown).
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
 `images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 166 KB).
@@ -350,10 +353,11 @@ it was saved, while the page may connect its cards elsewhere now. Not at once: t
 its connection has no lease and NAKs a renewal (web/gateway.ts `dhcp`), after which a client backs off for long. So the
 page waits until its network has settled with a card connected (web/app/net-settled.ts `NetSettled.when`, fed by the page network's `onChange`: every adapter
 with a client connected, or waiting on the user, a login or an error; 30 s at most once the first connected; none
-connected, pending until one is), then asks the agent (its HELLO within 20 s) for LEASE. The agent tells the guest's
-network manager through its own tool, where both are there: systemd-networkd (running: `/run/systemd/netif/links`)
-through `busctl call org.freedesktop.network1 … RenewLink i <ifindex>` for each card (`/sys/class/net/<name>` with a
-`device`), what `networkctl renew` calls (networkctl resolves a link over netlink, even an index, which the unit's
+connected, pending until one is; the grace ending with none connected, nothing), then asks the agent (its HELLO within
+20 s) for LEASE with the connected cards' MACs: a card still connecting would be NAKed and back off. The agent tells
+the guest's network manager through its own tool, where both are there: systemd-networkd (running:
+`/run/systemd/netif/links`) through `busctl call org.freedesktop.network1 … RenewLink i <ifindex>` for each of those
+cards (`/sys/class/net/<name>` with a `device`, its `address` one of LEASE's; each tried, past one that fails), what `networkctl renew` calls (networkctl resolves a link over netlink, even an index, which the unit's
 `RestrictAddressFamilies` refuses: seen on Debian 13), or NetworkManager (`/run/NetworkManager`) through `nmcli
 device connect <name>`, in a forked child polled by its pidfd; LEASED says what came of it. A renewal keeps an address
 that is still right (open connections live on), and the gateway's NAK of one it doesn't hold has the client ask afresh.
@@ -466,8 +470,12 @@ button, which turns red and then cuts the power (its tooltip says so); the statu
 the machine stops ([Powered off](ui:machine:messages.state.off)). A second Power off or Restart is today's hard one,
 asked first (the question says the guest is on its way). Taken, the sign stays until the run ends: the guest's PSCI power-off stops the machine (state `off`),
 its reset starts a new run (frontend.md "Starting and stopping"). The agent may be stopped by the shutdown before
-POWERED leaves: the connection's end is taken as the request taken. Refused (the message bar says so),
-no tool, no answer in time, or no agent that can: today's hard power-off (or restart), which asks first. The page never
+POWERED leaves: the connection's end is taken as the request taken, and an agent that connects again (a HELLO: it was
+restarted, the guest isn't shutting down) clears the sign. Refused, busy (a request the page gave up on still runs in
+the guest), no tool, no answer in time (each said in the message bar), or no agent that can: today's hard power-off
+(or restart), which asks first, and acts only if the run it asked about is still the machine's (the guest's own reboot
+may have started another meanwhile). A request given up on isn't withdrawn: logind can't take one back, so the guest
+may still shut down after the page's question. The page never
 forces on its own. The Machines page's Power off, and the stops the page makes itself (a disk's export, a restore, a
 size change), stay hard. Tests: the commands (`agent/src/power.rs`, `serve_test.rs`: busctl's method, refused, shutdown
 without logind, no tool), the link and `SoftPower`'s rules (`tests/agent-power.test.ts`), and on Debian
@@ -483,7 +491,7 @@ to the side that offers, request ids to the side that requests:
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
-| LEASE (17) | none | the page's, after a restore once its connections are up ("The network after a restore" below), to an agent whose HELLO has `CAP.LEASE` (bit 7) |
+| LEASE (17) | u8 count, then that many MACs (6 bytes each): the cards to renew; empty (an earlier page): every card | the page's, after a restore once its connections are up ("The network after a restore" below), to an agent whose HELLO has `CAP.LEASE` (bit 7) |
 | LEASED (18) | u8 status: 0 renewed, 1 no network manager the agent knows (or its tool missing), 2 its tool failed | the agent's, when its tool ended (`AgentLink.lease`'s answer) |
 | DESKTOP (19) | u8 state: 0 none, 1 Wayland's, 2 X11's | the agent's, to a page whose HELLO has `CAP.DESKTOP`: the graphical session's state at each change, and at a connection once the page's HELLO came if it isn't none ("The desktop's state" above) |
 | TRIM (20) | none | the page's, to an agent whose HELLO has `CAP.TRIM`: the guest's filesystems trimmed ("Disk space handed back" above) |
@@ -493,7 +501,7 @@ to the side that offers, request ids to the side that requests:
 | COPIED (24) | u8 status: 0 the text follows, 1 the console shows graphics, 2 no text console, 3 reading failed; then (0) the screen's UTF-8 | the agent's answer to COPY, at once (`AgentLink.copy`) |
 | OS (25) | the pretty name, ID, VERSION_ID: a u8 length and UTF-8 each (at most 255 bytes, cut between characters) | the agent's, after its HELLO to a page whose HELLO has `CAP.OS` ("The guest's OS" above) |
 | POWER (26) | u8: 0 power off, 1 reboot | the page's, to an agent whose HELLO has `CAP.POWER` ("Power off and restart from the guest" above); one at a time, a second while one runs answered by its POWERED |
-| POWERED (27) | u8 status: 0 taken, 1 refused (an inhibitor) or failed, 2 no tool | the agent's, when its tool ended (`AgentLink.power`'s answer; the connection's end first: `gone`) |
+| POWERED (27) | u8 status: 0 taken, 1 refused (an inhibitor) or failed, 2 no tool, 3 busy (an earlier request still runs) | the agent's, when its tool ended (`AgentLink.power`'s answer; the connection's end first: `gone`) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

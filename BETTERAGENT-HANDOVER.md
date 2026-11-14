@@ -1,14 +1,14 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–11 done (jobs 1–8, the agent's gzip and its fw_cfg pieces, the mid-track review's fixes); next: the track's end.
+Loops 1–12 done (jobs 1–8, the agent's gzip and its fw_cfg pieces, the mid-track and end reviews' fixes); next: the full CI.
 
 ## State
 
 The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEWED 16 (bit 6), LEASE 17 / LEASED 18
 (bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11), KEYMAP 22 (bit 12), COPY 23 / COPIED 24 (bit 13), OS 25
 (bit 14), POWER 26 / POWERED 27 (bit 15); free from 28 and bit 16 (bit 3 reserved for text/html, 8 and 9 for session
-kinds). The binary is 182,960 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
+kinds). The binary is 184,064 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
 
 - **Job 1, the screen's size:** the page sends the size it asks the guest's display for (DISPLAY, at each change and
   each agent HELLO). Wayland: `agent/src/outputs.rs` (wlr-output-management custom mode; sway, wlroots). X11 sessions:
@@ -64,10 +64,11 @@ kinds). The binary is 182,960 bytes (`images/build.sh agent`; its hash in images
 
 ## Next
 
-1. The track's end: an out-of-context review over the whole track (`review/betteragent`), its findings triaged into
-   fix loops or the backlog; `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`, `ci-net.sh`, `ci-graphics.sh`; then
-   PLAN.md's row, the kickoff and this handover deleted. GNOME's and KDE's layout (a test image each) stay in the
-   backlog (the user, 2026-11-13).
+1. The track's end: the review is done (`review/betteragent-agent`, `-page`, `-loop11`: 30 findings; the fixes in
+   loop 12, the rest in docs/backlog.md "The track review's deferred findings"). Left: `ci.sh`, `ci-debian.sh
+   --platform`, `ci-machines.sh`, `ci-net.sh`, `ci-graphics.sh`; then PLAN.md's row, the kickoff and this handover
+   deleted. Open for the user: whether a disk's export may skip its trim (review L5). GNOME's and KDE's layout (a test
+   image each) stay in the backlog (the user, 2026-11-13).
 
 ## Found (worth not re-discovering)
 

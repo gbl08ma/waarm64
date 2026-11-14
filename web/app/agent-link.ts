@@ -27,6 +27,7 @@ import {
   encodeFrame,
   encodeHello,
   encodeKeymap,
+  encodeLease,
   encodeTime,
   FRAME,
   FrameReader,
@@ -83,6 +84,8 @@ export class AgentLink {
   onOs?: (os: GuestOs) => void;
   /** Called with the agent's HELLO (each listener: the clipboard's, the clock's, the page's sign that the guest is up). */
   readonly onHello: ((h: Hello) => void)[] = [];
+  /** Called when the agent's connection ends (what the page shows of what it can goes). */
+  readonly onClose: (() => void)[] = [];
   private reader = new FrameReader();
   /** Frames to send, and TIME's, made as it goes (its time then, not when queued). */
   private queue: (Uint8Array | (() => Uint8Array))[] = [];
@@ -106,6 +109,13 @@ export class AgentLink {
   renewed?: { done: number; failed: number };
   /** The answers awaited (`lease`'s LEASED, `trim`'s TRIMMED, `copy`'s COPIED, `power`'s POWERED): their payload, or `gone` when the connection ends first. */
   private waiting: { type: number; done: (payload?: Uint8Array | 'gone') => void }[] = [];
+  /** `hello`'s waiters, which the run's end (`close`) settles. */
+  private helloWaits: ((h: Hello | undefined) => void)[] = [];
+  /**
+   * The answers still owed to asks that gave up (by type): the agent sends them all the same, and the next ask of their
+   * type mustn't take one for its own (a COPY's stale screen). A new connection owes none.
+   */
+  private stale = new Map<number, number>();
 
   constructor(port: MessagePort, caps: number) {
     [this.port, this.caps] = [port, caps];
@@ -182,9 +192,11 @@ export class AgentLink {
         clearTimeout(timer);
         const i = this.onHello.indexOf(on);
         if (i >= 0) this.onHello.splice(i, 1);
+        this.helloWaits = this.helloWaits.filter((w) => w !== done);
         resolve(h);
       };
       this.onHello.push(on);
+      this.helloWaits.push(done);
     });
   }
 
@@ -192,8 +204,8 @@ export class AgentLink {
    * The guest's leases renewed (LEASE: the machine was restored and its connections are up): LEASED's status, or
    * undefined if the agent can't (no `CAP.LEASE`), the connection ends first, or nothing comes within `ms`.
    */
-  lease(ms: number): Promise<number | undefined> {
-    return this.ask(FRAME.LEASE, CAP.LEASE, FRAME.LEASED, ms).then(first);
+  lease(ms: number, macs: string[] = []): Promise<number | undefined> {
+    return this.ask(FRAME.LEASE, CAP.LEASE, FRAME.LEASED, ms, encodeLease(macs)).then(first);
   }
 
   /**
@@ -253,7 +265,10 @@ export class AgentLink {
   ): Promise<Uint8Array | 'gone' | undefined> {
     if (!this.agent || !(this.agent.caps & cap) || !this.send(type, payload)) return Promise.resolve(undefined);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => done(undefined), ms);
+      const timer = setTimeout(() => {
+        this.stale.set(answer, (this.stale.get(answer) ?? 0) + 1);
+        done(undefined);
+      }, ms);
       const done = (payload?: Uint8Array | 'gone') => {
         clearTimeout(timer);
         this.waiting = this.waiting.filter((w) => w.done !== done);
@@ -284,8 +299,11 @@ export class AgentLink {
     return this.inflight + this.queue.reduce((n, b) => n + (typeof b === 'function' ? 13 : b.length), 0);
   }
 
+  /** The run ended: the port closed, and what waits on the link settled (as at a connection's end). */
   close() {
     this.port.close();
+    for (const w of [...this.waiting]) w.done('gone');
+    for (const w of [...this.helloWaits]) w(undefined);
   }
 
   private pump() {
@@ -326,9 +344,13 @@ export class AgentLink {
     this.inflight = 0;
     this.resetting = false;
     this.renewSent = false;
+    this.stale.clear();
     for (const w of [...this.waiting]) w.done('gone');
     this.setDesktop(DESKTOP.NONE);
-    if (!open) this.conn = 0;
+    if (!open) {
+      this.conn = 0;
+      for (const f of [...this.onClose]) f();
+    }
     if (open) {
       this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: this.caps }));
       // The switch, said at each connection: an agent restored from a snapshot taken while paused is paused, and the
@@ -344,19 +366,29 @@ export class AgentLink {
     this.onDesktop?.(d);
   }
 
+  /** The agent's HELLO: what is owed to it said, its listeners told. */
+  private agentHello(payload: Uint8Array) {
+    const h = decodeHello(payload);
+    if (!h) return;
+    this.agent = h;
+    this.sendRenew();
+    this.sendDisplay();
+    // A copy: a waiter (`hello`) leaves the list as it hears it.
+    for (const f of [...this.onHello]) f(h);
+  }
+
+  /** An answer to the asks of its type, unless it is the one owed to an ask that gave up. */
+  private answered(f: Frame) {
+    const owed = this.stale.get(f.type) ?? 0;
+    if (owed) this.stale.set(f.type, owed - 1);
+    else for (const w of this.waiting.filter((w) => w.type === f.type)) w.done(f.payload);
+  }
+
   /** The agent's bytes: its frames, a HELLO taken as the agent's. */
   private received(bytes: Uint8Array) {
     for (const f of this.reader.push(bytes)) {
-      if (f.type === FRAME.HELLO) {
-        const h = decodeHello(f.payload);
-        if (h) {
-          this.agent = h;
-          this.sendRenew();
-          this.sendDisplay();
-          for (const f of this.onHello) f(h);
-        }
-      }
-      for (const w of this.waiting.filter((w) => w.type === f.type)) w.done(f.payload);
+      if (f.type === FRAME.HELLO) this.agentHello(f.payload);
+      this.answered(f);
       if (f.type === FRAME.DESKTOP && f.payload.length === 1) this.setDesktop(f.payload[0]);
       const os = f.type === FRAME.OS ? decodeOs(f.payload) : undefined;
       if (os) this.onOs?.((this.os = os));

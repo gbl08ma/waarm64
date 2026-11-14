@@ -20,7 +20,7 @@ import { t } from '../web/i18n.ts';
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const AGENT = new URL('../target/images/agent/waarm64-agent', import.meta.url);
+const AGENT = new URL('../target/images/agent/waarm64-agent.gz', import.meta.url); // what the page serves
 const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WAARM64_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh debian edk2 agent';
 
 let browser: Browser;

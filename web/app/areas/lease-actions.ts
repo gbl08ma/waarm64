@@ -17,9 +17,12 @@ export const AGENT_WAIT_MS = 20_000;
 /** How long the agent's network manager may take to answer. */
 export const LEASED_WAIT_MS = 60_000;
 
+/** An adapter connected: its number and its MAC (the guest's card's, which LEASE names). */
+export type Connected = { index: number; mac: string };
+
 export type LeaseDeps = {
-  /** The adapters connected once the page's network settled (web/app/net-settled.ts `NetSettled.when`). */
-  whenConnected(graceMs: number, cancelled: () => boolean): Promise<number[]>;
+  /** The adapters connected once the page's network settled (web/app/net-settled.ts `NetSettled.when`), with their MACs. */
+  whenConnected(graceMs: number, cancelled: () => boolean): Promise<Connected[]>;
   /** The run's agent link, if it has one. */
   link(): AgentLink | undefined;
   /** Flaps card `i`'s link. */
@@ -38,19 +41,27 @@ export class LeaseActions {
   }
 
   /** The machine was restored: its guest renews its leases once the page's connections are up. What was done, for the tests. */
-  async restored(): Promise<'agent' | 'flap' | 'gone'> {
+  async restored(): Promise<'agent' | 'flap' | 'gone' | 'none'> {
     const run = ++this.#run;
     const gone = () => run !== this.#run;
     const w = this.#d.waits ?? { grace: GRACE_MS, agent: AGENT_WAIT_MS, leased: LEASED_WAIT_MS };
     const connected = await this.#d.whenConnected(w.grace, gone);
     if (gone()) return 'gone';
+    // The grace ended with none connected (the one that was went back to connecting): nothing to renew yet.
+    if (!connected.length) return 'none';
     const link = this.#d.link();
     const hello = link && (await link.hello(w.agent));
     if (gone()) return 'gone';
-    const status = hello ? await link.lease(w.leased) : undefined;
+    // The connected cards only: one still connecting would be refused (and back off) by the page's gateway.
+    const status = hello
+      ? await link.lease(
+          w.leased,
+          connected.map((c) => c.mac),
+        )
+      : undefined;
     if (gone()) return 'gone';
     if (status === LEASED.RENEWED) return 'agent';
-    for (const i of connected) this.#d.flap(i);
+    for (const c of connected) this.#d.flap(c.index);
     return 'flap';
   }
 

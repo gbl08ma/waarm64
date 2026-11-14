@@ -1623,7 +1623,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 182,960 bytes (179,672 before job 8's OS and POWER; 132,696 before the screen's size, BETTERAGENT), ~114 KB gzipped (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 184,064 bytes (179,672 before job 8's OS and POWER; 132,696 before the screen's size, BETTERAGENT), ~114 KB gzipped (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
@@ -1641,6 +1641,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The clean power-off, the rest of it** (devices.md "Power off and restart from the guest"): `shutdown now`, the
   path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool); the
   Machines page's Power off stays a hard one (it asks its own question; the toolbar's soft one could serve it too).
+- **The track review's deferred findings** (BETTERAGENT's end, 2026-11-14; `review/betteragent-agent`,
+  `review/betteragent-page`): the session child's `sway_run` connects to sway's IPC blocking (a sway hung with its
+  backlog full holds the child's loop; `setxkbmap` up to 5 s, each `sway_run` wait up to 2 s); a RandR run's late
+  replies may fill the next run's state after an error mid-run (a suspicion: the replies carry no run); an X11 session
+  that a Wayland compositor replaces without a "none" between never gives sway the layout (`key_step`'s `keyed` resets
+  on none only; a suspicion); NetworkManager's `nmcli device connect` may re-activate a connected device (a down/up of
+  its IP) or one the user disconnected, not renew it (`nmcli device reapply` or a DHCP renewal call may fit better:
+  measure on a NetworkManager guest); the full compaction after a trim runs in one synchronous loop on the device
+  worker, holding the net, console and input devices too (measured at 47 MiB only: measure a GiB, slice it if long);
+  a disk's export waits up to ~6 min for the trim and compactions with no way to skip them (a product call); a
+  restored machine's agent that crashes stays gone for the run (a restore fetches no binary, so the unit's restart
+  finds no `agent.000`, and says "this kernel has no qemu_fw_cfg?", wrongly).
 - **Restarts read the binary again:** each of the unit's restarts (at most 5 in 10 minutes) gunzips it out of fw_cfg
   anew. Keeping it across restarts (outside the unit's own tmpfs, or a unit that outlives the agent) would save that.
 - **Two compositors for one user** (sway on two VTs): the session child takes the first `wayland-<n>` that accepts.

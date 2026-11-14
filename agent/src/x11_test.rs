@@ -1017,3 +1017,75 @@ fn says_when_an_x11_session_is_up_and_when_it_goes() {
     drop(page);
     assert_eq!(served.join().unwrap(), Ok("session: the parent is gone"));
 }
+
+/// An X server that takes the setup and then fails it (an error to the clipboard's first request, as one without what
+/// the setup asks for): the child tries it again at the retries' pace, not in a loop (review M1).
+#[test]
+fn a_server_that_fails_the_setup_is_not_reconnected_in_a_loop() {
+    use std::os::unix::net::UnixListener;
+    let dir =
+        std::env::temp_dir().join(format!("waarm64-agent-x11-failing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir(&dir).unwrap();
+    let listener = UnixListener::bind(dir.join("X7")).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let w = Where {
+        runtime: String::new(),
+        x11: dir.to_str().unwrap().to_owned(),
+        display: Some(7),
+        jobs: Jobs {
+            clip: true,
+            resize: false,
+            desktop: false,
+            keymap: false,
+        },
+    };
+    let (page, child, runtime) = child(
+        |r| Where {
+            runtime: r.to_str().unwrap().to_owned(),
+            ..w
+        },
+        "failing",
+    );
+    // The setup's reply: a success with one screen (root 0x100), ids from 0x200000; then an error to request 1.
+    let mut setup = vec![0u8; 44];
+    setup[0] = 1;
+    setup[6..8].copy_from_slice(&9u16.to_le_bytes());
+    setup[12..16].copy_from_slice(&0x0020_0000u32.to_le_bytes());
+    setup[16..20].copy_from_slice(&0x001f_ffffu32.to_le_bytes());
+    setup[26..28].copy_from_slice(&65535u16.to_le_bytes());
+    setup[28] = 1;
+    setup[40..44].copy_from_slice(&0x100u32.to_le_bytes());
+    let mut error = vec![0u8; 32];
+    error[1] = 2; // BadValue
+    error[2..4].copy_from_slice(&1u16.to_le_bytes());
+    let end = Instant::now() + Duration::from_millis(1500);
+    let mut accepted = 0;
+    let mut held = Vec::new();
+    while Instant::now() < end {
+        match listener.accept() {
+            Ok((mut s, _)) => {
+                accepted += 1;
+                s.set_nonblocking(false).unwrap();
+                s.set_read_timeout(Some(Duration::from_millis(500)))
+                    .unwrap();
+                let mut b = [0u8; 12];
+                if s.read_exact(&mut b).is_ok() {
+                    let _ = s.write_all(&setup);
+                    let _ = s.write_all(&error);
+                }
+                held.push(s);
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(5)),
+        }
+    }
+    drop(page);
+    let _ = child.join();
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&runtime);
+    assert!(accepted >= 1, "the child connected");
+    assert!(
+        accepted <= 12,
+        "{accepted} connections in 1.5 s: reconnected in a loop"
+    );
+}

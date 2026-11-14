@@ -98,10 +98,12 @@ export class PowerActions {
 
   /**
    * The toolbar's Start, Restart or Retry. A running machine's restart is asked of the guest first (a reboot,
-   * web/app/run/soft-power.ts); else (or a second Restart meanwhile) it is a power cut, so it asks first.
+   * web/app/run/soft-power.ts); else (or a second Restart meanwhile) it is a power cut, so it asks first: for the run it
+   * asked about (the guest's own reboot may have started another while the question was open).
    */
   async restartAsked() {
     if (isLive(power.state) && (await this.#soft.request('reboot'))) return;
+    const run = this.#d.machine.run;
     if (
       isLive(power.state) &&
       !(await ask.confirm(
@@ -114,6 +116,7 @@ export class PowerActions {
       ))
     )
       return;
+    if (run && this.#d.machine.run !== run) return;
     await this.restart();
   }
 
@@ -126,10 +129,12 @@ export class PowerActions {
   }
   /**
    * The toolbar's Power off: asked of the guest first (web/app/run/soft-power.ts); else (or a second Power off
-   * meanwhile) the machine stops at once, after asking.
+   * meanwhile) the machine stops at once, after asking: the run it asked about (the guest's own shutdown or reboot may
+   * have ended it while the question was open).
    */
   async powerOffAsked() {
     if (!isLive(power.state) || (await this.#soft.request('off'))) return;
+    const run = this.#d.machine.run;
     if (!isLive(power.state)) return;
     if (
       !(await ask.confirm(
@@ -142,6 +147,7 @@ export class PowerActions {
       ))
     )
       return;
+    if (this.#d.machine.run !== run || !isLive(power.state)) return;
     await this.powerOff();
   }
 

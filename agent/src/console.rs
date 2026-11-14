@@ -7,7 +7,7 @@ use crate::log;
 use crate::prelude::*;
 use crate::rt::Instant;
 use core::time::Duration;
-use rustix::fd::{AsRawFd, OwnedFd, RawFd};
+use rustix::fd::OwnedFd;
 use rustix::fs::{Mode, OFlags, open};
 use rustix::io::{self, ioctl_fionread};
 use rustix::ioctl::{Getter, Opcode, Setter, ioctl};
@@ -53,10 +53,6 @@ pub trait Console: Send {
     }
     /// One byte in its input.
     fn put(&self, b: u8) -> io::Result<()>;
-    /// Its descriptor while open: a session child forked meanwhile closes it (the console's input is root's).
-    fn fd(&self) -> Option<RawFd> {
-        None
-    }
 }
 
 /// The guest's foreground virtual terminal.
@@ -100,10 +96,6 @@ impl Console for Vt {
         let tty = self.0.as_ref().ok_or(io::Errno::BADF)?;
         // SAFETY: TIOCSTI takes a pointer to one byte, which `Setter` passes (to `b`, alive across the call).
         unsafe { ioctl(tty, Setter::<TIOCSTI, u8>::new(b)) }
-    }
-
-    fn fd(&self) -> Option<RawFd> {
-        self.0.as_ref().map(|f| f.as_raw_fd())
     }
 }
 
@@ -282,11 +274,6 @@ impl Typist {
             self.open = false;
         }
         status
-    }
-
-    /// The console's descriptor while a paste has it open.
-    pub fn fd(&self) -> Option<RawFd> {
-        self.con.fd()
     }
 
     /// Drops what is queued, without a word (PAUSE, a new opening of the port: a new stream).
