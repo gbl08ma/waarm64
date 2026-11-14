@@ -19,6 +19,8 @@ type Options = { title?: string; ok?: string; cancel?: string; danger?: boolean 
 
 export const asking = $state({ current: undefined as Question | undefined, serial: 0 });
 const queue: Question[] = [];
+/** The question shown, as given: `asking.current` holds Svelte's proxy of it, which never equals it (`takeDown`). */
+let shownRaw: Question | undefined;
 
 function show(q: Omit<Question, 'resolve'>, shown?: (q: Question) => void) {
   return new Promise<boolean | string | undefined>((resolve) => {
@@ -29,12 +31,13 @@ function show(q: Omit<Question, 'resolve'>, shown?: (q: Question) => void) {
   });
 }
 function next() {
-  asking.current = queue.shift();
+  shownRaw = queue.shift();
+  asking.current = shownRaw;
   asking.serial++;
 }
 /** Answers the question shown (Ask.svelte): OK (`true`, or a prompt's `text`) or Cancel (`false`, a prompt's `undefined`). */
 export function answer(ok: boolean, text = '') {
-  const q = asking.current;
+  const q = shownRaw;
   if (!q) return;
   q.resolve(q.kind === 'prompt' ? (ok ? text : undefined) : ok);
   next();
@@ -43,7 +46,7 @@ export function answer(ok: boolean, text = '') {
 /** Takes question `q` down, shown or queued, as a Cancel (a question already answered stays answered). */
 function takeDown(q: Question | undefined) {
   if (!q) return;
-  if (asking.current === q) answer(false);
+  if (shownRaw === q) answer(false);
   else {
     const i = queue.indexOf(q);
     if (i >= 0) queue.splice(i, 1);

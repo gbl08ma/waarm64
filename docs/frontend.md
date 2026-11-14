@@ -393,7 +393,10 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 first in a modal `<dialog id="ask">` (a title, the text, OK and Cancel with the action's own words; one that loses
 data has its OK drawn as a warning; Esc is Cancel). `ask.wait` is a wait its caller ends (`close`), with one button
 drawn as a warning (`skipped`): the guest's clean shutdown before a change (devices.md "Power off and restart from the
-guest"). Clicking OK is a user activation, so a file picker or a permission
+guest"); `ask.closableConfirm` is a confirm its caller can take down too. A question taken down leaves the dialog
+whether shown or queued; which one is shown is known by the question itself, not by `asking.current`, which holds
+Svelte's proxy of it and never equals it (compared with it, a closed wait stayed on screen: `tests/page-ask.test.ts`).
+Clicking OK is a user activation, so a file picker or a permission
 request after it still works. Tests answer them by clicking (`tests/page-ask.ts` `answerAsks`).
 
 **The message bar** (under the toolbar) says what stops a machine (below, "Errors") and what happened: it has a close
