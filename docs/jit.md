@@ -737,7 +737,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   after it, reloading what the fast arm had loaded, so both arms merge. Only the locals a
   function uses are declared (`wasm::Code::compact_locals`: past 12 locals, or with any not
   i32/i64, Liftoff zero-fills every one at each call, ~2.8% of Alpine's boot on the Mac: [v8.md](v8.md) "Costs that
-  shaped the design"; a filled function's 21 locals are half X registers); registers read once and never written stay plain loads (for a V register read as a
+  shaped the design"; a filled function's 21 locals are half X registers, which sharing locals wouldn't take out at a
+  measurable gain: [Tried and not kept](#tried-and-not-kept)); registers read once and never written stay plain loads (for a V register read as a
   scalar lane, a scalar load: `Func::vlane`). In regions, each member starts in a fixed register
   state (the merge of its incoming edges, found by a first emission) and every edge conforms to
   it; the head's state is loaded once before the loop.
@@ -1295,6 +1296,15 @@ fast paths send there (`WAARM64_JIT_DIFF_HELPERS=1` on the differential test lis
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **X registers sharing locals** (PERF loop 27, 2026-11-14; `bench/boot/REPORT.md` "PERF loop 27"): Liftoff's
+  zero-fill (~2.8% of Alpine's boot, ~1.7% of its userspace on the Mac, loop 26) is linear in a function's locals,
+  half of them X registers held from first use to the write-back. Estimated with a diagnostic core, not built: if
+  each register dropped its local after its last touch and registers whose ranges never overlap shared one, the
+  fill turns Alpine's boot runs would fall 3.7% (single blocks alone; its userspace 2.1%) or 14.9% (non-looped
+  regions too; 13.5%), weighted by calls: ~0.1% and at best ~0.4% of the boot, under what an A/B can tell, before
+  the new chains and edge stores sharing costs. Only 412 of the boot's 3,560 filled functions are single blocks out
+  of a loop, and a loop holds every register it touches. Taking any one other local out of every filled function
+  (a scratch, a flag local, the entry PC as a parameter) is bounded at ~0.3% likewise.
 - **A lone table's jump cache and hot words as constants** (PERF loop 14, 2026-11-10; `bench/boot/results/perf14/`):
   with one table, modules can address its jump cache and hot words directly instead of through the vCPU
   (`emit::JC_PTR`, `HOT_PTR`). On the Mac's gates −0.2% on the boot and the userspace benchmark (compress −1.1%, apart;

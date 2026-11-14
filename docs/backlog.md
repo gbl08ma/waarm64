@@ -88,23 +88,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   - The dispatcher's entries (15% of the entry stalls on 2026-11-04 for 4.7% of the indirect entries: about three
     times the average stall each) and the signature check's table load (3.0% of the time; a typed table didn't make
     the transfer cheaper in `chain.mjs`).
-- **Liftoff zero-fills its locals at every entry: share X-register locals** (PERF loop 26, `bench/boot/REPORT.md`
-  "PERF loop 26: Liftoff's zero-fill, measured"; V8's rule in [v8.md](v8.md) "Costs that shaped the design"). Doubling
-  every fill (21 unused locals more) cost Alpine's boot 2.8% and its userspace 1.7% on the Mac, so today's fills cost
-  about that: half the functions fill (more than 12 locals), 42 loop turns each, ~0.23 ns a turn. A filled function
-  uses 21.1 locals, **10.6 of them guest X registers** (a local per register touched, from its first use to the
-  write-back), 5.6 scratch, 2.1 flags, 2.8 others; 14.8% of all functions have 13-16 integer locals. Each local fewer
-  in every filled function is ~0.13% of the boot; under 13, the whole fill goes. The doable form: one local shared by
-  X registers whose live ranges in the function don't overlap (a backward liveness pass over a block, as
-  `emit::scalar_uses` is for shadows; a register dead after its last read, written back if dirty, frees its local),
-  then regions (a member's state names which local holds which register; merges, `conform` and failure chains follow
-  it). Rank it on the gates (Alpine's boot and userspace, Mac, 3 rounds alternated) and the size of the TurboFan code
-  (sharing must not add moves there); a browser's share is unmeasured (`bench/results/local/interp/ab-pages.sh` still
-  names the old checkout and `.webpcsnap`, and `target/snapbench/` has no pages snapshot: make one with
-  `bench/gpu/warm-snapshots.sh` first). Ruled out: scratch locals (each declared one is used; i32 and i64 can't share
-  a local; keeping a load's base in BASE only when needed, M8's `no-base-local.patch` in
-  `bench/boot/results/m8-liftoff/baseruns/`, saved one local in some functions and 0.6% of the wasm), extra parameters (Liftoff doesn't fill them, but every caller would pass them), and the f32/f64 shadows
-  (loop 23 made no function fill that didn't).
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
@@ -1660,6 +1643,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **`tests/usb-keyboard.test.ts`'s glue case waits a fixed 20 ms** for the `usb-state` answer over a MessageChannel:
+  under `scripts/ci.sh`'s load it once found none (2026-11-14, PERF loop 27's run, a docs-only change; alone it passes
+  in ~100 ms). Wait for the message instead of a timeout.
 - [B] **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
   case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two

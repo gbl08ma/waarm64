@@ -1,0 +1,200 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index c6b99c50..b78a9f2e 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -858,7 +858,35 @@ pub fn module(
+         let (mut c, n) = (x.c, x.inl);
+         nzcv_used |= c.nzcv_used;
+         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
+-        let locals = c.locals();
++        let today = c.nregs;
++        let colors = if r.looped() {
++            today
++        } else {
++            diag_colors(&first.c.trace, r.blocks.len() == 1, plain)
++        };
++        let locals = {
++            let l = c.locals();
++            let total: u32 = l.iter().map(|d| d.0).sum();
++            let other = l.iter().any(|d| d.1 != emit_i64() && d.1 != emit_i32());
++            let after = total - today.saturating_sub(colors);
++            let fills = |t: u32| other || t > 12;
++            let turns = |t: u32| if fills(t) { 2 * t } else { 0 };
++            if fills(total) {
++                DIAG_PRO[0].store(turns(total) as u64, Relaxed);
++                DIAG_PRO[1].store(turns(after) as u64, Relaxed);
++                let mut y = emit_region(&env, r, plain, &entry, &flags);
++                if y.bad {
++                    let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
++                    y = emit_region(&env, r, plain, &entry, &(0..r.blocks.len()).map(dead).collect::<Vec<_>>());
++                }
++                DIAG_PRO[0].store(0, Relaxed);
++                DIAG_PRO[1].store(0, Relaxed);
++                c = y.c;
++                c.locals()
++            } else {
++                l
++            }
++        };
+         m.func(bt, &locals, &c.c, &name);
+         out.inl.push(n);
+         let mut links = vec![];
+@@ -890,9 +918,81 @@ pub fn module(
+         }
+     }
+     out.bytes = m.finish();
++    let d = |k: usize| DIAG[k].load(Relaxed) - DIAG_REP[k].swap(DIAG[k].load(Relaxed), Relaxed);
++    out.counts = emit::Counts {
++        flags_stored: d(0),
++        flags_elided: d(1),
++        cond_direct: d(2),
++        cond_computed: 0,
++        cond_memory: 0,
++    };
+     out
+ }
+ 
++use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
++static DIAG: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
++static DIAG_REP: [AtomicU64; 3] = [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
++static DIAG_PRO: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
++
++fn emit_i64() -> u8 {
++    super::wasm::I64
++}
++fn emit_i32() -> u8 {
++    super::wasm::I32
++}
++
++/// DIAG: the locals X registers would take if each dropped its local after its last touch.
++fn diag_colors(trace: &[(u32, bool)], barriers: bool, plain: u64) -> u32 {
++    let n = trace.len();
++    let mut last = [None; 32];
++    for (k, &(t, _)) in trace.iter().enumerate() {
++        for r in 0..32 {
++            if t & 1 << r != 0 {
++                last[r] = Some(k);
++            }
++        }
++    }
++    // Held masks per instruction.
++    let mut held = vec![0u32; n];
++    let mut cur = 0u32;
++    for (k, &(t, h)) in trace.iter().enumerate() {
++        if h && barriers {
++            cur = 0;
++        }
++        cur |= t & !(plain as u32);
++        held[k] = cur;
++        for r in 0..32 {
++            if last[r] == Some(k) {
++                cur &= !(1 << r);
++            }
++        }
++    }
++    let mut conf = [0u32; 32];
++    for &m in &held {
++        let mut x = m;
++        while x != 0 {
++            let r = x.trailing_zeros();
++            x &= x - 1;
++            conf[r as usize] |= m;
++        }
++    }
++    let mut order: Vec<usize> = (0..32).filter(|&r| last[r].is_some() && plain & 1 << r == 0).collect();
++    order.sort_by_key(|&r| trace.iter().position(|&(t, _)| t & 1 << r != 0));
++    let mut color = [u32::MAX; 32];
++    let mut ncol = 0;
++    for &r in &order {
++        let mut used = 0u64;
++        for q in 0..32 {
++            if q != r && conf[r] & 1 << q != 0 && color[q] != u32::MAX {
++                used |= 1 << color[q];
++            }
++        }
++        color[r] = (!used).trailing_zeros();
++        ncol = ncol.max(color[r] + 1);
++    }
++    ncol
++}
++
+ /// The transfer cache's miss functions (`emit::xmiss`) for a JIT cache: one
+ /// module, `f0` for EL0 and `f1` for EL1 (MMU on), and the stale-code
+ /// checker with `check`. A table installs it once, so it gets hot and
+@@ -974,6 +1074,15 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+     let mut dead = vec![false; n];
+     let mut bad = false;
+     let mut inl = 0;
++    {
++        let (t0, t1) = (DIAG_PRO[0].load(Relaxed), DIAG_PRO[1].load(Relaxed));
++        if t0 != 0 {
++            for (k, v) in [(0usize, 1i64), (1, t0 as i64), (2, t1 as i64)] {
++                let a = (DIAG.as_ptr() as usize + 8 * k) as u32;
++                c.i32_const(0).i32_const(0).i64_load(a).i64_const(v).i64_add().i64_store(a);
++            }
++        }
++    }
+     c.local_get(0).i64_load(emit::PC).local_set(1);
+     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+         // It runs before the entries' prologue below, as at the head.
+@@ -1073,8 +1182,10 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             // The second word of a fused pair was emitted with the first.
+             if core::mem::take(&mut skip) {
+                 inl += 1;
++                c.trace.push((0, false));
+                 continue;
+             }
++            c.touch = 0;
+             let op = decode(w);
+             // NZCV is stored before the block's branch (see `commit_flags`),
+             // unless a successor is a member and none that is needs it: the
+@@ -1099,6 +1210,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             c.prev = if k > 0 { b.words[k - 1] } else { 0 };
+             last = emit::inline(&mut c, w, op, k, &e.cx);
+             skip = core::mem::take(&mut c.fused);
++            c.trace.push((c.touch as u32, !last));
+             if last {
+                 inl += 1;
+                 // Branches end blocks and set the PC; an inline ISB (outside
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index c1b03150..9c4c4e55 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -265,7 +265,7 @@ pub struct Func {
+     pub c: Code,
+     /// Each register's local (0: none yet), the V registers' from 32.
+     local: [[u32; 32]; 2],
+-    nregs: u32,
++    pub nregs: u32,
+     nvregs: u32,
+     pub regs: Regs,
+     pub flags: Flags,
+@@ -349,6 +349,9 @@ pub struct Func {
+     /// what [`Func::chain_open`] needs of a register a segment stores from a
+     /// shadow.
+     vzx: u32,
++    /// DIAG: the X registers the instruction being emitted touched, and per instruction.
++    pub touch: u64,
++    pub trace: Vec<(u32, bool)>,
+ }
+ 
+ /// Load and store failure exits that share their write-backs (docs/jit.md
+@@ -430,6 +433,9 @@ impl Func {
+ 
+     /// Register `n`'s local (31 is SP, 32 + k is Vk).
+     fn local(&mut self, n: u32) -> u32 {
++        if n < 32 {
++            self.touch |= 1 << n;
++        }
+         let l = &mut self.local[n as usize / 32][n as usize % 32];
+         if *l == 0 {
+             if n < 32 {
+@@ -543,7 +549,7 @@ impl Func {
+         if self.plain & 1 << n != 0 {
+             self.load_cpu(n);
+         } else if self.regs.valid & 1 << n != 0 {
+-            let l = self.local[n as usize / 32][n as usize % 32];
++            let l = self.local(n);
+             self.c.local_get(l);
+         } else {
+             let l = self.local(n);

@@ -1,0 +1,20 @@
+tools/estimate.ts capture over Alpine's boot ("alpine") and its userspace benchmark ("user") in Node (the dev VM),
+with diagnostic cores from diag.patch on b262da7f. Model: each X register drops its local after its last touch in the
+function (a read or write, from the first emission), stored there if dirty; registers whose held ranges never
+overlap share a local (greedy colouring over the held masks). "block": single-block functions only (helper calls
+drop every local, so they cut ranges); "region": every non-looped region too, its members in order and ranges
+uncut by helpers; looped regions keep their locals in both.
+
+Static, per compiled function (a function's fill: 2 turns a local when it has more than 12 or any not i32/i64):
+
+block, alpine: fills today 3560 (single-block non-looped 412, looped 650), fills after 3335; locals saved in filled 1700 (X locals today 37711, after 36011); turns today 150422, after 142394; filled functions out of the fill 225
+region, alpine: fills today 3560 (single-block non-looped 412, looped 650), fills after 3155; locals saved in filled 8419 (X locals today 37711, after 29292); turns today 150422, after 124918; filled functions out of the fill 405
+block, user: fills today 4861 (single-block non-looped 634, looped 845), fills after 4552; locals saved in filled 2314 (X locals today 50968, after 48654); turns today 204368, after 193332; filled functions out of the fill 309
+region, user: fills today 4861 (single-block non-looped 634, looped 845), fills after 4327; locals saved in filled 11224 (X locals today 50968, after 39744); turns today 204368, after 170454; filled functions out of the fill 534
+
+Weighted by calls (every filled function's prologue adds its fill's turns today and with sharing to two counters):
+
+block, alpine: calls of filled functions 94001123; fill turns run 4079261850, with sharing 3928638294 (3.7% fewer)
+region, alpine: calls of filled functions 94001123; fill turns run 4079261850, with sharing 3471307980 (14.9% fewer)
+block, user: calls of filled functions 428846859; fill turns run 18268845264, with sharing 17881335692 (2.1% fewer)
+region, user: calls of filled functions 428846859; fill turns run 18268845264, with sharing 15799540118 (13.5% fewer)

@@ -16,7 +16,7 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 26)
+## State (2026-11-14, after loop 27)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
@@ -36,16 +36,16 @@ e7575694 on the Mac, Alpine's boot +0.4%, its userspace +0.5%, the rounds overla
 code +0.15% from loop 22's reloads; the FP guest +7.8%); a session's first-round arm is an outlier either way, so
 alternate which arm goes first. Loop 26 measured Liftoff's zero-fill (no code kept): loop 23's shadows made no
 function fill that didn't, and doubling every fill cost Alpine's boot 2.8% and userspace 1.7% on the Mac, so the
-fills cost about that (ten times the old ~0.3% bound); a filled function's 21 locals are half X registers. The
-backlog's entry is now "share X-register locals" (liveness over a block, then regions), a large change with that
-bound: a candidate loop if the track takes it on, not in the queue below.
+fills cost about that (ten times the old ~0.3% bound); a filled function's 21 locals are half X registers. Loop 27
+estimated sharing X-register locals before building it (no code kept; docs/jit.md "Tried and not kept"): a
+diagnostic core's call-weighted fill turns fall 3.7% with single blocks shared (~0.1% of the boot) and 14.9% with
+non-looped regions too (at best ~0.4%; userspace ~0.25%), under the floor; the entry left the backlog.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** JIT: share X-register locals (Liftoff's zero-fill; PERF loop 26) | measured bound: today's fills cost ~2.8% of Alpine's boot, ~1.7% of its userspace (Mac; doubling every fill moved them that much). 49% of functions fill (>12 locals or a non-i32/i64), 21 locals each, 10.6 of them X registers; a liveness pass over a block, then regions, to share locals between X registers whose ranges don't overlap; ~0.13% of the boot a local fewer, a function at ≤12 i32/i64 locals loses its whole fill. Large; build it in steps, the block-level pass first |
-| JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
+| **Next:** JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |
 

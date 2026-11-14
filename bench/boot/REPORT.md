@@ -4688,3 +4688,50 @@ parameters (which Liftoff doesn't fill) would cost every caller the same stores.
 between X registers whose live ranges don't overlap within a function (a backward liveness pass, as
 `emit::scalar_uses` is for shadows, plus region merges and failure chains that know a local's register changes),
 docs/backlog.md's entry with these numbers. No core change; no step count moved. CI: `scripts/ci.sh` (864 s) passes.
+
+## PERF loop 27: sharing X-register locals, estimated (2026-11-14)
+
+The backlog's "Liftoff zero-fills its locals at every entry: share X-register locals" (loop 26: today's fills cost
+~2.8% of Alpine's boot and ~1.7% of its userspace on the Mac). Estimated before building, with a diagnostic core;
+**not built**: the whole design is worth under the noise floor. Raw: `results/perf27/` (README, `diag.patch`,
+`tools/estimate.ts`, `counts.txt`).
+
+**The model** (the best sharing can do without changing what a function holds where it's used): each X register
+drops its local after its last touch in the function (a read or write, as the first emission sees them), stored
+there if dirty; registers whose held ranges never overlap share a local (greedy colouring). Two scopes: the block
+step (single-block functions, ranges cut at helper calls, which drop every local) and the region step (every
+non-looped region too, members in order, ranges not cut). In a loop every register the loop touches is live at the
+head, so looped regions keep theirs in both. Costs the model leaves out, all against sharing: a dropped register in
+an open failure chain makes the next site start a new chain (more wasm), and an edge stores a dirty register its
+target doesn't need where the exit stored it before.
+
+**Counts** (`tools/estimate.ts`, Node in the dev VM; the X locals today match loop 26's role count, 37,711 against
+37,709). Of the 3,560 functions Alpine's boot fills, only 412 are single blocks outside a loop; 650 are looped
+regions and the other 2,498 forward regions (userspace: 634, 845 and 3,382 of 4,861).
+
+| | block step: boot · userspace | region step: boot · userspace |
+|---|---|---|
+| X locals in filled functions (today 37,711 · 50,968) | 36,011 · 48,654 | 29,292 · 39,744 |
+| functions out of the fill | 225 · 309 | 405 · 534 |
+| fill turns, static (today 150,422 · 204,368) | −5.3% · −5.4% | −17.0% · −16.6% |
+| **fill turns, weighted by calls** (94 M · 429 M calls of filled functions) | **−3.7% · −2.1%** | **−14.9% · −13.5%** |
+
+The weighted count: every filled function's prologue added its fill's turns today and with sharing to two
+counters. A fill's cost is linear in its turns (loop 26's `fillcost.mjs`; a function that leaves the fill also saves
+~1 ns of the loop's setup, ~5 turns, under 0.03% here), so with loop 26's measured cost **the block step is worth
+~0.1% of Alpine's boot and ~0.04% of its userspace, and the whole region design at best ~0.4% and ~0.25%**: under
+the ~1% a Mac A/B can tell, before the costs the model leaves out.
+
+**Cheaper ways, bounded the same way**: a local fewer in every filled function is ~0.13% of the boot (loop 26);
+with the 320 functions at exactly 13 locals (9% of those filled, static) leaving the fill too, ~0.3%. No single
+local is that cheap to take out: the scratch locals are four fixed roles of each type (ADDR, BASE, OFF, a
+temporary; HOST, TLBE, a temporary, a call's result), the flag locals are split by type (2.1 a filled function: about one
+setter size's pair), and the entry PC (local 1) as a parameter would change the block type for every
+caller (the dispatcher, the jump and transfer caches, imports, host calls) for that one local.
+
+The work this would take, for the block step alone: a last-touch table from the first emission, drops with their
+stores, a colouring the second emission's `Func::local` follows, a check at every register-local access that no
+other held register shares its local (falling back to one local each), failure chains that don't join across a
+drop; then regions (live-in masks on the entry states, the settled emission's conflicts) for the rest. Out of
+proportion to ~0.1-0.4%. No core change; no step count moved. CI: `scripts/ci.sh` passes but for `tests/usb-keyboard.test.ts`'s glue
+case, a fixed 20 ms wait under load that passes alone (docs/backlog.md "Tests and tools").
