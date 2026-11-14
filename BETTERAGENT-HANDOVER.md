@@ -56,8 +56,18 @@ The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEW
 
 ## Next
 
-1. Job 8 (the smaller jobs: the guest's address and OS name in the status bar, a power-off and reboot through logind,
-   a shared folder mounted when attached); ask the user what each does to the guest where the kickoff leaves it open.
+1. Job 8, as the user decided it (2026-11-14; not started):
+   - **The OS name:** the agent sends `/etc/os-release` (its fields for the status bar) when it connects. **No
+     interface addresses** (dropped).
+   - **Soft power-off and reboot:** the agent asks logind (`PowerOff`/`Reboot`, inhibitors honoured); without logind,
+     `shutdown now` / `shutdown -r now` (the agent is root; worth trying). It reports whether the request was taken.
+     The page uses it when the agent is connected; with no connection, or no success reported within a useful time,
+     it does today's hard power-off. A second request from the user after a soft one is a hard power-off. The page
+     never forces on its own; it may show a non-blocking sign while a soft one is pending (next to the toolbar's stop
+     button, which can then highlight the hard power-off).
+   - **Shared folders mounted when attached: dropped.** One 9p device carries every attached folder, and one attached
+     while the machine runs appears at once (docs/shares.md §3). What still waits for the next start is the mount
+     setting itself (Mount shared folders in the guest, its mount point); not wanted unless the user asks.
    Job 6's decision (the user, 2026-11-13): the layout's disk write at
    boot stays, by today's non-agent path, so it applies where the agent doesn't run (and to the greeter); the agent
    applies it in the running session on top: sway (its IPC), X11 (setxkbmap where installed), the consoles (loadkeys),
