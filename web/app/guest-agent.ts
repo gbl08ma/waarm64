@@ -94,7 +94,8 @@ exec /run/waarm64/agent
 template's restore (agent/src/renew.rs) is writable through `ProtectSystem=strict`: the machine id, the SSH host keys'
 directory (ssh-keygen's new keys are renamed in), systemd's random seed (`-`: each may be missing); `/dev/random`'s
 RNDADDENTROPY and RNDRESEEDCRNG take CAP_SYS_ADMIN, which it has. KEYMAP's `loadkeys` (the consoles' keymap,
-agent/src/keymap.rs) takes CAP_SYS_TTY_CONFIG (KDSKBENT).
+agent/src/keymap.rs) takes CAP_SYS_TTY_CONFIG (KDSKBENT). POWER's request to logind (agent/src/power.rs) takes
+CAP_SYS_BOOT: logind grants a power-off to a caller that has it (else polkit decides, and a guest may have none).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/waarm64 is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -107,7 +108,7 @@ RestartSec=5s
 Nice=10
 MemoryMax=32M
 OOMScoreAdjust=500
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_TTY_CONFIG
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_TTY_CONFIG CAP_SYS_BOOT
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only

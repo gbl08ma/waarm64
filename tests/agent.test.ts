@@ -193,7 +193,7 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.COPY });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS | CAP.COPY });
   sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
@@ -252,6 +252,8 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_TIME\b/m);
   // KEYMAP's loadkeys (the consoles' keymap: KDSKBENT).
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_TTY_CONFIG\b/m);
+  // POWER's logind request (logind grants it to a caller with CAP_SYS_BOOT).
+  assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_BOOT\b/m);
   assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_VSOCK$/m);
   assert.doesNotMatch(unit, /^(ProtectClock|PrivateNetwork)=/m);
   // X11 (step 5): the private /tmp keeps the X server's sockets (read-only; none there is no failure).
@@ -1090,7 +1092,7 @@ test("the link: TIME once the agent said it can; a machine without the clipboard
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   await settle();
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO], 'no clipboard: no switch');
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME | CAP.DESKTOP | CAP.KEYMAP });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS });
   assert.equal(link.time(1000), false, "before the agent's HELLO");
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE })) });
   await settle();
@@ -1121,11 +1123,11 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   assert.deepEqual([...encodeFrame(FRAME.TIME, encodeTime(0))], [9, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual([...encodeHello({ version: 1, caps: CAP.TIME })], [1, 0, 16, 0, 0, 0]);
   assert.deepEqual([FRAME.SESSION, FRAME.TIME, CAP.TIME], [11, 13, 16]);
-  assert.deepEqual(pageCaps(false), CAP.TIME | CAP.DESKTOP | CAP.KEYMAP);
+  assert.deepEqual(pageCaps(false), CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS);
   // DISPLAY (agent/src/frame.rs `decode_display` pins the payload).
   assert.deepEqual([FRAME.DISPLAY, CAP.DISPLAY], [14, 32]);
   assert.deepEqual([...encodeDisplay(1280, 720)], [0, 5, 0, 0, 0xd0, 2, 0, 0]);
-  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.DISPLAY);
+  assert.equal(pageCaps(false, true), CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS | CAP.DISPLAY);
   // RENEW and RENEWED (agent/src/frame.rs, agent/src/renew.rs `what`).
   assert.deepEqual([FRAME.RENEW, FRAME.RENEWED, CAP.RENEW], [15, 16, 64]);
   assert.deepEqual([RENEWED.ENTROPY, RENEWED.MACHINE_ID, RENEWED.SEED, RENEWED.SSH], [1, 2, 4, 8]);
@@ -1898,7 +1900,7 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   t.mock.timers.enable({ apis: ['setInterval'] });
   const actions = new AgentActions(() => undefined, () => undefined);
   const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => ups++)!;
-  assert.equal(link.caps, CAP.TIME | CAP.DESKTOP | CAP.KEYMAP);
+  assert.equal(link.caps, CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS);
   assert.equal(body.dataset.desktop, 'none', "the guest's desktop: none yet");
   assert.equal(actions.syncClock(), false, 'no agent yet');
   port2.postMessage({ type: 'open', open: true, conn: 1 });

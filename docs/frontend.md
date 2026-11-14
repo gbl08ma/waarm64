@@ -260,7 +260,9 @@ what differs besides the change is the dev server's port (in Add a disk's URL) a
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
 separators; the main gates also have their names. Left to right: **[Machines](ui:toolbar:Toolbar.machines)** (the Machines page), the machine's name,
-**Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs), **[Suspend](ui:toolbar:Toolbar.suspend)**,
+**Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
+where the guest's agent can, both ask the guest first and show [Shutting down…](ui:toolbar:Toolbar.soft.off) meanwhile:
+devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
 **[Snapshot](ui:toolbar:Toolbar.snapshot)** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
 five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
@@ -340,7 +342,7 @@ the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new 
 The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesNav.preferences)** (the Machines page),
 kept per browser as `waarm64.settings` `statusBar` (absent: the defaults; `[]`: no bar). The model is DOM-free
 (tests/statusbar.test.ts): `web/app/statusbar-kinds.ts` the kinds (`KINDS`: name, group, icon, default look),
-`statusbar.ts` the elements (the defaults: power state, a divider, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s;
+`statusbar.ts` the elements (the defaults: power state, a divider, the guest's OS, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s;
 `normalize`, a kept list from another version: unknown kinds and fields dropped; names and the palette),
 `statusbar-metrics.ts` `metrics` (the last second from two `status` messages; none across a new run, whose counters
 start at 0), `statusbar-graphics.ts` `graphics` (the screen's report: a 3D machine's GPU worker `stats`, a 2D one's
@@ -350,7 +352,8 @@ the network's, disks' and USB's in `statusbar-traffic.ts`, with the received and
 `statusbar-sample.ts` the made-up machine the editor's preview draws. `StatusBar.svelte` draws the bar (neighbours split by
 a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#state[data-state]` stays, hidden, for the
 tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor (a chip of its bar `StatusChip.svelte`, its palette `StatusPalette.svelte`, its chosen chip's settings `StatusOptions.svelte`, its drags `status-drag.svelte.ts`); what both draw besides the statuses (the power state, the mouse and keys, the adapters' states) is `areas/status-live.ts` `liveNow`.
-- **Elements:** power state, vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
+- **Elements:** power state, [Guest OS](ui:statusbar:statusbar-kinds.kind.os) (the guest's os-release's name, once its
+  agent named it: devices.md "The guest's OS"), vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
   IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
   in and out as the guest sees them, counted as the xHCI's transfers complete, `web/usb.ts`); the renderer (3D or 2D,
@@ -1320,7 +1323,8 @@ with `?ncpus=` and `?ram=` over them (and `?split=2560,1024`, a split set by han
 (1 GiB). The page's memory check (`hostMemoryGiB`) warns in the confirmation when the device
 reports less than the choice needs (Chromium reports at most 8 GB, so past that it says the device may well have more). A suspended machine resumes with its own size.
 
-Restart and Power off ask for a confirmation while the machine is booting or running (they're a power cut); after
+Restart and Power off ask for a confirmation while the machine is booting or running (they're a power cut), unless the
+guest's agent takes them as a clean reboot or shutdown (devices.md "Power off and restart from the guest"); after
 a power off the button reads Start. One restart or disk reset at a time (`exclusively` in
 `run/power-actions.ts`): Restart, Power off and Reset disk are disabled from the click until the new machine's worker is
 started, so a second click can't start a machine beside the one being started (the first would

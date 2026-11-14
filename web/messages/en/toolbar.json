@@ -23,6 +23,10 @@
     "message": "Forcibly power off the machine and start it again.",
     "note": "Tooltip of the toolbar's Restart button: a reset without the guest's shutdown."
   },
+  "Toolbar.restart.soft.title": {
+    "message": "Restart the guest: it is asked to shut down and start again, as its own restart does. Click again while it restarts to restart the machine at once.",
+    "note": "Tooltip of the toolbar's Restart button while the machine runs and the guest's agent (the page's program in the guest) can restart it cleanly."
+  },
   "Toolbar.view.screen": {
     "message": "Screen",
     "note": "Tooltip and screen-reader name of the toolbar's view button that shows the machine's screen alone."
@@ -54,6 +58,22 @@
   "Toolbar.powerOff.title": {
     "message": "Forcibly power off the machine, like pulling the plug. Shut the guest down first for a clean stop.",
     "note": "Tooltip of the toolbar's Power off button (a stop icon)."
+  },
+  "Toolbar.powerOff.soft.title": {
+    "message": "Shut down the guest: it is asked to power off, as its own shutdown does. Click again while it shuts down to power off at once.",
+    "note": "Tooltip of the toolbar's Power off button (a stop icon) while the guest's agent (the page's program in the guest) can shut it down cleanly."
+  },
+  "Toolbar.powerOff.now.title": {
+    "message": "Power off the machine now, like pulling the plug, without waiting for the guest.",
+    "note": "Tooltip of the toolbar's Power off button (a stop icon, drawn in red) while the guest is shutting down or restarting on the page's request."
+  },
+  "Toolbar.soft.off": {
+    "message": "Shutting down…",
+    "note": "Shown in the toolbar beside the Power off button while the guest shuts down on the page's request (Power off, with the guest's agent)."
+  },
+  "Toolbar.soft.reboot": {
+    "message": "Restarting…",
+    "note": "Shown in the toolbar beside the Power off button while the guest restarts on the page's request (Restart, with the guest's agent)."
   },
   "Toolbar.suspend": {
     "message": "Suspend",

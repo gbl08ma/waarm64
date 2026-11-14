@@ -172,6 +172,14 @@ impl Harness {
             vcs: s("vcs"),
             console: two_by_four,
         };
+        let os = crate::os::Paths {
+            files: vec![s("os-release")],
+        };
+        let power = crate::power::Paths {
+            logind: s("logind"),
+            busctl: vec![s("busctl")],
+            shutdown: vec![s("shutdown")],
+        };
         let con = Arc::new(Mutex::new(Fake::default()));
         let c = con.clone();
         let (mine, theirs) = socketpair(
@@ -195,6 +203,8 @@ impl Harness {
             a.environment = environment;
             a.loadkeys_at = vec![loadkeys];
             a.screen = screen;
+            a.os = os;
+            a.power = power;
             match serve(&theirs, &mut a) {
                 Stop::Broken => "broken",
                 Stop::Failed(what, _) => what,
@@ -998,4 +1008,93 @@ fn says_the_childs_desktop_to_a_page_that_asks() {
     // (The new child hears the HELLO first: its DESKTOP has passed the parent once its OFFER's ACK is back.)
     h.activate();
     assert!(h.page.next(frame::DESKTOP, 300).is_none(), "not asked");
+}
+
+#[test]
+fn names_the_os_to_a_page_that_asks() {
+    let mut h = Harness::start("os");
+    std::fs::write(
+        h.root.join("os-release"),
+        "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nVERSION_ID=\"13\"\nID=debian\n",
+    )
+    .unwrap();
+    h.page
+        .send(frame::HELLO, &hello_with(frame::cap::TIME | frame::cap::OS));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::OS, 0, "the agent names it");
+    assert_eq!(
+        h.page.next(frame::OS, 2000).as_deref(),
+        Some(&b"\x1cDebian GNU/Linux 13 (trixie)\x06debian\x0213"[..])
+    );
+    // At each HELLO (the file read again); not to a page that doesn't ask.
+    std::fs::write(h.root.join("os-release"), "NAME=Other\n").unwrap();
+    h.page
+        .send(frame::HELLO, &hello_with(frame::cap::TIME | frame::cap::OS));
+    assert_eq!(
+        h.page.next(frame::OS, 2000).as_deref(),
+        Some(&b"\x05Other\x05linux\x00"[..])
+    );
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    assert!(h.page.next(frame::HELLO, 2000).is_some());
+    assert!(h.page.next(frame::OS, 300).is_none(), "not asked");
+}
+
+#[test]
+fn powers_off_or_reboots_as_asked_and_says_if_taken() {
+    use crate::power::status;
+    use std::os::unix::fs::PermissionsExt;
+    let mut h = Harness::start("power");
+    let root = h.root.clone();
+    let r = |p: &str| root.join(p);
+    let tool = |name: &str, exit: u8| {
+        std::fs::write(
+            r(name),
+            format!(
+                "#!/bin/sh\necho \"$*\" >> {}\nexit {exit}\n",
+                r("calls").display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(r(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let calls = || std::fs::read_to_string(r("calls")).unwrap_or_default();
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::POWER, 0, "the agent powers off");
+    let ask = |h: &mut Harness, what: u8| {
+        h.page.send(frame::POWER, &[what]);
+        h.page.next(frame::POWERED, 5000)
+    };
+    assert_eq!(
+        ask(&mut h, frame::power::OFF).as_deref(),
+        Some(&[status::NO_TOOL][..]),
+        "no tool"
+    );
+    // logind running with busctl: its method, inhibitors checked for root too.
+    tool("busctl", 0);
+    tool("shutdown", 0);
+    std::fs::create_dir(r("logind")).unwrap();
+    assert_eq!(
+        ask(&mut h, frame::power::REBOOT).as_deref(),
+        Some(&[status::TAKEN][..])
+    );
+    let m = "call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager";
+    assert_eq!(calls(), format!("{m} RebootWithFlags t 1\n"));
+    // Refused (a block inhibitor): said.
+    tool("busctl", 1);
+    assert_eq!(
+        ask(&mut h, frame::power::OFF).as_deref(),
+        Some(&[status::REFUSED][..])
+    );
+    // No logind: shutdown.
+    std::fs::remove_dir(r("logind")).unwrap();
+    std::fs::remove_file(r("calls")).unwrap();
+    assert_eq!(
+        ask(&mut h, frame::power::OFF).as_deref(),
+        Some(&[status::TAKEN][..])
+    );
+    assert_eq!(calls(), "now\n");
+    // A request it doesn't know: no answer.
+    h.page.send(frame::POWER, &[7]);
+    assert!(h.page.next(frame::POWERED, 300).is_none());
 }

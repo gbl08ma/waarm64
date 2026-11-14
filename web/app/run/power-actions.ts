@@ -8,6 +8,8 @@ import type { Messages } from './messages.ts';
 import { needsDisk } from './page-disks.ts';
 import { loadStored, type PageMachine } from './page-machine.svelte.ts';
 import type { Runner } from './runner.ts';
+import { SoftPower } from './soft-power.ts';
+import type { AgentLink } from '../agent-link.ts';
 
 export type PowerDeps = {
   machine: PageMachine;
@@ -18,12 +20,16 @@ export type PowerDeps = {
   later: { openMachines(tab?: 'disks', id?: string): void; openDisk(): Promise<void> };
   /** The memory signal's checks (web/app/run/memory-signal.ts): a crash before, too little memory (true: said, not started). */
   signal: { crashedBefore(): boolean; fits(): boolean };
+  /** The run's agent (web/app/areas/agent-actions.ts): Power off and Restart ask the guest first where it can. */
+  agent: { readonly link: AgentLink | undefined };
 };
 
 export class PowerActions {
   readonly #d: PowerDeps;
+  readonly #soft: SoftPower;
   constructor(d: PowerDeps) {
     this.#d = d;
+    this.#soft = new SoftPower(d.agent, power, d.messages);
   }
 
   /**
@@ -90,15 +96,22 @@ export class PowerActions {
     if (live()) await this.restart();
   }
 
-  /** The toolbar's Start, Restart or Retry: a restart of a running machine is a power cut, so it asks first. */
+  /**
+   * The toolbar's Start, Restart or Retry. A running machine's restart is asked of the guest first (a reboot,
+   * web/app/run/soft-power.ts); else (or a second Restart meanwhile) it is a power cut, so it asks first.
+   */
   async restartAsked() {
+    if (isLive(power.state) && (await this.#soft.request('reboot'))) return;
     if (
       isLive(power.state) &&
-      !(await ask.confirm(t('machine:power-actions.restart.confirm'), {
-        title: t('machine:power-actions.restart.title'),
-        ok: t('machine:power-actions.restart.ok'),
-        danger: true,
-      }))
+      !(await ask.confirm(
+        t(power.soft ? 'machine:power-actions.restart.now' : 'machine:power-actions.restart.confirm'),
+        {
+          title: t('machine:power-actions.restart.title'),
+          ok: t('machine:power-actions.restart.ok'),
+          danger: true,
+        },
+      ))
     )
       return;
     await this.restart();
@@ -111,15 +124,22 @@ export class PowerActions {
       this.#d.messages.setState('off');
     });
   }
-  /** The toolbar's Power off: the machine stops at once, after asking. */
+  /**
+   * The toolbar's Power off: asked of the guest first (web/app/run/soft-power.ts); else (or a second Power off
+   * meanwhile) the machine stops at once, after asking.
+   */
   async powerOffAsked() {
+    if (!isLive(power.state) || (await this.#soft.request('off'))) return;
     if (!isLive(power.state)) return;
     if (
-      !(await ask.confirm(t('machine:power-actions.powerOff.confirm'), {
-        title: t('machine:power-actions.powerOff.title'),
-        ok: t('machine:power-actions.powerOff.ok'),
-        danger: true,
-      }))
+      !(await ask.confirm(
+        t(power.soft ? 'machine:power-actions.powerOff.now' : 'machine:power-actions.powerOff.confirm'),
+        {
+          title: t('machine:power-actions.powerOff.title'),
+          ok: t('machine:power-actions.powerOff.ok'),
+          danger: true,
+        },
+      ))
     )
       return;
     await this.powerOff();

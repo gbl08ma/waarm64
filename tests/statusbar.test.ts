@@ -37,10 +37,10 @@ const inJit = (value: string) => t('statusbar:statusbar-render.cpu.jit', { value
 const net = (rx: string, tx: string) => t('statusbar:statusbar-traffic.net.traffic', { rx, tx });
 const disk = (read: string, written: string) => t('statusbar:statusbar-traffic.disk.traffic', { read, written });
 
-test('the defaults draw what the bar always showed', () => {
+test('the defaults draw what the bar always showed, and the guest\'s OS once its agent names it', () => {
   const m = second();
-  assert.equal(DEFAULT_ITEMS.filter((i) => i.kind !== 'divider').map((i) => text(i, m)).join(' · '), [
-    RUNNING, t('statusbar:statusbar-render.vcpus', { count: 2 }), '1024 MiB', t('statusbar:statusbar-render.uptime', { time: '0:00:11' }), mips('600'), inJit('83.3%'), t('statusbar:statusbar-render.irqs', { irqs: '1,000' }),
+  assert.equal(DEFAULT_ITEMS.filter((i) => i.kind !== 'divider').map((i) => text(i, m, { ...live, os: 'Debian GNU/Linux 13 (trixie)' })).join(' · '), [
+    RUNNING, 'Debian GNU/Linux 13 (trixie)', t('statusbar:statusbar-render.vcpus', { count: 2 }), '1024 MiB', t('statusbar:statusbar-render.uptime', { time: '0:00:11' }), mips('600'), inJit('83.3%'), t('statusbar:statusbar-render.irqs', { irqs: '1,000' }),
   ].join(' · '));
   assert.ok(shows(DEFAULT_ITEMS));
   assert.ok(!shows([{ kind: 'spacer' }, { kind: 'divider' }]), 'only layout: no bar');

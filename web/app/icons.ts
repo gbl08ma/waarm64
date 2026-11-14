@@ -66,6 +66,7 @@ import IconVolumeOff from '@tabler/icons-svelte-runes/icons/volume-off';
 import IconWorldWww from '@tabler/icons-svelte-runes/icons/world-www';
 import IconX from '@tabler/icons-svelte-runes/icons/x';
 import IconZzz from '@tabler/icons-svelte-runes/icons/zzz';
+import IconAppWindow from '@tabler/icons-svelte-runes/icons/app-window';
 
 export const ICONS = {
   'arrow-down': IconArrowDown,
@@ -134,5 +135,6 @@ export const ICONS = {
   'world-www': IconWorldWww,
   x: IconX,
   zzz: IconZzz,
+  'app-window': IconAppWindow,
 };
 export type IconName = keyof typeof ICONS;

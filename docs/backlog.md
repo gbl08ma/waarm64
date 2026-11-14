@@ -1623,7 +1623,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `PrivateNetwork` and with `CAP_SYS_TIME` (3.8 on the console). And what vsock would allow and wasn't taken: a
   connection per transfer (vsock's credit in place of the frames' CREDIT/MORE), and ports for plans/agent.md's other
   jobs.
-- **The agent's size past `no_std`:** 179,672 bytes (132,696 before the screen's size, BETTERAGENT), ~114 KB gzipped (clipboard.md "What it costs"). What's left is
+- **The agent's size past `no_std`:** 182,960 bytes (179,672 before job 8's OS and POWER; 132,696 before the screen's size, BETTERAGENT), ~114 KB gzipped (clipboard.md "What it costs"). What's left is
   mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
   and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
   agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
@@ -1638,6 +1638,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   UTF-8 mode (`/dev/vcs`'s bytes, ASCII only) not run on a guest (Debian's consoles are UTF-8); what was on a console
   before vcsu's first read comes back through its font's glyphs (a character the font lacks as ■): the agent could read
   each console's vcsu once at its start (the kernel keeps the characters from then on), not measured.
+- **The clean power-off, the rest of it** (devices.md "Power off and restart from the guest"): `shutdown now`, the
+  path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool); the
+  Machines page's Power off stays a hard one (it asks its own question; the toolbar's soft one could serve it too).
 - **Restarts read the binary again:** each of the unit's restarts (at most 5 in 10 minutes) gunzips it out of fw_cfg
   anew. Keeping it across restarts (outside the unit's own tmpfs, or a unit that outlives the agent) would save that.
 - **Two compositors for one user** (sway on two VTs): the session child takes the first `wayland-<n>` that accepts.

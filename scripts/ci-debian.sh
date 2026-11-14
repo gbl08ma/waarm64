@@ -19,5 +19,5 @@ platform=()
 [ "${1:-}" = --platform ] && platform=(tests/page-usb-keyboard.test.ts tests/page-usb-gamepad.test.ts tests/page-clock.test.ts tests/page-clipboard.test.ts tests/page-clipboard-x11.test.ts tests/page-template.test.ts)
 export WAARM64_DISTROS=debian WAARM64_DEBIAN_SLOTS=${WAARM64_DEBIAN_SLOTS-2}
 step 'Debian on the page'
-node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-spill.test.ts tests/page-agent.test.ts "${platform[@]}"
+node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-spill.test.ts tests/page-agent.test.ts tests/page-power.test.ts "${platform[@]}"
 printf '\nCI-DEBIAN OK (%d s)\n' "$SECONDS"

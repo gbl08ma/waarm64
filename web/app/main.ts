@@ -15,6 +15,7 @@ import { records } from './areas/records.svelte.ts';
 import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
+import { agentShown } from './areas/agent-shown.ts';
 import { LeaseActions } from './areas/lease-actions.ts';
 import { compactor, TrimActions } from './areas/trim-actions.ts';
 import { keyboardFollow, runLayout } from './areas/keyboard-follow.ts';
@@ -142,7 +143,7 @@ const messages = new Messages(machine, () => {
   if (screen.cursor) screen.setCursor(undefined);
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
-const agentActions = new AgentActions(() => screen.sent, runLayout);
+const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown);
 const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,
@@ -214,6 +215,7 @@ const powerActions: PowerActions = new PowerActions({
   terminal,
   later: { openMachines: (tab, id) => pageWindow.openMachines(tab, id), openDisk: () => disks.open() },
   signal,
+  agent: agentActions,
 });
 const core = { machine, runner, power: powerActions, messages, terminal };
 const restore = new SnapshotRestore(core);

@@ -56,6 +56,13 @@ pub const KEYMAP: u8 = 22;
 pub const COPY: u8 = 23;
 /// The agent's: a u8 status (`screen::status`), then the screen's UTF-8 text (OK's).
 pub const COPIED: u8 = 24;
+/// The agent's, after its HELLO to a page with `cap::OS`: the guest's OS as `/etc/os-release` names it (src/os.rs
+/// `payload`: its pretty name, ID and VERSION_ID).
+pub const OS: u8 = 25;
+/// The page's: a u8 (`power`), the guest is to power off or reboot itself, as asked of logind (src/power.rs).
+pub const POWER: u8 = 26;
+/// The agent's: a u8 status (`power::status`), whether the guest took POWER.
+pub const POWERED: u8 = 27;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -95,6 +102,10 @@ pub mod cap {
     pub const KEYMAP: u32 = 1 << 12;
     /// COPY and COPIED: the text console's screen read for the host's clipboard.
     pub const COPY: u32 = 1 << 13;
+    /// OS: the guest's OS named (the agent), or a page that takes it.
+    pub const OS: u32 = 1 << 14;
+    /// POWER and POWERED: the guest powers off or reboots itself on the page's request.
+    pub const POWER: u32 = 1 << 15;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
@@ -117,6 +128,12 @@ pub mod ack {
     pub const TOO_LARGE: u8 = 3;
     /// No type the agent takes.
     pub const NO_TYPE: u8 = 4;
+}
+
+/// POWER's requests.
+pub mod power {
+    pub const OFF: u8 = 0;
+    pub const REBOOT: u8 = 1;
 }
 
 /// DESKTOP's states.

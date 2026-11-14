@@ -6,7 +6,7 @@
 // What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
 // page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it, DISPLAY on one
 // with a screen of virtio-gpu's; RENEW needs only the agent's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO),
-// RENEW once after a template's restore (`renew`), LEASE after a restore (`lease`), TRIM (`trim`), COPY (`copy`), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// RENEW once after a template's restore (`renew`), LEASE after a restore (`lease`), TRIM (`trim`), COPY (`copy`), POWER (`power`), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the guest's OS as it names it (`os`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
 // connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
 // clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
 // and `window.__clipboard`.
@@ -21,6 +21,7 @@ import {
   DESKTOP,
   decodeCopied,
   decodeHello,
+  decodeOs,
   decodeRenewed,
   encodeDisplay,
   encodeFrame,
@@ -29,9 +30,11 @@ import {
   encodeTime,
   FRAME,
   FrameReader,
+  POWER,
   typePayloads,
   VERSION,
   type Frame,
+  type GuestOs,
   type Hello,
 } from '../agent-frame.ts';
 import type { AgentFromDevice, AgentToDevice } from '../vsock-device.ts';
@@ -41,19 +44,23 @@ import type { KeyboardLayout } from './keyboard.ts';
 export const WINDOW = 256 << 10;
 
 /**
- * What the page says it does (web/agent-frame.ts `CAP`): the clock, the desktop's state and the layout always (every
- * machine has a screen), the clipboard's frames where it is shared, the screen's size where the guest's screen follows the page's
- * (`display`: virtio-gpu's).
+ * What the page says it does (web/agent-frame.ts `CAP`): the clock, the desktop's state, the layout and the OS's name
+ * always (every machine has a screen and a status bar), the clipboard's frames where it is shared, the screen's size
+ * where the guest's screen follows the page's (`display`: virtio-gpu's).
  */
 export const pageCaps = (clipboard: boolean, display = false) =>
   CAP.TIME |
   CAP.DESKTOP |
   CAP.KEYMAP |
+  CAP.OS |
   (clipboard ? CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.COPY : 0) |
   (display ? CAP.DISPLAY : 0);
 
 /** RENEW's random bytes. */
 export const RENEW_BYTES = 64;
+
+/** An answer's status: its first byte. */
+const first = (p: Uint8Array | 'gone' | undefined) => (p instanceof Uint8Array ? p[0] : undefined);
 
 export class AgentLink {
   /** The guest's agent is connected. */
@@ -70,6 +77,10 @@ export class AgentLink {
   desktop: number = DESKTOP.NONE;
   /** Called when `desktop` changes. */
   onDesktop?: (d: number) => void;
+  /** The guest's OS as the agent last named it (OS; kept over its connections: the run's). */
+  os?: GuestOs;
+  /** Called with each OS. */
+  onOs?: (os: GuestOs) => void;
   /** Called with the agent's HELLO (each listener: the clipboard's, the clock's, the page's sign that the guest is up). */
   readonly onHello: ((h: Hello) => void)[] = [];
   private reader = new FrameReader();
@@ -93,8 +104,8 @@ export class AgentLink {
   private renewSent = false;
   /** What the agent's RENEWED said (the tests read it). */
   renewed?: { done: number; failed: number };
-  /** The answers awaited (`lease`'s LEASED, `trim`'s TRIMMED, `copy`'s COPIED): their payload, or undefined when the connection ends first. */
-  private waiting: { type: number; done: (payload?: Uint8Array) => void }[] = [];
+  /** The answers awaited (`lease`'s LEASED, `trim`'s TRIMMED, `copy`'s COPIED, `power`'s POWERED): their payload, or `gone` when the connection ends first. */
+  private waiting: { type: number; done: (payload?: Uint8Array | 'gone') => void }[] = [];
 
   constructor(port: MessagePort, caps: number) {
     [this.port, this.caps] = [port, caps];
@@ -182,7 +193,7 @@ export class AgentLink {
    * undefined if the agent can't (no `CAP.LEASE`), the connection ends first, or nothing comes within `ms`.
    */
   lease(ms: number): Promise<number | undefined> {
-    return this.ask(FRAME.LEASE, CAP.LEASE, FRAME.LEASED, ms).then((p) => p?.[0]);
+    return this.ask(FRAME.LEASE, CAP.LEASE, FRAME.LEASED, ms).then(first);
   }
 
   /**
@@ -191,7 +202,7 @@ export class AgentLink {
    * asked while one runs is answered with it.
    */
   trim(ms: number): Promise<number | undefined> {
-    return this.ask(FRAME.TRIM, CAP.TRIM, FRAME.TRIMMED, ms).then((p) => p?.[0]);
+    return this.ask(FRAME.TRIM, CAP.TRIM, FRAME.TRIMMED, ms).then(first);
   }
 
   /** Whether the agent said it reads the text console's screen (its HELLO has COPY). */
@@ -204,7 +215,24 @@ export class AgentLink {
    * `CAP.COPY`), the connection ends first, or nothing comes within `ms`.
    */
   copy(ms: number): Promise<{ status: number; text: string } | undefined> {
-    return this.ask(FRAME.COPY, CAP.COPY, FRAME.COPIED, ms).then((p) => p && decodeCopied(p));
+    return this.ask(FRAME.COPY, CAP.COPY, FRAME.COPIED, ms).then((p) =>
+      p instanceof Uint8Array ? decodeCopied(p) : undefined,
+    );
+  }
+
+  /** Whether the agent said it powers the guest off (its HELLO has POWER). */
+  get canPower() {
+    return !!this.agent && (this.agent.caps & CAP.POWER) !== 0;
+  }
+
+  /**
+   * The guest powers off or reboots itself (POWER: a clean shutdown): POWERED's status; `gone` if the connection ended
+   * first (the guest's shutdown stops its agent, which may be before its answer leaves); undefined if the agent can't
+   * (no `CAP.POWER`) or nothing came within `ms`.
+   */
+  power(reboot: boolean, ms: number): Promise<number | 'gone' | undefined> {
+    const what = new Uint8Array([reboot ? POWER.REBOOT : POWER.OFF]);
+    return this.ask(FRAME.POWER, CAP.POWER, FRAME.POWERED, ms, what).then((p) => (p === 'gone' ? p : first(p)));
   }
 
   /**
@@ -215,12 +243,18 @@ export class AgentLink {
     return !!this.agent && (this.agent.caps & CAP.KEYMAP) !== 0 && this.send(FRAME.KEYMAP, encodeKeymap(k));
   }
 
-  /** Sends `type` to an agent with `cap`, and waits up to `ms` for its answer (`answer`'s payload). */
-  private ask(type: number, cap: number, answer: number, ms: number): Promise<Uint8Array | undefined> {
-    if (!this.agent || !(this.agent.caps & cap) || !this.send(type)) return Promise.resolve(undefined);
+  /** Sends `type` (with `payload`) to an agent with `cap`, and waits up to `ms` for its answer (`answer`'s payload; `gone`: the connection ended first). */
+  private ask(
+    type: number,
+    cap: number,
+    answer: number,
+    ms: number,
+    payload?: Uint8Array,
+  ): Promise<Uint8Array | 'gone' | undefined> {
+    if (!this.agent || !(this.agent.caps & cap) || !this.send(type, payload)) return Promise.resolve(undefined);
     return new Promise((resolve) => {
       const timer = setTimeout(() => done(undefined), ms);
-      const done = (payload?: Uint8Array) => {
+      const done = (payload?: Uint8Array | 'gone') => {
         clearTimeout(timer);
         this.waiting = this.waiting.filter((w) => w.done !== done);
         resolve(payload);
@@ -292,7 +326,7 @@ export class AgentLink {
     this.inflight = 0;
     this.resetting = false;
     this.renewSent = false;
-    for (const w of [...this.waiting]) w.done(undefined);
+    for (const w of [...this.waiting]) w.done('gone');
     this.setDesktop(DESKTOP.NONE);
     if (!open) this.conn = 0;
     if (open) {
@@ -324,6 +358,8 @@ export class AgentLink {
       }
       for (const w of this.waiting.filter((w) => w.type === f.type)) w.done(f.payload);
       if (f.type === FRAME.DESKTOP && f.payload.length === 1) this.setDesktop(f.payload[0]);
+      const os = f.type === FRAME.OS ? decodeOs(f.payload) : undefined;
+      if (os) this.onOs?.((this.os = os));
       if (f.type === FRAME.RENEWED) {
         this.renewed = decodeRenewed(f.payload);
         this.renewing = false;

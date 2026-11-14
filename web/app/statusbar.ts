@@ -11,10 +11,11 @@ import { def, KINDS, type Device, type Group, type Kind, type Look, type Scope }
  * vCPU element writes its numbers rather than drawing bars. */
 export type Item = { kind: Kind; scope?: Scope; index?: number; look?: Look; numbers?: boolean };
 
-/** Today's bar, and the one a browser starts with. */
+/** Today's bar, and the one a browser starts with (the guest's OS shows where its agent names it). */
 export const DEFAULT_ITEMS: readonly Item[] = [
   { kind: 'state' },
   { kind: 'divider' },
+  { kind: 'os' },
   { kind: 'vcpus' },
   { kind: 'ram' },
   { kind: 'uptime' },

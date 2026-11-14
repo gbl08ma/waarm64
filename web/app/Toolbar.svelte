@@ -44,6 +44,17 @@
     restart: { label: 'toolbar:Toolbar.restart', title: 'toolbar:Toolbar.restart.title' },
   } as const;
   const canSnapshot = $derived(running && !power.busy);
+  /** Power off's tooltip: a request to the guest where its agent takes one, at once while one is pending. */
+  const offTitle = $derived(
+    power.soft
+      ? 'toolbar:Toolbar.powerOff.now.title'
+      : power.canSoft
+        ? 'toolbar:Toolbar.powerOff.soft.title'
+        : 'toolbar:Toolbar.powerOff.title',
+  );
+  const startTitle = $derived(
+    startAs === 'restart' && power.canSoft && !power.soft ? 'toolbar:Toolbar.restart.soft.title' : START[startAs].title,
+  );
 
   /** Each network adapter has its own button (`fits`). */
   let split = $state(true);
@@ -142,19 +153,23 @@
     id="restart"
     hidden={power.cantRun}
     disabled={power.busy}
-    title={t(START[startAs].title)}
+    title={t(startTitle)}
     onclick={() => inBar(() => page.restart())}
   >
     {t(START[startAs].label)}
   </Button>
+  {#if power.soft && running}<span id="soft-power" role="status"
+      >{t(power.soft === 'off' ? 'toolbar:Toolbar.soft.off' : 'toolbar:Toolbar.soft.reboot')}</span
+    >{/if}
   <Button
     variant="tool"
     icon="player-stop"
     id="power-off"
+    class={power.soft ? 'now' : undefined}
     hidden={power.cantRun || !running}
     disabled={power.busy}
     aria-label={t('toolbar:Toolbar.powerOff')}
-    title={t('toolbar:Toolbar.powerOff.title')}
+    title={t(offTitle)}
     onclick={() => inBar(() => page.powerOffAsked())}
   />
   <Button
@@ -251,6 +266,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A power-off or reboot asked of the guest, pending: said beside the stop button, which then cuts the power. */
+  #soft-power {
+    margin: 0 var(--space-2);
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+  .toolbar :global(#power-off.now) {
+    color: var(--danger-fg);
   }
   .views {
     display: inline-flex;

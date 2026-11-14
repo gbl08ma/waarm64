@@ -5,8 +5,8 @@
 // moving away from `performance.now()`, which the guest's counter follows and which may not count a host's sleep); and
 // the screen's size, which the agent's session follows (DISPLAY: the guest's compositor or X server set to it); and the
 // guest's graphical session as the agent says it (DESKTOP), as `body[data-desktop]` for the tests' waits (nothing the
-// user sees: docs/devices.md "The desktop's state").
-import { DESKTOP } from '../../agent-frame.ts';
+// user sees: docs/devices.md "The desktop's state"); and the guest's OS as the agent names it (OS), for the status bar; whether it powers the guest off when asked (`canPower`).
+import { CAP, DESKTOP, type GuestOs } from '../../agent-frame.ts';
 import { AgentLink, pageCaps } from '../agent-link.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
 import { clockSync } from '../settings.ts';
@@ -14,6 +14,9 @@ import type { ClipboardShare } from '../clipboard.ts';
 import type { AgentChannels } from '../run/start-message.ts';
 
 type Size = { width: number; height: number };
+/** Where the page shows what the agent says (web/app/areas/agent-shown.ts: the status bar's OS, the toolbar's power). */
+export type AgentShown = { os(os: GuestOs | undefined): void; canPower(can: boolean): void };
+const NOT_SHOWN: AgentShown = { os: () => undefined, canPower: () => undefined };
 
 /** What a run asks of its agent (web/app/run/runner.ts): its link begun and ended; a restore's renewals (`template`: its identity too). */
 export type RunAgent = {
@@ -44,9 +47,12 @@ export class AgentActions {
   /** The keyboard layout the run gives its guest (web/app/areas/keys.svelte.ts `layout`; none: its own). */
   readonly #layout: () => KeyboardLayout | undefined;
 
-  constructor(size: () => Size | undefined, layout: () => KeyboardLayout | undefined) {
+  readonly #shown: AgentShown;
+
+  constructor(size: () => Size | undefined, layout: () => KeyboardLayout | undefined, shown = NOT_SHOWN) {
     this.#size = size;
     this.#layout = layout;
+    this.#shown = shown;
   }
 
   /**
@@ -67,11 +73,13 @@ export class AgentActions {
     };
     desktop(link.desktop);
     link.onDesktop = desktop;
+    link.onOs = (os) => this.#shown.os(os);
     if (size) link.display(size);
     link.onHello.push(
       up,
       () => this.syncClock(),
       () => this.keymap(this.#layout()),
+      (h) => this.#shown.canPower((h.caps & CAP.POWER) !== 0),
     );
     let offset = Date.now() - performance.now();
     this.#timer = setInterval(() => {
@@ -90,6 +98,8 @@ export class AgentActions {
     this.#timer = undefined;
     window.__agent = undefined;
     delete document.body.dataset.desktop;
+    this.#shown.os(undefined);
+    this.#shown.canPower(false);
   }
 
   /** The screen's size the guest is asked for now (a new window size, settled): the agent's session takes it too. */

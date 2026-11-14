@@ -8,7 +8,8 @@
 // (a template's copy made the guest's own); LEASE and LEASED, `CAP.LEASE` (the leases renewed after a restore);
 // DESKTOP, `CAP.DESKTOP` (the guest's graphical session up or down); TRIM and TRIMMED, `CAP.TRIM` (the guest's
 // filesystems trimmed on the page's request); KEYMAP, `CAP.KEYMAP` (the machine's keyboard layout for the running session);
-// COPY and COPIED, `CAP.COPY` (the text console's screen as text, for the host's clipboard).
+// COPY and COPIED, `CAP.COPY` (the text console's screen as text, for the host's clipboard); OS, `CAP.OS` (the guest's
+// OS named, for the status bar); POWER and POWERED, `CAP.POWER` (the guest powers off or reboots itself).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -61,7 +62,36 @@ export const FRAME = {
   COPY: 23,
   /** The agent's: a u8 status (`COPIED`), then the screen's UTF-8 text (`decodeCopied`). */
   COPIED: 24,
+  /** The agent's, after its HELLO to a page with `CAP.OS`: the guest's OS (`decodeOs`). */
+  OS: 25,
+  /** The page's: a u8 (`POWER`), the guest is to power off or reboot itself (a clean shutdown). */
+  POWER: 26,
+  /** The agent's: a u8 status (`POWERED`), whether the guest took POWER. */
+  POWERED: 27,
 } as const;
+
+/** POWER's requests (agent/src/frame.rs `power`). */
+export const POWER = { OFF: 0, REBOOT: 1 } as const;
+
+/** POWERED's statuses (agent/src/power.rs `status`). */
+export const POWERED = {
+  /** The guest took it: its shutdown or reboot is under way (or waits on a delay inhibitor). */
+  TAKEN: 0,
+  /** The guest refused it (a block inhibitor, a shutdown already under way) or its tool failed. */
+  REFUSED: 1,
+  /** The guest has no tool for it (neither logind with busctl nor `shutdown`). */
+  NO_TOOL: 2,
+} as const;
+
+/** The guest's OS as its os-release names it: the pretty name, ID and VERSION_ID. */
+export type GuestOs = { name: string; id: string; version: string };
+
+/** OS's payload: the pretty name, ID and VERSION_ID, each a u8 length and its UTF-8; undefined if short. */
+export function decodeOs(p: Uint8Array): GuestOs | undefined {
+  const f = fields(p);
+  const [name, id, version] = [f.str(), f.str(), f.str()];
+  return name === undefined || id === undefined || version === undefined ? undefined : { name, id, version };
+}
 
 /** DESKTOP's states (agent/src/frame.rs `desktop`). */
 export const DESKTOP = {
@@ -190,6 +220,10 @@ export const CAP = {
   KEYMAP: 1 << 12,
   /** COPY and COPIED: the text console's screen read for the host's clipboard (the agent's). */
   COPY: 1 << 13,
+  /** OS: the guest's OS named (the agent), or a page that takes it. */
+  OS: 1 << 14,
+  /** POWER and POWERED: the guest powers off or reboots itself on the page's request (the agent's). */
+  POWER: 1 << 15,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

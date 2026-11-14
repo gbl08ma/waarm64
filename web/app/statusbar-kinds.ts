@@ -40,6 +40,13 @@ export const KINDS = {
     look: 'text',
     about: 'statusbar:statusbar-kinds.kind.state.about',
   },
+  os: {
+    name: 'statusbar:statusbar-kinds.kind.os',
+    group: 'machine',
+    icon: 'app-window',
+    look: 'text',
+    about: 'statusbar:statusbar-kinds.kind.os.about',
+  },
   vcpus: {
     name: 'statusbar:statusbar-kinds.kind.vcpus',
     group: 'machine',

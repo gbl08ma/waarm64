@@ -60,13 +60,13 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.click('#machines-open');
   await page.click('[data-machine=preferences]');
   const chips = '.status-edit .bar .chip';
-  assert.deepEqual(await kinds(page, chips), ['state', 'divider', 'vcpus', 'ram', 'uptime', 'mips', 'jit', 'irqs']);
+  assert.deepEqual(await kinds(page, chips), ['state', 'divider', 'os', 'vcpus', 'ram', 'uptime', 'mips', 'jit', 'irqs']);
 
   // Added by clicks, at the end; a spacer before the last two.
   await page.click('[data-add="spacer"]');
   await page.click('[data-add="mips:each"]');
   await page.click('[data-add="diskrate:all"]');
-  assert.deepEqual((await kinds(page, chips)).slice(8), ['spacer', 'mips', 'diskrate']);
+  assert.deepEqual((await kinds(page, chips)).slice(9), ['spacer', 'mips', 'diskrate']);
   // A drag from the palette onto the first chip's left half puts the clock first.
   await page.locator('[data-add="clock"]').dragTo(page.locator(`${chips}[data-at="0"]`), { targetPosition: { x: 2, y: 5 } });
   assert.equal((await kinds(page, chips))[0], 'clock');
@@ -89,7 +89,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   assert.equal(await tall(), plainHeight, 'icons don\'t make the bar taller');
   assert.equal((await kept(page)).find((i: { kind: string }) => i.kind === 'vcpus').look, 'icon');
   // A vCPU element's two sets of options (its look, bars or numbers), each in its own frame.
-  await page.click(`${chips}[data-kind=mips][data-at="10"] .pick`);
+  await page.click(`${chips}[data-kind=mips][data-at="11"] .pick`);
   assert.deepEqual(await page.$$eval('[data-field=status-options] fieldset legend', (ls) => ls.map((l) => l.textContent)), [t('statusbar:StatusOptions.look'), t('statusbar:StatusOptions.cpus')]);
   if (shots) await page.locator('[data-field=status-options]').screenshot({ path: `${shots}/options.png` });
   await page.click(`${chips}[data-kind=vcpus] .pick`);

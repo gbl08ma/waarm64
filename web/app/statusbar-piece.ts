@@ -27,6 +27,10 @@ export type Live = {
   nets: { name: string; phase: string; text: string; details?: string[] }[];
   /** The screen's last second (none yet, or no screen). */
   gpu?: Graphics;
+  /** A power-off or reboot asked of the guest, pending (web/app/run/soft-power.ts): the state says it. */
+  soft?: 'off' | 'reboot';
+  /** The guest's OS as its agent names it (none: no agent, or not connected yet). */
+  os?: string;
 };
 
 /** A colour the bar has words for. */

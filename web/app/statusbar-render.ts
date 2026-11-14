@@ -36,16 +36,23 @@ const PHASE_WORD: Record<string, [string, Tone]> = {
   off: ['statusbar:statusbar-render.link.off', 'off'],
 };
 
-/** The power state, a dot before its words. */
-const statePiece: Renderer = (_i, _icon, _m, live) => [
-  {
-    text: live.stateText,
-    short: '',
-    dot: true,
-    tone: STATE_TONE[live.state] ?? 'busy',
-    title: t('statusbar:statusbar-render.state.title', { state: live.stateText }),
-  },
-];
+/** A clean power-off or reboot under way, as the state says it. */
+const SOFT_WORDS = {
+  off: 'statusbar:statusbar-render.state.shuttingDown',
+  reboot: 'statusbar:statusbar-render.state.restarting',
+} as const;
+
+/** The power state, a dot before its words (a running guest's pending power-off or reboot in its place). */
+const statePiece: Renderer = (_i, _icon, _m, live) => {
+  const soft = live.soft && live.state === 'running' ? t(SOFT_WORDS[live.soft]) : undefined;
+  const text = soft ?? live.stateText;
+  const title = t('statusbar:statusbar-render.state.title', { state: text });
+  return [{ text, short: '', dot: true, tone: soft ? 'busy' : (STATE_TONE[live.state] ?? 'busy'), title }];
+};
+
+/** The guest's OS, once its agent named it. */
+const osPiece: Renderer = (_i, icon, _m, live) =>
+  live.os ? piece(icon, live.os, live.os, t('statusbar:statusbar-render.os.title', { os: live.os })) : [];
 
 const clockPiece: Renderer = (_i, icon, _m, live) => {
   const time = new Date(live.now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -301,6 +308,7 @@ const cpuPieces: Numbers = (i, icon, m, live) => {
 const RENDERERS: Record<Kind, Renderer> = {
   state: statePiece,
   clock: clockPiece,
+  os: osPiece,
   pointer: pointerPiece,
   keyboard: keyboardPiece,
   mic: micPiece,

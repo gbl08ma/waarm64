@@ -24,5 +24,9 @@ class Power {
   readonly busy = $derived(this.switching || this.saving);
   /** The page can't run here (no cross-origin isolation): no Start. */
   cantRun = $state(false);
+  /** The run's agent powers the guest off or reboots it when asked (web/app/run/soft-power.ts): the toolbar says so. */
+  canSoft = $state(false);
+  /** A power-off or reboot asked of the guest, pending (the run's end clears it): the toolbar's sign. */
+  soft = $state<'off' | 'reboot' | undefined>();
 }
 export const power = new Power();

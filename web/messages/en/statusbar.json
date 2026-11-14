@@ -39,6 +39,14 @@
     "message": "Whether the machine is powered off, booting, or running, and what this emulator is doing.",
     "note": "What the Power state status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
+  "statusbar-kinds.kind.os": {
+    "message": "Guest OS",
+    "note": "The name of a status bar element (the guest's operating system kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips."
+  },
+  "statusbar-kinds.kind.os.about": {
+    "message": "The guest's operating system, as it names itself. Shown once the guest's agent has connected.",
+    "note": "What the Guest OS status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips. The guest's agent is the page's program inside the guest (docs/devices.md)."
+  },
   "statusbar-kinds.kind.vcpus": {
     "message": "vCPUs",
     "note": "The name of a status bar element (the vcpus kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
@@ -319,9 +327,21 @@
     "message": "The machine: {{state}}",
     "note": "Tooltip of the power state at the left of the status bar (the page's footer). {{state}} is the state's words (Running, Powered off, Loading 40%…)."
   },
+  "statusbar-render.state.shuttingDown": {
+    "message": "Shutting down…",
+    "note": "The status bar's power state while the guest shuts down on the toolbar's Power off (the guest's agent asked it to), before Powered off."
+  },
+  "statusbar-render.state.restarting": {
+    "message": "Restarting…",
+    "note": "The status bar's power state while the guest restarts on the toolbar's Restart (the guest's agent asked it to), before it boots again."
+  },
   "statusbar-render.clock.title": {
     "message": "Your computer's time: {{time}}",
     "note": "Tooltip of the Clock element in the status bar (the page's footer). {{time}} is your computer's time of day, as the browser's locale writes it."
+  },
+  "statusbar-render.os.title": {
+    "message": "The guest's operating system: {{os}}",
+    "note": "Tooltip of the Guest OS element in the status bar (the page's footer). {{os}} is the name the guest's /etc/os-release gives itself, e.g. Debian GNU/Linux 13 (trixie)."
   },
   "statusbar-render.pointer.held": {
     "message": "Mouse held",

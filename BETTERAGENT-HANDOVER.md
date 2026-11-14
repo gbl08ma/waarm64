@@ -1,13 +1,14 @@
 # BETTERAGENT handover
 
 The track's brief: BETTERAGENT-KICKOFF.md (the user's; approved and started 2026-11-13). State and next steps only.
-Loops 1–10 done (jobs 1–7, the agent's gzip and its fw_cfg pieces, the mid-track review's fixes); the next loop is job 8.
+Loops 1–11 done (jobs 1–8, the agent's gzip and its fw_cfg pieces, the mid-track review's fixes); next: the track's end.
 
 ## State
 
 The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEWED 16 (bit 6), LEASE 17 / LEASED 18
-(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11), KEYMAP 22 (bit 12), COPY 23 / COPIED 24 (bit 13); free from
-25 and bit 14 (bit 3 reserved for text/html, 8 and 9 for session kinds). The binary is 179,672 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
+(bit 7), DESKTOP 19 (bit 10), TRIM 20 / TRIMMED 21 (bit 11), KEYMAP 22 (bit 12), COPY 23 / COPIED 24 (bit 13), OS 25
+(bit 14), POWER 26 / POWERED 27 (bit 15); free from 28 and bit 16 (bit 3 reserved for text/html, 8 and 9 for session
+kinds). The binary is 182,960 bytes (`images/build.sh agent`; its hash in images/SHA256SUMS moves with each agent change, in the same commit).
 
 - **Job 1, the screen's size:** the page sends the size it asks the guest's display for (DISPLAY, at each change and
   each agent HELLO). Wayland: `agent/src/outputs.rs` (wlr-output-management custom mode; sway, wlroots). X11 sessions:
@@ -47,36 +48,26 @@ The agent's frames and capability bits now: DISPLAY 14 (bit 5), RENEW 15 / RENEW
   `Content-Encoding` servers put on a `.gz`; an ELF that arrives decoded is gzipped by the page as before. Cloudflare's
   headers on it: check at the next deploy. Loop 10: in fw_cfg as pieces of 4 KiB (`agent.000`…, `agentFiles`): Linux's
   sysfs read of one file re-reads up to each page's offset (quadratic: 414 ms), the pieces take 74 ms.
+- **Job 8 (loop 11, the user's decisions 2026-11-14):** OS (`agent/src/os.rs`: os-release's PRETTY_NAME, ID,
+  VERSION_ID after the agent's HELLO; the status bar's Guest OS, in the defaults); POWER (`agent/src/power.rs`: logind's
+  `PowerOffWithFlags`/`RebootWithFlags` flags 1 through busctl, else `shutdown`; never `reboot(2)`, the user's call; the
+  unit got CAP_SYS_BOOT). The toolbar's Power off and Restart ask the guest first with no question
+  (`web/app/run/soft-power.ts`), "Shutting down…" beside the stop button and in the bar's state; refused, no tool or
+  15 s silent: today's hard one, asked; a second click: the hard one. Debian: `tests/page-power.test.ts`. No interface
+  addresses; shared folders' mount at attach dropped. devices.md "The guest's OS", "Power off and restart from the guest".
 - **The mid-track review** (2026-11-13): five findings, fixed (each with its failing test first) or filed in the backlog.
 - **Not run end to end** (backlog): a restore with a live connection (the network tests use `tests/browser/netguest.html`,
   no snapshots or agent); Xorg's modesetting on virtio-gpu; sshd on the Debian test image (it has none: the real
   ssh-keygen and sshd run in the native test); NetworkManager (a fake nmcli); the trim before an Export and at the
   storage-full notice (`TrimActions` with fakes; Debian runs only the storage bar's); the layout's X11 and console
-  paths (no setxkbmap or kbd in Debian's images); the console's text from a non-UTF-8 console (`/dev/vcs`).
+  paths (no setxkbmap or kbd in Debian's images); the console's text from a non-UTF-8 console (`/dev/vcs`); POWER's `shutdown` path (Debian has logind and busctl).
 
 ## Next
 
-1. Job 8, as the user decided it (2026-11-14; not started):
-   - **The OS name:** the agent sends `/etc/os-release` (its fields for the status bar) when it connects. **No
-     interface addresses** (dropped).
-   - **Soft power-off and reboot:** the agent asks logind (`PowerOff`/`Reboot`, inhibitors honoured); without logind,
-     `shutdown now` / `shutdown -r now` (the agent is root; worth trying). It reports whether the request was taken.
-     The page uses it when the agent is connected; with no connection, or no success reported within a useful time,
-     it does today's hard power-off. A second request from the user after a soft one is a hard power-off. The page
-     never forces on its own; it may show a non-blocking sign while a soft one is pending (next to the toolbar's stop
-     button, which can then highlight the hard power-off).
-   - **Shared folders mounted when attached: dropped.** One 9p device carries every attached folder, and one attached
-     while the machine runs appears at once (docs/shares.md §3). What still waits for the next start is the mount
-     setting itself (Mount shared folders in the guest, its mount point); not wanted unless the user asks.
-   Job 6's decision (the user, 2026-11-13): the layout's disk write at
-   boot stays, by today's non-agent path, so it applies where the agent doesn't run (and to the greeter); the agent
-   applies it in the running session on top: sway (its IPC), X11 (setxkbmap where installed), the consoles (loadkeys),
-   only when the page's layout differs from what the session has (the boot's `/etc/environment`, then the agent's last).
-   GNOME and KDE later, with a test image each (the user, 2026-11-13): no shared live D-Bus path (localed's is the
-   system default, read-only on Debian 13; GNOME's is the user's dconf `org.gnome.desktop.input-sources`, KDE's
-   `kxkbrc` and its reload signal, both kept in the user's settings).
-2. The track's end: an out-of-context review over the whole track, `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`,
-   `ci-net.sh`, `ci-graphics.sh`; then PLAN.md's row, the kickoff and this handover deleted.
+1. The track's end: an out-of-context review over the whole track (`review/betteragent`), its findings triaged into
+   fix loops or the backlog; `ci.sh`, `ci-debian.sh --platform`, `ci-machines.sh`, `ci-net.sh`, `ci-graphics.sh`; then
+   PLAN.md's row, the kickoff and this handover deleted. GNOME's and KDE's layout (a test image each) stay in the
+   backlog (the user, 2026-11-13).
 
 ## Found (worth not re-discovering)
 

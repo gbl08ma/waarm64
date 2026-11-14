@@ -33,7 +33,9 @@ mod frame;
 mod keymap;
 mod lease;
 mod logind;
+mod os;
 mod outputs;
+mod power;
 mod renew;
 mod rt;
 mod screen;
@@ -70,7 +72,9 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::DESKTOP
     | frame::cap::TRIM
     | frame::cap::KEYMAP
-    | frame::cap::COPY;
+    | frame::cap::COPY
+    | frame::cap::OS
+    | frame::cap::POWER;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -190,6 +194,12 @@ struct Agent {
     /// COPY's console (the tests' files).
     screen: screen::Paths,
     loadkeys: Option<lease::Job>,
+    /// OS's file (the tests' is theirs).
+    os: os::Paths,
+    /// POWER's tools, the request's run, and POWERED's status once done.
+    power: power::Paths,
+    powering: Option<lease::Job>,
+    powered: Option<u8>,
     /// TYPE's text, on its way to the foreground console.
     typist: console::Typist,
     /// The tests': a function on a thread in place of the forked child.
@@ -245,6 +255,10 @@ impl Agent {
             loadkeys_at: keymap::places("loadkeys"),
             screen: screen::Paths::default(),
             loadkeys: None,
+            os: os::Paths::default(),
+            power: power::Paths::default(),
+            powering: None,
+            powered: None,
             typist: console::Typist::new(console),
             #[cfg(test)]
             test_child: None,
@@ -558,6 +572,7 @@ enum Tag {
     Lease,
     Trim,
     Loadkeys,
+    Power,
 }
 
 fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
@@ -597,6 +612,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.trimming {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Trim);
+        }
+        if let Some(j) = &s.agent.powering {
+            fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
+            tags.push(Tag::Power);
         }
         if let Some(j) = &s.agent.loadkeys {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
@@ -652,6 +671,24 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                         s.agent.trimmed = Some(trim::done(j));
                     }
                 }
+                Tag::Power => {
+                    if let Some(j) = s.agent.powering.take() {
+                        let taken = lease::reap(j);
+                        log(
+                            if taken {
+                                "power: the guest took it"
+                            } else {
+                                "power: refused (an inhibitor?) or failed"
+                            },
+                            None,
+                        );
+                        s.agent.powered = Some(if taken {
+                            power::status::TAKEN
+                        } else {
+                            power::status::REFUSED
+                        });
+                    }
+                }
                 Tag::Loadkeys => {
                     if let Some(j) = s.agent.loadkeys.take() {
                         let ok = lease::reap(j);
@@ -694,6 +731,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(st) = s.agent.trimmed.take() {
             frame::encode(frame::TRIMMED, &[st], &mut s.out);
         }
+        if let Some(st) = s.agent.powered.take() {
+            frame::encode(frame::POWERED, &[st], &mut s.out);
+        }
         if core::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
         }
@@ -726,6 +766,9 @@ impl Session<'_> {
                 frame::hello_answer(payload, CAPS, &mut self.out);
                 if let Some(h) = frame::Hello::decode(payload) {
                     self.hello = true;
+                    if h.caps & frame::cap::OS != 0 {
+                        frame::encode(frame::OS, &os::payload(&self.agent.os), &mut self.out);
+                    }
                     self.agent.jobs = session::Jobs::from_caps(h.caps);
                     self.agent.hello = Some(payload.to_vec());
                     if !self.agent.jobs.resize {
@@ -793,6 +836,28 @@ impl Session<'_> {
                     );
                     self.agent.for_child(kind, payload);
                     self.agent.load_console(&k);
+                }
+            }
+            // The guest powered off or rebooted as a clean shutdown does (src/power.rs); one request at a time (a
+            // second while one runs is answered by its POWERED).
+            frame::POWER if self.agent.powering.is_none() => {
+                let reboot = match payload {
+                    [frame::power::OFF] => false,
+                    [frame::power::REBOOT] => true,
+                    _ => return,
+                };
+                match power::command(&self.agent.power, reboot) {
+                    None => {
+                        log("power: neither logind with busctl nor shutdown", None);
+                        self.agent.powered = Some(power::status::NO_TOOL);
+                    }
+                    Some(cmd) => match lease::spawn(&[cmd]) {
+                        Ok(j) => self.agent.powering = Some(j),
+                        Err(e) => {
+                            log("power: fork", Some(e));
+                            self.agent.powered = Some(power::status::REFUSED);
+                        }
+                    },
                 }
             }
             // The foreground console's screen, as text (src/screen.rs): read at once (the kernel's copy of it).

@@ -1,5 +1,5 @@
 // What the status bar's elements show besides the statuses (web/app/statusbar-piece.ts `Live`), read from the areas: the
-// power state, the mouse and keys, the microphone, the disks', the screen's and the network adapters' states. Reactive
+// power state, the mouse and keys, the microphone, the disks', the screen's and the network adapters' states, the guest's OS. Reactive
 // when read in a `$derived` (the status bar's, the Preferences' editor's).
 import { adapterName, type Live } from '../statusbar-piece.ts';
 import type { PageNetwork } from '../net-live.ts';
@@ -23,6 +23,8 @@ export function liveNow(net: PageNetwork, now: number): Live {
     mic: sound.mic,
     disks: status.disks,
     gpu: status.gpu?.g,
+    os: status.os?.name,
+    soft: power.soft,
     nets: net.views().map((a) => ({
       name: adapterName(a.index + 1),
       phase: a.view.phase,

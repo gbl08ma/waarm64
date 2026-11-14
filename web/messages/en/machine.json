@@ -175,6 +175,10 @@
     "message": "Restart the machine? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked by the toolbar's Restart while the machine runs."
   },
+  "power-actions.restart.now": {
+    "message": "The guest is shutting down or restarting. Restart the machine now? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "note": "Text of the question asked by the toolbar's Restart when the guest was already asked to shut down or restart (a second click)."
+  },
   "power-actions.restart.title": {
     "message": "Restart",
     "note": "Title of the question asked by the toolbar's Restart while the machine runs."
@@ -186,6 +190,10 @@
   "power-actions.powerOff.confirm": {
     "message": "Power off the machine? This will stop it at once, like pulling the plug, and unsaved work in the guest will be lost. To stop it cleanly, shut down the guest first, for example with the poweroff command.",
     "note": "Text of the question asked by the toolbar's Power off."
+  },
+  "power-actions.powerOff.now": {
+    "message": "The guest is shutting down or restarting. Power off the machine now? This will stop it at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "note": "Text of the question asked by the toolbar's Power off when the guest was already asked to shut down or restart (a second click)."
   },
   "power-actions.powerOff.title": {
     "message": "Power off",
@@ -502,5 +510,13 @@
   "worker-snapshot.suspend.failed": {
     "message": "Couldn't suspend the machine",
     "note": "Error headline in the message bar (under the toolbar) when Suspend failed (the machine runs on); why is the detail under it."
+  },
+  "soft-power.refused.off": {
+    "message": "The guest refused to shut down: a program is holding it off.",
+    "note": "Message bar notice when the toolbar's Power off asked the guest to shut down and the guest refused (a program inhibits it, e.g. a running update). The page then asks whether to power off at once."
+  },
+  "soft-power.refused.reboot": {
+    "message": "The guest refused to restart: a program is holding it off.",
+    "note": "Message bar notice when the toolbar's Restart asked the guest to restart and the guest refused (a program inhibits it). The page then asks whether to restart at once."
   }
 }
