@@ -1,6 +1,6 @@
 <!--
   A dialog over the page, opened when it mounts: its title, the caller's content, then a row of buttons (`buttons`, at
-  the end; `back`, at the start: a wizard's Back). The shell, so the dialogs look alike: Add a disk…, Add a device…, a
+  the end; `back`, at the start: a wizard's Back). The shell, so the dialogs look alike: Add a disk…, Export…, Add a device…, a
   disk's Overlays, Attach to a machine, and the Network and Folder wizards (always mounted: `auto` off, opened with
   `open()`). The page's questions are Ask.svelte's. Its content is built of the primitives (Note, Field, Choice, Card,
   Button); the one rule it sets on it is layout: a column, its parts a step apart. Cards in it take the page's

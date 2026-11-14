@@ -783,49 +783,89 @@
     "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute); {{used}} is what this web app's storage holds, {{quota}} what the browser gives it."
   },
-  "ExportMenu.title": {
+  "ExportButton.title": {
     "message": "Save the disk, or just the changes made to it, to a file",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of a disk's Export menu button."
+    "note": "Machine's Disks tab (Machines page): the tooltip of a disk's Export button, which opens the Export wizard."
   },
-  "ExportMenu.label": {
-    "message": "Export",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the label of a disk's menu button that saves it to a file (its choices: changes only, whole disk as qcow2 or raw)."
+  "ExportButton.label": {
+    "message": "Export…",
+    "note": "Machine's Disks tab (Machines page): the label of a disk's button that opens the Export wizard (changes only, or the whole disk; then the file's format)."
   },
-  "ExportMenu.changes.title": {
-    "message": "A qcow2 containing just the changes over the base image. Keep the latter, otherwise this file is useless.",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of Changes only (qcow2)."
-  },
-  "ExportMenu.changes": {
-    "message": "Changes only (qcow2)",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the item that saves what the machine wrote over the disk's image, as a qcow2 backed by the image (not for a blank disk)."
-  },
-  "ExportMenu.qcow2.title": {
-    "message": "Save the whole disk as a qcow2 file, leaving out blocks that are all zeros.",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of Whole disk (qcow2)."
-  },
-  "ExportMenu.qcow2": {
-    "message": "Whole disk (qcow2)",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the item that saves the whole disk, with its changes, as a qcow2."
-  },
-  "ExportMenu.raw.title": {
-    "message": "Save the whole disk as a raw image.",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of Whole disk (raw)."
-  },
-  "ExportMenu.raw": {
-    "message": "Whole disk (raw)",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the item that saves the whole disk, with its changes, as a raw image."
-  },
-  "ExportMenu.compress.title": {
-    "message": "Compress the qcow2 file with deflate, as qemu-img convert -c does. The file is about half the size and takes longer to write.",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of the Compress the qcow2 checkbox."
-  },
-  "ExportMenu.compress": {
-    "message": "Compress the qcow2",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the checkbox (remembered) that compresses a qcow2 export's clusters."
-  },
-  "ExportMenu.hint": {
+  "ExportButton.hint": {
     "message": "Exporting will forcibly power off a machine using the disk. After the file is written, the machine will be started again.",
-    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the small note at the menu's bottom."
+    "note": "Export wizard opened from a machine's Disks tab: the small note under the formats."
+  },
+  "ExportSteps.title": {
+    "message": "Export “{{name}}”",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dialog's title on its first step (what goes in the file). {{name}} is the disk's name, or the overlay's."
+  },
+  "ExportSteps.title.changes": {
+    "message": "Export the changes",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dialog's title on the format step, after Changes only."
+  },
+  "ExportSteps.title.whole": {
+    "message": "Export the whole disk",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dialog's title on the format step, after Whole disk (or straight away, for a disk with no changes to export on their own)."
+  },
+  "ExportSteps.what": {
+    "message": "What should the file hold?",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the note at the top of the first step."
+  },
+  "ExportSteps.changes": {
+    "message": "Changes only",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the first step's choice that saves only what was written over the disk's image."
+  },
+  "ExportSteps.changes.text": {
+    "message": "A small qcow2 file holding only what was written over the disk's base image, which it names as its backing file. Keep the base image beside it: without it, this file is useless. Import changes… loads it back.",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Changes only."
+  },
+  "ExportSteps.whole": {
+    "message": "Whole disk",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the first step's choice that saves the whole disk, the image with its changes."
+  },
+  "ExportSteps.whole.text": {
+    "message": "A file that stands on its own: the base image with the changes applied. Larger, and any tool that reads disk images can open it.",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Whole disk."
+  },
+  "ExportSteps.format": {
+    "message": "Which format?",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the note at the top of the format step."
+  },
+  "ExportSteps.compressed": {
+    "message": "Compressed qcow2",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the format step's choice of a qcow2 whose clusters are compressed; choosing it saves."
+  },
+  "ExportSteps.compressed.text": {
+    "message": "Clusters compressed with deflate, as qemu-img convert -c does. The file is about half the size and takes longer to write.",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Compressed qcow2."
+  },
+  "ExportSteps.qcow2": {
+    "message": "Uncompressed qcow2",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the format step's choice of a qcow2 not compressed; choosing it saves."
+  },
+  "ExportSteps.qcow2.text": {
+    "message": "Quicker to write, and larger. Blocks that are all zeros are left out.",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Uncompressed qcow2, for the whole disk."
+  },
+  "ExportSteps.qcow2.changes.text": {
+    "message": "Quicker to write, and larger.",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Uncompressed qcow2, for the changes only."
+  },
+  "ExportSteps.raw": {
+    "message": "Raw image",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the format step's choice of a raw image (whole disk only); choosing it saves."
+  },
+  "ExportSteps.raw.text": {
+    "message": "Every byte of the disk, so the file is as large as the disk. The simplest format: tools read it as it is, and Linux can mount it through a loop device.",
+    "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Raw image."
+  },
+  "ExportWizard.back": {
+    "message": "Back",
+    "note": "Export wizard (opened from a machine's Disks tab or the page's machine): the button that goes back to the first step (changes only, or the whole disk)."
+  },
+  "ExportWizard.cancel": {
+    "message": "Cancel",
+    "note": "Export wizard (opened from a machine's Disks tab or the page's machine): the button that closes the dialog without saving."
   },
   "Overlays.title": {
     "message": "Overlays of {{disk}}",
@@ -950,6 +990,22 @@
   "Overlays.mergeButton": {
     "message": "Merge into the disk",
     "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay of a stored disk that writes its changes into the disk (after a confirmation)."
+  },
+  "Overlays.exportButton": {
+    "message": "Export…",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): an overlay's button that shows the Export wizard's steps in the dialog (changes only, or the whole disk; then the format)."
+  },
+  "Overlays.exportButton.title": {
+    "message": "Save this overlay's changes, or the whole disk with them, to a file",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of an overlay's Export… button."
+  },
+  "Overlays.exportHint": {
+    "message": "Exporting will forcibly power off a machine using the disk. After the file is written, the machine will be started again.",
+    "note": "Overlays dialog, on Export's format step (after an overlay's Export…): the small note under the formats."
+  },
+  "Overlays.back": {
+    "message": "Back",
+    "note": "Overlays dialog, on Export's steps (after an overlay's Export…): the button that goes back a step, from the first one to the list of overlays."
   },
   "AttachDisk.title": {
     "message": "Attach {{disk}} to a machine",

@@ -1,11 +1,12 @@
 <!--
   A disk's overlays (docs/machines.md §4): a dialog over the Machines page, opened by Overlays… on a disk in the Disks pane or
   on a machine's Disks tab. Each overlay with what it holds, when it was made and the machines that write to it; Rename,
-  Delete, Merge into the disk (a stored disk) and Export. Which overlay a machine uses is chosen on its Disks tab.
+  Delete, Merge into the disk (a stored disk) and Export. Export's steps (ExportSteps.svelte) take the dialog's place, the
+  list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.
 -->
 <script lang="ts">
   import type { Act } from './actions.svelte.ts';
-  import ExportMenu from './ExportMenu.svelte';
+  import ExportSteps from './ExportSteps.svelte';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
@@ -19,6 +20,8 @@
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
   import { deleteOverlay, mergeCosts, mergeIntoDisk, renameOverlay } from './disks.ts';
+  import type { ExportMode, ExportStepsApi } from './export.ts';
+  import { inBar, page } from './page.ts';
 
   type Props = {
     store: Store;
@@ -39,6 +42,22 @@
   /** The machines whose attachment of this disk writes to overlay `id`. */
   const usersOf = (id: string) =>
     machines.filter((m) => m.attachments.some((a) => a.disk === disk.id && a.overlay === id)).map((m) => m.name);
+
+  /** The overlay being exported: Export's steps show instead of the list. */
+  let exporting = $state<OverlayRecord>();
+  let steps = $state<ExportStepsApi>();
+  function startExport(o: OverlayRecord) {
+    runner.clear();
+    exporting = o;
+  }
+  function save(mode: ExportMode, compress: boolean) {
+    const overlay = exporting?.id;
+    exporting = undefined;
+    inBar(() => page.saveDisk(mode, compress, { disk: $state.snapshot(disk), overlay }));
+  }
+  function goBack() {
+    if (!steps?.back()) exporting = undefined;
+  }
 
   /** Runs an action through the page's `act` (what runs, the reread), its error shown here. */
   const run = (what: string, f: () => Promise<unknown>) => act(what, () => runner.run(what, f));
@@ -97,49 +116,64 @@
 <Modal
   id="overlays"
   bind:this={dialog}
-  title={t('disks:Overlays.title', { disk: disk.name })}
+  title={exporting ? (steps?.title() ?? '') : t('disks:Overlays.title', { disk: disk.name })}
   onclose={close}
   data-disk={disk.id}
 >
-  <Note size="md">{t('disks:Overlays.note')}</Note>
-  <CardList empty={mine.length ? undefined : t('disks:Overlays.none')}>
-    {#each mine as o (o.id)}
-      {@const users = usersOf(o.id)}
-      <!-- An overlay's line (size, date, machines) is long: it takes the row, its actions go under it. -->
-      <Card data-overlay={o.id}>
-        <strong>{o.name}</strong>
-        <Note inline
-          >{o.fork
-            ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) })
-            : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length
-            ? t('disks:Overlays.usedBy', { machines: users })
-            : t('disks:Overlays.usedByNone')}</Note
-        >
-        <div class="actions">
-          <Button
-            icon="pencil"
-            onclick={() => rename(o)}
-            title={t('disks:Overlays.renameButton.title')}
-            data-action="rename-overlay">{t('disks:Overlays.renameButton')}</Button
+  {#if exporting}
+    <ExportSteps bind:this={steps} name={exporting.name} changes={disk.kind !== 'blank'} {save}
+      >{#snippet hint()}{t('disks:Overlays.exportHint')}{/snippet}</ExportSteps
+    >
+  {:else}
+    <Note size="md">{t('disks:Overlays.note')}</Note>
+    <CardList empty={mine.length ? undefined : t('disks:Overlays.none')}>
+      {#each mine as o (o.id)}
+        {@const users = usersOf(o.id)}
+        <!-- An overlay's line (size, date, machines) is long: it takes the row, its actions go under it. -->
+        <Card data-overlay={o.id}>
+          <strong>{o.name}</strong>
+          <Note inline
+            >{o.fork
+              ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) })
+              : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length
+              ? t('disks:Overlays.usedBy', { machines: users })
+              : t('disks:Overlays.usedByNone')}</Note
           >
-          <Button
-            icon="trash"
-            onclick={() => remove(o)}
-            title={t('disks:Overlays.deleteButton.title')}
-            data-action="delete-overlay">{t('disks:Overlays.deleteButton')}</Button
-          >
-          {#if disk.kind === 'stored'}<Button
-              icon="git-merge"
-              onclick={() => merge(o)}
-              title={t('disks:Overlays.mergeButton.title')}
-              data-action="merge-overlay">{t('disks:Overlays.mergeButton')}</Button
-            >{/if}
-          <ExportMenu id={o.id} {disk} overlay={o.id} changes={disk.kind !== 'blank'} />
-        </div>
-      </Card>
-    {/each}
-  </CardList>
+          <div class="actions">
+            <Button
+              icon="pencil"
+              onclick={() => rename(o)}
+              title={t('disks:Overlays.renameButton.title')}
+              data-action="rename-overlay">{t('disks:Overlays.renameButton')}</Button
+            >
+            <Button
+              icon="trash"
+              onclick={() => remove(o)}
+              title={t('disks:Overlays.deleteButton.title')}
+              data-action="delete-overlay">{t('disks:Overlays.deleteButton')}</Button
+            >
+            {#if disk.kind === 'stored'}<Button
+                icon="git-merge"
+                onclick={() => merge(o)}
+                title={t('disks:Overlays.mergeButton.title')}
+                data-action="merge-overlay">{t('disks:Overlays.mergeButton')}</Button
+              >{/if}
+            <Button
+              icon="download"
+              onclick={() => startExport(o)}
+              title={t('disks:Overlays.exportButton.title')}
+              data-action="export">{t('disks:Overlays.exportButton')}</Button
+            >
+          </div>
+        </Card>
+      {/each}
+    </CardList>
+  {/if}
   {#if runner.error}<Note tone="error" size="md" class="error" role="alert">{runner.error.text}</Note>{/if}
+  {#snippet back()}
+    {#if exporting}<Button type="button" data-action="export-back" onclick={goBack}>{t('disks:Overlays.back')}</Button
+      >{/if}
+  {/snippet}
   {#snippet buttons()}<Button onclick={() => dialog.close()} data-action="close-overlays"
       >{t('disks:Overlays.close')}</Button
     >{/snippet}
