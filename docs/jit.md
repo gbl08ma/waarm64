@@ -735,8 +735,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   back every dirty register before its helper (a load's or store's only what the helper reads or
   writes: below) and drops the instruction's destinations (`written`, V ones included)
   after it, reloading what the fast arm had loaded, so both arms merge. Only the locals a
-  function uses are declared (`wasm::Code::compact_locals`: Liftoff zero-initializes each one
-  per call); registers read once and never written stay plain loads (for a V register read as a
+  function uses are declared (`wasm::Code::compact_locals`: past 12 locals, or with any not
+  i32/i64, Liftoff zero-fills every one at each call, ~2.8% of Alpine's boot on the Mac: [v8.md](v8.md) "Costs that
+  shaped the design"; a filled function's 21 locals are half X registers); registers read once and never written stay plain loads (for a V register read as a
   scalar lane, a scalar load: `Func::vlane`). In regions, each member starts in a fixed register
   state (the merge of its incoming edges, found by a first emission) and every edge conforms to
   it; the head's state is loaded once before the loop.

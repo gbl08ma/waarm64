@@ -4623,3 +4623,68 @@ of the medians' 0.4-0.5%, which is under what this screen resolves. Nothing to f
 
 Also: `bench/run-mac.sh` bounds its Mac side now (`perl -e 'alarm'`, `MAC_TIMEOUT`, 580 s by default), so a hung
 run no longer outlives the local `timeout`. No step count moved. CI: `scripts/ci.sh` (783 s) passes.
+
+## PERF loop 26: Liftoff's zero-fill, measured (2026-11-14)
+
+The backlog's "Liftoff zero-fills its locals at every entry", bounded at ~0.3% of a browser from a profile's sample
+shares (M8), and the question of whether loop 23's f32/f64 shadows made more functions fill. Raw:
+`results/perf26/` (README; the Mac's JSON, the counts, the tools).
+
+**V8's rule, from its source** for both browsers in use (Chromium 155.0.8059.84's V8 712e1808, Chrome for Testing
+157.0.8103.78's 30710815; `src/wasm/baseline/liftoff-compiler.cc` `SpillLocalsInitially` and
+`arm64/liftoff-assembler-arm64-inl.h` `FillStackSlotsWithZero`, the same text in both): Liftoff fills when a function
+has more than 12 locals besides its parameters (half the 24 cache registers) or any local not i32/i64; it fills every
+local's slot (8 bytes, 16 for a v128) at every entry, with straight `stp xzr, xzr` for up to 96 bytes and past that a
+loop of 4-byte stores (`sub`, `str wzr, [x16], #4`, `cbnz`: two turns a local, four a v128). `tools/fillcost.mjs`
+(`node --liftoff-only`, the dev VM): a call costs 2.0 ns with 12 locals of any scalar type, 8.2 with 13, then
++0.23 ns a turn (11.5 at 20, 17.0 at 32); f64 locals fill as i64 ones do; 12 v128s cost 13.3 ns.
+
+**Counts** (`tools/locals.ts`, every module of the guest in Node; before = the core before loop 23):
+
+| | FP guest before · now | Alpine boot | Alpine userspace before · now |
+|---|---|---|---|
+| functions (incl. the modules' NZCV helpers) | 69 · 69 | 7,236 | 10,308 · 10,308 |
+| zero-filled | 25 · 25 | 3,560 (49.2%) | 4,861 · 4,861 (47.2%) |
+| of those, with 12 or fewer locals: by a v128 · by f32/f64 alone | 0 · 0 | 3 · 0 | 17 · 0 → 10 · 7 |
+| functions with f32/f64 locals (locals) | 4 (4) · 15 (111) | 0 | 0 · 17 (34) |
+| fill loop turns, a filled function | 71.2 · 73.4 | 42.4 | 42.2 · 42.2 |
+| integer-only at 13-16 locals | 2.9% | 14.8% | 14.0% |
+
+**Loop 23 made no function fill that didn't**: every function with a shadow already filled (more than 12 locals, or
+a v128 for the register its scalar FP wrote); in Alpine's userspace 7 functions with 12 or fewer locals fill now for
+their f32/f64 locals where they filled for a v128 before, more cheaply (a shadow's slot is 8 bytes, a v128's 16: 5
+more of them take the straight fill). The FP guest's fills are 3% longer (73.4 turns against 71.2), in functions
+whose hot paths run in TurboFan. Nothing to fix there: not declaring shadows (or declaring them differently) can't
+take a function under the rule, and the shadows' functions have more than 12 locals anyway.
+
+**What the fill costs** (no profile: an A/B that doubles it). `pad.patch` declares 21 unused i64 locals more in every
+function Liftoff fills (42.4 → 84.3 turns a filled function in Alpine's boot): TurboFan drops unused locals, and the
+code, compile time and emit time are the base's (Alpine's modules 12,120,141 → 12,127,341 bytes; `compileNs` 50-51
+ms both), so the difference is the fill's. `bench/interp/ab-mac.sh` on the Mac (M4, Chrome for Testing
+157.0.8103.78), base first in rounds 1 and 3, ms:
+
+| | base r1 · r2 · r3; median | pad r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 3,852 · 3,951 · 3,938; **3,938** | 4,003 · 4,058 · 4,049; **4,049** (+2.8%) |
+| `alpine_user_jit_total` | 10,943 · 10,606 · 10,604; **10,606** | 10,732 · 10,821 · 10,784; **10,784** (+1.7%) |
+
+The boot's rounds don't overlap; userspace's do only through base's first round (the session's first run, IQR ±504
+ms: loop 25's outlier), the other two 10,604-10,606 against 10,784-10,821. Since a fill's cost is linear in its turns
+(above), **today's fills cost about 2.8% of Alpine's boot and 1.7% of its userspace on the Mac**: ten times the
+backlog's ~0.3% (which came from a profile's prologue share in the VM, against a browser's busy time; Alpine's JIT
+time is two-thirds Liftoff code, docs/v8.md "Tiering").
+
+**Where a filled function's locals come from** (a diagnostic core counting the locals each function with more than 12
+uses, by role; Alpine's boot, 3,557 functions): 21.1 locals each, of them **10.6 guest X registers**, 3.1 i32
+scratch, 2.5 i64 scratch, 2.1 flag locals and 2.8 others (ENTRY, TAKEN, SUM, V registers, FP scratch); userspace
+the same shape (10.5 X registers of 21.1). So the lever is the X registers: a local each per register the function
+touches, held from first use to the write-back. One local fewer in every filled function saves ~0.13% of the
+boot (2.8% × 2 of 42.4 turns); getting a function to 12 or fewer saves its whole fill, which 14.8% of
+the functions (13-16 integer locals) are near.
+
+**Not built**: no cheap change reaches it. Every scratch local is used where it's declared (`compact_locals`
+declares only those), the flag and scratch locals are split by type (i32 and i64 can't share a wasm local), and
+parameters (which Liftoff doesn't fill) would cost every caller the same stores. What would: sharing one local
+between X registers whose live ranges don't overlap within a function (a backward liveness pass, as
+`emit::scalar_uses` is for shadows, plus region merges and failure chains that know a local's register changes),
+docs/backlog.md's entry with these numbers. No core change; no step count moved. CI: `scripts/ci.sh` (864 s) passes.

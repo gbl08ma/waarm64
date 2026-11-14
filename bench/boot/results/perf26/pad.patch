@@ -1,0 +1,14 @@
+diff --git a/core/src/jit/wasm.rs b/core/src/jit/wasm.rs
+--- a/core/src/jit/wasm.rs
++++ b/core/src/jit/wasm.rs
+@@ -274,6 +274,10 @@ impl Code {
+                 decls.push((next - n, t));
+             }
+         }
++        // PERF26 PAD: 21 unused i64 locals more in every function Liftoff zero-fills (a measurement).
++        if next - params.len() as u32 > 12 || decls.iter().any(|d| d.1 != I64 && d.1 != I32) {
++            decls.push((21, I64));
++        }
+         if next <= 128 {
+             for &p in &self.locals {
+                 self.b[p] = map[self.b[p] as usize] as u8;

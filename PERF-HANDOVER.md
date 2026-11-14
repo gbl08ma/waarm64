@@ -16,7 +16,7 @@ Feature A/Bs: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu
 target/arch/desktop.qcow2 <name>` (modes `codecs`, `kernels`, `fp16k`, `bf16k`). Subagents' Monitor watchers
 (`tail -F | grep`) can outlive them: check `ps` for stray `ugrep`/`tail` between loops.
 
-## State (2026-11-14, after loop 25)
+## State (2026-11-14, after loop 26)
 
 Kept: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads inline; the rich FP copy of `hot`
 chosen per block (FP guest +12-14%); DAIF/DAIFClr/DIT unmasks and ISB (outside parallel) inline (Alpine's boot
@@ -34,13 +34,16 @@ over real predecessors only, a loop-carried scalar clean in its shadow at the he
 level once the scalar-use table was made lazily). Loop 25 checked that loops 21-24 together don't regress the gates: 36c399a1 against
 e7575694 on the Mac, Alpine's boot +0.4%, its userspace +0.5%, the rounds overlapping (the emitter +6-10 ms, the
 code +0.15% from loop 22's reloads; the FP guest +7.8%); a session's first-round arm is an outlier either way, so
-alternate which arm goes first.
+alternate which arm goes first. Loop 26 measured Liftoff's zero-fill (no code kept): loop 23's shadows made no
+function fill that didn't, and doubling every fill cost Alpine's boot 2.8% and userspace 1.7% on the Mac, so the
+fills cost about that (ten times the old ~0.3% bound); a filled function's 21 locals are half X registers. The
+backlog's entry is now "share X-register locals" (liveness over a block, then regions), a large change with that
+bound: a candidate loop if the track takes it on, not in the queue below.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| JIT: Liftoff's zero-fill (a register allocator over a block's locals) | bounded at ~0.3% of a browser now; likely a finding |
 | JIT: the core's heap (decoded blocks' budget, page index, the untuned constants), the transfer cache's costs, the 320 MiB budget session, V8's per-function overhead | measure before building |
 | JIT: counter reads inline in deterministic runs; the gates' timer rate (loop 8) | gates only |
 | Interpreter, loop 19's ideas | cheaper `SWITCH` re-entry; more rich handlers (FMADD, FCVTZS, SIMD&FP LDR/STR register, vector MUL/SUB/CMxx, shifts, permutes); blocks marked rich at run time for hot slow paths (misaligned stores, STTR/LDTR, CASP); count single-MOVI rich blocks |

@@ -88,20 +88,23 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   - The dispatcher's entries (15% of the entry stalls on 2026-11-04 for 4.7% of the indirect entries: about three
     times the average stall each) and the signature check's table load (3.0% of the time; a typed table didn't make
     the transfer cheaper in `chain.mjs`).
-- **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
-  Liftoff's samples in Firefox sit in prologues. Measured 2026-10-20 (`bench/boot/REPORT.md` "M8: what Liftoff runs
-  that a static change could cut"): V8 zero-fills when a function has **more than 12 locals** besides its
-  parameters (half Liftoff's cache registers) or any that isn't i32/i64, and then fills every local's 8-byte slot
-  (16 for a v128) in that loop; with 12 or fewer integer locals it fills nothing (they start as constants). i32 or
-  i64 doesn't matter. In Firefox's pages session 40% of the functions compiled zero-fill (13 locals or more; Alpine's
-  userspace benchmark 42%), 36 loop turns each, and 18.6% have 13-16 integer locals. Trimming a local only shortens
-  the loop (2 turns a local) unless it crosses 12: keeping a load's base in BASE only when needed moved Firefox's
-  zero-filled share from 40.2% to 39.7% (not kept for the zero-fill; its wasm was 0.6% smaller, which counts on its
-  own with the wasm size items below: `no-base-local.patch` in `bench/boot/results/m8-liftoff/baseruns/`). The lever is getting functions to 12, which dropping scratch
-  locals can't (one load or store takes ADDR, HOST and TLBE): it would take sharing one local between guest
-  registers whose live ranges don't overlap, a register allocator over the block's locals. Bounded by the
-  prologues' ~5% of Liftoff's samples in Firefox; Liftoff's bodies were 12.9% of a busy vCPU's samples then and 6.3%
-  on 2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"), so ~0.3% now.
+- **Liftoff zero-fills its locals at every entry: share X-register locals** (PERF loop 26, `bench/boot/REPORT.md`
+  "PERF loop 26: Liftoff's zero-fill, measured"; V8's rule in [v8.md](v8.md) "Costs that shaped the design"). Doubling
+  every fill (21 unused locals more) cost Alpine's boot 2.8% and its userspace 1.7% on the Mac, so today's fills cost
+  about that: half the functions fill (more than 12 locals), 42 loop turns each, ~0.23 ns a turn. A filled function
+  uses 21.1 locals, **10.6 of them guest X registers** (a local per register touched, from its first use to the
+  write-back), 5.6 scratch, 2.1 flags, 2.8 others; 14.8% of all functions have 13-16 integer locals. Each local fewer
+  in every filled function is ~0.13% of the boot; under 13, the whole fill goes. The doable form: one local shared by
+  X registers whose live ranges in the function don't overlap (a backward liveness pass over a block, as
+  `emit::scalar_uses` is for shadows; a register dead after its last read, written back if dirty, frees its local),
+  then regions (a member's state names which local holds which register; merges, `conform` and failure chains follow
+  it). Rank it on the gates (Alpine's boot and userspace, Mac, 3 rounds alternated) and the size of the TurboFan code
+  (sharing must not add moves there); a browser's share is unmeasured (`bench/results/local/interp/ab-pages.sh` still
+  names the old checkout and `.webpcsnap`, and `target/snapbench/` has no pages snapshot: make one with
+  `bench/gpu/warm-snapshots.sh` first). Ruled out: scratch locals (each declared one is used; i32 and i64 can't share
+  a local; keeping a load's base in BASE only when needed, M8's `no-base-local.patch` in
+  `bench/boot/results/m8-liftoff/baseruns/`, saved one local in some functions and 0.6% of the wasm), extra parameters (Liftoff doesn't fill them, but every caller would pass them), and the f32/f64 shadows
+  (loop 23 made no function fill that didn't).
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such

@@ -1,0 +1,18 @@
+base-fp: 69 functions, 10.25 locals each; zero-filled 25 (36.2%): >12 locals 25, ≤12 with a v128 0, ≤12 with only f32/f64 non-integer 0; with f32/f64 locals 4 (4 locals); straight fills 0, loops 25 (71.2 turns each, 25.80 a function); integer-only at 13-16 2.9%
+new-fp: 69 functions, 11.22 locals each; zero-filled 25 (36.2%): >12 locals 25, ≤12 with a v128 0, ≤12 with only f32/f64 non-integer 0; with f32/f64 locals 15 (111 locals); straight fills 0, loops 25 (73.4 turns each, 26.58 a function); integer-only at 13-16 2.9%
+base-alpine: 7236 functions, 13.42 locals each; zero-filled 3560 (49.2%): >12 locals 3557, ≤12 with a v128 3, ≤12 with only f32/f64 non-integer 0; with f32/f64 locals 0 (0 locals); straight fills 3, loops 3557 (42.4 turns each, 20.82 a function); integer-only at 13-16 14.8%
+new-alpine: 7236 functions, 13.42 locals each; zero-filled 3560 (49.2%): >12 locals 3557, ≤12 with a v128 3, ≤12 with only f32/f64 non-integer 0; with f32/f64 locals 0 (0 locals); straight fills 3, loops 3557 (42.4 turns each, 20.82 a function); integer-only at 13-16 14.8%
+pad-alpine: 7236 functions, 23.75 locals each; zero-filled 3560 (49.2%): >12 locals 3560, ≤12 with a v128 0, ≤12 with only f32/f64 non-integer 0; with f32/f64 locals 0 (0 locals); straight fills 0, loops 3560 (84.3 turns each, 41.49 a function); integer-only at 13-16 0.0%
+base-user: 10308 functions, 12.90 locals each; zero-filled 4861 (47.2%): >12 locals 4844, ≤12 with a v128 17, ≤12 with only f32/f64 non-integer 0; with f32/f64 locals 0 (0 locals); straight fills 10, loops 4851 (42.2 turns each, 19.86 a function); integer-only at 13-16 14.0%
+new-user: 10308 functions, 12.90 locals each; zero-filled 4861 (47.2%): >12 locals 4844, ≤12 with a v128 10, ≤12 with only f32/f64 non-integer 7; with f32/f64 locals 17 (34 locals); straight fills 15, loops 4846 (42.2 turns each, 19.84 a function); integer-only at 13-16 14.0%
+
+Which locals the zero-filled functions (more than 12 locals) use, summed (a diagnostic core at c3af2c77 counting them
+by role in `block::module` before `Func::locals`, through the Stats counters scaled by 10^6, as
+../m8-liftoff/baseruns/count-locals.patch does):
+alpine boot (3,557 functions): scratch i64 (2..=5) 9040, scratch i32 (6..=9) 11089, flags (10..=16) 7300, X registers (17..=48) 37709, other (ENTRY, TAKEN, SUM, V registers, FP and crypto scratch) 10053
+alpine userspace (4,844 functions): scratch i64 12182, scratch i32 15108, flags 10090, X registers 50950, other 13688
+
+fillcost.mjs, node --liftoff-only (Node 26.7.0, V8 14.6, the dev VM), ns a call of a function with n locals:
+i64 n=1: 1.98; n=12: 1.98; n=13: 8.20; n=16: 9.38; n=20: 11.48; n=24: 13.24; n=32: 16.95
+f64 n=1: 1.99; n=12: 2.05; n=13: 8.21; n=16: 9.41; n=20: 11.45; n=24: 13.39; n=32: 16.92
+v128 n=1: 2.02; n=12: 13.33; n=13: 14.22; n=16: 17.02; n=20: 20.68; n=24: 24.34; n=32: 35.75
