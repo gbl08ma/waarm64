@@ -1,7 +1,7 @@
 <!--
   The body of Disks on the Machines page (docs/machines.md §4): every disk this browser keeps, attached or not, ramdisks
   included. Each with what it is, its overlays and the machines that have it; Overlays… (the disk's overlays, Overlays.svelte, when it has some),
-  Attach to a machine… (AttachDisk.svelte) and, when no machine has it, Delete with its overlays (`Store.deleteDisk`).
+  Attach to a machine… (AttachDisk.svelte), Resize… on a stored disk or a ramdisk (ResizeDisk.svelte) and, when no machine has it, Delete with its overlays (`Store.deleteDisk`).
 -->
 <script lang="ts">
   import type { Act } from './actions.svelte.ts';
@@ -11,6 +11,7 @@
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
   import Overlays from './Overlays.svelte';
+  import ResizeDisk from './ResizeDisk.svelte';
   import { ask } from './ask.svelte.ts';
   import { msg, t } from '../i18n.ts';
   import type { OverlayRecord, Store } from './store.ts';
@@ -32,8 +33,10 @@
   const overlaysOf = (id: string) => overlays.filter((o) => o.disk === id);
   const usersOf = (id: string) => machines.filter((m) => m.attachments.some((a) => a.disk === id)).map((m) => m.name);
 
-  /** The disk whose dialog is open: its overlays, or the machines to attach it to. */
-  let showing = $state<{ disk: string; what: 'overlays' | 'attach' } | undefined>();
+  /** The disk whose dialog is open: its overlays, the machines to attach it to, or its Resize. */
+  let showing = $state<{ disk: string; what: 'overlays' | 'attach' | 'resize' } | undefined>();
+  /** Disks that grow themselves (a URL's, a file's or a blank disk grows through its overlays). */
+  const resizable = (d: DiskRecord) => d.kind === 'stored' || d.kind === 'ramdisk';
   const shown = $derived(showing ? disks.get(showing.disk) : undefined);
 
   /** Deletes a disk no machine has, with its overlays, after asking. */
@@ -90,6 +93,11 @@
           data-action="attach-disk"
           title={t('disks:DisksPane.attach.title')}>{t('disks:DisksPane.attach')}</Button
         >
+        {#if resizable(d)}<Button
+            onclick={() => (showing = { disk: d.id, what: 'resize' })}
+            data-action="resize-disk"
+            title={t('disks:DisksPane.resize.title')}>{t('disks:DisksPane.resize')}</Button
+          >{/if}
         <Button
           icon="trash"
           onclick={() => remove(d)}
@@ -104,9 +112,19 @@
   {/each}
 </CardList>
 {#if showing?.what === 'overlays' && shown}
-  <Overlays {store} disk={shown} {overlays} {machines} {act} close={() => (showing = undefined)} />
+  <Overlays {store} disk={shown} {overlays} {machines} {act} {offFirst} close={() => (showing = undefined)} />
 {:else if showing?.what === 'attach' && shown}
   <AttachDisk {store} disk={shown} {machines} {running} {act} {offFirst} close={() => (showing = undefined)} />
+{:else if showing?.what === 'resize' && shown}
+  <ResizeDisk
+    {store}
+    target={{ disk: shown.id }}
+    name={shown.name}
+    ramdisk={shown.kind === 'ramdisk'}
+    {act}
+    {offFirst}
+    close={() => (showing = undefined)}
+  />
 {/if}
 
 <style>

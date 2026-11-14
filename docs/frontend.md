@@ -26,7 +26,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Machines page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
+| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
 | `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
@@ -437,10 +437,13 @@ Duplicate, Export the definition, Delete; then tabs:
   [Whole disk](ui:disks:ExportSteps.whole), then the format, each explained: compressed or uncompressed qcow2, the
   whole disk also raw; the format's choice saves, Back returns to the first step; a machine on this page running from
   it stops while the file is written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
-  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. Overlays… opens the disk's
+  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. **[Resize…](ui:disks:Disks.resize)** on each writable
+  disk is a shortcut to the Resize dialog (below) for what the machine writes to: its chosen overlay, the stored disk
+  written in place, or the ramdisk (`resize.ts` `attachmentTarget`; none on a read-only disk, or before an overlay is
+  chosen); the disk's line shows the size the guest sees (a grown overlay's). Overlays… opens the disk's
   **Overlays** dialog (`Overlays.svelte`, also from the Disks pane below): every overlay of the disk with what it holds,
   when it was made and the machines that write to it; Rename, Delete (a machine that wrote to it is left without one,
-  and makes a new one at its next boot), Merge into the disk (a stored disk) and Export… each (the Export wizard's steps take the dialog's place, the list being the step before them: Back from the first returns to it). [Add a disk…](ui:disks:Disks.add) opens a
+  and makes a new one at its next boot), [Resize…](ui:disks:Overlays.resizeButton) (over the dialog), Merge into the disk (a stored disk) and Export… each (the Export wizard's steps take the dialog's place, the list being the step before them: Back from the first returns to it). [Add a disk…](ui:disks:Disks.add) opens a
   wizard (`AddDisk.svelte`; what it makes is `add-disk.ts`): the source first (**a disk already in this browser**, a file read where it is, a file
   copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already
   in this browser is one another machine has or one detached (Detach keeps the disk and its overlays, and says so):
@@ -474,7 +477,18 @@ its Overlays dialog; **[Attach to a machine…](ui:disks:DisksPane.attach)** ope
 attaching the disk last with its overlays (the machine running in this tab is powered off first, after asking); a
 machine that has the disk already, has as many disks as a machine can (`MAX_DISKS`), or runs in another tab says so
 and can't take it. **[Delete](ui:disks:DisksPane.deleteButton)** is for a disk no machine has (its tooltip names the machines otherwise), with its
-overlays (`Store.deleteDisk`: the space comes back).
+overlays (`Store.deleteDisk`: the space comes back). **[Resize…](ui:disks:DisksPane.resize)** is on a stored disk's card (its overlays grow with it) and a
+ramdisk's; a URL's, a file's or a blank disk grows through its overlays' Resize….
+
+**The Resize dialog** (`ResizeDisk.svelte`, docs/machines.md §4.5) grows a stored disk, a ramdisk or an overlay: the
+size now (as the guest sees it), the new size in MiB or GiB (the next 256 MiB or whole GiB offered; rounded up to a
+whole MiB, the alignment the guest's partition growth wants), and **[Grow the partition and filesystem at the next start](ui:disks:ResizeDisk.grow)**,
+on by default, its note saying it needs the guest agent (not shown for a ramdisk, empty at every start). As the size
+is typed, `resizeCosts` says what it does: the machines whose disk grows, the kept snapshots it orphans (by name and
+machine), or why it's refused (not larger, past `MAX_RESIZE`'s 256 GiB: an overlay's map is in memory for its whole
+size). A machine using it that runs names itself and keeps [Resize](ui:disks:ResizeDisk.ok) off; the one running on this page has a
+Power off button (`ResizeDisk.powerOff`) (the page's `offFirst`: it asks, a soft shutdown where the agent can), one in another tab is powered off there.
+Resize runs `resize(store, target, size, { grow })` (the box's word sets or clears the grow mark).
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The

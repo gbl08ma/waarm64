@@ -17,7 +17,7 @@ import { changedClusters, nonZeroClusters, writeQcow2, type Sink } from '../web/
 import { machineLock } from '../web/app/machines.ts';
 import { sizeSeen } from '../web/app/disk-size.ts';
 import { serialOf, shapeOf, slots, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
-import { clearGrowMark, growMark, resize, resizeCosts } from '../web/app/resize.ts';
+import { attachmentTarget, clearGrowMark, growMark, MAX_RESIZE, resize, resizeCosts } from '../web/app/resize.ts';
 import { planRestore } from '../web/app/snapshots.ts';
 import { overlayDir, Store, type OverlayRecord, type SnapshotRecord } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
@@ -64,6 +64,12 @@ test('resize: grow only, in sectors, of an overlay, a stored disk or a ramdisk (
   await assert.rejects(resize(store, { overlay: w.oa.id }, 9 * MiB + 100), said('machines:resize.unaligned'));
   await assert.rejects(resize(store, { disk: w.url.id }, 16 * MiB), said('machines:resize.notResizable'));
   await assert.rejects(resize(store, { overlay: 'ffffffffffff' }, 16 * MiB), said('machines:resize.gone'));
+  await assert.rejects(resize(store, { overlay: w.oa.id }, MAX_RESIZE + 512), said('machines:resize.tooLarge'), 'past the cap');
+  // What a machine's Disks tab resizes: its overlay, its stored disk in place, its ramdisk.
+  assert.deepEqual(w.A.attachments.map((a) => attachmentTarget(a, [w.url, w.stored, w.ram].find((d) => d.id === a.disk))), [{ overlay: w.oa.id }, { overlay: w.os.id }, { disk: w.ram.id }]);
+  assert.deepEqual(attachmentTarget(w.B.attachments[1], w.stored), { disk: w.stored.id });
+  assert.equal(attachmentTarget({ ...w.B.attachments[0], readOnly: true }, w.url), undefined, 'none read-only');
+  assert.equal(attachmentTarget({ ...w.B.attachments[0], overlay: undefined }, w.url), undefined, 'none without an overlay');
 
   const before = await w.shapeNow(w.A);
   const costs = await resize(store, { overlay: w.oa.id }, 16 * MiB + 512, { grow: true });

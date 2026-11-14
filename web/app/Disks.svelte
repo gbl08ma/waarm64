@@ -1,7 +1,8 @@
 <!--
   A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached;
   per writable disk its overlays (switch, new empty; Overlays… opens the disk's overlays, Overlays.svelte: rename, delete,
-  merge into a stored disk, export each), export (the Export wizard: the changes or the whole disk) and import (a changes file becomes a new
+  merge into a stored disk, resize, export each), Resize… on a writable disk (ResizeDisk.svelte: its chosen overlay, the
+  stored disk written in place, or the ramdisk), export (the Export wizard: the changes or the whole disk) and import (a changes file becomes a new
   overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
 <script lang="ts">
@@ -16,16 +17,19 @@
   import MoveButtons from './MoveButtons.svelte';
   import ExportButton from './ExportButton.svelte';
   import Overlays from './Overlays.svelte';
+  import ResizeDisk from './ResizeDisk.svelte';
   import { ask } from './ask.svelte.ts';
   import { msg, MsgError, t, text } from '../i18n.ts';
   import type { Store, OverlayRecord } from './store.ts';
-  import type { DiskRecord, MachineRecord } from './shape.ts';
+  import type { Attachment, DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
   import { bytesText, editAttachment } from './machines.ts';
   import { createOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
   import { inBar, page } from './page.ts';
   import { diskKind } from './disk-kind.ts';
+  import { attachmentTarget, type ResizeTarget } from './resize.ts';
+  import { sizeSeen } from './disk-size.ts';
 
   type Props = {
     store: Store;
@@ -40,6 +44,13 @@
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();
 
   const plain = (m: MachineRecord) => $state.snapshot(m);
+  /** Disk `d`'s size as its guest sees it through attachment `a` (a grown overlay's own). */
+  const seen = (d: DiskRecord, a: Attachment) =>
+    sizeSeen(
+      d,
+      a,
+      overlays.find((o) => o.id === a.overlay),
+    );
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string, disk: DiskRecord) {
     const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), {
@@ -112,11 +123,18 @@
   /** The disk whose Overlays dialog is open. */
   let overlaysOpen = $state<string>();
   const overlaysShown = $derived(overlaysOpen ? disks.get(overlaysOpen) : undefined);
+  /** The Resize dialog open: what it grows, its name, and whether it's a ramdisk. */
+  let resizing = $state<{ target: ResizeTarget; name: string; ramdisk: boolean }>();
+  function openResize(target: ResizeTarget, d: DiskRecord) {
+    const o = 'overlay' in target ? overlays.find((x) => x.id === target.overlay) : undefined;
+    resizing = { target, name: o?.name ?? d.name, ramdisk: d.kind === 'ramdisk' };
+  }
 </script>
 
 <CardList empty={machine.attachments.length ? undefined : t('disks:Disks.none')}>
   {#each machine.attachments as a, i (a.id)}
     {@const d = disks.get(a.disk)}
+    {@const target = attachmentTarget(a, d)}
     <Card data-attachment={a.id}>
       <div class="row">
         <span class="kind" title={d ? diskKind(d.kind).text : ''}
@@ -127,7 +145,7 @@
           >{d
             ? t('disks:Disks.meta', {
                 kind: diskKind(d.kind).text,
-                size: bytesText(d.size),
+                size: bytesText(seen(d, a)),
                 letter: String.fromCharCode(97 + i),
               })
             : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</Note
@@ -163,6 +181,11 @@
           upTitle={t('disks:Disks.moveUp.title')}
           downTitle={t('disks:Disks.moveDown.title')}
         />
+        {#if d && target}<Button
+            onclick={() => openResize(target, d)}
+            title={t('disks:Disks.resize.title')}
+            data-action="resize-attachment">{t('disks:Disks.resize')}</Button
+          >{/if}
         <Button onclick={() => detach(a.id, d)} title={t('disks:Disks.detach.button.title')}
           >{t('disks:Disks.detach.button')}</Button
         >
@@ -240,7 +263,17 @@
     {overlays}
     {machines}
     {act}
+    {offFirst}
     close={() => (overlaysOpen = undefined)}
+  />{/if}
+{#if resizing}<ResizeDisk
+    {store}
+    target={resizing.target}
+    name={resizing.name}
+    ramdisk={resizing.ramdisk}
+    {act}
+    {offFirst}
+    close={() => (resizing = undefined)}
   />{/if}
 
 <style>

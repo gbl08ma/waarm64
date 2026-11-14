@@ -1,12 +1,13 @@
 <!--
   A disk's overlays (docs/machines.md §4): a dialog over the Machines page, opened by Overlays… on a disk in the Disks pane or
   on a machine's Disks tab. Each overlay with what it holds, when it was made and the machines that write to it; Rename,
-  Delete, Merge into the disk (a stored disk) and Export. Export's steps (ExportSteps.svelte) take the dialog's place, the
-  list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.
+  Delete, Resize… (ResizeDisk.svelte, over this dialog), Merge into the disk (a stored disk) and Export. Export's steps
+  (ExportSteps.svelte) take the dialog's place, the list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.
 -->
 <script lang="ts">
   import type { Act } from './actions.svelte.ts';
   import ExportSteps from './ExportSteps.svelte';
+  import ResizeDisk from './ResizeDisk.svelte';
   import Button from './ui/Button.svelte';
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
@@ -30,9 +31,10 @@
     overlays: OverlayRecord[];
     machines: MachineRecord[];
     act: Act;
+    offFirst: (m: MachineRecord) => Promise<boolean>;
     close: () => void;
   };
-  let { store, disk, overlays, machines, act, close }: Props = $props();
+  let { store, disk, overlays, machines, act, offFirst, close }: Props = $props();
 
   let dialog: Dialog;
   /** The dialog's own runner: its errors show here (the page's bar is behind the dialog); the page's `act` says what runs. */
@@ -42,6 +44,9 @@
   /** The machines whose attachment of this disk writes to overlay `id`. */
   const usersOf = (id: string) =>
     machines.filter((m) => m.attachments.some((a) => a.disk === disk.id && a.overlay === id)).map((m) => m.name);
+
+  /** The overlay whose Resize dialog is open (over this one). */
+  let resizing = $state<OverlayRecord>();
 
   /** The overlay being exported: Export's steps show instead of the list. */
   let exporting = $state<OverlayRecord>();
@@ -152,6 +157,11 @@
               title={t('disks:Overlays.deleteButton.title')}
               data-action="delete-overlay">{t('disks:Overlays.deleteButton')}</Button
             >
+            <Button
+              onclick={() => (resizing = o)}
+              title={t('disks:Overlays.resizeButton.title')}
+              data-action="resize-overlay">{t('disks:Overlays.resizeButton')}</Button
+            >
             {#if disk.kind === 'stored'}<Button
                 icon="git-merge"
                 onclick={() => merge(o)}
@@ -178,6 +188,15 @@
       >{t('disks:Overlays.close')}</Button
     >{/snippet}
 </Modal>
+{#if resizing}<ResizeDisk
+    {store}
+    target={{ overlay: resizing.id }}
+    name={resizing.name}
+    ramdisk={false}
+    {act}
+    {offFirst}
+    close={() => (resizing = undefined)}
+  />{/if}
 
 <style>
   .actions {

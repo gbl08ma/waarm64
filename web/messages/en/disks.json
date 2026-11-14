@@ -125,7 +125,7 @@
   },
   "Disks.meta": {
     "message": "{{kind}}, {{size}} · vd{{letter}}",
-    "note": "Machines page, Disks: the small line beside a disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…)."
+    "note": "Machines page, Disks: the small line beside a disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…). The size is what the guest sees: a grown overlay's own size when it's larger than the disk's."
   },
   "Disks.meta.missing": {
     "message": "· vd{{letter}}",
@@ -1142,5 +1142,109 @@
   "disk-export.save.ok.soft": {
     "message": "Shut down and save",
     "note": "The confirm button of the question asked before saving the running machine's disk, when its guest can shut down cleanly."
+  },
+  "DisksPane.resize": {
+    "message": "Resize…",
+    "note": "Machines page, Disks pane: the button on a stored disk's or a ramdisk's card that opens the Resize dialog (grows the disk)."
+  },
+  "DisksPane.resize.title": {
+    "message": "Make this disk larger, for every machine that uses it.",
+    "note": "Machines page, Disks pane: the tooltip of Resize… on a stored disk or a ramdisk."
+  },
+  "Overlays.resizeButton": {
+    "message": "Resize…",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay that opens the Resize dialog (grows the overlay)."
+  },
+  "Overlays.resizeButton.title": {
+    "message": "Make this overlay's disk larger, for the machines that use this overlay. The disk's other overlays keep their size.",
+    "note": "Overlays dialog: the tooltip of Resize… on an overlay."
+  },
+  "Disks.resize": {
+    "message": "Resize…",
+    "note": "Machines page, a machine's Disks tab: the button on a writable disk that opens the Resize dialog for what the machine writes to (its chosen overlay, the stored disk written in place, or the ramdisk)."
+  },
+  "Disks.resize.title": {
+    "message": "Make this disk larger: its chosen overlay, or the disk itself when it is written in place or is a ramdisk.",
+    "note": "Machines page, a machine's Disks tab: the tooltip of Resize… on a writable disk."
+  },
+  "ResizeDisk.title": {
+    "message": "Resize {{name}}",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the dialog's title. {{name}}: the disk's or the overlay's name."
+  },
+  "ResizeDisk.note": {
+    "message": "A disk can only grow. The machines that use it must be off, and see the new size at their next start.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the explanation at its top."
+  },
+  "ResizeDisk.now": {
+    "message": "Its size now: {{size, bytes}}.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it). {{size}}: in KiB, MiB or GiB."
+  },
+  "ResizeDisk.size": {
+    "message": "New size",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the label of the new size's field (a number, and its unit beside it)."
+  },
+  "ResizeDisk.unit": {
+    "message": "Unit",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the screen-reader name of the unit's list beside the new size's field."
+  },
+  "ResizeDisk.unit.mib": {
+    "message": "MiB",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's mebibytes."
+  },
+  "ResizeDisk.unit.gib": {
+    "message": "GiB",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's gibibytes."
+  },
+  "ResizeDisk.newSize": {
+    "message": "It will be {{size, bytes}} (sizes are rounded up to a whole MiB).",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line under the size field with the size the disk grows to. {{size}}: in KiB, MiB or GiB."
+  },
+  "ResizeDisk.machines": {
+    "message": "It grows for {{machines}}.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line naming the machines whose disk grows. {{machines}}: their names, comma-separated."
+  },
+  "ResizeDisk.machinesNone": {
+    "message": "No machine uses it now.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line in place of ResizeDisk.machines when no machine's disk grows."
+  },
+  "ResizeDisk.snapshots_one": {
+    "message": "A disk's size is part of the machine: the snapshot {{list}} can't be restored after this.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans a kept snapshot. {{list}}: the snapshot as ResizeDisk.snapshot says it; {{count}}: 1."
+  },
+  "ResizeDisk.snapshots_other": {
+    "message": "A disk's size is part of the machine: these {{count}} snapshots can't be restored after this: {{list}}.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans kept snapshots. {{list}}: each as ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+  },
+  "ResizeDisk.snapshot": {
+    "message": "{{name}} ({{machine}})",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a snapshot in ResizeDisk.snapshots' list. {{name}}: the snapshot's name; {{machine}}: its machine's."
+  },
+  "ResizeDisk.powerOff": {
+    "message": "Power off {{name}}",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button under the running machine's refusal when that machine is the one on this page; it asks first, as the page's other edits do. {{name}}: the machine."
+  },
+  "ResizeDisk.grow": {
+    "message": "Grow the partition and filesystem at the next start",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the box (on by default; not shown for a ramdisk) that has the guest grow its last partition and filesystem into the new space."
+  },
+  "ResizeDisk.grow.note": {
+    "message": "Needs the guest agent. The partition that ends last grows, and its filesystem if it is mounted (ext4, btrfs or xfs). Without it, the new space is left free.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the fine print under ResizeDisk.grow."
+  },
+  "ResizeDisk.cancel": {
+    "message": "Cancel",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button that closes the dialog without resizing."
+  },
+  "ResizeDisk.ok": {
+    "message": "Resize",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the main button: grows the disk to the new size."
+  },
+  "ResizeDisk.busy": {
+    "message": "Resizing the disk…",
+    "note": "Machines page: what runs while the Resize dialog grows a disk or an overlay."
+  },
+  "ResizeDisk.busy.powerOff": {
+    "message": "Powering off the machine…",
+    "note": "Machines page: what runs while the Resize dialog powers off the machine on this page (its Power off button)."
   }
 }

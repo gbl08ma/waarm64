@@ -7,7 +7,7 @@ import { MsgError } from '../msg.ts';
 import { lockOverlay, overlayLock, writeOwnSize } from '../overlay.ts';
 import { machineLock } from './machines.ts';
 import { SECTOR, sizeSeen, type GrowMark } from './disk-size.ts';
-import { serialOf, type MachineRecord } from './shape.ts';
+import { serialOf, type Attachment, type DiskRecord, type MachineRecord } from './shape.ts';
 import { diskDir, overlayDir, type SnapshotRecord, type Store } from './store.ts';
 
 /** What a resize acts on: an overlay (over any base), or a disk (stored in the browser, or a ramdisk). */
@@ -24,6 +24,12 @@ export type ResizeCosts = {
   /** Their kept snapshots made with the disk at its size now: the resize orphans them (§5.1). */
   snapshots: SnapshotRecord[];
 };
+
+/**
+ * The largest size a resize grows to: an overlay keeps its map in memory, 4 bytes per 4 KiB block of its whole size
+ * (1 GiB per TiB), so the size is capped where that stays modest.
+ */
+export const MAX_RESIZE = 256 * 1024 ** 3;
 
 /** How long a resize waits for an overlay's or a stored disk's lock (a machine stopping, an export) before it is refused. */
 const RESIZE_WAIT_MS = 2_000;
@@ -54,11 +60,14 @@ async function target(store: Store, t: ResizeTarget) {
   return { o: undefined, d, size: d.size };
 }
 
+/** The size `t`'s guests see now (refused, as `resizeCosts`, when it's gone or can't be resized). */
+export const sizeNow = async (store: Store, t: ResizeTarget) => (await target(store, t)).size;
+
 /**
  * What growing `t` to `size` bytes does: the size now, the machines whose disk grows (an overlay's: those that have it
  * chosen; a disk's: those that attach it, unless their overlay is as large already), those of them running, and their
  * kept snapshots it orphans. Refused (a `MsgError`) when `size` isn't a larger multiple of 512 bytes (`SECTOR`: the
- * blk device's sector, and what QEMU asks of a qcow2's size), or `t` can't be resized (a URL's, a file's or a blank disk
+ * blk device's sector, and what QEMU asks of a qcow2's size), is past `MAX_RESIZE`, or `t` can't be resized (a URL's, a file's or a blank disk
  * itself: their overlays grow).
  */
 export async function resizeCosts(store: Store, t: ResizeTarget, size: number): Promise<ResizeCosts> {
@@ -66,6 +75,7 @@ export async function resizeCosts(store: Store, t: ResizeTarget, size: number): 
   if (!Number.isSafeInteger(size) || size % SECTOR)
     throw refused(new MsgError('machines:resize.unaligned', { size, sector: SECTOR }));
   if (size <= now) throw refused(new MsgError('machines:resize.notLarger', { size, now }));
+  if (size > MAX_RESIZE) throw refused(new MsgError('machines:resize.tooLarge', { size, max: MAX_RESIZE }));
   const before = new Map((await store.overlaysOf(d.id)).map((x) => [x.id, x]));
   const after = new Map(before);
   if (o) after.set(o.id, { ...o, size });
@@ -89,6 +99,16 @@ export async function resizeCosts(store: Store, t: ResizeTarget, size: number): 
     s.shape.disks.some((x) => was.get(`${s.machine}/${x.serial}`) === x.size),
   );
   return { size: now, machines, running: machines.filter((m) => held.has(machineLock(m.id))), snapshots };
+}
+
+/**
+ * What Resize… on a machine's attachment `a` of disk `d` grows: its ramdisk, its stored disk written in place, or its
+ * chosen overlay; none for a read-only attachment, or one with no overlay chosen yet.
+ */
+export function attachmentTarget(a: Attachment, d: DiskRecord | undefined): ResizeTarget | undefined {
+  if (!d || a.readOnly) return undefined;
+  if (d.kind === 'ramdisk' || (d.kind === 'stored' && a.inPlace)) return { disk: d.id };
+  return a.overlay ? { overlay: a.overlay } : undefined;
 }
 
 /** Takes overlay or stored disk `path`'s lock (no machine opens it meanwhile), or refuses: something has it open. */

@@ -298,7 +298,8 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 
 Writable disks aren't qcow2 files: an image is a read-only base under an overlay, and a stored disk is the overlay's
 format itself (§4.4). So growing one is a size in a record, and for an overlay in its `meta` too (the user's design,
-2026-11-14: RESIZE-KICKOFF.md; the page's Resize… is the next step of the track).
+2026-11-14: RESIZE-KICKOFF.md). The page's [Resize…](ui:disks:Disks.resize) (frontend.md "The Machines page": the Disks pane's stored disks,
+ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
 - **An overlay** (over a URL, file, blank or stored disk) has a **size of its own** (`OverlayRecord.size`, and the
   u64 at 32 in its `meta`, which the device worker reads at its opening: devices.md "blk"); absent, or a 32-byte
   `meta` from before sizes: none. Per overlay, not per disk: overlays are a base's named variants (rule 3), and a
@@ -322,6 +323,8 @@ format itself (§4.4). So growing one is a size in a record, and for an overlay 
   running, and the overlay's or stored disk's lock held (a machine the records don't show running, an export, a merge:
   the lock Merge into the disk takes); it then writes an overlay's `meta` (`writeOwnSize`, a writable stream: from the
   page) and its record, or the disk's record, under that lock.
+- **An upper bound:** `MAX_RESIZE` (256 GiB) refuses a larger size (`resize.tooLarge`): an overlay keeps its map in
+  memory, 4 bytes per 4 KiB block of its whole size (1 GiB per TiB).
 - **The grow mark** (`GrowMark`, `{ from, to }`, on the overlay's or stored disk's record, not an attachment's:
   whichever machine boots it next does it): `grow` sets it (`from` stays the size before the first resize the guest
   hasn't followed), a resize without it clears it, `growMark`/`clearGrowMark` read and clear it. A ramdisk gets none
@@ -433,7 +436,7 @@ budget, the status bar.
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/snapshots.ts`
   (the shape now, the restore's plan, a machine like a snapshot), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Machines page"; `Disks.svelte`, `AddDisk.svelte`,
-  `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
+  `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
 - `web/devices.ts`: the `zero` and `ram` sources, a stored disk under an overlay or written in place, the generation
   bump, the serial in `GET_ID`. `web/ramdisk.ts`, `web/stored.ts`, `web/overlay.ts` (overlays by path, `meta`, the
   generation, `overlayMeta`, `removeOverlay`, `overlayBytes`, the suspend writer).
@@ -446,7 +449,7 @@ budget, the status bar.
 ## 9. Tests
 
 docs/testing.md's "Machines as the unit" row: the store's ordering and sweep, the shape's hash, the ramdisk, stored
-disks (import, export under `qemu-img compare`, merge and its resume), growing a disk (tests/resize.test.ts), the generation and its epoch, the restore's
+disks (import, export under `qemu-img compare`, merge and its resume), growing a disk (tests/resize.test.ts; the page's Resize dialog from each place, tests/page-resize.test.ts), the generation and its epoch, the restore's
 plan, the Machines page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
 several disks, a stored Debian, kept snapshots, forks, Suspend on pins, orphaning.
 
