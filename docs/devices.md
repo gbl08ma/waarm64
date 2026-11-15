@@ -1005,7 +1005,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
 - **Its surface** (web/surface.ts, docs/plans/surface.md): `Backend.inspect` answers a disk's surface (per cell of
   4 MiB × a power of two, the blocks the disk and its overlay hold) and one 4 MiB range block by block, from the maps
   the device has in memory (the overlay's `leaves()`, a stored disk's `blockSource`, a ramdisk's chunks, an image's
-  `liveImage`). A stored disk under an overlay doesn't change, so its per-range counts are taken once.
+  `liveImage`). A stored disk under an overlay doesn't change, so its per-range counts are taken once. Under a grown
+  overlay a stored or blank disk is opened at the guest's size; the spec's `diskSize` (web/app/worker-devices.ts
+  `blkSpec`) is its own, which the surface's disk layer takes (nothing else reads it).
   **An image**: a qcow2's clusters from its L2 tables (web/qcow2.ts `Disk.allocation`: per cluster, data or compressed
   against unallocated or zero; a 4 KiB block is the disk's if any cluster in it is), made once and kept (the image
   doesn't change while open). `openDisk` reads L2 tables lazily, as requests need them, and keeps them; the first

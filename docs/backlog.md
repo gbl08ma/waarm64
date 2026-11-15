@@ -1415,8 +1415,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     opening the cache's bucket pushes on its expiry. The page could keep the identity in the disk's record.
   - A remote qcow2 stays not examined until the guest has read every L2 table (a 3 GiB Debian's 6 are read by its
     boot); a counted layer with "not examined" cells where a table is missing would show what's known sooner.
-  - The content check reads nothing of a raw image (not examined) nor of a remote qcow2 (its clusters would be
-    fetched): it says "0 of the 0 blocks", where it could say why.
   - Storing a record with an OPFS file's handle (granted without a prompt) in IndexedDB closes Chromium's headless page
     under Playwright (seen 2026-11-15, not traced), so the page test of a file disk examined offline is Node's
     (`tests/surface-image.test.ts`). Worth checking a real file handle's record isn't affected.
@@ -1427,6 +1425,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     other view shown); a source's answers aren't told apart in the window's state.
   - Live, an ask a newer one replaced (a resize, a Refresh) drops its answer, and with it the activity it carried
     (flashes missed for one poll).
+  - Every offline ask reads the whole map again (~105 MB for an overlay with 100 GiB written; a legacy flat map is 4
+    bytes per block), a Refresh and each settled records change too; a long-lived job worker could keep the per-range
+    counts and answer another cell size, or a refresh at the same generation, without reading it again.
   - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
     720 × 520, fits them).
   - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0

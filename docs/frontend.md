@@ -533,8 +533,10 @@ was (on the screen).
   the disk (grown, [machines.md](machines.md) §4.5) the squares past the disk have no rim and the disk's end is
   marked. Live, a square the guest read or wrote flashes. The legend (`SurfaceLegend.svelte`) shows only the looks
   the view can show (`surface-look.ts` `legendOf`). The line under the map says the pointed square's numbers
-  (`cellWords`: where, the disk's blocks held of its blocks, the overlay's changed and zeroed, the activity; read
-  aloud, `aria-live`), else what the view holds as a whole ([The disk holds no data yet. Every block reads as zeros.](ui:disks:SurfaceWindow.empty)
+  (`cellWords`: where, the disk's blocks held of its blocks, the overlay's changed and zeroed, the activity; the
+  keyboard's cursor's square until the map loses the focus), else what the view holds as a whole; a screen reader is
+  told the line (an `aria-live` copy) when the square pointed at or the view changes, not as a live poll changes its
+  numbers ([The disk holds no data yet. Every block reads as zeros.](ui:disks:SurfaceWindow.empty)
   for an empty one; for an image not examined, why: raw, its tables not all read yet, too large, no permission to
   read the file, a URL while its machine doesn't run here: `surface-look.ts` `opaqueWords`). **The overlay picker**
   says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
@@ -543,14 +545,27 @@ was (on the screen).
   32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
   consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
   fragmented it is there), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
-  data (up to 4 MiB) and counts those that hold only zeros.
+  data (up to 4 MiB) and counts those that hold only zeros; where they are only an image's it doesn't read (not
+  examined, or a remote qcow2's), it isn't offered and the words say they can't be checked
+  ([The image's blocks aren't read here, so their contents can't be checked.](ui:disks:surface-look.range.uncheckable)).
 - **Where its numbers come from** (`surface-source.ts` `chooseSource`, Node-tested): **live** when the stored
-  machine running on this page has the disk attached as the view shows it (through that overlay; the disk alone
-  read-only, written in place, or a ramdisk): `inspect` to the run's worker (the run writes `current.inspect`: its
+  machine on this page has the disk attached as the view shows it (through that overlay; the disk alone read-only,
+  written in place, or a ramdisk), from its loading to its stop (`holdsDisks`: its device worker has the files, or is
+  opening them; before its devices answer the window says it's reading): `inspect` to the run's worker (the run writes `current.inspect`: its
   worker, the replies by id, the attachments it started with), the disk being its place in slot order; a stored disk
   written in place answers as a blank disk under an overlay that is its store, shown as the disk (`asInPlace`).
   Otherwise **from the files**: a job worker per ask (`surface-worker.ts`, `surface-job.ts`), read-only under the
-  shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too). A
+  shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too), one
+  of each kind (the map, a range) in flight: a newer ask ends the one before, its worker terminated. The job holds
+  the files' locks under `waarm64-surface-reader` (web/overlay.ts `SURFACE_READER_LOCK`), and the page's checks of
+  whether something has a disk's files open (web/overlay.ts `locksInUse`: `disks.ts` `inUse`, the resize's) leave out
+  the locks of a client that holds it, so a Delete, a Resize… or a Merge into the disk is never refused for the
+  window's reading (a machine's device worker never takes it). A merge holds `waarm64-merge:disks/<id>` from its
+  first check to its end (`mergeIntoDisk`), and a job of that disk waits for it before it starts; a stored disk whose
+  merge was interrupted is said so ([A merge into this disk was interrupted. It completes the next time the disk is used, and its map can be seen after that.](ui:disks:surface-job.merging)), not drawn
+  half merged. An overlay's view of a stored disk the machine here writes in place is said so too
+  ([The machine running in this tab writes this disk in place, so its overlays can't be read while it runs. The disk alone is shown live.](ui:disks:surface-source.inPlaceHere)): its store is the
+  machine's. A
   file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, never
   `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
   (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters; a URL's image isn't examined offline
@@ -563,7 +578,8 @@ was (on the screen).
 - **When it asks** (`surface-poll.svelte.ts`): live, every 500 ms while the document is visible, stretched so that
   making the answers stays under 2% of the time (the next ask ≥ 50 × the answer's `cost`), and the device worker's
   activity wrapper stays on only while it asks (devices.md "blk"); not live, once, again on
-  **[Refresh](ui:disks:SurfaceWindow.refresh)** and when the records change. A new source (the machine started or
+  **[Refresh](ui:disks:SurfaceWindow.refresh)** and when the records change (once they've settled for 300 ms: a disk
+  action writes several). A new source (the machine started or
   stopped, another overlay, another run) drops what the old one had in flight; just after the machine on this page
   stopped, a refusal that the files are in use is asked again for a few seconds (the device worker lets them go
   late). The grid's room is asked for again once a resize settles (150 ms).
