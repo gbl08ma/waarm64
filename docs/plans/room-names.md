@@ -397,7 +397,9 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 ## Measure first (loop N0, no product code)
 
 1. **Time to anchor** from each calendar, over a week of stamps, the slowest as well as the usual: sets `REF_WINDOW`
-   and what the dialog promises. (One stamp made 2026-11-15 20:46 UTC is being watched; its result goes here.)
+   and what the dialog promises. (One stamp made 2026-11-15 20:46 UTC: after 76 minutes still pending at all three; `alice` and `bob` each
+   named a Bitcoin transaction and said "waiting for 6 confirmations", so a calendar serves a proof only once its
+   block is 6 deep, an hour past the block at best.)
 2. **Proof of work**: BLAKE2s hashcash against Argon2id at a few memory sizes: time to make one in Chromium's wasm and
    natively, what a GPU does to each, **and the time to check the 10,000 and 60,000 entries** of a 1,000 and a
    5,000-name registry in the module's wasm. Picks the function and `POW_BITS`.
