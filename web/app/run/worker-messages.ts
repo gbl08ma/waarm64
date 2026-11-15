@@ -142,6 +142,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     timeline: (m) => x.d.replies.worker.answer(m.id, m),
     heap: (m) => x.d.replies.worker.answer(m.id, m),
     compacted: (m) => x.d.replies.worker.answer(m.id, m),
+    inspected: (m) => x.d.replies.worker.answer(m.id, m),
     'snapshot-check': (m) => x.d.replies.worker.answer(m.id, m),
     restored: (m) => x.d.agent.restored(m.template),
     phase: (m) => {

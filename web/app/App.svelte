@@ -1,6 +1,6 @@
 <!--
   The page (docs/frontend.md): the toolbar, the message bar, the machine (its screen and serial terminal) or the
-  Machines page in its place, the status line, and the page's questions. The machine's run draws on the canvas and the
+  Machines page in its place, a disk's surface window over either, the status line, and the page's questions. The machine's run draws on the canvas and the
   terminal here (given to its areas: `view`), and writes what the rest shows into the areas' state (web/app/areas/). The body's
   `data-*` (the tests' and the page's styles' hooks) follow that state here.
 -->
@@ -16,6 +16,7 @@
   import NetDetails from './NetDetails.svelte';
   import Osk from './Osk.svelte';
   import StatusBar from './StatusBar.svelte';
+  import SurfaceWindow from './SurfaceWindow.svelte';
   import Toolbar from './Toolbar.svelte';
   import type { PageAudio } from '../audio.ts';
   import type { PageFolders } from './folders-live.ts';
@@ -29,6 +30,7 @@
   import { messageBar } from './areas/message-bar.svelte.ts';
   import { mouse } from './areas/mouse.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
+  import { surfaceWindow } from './areas/surface.svelte.ts';
   import { page } from './page.ts';
   import type { Mods } from './osk.ts';
   import { t } from '../i18n.ts';
@@ -144,6 +146,8 @@
     />{/if}
 </main>
 {#if machinesNav.open}<MachinesPage {store} {net} {folders} />{/if}
+<!-- A disk's surface floats over the machine and the Machines page alike, and stays as the user goes between them. -->
+{#if surfaceWindow.open}{#key surfaceWindow.open}<SurfaceWindow open={surfaceWindow.open} />{/key}{/if}
 <StatusBar {net} />
 <NetWizard {net} />
 <NetDetails {net} />

@@ -1302,5 +1302,317 @@
   "surface-job.unreadable": {
     "message": "The disk's map can't be read from this browser's storage.",
     "note": "The disk surface visualizer's window, in place of the map, when reading the files of the disk (or of the overlay chosen) failed for a reason it has no words of its own for."
+  },
+  "surface-look.legend.empty": {
+    "message": "No data",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds no data (it reads as zeros)."
+  },
+  "surface-look.legend.some": {
+    "message": "Some data",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds some data (the faintest of four shades: any data at all)."
+  },
+  "surface-look.legend.full": {
+    "message": "Full",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds data in every block (the strongest shade)."
+  },
+  "surface-look.legend.ram": {
+    "message": "Some data in memory",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A ramdisk's square that holds some data in memory (the faintest of four shades)."
+  },
+  "surface-look.legend.opaque": {
+    "message": "Not examined",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of a disk whose image is a file or a URL: its contents aren't read to tell what it holds."
+  },
+  "surface-look.legend.absent": {
+    "message": "Past the disk's end",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. An outlined square past the end of the disk: the overlay laid over it is larger (grown), and only the overlay has this part."
+  },
+  "surface-look.legend.changed": {
+    "message": "Changed by the overlay",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square with an inner square: the overlay laid over the disk changed blocks there (in four shades of how many)."
+  },
+  "surface-look.legend.zeroed": {
+    "message": "Zeroed by the overlay",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square with a hollow inner square: the overlay only zeroed or discarded blocks there, hiding the disk's data."
+  },
+  "surface-look.legend.read": {
+    "message": "Read",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. Live only: a square that flashes when the running guest reads from that part of the disk."
+  },
+  "surface-look.legend.written": {
+    "message": "Written",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. Live only: a square that flashes when the running guest writes to that part of the disk."
+  },
+  "surface-look.at": {
+    "message": "From {{from}} to {{to}}.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Where the square is: {{from}} and {{to}} are offsets into the disk, as sizes (4 MiB, 1 GiB)."
+  },
+  "surface-look.disk.past": {
+    "message": "This is past the end of the disk.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The square is past the end of the disk (only the larger overlay laid over it has this part)."
+  },
+  "surface-look.disk.opaque": {
+    "message": "The contents of the disk's image aren't examined.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk's image is a file or a URL, which isn't read to tell what it holds."
+  },
+  "surface-look.disk.empty": {
+    "message": "The disk holds no data here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk holds nothing in this square: it reads as zeros."
+  },
+  "surface-look.ram.empty": {
+    "message": "The ramdisk holds nothing in memory here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running) holds nothing in memory in this square: it reads as zeros."
+  },
+  "surface-look.disk.held_one": {
+    "message": "The disk holds data in {{held}} of its {{count}} block of 4 KiB here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. {{held}} blocks with data of the {{count}} blocks of 4 KiB the disk has in this square."
+  },
+  "surface-look.disk.held_other": {
+    "message": "The disk holds data in {{held}} of its {{count}} blocks of 4 KiB here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. {{held}} blocks with data of the {{count}} blocks of 4 KiB the disk has in this square."
+  },
+  "surface-look.ram.held_one": {
+    "message": "The ramdisk holds {{held}} of its {{count}} block of 4 KiB in memory here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running): {{held}} of the {{count}} blocks of 4 KiB in this square are in memory."
+  },
+  "surface-look.ram.held_other": {
+    "message": "The ramdisk holds {{held}} of its {{count}} blocks of 4 KiB in memory here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running): {{held}} of the {{count}} blocks of 4 KiB in this square are in memory."
+  },
+  "surface-look.overlay.changed_one": {
+    "message": "The overlay changed {{count}} block.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk holds {{count}} block of its own (changed) in this square."
+  },
+  "surface-look.overlay.changed_other": {
+    "message": "The overlay changed {{count}} blocks.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk holds {{count}} blocks of its own (changed) in this square."
+  },
+  "surface-look.overlay.zeroed_one": {
+    "message": "The overlay zeroed {{count}} block.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk zeroed or discarded {{count}} block in this square (it reads as zeros, whatever the disk holds)."
+  },
+  "surface-look.overlay.zeroed_other": {
+    "message": "The overlay zeroed {{count}} blocks.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk zeroed or discarded {{count}} blocks in this square (they read as zeros, whatever the disk holds)."
+  },
+  "surface-look.overlay.both_one": {
+    "message": "The overlay changed {{count}} block and zeroed {{zero}}.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk changed {{count}} block and zeroed or discarded {{zero}} in this square."
+  },
+  "surface-look.overlay.both_other": {
+    "message": "The overlay changed {{count}} blocks and zeroed {{zero}}.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk changed {{count}} blocks and zeroed or discarded {{zero}} in this square."
+  },
+  "surface-look.overlay.none": {
+    "message": "The overlay changed nothing here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk has no changes in this square."
+  },
+  "surface-look.read": {
+    "message": "The guest just read from here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest read from this square since the map was last updated (twice a second)."
+  },
+  "surface-look.written": {
+    "message": "The guest just wrote here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest wrote to this square since the map was last updated (twice a second)."
+  },
+  "surface-look.readWritten": {
+    "message": "The guest just read from and wrote here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest read from and wrote to this square since the map was last updated (twice a second)."
+  },
+  "surface-look.range": {
+    "message": "From {{from}} to {{to}}.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. Its first sentence: where the range is, {{from}} and {{to}} offsets into the disk, as sizes."
+  },
+  "surface-look.range.opaque": {
+    "message": "The contents of the disk's image aren't examined.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The disk's image is a file or a URL, which isn't read to tell what it holds."
+  },
+  "surface-look.range.diskEmpty": {
+    "message": "The disk holds no data here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The disk holds nothing in this range."
+  },
+  "surface-look.range.diskRuns_one": {
+    "message": "The disk holds {{blocks}} blocks of data here, stored in this browser in one piece.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A disk stored in this browser: {{blocks}} blocks with data in the range, which its storage keeps in {{count}} piece of consecutive blocks (how fragmented it is there)."
+  },
+  "surface-look.range.diskRuns_other": {
+    "message": "The disk holds {{blocks}} blocks of data here, stored in this browser in {{count}} pieces.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A disk stored in this browser: {{blocks}} blocks with data in the range, which its storage keeps in {{count}} pieces of consecutive blocks (how fragmented it is there)."
+  },
+  "surface-look.range.disk_one": {
+    "message": "The disk holds {{count}} block of data here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A ramdisk: {{count}} block in memory in this range."
+  },
+  "surface-look.range.disk_other": {
+    "message": "The disk holds {{count}} blocks of data here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A ramdisk: {{count}} blocks in memory in this range."
+  },
+  "surface-look.range.overlayRuns_one": {
+    "message": "The overlay changed {{blocks}} blocks here, stored in one piece.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. {{blocks}} blocks of the overlay laid over the disk in the range, which this browser's storage keeps in {{count}} piece of consecutive blocks (how fragmented it is there)."
+  },
+  "surface-look.range.overlayRuns_other": {
+    "message": "The overlay changed {{blocks}} blocks here, stored in {{count}} pieces.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. {{blocks}} blocks of the overlay laid over the disk in the range, which this browser's storage keeps in {{count}} pieces of consecutive blocks (how fragmented it is there)."
+  },
+  "surface-look.range.overlayNone": {
+    "message": "The overlay changed nothing here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk has no changes in this range."
+  },
+  "surface-look.range.zeroed_one": {
+    "message": "The overlay zeroed {{count}} block here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk zeroed or discarded {{count}} block in this range."
+  },
+  "surface-look.range.zeroed_other": {
+    "message": "The overlay zeroed {{count}} blocks here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk zeroed or discarded {{count}} blocks in this range."
+  },
+  "surface-look.range.content_one": {
+    "message": "{{zeros}} of the {{count}} block of data read holds only zeros.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After Check contents: of the {{count}} block with data in the range that was read, how many ({{zeros}}) hold only zero bytes (written, but as good as empty)."
+  },
+  "surface-look.range.content_other": {
+    "message": "{{zeros}} of the {{count}} blocks of data read hold only zeros.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After Check contents: of the {{count}} blocks with data in the range that were read, how many ({{zeros}}) hold only zero bytes (written, but as good as empty)."
+  },
+  "surface-source.diskGone": {
+    "message": "This disk is no longer stored in this browser.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The disk was deleted (in this tab or another) while its window was open."
+  },
+  "surface-source.overlayGone": {
+    "message": "This overlay is no longer stored in this browser.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The overlay chosen in the window's title bar was deleted or merged while the window was open."
+  },
+  "surface-source.ramdisk": {
+    "message": "A ramdisk holds data only while its machine runs. Its map can be seen here while the machine runs in this tab.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. A ramdisk whose machine isn't running in this tab: it holds nothing (its memory is gone when its machine stops)."
+  },
+  "surface-source.noAnswer": {
+    "message": "Reading the disk's map took too long.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The running machine, or the reading of the disk's files, didn't answer in time; a live map is asked for again."
+  },
+  "SurfaceDetails.title": {
+    "message": "Pinned square",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. Its heading."
+  },
+  "SurfaceDetails.close": {
+    "message": "Unpin",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The tooltip and spoken name of the X button at the end of its heading, which closes the details (the square is no longer pinned)."
+  },
+  "SurfaceDetails.prev": {
+    "message": "Previous 4 MiB",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the left arrow button that shows the range before."
+  },
+  "SurfaceDetails.next": {
+    "message": "Next 4 MiB",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the right arrow button that shows the range after."
+  },
+  "SurfaceDetails.step": {
+    "message": "{{at}} of {{count}}",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: between the arrow buttons, which of the square's {{count}} ranges is shown ({{at}}, from 1)."
+  },
+  "SurfaceDetails.blocks": {
+    "message": "Blocks of 4 KiB in this range",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The spoken name of the small map of the range's 1,024 blocks of 4 KiB (32 by 32)."
+  },
+  "SurfaceDetails.check": {
+    "message": "Check contents",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. Button under the range's words: reads the blocks with data in the range and counts those that hold only zeros."
+  },
+  "SurfaceDetails.checking": {
+    "message": "Checking contents",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The Check contents button's words while it reads (busy text)."
+  },
+  "SurfaceDetails.check.title": {
+    "message": "Read the blocks of data in this range, up to 4 MiB, and count those that hold only zeros.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The tooltip of the Check contents button."
+  },
+  "SurfaceWindow.alone": {
+    "message": "The disk alone",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The first choice of the list in the window's title bar: the disk without any of its overlays laid over it."
+  },
+  "SurfaceWindow.overlay": {
+    "message": "{{name}} ({{held}} of {{size}})",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). A choice of the list in the window's title bar: one of the disk's overlays laid over it. {{name}} is its name, {{held}} what it holds, {{size}} the size the guest sees through it (the disk's, or a grown overlay's own)."
+  },
+  "SurfaceWindow.overlays": {
+    "message": "Overlay",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The spoken name of the list in the window's title bar (the disk alone, or one of its overlays laid over it)."
+  },
+  "SurfaceWindow.overlays.title": {
+    "message": "Lay one of the disk's overlays over it, or see the disk alone.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the list in the window's title bar."
+  },
+  "SurfaceWindow.scale": {
+    "message": "1 square = {{size}}",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Over the map: how much of the disk each square of the map is. {{size}} is a size (4 MiB, 16 MiB, 1 GiB): a larger window has smaller squares."
+  },
+  "SurfaceWindow.live": {
+    "message": "Live",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Over the map, beside a green light: the map follows the running guest's reads and writes."
+  },
+  "SurfaceWindow.live.title": {
+    "message": "The map follows the machine's reads and writes as it runs.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the Live sign over the map."
+  },
+  "SurfaceWindow.stored": {
+    "message": "Not live",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Over the map, beside a grey light, before the Refresh button: the map is the disk as stored in this browser, read once."
+  },
+  "SurfaceWindow.stored.title": {
+    "message": "The map shows the disk as stored in this browser. It is live while a machine runs with it in this tab.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the Not live sign over the map."
+  },
+  "SurfaceWindow.refresh": {
+    "message": "Refresh",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Button over the map, when it isn't live: reads the map again from this browser's storage."
+  },
+  "SurfaceWindow.refresh.title": {
+    "message": "Read the map again from this browser's storage.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the Refresh button over the map."
+  },
+  "SurfaceWindow.map": {
+    "message": "Map of {{name}}",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The spoken name of the map (a grid of squares; the arrow keys move between them, Enter pins one). {{name}} is the disk's name."
+  },
+  "SurfaceWindow.reading": {
+    "message": "Reading the map…",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). In place of the map while it is read the first time."
+  },
+  "SurfaceWindow.untitled": {
+    "message": "Disk",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The window's title when its disk is no longer in this browser (its name is gone with it)."
+  },
+  "SurfaceWindow.hint": {
+    "message": "Point at a square to see what it holds. Click it to see its blocks.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square."
+  },
+  "SurfaceWindow.empty": {
+    "message": "The disk holds no data yet. Every block reads as zeros.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, when nothing at all is held (a new blank disk, an empty overlay over it)."
+  },
+  "SurfaceWindow.ramEmpty": {
+    "message": "The ramdisk holds nothing in memory yet.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a ramdisk (its machine running) that holds nothing."
+  },
+  "SurfaceWindow.opaque": {
+    "message": "The disk's image is a file or a URL, whose contents aren't examined.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is a file or a URL (its squares are drawn flat, hatched)."
+  },
+  "SurfaceWindow.opaqueOverlay": {
+    "message": "The disk's image is a file or a URL, whose contents aren't examined. The overlay's changes are shown over it.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is a file or a URL, with an overlay laid over it."
+  },
+  "VisualizeLine.line": {
+    "message": "{{line}} · <link>visualize</link>",
+    "note": "Machines page, the Disks pane and a machine's Disks tab: the small line beside or under a disk's name, ended by a link that opens the disk's map (its surface window; from a machine's Disks tab, through the overlay that machine uses). {{line}} is the line itself (its kind, size, overlays or device name); the marked words are the link."
+  },
+  "VisualizeLine.title": {
+    "message": "See the disk's map: what it holds, and where.",
+    "note": "Machines page, the Disks pane and a machine's Disks tab: the tooltip of the \"visualize\" link at the end of a disk's line, which opens the disk's map in a window over the page."
+  },
+  "surface-look.range.past": {
+    "message": "This is past the end of the disk.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square); one of the sentences under its block map. The range is past the end of the disk (only the larger overlay laid over it has this part)."
   }
 }
