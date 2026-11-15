@@ -29,6 +29,8 @@ explorers a page can reach.
 - **Name owners serve the registry** and are found by an ephemeral "who serves the registry?" message; nothing about
   the sender goes in a room's link. Members who only use names announce nothing beyond what rooms.md already says.
 - **OpenTimestamps is acceptable** as the clock.
+- **The registry never holds a name in words**: names are looked up by a hash, and where a name points is sealed
+  under the name ("Names nobody lists"). Which names are acceptable is then each resolver's rule, not the registry's.
 - Left out on purpose: which suffixes names may use (a rule every node enforces, decided later; the default below needs
   no decision).
 
@@ -48,7 +50,8 @@ explorers a page can reach.
 
 | | |
 |---|---|
-| **owner key** | A BIP-340 key (secp256k1, `k256`, already a dependency) that signs a name's entries. One per room connection, made at the first registration, kept beside the node key. A node key is X25519 and can't sign. |
+| **owner key** | A BIP-340 key (secp256k1, `k256`, already a dependency) that signs a name's entries. One per name, derived from a secret the room connection keeps beside its node key (made at the first registration), so one owner's names can't be told to be one owner's. A node key is X25519 and can't sign. |
+| **name id** | What stands for a name everywhere outside its owner's and its users' own pages: 32 bytes, a keyed hash of the name. |
 | **entry** | A signed record on a name: `claim`, `renew` or `release`. Its **id** is the SHA-256 of its bytes. |
 | **anchor** | An OpenTimestamps proof from an entry's id to the Merkle root of a Bitcoin block; the entry's **height** is the lowest block height among its valid anchors. |
 | **chain** | A claim and its renewals, each naming the id of the one before. |
@@ -67,18 +70,43 @@ with no change to the lease, and a guest whose resolver uses the lease's domain 
 the two never collide. A name's zone may add labels under it (`git.<name>.<tag>.p2p.internal`). A nicer suffix is the
 later decision; it changes the resolver's match and the lease's domains, nothing else here.
 
+## Names nobody lists
+
+No record, message or stored registry holds a name in words. Three things do it:
+
+- **The name id** is BLAKE2s, keyed with a key of the room's (from its ID, a label of its own), over the name. Entries
+  and zones carry the id; sync orders by it; a resolver hashes what the guest asked and looks that up.
+- **A zone is sealed under its name**: each place it points (the name itself, a label under it) is a slot, an 8-byte
+  tag and a node key sealed with ChaCha20-Poly1305, tag and key both derived from the room's key and the full name
+  asked. A zone has 4 or 16 slots, the unused ones random, so a holder sees neither how many labels a name has nor
+  where any points. Whoever knows the name opens its slot; the owner's signature is over the sealed bytes, so anyone
+  can check a zone without reading it.
+- **An owner key per name**, so a registry doesn't show that five ids are one person's.
+
+**What a holder of the registry still learns:** how many names the room has; each id's owner key and the heights of
+its entries (when it was claimed and renewed; an owner's names renewed in one visit land in one block, so the agent
+spreads them when it can); and **any name it can guess**: hashing a dictionary against the registry's ids is cheap,
+and a slow hash wouldn't change that by much (a million guesses at 0.1 s each is a day of one machine, and every
+resolver would pay the 0.1 s on each name a guest asks). So this hides names that aren't guessable and stops anyone
+listing a room's names, as NSEC3 does for a DNS zone and GNS for its records; it doesn't make `www` a secret. In a
+private room the key comes from an ID outsiders don't have, so there even a guessable name is hidden from them.
+
+**What moves to the resolver:** the registry can't check a name's spelling, so an id for a name no resolver would ask
+(too long, punycode, a suffix not allowed) can be registered and is dead weight its registrant paid for. The rules of
+"Names" are enforced where names are still words: the resolver, and the dialog that registers.
+
 ## Records
 
 Binary, fixed order, integers little-endian. Every record starts with a version byte (1) and the room's 40 prefix bits,
 so a record of one room means nothing in another.
 
-**Entry** (~180 bytes plus the name):
+**Entry** (212 bytes):
 
 | Field | Bytes | |
 |---|---|---|
 | version, kind | 1, 1 | kind: 0 claim, 1 renew, 2 release |
 | room | 5 | the /48's 40 bits |
-| name | 1 + n | |
+| name id | 32 | |
 | owner | 32 | the owner key |
 | prev | 32 | the id of the entry before; zeros in a claim |
 | ref | 4 + 32 | a recent Bitcoin block, height and hash: the entry was made after it |
@@ -95,9 +123,9 @@ verifier handles the three operations the calendars emit (append, prepend, SHA-2
 anything else is an invalid anchor; 4 KiB at most. A *pending* anchor (a calendar's receipt, its URL and commitment)
 proves nothing and is carried only so that anyone can fetch the finished one.
 
-**Zone** (1,024 bytes at most): version, room, name, owner, `seq` (4), the target node key (32), up to 16 further
-`(label, node key)` pairs, a signature. An address is computed from a node key as today, and the resolver's answer
-teaches the module the key, so lookups to a named machine are sealed to it as lookups to a key name are. The highest
+**Zone** (~330 or ~1,000 bytes): version, room, name id, owner, `seq` (4), 4 or 16 sealed slots of 56 bytes ("Names
+nobody lists"), a signature. An address is computed from the node key a slot opens to, as today, and the resolver's
+answer teaches the module the key, so lookups to a named machine are sealed to it as lookups to a key name are. The highest
 `seq` wins (equal: the lower hash). A zone needs no anchor: only the owner can write it, so there is nothing to order.
 
 ## Who owns a name
@@ -167,11 +195,12 @@ online without anyone keeping a list. A node holds 3 servers; a server takes 32 
 longest idle. A member with a registry from an earlier session falls back, after 6 s without an answer, to looking up
 three targets of live names (a named machine is likely a server).
 
-**Sync.** Names are ordered by the hash of the name; an item's version is a hash of its chain's last id, its anchors'
+**Sync.** Items are ordered by name id; an item's version is a hash of its chain's last id, its anchors'
 heights and its zone's `seq`. Two nodes compare a fingerprint of everything, then of 16 ranges, then of 16 within each
-range that differs, down to ranges small enough to list (name hash and version, 16 bytes an item); whichever side has
+range that differs, down to ranges small enough to list (the id's and the version's first 8 bytes, 16 an item); whichever side has
 the better or newer item sends it, in chunks. Messages: `root`, `range`, `list`, `get`, `item`, `have` (a server tells
-the members it holds of an item it just took), `query` (one name, for a resolver that can't wait). A node syncs at the
+the members it holds of an item it just took), `query` (one name id, for a resolver that can't wait: the server
+learns which id a member wanted, not the name). A node syncs at the
 start, every 5 minutes with jitter while the room runs, and on `have`. Both sides push: a member's copy can restore a
 server's, which is how a room recovers after a reset without anyone detecting one.
 
@@ -193,8 +222,8 @@ through DERP, tailcat's public relays by default: N0 measures what they carry.
 ## The resolver
 
 `resolve()` (room.rs) gains, after the key-name case: a name under `<tag>.p2p.internal` whose last label is a
-registered, resolving name answers AAAA from its zone (the name itself, or the label before it), TTL 60, and learns
-the key; a pending name of this node's own answers this node's address, so a server can be tried by name before its
+registered, resolving name (by its id, once the name passes "Names"' rules) answers AAAA from the slot of its zone
+that the name asked opens (the name itself, or with the label before it), TTL 60, and learns the key; a pending name of this node's own answers this node's address, so a server can be tried by name before its
 registration is public. A name not in the registry: NXDOMAIN when the registry synced within the last 10 minutes;
 otherwise the query waits up to 2 s on a `query` to the node's servers (found first, if it has none), then SERVFAIL, so
 a guest's resolver retries and caches nothing. Guest-visible, in that names that were NXDOMAIN now answer.
@@ -202,8 +231,8 @@ a guest's resolver retries and caches nothing. Guest-visible, in that names that
 ## The names agent (the page)
 
 `web/names.ts` with a worker (`web/names-worker.ts`, for proof of work; it instantiates `ts.wasm` for a few pure
-exports, `ts_names_*`: make, mine, sign and check an entry; no JavaScript crypto dependency). It owns the owner keys
-and titles (IndexedDB `waarm64-room`, stores `owner` and `titles`, keyed as `identity` is, so names travel with a
+exports, `ts_names_*`: make, mine, sign and check an entry; no JavaScript crypto dependency). It owns the owners'
+secret and the titles, which are the only place a name is kept in words (IndexedDB `waarm64-room`, stores `owner` and `titles`, keyed as `identity` is, so names travel with a
 connection's key and are in its export). It needs no running machine:
 
 - **On every page load**, and hourly while open, for each title: fetch finished anchors for pending entries; renew
@@ -224,7 +253,8 @@ details gain one line (names known, last synced), for the curious.
 
 **Naming a machine.** In the Network menu of a room's adapter, **Name this machine…** opens one dialog:
 
-1. A field. Under it, as typed, from the registry: free, taken (until about a date), or not a valid name.
+1. A field. Under it, as typed, from the registry (by the id of what was typed): free, taken (until about a date), or
+   not a valid name. Nothing lists a room's names, here or anywhere: the registry couldn't.
 2. Two notices, always shown, no boxes: *members of this room who know the name can find this machine and see when it
    is online, and your machine helps other members look names up*; *open this page at least every 3 weeks to keep the
    name*.
@@ -242,6 +272,7 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 | Register many names | proof of work each, again every term | squatting, as on the internet; the names lapse when it stops paying |
 | Stamp a dictionary and hold it back | the same work, every term, for as long as it waits | takes a name later registered by someone else: accepted |
 | Race a new registration | none | nothing: a claim is public only once anchored, and an anchor can't be had for an earlier block |
+| Hash a dictionary against the registry | cheap | learns which guessable names exist and where they point; nothing about the others |
 | Serve a partial registry | one registration | a member syncing with three servers still gets everything one honest server has |
 | Hold a name after a reset | one registration | impersonates it to members who don't hold its chain, until one who does syncs |
 | Forge a Bitcoin header | a real block's work, at the floor | one false anchor |
@@ -295,6 +326,8 @@ and `scripts/ci-machines.sh` from N5.
   an IP address and a hash) and two explorers (every member with a room: an IP address and which block heights).
   Their lists could go in a room's link later, as relays do.
 - **Parameters**: `TERM`, `GRACE`, the three weeks; the dialog's words.
+- **Added with hashed names, not asked for**: zones sealed under the name, and an owner key per name. Either can go
+  without touching the rest.
 - **A dependency**, only if N0 picks it: `argon2` (RustCrypto, MIT/Apache-2.0).
 - **The module's interface** grows (titles in the config, `store` and events for the room client, the `ts_names_*`
   exports); it is tailnet.md "The module"'s, not docs/abi.md's, and has no version number.
