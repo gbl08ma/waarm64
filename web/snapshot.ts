@@ -7,7 +7,7 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
@@ -53,9 +53,10 @@ export type DiskPlan = { slot: number; action: 'keep'; generation: number } | { 
  * Where a save's time went, ms (`writeSnapshot`; tools read it in `#message`'s `data-snapshot`, docs/frontend.md
  * "Snapshots"): the devices' state taken (`state`: a 3D renderer's read-back is in it), the CORE, DEVS and BLOB frames
  * (`blobs`), RAM's (`ram`), the disks' blocks read and framed and the end (`disk`); and over all of those, where the
- * writer's time went (`WriteTimes`: RAM's scan, the codec, the frames' encoding and CRC, the sink).
+ * writer's time went (`WriteTimes`: RAM's scan, the codec, the frames' encoding and CRC, the sink; with a pool, its
+ * workers' sums), and the workers that made RAM's frames (`pool`; 0: this thread).
  */
-export type SavePhases = { state: number; blobs: number; ram: number; disk: number } & WriteTimes;
+export type SavePhases = { state: number; blobs: number; ram: number; disk: number; pool: number } & WriteTimes;
 
 /**
  * Where a restore's time went, ms (`readSnapshot`; the machine worker adds its own: web/app/protocol.ts `LoadPhases`):
@@ -73,9 +74,10 @@ const BLOCK = 4096;
  * Writes `vm`'s snapshot to `sink`. No vCPU may be in the core: between `run` calls after
  * `settle()`, or with `pause()` resolved true; the VM is unchanged and may run on once this
  * resolves (RAM and the disks must not move while it is written). `sha256` gives a disk's base
- * image's hash, if the caller has it.
+ * image's hash, if the caller has it. `pool`: workers that make RAM's frames (web/snapshot-pool.ts), else this thread
+ * does; the file is the same.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean } = {}) {
+export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean; pool?: RamPool } = {}) {
   const t0 = performance.now();
   const state = await vm.snapshot();
   // How long the devices' state took (a 3D machine's renderer read back is in it): tools split a snapshot's pause with it.
@@ -110,7 +112,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const starts = ramStarts(views.map((v) => v.length));
   const ram = { pages: 0, frames: 0 };
   for (let k = 0, before = 0; k < views.length; before += views[k].length, k++) {
-    const r = await w.ram(views[k], opts.progress && ((done) => opts.progress!(before + done, total)), starts[k]);
+    const r = await w.ram(views[k], opts.progress && ((done) => opts.progress!(before + done, total)), starts[k], opts.pool);
     [ram.pages, ram.frames] = [ram.pages + r.pages, ram.frames + r.frames];
   }
   const ramMs = since();
@@ -124,7 +126,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
     })());
   }
   const end = await w.end();
-  const phases: SavePhases = { state: stateMs, blobs: blobsMs, ram: ramMs, disk: since(), ...w.times };
+  const phases: SavePhases = { state: stateMs, blobs: blobsMs, ram: ramMs, disk: since(), pool: w.pooled, ...w.times };
   return { ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned, phases };
 }
 

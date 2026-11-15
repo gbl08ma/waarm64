@@ -179,6 +179,27 @@ function zeroPage(w: Uint32Array, off: number) {
   return true;
 }
 
+/**
+ * RAM's zero-page scan of the `len` bytes at byte `off` of `w` (a Uint32Array over a 4-aligned view; `len` at most a
+ * chunk, a multiple of 4 KiB): sets each non-zero page's bit in `bitmap` (32 bytes, zeroed) and returns their count.
+ */
+export function scanChunk(w: Uint32Array, off: number, len: number, bitmap: Uint8Array): number {
+  let present = 0;
+  for (let p = 0; p < len / PAGE; p++) {
+    if (!zeroPage(w, off + p * PAGE)) { bitmap[p >> 3] |= 1 << (p & 7); present++; }
+  }
+  return present;
+}
+
+/** Copies the pages `bitmap` marks, of the `len` bytes at `off` of `src`, one after another into `dst` from `at`. */
+export function gatherPages(src: Uint8Array, off: number, len: number, bitmap: Uint8Array, dst: Uint8Array, at: number): void {
+  for (let p = 0; p < len / PAGE; p++) {
+    if (!(bitmap[p >> 3] & (1 << (p & 7)))) continue;
+    dst.set(src.subarray(off + p * PAGE, off + (p + 1) * PAGE), at);
+    at += PAGE;
+  }
+}
+
 function popcount(bitmap: Uint8Array) {
   let n = 0;
   for (let i = 0; i < BITMAP; i++) {
@@ -226,6 +247,15 @@ function frameCrc(head: Uint8Array, stored: Uint8Array, crc: Crc) {
   return crc(stored, crc(head.subarray(0, 24)));
 }
 
+/** What a pool worker made of a RAM chunk (web/snapshot-pool.ts): the frame, or null for a chunk of zero pages. */
+export type RamFrame = { frame: Uint8Array | null; pages: number; scan: number; compress: number; crc: number };
+/**
+ * Workers that make RAM's frames from guest RAM where it lies (shared memory; web/snapshot-pool.ts): `ram` is chunk
+ * `index`'s frame from the `len` bytes at `off` of `buffer`, encoded whole as this writer encodes one (its codec, the
+ * same CRC: the file's bytes don't depend on who made a frame); `size` workers, each taking a chunk at a time.
+ */
+export type RamPool = { size: number; ram(buffer: SharedArrayBuffer, off: number, len: number, index: number): Promise<RamFrame> };
+
 /** Writes a snapshot to a sink, a frame at a time: CORE and DEVS first, then RAM, DISK, and `end()`. */
 export class SnapshotWriter {
   #sink: Sink;
@@ -242,6 +272,8 @@ export class SnapshotWriter {
   #index = new Map<string, number>();
   /** Where the time went so far (`WriteTimes`). */
   readonly times: WriteTimes = { scan: 0, compress: 0, crc: 0, sink: 0 };
+  /** The workers of the pool RAM's frames last went through (`ram()`'s `pool`), 0 for none. */
+  pooled = 0;
 
   /**
    * `concurrency` frames may be compressed at once (default 4), each at most 1 MiB; they are written in order. `blobs`:
@@ -263,13 +295,19 @@ export class SnapshotWriter {
     this.#push(Promise.resolve(out));
   }
 
-  /** Queues `bytes` (a promise: its compression) behind what is queued, and waits while too many are in flight. */
-  #push(bytes: Promise<Uint8Array>) {
+  /**
+   * Queues `bytes` (a promise: its compression; null writes nothing) behind what is queued; `then` runs once they are
+   * written, in order.
+   */
+  #push(bytes: Promise<Uint8Array | null>, then?: (b: Uint8Array | null) => void) {
     const written = this.#tail.then(() => bytes).then(async (b) => {
-      this.#bytes += b.length;
-      const t = performance.now();
-      await this.#sink(b);
-      this.times.sink += performance.now() - t;
+      if (b) {
+        this.#bytes += b.length;
+        const t = performance.now();
+        await this.#sink(b);
+        this.times.sink += performance.now() - t;
+      }
+      then?.(b);
     });
     this.#tail = written;
     written.catch((e) => { if (!this.#hasFailed) { this.#hasFailed = true; this.#failed = e; } });
@@ -324,8 +362,10 @@ export class SnapshotWriter {
    * be a view of shared memory. Its length is a multiple of 4096. `first`: its first chunk's index (a
    * spill memory's, after memory 0's chunks).
    */
-  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void, first = 0): Promise<{ pages: number; frames: number }> {
+  async ram(ram: Uint8Array, progress?: (done: number, total: number) => void, first = 0, pool?: RamPool): Promise<{ pages: number; frames: number }> {
     if (ram.length % PAGE !== 0) throw new RangeError('RAM is a whole number of 4 KiB pages');
+    // The pool's frames are codec 2's (the core's, web/snapshot-pool-worker.ts): only a writer of codec 2 takes them.
+    if (pool?.size && this.#codec.id === 2 && ram.buffer instanceof SharedArrayBuffer && ram.byteOffset % 4 === 0) return this.#poolRam(ram, pool, progress, first);
     // Scanned where it lies when 4-aligned (the usual case); otherwise a chunk is copied first.
     const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2) : null;
     let pages = 0;
@@ -342,19 +382,11 @@ export class SnapshotWriter {
       }
       const t = performance.now();
       const bitmap = new Uint8Array(BITMAP);
-      let present = 0;
-      for (let p = 0; p < len / PAGE; p++) {
-        if (!zeroPage(words, off + p * PAGE)) { bitmap[p >> 3] |= 1 << (p & 7); present++; }
-      }
+      const present = scanChunk(words, off, len, bitmap);
       const raw = present ? new Uint8Array(BITMAP + present * PAGE) : undefined;
       if (raw) {
         raw.set(bitmap, 0);
-        let at = BITMAP;
-        for (let p = 0; p < len / PAGE; p++) {
-          if (!(bitmap[p >> 3] & (1 << (p & 7)))) continue;
-          raw.set(src.subarray(off + p * PAGE, off + (p + 1) * PAGE), at);
-          at += PAGE;
-        }
+        gatherPages(src, off, len, bitmap, raw, BITMAP);
       }
       this.times.scan += performance.now() - t;
       if (raw) {
@@ -365,6 +397,65 @@ export class SnapshotWriter {
       progress?.(base + len, ram.length);
     }
     return { pages, frames };
+  }
+
+  /**
+   * `ram()` through a pool: chunk c to a worker (the pool deals them: c mod its size), three in flight a worker, the
+   * frames written in order as they come back. A chunk whose worker failed is made here (RAM doesn't move while it is
+   * written), so a failed worker costs time, not the file. `times` sums the workers' scan, codec and CRC (CPU time, not
+   * the wall's).
+   */
+  async #poolRam(ram: Uint8Array<ArrayBufferLike>, pool: RamPool, progress: ((done: number, total: number) => void) | undefined, first: number) {
+    if (this.#ended) throw new Error('the snapshot is already ended');
+    const buffer = ram.buffer as SharedArrayBuffer;
+    const limit = pool.size * 3;
+    this.pooled = pool.size;
+    const counts = { pages: 0, frames: 0 };
+    const words = new Uint32Array(buffer, ram.byteOffset, ram.length >>> 2);
+    for (let base = 0; base < ram.length; base += CHUNK) {
+      const len = Math.min(CHUNK, ram.length - base);
+      const index = first + base / CHUNK;
+      await this.#drain(limit - 1);
+      const made = pool.ram(buffer, ram.byteOffset + base, len, index).catch(() => this.#ramHere(ram, words, base, len, index));
+      this.#push(made.then((r) => {
+        this.times.scan += r.scan;
+        this.times.compress += r.compress;
+        this.times.crc += r.crc;
+        return r.frame;
+      }), (frame) => {
+        if (frame) {
+          this.#frames++;
+          counts.frames++;
+        }
+        progress?.(base + len, ram.length);
+      });
+      made.then((r) => { counts.pages += r.pages; }, () => {});
+    }
+    await this.#drain(0);
+    return counts;
+  }
+
+  /** RAM chunk `index`'s frame made on this thread (`#poolRam`'s, for a chunk its worker didn't make). */
+  async #ramHere(ram: Uint8Array, words: Uint32Array, base: number, len: number, index: number): Promise<RamFrame> {
+    let t = performance.now();
+    const bitmap = new Uint8Array(BITMAP);
+    const pages = scanChunk(words, base, len, bitmap);
+    if (!pages) return { frame: null, pages, scan: performance.now() - t, compress: 0, crc: 0 };
+    const raw = new Uint8Array(BITMAP + pages * PAGE);
+    raw.set(bitmap, 0);
+    gatherPages(ram, base, len, bitmap, raw, BITMAP);
+    const scan = performance.now() - t;
+    t = performance.now();
+    let id = 0;
+    let stored: Uint8Array = raw;
+    if (this.#codec.id !== 0) {
+      const packed = await this.#codec.compress(raw);
+      if (packed.length < raw.length) { id = this.#codec.id; stored = packed; }
+    }
+    const compress = performance.now() - t;
+    t = performance.now();
+    const frame = encodeFrame('RAM ', id, index, raw.length, stored, this.#crc);
+    return { frame, pages, scan, compress, crc: performance.now() - t };
   }
 
   /** The overlay's blocks (4 KiB each) in ascending block order; consecutive blocks share frames of up to 256. */
@@ -406,17 +497,24 @@ export class SnapshotWriter {
   }
 }
 
-function encodeFrame(tag: string, codec: number, index: number, rawLen: number, stored: Uint8Array, crc: Crc, end = false) {
-  const out = new Uint8Array(FRAME_HEADER + stored.length);
+/** A frame's 32-byte header, its CRC (bytes 24 to 28) left 0 for the caller. */
+export function frameHeader(tag: string, codec: number, index: number, rawLen: number, storedLen: number): Uint8Array {
+  const out = new Uint8Array(FRAME_HEADER);
   const v = new DataView(out.buffer);
   for (let i = 0; i < 4; i++) out[i] = tag.charCodeAt(i);
   v.setUint32(4, codec, true);
   v.setUint32(8, index % 2 ** 32, true);
   v.setUint32(12, Math.floor(index / 2 ** 32), true);
   v.setUint32(16, rawLen, true);
-  v.setUint32(20, stored.length, true);
+  v.setUint32(20, storedLen, true);
+  return out;
+}
+
+function encodeFrame(tag: string, codec: number, index: number, rawLen: number, stored: Uint8Array, crc: Crc, end = false) {
+  const out = new Uint8Array(FRAME_HEADER + stored.length);
+  out.set(frameHeader(tag, codec, index, rawLen, stored.length));
   out.set(stored, FRAME_HEADER);
-  v.setUint32(24, end ? 0 : frameCrc(out, stored, crc), true);
+  new DataView(out.buffer).setUint32(24, end ? 0 : frameCrc(out, stored, crc), true);
   return out;
 }
 

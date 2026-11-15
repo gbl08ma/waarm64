@@ -1451,9 +1451,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   thread; its load takes 9.8 s. The track takes lz4_flex as codec 2, the CRC into wasm, a pool of workers for the save
   and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
   in a restore, and a breakdown of the load's machine start.
-  Loop 1 (lz4_flex, crc32fast) is in; its one-thread CRC copies each frame's stored bytes into the codec's buffer
-  (the desktop's save: 293 ms of CRC, ~0.2 s of it crc32fast's), which the pool's workers (loop 2) avoid by taking the
-  CRC where `lz_compress` left the bytes.
+  Loops 1 (lz4_flex, crc32fast) and 2 (the save's pool: the desktop's pause 3.80 to 1.07 s) are in. Left from loop 2:
+  - **The save's memory with the pool** (bench/boot/REPORT.md "SNAPZ loop 2"): the pool's six instances add ~90-140
+    MiB while a save runs (Debian's kept and file saves +88, the desktop's kept +142); the desktop's file and suspend
+    saves added more again (+316, +347 over loop 1; four workers alike), which the pool's instances don't explain:
+    perhaps the output's buffering (the download's Blob parts, OPFS) behind a sink fed 3.5x faster, perhaps the
+    probe's 250 ms samples of a 1.1 s pause. Not looked into; transient (the RSS before each next save is loop 1's).
+  - **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
+    read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (mostly their reads through the device worker),
+    and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go
+    through the pool as `bytes` jobs (a copy each way): ~0.1 s at most.
 - **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
   test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
   stale entries, or the count of a run with TLB flushes at the same points

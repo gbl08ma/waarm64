@@ -10,7 +10,8 @@ import { lzCodec } from '../web/lz.ts';
 import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
 import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
 import { crc32 as zlibCrc32 } from 'node:zlib';
-import { applyRam, crc32, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter } from '../web/snapshot-file.ts';
+import { applyRam, crc32, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, type RamPool } from '../web/snapshot-file.ts';
+import { poolSize, startPool } from '../web/snapshot-pool.ts';
 import { oldLzContent, OLD_LZ_HEADER } from './old-lz-content.ts';
 import { STEPS } from './steps.ts';
 import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, compileCore, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
@@ -173,6 +174,90 @@ test('the core\'s codec: a file the old LZ wrote (before lz4_flex) still loads, 
     const k = n >> 1;
     assert.equal(codec.crc32!(b.subarray(k), codec.crc32!(b.subarray(0, k))), zlibCrc32(b), `seeded ${n}`);
   }
+});
+
+/** RAM on shared memory for the pool's tests: zero chunks and pages, incompressible chunks, compressible pages. */
+function poolRam(chunks: number) {
+  const ram = new Uint8Array(new SharedArrayBuffer(chunks << 20));
+  let s = 7;
+  const rand = () => ((s ^= s << 13), (s ^= s >>> 17), (s ^= s << 5), s & 255);
+  for (let c = 0; c < chunks; c++) {
+    if (c % 5 === 1) continue; // all zero: no frame
+    for (let p = 0; p < 256; p++) {
+      const page = ram.subarray((c * 256 + p) * 4096, (c * 256 + p + 1) * 4096);
+      if (c % 5 === 3) page.forEach((_, i) => (page[i] = rand())); // incompressible: stored, codec 0
+      else if ((p * 7 + c) % 3 === 0) page.fill(c + p);
+      else if ((p + c) % 3 === 1) for (let i = 0; i < 4096; i += 64) page[i] = rand();
+    }
+  }
+  return ram;
+}
+
+/** A file of RAM (`views`, memory 0's then a spill memory's, numbered on), through `pool` or this thread; its progress. */
+async function poolFile(views: Uint8Array[], codec: Awaited<ReturnType<typeof lzCodec>>, pool?: RamPool) {
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, OLD_LZ_HEADER, { codec, concurrency: 1 });
+  await w.bytes('CORE', new Uint8Array(3000).fill(9));
+  const seen: number[] = [];
+  const counts = [];
+  for (const [k, v] of views.entries()) counts.push(await w.ram(v, (done) => seen.push(done), k * 64, pool));
+  await w.disk([{ block: 3, data: new Uint8Array(4096).fill(1) }]);
+  await w.end();
+  return { file: Buffer.concat(parts), seen, counts, pooled: w.pooled, times: w.times };
+}
+
+test('a save\'s pool: the file is byte-identical for any pool size and for none, a failed pool or worker falls back to this thread', async () => {
+  const codec = await lzCodec(WASM);
+  const views = [poolRam(23), poolRam(9).subarray(65536 * 16)]; // a spill memory's view starts past its memory's start
+  const one = await poolFile(views, codec);
+  assert.equal(one.pooled, 0);
+  // Read back: every page where it was.
+  const back = views.map((v) => new Uint8Array(v.length));
+  for await (const f of (await openSnapshot(new Blob([one.file]), { codecs: [codec] })).frames()) {
+    if (f.tag === 'RAM ') applyRam(back[f.index >= 64 ? 1 : 0], f.index % 64, f.data);
+  }
+  for (const [k, v] of views.entries()) assert.ok(Buffer.compare(back[k], v) === 0, `view ${k} differs after a round trip`);
+  const same = (r: Awaited<ReturnType<typeof poolFile>>, what: string) => {
+    assert.ok(Buffer.compare(r.file, one.file) === 0, `${what}: the file differs (${r.file.length} bytes against ${one.file.length})`);
+    assert.deepEqual(r.counts, one.counts, `${what}: pages and frames`);
+    // The progress: each chunk once, in order, to the end of each view.
+    assert.deepEqual(r.seen, one.seen, `${what}: the progress`);
+  };
+  for (const n of [1, 2, 3, 6]) {
+    const pool = await startPool(WASM, n);
+    assert.ok(pool, `a pool of ${n} starts`);
+    try {
+      const r = await poolFile(views, codec, pool);
+      assert.equal(r.pooled, n);
+      assert.ok(r.times.compress > 0 && r.times.scan > 0, `${n}: the workers' times are counted`);
+      same(r, `a pool of ${n}`);
+    } finally {
+      pool.close();
+    }
+  }
+  // A pool that can't start (a failed instance: a module without the codec) is none: the save runs here, the same.
+  const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+  assert.equal(await startPool(empty, 2), undefined);
+  assert.equal(await startPool(WASM, 0), undefined);
+  assert.equal(poolSize(8), 6);
+  assert.equal(poolSize(4), 3);
+  assert.equal(poolSize(1), 0);
+  // Workers that fail chunks (every third), and a pool closed (its workers ended) halfway: those are made here.
+  const pool = await startPool(WASM, 3);
+  assert.ok(pool);
+  try {
+    let asked = 0;
+    const flaky: RamPool = { size: 3, ram: (b, o, l, i) => (i % 3 === 2 ? Promise.reject(new Error('planted')) : pool.ram(b, o, l, i)) };
+    same(await poolFile(views, codec, flaky), 'a pool failing every third chunk');
+    const closing: RamPool = { size: 3, ram: (b, o, l, i) => { if (++asked === 10) pool.close(); return pool.ram(b, o, l, i); } };
+    same(await poolFile(views, codec, closing), 'a pool closed halfway');
+  } finally {
+    pool.close();
+  }
+  // A view not on shared memory is written here (the pool reads shared memory only).
+  const plain = await poolFile(views.map((v) => v.slice()), codec, { size: 2, ram: () => Promise.reject(new Error('asked')) });
+  assert.ok(Buffer.compare(plain.file, one.file) === 0, 'a plain view through a pool');
+  assert.equal(plain.pooled, 0);
 });
 
 test('a snapshot of another machine, another version or with a damaged state is refused', { skip }, async () => {

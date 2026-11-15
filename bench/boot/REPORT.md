@@ -4996,3 +4996,64 @@ a settling browser), file 990 (the download's Blob, as before), suspend 182 (183
 DEVS, two RAM frames, three DISK runs, all codec 2; its content from `tests/old-lz-content.ts`) loads byte-exact
 (`tests/snapshot.test.ts`, and natively `core/src/codec.rs` `old_codec_frames_still_load`); the desktop's warm file
 loaded in every new-arm round above.
+
+## SNAPZ loop 2: the save's pool (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs: `hardwareConcurrency` 8, so a pool of 6), Chromium 155.0.8059.84 headless, the
+persistent profile `target/snapz/profile`; nothing else ran. Raw: `results/snapz-2/` (`<guest>-<arm>.json`, three
+rounds each, joined from `rounds/` by `merge.ts`; `summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab.txt`, its
+log). **Built:** RAM's frames made by a pool of workers (`web/snapshot-pool.ts`, `web/snapshot-pool-worker.ts`;
+docs/platform.md "A save's pool"), for a kept snapshot, a file and a suspend: `min(hardwareConcurrency − 1, 6)`
+workers, each with a core instance of its own on a small memory, scanning, gathering, compressing and CRC-ing its
+chunks straight from guest RAM (the shared memories), chunk c to worker c mod n, three in flight a worker, the machine
+worker writing the frames in order. No core or ABI change (loop 1's exports served as they were); the codec's instance
+now stubs the core's imports (`codecCore`, web/lz.ts), so a pool worker loads none of web/vm.ts. The pool starts when
+the save is asked for, beside the balloon's hint, and ends with the save: no warm pool.
+
+**The arms:** base = 0094eeee (loop 1, one thread), new = this loop's tree (6 workers), four = the same capped at 4
+(`POOL_MAX`), all on the same wasm (core `0ffff6be…`); the JSON's commits 2b030a6f and ebd5263f are local commits of
+this tree (new, and four's one-line change), squashed into this loop's. Each round a browser of its own (`ROUNDS=1`); Debian base, new
+×3, the desktop in a Latin square (base new four, new four base, four base new). Median (range), ms:
+
+| desktop (689 MB file) | base | new (6) | four | new vs base |
+|---|---|---|---|---|
+| kept: paused | 3,801 (3,767-3,814) | 1,069 (1,067-1,143) | 1,223 (1,184-1,269) | −72%, 3.6x |
+| ... ram (wall) | 3,365 (3,332-3,401) | 674 (671-716) | 820 (794-836) | 5.0x |
+| file: paused | 3,823 (3,805-3,827) | 1,155 (1,143-1,194) | 1,272 (1,256-1,284) | −70% |
+| suspend: paused | 3,665 (3,626-3,742) | 1,100 (1,041-1,132) | 1,206 (1,164-1,218) | −70% |
+| kept: wall (Snapshot to done) | 4,154 (4,087-4,177) | 1,392 (1,346-1,498) | 1,535 (1,481-1,642) | |
+| the pool's start / the save's wait for it | | 35-38 / 0-28 | 27-31 / 0-20 | |
+| file's size, MB: kept / file / suspend | 676 / 679 / 661 | 676 / 679 / 661 | 676 / 679 / 661 | same |
+
+| Debian (97 MB file) | base | new (6) | |
+|---|---|---|---|
+| kept: paused | 520 (519-523) | 162 (160-165) | −69% |
+| file: paused | 535 (534-544) | 168 (167-168) | −69% |
+| suspend: paused | 502 (499-515) | 141 (139-143) | −72% |
+
+No range overlaps. Loads and resumes are unchanged (loop 3's), as they should be: desktop load 9,126 / 9,102, resume
+7,241 / 6,937; Debian 2,065 / 2,078. **Against the projection** ("SNAPZ: compression…": ~1.2-1.3 s at 4 workers,
+~1.0-1.1 s at 6): 1.22 s at 4, 1.07 s at 6. What is left of the 1.07 s: the devices' state 0.23 s (3D read back), the
+BLOB frames 0.05, RAM's wall 0.67 (the workers' sums: scan 0.27, codec 2.94, CRC 0.53 s of CPU, against one thread's
+0.49 / 2.56 / 0.29: the codec ~15% slower a frame on six busy threads, the CRC's sum includes each frame's copy out of
+the worker's memory), the disk's blocks 0.12 (mostly their reads), and the frames' writing in order (sink 0.27 summed,
+on the machine worker). The pool's start (six workers and their instances, the core module posted) takes 35-38 ms,
+under the hint; the save waited 0-28 ms for it.
+
+**Memory** (the browser's RSS, the peak during a save over the memory before it; samples every 250 ms, ~4 in a 1.1 s
+pause): Debian kept +63 → +151 MiB, file +199 → +286, suspend +71 → +68; the desktop kept −5 → +137 (four: +122),
+file +987 → +1,303 (+1,456), suspend +185 → +532 (+511). So the pool's six instances cost ~90-140 MiB while a save runs
+(Node: a pool of six +132 MiB, six empty worker threads +50: each instance's memory and its isolate); the desktop's file
+and suspend added ~170-210 MiB more than that, not explained here (docs/backlog.md). It is transient: no worker stays,
+and the RSS before each next save was loop 1's (kept 3,783 against 3,784 MiB; file 3,322 / 3,317; suspend 4,028 /
+4,184).
+
+**Correctness:** `tests/snapshot.test.ts` "a save's pool": 32 MiB of RAM on shared memory in two views (zero chunks and
+pages, incompressible chunks stored as codec 0, compressible ones; the second view at an offset, numbered on as a spill
+memory's) written through pools of 1, 2, 3 and 6 real workers (Node's worker_threads) and on one thread: the files
+byte-identical, the progress the same calls in the same order, the pages and frames counted alike; a pool that can't
+start (a module without the codec, 0 workers) is none; a pool failing every third chunk and one closed halfway give the
+same file (the writer makes those chunks itself); a view not on shared memory is written on one thread. Planted, each
+caught by it: frames written as they finish rather than in order; a worker's frame dropped; the pool's replies matched
+to the wrong job; the worker's CRC over the stored bytes only; a failed chunk not made by the writer. The page tests'
+`checkSave` (tests/snapshot-phases.ts) now has every save on a host with a thread to spare go through a pool.

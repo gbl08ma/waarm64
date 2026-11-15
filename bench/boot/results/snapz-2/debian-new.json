@@ -1,0 +1,458 @@
+{
+ "meta": {
+  "guest": "debian",
+  "mode": "stored",
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/debian-go.waarm64snap",
+  "bytes": 96543163,
+  "rounds": 3,
+  "settleS": 20,
+  "commit": "2b030a6f",
+  "core": "0ffff6be4582386c",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-15T16:48:13.214Z",
+  "wallS": 68,
+  "parts": [
+   {
+    "date": "2026-11-15T16:48:13.214Z",
+    "core": "0ffff6be4582386c",
+    "commit": "2b030a6f"
+   },
+   {
+    "date": "2026-11-15T16:50:31.890Z",
+    "core": "0ffff6be4582386c",
+    "commit": "2b030a6f"
+   },
+   {
+    "date": "2026-11-15T16:52:50.654Z",
+    "core": "0ffff6be4582386c",
+    "commit": "2b030a6f"
+   }
+  ]
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 2078,
+    "phases": {
+     "check": 86,
+     "checkRead": 41,
+     "checkCrc": 44,
+     "state": 3,
+     "ram": 241,
+     "apply": 39,
+     "disk": 449,
+     "read": 20,
+     "crc": 46,
+     "unpack": 144,
+     "prepare": 429,
+     "start": 749,
+     "total": 1958
+    }
+   },
+   "kept": {
+    "wallMs": 332,
+    "kind": "kept",
+    "bytes": 95260390,
+    "pausedMs": 162,
+    "stateMs": 11,
+    "blobBytes": 0,
+    "hintMs": 42,
+    "hinted": 717225984,
+    "id": "bcfa98bbe594",
+    "phases": {
+     "state": 11,
+     "blobs": 1,
+     "ram": 125,
+     "disk": 23,
+     "pool": 6,
+     "scan": 99,
+     "compress": 389,
+     "crc": 78,
+     "sink": 32,
+     "poolWait": 0,
+     "poolReady": 24,
+     "pause": 0,
+     "close": 21
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1869,
+      "pssMiB": 1246
+     },
+     "peak": {
+      "rssMiB": 2020,
+      "pssMiB": 1393
+     }
+    }
+   },
+   "file": {
+    "wallMs": 429,
+    "kind": "file",
+    "bytes": 95456339,
+    "pausedMs": 168,
+    "stateMs": 6,
+    "blobBytes": 0,
+    "hintMs": 43,
+    "hinted": 717225984,
+    "phases": {
+     "state": 6,
+     "blobs": 1,
+     "ram": 136,
+     "disk": 25,
+     "pool": 6,
+     "scan": 105,
+     "compress": 406,
+     "crc": 60,
+     "sink": 29,
+     "poolWait": 0,
+     "poolReady": 26,
+     "pause": 0,
+     "close": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1732,
+      "pssMiB": 1106
+     },
+     "peak": {
+      "rssMiB": 2018,
+      "pssMiB": 1385
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 294,
+    "kind": "suspend",
+    "bytes": 94110006,
+    "pausedMs": 139,
+    "phases": {
+     "state": 4,
+     "blobs": 1,
+     "ram": 112,
+     "disk": 0,
+     "pool": 6,
+     "scan": 94,
+     "compress": 374,
+     "crc": 53,
+     "sink": 26,
+     "close": 18,
+     "poolWait": 0,
+     "poolReady": 30,
+     "pause": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1950,
+      "pssMiB": 1322
+     },
+     "peak": {
+      "rssMiB": 2073,
+      "pssMiB": 1445
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 1911,
+    "phases": {
+     "check": 83,
+     "checkRead": 33,
+     "checkCrc": 48,
+     "state": 4,
+     "ram": 244,
+     "apply": 43,
+     "disk": 0,
+     "read": 20,
+     "crc": 44,
+     "unpack": 139,
+     "prepare": 389,
+     "start": 695,
+     "total": 1416
+    }
+   }
+  },
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 1969,
+    "phases": {
+     "check": 87,
+     "checkRead": 37,
+     "checkCrc": 47,
+     "state": 8,
+     "ram": 242,
+     "apply": 40,
+     "disk": 435,
+     "read": 21,
+     "crc": 46,
+     "unpack": 145,
+     "prepare": 409,
+     "start": 640,
+     "total": 1821
+    }
+   },
+   "kept": {
+    "wallMs": 376,
+    "kind": "kept",
+    "bytes": 95292150,
+    "pausedMs": 165,
+    "stateMs": 11,
+    "blobBytes": 0,
+    "hintMs": 44,
+    "hinted": 717225984,
+    "id": "addb2cab0332",
+    "phases": {
+     "state": 11,
+     "blobs": 1,
+     "ram": 128,
+     "disk": 23,
+     "pool": 6,
+     "scan": 106,
+     "compress": 388,
+     "crc": 57,
+     "sink": 38,
+     "poolWait": 0,
+     "poolReady": 28,
+     "pause": 0,
+     "close": 20
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1869,
+      "pssMiB": 1246
+     },
+     "peak": {
+      "rssMiB": 2014,
+      "pssMiB": 1387
+     }
+    }
+   },
+   "file": {
+    "wallMs": 440,
+    "kind": "file",
+    "bytes": 95396671,
+    "pausedMs": 168,
+    "stateMs": 6,
+    "blobBytes": 0,
+    "hintMs": 47,
+    "hinted": 717225984,
+    "phases": {
+     "state": 6,
+     "blobs": 1,
+     "ram": 135,
+     "disk": 25,
+     "pool": 6,
+     "scan": 104,
+     "compress": 412,
+     "crc": 61,
+     "sink": 32,
+     "poolWait": 0,
+     "poolReady": 30,
+     "pause": 0,
+     "close": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1728,
+      "pssMiB": 1103
+     },
+     "peak": {
+      "rssMiB": 2017,
+      "pssMiB": 1382
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 277,
+    "kind": "suspend",
+    "bytes": 94041022,
+    "pausedMs": 141,
+    "phases": {
+     "state": 4,
+     "blobs": 1,
+     "ram": 113,
+     "disk": 0,
+     "pool": 6,
+     "scan": 96,
+     "compress": 374,
+     "crc": 53,
+     "sink": 29,
+     "close": 20,
+     "poolWait": 0,
+     "poolReady": 28,
+     "pause": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1944,
+      "pssMiB": 1315
+     },
+     "peak": {
+      "rssMiB": 2012,
+      "pssMiB": 1384
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 1933,
+    "phases": {
+     "check": 84,
+     "checkRead": 34,
+     "checkCrc": 49,
+     "state": 3,
+     "ram": 244,
+     "apply": 43,
+     "disk": 0,
+     "read": 19,
+     "crc": 45,
+     "unpack": 139,
+     "prepare": 392,
+     "start": 724,
+     "total": 1448
+    }
+   }
+  },
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 2174,
+    "phases": {
+     "check": 89,
+     "checkRead": 42,
+     "checkCrc": 45,
+     "state": 4,
+     "ram": 253,
+     "apply": 46,
+     "disk": 437,
+     "read": 23,
+     "crc": 45,
+     "unpack": 147,
+     "prepare": 476,
+     "start": 724,
+     "total": 1981
+    }
+   },
+   "kept": {
+    "wallMs": 377,
+    "kind": "kept",
+    "bytes": 95252482,
+    "pausedMs": 160,
+    "stateMs": 11,
+    "blobBytes": 0,
+    "hintMs": 44,
+    "hinted": 717225984,
+    "id": "7d1417281e39",
+    "phases": {
+     "state": 11,
+     "blobs": 1,
+     "ram": 124,
+     "disk": 23,
+     "pool": 6,
+     "scan": 105,
+     "compress": 384,
+     "crc": 68,
+     "sink": 33,
+     "poolWait": 0,
+     "poolReady": 22,
+     "pause": 0,
+     "close": 18
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1859,
+      "pssMiB": 1234
+     },
+     "peak": {
+      "rssMiB": 2023,
+      "pssMiB": 1394
+     }
+    }
+   },
+   "file": {
+    "wallMs": 445,
+    "kind": "file",
+    "bytes": 95493447,
+    "pausedMs": 167,
+    "stateMs": 6,
+    "blobBytes": 0,
+    "hintMs": 52,
+    "hinted": 717225984,
+    "phases": {
+     "state": 6,
+     "blobs": 1,
+     "ram": 133,
+     "disk": 26,
+     "pool": 6,
+     "scan": 106,
+     "compress": 419,
+     "crc": 82,
+     "sink": 33,
+     "poolWait": 0,
+     "poolReady": 28,
+     "pause": 0,
+     "close": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1734,
+      "pssMiB": 1106
+     },
+     "peak": {
+      "rssMiB": 2000,
+      "pssMiB": 1364
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 273,
+    "kind": "suspend",
+    "bytes": 94132887,
+    "pausedMs": 143,
+    "phases": {
+     "state": 4,
+     "blobs": 1,
+     "ram": 115,
+     "disk": 0,
+     "pool": 6,
+     "scan": 93,
+     "compress": 373,
+     "crc": 53,
+     "sink": 34,
+     "close": 19,
+     "poolWait": 0,
+     "poolReady": 28,
+     "pause": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1951,
+      "pssMiB": 1320
+     },
+     "peak": {
+      "rssMiB": 2015,
+      "pssMiB": 1385
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 2016,
+    "phases": {
+     "check": 80,
+     "checkRead": 34,
+     "checkCrc": 44,
+     "state": 6,
+     "ram": 242,
+     "apply": 42,
+     "disk": 0,
+     "read": 19,
+     "crc": 44,
+     "unpack": 137,
+     "prepare": 491,
+     "start": 747,
+     "total": 1566
+    }
+   }
+  }
+ ]
+}

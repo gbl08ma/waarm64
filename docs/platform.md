@@ -332,7 +332,7 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   [devices.md](devices.md) "virtio-gpu"; 9p's in-memory tree refuses to be saved: [shares.md](shares.md) §6) with the serial input the guest hadn't been given, and
   RAM in 1 MiB chunks without their zero pages (the guest's free memory zero by then: the balloon's hint, devices.md
   "balloon"), compressed by the core's lz4_flex (`web/lz.ts`, an
-  instance of the core of its own). A restore creates the VM without booting it, fills RAM from
+  instance of the core of its own; RAM's frames by a save's pool of workers, "The snapshot file" below). A restore creates the VM without booting it, fills RAM from
   the file, has the core restore its state, starts the backends with theirs and serves the
   doorbell once. A parallel VM is paused first ("Pausing a VM").
 - **The disk is in the file** (`web/snapshot.ts`): RAM holds the guest's page cache and filesystem
@@ -383,6 +383,25 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's own LZ (`core/src/lz.rs`, which wrote
   the same format: its files load, `tests/fixtures/old-lz.waarm64snap`) for a desktop save paused 9% less, its RAM
   frames unpacked 1.6x faster and a 2% smaller file ("SNAPZ loop 1").
+- **A save's pool** (`web/snapshot-pool.ts`, `web/snapshot-pool-worker.ts`; the writer's `RamPool`): RAM's frames are
+  made by `min(navigator.hardwareConcurrency − 1, 6)` workers (`poolSize`; the paused machine's vCPU threads are idle).
+  Each has a core instance of its own on a small memory (`codecCore` in `web/lz.ts`: the core's imports stubbed, none
+  of web/vm.ts loaded) and reads guest RAM where it lies: a job is a shared buffer (memory 0's, or a spill memory's:
+  every RAM view is a `SharedArrayBuffer`), an offset, a length and the chunk's index. The worker scans the chunk for
+  zero pages, gathers its pages into its instance's memory, compresses them there and takes the frame's CRC over the
+  header and the bytes where `lz_compress` left them (no copy), and posts the frame back whole (transferred). Chunk c
+  goes to worker c mod n, three in flight a worker; the machine worker writes the frames in order. Each frame is
+  compressed alone with the same codec and rule (stored when it doesn't shrink), so **the file's bytes don't depend on
+  the pool's size**, nor on whether there is one (`tests/snapshot.test.ts` "a save's pool"). The pool covers RAM
+  only: CORE, DEVS, BLOB and DISK frames (the desktop's: 46 ms and ~110-180 ms of a 1.1 s pause, the disk's mostly
+  its reads) stay on the machine worker. It is started **per save, when the save is asked for** (Snapshot, a kept
+  snapshot, Suspend: `web/app/worker-snapshot.ts`), beside the balloon's hint, and closed once the file is written:
+  its start (~35-45 ms to six instances) is not paused time, and no worker stays between saves. **The fallback:**
+  a pool that can't start (no worker, a failed instance, none ready in 10 s, one CPU) is none, and the save runs on
+  the machine worker as before; a worker that fails mid-save fails its chunks and every later one, which the writer
+  makes itself (RAM doesn't move while it is written): time lost, not the file. A view that isn't shared memory or
+  4-aligned, and a writer of another codec, take the one-thread path too. The desktop's pause went from 3.79 s to
+  ~1.1 s ("SNAPZ loop 2").
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,

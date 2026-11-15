@@ -711,7 +711,9 @@ would refuse it now (`snapshot-check`: Vulkan in use, a video decoding), and say
 the guest's input held, the guest's free memory is handed over so the file leaves it out (the state line: [Freeing the
 guest's unused memory](ui:snapshots:worker-snapshot.phase.freeing)): the guest agent drops the guest's caches under
 Preferences' switch (devices.md "The caches dropped before a snapshot"), then the worker has the balloon's hint taken
-(devices.md "balloon": tens of ms; `hintMs` and `hinted` in `data-snapshot`), and gives the memory back after the save. The worker pauses it (`vm.pause()`), writes the file with
+(devices.md "balloon": tens of ms; `hintMs` and `hinted` in `data-snapshot`), and gives the memory back after the save.
+Meanwhile the save's pool of workers starts (platform.md "A save's pool": RAM's frames made on several threads; a pool
+that can't start leaves them to the worker). The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
@@ -728,7 +730,10 @@ disk and Import changes say to wait. The run loop is not disturbed by the pause
 `SaveTimes`, web/snapshot.ts `SavePhases`): `pause` (the vCPUs stopping), `state` (the devices' state: a 3D renderer's
 read-back), `blobs` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames), `disk` (the disks' blocks read and framed,
 and the end); over all the frames, `scan` (RAM's zero-page scan and gather), `compress` (the codec), `crc` (the frame's
-encoding and CRC) and `sink` (the waits on the output); and `close` (the output closed: a file's or a kept snapshot's
+encoding and CRC; with a pool, RAM's are its workers' sums: CPU time, up to `pool` times `ram`'s wall) and `sink` (the
+waits on the output); `pool` (the workers that made RAM's frames, 0: the machine worker did: platform.md "A save's
+pool"), `poolReady` (the pool's start to its last worker ready, 0 without one) and `poolWait` (what the save waited
+for it after the hint, before the pause); and `close` (the output closed: a file's or a kept snapshot's
 after the resume, a suspended copy's before the stop). A start from a snapshot or a suspended copy posts `loaded` once
 it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is

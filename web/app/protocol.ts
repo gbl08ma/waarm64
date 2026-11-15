@@ -260,9 +260,11 @@ export type DiskRef = { source: DiskSource; overlay?: string; identity?: string 
 /**
  * Where a save's time went, ms (`snapshot-done`, `suspend-done`; the page puts it in `#message`'s `data-snapshot`):
  * web/snapshot.ts `SavePhases`, with the worker's wait for the vCPUs to stop (`pause`) and the output's close (`close`:
- * a picked file's stream or a kept snapshot's file after the resume, not paused; a suspended copy's before the stop).
+ * a picked file's stream or a kept snapshot's file after the resume, not paused; a suspended copy's before the stop);
+ * and, before the pause, the save's pool started (`poolReady`: its start to its last worker ready, 0 without one) and
+ * how long the save waited for it once the guest's free memory was handed over (`poolWait`).
  */
-export type SaveTimes = SavePhases & { pause: number; close: number };
+export type SaveTimes = SavePhases & { pause: number; close: number; poolWait: number; poolReady: number };
 /**
  * Where a start from a snapshot's time went, ms (`loaded`; the page puts it in `#message`'s `data-load`): the core
  * fetched and compiled and the machine's parts (`prepare`), web/snapshot.ts `RestorePhases` (the check pass, the state,

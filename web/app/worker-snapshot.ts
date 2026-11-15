@@ -8,6 +8,7 @@ import type { Codec, Sink } from '../snapshot-file.ts';
 import { writeSnapshot } from '../snapshot.ts';
 import { makeRoom } from '../diskcache.ts';
 import type { lzCodec } from '../lz.ts';
+import { startPool, type SavePool } from '../snapshot-pool.ts';
 import type { Machine } from './machine.ts';
 import { header, type Session } from './worker-header.ts';
 import { post, progress, state, throttled } from './worker-post.ts';
@@ -122,7 +123,7 @@ async function hint(r: Running, id: number) {
  * Pauses the machine, writes its snapshot to `sink` (a stored disk written in place left out unless `whole`) and
  * resumes it, also on an error. The guest's clock stands still meanwhile: the page has the agent set it after.
  */
-async function pausedWrite(r: Running, id: number, sink: Sink, lz: Codec, o: { whole: boolean }) {
+async function pausedWrite(r: Running, id: number, sink: Sink, lz: Codec, o: { whole: boolean; pool?: SavePool }) {
   const v = r.vm;
   progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
   const t0 = performance.now();
@@ -131,12 +132,33 @@ async function pausedWrite(r: Running, id: number, sink: Sink, lz: Codec, o: { w
   try {
     const w = await writeSnapshot(v, sink, meta(r), lz, {
       omit: (slot) => !o.whole && r.inPlace(slot),
+      pool: o.pool,
       progress: throttled(id, msg('snapshots:worker-snapshot.phase.writing')),
     });
     return { ...w, pause };
   } finally {
     v.resume();
   }
+}
+
+/**
+ * The save's pool, started before the pause (with the hint: its start isn't paused time), and how long the save waited
+ * for it after the hint (`poolWait`) and its start took (`poolReady`); `close` ends it, whatever came of it.
+ */
+function poolFor(r: Running) {
+  // None when it can't start (web/snapshot-pool.ts): the save runs on this thread.
+  const started = r
+    .codec()
+    .then((lz) => startPool(lz.module))
+    .catch(() => undefined);
+  return {
+    async ready() {
+      const t = performance.now();
+      const pool = await started;
+      return { pool, times: { poolWait: performance.now() - t, poolReady: pool?.readyMs ?? 0 } };
+    },
+    close: () => void started.then((p) => p?.close()),
+  };
 }
 
 /**
@@ -167,40 +189,47 @@ export async function saveSnapshot(
     );
   snapshotting = true;
   let out: Out | undefined;
+  let pool: ReturnType<typeof poolFor> | undefined;
   try {
     const lz = await r.codec();
+    pool = poolFor(r);
     out = await output(id, handle, keep);
     let hinted;
     let w;
     let pausedMs;
+    let started;
     try {
       hinted = await hint(r, id);
+      started = await pool.ready();
       const t0 = performance.now();
-      w = await pausedWrite(r, id, out.sink, lz, { whole });
+      w = await pausedWrite(r, id, out.sink, lz, { whole, pool: started.pool });
       pausedMs = performance.now() - t0;
     } finally {
       r.vm.release(); // the guest's free memory back to it, the save done or not
+      pool.close();
     }
     progress(id, msg('snapshots:worker-snapshot.phase.finishing'), 1);
     const t1 = performance.now();
     await out.close();
     const { bytes, stateMs, blobBytes, pins, pause } = w;
-    const phases: SaveTimes = { ...w.phases, pause, close: performance.now() - t1 };
+    const phases: SaveTimes = { ...w.phases, ...started.times, pause, close: performance.now() - t1 };
     post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted, phases });
   } catch (err) {
     fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
   } finally {
+    pool?.close();
     await out?.abort();
     snapshotting = false;
   }
 }
 
 /** Writes the suspended copy beside the overlay in `home`; its size and where the time went (but the pause's). */
-async function writeSuspended(r: Running, home: string, id: number, lz: Codec) {
+async function writeSuspended(r: Running, home: string, id: number, lz: Codec, pool?: SavePool) {
   const out = await suspendWriter(home, makeRoom);
   try {
     const w = await writeSnapshot(r.vm, (chunk) => out.write(chunk), meta(r), lz, {
       suspend: true,
+      pool,
       progress: throttled(id, msg('machine:worker-snapshot.phase.suspending')),
     });
     const t = performance.now();
@@ -242,27 +271,32 @@ export async function suspend(r: Running | undefined, id: number) {
   snapshotting = true;
   let paused = false;
   let closing = false;
+  let pool: ReturnType<typeof poolFor> | undefined;
   try {
     const lz = await r.codec();
+    pool = poolFor(r);
     // A restored machine's balloon gives the hinted memory back (web/balloon.ts `restore`); a failed suspend here.
     await hint(r, id);
+    const started = await pool.ready();
     progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
     const t0 = performance.now();
     if (!(await r.vm.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
     paused = true;
     const pause = performance.now() - t0;
-    const { bytes, phases } = await writeSuspended(r, home, id, lz);
+    const { bytes, phases } = await writeSuspended(r, home, id, lz, started.pool);
     const pausedMs = performance.now() - t0;
+    pool.close();
     // From here the machine must not run: the file is only good for the disk as it is now.
     closing = true;
     await r.close();
-    post({ type: 'suspend-done', id, bytes, pausedMs, phases: { ...phases, pause } });
+    post({ type: 'suspend-done', id, bytes, pausedMs, phases: { ...phases, ...started.times, pause } });
     state('suspended', { note: msg('machine:worker-snapshot.suspended', { size: bytes }) });
   } catch (err) {
     if (paused && !closing) r.vm.resume();
     if (!closing) r.vm.release();
     fail(new MsgError('machine:worker-snapshot.suspend.failed', {}, { cause: err }));
   } finally {
+    pool?.close();
     snapshotting = false;
   }
 }

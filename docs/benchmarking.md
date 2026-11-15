@@ -165,7 +165,10 @@ on). Dev-only, alone like any Chromium session:
   every 250 ms), go to the JSON (default `bench/results/local/snapz-probe/`); `probe-summary.ts` gives medians and
   ranges per operation. Alternate arms by rounds of their own, each in a browser of its own (`ROUNDS=1`: the
   browser's memory grows within a session), an arm being its tree checked out and its wasm copied into the build's
-  path (`bench/boot/results/snapz-1/run-ab.sh` and `merge.ts`, which joins the rounds into one file an arm).
+  path (`bench/boot/results/snapz-1/run-ab.sh` and `merge.ts`, which joins the rounds into one file an arm; loop 2's
+  `snapz-2/run-ab.sh` for arms that differ in JS only). Since loop 2 a save's `scan`, `compress` and `crc` are the
+  pool's workers' sums (CPU time; `pool` says how many): compare its wall by `ram` and `pausedMs`. A pause of ~1 s
+  gets ~4 of the 250 ms memory samples: its peak is coarse.
 - **A stored machine:** the warm files were saved by transient machines (opened by URL), which keep no snapshots, so
   the probe makes "SNAPZ desktop" (or debian) in the profile, of the files' shape (vCPUs, RAM, 3D, a network card, the
   clock; the disks by URL), and a copy of the file under that machine's header, `target/snapz/<guest>-<hash>.waarm64snap`

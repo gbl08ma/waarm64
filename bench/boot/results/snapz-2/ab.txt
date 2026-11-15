@@ -1,0 +1,122 @@
+== debian round 1: base at 0094eeee, pool max none
+rc=0 
+round 0 load {"wallMs":2197,"phases":{"check":174,"checkRead":134,"checkCrc":38,"state":4,"ram":250,"apply":43,"disk":460,"read":22,"crc":46,"unpack":148,"prepa
+round 0 kept {"wallMs":685,"kind":"kept","bytes":95227388,"pausedMs":520,"stateMs":11,"blobBytes":0,"hintMs":40,"hinted":717225984,"id":"6d6d6b63df60","phases":
+round 0 file {"wallMs":786,"kind":"file","bytes":95427301,"pausedMs":535,"stateMs":6,"blobBytes":0,"hintMs":38,"hinted":717225984,"phases":{"state":6,"blobs":1,
+round 0 suspend {"wallMs":643,"kind":"suspend","bytes":94073872,"pausedMs":499,"phases":{"state":4,"blobs":1,"ram":469,"disk":0,"scan":92,"compress":325,"crc":4
+round 0 resume {"wallMs":1716,"phases":{"check":84,"checkRead":35,"checkCrc":47,"state":4,"ram":238,"apply":41,"disk":0,"read":18,"crc":43,"unpack":136,"prepare
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/debian-base-1.json
+== debian round 2: new at 2b030a6f, pool max POOL_MAX = 6
+rc=0 
+round 0 load {"wallMs":2078,"phases":{"check":86,"checkRead":41,"checkCrc":44,"state":3,"ram":241,"apply":39,"disk":449,"read":20,"crc":46,"unpack":144,"prepare
+round 0 kept {"wallMs":332,"kind":"kept","bytes":95260390,"pausedMs":162,"stateMs":11,"blobBytes":0,"hintMs":42,"hinted":717225984,"id":"bcfa98bbe594","phases":
+round 0 file {"wallMs":429,"kind":"file","bytes":95456339,"pausedMs":168,"stateMs":6,"blobBytes":0,"hintMs":43,"hinted":717225984,"phases":{"state":6,"blobs":1,
+round 0 suspend {"wallMs":294,"kind":"suspend","bytes":94110006,"pausedMs":139,"phases":{"state":4,"blobs":1,"ram":112,"disk":0,"pool":6,"scan":94,"compress":37
+round 0 resume {"wallMs":1911,"phases":{"check":83,"checkRead":33,"checkCrc":48,"state":4,"ram":244,"apply":43,"disk":0,"read":20,"crc":44,"unpack":139,"prepare
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/debian-new-2.json
+== debian round 3: base at 0094eeee, pool max none
+rc=0 
+round 0 load {"wallMs":2065,"phases":{"check":87,"checkRead":42,"checkCrc":44,"state":4,"ram":241,"apply":40,"disk":444,"read":20,"crc":45,"unpack":144,"prepare
+round 0 kept {"wallMs":744,"kind":"kept","bytes":95315030,"pausedMs":523,"stateMs":11,"blobBytes":0,"hintMs":40,"hinted":717225984,"id":"47f082fce71e","phases":
+round 0 file {"wallMs":836,"kind":"file","bytes":95516737,"pausedMs":544,"stateMs":6,"blobBytes":0,"hintMs":39,"hinted":717225984,"phases":{"state":6,"blobs":1,
+round 0 suspend {"wallMs":647,"kind":"suspend","bytes":94136783,"pausedMs":502,"phases":{"state":4,"blobs":1,"ram":474,"disk":0,"scan":92,"compress":325,"crc":4
+round 0 resume {"wallMs":1941,"phases":{"check":81,"checkRead":36,"checkCrc":44,"state":3,"ram":240,"apply":41,"disk":0,"read":18,"crc":43,"unpack":137,"prepare
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/debian-base-3.json
+== debian round 4: new at 2b030a6f, pool max POOL_MAX = 6
+rc=0 
+round 0 load {"wallMs":1969,"phases":{"check":87,"checkRead":37,"checkCrc":47,"state":8,"ram":242,"apply":40,"disk":435,"read":21,"crc":46,"unpack":145,"prepare
+round 0 kept {"wallMs":376,"kind":"kept","bytes":95292150,"pausedMs":165,"stateMs":11,"blobBytes":0,"hintMs":44,"hinted":717225984,"id":"addb2cab0332","phases":
+round 0 file {"wallMs":440,"kind":"file","bytes":95396671,"pausedMs":168,"stateMs":6,"blobBytes":0,"hintMs":47,"hinted":717225984,"phases":{"state":6,"blobs":1,
+round 0 suspend {"wallMs":277,"kind":"suspend","bytes":94041022,"pausedMs":141,"phases":{"state":4,"blobs":1,"ram":113,"disk":0,"pool":6,"scan":96,"compress":37
+round 0 resume {"wallMs":1933,"phases":{"check":84,"checkRead":34,"checkCrc":49,"state":3,"ram":244,"apply":43,"disk":0,"read":19,"crc":45,"unpack":139,"prepare
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/debian-new-4.json
+== debian round 5: base at 0094eeee, pool max none
+rc=0 
+round 0 load {"wallMs":1975,"phases":{"check":90,"checkRead":45,"checkCrc":43,"state":4,"ram":242,"apply":40,"disk":444,"read":20,"crc":46,"unpack":145,"prepare
+round 0 kept {"wallMs":691,"kind":"kept","bytes":95271561,"pausedMs":519,"stateMs":11,"blobBytes":0,"hintMs":40,"hinted":717225984,"id":"33f1469a229a","phases":
+round 0 file {"wallMs":810,"kind":"file","bytes":95526725,"pausedMs":534,"stateMs":6,"blobBytes":0,"hintMs":38,"hinted":717225984,"phases":{"state":6,"blobs":1,
+round 0 suspend {"wallMs":644,"kind":"suspend","bytes":94187846,"pausedMs":515,"phases":{"state":5,"blobs":1,"ram":487,"disk":0,"scan":103,"compress":328,"crc":
+round 0 resume {"wallMs":1899,"phases":{"check":92,"checkRead":43,"checkCrc":46,"state":4,"ram":252,"apply":47,"disk":0,"read":21,"crc":44,"unpack":141,"prepare
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/debian-base-5.json
+== debian round 6: new at 2b030a6f, pool max POOL_MAX = 6
+rc=0 
+round 0 load {"wallMs":2174,"phases":{"check":89,"checkRead":42,"checkCrc":45,"state":4,"ram":253,"apply":46,"disk":437,"read":23,"crc":45,"unpack":147,"prepare
+round 0 kept {"wallMs":377,"kind":"kept","bytes":95252482,"pausedMs":160,"stateMs":11,"blobBytes":0,"hintMs":44,"hinted":717225984,"id":"7d1417281e39","phases":
+round 0 file {"wallMs":445,"kind":"file","bytes":95493447,"pausedMs":167,"stateMs":6,"blobBytes":0,"hintMs":52,"hinted":717225984,"phases":{"state":6,"blobs":1,
+round 0 suspend {"wallMs":273,"kind":"suspend","bytes":94132887,"pausedMs":143,"phases":{"state":4,"blobs":1,"ram":115,"disk":0,"pool":6,"scan":93,"compress":37
+round 0 resume {"wallMs":2016,"phases":{"check":80,"checkRead":34,"checkCrc":44,"state":6,"ram":242,"apply":42,"disk":0,"read":19,"crc":44,"unpack":137,"prepare
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/debian-new-6.json
+ALLDONE
+== desktop round 1: base at 0094eeee, pool max none
+rc=0 
+round 0 load {"wallMs":9242,"phases":{"check":749,"checkRead":467,"checkCrc":276,"state":68,"ram":1963,"apply":398,"disk":2159,"read":219,"crc":325,"unpack":110
+round 0 kept {"wallMs":4087,"kind":"kept","bytes":675568416,"pausedMs":3801,"stateMs":232,"blobBytes":109066428,"hintMs":11,"hinted":910163968,"id":"2704241cfef
+round 0 file {"wallMs":4545,"kind":"file","bytes":678901503,"pausedMs":3805,"stateMs":179,"blobBytes":109066428,"hintMs":10,"hinted":910163968,"phases":{"state"
+round 0 suspend {"wallMs":3731,"kind":"suspend","bytes":661389378,"pausedMs":3665,"phases":{"state":172,"blobs":40,"ram":3339,"disk":0,"scan":492,"compress":248
+round 0 resume {"wallMs":7496,"phases":{"check":524,"checkRead":216,"checkCrc":304,"state":65,"ram":1727,"apply":292,"disk":0,"read":162,"crc":317,"unpack":997,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-base-1.json
+== desktop round 2: new at 2b030a6f, pool max POOL_MAX = 6
+rc=0 
+round 0 load {"wallMs":9102,"phases":{"check":700,"checkRead":406,"checkCrc":286,"state":65,"ram":1731,"apply":298,"disk":2157,"read":158,"crc":333,"unpack":102
+round 0 kept {"wallMs":1498,"kind":"kept","bytes":675510713,"pausedMs":1143,"stateMs":232,"blobBytes":109066428,"hintMs":18,"hinted":910163968,"id":"f927ba5be3d
+round 0 file {"wallMs":1981,"kind":"file","bytes":678885860,"pausedMs":1194,"stateMs":189,"blobBytes":109066428,"hintMs":10,"hinted":910163968,"phases":{"state"
+round 0 suspend {"wallMs":1190,"kind":"suspend","bytes":661378517,"pausedMs":1100,"phases":{"state":183,"blobs":53,"ram":653,"disk":1,"pool":6,"scan":241,"compr
+round 0 resume {"wallMs":7116,"phases":{"check":536,"checkRead":222,"checkCrc":310,"state":66,"ram":1715,"apply":294,"disk":0,"read":148,"crc":319,"unpack":995,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-new-2.json
+== desktop round 3: four at ebd5263f, pool max POOL_MAX = 4
+rc=0 
+round 0 load {"wallMs":9012,"phases":{"check":745,"checkRead":465,"checkCrc":272,"state":76,"ram":2080,"apply":428,"disk":2138,"read":258,"crc":330,"unpack":114
+round 0 kept {"wallMs":1642,"kind":"kept","bytes":675529769,"pausedMs":1269,"stateMs":233,"blobBytes":109066428,"hintMs":13,"hinted":910163968,"id":"fe0cc8dade8
+round 0 file {"wallMs":2051,"kind":"file","bytes":678909331,"pausedMs":1272,"stateMs":190,"blobBytes":109066428,"hintMs":12,"hinted":910163968,"phases":{"state"
+round 0 suspend {"wallMs":1336,"kind":"suspend","bytes":661380844,"pausedMs":1218,"phases":{"state":184,"blobs":56,"ram":777,"disk":0,"pool":4,"scan":186,"compr
+round 0 resume {"wallMs":7056,"phases":{"check":553,"checkRead":222,"checkCrc":324,"state":72,"ram":1608,"apply":244,"disk":0,"read":135,"crc":320,"unpack":955,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-four-3.json
+== desktop round 4: new at 2b030a6f, pool max POOL_MAX = 6
+rc=0 
+round 0 load {"wallMs":8508,"phases":{"check":595,"checkRead":290,"checkCrc":300,"state":68,"ram":1611,"apply":242,"disk":2096,"read":137,"crc":336,"unpack":973
+round 0 kept {"wallMs":1346,"kind":"kept","bytes":675463512,"pausedMs":1067,"stateMs":227,"blobBytes":109066428,"hintMs":10,"hinted":910163968,"id":"98a13bdcaff
+round 0 file {"wallMs":1895,"kind":"file","bytes":678864879,"pausedMs":1155,"stateMs":186,"blobBytes":109066428,"hintMs":6,"hinted":910163968,"phases":{"state":
+round 0 suspend {"wallMs":1133,"kind":"suspend","bytes":661345135,"pausedMs":1041,"phases":{"state":171,"blobs":54,"ram":634,"disk":0,"pool":6,"scan":217,"compr
+round 0 resume {"wallMs":6919,"phases":{"check":530,"checkRead":211,"checkCrc":315,"state":67,"ram":1699,"apply":283,"disk":0,"read":138,"crc":320,"unpack":985,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-new-4.json
+== desktop round 5: four at ebd5263f, pool max POOL_MAX = 4
+rc=0 
+round 0 load {"wallMs":8506,"phases":{"check":633,"checkRead":339,"checkCrc":288,"state":66,"ram":1644,"apply":251,"disk":2143,"read":139,"crc":339,"unpack":991
+round 0 kept {"wallMs":1535,"kind":"kept","bytes":675412521,"pausedMs":1184,"stateMs":229,"blobBytes":109066428,"hintMs":14,"hinted":910163968,"id":"ffd72902901
+round 0 file {"wallMs":1971,"kind":"file","bytes":678890368,"pausedMs":1284,"stateMs":188,"blobBytes":109066428,"hintMs":13,"hinted":910163968,"phases":{"state"
+round 0 suspend {"wallMs":1329,"kind":"suspend","bytes":661417055,"pausedMs":1206,"phases":{"state":204,"blobs":46,"ram":806,"disk":0,"pool":4,"scan":235,"compr
+round 0 resume {"wallMs":7392,"phases":{"check":523,"checkRead":210,"checkCrc":310,"state":64,"ram":1705,"apply":289,"disk":0,"read":150,"crc":319,"unpack":983,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-four-5.json
+== desktop round 6: base at 0094eeee, pool max none
+rc=0 
+round 0 load {"wallMs":9126,"phases":{"check":645,"checkRead":349,"checkCrc":290,"state":70,"ram":1775,"apply":306,"disk":2109,"read":160,"crc":337,"unpack":104
+round 0 kept {"wallMs":4177,"kind":"kept","bytes":675578699,"pausedMs":3814,"stateMs":222,"blobBytes":109066428,"hintMs":12,"hinted":910163968,"id":"c6e3c542cc9
+round 0 file {"wallMs":4478,"kind":"file","bytes":678896598,"pausedMs":3823,"stateMs":182,"blobBytes":109066428,"hintMs":8,"hinted":910163968,"phases":{"state":
+round 0 suspend {"wallMs":3688,"kind":"suspend","bytes":661434583,"pausedMs":3626,"phases":{"state":170,"blobs":40,"ram":3254,"disk":0,"scan":441,"compress":249
+round 0 resume {"wallMs":7241,"phases":{"check":536,"checkRead":219,"checkCrc":313,"state":64,"ram":1784,"apply":315,"disk":0,"read":170,"crc":322,"unpack":1012
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-base-6.json
+== desktop round 7: four at ebd5263f, pool max POOL_MAX = 4
+rc=0 
+round 0 load {"wallMs":9217,"phases":{"check":718,"checkRead":436,"checkCrc":276,"state":78,"ram":1767,"apply":305,"disk":2152,"read":172,"crc":337,"unpack":103
+round 0 kept {"wallMs":1481,"kind":"kept","bytes":675425025,"pausedMs":1223,"stateMs":222,"blobBytes":109066428,"hintMs":14,"hinted":910163968,"id":"05c822616be
+round 0 file {"wallMs":2001,"kind":"file","bytes":678787808,"pausedMs":1256,"stateMs":182,"blobBytes":109066428,"hintMs":8,"hinted":910163968,"phases":{"state":
+round 0 suspend {"wallMs":1283,"kind":"suspend","bytes":661334503,"pausedMs":1164,"phases":{"state":179,"blobs":53,"ram":771,"disk":0,"pool":4,"scan":188,"compr
+round 0 resume {"wallMs":6768,"phases":{"check":533,"checkRead":226,"checkCrc":303,"state":63,"ram":1648,"apply":259,"disk":0,"read":142,"crc":322,"unpack":962,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-four-7.json
+== desktop round 8: base at 0094eeee, pool max none
+rc=0 
+round 0 load {"wallMs":8614,"phases":{"check":591,"checkRead":283,"checkCrc":303,"state":66,"ram":1624,"apply":248,"disk":2162,"read":135,"crc":337,"unpack":982
+round 0 kept {"wallMs":4154,"kind":"kept","bytes":675469038,"pausedMs":3767,"stateMs":251,"blobBytes":109066428,"hintMs":14,"hinted":910163968,"id":"144113211e8
+round 0 file {"wallMs":4491,"kind":"file","bytes":678908243,"pausedMs":3827,"stateMs":189,"blobBytes":109066428,"hintMs":4,"hinted":910163968,"phases":{"state":
+round 0 suspend {"wallMs":3825,"kind":"suspend","bytes":661382097,"pausedMs":3742,"phases":{"state":179,"blobs":55,"ram":3305,"disk":0,"scan":451,"compress":251
+round 0 resume {"wallMs":6678,"phases":{"check":546,"checkRead":210,"checkCrc":329,"state":71,"ram":1643,"apply":258,"disk":0,"read":148,"crc":322,"unpack":959,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-base-8.json
+== desktop round 9: new at 2b030a6f, pool max POOL_MAX = 6
+rc=0 
+round 0 load {"wallMs":9123,"phases":{"check":660,"checkRead":366,"checkCrc":287,"state":75,"ram":1851,"apply":345,"disk":2188,"read":189,"crc":335,"unpack":106
+round 0 kept {"wallMs":1392,"kind":"kept","bytes":675606471,"pausedMs":1069,"stateMs":223,"blobBytes":109066428,"hintMs":18,"hinted":910163968,"id":"ed75a1e0ccc
+round 0 file {"wallMs":1825,"kind":"file","bytes":678951730,"pausedMs":1143,"stateMs":180,"blobBytes":109066428,"hintMs":10,"hinted":910163968,"phases":{"state"
+round 0 suspend {"wallMs":1236,"kind":"suspend","bytes":661405725,"pausedMs":1132,"phases":{"state":209,"blobs":44,"ram":670,"disk":0,"pool":6,"scan":334,"compr
+round 0 resume {"wallMs":6937,"phases":{"check":531,"checkRead":214,"checkCrc":313,"state":67,"ram":1635,"apply":258,"disk":0,"read":138,"crc":321,"unpack":959,
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-2/desktop-new-9.json
+ALLDONE
