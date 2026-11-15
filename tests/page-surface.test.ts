@@ -4,7 +4,9 @@
 // the disk alone, in a machine's Disks tab its attachment's overlay; held squares where the data is; an overlay grown
 // past the disk (squares without the disk, its end marked, the overlay's changes and zeroings); the overlay picker; a
 // pinned square's blocks, runs and Check contents; the window over the machine once the Machines page is closed; a
-// ramdisk with nothing to show while its machine is off; a file disk without a handle to read, not examined, said why.
+// ramdisk with nothing to show while its machine is off; a file disk without a handle to read, not examined, said why
+// (and its blocks not checked); the window's reading of the files not taken for a machine's by delete, resize and merge
+// (the merge with the window open on an overlay it deletes); the pointed square's words spoken once per square.
 // The live map is tests/page-surface-debian.test.ts's.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -240,6 +242,187 @@ test('the disk surface window over a file disk without a handle to read: not exa
   assert.deepEqual(o.rim, [RIM.opaque, RIM.opaque, RIM.opaque]);
   assert.equal(await win(page).locator('[data-legend]').getAttribute('data-legend'), 'opaque');
   assert.equal((await win(page).locator('[data-field=surface-line]').textContent())!.trim(), plain(t('disks:surface-look.why.permission')));
+  // A square's blocks: the image's, which no check reads: said so, no Check contents.
+  await clickAt(page, 0);
+  await win(page).locator('section.details[data-range="0"][data-loaded]').waitFor();
+  assert.equal(await win(page).locator('[data-action=surface-check]').count(), 0);
+  assert.equal(await win(page).locator('[data-field=surface-uncheckable]').textContent(), t('disks:surface-look.range.uncheckable'));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+/** Stored disk S (16 MiB, data in its first MiB) with overlays X1 (a change at 8 MiB), X2 and X3 (a change each), made in the page. */
+async function setUpOverlays(page: Page) {
+  return page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { createOverlay, importStored } = await import('/web/app/disks.ts' as string);
+    const MiB = 2 ** 20;
+    const raw = new Uint8Array(16 * MiB);
+    raw.fill(1, 0, MiB);
+    const store = await Store.open();
+    const s = await importStored(store, new File([raw], 'merged.raw'), () => {});
+    const [x1, x2, x3] = [await createOverlay(store, s, 'X1'), await createOverlay(store, s, 'X2'), await createOverlay(store, s, 'X3')];
+    store.close();
+    const write = async (dir: string, at: number) => {
+      const worker = new Worker('/tests/browser/overlay-writer.ts', { type: 'module' });
+      const done = await new Promise<string>((resolve) => {
+        worker.onmessage = (e) => resolve(String(e.data));
+        worker.postMessage({ dir, size: 16 * MiB, writes: [{ at, len: 8192, fill: 4 }], zeros: [] });
+      });
+      worker.terminate();
+      if (done !== 'done') throw new Error(done);
+    };
+    await write(`overlays/${x1.id}`, 8 * MiB);
+    await write(`overlays/${x2.id}`, 4 * MiB);
+    await write(`overlays/${x3.id}`, 12 * MiB);
+    return { s: s.id as string, x1: x1.id as string, x2: x2.id as string, x3: x3.id as string };
+  });
+}
+
+test("the window's reading of the files isn't a machine's: delete, resize and merge go on while it shows the disk", { timeout: 120_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?view=terminal`);
+  const ids = await setUpOverlays(page);
+  await page.reload();
+  await page.click('#machines-open');
+  await modal(page).locator('nav [data-machine=disks]').click();
+  await modal(page).locator(`section[data-selected=disks] [data-disk="${ids.s}"] [data-action=surface-open]`).click();
+  await win(page).locator('[data-field=surface-overlay]').selectOption(ids.x2);
+  await view(page, (x) => x.overlay === ids.x2 && x.layers.length === 2);
+
+  // A job caught holding the disk's lock (shared) while it waits for X2's (held here, as another tab's machine would):
+  // the disk isn't in use for the page's checks, and a resize of it waits for the job instead of being refused.
+  await page.evaluate((x2) => {
+    const w = window as unknown as { __release?: () => void };
+    void navigator.locks.request(`waarm64-overlay:overlays/${x2}`, () => new Promise<void>((r) => (w.__release = r)));
+  }, ids.x2);
+  await page.waitForFunction(() => !!(window as unknown as { __release?: () => void }).__release);
+  const checks = await page.evaluate(async (x) => {
+    const { inUse } = await import('/web/app/disks.ts' as string);
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { resize } = await import('/web/app/resize.ts' as string);
+    const store = await Store.open();
+    document.querySelector<HTMLButtonElement>('[data-action=surface-refresh]')!.click();
+    // The job is in the files' locks: the disk's held, X2's asked for (it waits a second for it, then gives up).
+    for (const t0 = performance.now(); ; await new Promise((r) => setTimeout(r, 5))) {
+      const q = await navigator.locks.query();
+      if ((q.held ?? []).some((l) => l.name === `waarm64-overlay:disks/${x.s}` && l.mode === 'shared') && (q.pending ?? []).some((l) => l.name === `waarm64-overlay:overlays/${x.x2}`)) break;
+      if (performance.now() - t0 > 10_000) throw new Error('the job never waited for X2');
+    }
+    const disk = await inUse(`disks/${x.s}`);
+    const overlay = await inUse(`overlays/${x.x2}`); // held here: in use
+    const resized = await resize(store, { disk: x.s }, 20 * 2 ** 20).then(
+      () => 'resized',
+      (e: unknown) => String((e as { cause?: { msg?: { key?: string } } }).cause?.msg?.key ?? e),
+    );
+    store.close();
+    (window as unknown as { __release: () => void }).__release();
+    return { disk, overlay, resized };
+  }, ids);
+  assert.deepEqual(checks, { disk: false, overlay: true, resized: 'resized' });
+
+  // Delete and resize an overlay right after the window asked for it, then merge X1 with the window on X3 (the merge
+  // deletes X2 and X3; each deletion rereads the records, which asks the files again).
+  await win(page).locator('[data-field=surface-overlay]').selectOption(ids.x3);
+  await view(page, (x) => x.overlay === ids.x3 && x.size === 20 * MiB);
+  const actions = await page.evaluate(async (x) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { mergeIntoDisk } = await import('/web/app/disks.ts' as string);
+    const { resize } = await import('/web/app/resize.ts' as string);
+    type E = { msg?: { key?: string }; cause?: { msg?: { key?: string } } };
+    const why = (e: unknown) => String((e as E).cause?.msg?.key ?? (e as E).msg?.key ?? e);
+    const refresh = () => document.querySelector<HTMLButtonElement>('[data-action=surface-refresh]')?.click();
+    const store = await Store.open();
+    const out: string[] = [];
+    for (let k = 0; k < 3; k++) {
+      refresh();
+      await new Promise((r) => setTimeout(r, 30 * k));
+      out.push(await resize(store, { overlay: x.x3 }, (24 + k) * 2 ** 20).then(() => 'resized', why));
+    }
+    refresh();
+    out.push(await mergeIntoDisk(store, x.x1).then(() => 'merged', why));
+    store.close();
+    return out;
+  }, ids);
+  assert.deepEqual(actions, ['resized', 'resized', 'resized', 'merged']);
+  // X3 went with the merge: said so; the disk alone shows X1's change in it.
+  await win(page).locator('[data-field=surface-why]').waitFor();
+  assert.equal((await win(page).locator('[data-field=surface-why]').textContent())!.trim(), t('disks:surface-source.overlayGone'));
+  await win(page).locator('[data-field=surface-overlay]').selectOption('');
+  const v = await view(page, (x) => x.overlay === undefined && x.layers.length === 1);
+  assert.deepEqual(v.layers[0].held.slice(0, 4), [256, 0, 2, 0], "the disk with X1's change merged");
+  // A Delete while the window asks for that overlay.
+  const deleted = await page.evaluate(async (x) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { createOverlay, deleteOverlay } = await import('/web/app/disks.ts' as string);
+    const store = await Store.open();
+    const o = await createOverlay(store, await store.get('disks', x.s), 'X4');
+    const select = document.querySelector<HTMLSelectElement>('[data-field=surface-overlay]')!;
+    await new Promise((r) => setTimeout(r, 200)); // the picker has it
+    select.value = o.id;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 20));
+    const r = await deleteOverlay(store, o.id).then(() => 'deleted', (e: unknown) => String((e as { msg?: { key?: string } }).msg?.key ?? e));
+    store.close();
+    return r;
+  }, ids);
+  assert.equal(deleted, 'deleted');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the pointed square's words: spoken when the square changes, not when its numbers do; the keyboard's square goes on blur", { timeout: 120_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?view=terminal`);
+  const ids = await setUpOverlays(page);
+  await page.reload();
+  await page.click('#machines-open');
+  await modal(page).locator('nav [data-machine=disks]').click();
+  await modal(page).locator(`section[data-selected=disks] [data-disk="${ids.s}"] [data-action=surface-open]`).click();
+  await win(page).locator('[data-field=surface-overlay]').selectOption(ids.x2);
+  await view(page, (x) => x.overlay === ids.x2 && x.layers.length === 2);
+  const shown = () => win(page).locator('[data-field=surface-line]').textContent();
+  const spoken = () => win(page).locator('[aria-live]').textContent();
+  await pointAt(page, 1);
+  await page.waitForFunction(() => document.querySelector('[data-field=surface-line]')?.textContent?.includes('4 MiB'));
+  const [shown1, spoken1] = [await shown(), await spoken()];
+  assert.equal(spoken1, shown1, 'a new square: its words spoken');
+  // More changes in X2 at 4 MiB, read again (as a live poll's new numbers): shown, not spoken again.
+  const before = (await view(page)).answers;
+  await page.evaluate(async (dir) => {
+    const worker = new Worker('/tests/browser/overlay-writer.ts', { type: 'module' });
+    await new Promise<string>((resolve) => {
+      worker.onmessage = (e) => resolve(String(e.data));
+      worker.postMessage({ dir, size: 16 * 2 ** 20, writes: [{ at: 4 * 2 ** 20 + 65536, len: 4096 * 5, fill: 6 }], zeros: [] });
+    });
+    worker.terminate();
+  }, `overlays/${ids.x2}`);
+  await page.evaluate(() => document.querySelector<HTMLButtonElement>('[data-action=surface-refresh]')!.click()); // the pointer stays
+  await view(page, (x) => x.answers > before);
+  await page.waitForFunction((was) => document.querySelector('[data-field=surface-line]')?.textContent !== was, shown1);
+  assert.match((await shown())!, words('disks:surface-look.overlay.changed', { count: 7 }));
+  assert.notEqual(await shown(), shown1, 'the numbers shown are the new ones');
+  assert.equal(await spoken(), spoken1, 'and not spoken again');
+  await pointAt(page, 2);
+  await page.waitForFunction(() => document.querySelector('[data-field=surface-line]')?.textContent?.includes('8 MiB'));
+  assert.equal(await spoken(), await shown(), 'another square: spoken');
+  // The keyboard's cursor points too, until the map loses the focus.
+  await page.mouse.move(5, 5);
+  const grid = win(page).locator('.map [role=application]');
+  await grid.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => document.querySelector('[data-field=surface-line]')?.textContent?.includes('4 MiB'));
+  await win(page).locator('[data-field=surface-overlay]').focus();
+  await page.waitForFunction(() => !document.querySelector('[data-field=surface-line]')?.textContent?.includes('4 MiB'));
+  assert.equal(await shown(), t('disks:SurfaceWindow.hint'), 'the hint again, once the map lost the focus');
   assert.deepEqual(errors, []);
   await context.close();
 });

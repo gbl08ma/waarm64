@@ -3,13 +3,16 @@
 // goes between the Machines page and the machine. `runningHere` is the machine that runs on this page, for a live map
 // (its run says how to reach it: web/app/run/runner.ts writes `current.inspect`).
 import { current } from './current.svelte.ts';
-import { isLive, power } from './power.svelte.ts';
-import type { LiveHost, RunningMachine, SurfaceTarget } from '../surface-source.ts';
+import { power } from './power.svelte.ts';
+import { holdsDisks, type LiveHost, type RunningMachine, type SurfaceTarget } from '../surface-source.ts';
 
-/** The stored machine on this page while it runs (a transient machine's disks have no records), and how to ask it. */
+/**
+ * The stored machine on this page while it has its disks open, from its loading to its stop (a transient machine's
+ * disks have no records), and how to ask it: a view of its disks is its, live, even before its devices answer.
+ */
 export const runningHere = (): (RunningMachine & LiveHost) | undefined => {
   const r = current.inspect;
-  return r?.attachments && isLive(power.state) ? { ...r, attachments: r.attachments } : undefined;
+  return r?.attachments && holdsDisks(power.state) ? { ...r, attachments: r.attachments } : undefined;
 };
 
 /** An open window: its view at the start (`overlay`: the attachment's chosen one, from a machine's Disks tab). */

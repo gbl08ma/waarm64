@@ -242,6 +242,17 @@ export function detailWords(d: RangeDetail, v: Pick<ViewKind, 'disk' | 'overlay'
     else out.push(msg('disks:surface-look.range.overlayNone'));
     if (c.zeroed) out.push(msg('disks:surface-look.range.zeroed', { count: c.zeroed }));
   }
-  if (d.content) out.push(msg('disks:surface-look.range.content', { count: d.content.read, zeros: d.content.zeros }));
+  if (d.content?.read === 0 && c.disk + c.overlay > 0) out.push(msg('disks:surface-look.range.uncheckable'));
+  else if (d.content)
+    out.push(msg('disks:surface-look.range.content', { count: d.content.read, zeros: d.content.zeros }));
   return out;
+}
+
+/**
+ * Whether Check contents could read a block of range `d`: the overlay's (always read), or the disk's when its image
+ * is examined (an image not examined, `opaque`, has its blocks read by no check).
+ */
+export function checkable(d: RangeDetail, v: Pick<ViewKind, 'disk'>) {
+  const c = detailCounts(d);
+  return c.overlay > 0 || (v.disk !== 'opaque' && c.disk > 0);
 }

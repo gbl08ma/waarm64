@@ -9,7 +9,7 @@
   import BlockGrid from './ui/BlockGrid.svelte';
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
-  import { detailLook, detailWords, diskLayer, rangesOfCell, type ViewKind } from './surface-look.ts';
+  import { checkable, detailLook, detailWords, diskLayer, rangesOfCell, type ViewKind } from './surface-look.ts';
   import type { SurfacePoll } from './surface-poll.svelte.ts';
   import type { RangeDetail, Surface } from '../surface.ts';
   import { text, t, type Msg } from '../i18n.ts';
@@ -43,7 +43,8 @@
   });
   const look = $derived(detail && detailLook(detail, kind.disk === 'opaque'));
   const lines = $derived(detail ? detailWords(detail, kind, diskLayer(surface)?.size).map(text) : []);
-  const held = $derived(detail ? detail.blocks.some((b) => b === 1 || b === 2) : false);
+  const held = $derived(detail ? detail.blocks.some((b) => b === 1 || b === 2 || b === 5) : false);
+  const canCheck = $derived(detail ? checkable(detail, kind) : false);
 </script>
 
 <section class="details" data-range={range} data-loaded={detail ? '' : undefined}>
@@ -102,7 +103,7 @@
     <div class="words" data-field="surface-range-words">
       {#each lines as l, i (i)}<p>{l}</p>{/each}
     </div>
-    {#if held}
+    {#if canCheck}
       <Button
         data-action="surface-check"
         disabled={checking}
@@ -110,6 +111,8 @@
         onclick={() => ask(range, true)}
         >{checking ? t('disks:SurfaceDetails.checking') : t('disks:SurfaceDetails.check')}</Button
       >
+    {:else if held}
+      <p class="words" data-field="surface-uncheckable">{t('disks:surface-look.range.uncheckable')}</p>
     {/if}
   {:else if why}
     <Note>{text(why)}</Note>

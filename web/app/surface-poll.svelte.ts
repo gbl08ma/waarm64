@@ -106,8 +106,8 @@ export class SurfacePoll {
     if (a.kind !== 'none') return undefined;
     if (s.live) {
       // Live without an answer: the machine is starting (no devices yet) or busy, and is asked again; the last picture
-      // stays meanwhile.
-      if (!this.surface) this.why = a.why;
+      // stays meanwhile (none yet and no words why: still reading).
+      if (!this.surface) [this.why, this.asking] = [a.why, !a.why];
       return pollDelay();
     }
     this.surface = undefined;

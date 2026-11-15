@@ -2,11 +2,12 @@
 // answered from the files, read whole and closed at once: a stored disk's `map`, an overlay's `map` and `meta` (its own
 // size), and for a range's content check the held blocks of that range from `data`. Read-only handles under the shared
 // lock (web/overlay.ts `openOverlay`'s `readOnly`): a machine in another tab that has the overlay open holds its lock
-// exclusively, and after a short wait the answer says so. A file's qcow2 image the page may read without asking (its
+// exclusively, and after a short wait the answer says so; the page's checks of whether a machine has the files open
+// leave the job's holds out (`SURFACE_READER_LOCK`). A stored disk whose merge was interrupted is said so, not drawn. A file's qcow2 image the page may read without asking (its
 // handle's permission granted) has its L2 tables read (web/qcow2.ts `readAllocation`, bounded) for its clusters.
 // web/app/surface-worker.ts runs it; Node's tests call it.
 import { msg, msgOf } from '../msg.ts';
-import { openOverlay, readMap, readMeta, type MapLeaves, type OverlayFiles } from '../overlay.ts';
+import { openOverlay, readMap, readMeta, SURFACE_READER_LOCK, type MapLeaves, type OverlayFiles } from '../overlay.ts';
 import { openDisk, readAllocation } from '../qcow2.ts';
 import {
   cellBytesFor,
@@ -163,12 +164,22 @@ async function answer(job: SurfaceJob, stored: Open | undefined, over: Open | un
   return { kind: 'disk-range', detail };
 }
 
-/** `job`'s answer from the files; `{kind: 'none', why}` when they are in use elsewhere or can't be read. */
-export async function surfaceJob(job: SurfaceJob, waitMs = SURFACE_WAIT_MS): Promise<InspectAnswer> {
+/**
+ * `job`'s answer from the files; `{kind: 'none', why}` when they are in use elsewhere, a merge into the stored disk was
+ * interrupted (its blocks half copied: the disk's next opening finishes it), or they can't be read. The files' locks
+ * are taken under `SURFACE_READER_LOCK` (their holds aren't a machine's to the page's checks: web/overlay.ts
+ * `locksInUse`), so it runs in a worker of its own (Node's tests call it in theirs).
+ */
+export function surfaceJob(job: SurfaceJob, waitMs = SURFACE_WAIT_MS): Promise<InspectAnswer> {
+  return navigator.locks.request(SURFACE_READER_LOCK, { mode: 'shared' }, () => read(job, waitMs));
+}
+
+async function read(job: SurfaceJob, waitMs: number): Promise<InspectAnswer> {
   let stored: Open | undefined;
   let over: Open | undefined;
   try {
     if (job.baseKind === 'stored' && job.stored) stored = await openRead(job.stored, job.size, false, waitMs);
+    if (stored && readMeta(stored.files.meta).merging) return { kind: 'none', why: msg('disks:surface-job.merging') };
     if (job.overlay) over = await openRead(job.overlay, Math.max(job.size, job.overlaySize ?? 0), true, waitMs);
     return await answer(job, stored, over);
   } catch (e) {

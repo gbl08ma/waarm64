@@ -11,7 +11,8 @@
     take the largest size with which they all fit and grow a little to fill the width (read when it mounts).
   - `onroom(n)`: how many cells of the smallest size its box holds, whenever that changes (its owner asks for that
     many). It fills its box (its parent gives it a height).
-  - `onhover(i)`: the cell the pointer or the keyboard's cursor is on, `undefined` off the cells; `onpick(i)`: a click,
+  - `onhover(i)`: the cell the pointer or the keyboard's cursor is on (the cursor's until the grid loses the focus),
+    `undefined` off the cells; `onpick(i)`: a click,
     or Enter or Space on the cursor's cell.
   - Keyboard: focusable; the arrows move a cursor (drawn while focused), Home and End go to the first and last cell.
     `label` is its spoken name (its role: an application, its keys its own). A click doesn't focus it by itself: a floating window over
@@ -47,6 +48,8 @@
   let hover = $state<number>();
   let cursor = $state(0);
   let focused = $state(false);
+  /** The cell pointed at is the keyboard's cursor (it goes when the grid loses the focus). */
+  let keyed = false;
 
   function laidOut(p: GridPainter) {
     const l = p.layout;
@@ -105,7 +108,8 @@
     const [x, y] = [e.offsetX * painter.dpr - painter.pad, e.offsetY * painter.dpr - painter.pad];
     return cellAt(painter.layout, cells, x, y);
   }
-  function point(i: number | undefined) {
+  function point(i: number | undefined, byKey = false) {
+    keyed = byKey && i !== undefined;
     if (i === hover) return;
     hover = i;
     onhover?.(i);
@@ -126,7 +130,7 @@
     if (to === undefined) return;
     e.preventDefault();
     cursor = to;
-    point(to);
+    point(to, true);
   }
 </script>
 
@@ -149,7 +153,10 @@
   onclick={click}
   onkeydown={key}
   onfocus={() => (focused = true)}
-  onblur={() => (focused = false)}
+  onblur={() => {
+    focused = false;
+    if (keyed) point(undefined);
+  }}
 >
   <canvas bind:this={canvas}></canvas>
 </div>

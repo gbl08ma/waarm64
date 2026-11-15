@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { blk, Devices, zeroSource, type Ctx, type DeviceSpec } from '../web/devices.ts';
 import { blkSpec } from '../web/app/worker-devices.ts';
-import { lockOverlay, memFile, openOverlay, overlay, writeOwnSize } from '../web/overlay.ts';
+import { lockOverlay, memFile, openOverlay, overlay, readMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { ramDisk } from '../web/ramdisk.ts';
 import { blockSource, zeroDisk } from '../web/stored.ts';
@@ -483,4 +483,14 @@ test('blk inspect over the realtime wrappers (concurrent, stats): a write asked 
   } finally {
     mock.timers.reset();
   }
+});
+
+test('surface job: a stored disk with a merge interrupted is said so, not drawn half merged', async () => {
+  const size = 2 * RANGE;
+  const st = await openOverlay('disks/surf-merging', 'id-m');
+  assert.ok(await overlay(zeroDisk(size), st.data, st.map, st.meta).write(0, new Uint8Array(4 * BLOCK).fill(9)));
+  assert.ok(writeMeta(st.meta, { ...readMeta(st.meta), merging: 'overlays/surf-merged' }));
+  st.close();
+  for (const query of [{ kind: 'disk-surface', disk: 0, cells: 2 }, { kind: 'disk-range', disk: 0, range: 0, content: true }] as const)
+    assert.deepEqual(await surfaceJob({ stored: 'disks/surf-merging', size, baseKind: 'stored', query }), { kind: 'none', why: { key: 'disks:surface-job.merging' } });
 });

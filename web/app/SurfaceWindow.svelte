@@ -56,17 +56,24 @@
   $effect(() => {
     const [c, r] = [choice, running];
     // A live source is the run's: another run (a restart) is another source.
-    const key = `${choiceKey(c)} ${r && c.kind === 'live' ? runId(r.worker) : ''}`;
+    const key = `${choiceKey(c, disk)} ${r && c.kind === 'live' ? runId(r.worker) : ''}`;
     untrack(() => poll.use(key, () => sourceFor(c, r)));
   });
-  // Not live, the map is read again when the records change (a machine stopped and wrote its overlay's numbers, a merge).
+  // Not live, the map is read again when the records change (a machine stopped and wrote its overlay's numbers, a
+  // merge), once they've settled: a disk action writes several in a row.
+  const RECORDS_SETTLE_MS = 300;
   let seen = false;
+  let recordsTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- read to track them (the effect's dependencies)
     void [records.disks, records.overlays];
-    if (seen) untrack(() => !poll.live && poll.refresh());
+    if (seen) {
+      clearTimeout(recordsTimer);
+      recordsTimer = setTimeout(() => !poll.live && poll.refresh(), RECORDS_SETTLE_MS);
+    }
     seen = true;
   });
+  onDestroy(() => clearTimeout(recordsTimer));
 
   // The grid's room, asked for once it settles (a resize reports many).
   let roomTimer: ReturnType<typeof setTimeout> | undefined;
@@ -114,6 +121,17 @@
     if (nothing(d) && (!o || (nothing(o) && o.zero.every((x) => x === 0))))
       return t(kind.disk === 'ram' ? 'disks:SurfaceWindow.ramEmpty' : 'disks:SurfaceWindow.empty');
     return t('disks:SurfaceWindow.hint');
+  });
+
+  /**
+   * What a screen reader is told: the line as it is when the square pointed at changes (or the view does), not each
+   * time a live poll changes its numbers (twice a second).
+   */
+  let spoken = $state('');
+  $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- read to track them (the effect's dependencies)
+    void [hover, choice.kind, overlay];
+    spoken = untrack(() => line);
   });
 
   const title = $derived(disk?.name ?? t('disks:SurfaceWindow.untitled'));
@@ -218,13 +236,14 @@
     </div>
     {#if surface && pinned !== undefined}
       <!-- A new one for another square or another source: its first range, asked again. -->
-      {#key `${String(pinned)} ${choiceKey(choice)}`}
+      {#key `${String(pinned)} ${choiceKey(choice, disk)}`}
         <SurfaceDetails {surface} cell={pinned} {kind} {poll} onclose={() => (pinnedAt = undefined)} />
       {/key}
     {/if}
   </div>
   {#if surface}<SurfaceLegend {kind} />{/if}
-  <div class="line" aria-live="polite" data-field="surface-line">{line}</div>
+  <div class="line" data-field="surface-line">{line}</div>
+  <div class="sr" aria-live="polite">{spoken}</div>
 </FloatingWindow>
 
 <style>

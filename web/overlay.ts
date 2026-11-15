@@ -846,6 +846,37 @@ export const overlayLock = (name: string) => `waarm64-overlay:${name}`;
 export const OVERLAY_WAIT_MS = 10_000;
 
 /**
+ * The lock a disk surface job holds (shared) for as long as it holds files' locks (web/app/surface-job.ts, in a worker
+ * of its own): a client that holds it only reads a map, for moments, and is no machine. `locksInUse` leaves its holds
+ * out; a machine's device worker never takes it, so none of a machine's is.
+ */
+export const SURFACE_READER_LOCK = 'waarm64-surface-reader';
+
+/**
+ * The lock a merge into stored disk `disk` (`disks/<id>`) holds from its first check to its end (web/app/disks.ts
+ * `mergeIntoDisk`): the disk surface's jobs wait for it rather than read the disk half merged.
+ */
+export const mergeLock = (disk: string) => `waarm64-merge:${disk}`;
+
+/**
+ * The Web Locks held or asked for now in every tab and worker, by name (none where there are no Web Locks), but those
+ * of the clients that hold `SURFACE_READER_LOCK`: what tells whether a machine (or a disk job) has a disk's files open.
+ * A lock whose client isn't named counts.
+ */
+export async function locksInUse(): Promise<Set<string>> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return new Set();
+  const q = await navigator.locks.query();
+  const held = q.held ?? [];
+  const readers = new Set(held.flatMap((l) => (l.name === SURFACE_READER_LOCK && l.clientId ? [l.clientId] : [])));
+  return new Set(
+    [...held, ...(q.pending ?? [])].flatMap((l) =>
+      l.name && l.name !== SURFACE_READER_LOCK && !(l.clientId && readers.has(l.clientId)) ? [l.name] : [],
+    ),
+  );
+}
+
+/**
  * Takes the Web Lock `waarm64-overlay:<name>` (exclusive, per origin: every tab
  * and worker), which whoever opens the overlay's files holds until they're
  * closed; resolves to its release. A context that ends (a terminated worker, a

@@ -4,7 +4,9 @@
 // (web/app/surface-worker.ts); a ramdisk not running has nothing to show. `chooseSource` decides (pure: Node's tests
 // run it), `sourceFor` makes the source; every ask is bounded (a worker that went away never answers).
 import { msg, type Msg } from '../msg.ts';
+import { mergeLock } from '../overlay.ts';
 import type { InspectAnswer, InspectQuery, RangeDetail, Surface } from '../surface.ts';
+import type { PageState } from './areas/power.svelte.ts';
 import type { FromWorker, ToWorker } from './protocol.ts';
 import type { Replies } from './run/replies.ts';
 import type { SurfaceJob } from './surface-job.ts';
@@ -39,8 +41,8 @@ function shows(t: SurfaceTarget, d: DiskRecord, a: Attachment) {
 
 /**
  * Where view `t` of disk `d` (its record; `o` the overlay's, when `t` has one) comes from: live when `running` (the
- * machine on this page, while it runs) has the disk attached that way; else the files; a ramdisk only lives in a
- * running machine. A stored disk viewed alone while a machine here writes an overlay over it is read from its files
+ * machine on this page, from its loading to its stop: `holdsDisks`) has the disk attached that way; else the files,
+ * unless that machine holds them (a stored disk it writes in place); a ramdisk only lives in a running machine. A stored disk viewed alone while a machine here writes an overlay over it is read from its files
  * (they're opened read-only, under a shared lock, by the machine too).
  */
 export function chooseSource(
@@ -55,6 +57,10 @@ export function chooseSource(
   const i = list.findIndex((a) => shows(t, d, a));
   if (i >= 0) return { kind: 'live', disk: i, inPlace: d.kind === 'stored' && !!list[i].inPlace && !list[i].readOnly };
   if (d.kind === 'ramdisk') return { kind: 'unavailable', why: msg('disks:surface-source.ramdisk') };
+  // The machine here writes the stored disk in place (its store held exclusively): an overlay's view, which a job reads
+  // over the store, waits for it in vain. (An overlay the machine writes is always live: `shows`.)
+  if (d.kind === 'stored' && list.some((a) => a.disk === d.id && a.inPlace && !a.readOnly))
+    return { kind: 'unavailable', why: msg('disks:surface-source.inPlaceHere') };
   return {
     kind: 'offline',
     job: {
@@ -74,8 +80,19 @@ function offlineBase(d: DiskRecord): Pick<OfflineJob, 'baseKind' | 'stored' | 'h
   return { baseKind: 'opaque', why: 'remote' };
 }
 
-/** A key that changes with the choice (the window makes a new source when it does). */
-export const choiceKey = (c: SourceChoice) => JSON.stringify(c);
+/**
+ * Whether the machine on this page, in state `s`, has its disks' files open or about to be (so a view of them is its,
+ * live): from its loading (the device worker opens them) to its stop, a reboot's restart included.
+ */
+export const holdsDisks = (s: PageState) => s === 'loading' || s === 'booting' || s === 'running' || s === 'rebooting';
+
+/**
+ * A key that changes with the choice (the window makes a new source when it does): of disk `d` (its id and identity:
+ * another file picked for a file disk is another key), never its handle (an object read back anew at every records
+ * read, which serializes as nothing).
+ */
+export const choiceKey = (c: SourceChoice, d: DiskRecord | undefined) =>
+  JSON.stringify([d?.id, d?.identity, c], (k, v: unknown) => (k === 'handle' ? undefined : v));
 
 /** A source of a view's surface and its ranges' details. `live`: it follows the running guest (the window polls it). */
 export type SurfaceSource = {
@@ -170,34 +187,58 @@ export async function jobOf(job: OfflineJob): Promise<Omit<SurfaceJob, 'query'>>
   }
 }
 
-/** The disk's files, read by a job worker per ask (`make`: the worker; tests give their own). */
+/**
+ * Waits for a merge into stored disk `stored` that runs now (web/overlay.ts `mergeLock`), if any, so that a job doesn't
+ * read the disk half merged (nor tell its lock is in use); resolves at once without one, or when `signal` aborts.
+ */
+async function noMerge(stored: string | undefined, signal: AbortSignal) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (!stored || typeof navigator === 'undefined' || !navigator.locks) return;
+  await navigator.locks.request(mergeLock(stored), { mode: 'shared', signal }, () => undefined).catch(() => undefined);
+}
+
+/**
+ * The disk's files, read by a job worker per ask (`make`: the worker; tests give their own). One job of each kind (the
+ * map, a range) is in flight: a newer ask of that kind ends the one before (its worker terminated, its answer `none`),
+ * as `close` ends them all. A merge into the disk that runs is waited for first, outside the job's time.
+ */
 export function jobSource(job: OfflineJob, make: () => JobWorker = jobWorker, ms = JOB_MS): SurfaceSource {
-  const running = new Set<() => void>();
+  const running = new Map<InspectQuery['kind'], () => void>();
   const ask = (query: InspectQuery) =>
     new Promise<InspectAnswer>((resolve) => {
-      const w = make();
+      running.get(query.kind)?.();
+      let w: JobWorker | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const abort = new AbortController();
       let done = false;
       const end = (a: InspectAnswer) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        running.delete(stop);
-        w.terminate();
+        abort.abort();
+        if (running.get(query.kind) === stop) running.delete(query.kind);
+        w?.terminate();
         resolve(a);
       };
       const stop = () => end({ kind: 'none' });
-      const timer = setTimeout(() => end(noAnswer()), ms);
-      running.add(stop);
-      w.onmessage = (e) => end(e.data);
-      w.onerror = () => end({ kind: 'none', why: msg('disks:surface-job.unreadable') });
-      // An image file's handle checked first (it may have gone meanwhile: the ask ended, the worker with it).
-      void jobOf(job).then((prepared) => done || w.postMessage({ ...prepared, query } satisfies SurfaceJob));
+      running.set(query.kind, stop);
+      const start = () => {
+        if (done) return;
+        const worker = (w = make());
+        timer = setTimeout(() => end(noAnswer()), ms);
+        worker.onmessage = (e) => end(e.data);
+        worker.onerror = () => end({ kind: 'none', why: msg('disks:surface-job.unreadable') });
+        // An image file's handle checked first (it may have gone meanwhile: the ask ended, the worker with it).
+        void jobOf(job).then((prepared) => done || worker.postMessage({ ...prepared, query } satisfies SurfaceJob));
+      };
+      if (job.stored) void noMerge(job.stored, abort.signal).then(start);
+      else start();
     });
   return {
     live: false,
     surface: (cells) => ask({ kind: 'disk-surface', disk: 0, cells }),
     range: (range, content) => ask({ kind: 'disk-range', disk: 0, range, content }),
-    close: () => [...running].forEach((s) => s()),
+    close: () => [...running.values()].forEach((s) => s()),
   };
 }
 

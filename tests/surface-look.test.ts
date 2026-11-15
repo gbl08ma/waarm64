@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CORE, FLASH, RIM } from '../web/app/ui/block-grid.ts';
-import { cellWords, detailLook, detailWords, legendOf, lookOf, rangesOfCell, sizeText, stepOf } from '../web/app/surface-look.ts';
-import { asInPlace, chooseSource, jobSource, pollDelay, type JobWorker } from '../web/app/surface-source.ts';
+import { cellWords, checkable, detailLook, detailWords, legendOf, lookOf, rangesOfCell, sizeText, stepOf } from '../web/app/surface-look.ts';
+import { asInPlace, choiceKey, chooseSource, holdsDisks, jobSource, pollDelay, type JobWorker } from '../web/app/surface-source.ts';
 import { RANGE, UNIT, type InspectAnswer, type RangeDetail, type Surface, type SurfaceLayer } from '../web/surface.ts';
 import type { Attachment, DiskRecord } from '../web/app/shape.ts';
 import type { OverlayRecord } from '../web/app/store.ts';
@@ -169,4 +169,64 @@ test("a job's ask: its worker's answer, or after its time a refusal in words, an
   closing.close();
   assert.deepEqual(await pending, { kind: 'none' });
   assert.ok(made[2].ended);
+});
+
+test("a job's asks: a newer one of a kind ends the one before (its worker terminated), a range's and the map's apart", async () => {
+  const made: { ended: boolean; answer: (a: InspectAnswer) => void }[] = [];
+  const make = () => {
+    const w: JobWorker = { onmessage: null, onerror: null, postMessage() {}, terminate() { m.ended = true; } };
+    const m = { ended: false, answer: (a: InspectAnswer) => w.onmessage?.({ data: a } as MessageEvent<InspectAnswer>) };
+    made.push(m);
+    return w;
+  };
+  const s = jobSource({ size: RANGE, baseKind: 'blank' }, make, 60_000);
+  const first = s.surface(4);
+  const range = s.range(0, true);
+  const second = s.surface(8);
+  assert.deepEqual(await first, { kind: 'none' }, 'superseded');
+  assert.deepEqual(made.map((m) => m.ended), [true, false, false], "the first map's worker ended, the range's not");
+  const a: InspectAnswer = { kind: 'none', why: { key: 'disks:surface-job.inUse' } };
+  made[2].answer(a);
+  assert.deepEqual(await second, a);
+  made[1].answer(a);
+  assert.deepEqual(await range, a);
+  assert.ok(made.every((m) => m.ended));
+});
+
+test("chooseSource: this tab's machine writing the disk in place holds its store (said so, no job), and a machine loading is live to be", () => {
+  const stored = disk('stored');
+  const work = over(stored, 'work');
+  const here = { attachments: [at(stored, { inPlace: true })] };
+  assert.deepEqual(chooseSource({ disk: stored.id, overlay: 'work' }, stored, work, here), { kind: 'unavailable', why: { key: 'disks:surface-source.inPlaceHere' } });
+  assert.deepEqual(chooseSource({ disk: stored.id }, stored, undefined, here), { kind: 'live', disk: 0, inPlace: true });
+  // Read-only here (a shared lock, as the job's): its overlays are read from their files.
+  assert.equal(chooseSource({ disk: stored.id, overlay: 'work' }, stored, work, { attachments: [at(stored, { inPlace: true, readOnly: true })] }).kind, 'offline');
+  // The machine here holds its disks from its loading (its device worker opens them) to its stop; not once off.
+  assert.deepEqual((['loading', 'booting', 'running', 'rebooting'] as const).map(holdsDisks), [true, true, true, true]);
+  assert.deepEqual((['off', 'suspended', 'crashed', 'failed', 'idle'] as const).map(holdsDisks), [false, false, false, false, false]);
+});
+
+test("the choice's key: two file disks of one size apart (their ids, their files), the same disk alike however its handle is read back", () => {
+  const handle = () => ({ kind: 'file', name: 'a.qcow2' }) as unknown as FileSystemFileHandle;
+  const file = (id: string, name: string, h = handle()) => ({ ...disk('file'), id, name, handle: h, identity: { kind: 'file', name, bytes: 64 * MiB, modified: 1 } }) as unknown as DiskRecord;
+  const [a, b] = [file('fa', 'a.qcow2'), file('fb', 'b.qcow2')];
+  const key = (d: DiskRecord) => choiceKey(chooseSource({ disk: d.id }, d, undefined), d);
+  assert.notEqual(key(a), key(b));
+  assert.equal(key(a), key(file('fa', 'a.qcow2')), 'the records read again: a new handle object, the same key');
+  assert.notEqual(key(a), key({ ...a, identity: { kind: 'file', name: 'a.qcow2', bytes: 64 * MiB, modified: 2 } } as unknown as DiskRecord), 'another file picked for it');
+  assert.ok(!key(a).includes('handle'), 'no handle in it');
+});
+
+test("Check contents: offered where a block it would read is held; an image it doesn't read can't be checked, said so", () => {
+  const blocks = new Uint8Array(per);
+  blocks.set([1, 1, 5]);
+  const image: RangeDetail = { range: 0, blocks, runs: {} };
+  assert.equal(checkable(image, { disk: 'opaque' }), false, 'an image not examined: its blocks are not read');
+  assert.equal(checkable(image, { disk: 'counted' }), true);
+  assert.equal(checkable({ ...image, blocks: Uint8Array.from([1, 2]) }, { disk: 'opaque' }), true, "the overlay's blocks are read");
+  assert.equal(checkable({ ...image, blocks: new Uint8Array(per) }, { disk: 'counted' }), false, 'nothing held');
+  // A check that read none of the held blocks (a remote qcow2's, counted from its tables but not fetched): said so.
+  const none = detailWords({ ...image, content: { read: 0, zeros: 0 } }, { disk: 'counted', overlay: false });
+  assert.deepEqual(none.at(-1), { key: 'disks:surface-look.range.uncheckable' });
+  assert.ok(!none.some((m) => m.key === 'disks:surface-look.range.content'));
 });
