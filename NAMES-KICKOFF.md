@@ -30,7 +30,7 @@ to brush against:
    owner key per name. Which names are acceptable is the resolver's and the dialog's rule.
 6. **The two hot paths**: reaching someone's name takes no switch, notice or reading; naming a machine is one dialog
    with two notices (discoverable; visit every N days) and no key shown. A design that adds a step to either is asked.
-7. **Short terms** (~30 days, a week's grace, renewed past a third of the term); the exact numbers may move with N0's
+7. **Short terms** (~30 days, a week's grace, renewed past half of the term); the exact numbers may move with N0's
    measurements, inside "a month or shorter".
 8. **The page may reach a room without a guest** to publish names (through a names client, which needs no machine
    and no key of the node's); a room connection of the guest's that stays up without a machine isn't in this track.
