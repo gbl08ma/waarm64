@@ -34,7 +34,8 @@ the whole load on the machine worker (`web/lz.ts`'s one instance). Now (REPORT "
 | 0 | The probe and the baseline | done (REPORT "SNAPZ loop 0") |
 | 1 | lz4_flex and crc32fast in the core | done (REPORT "SNAPZ loop 1") |
 | 2 | The save's pool | done (REPORT "SNAPZ loop 2") |
-| 3 | The load's pool; then the out-of-context review | next |
+| 2b | Old-format code removed (kickoff decision 7); the file and suspend saves' unexplained memory found and cut (decision 8) | next |
+| 3 | The load's pool; then the out-of-context review | |
 | 4 | The review's findings; a picked file staged through OPFS | |
 | 5 | The disk's blocks, batched | |
 | 6 | qcow2's clusters through miniz_oxide | |

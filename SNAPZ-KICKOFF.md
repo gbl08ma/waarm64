@@ -45,6 +45,11 @@ compatibility with existing snapshot files is not required. The measurements beh
 6. **Measure with a persistent profile.** Playwright's default context is off the record, where OPFS costs ~250 µs a
    call: it inflated the bench's save to 6.6-7.5 s. Every snapshot timing in this track uses `WAARM64_PROFILE=<dir
    under target/>`; the off-the-record cost is a finding (loop 5 takes what's cheap of it).
+7. **Old snapshot files need not load** (the user, 2026-11-15, during loop 2): only a few testers use the page and none
+   keep snapshots, and an ABI bump will end them anyway. Remove the compatibility code (codecs and format versions no
+   longer written, their fixtures and tests); an old file gets the page's refusal.
+8. **The save's pool may cost ~90-140 MiB while a save runs** (6 workers, released after; the user, 2026-11-15, after
+   loop 2). The unexplained further ~170-210 MiB of the desktop's file and suspend saves is to be found and cut.
 
 ## How the track runs
 
