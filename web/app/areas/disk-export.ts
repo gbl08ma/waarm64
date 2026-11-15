@@ -26,11 +26,14 @@ const SAVES: Record<ExportMode, { suffix: string; description: string; type: str
 /** A stored disk with one of its overlays (none: the stored disk itself). */
 type Target = { disk: DiskRecord; overlay?: string };
 
+/** How long a download's address (and a staged snapshot behind it: web/snapshot-stage.ts) is kept after its click. */
+export const DOWNLOAD_KEPT_MS = 60_000;
+
 /** Downloads `blob` as `name`. */
 export function download(blob: Blob, name: string) {
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  setTimeout(() => URL.revokeObjectURL(a.href), DOWNLOAD_KEPT_MS);
 }
 
 /** The save picker's file (it needs the click's user activation); none: a download; undefined `false`: cancelled. */

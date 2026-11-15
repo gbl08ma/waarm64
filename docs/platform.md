@@ -402,14 +402,19 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   snapshot, Suspend: `web/app/worker-snapshot.ts`), beside the balloon's hint, and closed once the file is written:
   its start (~35-45 ms to six instances) is not paused time, and no worker stays between saves. **The fallback:**
   a pool that can't start (no worker, a failed instance, none ready in 10 s, one CPU) is none, and the save runs on
-  the machine worker as before; a worker that fails mid-save fails its chunks and every later one, which the writer
-  makes itself (RAM doesn't move while it is written): time lost, not the file. A view that isn't shared memory or
-  4-aligned, and a writer of another codec, take the one-thread path too. The desktop's pause went from 3.79 s to
+  the machine worker as before. A worker that fails mid-save (an error it didn't catch, which the pool handles and
+  cancels so that it goes no further up, or a reply that can't be read), or a pool with work out that answers nothing
+  for 10 s (`STALL_MS`), fails **the whole pool**: its workers are ended at once, and every chunk in flight on any of
+  them and every later one is made by the writer itself (RAM doesn't move while it is written): time lost, not the
+  file; once the write itself has failed (the sink), no chunk is made. A view that isn't shared memory or 4-aligned,
+  and a writer of a codec the workers don't write (only the core's codec is `pooled`: web/lz.ts), take the one-thread
+  path too (`tests/snapshot-pool.test.ts`). The desktop's pause went from 3.79 s to
   ~1.1 s ("SNAPZ loop 2").
 - **A load's pool** (the same workers, `startPool`; the reader's `LoadPool`; `openSnapshot`'s `pool`): started by the
   machine worker when a start has a snapshot (a picked file, a kept snapshot, a suspended copy: `openRestore` in
-  `web/app/worker-start.ts`), beside the header's checks, and closed once `bootVm` has filled RAM (or failed to), at a
-  refusal, or at the next restore. A Blob is read in 4 MiB
+  `web/app/worker-start.ts`), beside the header's checks; it is that restore's, closed once `bootVm` has filled RAM (or
+  failed to), at a refusal, or when the start ends before `fill` (`bootVm` failed earlier: a resume then boots instead,
+  without it). A Blob is read in 4 MiB
   slices, four ahead (Chromium reads a picked file's stream at ~1.1 GB/s in 64 KiB chunks, four slices in flight at
   ~3.2 GB/s; the one-thread reader reads a Blob so too). Through the pool each piece goes **whole to a worker**
   (transferred, the least busy one, two pieces a worker at most) with the jobs of the frames in it; a frame across two
@@ -421,9 +426,11 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   in**: a damaged frame anywhere is refused before RAM or a disk is touched, and a refusal is the first failing
   frame's (`tests/snapshot.test.ts` "a load's pool"; the page's refusal in tests/page-snapshot.test.ts). `placed()`
   waits for every RAM frame given so far (the piece in hand given as a copy), so the restore pass's own refusal also
-  comes before the disks. **The fallback:** a frame a worker fails, or a piece whose worker failed, is read again from
-  the file and done on the machine worker (a damaged one refused there, as on one thread); no pool (it can't start, one
-  CPU), a stream or RAM not on shared memory is the one-thread reader. Copying frames into shared slots instead was
+  comes before the disks. **The fallback:** a frame a worker fails, or a piece whose worker failed (a failed worker fails
+  the whole pool, as a save's does), is read again from the file and done on the machine worker (a damaged one refused
+  there, as on one thread); no pool (it can't start, one CPU), a stream or a codec the workers don't read is the
+  one-thread reader. RAM not on shared memory still goes through the pool's check pass; the restore pass places those
+  frames from copies on the machine worker. Copying frames into shared slots instead was
   measured first: V8 copies into shared memory word by word, ~220 ms of the machine worker's time a pass for the
   desktop's file, which whole pieces avoid. The desktop's load spends 1.13 s in the check pass, the state and RAM
   against 3.13 s on one thread (wall 9.5 to 7.6 s), Debian's 0.13 s against 0.35 ("SNAPZ loop 3").

@@ -1,0 +1,37 @@
+== desktop round 1: base at e62727ec, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1456,"kind":"kept","bytes":675451595,"pausedMs":1193
+round 0 file {"wallMs":3393,"kind":"file","bytes":678744423,"pausedMs":1893
+round 0 picked {"wallMs":5049,"kind":"file","bytes":678858580,"pausedMs":4817
+round 0 suspend {"wallMs":1392,"kind":"suspend","bytes":663344064,"pausedMs":1251
+== desktop round 2: new at 9d8b90ae, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1804,"kind":"kept","bytes":675472806,"pausedMs":1325
+round 0 file {"wallMs":2959,"kind":"file","bytes":678912377,"pausedMs":1363
+round 0 picked {"wallMs":5861,"kind":"file","bytes":678905413,"pausedMs":1316
+round 0 suspend {"wallMs":1365,"kind":"suspend","bytes":663384918,"pausedMs":1214
+== desktop round 3: new at 9d8b90ae, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1501,"kind":"kept","bytes":675363248,"pausedMs":1175
+round 0 file {"wallMs":2975,"kind":"file","bytes":678697798,"pausedMs":1366
+round 0 picked {"wallMs":5723,"kind":"file","bytes":678761576,"pausedMs":1399
+round 0 suspend {"wallMs":1440,"kind":"suspend","bytes":662888466,"pausedMs":1269
+== desktop round 4: base at e62727ec, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1705,"kind":"kept","bytes":675553302,"pausedMs":1261
+round 0 file {"wallMs":3155,"kind":"file","bytes":678917298,"pausedMs":1811
+round 0 picked {"wallMs":4818,"kind":"file","bytes":678923716,"pausedMs":4571
+round 0 suspend {"wallMs":1450,"kind":"suspend","bytes":662781238,"pausedMs":1288
+== desktop round 5: base at e62727ec, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1821,"kind":"kept","bytes":675505529,"pausedMs":1341
+round 0 file {"wallMs":3074,"kind":"file","bytes":678881665,"pausedMs":1747
+round 0 picked {"wallMs":4903,"kind":"file","bytes":678927720,"pausedMs":4679
+round 0 suspend {"wallMs":1658,"kind":"suspend","bytes":663905709,"pausedMs":1487
+== desktop round 6: new at 9d8b90ae, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1865,"kind":"kept","bytes":675563115,"pausedMs":1294
+round 0 file {"wallMs":2999,"kind":"file","bytes":678951303,"pausedMs":1426
+round 0 picked {"wallMs":5756,"kind":"file","bytes":678927156,"pausedMs":1410
+round 0 suspend {"wallMs":1396,"kind":"suspend","bytes":661487045,"pausedMs":1215
+ALLDONE

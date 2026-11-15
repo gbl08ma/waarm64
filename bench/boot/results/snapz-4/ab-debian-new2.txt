@@ -1,0 +1,19 @@
+== debian round 1: new2 at dc131da3, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":383,"kind":"kept","bytes":95247982,"pausedMs":179
+round 0 file {"wallMs":539,"kind":"file","bytes":95483093,"pausedMs":166
+round 0 picked {"wallMs":484,"kind":"file","bytes":95525171,"pausedMs":166
+round 0 suspend {"wallMs":270,"kind":"suspend","bytes":94113278,"pausedMs":144
+== debian round 2: new2 at dc131da3, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":368,"kind":"kept","bytes":95252757,"pausedMs":163
+round 0 file {"wallMs":466,"kind":"file","bytes":95549027,"pausedMs":167
+round 0 picked {"wallMs":484,"kind":"file","bytes":95629680,"pausedMs":156
+round 0 suspend {"wallMs":316,"kind":"suspend","bytes":94216896,"pausedMs":148
+== debian round 3: new2 at dc131da3, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":378,"kind":"kept","bytes":95306791,"pausedMs":162
+round 0 file {"wallMs":467,"kind":"file","bytes":95559753,"pausedMs":165
+round 0 picked {"wallMs":487,"kind":"file","bytes":95573027,"pausedMs":160
+round 0 suspend {"wallMs":270,"kind":"suspend","bytes":94141004,"pausedMs":150
+ALLDONE

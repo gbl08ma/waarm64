@@ -20,14 +20,13 @@ import type { DeviceSpec } from '../devices.ts';
 import { firmwareFiles } from './firmware-files.ts';
 import { MACHINES, readiness, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
-import type { Status, ToWorker } from './protocol.ts';
-import type { DeviceKind } from './shape.ts';
+import type { ToWorker } from './protocol.ts';
 import type { StartMessage } from './worker-devices.ts';
 import { explain } from './worker-errors.ts';
 import { sessionOf, type Session } from './worker-header.ts';
 import { asked } from './worker-profile.ts';
 import { post, state } from './worker-post.ts';
-import { status } from './worker-status.ts';
+import { limitJit, status, watchKeyboard } from './worker-status.ts';
 import { checkSnapshot, saveSnapshot, spareBuffer, suspend, TAIL, type Running } from './worker-snapshot.ts';
 import {
   loadPhases,
@@ -37,6 +36,7 @@ import {
   fetchParts,
   ioOf,
   openRestore,
+  releasing,
   planOf,
   showScreen,
   type Plan,
@@ -54,6 +54,8 @@ const stopped = () => stopping;
 let current: Machine | undefined;
 /** The OPFS directory of the machine's variable store and suspended copy (the start message's `home`). */
 let home: string | undefined;
+/** `?stageroom=`'s room for a file save's staging file (docs/frontend.md "Query parameters"). */
+let stageRoom: number | undefined;
 let up: (() => void) | undefined; // the run's: says `running` once (from the guest's sign: `up`)
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
@@ -67,7 +69,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       });
       break;
     case 'snapshot':
-      void saveSnapshot(running(), m.id, m.handle, m.keep, m.whole);
+      void saveSnapshot(running(), m.id, m.handle, m.keep, m.whole, m.stage);
       break;
     case 'suspend':
       void suspend(running(), m.id);
@@ -164,6 +166,7 @@ function running(): Running | undefined {
       isSuspended = true;
       return shutdown(v);
     },
+    stageRoom,
   };
 }
 
@@ -209,6 +212,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   const t0 = performance.now();
   const machine: Machine = (current = MACHINES[m.config.machine]);
   home = m.home;
+  stageRoom = m.config.dev.stageRoom;
   state('loading');
   const resume = await suspendedCopy(m);
   const snapshot: Blob | undefined = m.snapshot ?? resume;
@@ -232,28 +236,41 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   let specs: DeviceSpec[] | undefined;
   let header: SnapshotHeader | undefined;
   let restored: RestorePhases | undefined;
+  /** The restore's load's pool closed (it is by `fill`'s end; a start that ends before that closes it here). */
+  let release: (() => void) | undefined;
   if (snapshot) {
     try {
-      ({ plan, restore, specs, header, phases: restored } = await fromSnapshot(m, machine, snapshot, !!resume));
+      ({
+        plan,
+        restore,
+        specs,
+        header,
+        phases: restored,
+        release,
+      } = await fromSnapshot(m, machine, snapshot, !!resume));
     } catch (err) {
       if (resume && !stopped()) return bootInstead(err);
       throw err;
     }
-    if (stopped()) return;
     restoring = !resume;
   }
-  checkSplit(plan, m, machine, !!snapshot);
-  const devices = (liveSpecs = devicesOf(plan, m, machine, specs));
-  session = sessionOf(m, plan);
-  booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore));
-  try {
-    vm = await booting;
-  } catch (err) {
-    if (resume && !stopped()) return bootInstead(err);
-    throw err;
-  }
-  if (stopped()) return; // `stop` closes it
-  await booted(vm, m, { header, resume: !!resume, note });
+  const made = await releasing(release, async () => {
+    if (stopped()) return undefined;
+    checkSplit(plan, m, machine, !!snapshot);
+    const devices = (liveSpecs = devicesOf(plan, m, machine, specs));
+    session = sessionOf(m, plan);
+    booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore));
+    try {
+      return { devices, v: (vm = await booting) };
+    } catch (err) {
+      if (resume && !stopped()) return { instead: err };
+      throw err;
+    }
+  });
+  if (!made || stopped()) return; // `stop` closes it
+  if ('instead' in made) return bootInstead(made.instead);
+  const { devices, v } = made;
+  await booted(v, m, { header, resume: !!resume, note });
   // A start from a snapshot says where its time went, once it runs (for tools: `#message[data-load]`).
   if (restored) post({ type: 'loaded', phases: loadPhases(t0, prepared, restored) });
   const marker = m.config.dev.guestReadyOnly ? undefined : machine.ready; // `?ready=guest`: only the guest's signs
@@ -272,26 +289,6 @@ async function booted(v: Vm, m: StartMessage, o: { header?: SnapshotHeader; resu
   if (!o.header) return state('booting', { error: o.note });
   if (serialTail) post({ type: 'serial', data: serialTail, replay: true }); // what the terminal showed when it was saved
   state('running', { note: o.resume ? msg('machine:worker.resumed') : undefined });
-}
-
-/** The keyboard's driver: the page sends keys typed on the screen to the serial console until it is up (the firmware's menus, GRUB). */
-function watchKeyboard(here: { kind: DeviceKind }[]) {
-  const kbd = here.findIndex((s) => s.kind === 'keyboard');
-  let kbdLive: boolean | undefined;
-  return kbd >= 0
-    ? setInterval(() => {
-        const live = (vm!.deviceStatus(kbd) & 4) !== 0;
-        if (live !== kbdLive) post({ type: 'keyboard', live: (kbdLive = live) });
-      }, 200)
-    : undefined;
-}
-
-/** The memory signal (web/app/memory.ts): past what the device reports, the JIT's cache holds no more than it does now
- * (the gauge's limit: it flushes there, docs/jit.md "The page's memory signal"). */
-function limitJit(st: Status) {
-  const device = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  if (device && st.estimateBytes > device * 2 ** 30 && !st.memory.jitLimit)
-    vm!.setJitLimit(Math.max(st.memory.jitLiveBytes, 1));
 }
 
 /**
@@ -337,11 +334,11 @@ async function run(machine: Machine, plan: Plan, io: Parameters<typeof status>[6
     if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!);
     const now = performance.now();
     const st = status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt, io, signal);
-    limitJit(st);
+    limitJit(vm!, st);
     post({ type: 'status', status: st });
     loopMax = 0;
   }, 1000);
-  const kbdTimer = watchKeyboard(plan.here);
+  const kbdTimer = watchKeyboard(vm, plan.here);
   try {
     for (;;) {
       const r = await vm.runAsync(1e9); // while a snapshot pauses the VM this keeps returning BUDGET

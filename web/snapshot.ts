@@ -7,7 +7,7 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, readHeader, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import { BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, readHeader, snapshotBound, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
@@ -79,7 +79,7 @@ const BLOCK = 4096;
  * image's hash, if the caller has it. `pool`: workers that make RAM's frames (web/snapshot-pool.ts), else this thread
  * does; the file is the same.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean; pool?: RamPool } = {}) {
+export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean; pool?: RamPool; sized?: (bound: number) => void | Promise<void> } = {}) {
   const t0 = performance.now();
   const state = await vm.snapshot();
   // How long the devices' state took (a 3D machine's renderer read back is in it): tools split a snapshot's pause with it.
@@ -95,6 +95,9 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   // The state's Uint8Arrays go in BLOB frames; DEVS names each by its number and length.
   const blobs: Uint8Array[] = [];
   const devs = JSON.stringify(state.host, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v));
+  // The file's largest size, before its first byte goes to the sink (`sized`: a picked file's staging checks its room).
+  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
+  await opts.sized?.(snapshotBound({ core: state.core.length, devs: devs.length * 3, blobs: blobs.map((b) => b.length), ram: views.map((v) => v.length), blocks: disks.reduce((n, d) => n + d.blocks.length, 0) }));
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
@@ -109,7 +112,6 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const blobsMs = since();
   // Memory 0's RAM, then each spill memory's (node 1's after Venus's arena and window in memory 1), their chunks numbered
   // on (`ramStarts`); the progress is over all of it.
-  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
   const total = views.reduce((n, v) => n + v.length, 0);
   const starts = ramStarts(views.map((v) => v.length));
   const ram = { pages: 0, frames: 0 };

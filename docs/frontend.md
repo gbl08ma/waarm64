@@ -47,7 +47,8 @@ line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credenti
 firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
 passes none), `?clipboard=1` (clipboard sharing through the guest agent, docs/devices.md "The guest's agent";
 `window.__agent` is the page's end of its connection; `?agentstub` gives the link a channel whose device end a test plays,
-`window.__agentStub`, on any machine), `?disk2=<url>` (a second,
+`window.__agentStub`, on any machine), `?stageroom=<MiB>` (the room a file save's staging file assumes instead of the
+storage's estimate: "Snapshots"), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
 test's `--disk2` gives it the Go toolchain image, docs/images.md "The Go compiler on a second disk"), `?snd=stats[,timer]`
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
@@ -549,7 +550,7 @@ Page → worker:
   `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
   worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
   `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
-  `?agentstub`), parsed by the
+  `?agentstub`, `?stageroom=`), parsed by the
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
   features, the kernel and the command line are then the file's.
@@ -717,11 +718,34 @@ Preferences' switch (devices.md "The caches dropped before a snapshot"), then th
 (devices.md "balloon": tens of ms; `hintMs` and `hinted` in `data-snapshot`), and gives the memory back after the save.
 Meanwhile the save's pool of workers starts (platform.md "A save's pool": RAM's frames made on several threads; a pool
 that can't start leaves them to the worker). The worker pauses it (`vm.pause()`), writes the file with
-`writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
+`writeSnapshot` and resumes, also on an error.
+
+**A file save is staged through OPFS** (web/snapshot-stage.ts; SNAPZ's decision 3: the picked file's stream takes
+~430 MB/s, half what the save's pool makes, and a download's Blob parts held the file in the page's memory): the page
+names a staging file in `snapshot-staging/` and holds its Web Lock (`waarm64-staging:<name>`) until the file is gone,
+and during the pause the worker writes the snapshot there (a sync access handle, as a kept snapshot's). The machine
+resumes (`snapshot-resumed`: the guest's input, its USB devices and its clock come back then), and then a picked
+file gets the staging file copied into its stream, in 64 MiB slices written as Blobs (the browser copies them file to file), while the state line says
+[Copying the snapshot to the file](ui:snapshots:worker-stage.phase.copying) with a percentage; the staging file is
+removed after. A download is the staging file itself (`snapshot-done`'s `file`: the page holds none of its bytes),
+removed when its address is revoked, a minute after the click (`DOWNLOAD_KEPT_MS`). The copy is still the save in
+progress (one at a time: Snapshot, Suspend, Restart and Power off stay disabled until it ends), though the machine
+runs. **The fallbacks write the file directly, as before staging:** when the storage hasn't room
+(`navigator.storage.estimate()`'s quota less usage, against the file's bound, `snapshotBound`, known once the devices'
+state and the disks' blocks are, plus a tenth and 64 MiB; `?stageroom=<MiB>` says the room instead, for tests), when
+a staging write is refused partway (the snapshot is written again directly, still paused: the pause is longer by
+the refused part), and where there is no OPFS or Web Locks. A copy that fails after the resume says
+[Couldn't save the snapshot](ui:snapshots:worker-snapshot.notSaved) with
+[The snapshot was taken, but copying it into {{name}} failed: the file has none of it, and nothing of it is left in the browser's storage.](ui:snapshots:worker-stage.notCopied) and the error, the picked file aborted (it holds none of it) and
+the staging file removed. A staging file whose lock no one holds (its page crashed or closed mid-save) is removed at
+the page's next start (`removeStale`). `data-snapshot`'s `staging` says what came of it: `staged`, `room`,
+`refused`, or none (not a file save, or no OPFS); `phases.copy` the copy's ms after the resume
+(tests/page-snapshot-stage.test.ts). Kept snapshots and Suspend write to OPFS directly and don't stage. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
 tools: below), and the machine runs as before. Only the writing is between pause and resume: the picked
-file's stream is opened before and closed (flushed) after, and nothing is hashed. One save at a
+file's stream is opened before and closed (flushed) after (a staged file's copy into it, below, comes after the
+resume too), and nothing is hashed. One save at a
 time: while it runs Restart, Power off, Suspend, Snapshot and Load snapshot are disabled, and a disk's Export, Open
 disk and Import changes say to wait. The run loop is not disturbed by the pause
 (`runAsync` keeps returning `BUDGET`), the status timer and the flash keeper only read.
@@ -737,7 +761,8 @@ encoding and CRC; with a pool, RAM's are its workers' sums: CPU time, up to `poo
 waits on the output); `pool` (the workers that made RAM's frames, 0: the machine worker did: platform.md "A save's
 pool"), `poolReady` (the pool's start to its last worker ready, 0 without one) and `poolWait` (what the save waited
 for it after the hint, before the pause); and `close` (the output closed: a file's or a kept snapshot's
-after the resume, a suspended copy's before the stop). A start from a snapshot or a suspended copy posts `loaded` once
+after the resume, a suspended copy's before the stop), `copy` (a staged file's copy into the picked file, after the
+resume; 0 for none). A start from a snapshot or a suspended copy posts `loaded` once
 it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
 touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
@@ -749,7 +774,7 @@ their phase's wall).
 
 **Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
 file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the
-header (`openSnapshot` without a codec) before it asks anything, and refuses at once, with the
+header (`readHeader`, web/snapshot-file.ts) before it asks anything, and refuses at once, with the
 machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another
 machine (`?machine=` differs), and one taken on another disk by name (the header's `disk`, for a
 disk opened with Open disk… or `?disk=`; the user opens that disk first). Then a confirmation says

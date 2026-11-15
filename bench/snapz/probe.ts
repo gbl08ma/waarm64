@@ -1,5 +1,6 @@
 // The snapshot probe (docs/benchmarking.md "The snapshot probe"; dev-only): a warm snapshot loaded on the page, then
-// saved as a kept snapshot (and the machine started from it: `keptStart`), to a file (a download) and as a suspend, and
+// saved as a kept snapshot (and the machine started from it: `keptStart`), to a file (a download, then a picked file:
+// `picked`, an OPFS file standing in for the pick) and as a suspend, and
 // resumed; per round, each operation's wall time
 // and the page's own phases (`#message`'s `data-load` and `data-snapshot`: web/app/protocol.ts `LoadPhases`,
 // `SaveTimes`), and the browser's memory before and during each save.
@@ -316,6 +317,23 @@ if (MODE === 'transient') {
       await page.locator('.machines').getByRole('button', { name: t('snapshots:Snapshots.toFile') }).click();
     }, deleted);
     say(`round ${k} file`, r.file as Record<string, unknown>);
+    if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
+    await settle();
+    // A picked file (a file in OPFS stands in for the user's pick: a FileSystemWritableFileStream as a real pick's):
+    // the pause, and a staged save's copy after the resume (`phases.copy`, in the wall time).
+    await page.evaluate(() => {
+      (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('probe-picked.waarm64snap', { create: true });
+    });
+    r.picked = await save('file', async () => {
+      await page.locator('#machines-open').click();
+      await page.locator('.machines [data-tab=snapshots]').click();
+      await page.locator('.machines').getByRole('button', { name: t('snapshots:Snapshots.toFile') }).click();
+    });
+    await page.evaluate(async () => {
+      (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined;
+      await (await navigator.storage.getDirectory()).removeEntry('probe-picked.waarm64snap');
+    });
+    say(`round ${k} picked`, r.picked as Record<string, unknown>);
     if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
     await settle();
     r.suspend = await save('suspend', () => page.locator('#suspend').click(), () => until(['suspended']).then(() => undefined));

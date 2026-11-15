@@ -89,44 +89,45 @@ async function sameOverlays(header: SnapshotHeader, specs: DeviceSpec[]) {
 }
 
 /**
- * The load's pool (docs/platform.md "A load's pool"), started by `openRestore` beside the header's checks; none (it
- * can't start) is the machine worker doing it all.
- */
-let loadPool: Promise<SavePool | undefined> | undefined;
-
-/**
- * The load's pool ended: once `bootVm` has filled RAM (the restore's `fill` done, or failed), at a refusal, or at the
- * next restore (a start that fails between the two leaves it to then, or to the worker's end).
- */
-function endLoadPool() {
-  void loadPool?.then((p) => p?.close());
-  loadPool = undefined;
-}
-
-/**
  * The machine a snapshot (or a suspended machine, `resume`) says, and its restore: everything that can be refused is,
  * before anything is touched (the overlay is replaced inside `bootVm`; a resume keeps it: it is as the suspended
- * machine left it); its phases posted. Its pool (`loadPool`) is awaited before the check pass. `specs`: the devices
- * the restore hands ramdisks their chunks through; `serial`, the terminal's tail.
+ * machine left it); its phases posted. Its load's pool (docs/platform.md "A load's pool"; none: it can't start, the
+ * machine worker does it all) starts beside the header's checks and is awaited before the check pass; it is this
+ * restore's, closed once: when `fill` is done (or failed), at a refusal, or at `release` (the caller's, once `bootVm`
+ * has settled: a start that fails before `fill` closes it there). `specs`: the devices the restore hands ramdisks
+ * their chunks through; `serial`, the terminal's tail.
  */
 export async function openRestore(snapshot: Blob, m: StartMessage, machine: Machine, resume: boolean, lz: Lz) {
-  endLoadPool();
-  loadPool = startPool(lz.module).catch(() => undefined);
+  const pool = startPool(lz.module).catch(() => undefined);
+  let open = true;
+  const release = () => {
+    if (open) void pool.then((p) => p?.close());
+    open = false;
+  };
   try {
-    const r = await restoreOf(snapshot, m, machine, resume, lz, loadPool);
+    const r = await restoreOf(snapshot, m, machine, resume, lz, pool);
     const restore = r.restore;
     const fill = restore.fill.bind(restore);
     restore.fill = async (ram, spill) => {
       try {
         await fill(ram, spill);
       } finally {
-        endLoadPool();
+        release();
       }
     };
-    return r;
+    return { ...r, release };
   } catch (err) {
-    endLoadPool();
+    release();
     throw err;
+  }
+}
+
+/** `f`, then the restore's load's pool released (`release`), whatever came of it. */
+export async function releasing<T>(release: (() => void) | undefined, f: () => Promise<T>): Promise<T> {
+  try {
+    return await f();
+  } finally {
+    release?.();
   }
 }
 

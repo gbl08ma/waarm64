@@ -505,3 +505,22 @@ test('a state\'s Uint8Arrays (the display\'s 3D contents) travel as BLOB frames,
   await refused(readSnapshot(whole(await made(30, 20)), deflateCodec, 7), 'corrupt', /damage\.blobMissing/);
   await refused(readSnapshot(whole(await made(10, 20)), deflateCodec, 7), 'corrupt', /damage\.blobFit/);
 });
+
+test('a save\'s bound (a staging file\'s room is checked against it) is never under the file, and is told before its first byte', async () => {
+  // Incompressible RAM and blocks (stored whole), a 3D blob, scattered disk blocks (a frame each): the worst case.
+  const ram = random(3 * MiB + 8192, 4);
+  const blocks = Uint32Array.from([1, 3, 5, 9, 200, 201, 1000]);
+  const vm = {
+    snapshot: async () => ({ version: 7, core: random(1_500_000, 1), host: { devices: [{ gpu: { data: random(2 * MiB + 1, 6) } }], input: [] } }),
+    disks: async () => [{ slot: 0, identity: 'x', size: 1 << 30, blocks }],
+    diskBlocks: async (_slot: number, b: Uint32Array) => random(b.length * 4096, 7),
+    ramSize: ram.length, spill: [], spillRam: () => [], memory: { buffer: ram.buffer }, ram: 0,
+  } as unknown as Vm;
+  const parts: Uint8Array[] = [];
+  let bound = 0;
+  const out = await writeSnapshot(vm, (b) => { if (!bound) throw new Error('a byte before the bound'); parts.push(b.slice()); }, { machine: 'test' }, deflateCodec, { sized: (n) => { bound = n; } });
+  const bytes = concat(parts).length;
+  assert.equal(out.bytes, bytes);
+  assert.ok(bytes <= bound, `${bytes} bytes against a bound of ${bound}`);
+  assert.ok(bound - bytes < 2 * MiB, `the bound is near (${bound - bytes} over)`);
+});

@@ -154,6 +154,7 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
       if (power.state === 'loading') x.d.messages.stateText(m.text);
     },
     'snapshot-progress': (m) => r.job(m.id)?.progress(m.phase, m.fraction),
+    'snapshot-resumed': (m) => r.job(m.id)?.resumed?.(),
     'snapshot-chunk': (m) => {
       r.job(m.id)?.chunk(m.data);
       // Copied by the job (a Blob of it): the buffer goes back for the save's next chunks.

@@ -6,7 +6,7 @@ import { availableParallelism } from 'node:os';
 import type { LoadPhases, SaveTimes } from '../web/app/protocol.ts';
 
 // Every key of each (the compiler holds them complete).
-const SAVE: Record<keyof SaveTimes, true> = { state: true, blobs: true, ram: true, disk: true, scan: true, compress: true, crc: true, sink: true, pool: true, pause: true, close: true, poolWait: true, poolReady: true };
+const SAVE: Record<keyof SaveTimes, true> = { state: true, blobs: true, ram: true, disk: true, scan: true, compress: true, crc: true, sink: true, pool: true, pause: true, close: true, copy: true, poolWait: true, poolReady: true };
 const LOAD: Record<keyof LoadPhases, true> = { check: true, checkRead: true, checkCrc: true, state: true, ram: true, apply: true, disk: true, pool: true, read: true, crc: true, unpack: true, prepare: true, start: true, total: true };
 
 /** Every key of `keys` in `phases` and no other, each a number of ms. */

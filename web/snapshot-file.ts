@@ -60,6 +60,12 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
 export type Codec = {
   id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array>;
   crc32(bytes: Uint8Array, seed?: number): number;
+  /**
+   * The pool's workers (web/snapshot-pool-worker.ts) write and read this codec's frames: the core's lz4_flex and
+   * crc32fast (web/lz.ts `lzCodec`). Only such a codec's RAM goes through a pool; another, even of the same id, is done
+   * on this thread.
+   */
+  pooled?: boolean;
 };
 /** A CRC-32 as {@link crc32}'s. */
 type Crc = (bytes: Uint8Array, seed?: number) => number;
@@ -363,8 +369,8 @@ export class SnapshotWriter {
    */
   async ram(ram: Uint8Array, progress?: (done: number, total: number) => void, first = 0, pool?: RamPool): Promise<{ pages: number; frames: number }> {
     if (ram.length % PAGE !== 0) throw new RangeError('RAM is a whole number of 4 KiB pages');
-    // The pool's frames are codec 2's (the core's, web/snapshot-pool-worker.ts): only a writer of codec 2 takes them.
-    if (pool?.size && this.#codec.id === 2 && ram.buffer instanceof SharedArrayBuffer && ram.byteOffset % 4 === 0) return this.#poolRam(ram, pool, progress, first);
+    // The pool's frames are the core's codec's (web/snapshot-pool-worker.ts): only a writer of that codec takes them.
+    if (pool?.size && this.#codec.pooled && ram.buffer instanceof SharedArrayBuffer && ram.byteOffset % 4 === 0) return this.#poolRam(ram, pool, progress, first);
     // Scanned where it lies when 4-aligned (the usual case); otherwise a chunk is copied first.
     const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2) : null;
     let pages = 0;
@@ -415,7 +421,9 @@ export class SnapshotWriter {
       const len = Math.min(CHUNK, ram.length - base);
       const index = first + base / CHUNK;
       await this.#drain(limit - 1);
-      const made = pool.ram(buffer, ram.byteOffset + base, len, index).catch(() => this.#ramHere(ram, words, base, len, index));
+      // Once the write has failed (the sink), a chunk is not made here: RAM may be running again by then.
+      const made = pool.ram(buffer, ram.byteOffset + base, len, index).catch(() =>
+        this.#hasFailed ? { frame: null, pages: 0, scan: 0, compress: 0, crc: 0 } : this.#ramHere(ram, words, base, len, index));
       this.#push(made.then((r) => {
         this.times.scan += r.scan;
         this.times.compress += r.compress;
@@ -495,6 +503,18 @@ export class SnapshotWriter {
     await this.#tail;
     return { bytes: this.#bytes, frames: this.#frames };
   }
+}
+
+/**
+ * The most bytes a file of these parts can take (a staging file's room is checked against it: docs/frontend.md
+ * "Snapshots"): the header at its largest, each CORE, DEVS and BLOB part stored whole in frames of {@link CHUNK}, every
+ * RAM chunk stored whole with its bitmap (`ram`: each memory's bytes), every disk block a frame of its own, and the end.
+ * A frame is never stored larger than its raw bytes (the writer's rule), so no file of these parts is larger.
+ */
+export function snapshotBound(p: { core: number; devs: number; blobs: number[]; ram: number[]; blocks: number }): number {
+  const frames = (n: number) => n + FRAME_HEADER * Math.ceil(n / CHUNK);
+  const ram = p.ram.reduce((t, n) => t + n + (FRAME_HEADER + BITMAP) * Math.ceil(n / CHUNK), 0);
+  return 20 + MAX_HEADER + frames(p.core) + frames(p.devs) + p.blobs.reduce((t, n) => t + frames(n), 0) + ram + p.blocks * (PAGE + FRAME_HEADER) + FRAME_HEADER;
 }
 
 /** A frame's 32-byte header, its CRC (bytes 24 to 28) left 0 for the caller. */
@@ -717,7 +737,7 @@ export async function openSnapshot(
 ): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<ReadFrame>; placed(): Promise<void>; times: ReadTimes; pooled: number }> {
   const { codec } = opts;
   const crc: Crc = codec.crc32.bind(codec);
-  const pool = opts.pool?.size && source instanceof Blob ? opts.pool : undefined;
+  const pool = opts.pool?.size && codec.pooled && source instanceof Blob ? opts.pool : undefined;
   // Through a pool the header is read on its own (the frames are read in pieces).
   const input = new Input(pool ? (source as Blob).slice(0, 20 + MAX_HEADER) : source);
   const times: ReadTimes = { read: 0, crc: 0, unpack: 0, apply: 0 };
@@ -725,10 +745,12 @@ export async function openSnapshot(
   // unhandled while earlier ones are awaited.
   const jobs: Promise<unknown>[] = [];
   const settle = (p: Promise<unknown>) => { jobs.push(p.then(() => undefined, (e: unknown) => e ?? new Error('a frame failed'))); };
+  /** The refusal `settleOne` threw: the oldest work's, earlier in the file than any still queued. */
+  let jobRefusal: unknown;
   /** The oldest work settled; its refusal thrown. */
   const settleOne = async () => {
     const e = await jobs.shift();
-    if (e) throw e;
+    if (e) throw (jobRefusal = e);
   };
   /** The pool's frames of the piece in hand given to a worker now (a copy of the piece: the reader isn't done with it). */
   let flush = async () => {};
@@ -948,10 +970,13 @@ export async function openSnapshot(
       try {
         yield* pool ? pooled(source as Blob, pool) : oneThread();
       } catch (e) {
-        // An earlier frame's refusal comes first, as it would on one thread.
-        for (const j of jobs.splice(0)) {
-          const f = await j;
-          if (f) throw f;
+        // An earlier frame's refusal comes first, as it would on one thread: a job's is (the jobs still queued are later
+        // frames'); a refusal of the structure here is after the frames queued before it.
+        if (e !== jobRefusal) {
+          for (const j of jobs.splice(0)) {
+            const f = await j;
+            if (f) throw f;
+          }
         }
         throw e;
       } finally {

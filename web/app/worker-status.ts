@@ -3,6 +3,8 @@
 import type { Vm } from '../vm.ts';
 import type { Signal } from './memory.ts';
 import type { Status } from './protocol.ts';
+import type { DeviceKind } from './shape.ts';
+import { post } from './worker-post.ts';
 
 /** `io`: the device index of each of the page's disks and adapters, in its order (none: a machine without `network`), and the xHCI's (none: no USB controller); `signal`: the run's memory signal, updated. */
 export function status(
@@ -43,4 +45,24 @@ export function status(
     cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
     asleep: vm.suspended(),
   };
+}
+
+/** The keyboard's driver: the page sends keys typed on the screen to the serial console until it is up (the firmware's menus, GRUB). */
+export function watchKeyboard(vm: Vm, here: { kind: DeviceKind }[]) {
+  const kbd = here.findIndex((s) => s.kind === 'keyboard');
+  let kbdLive: boolean | undefined;
+  return kbd >= 0
+    ? setInterval(() => {
+        const live = (vm.deviceStatus(kbd) & 4) !== 0;
+        if (live !== kbdLive) post({ type: 'keyboard', live: (kbdLive = live) });
+      }, 200)
+    : undefined;
+}
+
+/** The memory signal (web/app/memory.ts): past what the device reports, the JIT's cache holds no more than it does now
+ * (the gauge's limit: it flushes there, docs/jit.md "The page's memory signal"). */
+export function limitJit(vm: Vm, st: Status) {
+  const device = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  if (device && st.estimateBytes > device * 2 ** 30 && !st.memory.jitLimit)
+    vm.setJitLimit(Math.max(st.memory.jitLiveBytes, 1));
 }

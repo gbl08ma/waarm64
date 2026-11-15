@@ -54,6 +54,7 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
   const bytes = () => new Uint8Array(memory.buffer);
   return {
     id: 2,
+    pooled: true,
     module,
     snapshotVersion: ex.snapshot_version(),
     async compress(raw) {

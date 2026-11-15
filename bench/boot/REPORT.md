@@ -5198,3 +5198,90 @@ caught: the check pass returning before its CRCs are in (writes before the check
 test, whose refusal becomes "not restored"), a frame placed at the wrong address (the view's offset ignored), a
 worker's frame dropped, the frames a worker failed not redone, a failed worker's piece not redone, a frame across
 pieces not checked, one not placed, `placed()` without the piece in hand.
+
+## SNAPZ loop 4: the review's findings; a file save staged through OPFS (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the persistent profile
+`target/snapz/profile`, nothing else running. Raw: `results/snapz-4/` (`rounds/<guest>-<arm>-<n>.{json,log}` and
+`.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
+driver; `ab-*.txt`, its logs; `copybench.ts` and `copybench.txt`, the copy's measurement below; `nested-error.ts`
+and `.txt`, R1's check).
+
+**Part 1, the review of loop 3** (`review/snapz-3`, a static review of 5104f64b; each real finding's test written
+first and seen failing): R1 (a pool worker's uncaught error not cancelled, so it went on to the machine worker's
+parent and the page took it for the machine's crash) real, confirmed in Chromium 155 (`nested-error.ts`: the page's
+`Worker.onerror` fires unless the parent cancels it); fixed (`preventDefault`, and `messageerror` handled).
+R3 (a lost reply hung the save, paused) real: a pool with work out and no reply for 10 s (`STALL_MS`) fails. R4 (one
+worker's failure left the others running their given-up jobs) real: a failure ends every worker at once; a writer
+whose sink failed no longer makes chunks itself. R5 (workers spawned before a failed spawn leaked) real:
+`Promise.allSettled`, the made ones ended. R6 (a refusal could name a later frame) real: a job's refusal is thrown
+before the later jobs are looked at. R10 (the writer gave RAM to the pool on the codec's id alone) real: a codec says
+`pooled` (only `lzCodec`); the reader is gated the same way. Their tests: `tests/snapshot-pool.test.ts` (fake workers
+through `startPool`'s `spawn`, and real ones). R2 (the load's pool leaked when a resume's `bootVm` failed before
+`fill`) and R7 (`fill` closed whatever pool was current) real by the code: the pool is now its restore's (a local of
+`openRestore`, with `release`), and `start` releases it once `bootVm` settles, whatever the outcome; no test reaches
+that path (it needs `bootVm` to fail before `fill`). R8 not a defect: the page test tells the passes apart by the
+headline (the check pass's refusal is "Couldn't load the snapshot", the restore pass's "Couldn't restore"); planted,
+the check pass ignoring its workers' failures fails it, and every load on that page is checked to go through the
+pool. R9 (docs) fixed.
+
+**Part 2, built:** a file save (a picked file, a download) goes to a staging file in OPFS during the pause
+(`web/snapshot-stage.ts`; docs/frontend.md "Snapshots"), the machine resumes (`snapshot-resumed`: input, USB and the
+clock back), then the picked file gets the staging file copied in and it's removed, and a download is the staging
+file itself (removed with its address, 60 s on). The fallbacks write directly: no room (the estimate against
+`snapshotBound` plus a tenth and 64 MiB), a staging write refused partway (written again directly, still paused), no
+OPFS. "A picked file" on this page is `showSaveFilePicker`'s writable in Chromium and a download elsewhere (and where
+the picker throws); both were bound by their path (the writable at ~140-150 MB/s here, the download's Blob parts in
+the page), so both stage. **The copy** first read the staging file in 4 MiB pieces into the worker (arm "new"): 3.9 s
+for the desktop's 680 MB beside the running guest, +594 MiB of the renderer's garbage. Writing it as 64 MiB Blob
+slices instead (the browser copies file to file) took 0.69-0.89 s against 1.27-1.40 s on an idle browser
+(`copybench.txt`) and is what was taken ("new2").
+
+**The A/B:** base = e62727ec (loop 3), new = this loop with the copy read in pieces (9d8b90ae, a local commit), each
+round a browser of its own, base new new base base new per guest; then new2 = this loop (the Blob copy) three rounds
+a guest in the same session after them (not alternated: the pause's code is new's; its kept pauses ran ~10% higher
+than new's, the session's drift). The probe's new `picked` save stands an OPFS file in for the pick (a writable as
+a real pick's). Median (range) of 3, ms; memory = the whole browser's peak over the sample before the save, MiB
+(memwatch's 50 ms):
+
+| desktop (689 MB file) | base | new | new2 |
+|---|---|---|---|
+| kept: paused | 1,261 (1,193-1,341) | 1,294 (1,175-1,325) | 1,438 (1,353-1,467) |
+| download: paused | 1,811 (1,747-1,893) | 1,366 (1,363-1,426) | 1,450 (1,444-1,458) |
+| ... memory added (browser process / renderer) | +1,144 (684 / 530) | +229 (7 / 218) | +239 (7 / 227) |
+| picked: paused | 4,679 (4,571-4,817) | 1,399 (1,316-1,410) | 1,368 (1,363-1,373) |
+| ... the copy after the resume | | 3,884 (3,866-4,031) | 1,379 (1,330-1,379) |
+| ... wall (click to done) | 4,903 (4,818-5,049) | 5,756 (5,723-5,861) | 3,130 (3,072-3,237) |
+| ... memory added | +282 | +594 | +313 |
+| suspend: paused | 1,288 (1,251-1,487) | 1,215 (1,214-1,269) | 1,265 (1,241-1,297) |
+
+| Debian (97 MB file) | base | new | new2 |
+|---|---|---|---|
+| kept: paused | 164 (163-174) | 162 (157-163) | 163 (162-179) |
+| download: paused | 181 (169-182) | 163 (158-167) | 166 (165-167) |
+| ... memory added | +209 | +95 | +82 |
+| picked: paused | 491 (478-505) | 160 (155-170) | 160 (156-166) |
+| ... the copy after the resume | | 210 (194-214) | 114 (106-114) |
+| suspend: paused | 145 (145-157) | 146 (146-149) | 148 (144-150) |
+
+**Against the goal** (the picked file's pause equal to a kept snapshot's within the noise): the desktop's picked
+pause 4.68 → 1.37-1.40 s, a kept one's 1.29 (new) and 1.44 (new2) in the same sessions, the ranges overlapping in
+each; the download's 1.81 → 1.37-1.45 s. Within a round the file saves' pauses run 70-100 ms over the kept one's in
+`disk` (the disks' blocks read: 250-310 ms against 160-200; the base's file saves the same against its kept), not in
+the sink (264-316 ms against 330-418): the overlay is the kept snapshot's restore's by then, later in the round.
+Debian's picked pause 0.49 → 0.16 s, the kept one's. **Memory:** the download's +1,144 MiB is +229-239 (the pool's
+instances and the 3D read-back, as a kept snapshot's +187-200); the browser process's 684 MiB of blob storage is
+gone, and nothing of the file is in the page. The picked file's +282 → +313 MiB (the Blob copy; +594 when read in).
+Loads, resumes and kept starts don't change (nothing on their path did; desktop load 8.2 / 7.4 s, Debian 1.67 /
+1.72).
+
+**Correctness:** `tests/page-snapshot-stage.test.ts` (Buildroot, an on-disk profile): a download and a picked file
+staged (the picked file's bytes the file's, its staging file gone, the download's kept for its address), a staging
+write refused partway (the origin's quota at half a file over its usage, `Storage.overrideQuotaForOrigin`: a whole
+file written directly, `staging: refused`), a copy that fails after the resume (the quota at 1.5 files: the message
+and its cause, the picked file empty, no staging file left, the machine running), a staging file no page holds and
+the download's (its page gone) removed at the next start, and no room (`?stageroom=0`: written directly,
+`staging: room`). Planted, each caught: the stale files kept (no `removeStale` at the start), a failed copy's staging
+file kept (neither the worker nor the page's release removing it), the room never checked, and a refusal partway not
+written again. `tests/snapshot-file.test.ts`: `snapshotBound` over the worst case (incompressible RAM, blobs,
+scattered blocks) is never under the file and is told before its first byte.

@@ -703,6 +703,14 @@
     "message": "Writing the snapshot",
     "note": "The machine's state in the status bar while a snapshot is written (a percentage may follow)."
   },
+  "worker-stage.phase.copying": {
+    "message": "Copying the snapshot to the file",
+    "note": "The machine's state in the status bar after a snapshot to a file was written to the browser's storage during the pause, while it is copied into the chosen file, the machine already running on (a percentage may follow)."
+  },
+  "worker-stage.notCopied": {
+    "message": "The snapshot was taken, but copying it into {{name}} failed: the file has none of it, and nothing of it is left in the browser's storage.",
+    "note": "Error details under “Couldn't save the snapshot” (snapshots:worker-snapshot.notSaved) in the message bar (under the toolbar) when a snapshot written to the browser's storage during the pause couldn't be copied into the chosen file afterwards; {{name}} is the file's name; why is the detail under it."
+  },
   "worker-snapshot.phase.finishing": {
     "message": "Finishing the file",
     "note": "The machine's state in the status bar while a snapshot's file is closed, the machine already running on."

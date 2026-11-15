@@ -1452,7 +1452,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
   in a restore, and a breakdown of the load's machine start.
   Loops 1 (lz4_flex, crc32fast), 2 (the save's pool: the desktop's pause 3.80 to 1.07 s), 2b (older files refused,
-  the save's garbage recycled) and 3 (the load's pool: its check, state and RAM 3.13 to 1.13 s) are in. Left:
+  the save's garbage recycled), 3 (the load's pool: its check, state and RAM 3.13 to 1.13 s) and 4 (a file save staged
+  through OPFS: a picked file's pause 4.7 to 1.4 s, a kept one's) are in. Left:
   - **What is left of a load's compression share** (bench/boot/REPORT.md "SNAPZ loop 3", the desktop's 1.13 s): the
     check pass ~0.4 s, bound by reading the file (~0.3 s at four 4 MiB slices in flight; the file is read twice, once
     a pass); the state 0.08-0.10 s (109 MB of BLOB frames unpacked on the machine worker: a pool job that posts the
@@ -1461,14 +1462,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     page faults). A frame index at the file's end would let the restore pass's workers read their frames themselves.
     The rest of the load is the disk's blocks (~2.2 s, loop 5) and the machine's start (prepare ~2 s, start ~2.2 s,
     loop 7).
-  - **A download's memory** (bench/boot/REPORT.md "SNAPZ loop 2b"): the desktop's file save adds ~1.1-1.2 GiB at
-    its peak: the browser's blob storage the file (~685 MiB, until the download's URL is revoked 60 s later) and the
-    renderer ~600 MiB more, which falls back as the save ends: by its timeline the page's Blobs' bytes, held until the
-    browser has taken them (the chunk buffers themselves go back to the worker). Blobs made in the machine worker instead held only ~340 MiB in the renderer but paused the save 0.44 s
-    longer (1.80 s against 1.36), not taken. Loop 4's staging through OPFS (a file on disk, then copied or handed to
-    the download) is to replace both; what is left of a kept snapshot's and a suspend's (+90 and +205 MiB on the
-    desktop) is the pool's six instances while it runs and, for a 3D machine, its read-back state (109 MB of BLOB
-    contents held through the save).
+  - **A save's memory left** (bench/boot/REPORT.md "SNAPZ loop 4"): a file save stages through OPFS now, so the
+    download's ~1.1 GiB is gone; every desktop save adds ~190-240 MiB while it runs (the pool's six instances and, for
+    a 3D machine, its read-back state: 109 MB of BLOB contents held through the save), and a picked file's ~310 MiB
+    (the copy's Blob writes in the renderer's accounting).
+  - **A picked file's copy** after the resume (1.4 s for the desktop's 680 MB beside the running guest, 0.7 s on an
+    idle browser): Blob slices written by the browser, file to file; nothing faster was found from the page. A
+    staging file of a download stays 60 s (its address); one whose page ends first is removed at the next start.
   - **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
     read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (mostly their reads through the device worker),
     and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go
