@@ -1,12 +1,14 @@
 // The machine worker's answers to the page's asks about the running machine `vm` (web/app/worker.ts `asked`): the
-// profilers, for benchmarks (docs/benchmarking.md: the guest PC sampler and the vCPU timeline), its heap's use, and the
-// disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts).
+// profilers, for benchmarks (docs/benchmarking.md: the guest PC sampler and the vCPU timeline), its heap's use, the
+// disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts), and the questions about its
+// surfaces (web/surface.ts: `inspect`).
 import type { Vm } from '../vm.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import type { ToWorker } from './protocol.ts';
+import { answerBuffers, type InspectAnswer, type InspectQuery } from '../surface.ts';
 import { post } from './worker-post.ts';
 
-/** Answers `m` if it is one of these asks (a profiler on or off, the heap, the compaction). */
+/** Answers `m` if it is one of these asks (a profiler on or off, the heap, the compaction, a surface). */
 export function asked(vm: Vm | undefined, m: ToWorker) {
   if (m.type === 'profile') void profile(vm, m.on, m.id);
   else if (m.type === 'timeline') void timeline(vm, m.on, m.id);
@@ -18,7 +20,21 @@ export function asked(vm: Vm | undefined, m: ToWorker) {
       (c) => post({ type: 'compacted', id, ...c }),
       () => post({ type: 'compacted', id }),
     );
+  } else if (m.type === 'inspect') {
+    const id = m.id;
+    void inspect(vm, m.query)
+      .catch((): InspectAnswer => ({ kind: 'none' }))
+      .then((answer) => post({ type: 'inspected', id, answer }, answerBuffers(answer)));
   }
+}
+
+/**
+ * Who answers a surface's query, by its kind: a disk's (`disk-*`) the machine's devices (web/vm.ts `Vm.inspect`, the
+ * device worker); anything else (a RAM view's kinds, later) nothing yet.
+ */
+function inspect(vm: Vm | undefined, query: InspectQuery): Promise<InspectAnswer> {
+  if (vm && query.kind.startsWith('disk-')) return vm.inspect(query);
+  return Promise.resolve({ kind: 'none' });
 }
 
 let stopSampler: (() => Promise<[string, number][]>) | undefined;

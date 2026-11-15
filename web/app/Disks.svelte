@@ -1,5 +1,6 @@
 <!--
-  A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached;
+  A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached,
+  a "visualize" link on its line (its surface window through the overlay it uses, SurfaceWindow.svelte);
   per writable disk its overlays (switch, new empty; Overlays… opens the disk's overlays, Overlays.svelte: rename, delete,
   merge into a stored disk, resize, export each), Resize… on a writable disk (ResizeDisk.svelte: its chosen overlay, one
   made for it where none is chosen yet, the stored disk written in place, or the ramdisk), export (the Export wizard: the changes or the whole disk) and import (a changes file becomes a new
@@ -21,7 +22,7 @@
   import { ask } from './ask.svelte.ts';
   import { msg, MsgError, t, text } from '../i18n.ts';
   import type { Store, OverlayRecord } from './store.ts';
-  import type { DiskRecord, MachineRecord } from './shape.ts';
+  import type { Attachment, DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
   import { bytesText, editAttachment } from './machines.ts';
   import { newEmptyOverlay, switchOverlay } from './disks.ts';
@@ -31,6 +32,8 @@
   import { attachmentTarget, type ResizeWhat } from './resize.ts';
   import { switchAsked } from './switch-asked.ts';
   import { attachmentLine, overlayOption } from './disk-lines.ts';
+  import VisualizeLine from './VisualizeLine.svelte';
+  import { surfaceWindow } from './areas/surface.svelte.ts';
 
   type Props = {
     store: Store;
@@ -45,6 +48,9 @@
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();
 
   const plain = (m: MachineRecord) => $state.snapshot(m);
+  /** The overlay the disk's surface window starts on: the attachment's own `o`, where it writes to one (else the disk alone). */
+  const viewed = (a: Attachment, d: DiskRecord, o?: OverlayRecord) =>
+    !a.readOnly && !a.inPlace && d.kind !== 'ramdisk' ? o?.id : undefined;
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string) {
     const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), {
@@ -133,6 +139,7 @@
   {#each machine.attachments as a, i (a.id)}
     {@const d = disks.get(a.disk)}
     {@const target = attachmentTarget(machine, a, d)}
+    {@const chosen = overlays.find((o) => o.id === a.overlay)}
     <Card data-attachment={a.id}>
       <div class="row">
         <span class="kind" title={d ? diskKind(d.kind).text : ''}
@@ -140,14 +147,10 @@
         >
         <strong>{d?.name ?? t('disks:Disks.missing')}</strong>
         <Note inline class="meta"
-          >{d
-            ? attachmentLine(
-                d,
-                a,
-                i,
-                overlays.find((o) => o.id === a.overlay),
-              )
-            : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</Note
+          >{#if d}<VisualizeLine
+              line={attachmentLine(d, a, i, chosen)}
+              onvisualize={() => surfaceWindow.show(d.id, viewed(a, d, chosen), 'machine')}
+            />{:else}{t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}{/if}</Note
         >
         <span class="grow"></span>
         <Check

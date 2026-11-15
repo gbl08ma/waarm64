@@ -1002,6 +1002,41 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   generation bumped and its `meta` naming the overlay first, so an interrupted merge is finished at the store's next
   opening (`resumeMerge`), before anything reads it (`tests/stored.test.ts`, with the resume left out as the planted
   bug).
+- **Its surface** (web/surface.ts, docs/plans/surface.md): `Backend.inspect` answers a disk's surface (per cell of
+  4 MiB × a power of two, the blocks the disk and its overlay hold) and one 4 MiB range block by block, from the maps
+  the device has in memory (the overlay's `leaves()`, a stored disk's `blockSource`, a ramdisk's chunks, an image's
+  `liveImage`). A stored disk under an overlay doesn't change, so its per-range counts are taken once. Under a grown
+  overlay a stored or blank disk is opened at the guest's size; the spec's `diskSize` (web/app/worker-devices.ts
+  `blkSpec`) is its own, which the surface's disk layer takes (nothing else reads it).
+  **An image**: a qcow2's clusters from its L2 tables (web/qcow2.ts `Disk.allocation`: one object over the tables read
+  so far, per cluster data or compressed against unallocated or zero, its bytes' place in the file, and per table
+  whether it is known; a 4 KiB block is the disk's if any cluster in it is). `openDisk` reads L2 tables lazily, as
+  requests need them, and keeps them; each inspect reads those not read yet from a local file (a bounded read: at most
+  `ALLOCATION_MAX`, 32 MiB of tables, an image of 256 GiB at 64 KiB clusters; past it, only those the guest's requests
+  read), and from a remote image only those the block cache holds in memory or in OPFS (`Source.kept`,
+  web/blockcache.ts): nothing is fetched for the map. The layer is counted per table as tables are known
+  (`allocationCounts`, each table once: the image doesn't change while open), the blocks under a table not known yet
+  in its `unknown` (not examined: `why` `'tables'` remote, `'large'` local). The tables it reads it keeps for the
+  guest's reads too. A raw image is not examined (`'raw'`), nor read by the content check. **Kept**: a remote image
+  says per cell how many of its blocks this browser keeps (`kept`): a raw one's of all its blocks (the file is the
+  disk), a qcow2's of its blocks with data, a block kept when every cache block its clusters' bytes take is (a data
+  cluster's, a compressed one's packed bytes; unallocated and zero clusters need nothing from the server). The
+  qcow2's clusters are indexed once per table (`keptIndex`: a cluster's units and its first and last cache block),
+  and each answer looks each cache block up once and passes over the index (`keptCounts`): 2.5 to 4.9 ms for a
+  20 GiB image at 64 KiB clusters with every cluster allocated (327,680; the index 10 to 23 ms once, the tables'
+  counts 2 to 4 ms once; Node in a cloud container, 2026-11-15: `tests/surface-image.test.ts` prints it). A range's
+  detail marks a block under an unknown table not examined (5) and a kept one in `kept`. The content check reads a
+  local qcow2's blocks
+  through the image, a remote one's not at all (they'd be fetched). Activity: a
+  query that asks for it puts a wrapper around the backend's outermost `request` (over the stats', concurrent and
+  compaction wrappers, which are made at the build), which reads the request's header and marks the ranges read
+  and written; an answer carries the marks per cell and clears them, and once no query asked for 3 s (or at
+  `close`) the request it wrapped is put back as it was. While nobody looks, nothing is added to the request path.
+  While the wrapper is on, the overlay's per-range counts are kept and only the ranges written since are counted
+  again: a whole walk of 25,600 leaves (100 GiB written) took 30 to 55 ms in Node (a cloud container, 2026-11-15:
+  `tests/surface.test.ts` prints it), a range's ~1 µs. One answer every 10 s (`FULL_WALK_MS`) walks the leaves whole all the
+  same: a request in flight when the wrapper went on isn't marked, and what it changed after the first two walks is
+  caught up then.
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in

@@ -357,7 +357,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
-- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test::follows_the_session_and_passes_the_child_its_frames` fail, which stops `scripts/ci.sh` there. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
+- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) six fail (2026-11-15), which stops `scripts/ci.sh` there: `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test`'s `follows_the_session_and_passes_the_child_its_frames`, `a_child_for_the_screens_size_hears_the_hello_and_the_size_first`, `applies_the_pages_layout_where_the_session_hasnt_it`, `no_session_child_without_the_clipboard` and `says_the_childs_desktop_to_a_page_that_asks`. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
 - **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
@@ -1403,6 +1403,39 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The screen's cursor styles** (areas/screen-view.ts): the CSS cursor (`showCursor`) and the lock cursor's box
   (`placeCursor`) are still set on the elements, as they follow the guest's cursor messages; through state they would
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
+
+- **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
+  - A URL disk offline isn't examined: its kept blocks are named by its identity (a chunked image's manifest id, or
+    the server's validator), which needs a request to the server; its store is locked by a machine reading it, and
+    opening the cache's bucket pushes on its expiry. The page could keep the identity in the disk's record.
+  - Storing a record with an OPFS file's handle (granted without a prompt) in IndexedDB closes Chromium's headless page
+    under Playwright (seen 2026-11-15, not traced), so the page test of a file disk examined offline is Node's
+    (`tests/surface-image.test.ts`). Worth checking a real file handle's record isn't affected.
+  - A transient machine's disk (a test's `?machine=`, `?disk=`) has no "visualize": its disk has no record; its
+    pane would need one made from the run's disks.
+  - A ramdisk viewed while its machine runs in another tab says it has nothing (only this tab's run answers live).
+  - The carrying of a dropped live answer's activity into the next picture (`SurfacePoll`, `carryActivity`) is tested
+    only as the pure function: `SurfacePoll` is a `.svelte.ts` (runes), which Node's tests don't compile.
+  - A remote qcow2's kept count passes over every cluster with data at each answer (2.5–4.9 ms at 20 GiB of 64 KiB
+    clusters, all allocated; Node, a cloud container): past ~100 GiB it would want counts kept per cell, recounted only
+    where the cache's blocks changed (the cache would have to say which).
+  - Every offline ask reads the whole map again (~105 MB for an overlay with 100 GiB written; a legacy flat map is 4
+    bytes per block), a Refresh and each settled records change too; a long-lived job worker could keep the per-range
+    counts and answer another cell size, or a refresh at the same generation, without reading it again.
+- **A RAM usage view on the surface window's pieces** (the user's idea, 2026-11-15; `ui/BlockGrid`, `ui/FloatingWindow`
+  and the `inspect` route are made for it: a `ram-surface` query kind and a worker that scans the guest's shared
+  memories, nothing added to the interpreter or the JIT). No live reads and writes: compiled code touches RAM directly.
+  **Measured** (2026-11-15, Chromium 153 on x86_64 Linux in a cloud container, one run): a worker's scan of an untouched
+  4 GiB shared wasm memory doesn't make the host commit it (the browser's processes' resident memory 372 MiB before,
+  381 MiB after; writing 512 MiB of it then added 512 MiB), so a scan doesn't inflate the tab. A zero-or-not pass per
+  4 KiB page over the 4 GiB took 0.46–1.0 s there (zeros read whole; a page with data is left at its first word that
+  isn't zero: 512 MiB of data in 7.5 ms). Not measured: macOS and Windows hosts, the cost of a checksum per cell for
+  "changed since the last pass" (it reads every byte of the pages with data), the vCPUs' slowdown beside a scan.
+  - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
+    720 × 520, fits them).
+  - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0
+    (`disks:stored.imageUnreadable`); 256 MiB worked (seen making screenshots, 2026-11-15, not traced: the import
+    worker's read of a large in-memory `File`?).
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a

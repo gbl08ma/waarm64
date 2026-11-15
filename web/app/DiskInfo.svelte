@@ -2,17 +2,20 @@
   A disk as the lists of disks show it (docs/machines.md §4): its kind's icon, its name, and a line with its kind, size (and what a stored disk holds of it),
   overlays (a ramdisk has none) and the machines it's attached to. In the Disks pane and Add a disk… › A disk already in
   this browser. One element: a row (the icon, then the name over its line) that takes the room its parent gives it.
+  With `onvisualize` (the Disks pane's), the line ends with a "visualize" link that opens the disk's surface window.
 -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
+  import VisualizeLine from './VisualizeLine.svelte';
   import { t } from '../i18n.ts';
   import { bytesText } from './bytes.ts';
   import { diskKind } from './disk-kind.ts';
   import type { OverlayRecord } from './store.ts';
   import type { DiskRecord } from './shape.ts';
 
-  /** `overlays`: the disk's; `users`: the names of the machines it's attached to. */
-  let { disk, overlays, users }: { disk: DiskRecord; overlays: OverlayRecord[]; users: string[] } = $props();
+  /** `overlays`: the disk's; `users`: the names of the machines it's attached to; `onvisualize`: its line's link. */
+  type Props = { disk: DiskRecord; overlays: OverlayRecord[]; users: string[]; onvisualize?: () => void };
+  let { disk, overlays, users, onvisualize }: Props = $props();
   const kind = $derived(diskKind(disk.kind));
   const bytes = $derived(overlays.reduce((n, o) => n + o.bytes, 0));
   /** Its line: its kind and size, its overlays (a ramdisk has none), the machines that have it. */
@@ -37,7 +40,9 @@
   <span class="kind" title={kind.text}><Icon name={kind.icon} size={18} /></span>
   <div class="what">
     <strong>{disk.name}</strong>
-    <span class="meta">{line}</span>
+    <span class="meta"
+      >{#if onvisualize}<VisualizeLine {line} {onvisualize} />{:else}{line}{/if}</span
+    >
   </div>
 </div>
 

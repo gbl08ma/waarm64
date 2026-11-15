@@ -42,15 +42,18 @@ function sourceOf(s: Source) {
 
 /**
  * A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back), at
- * the size the guest sees (a grown overlay's, past its source's: docs/machines.md §4.5).
+ * the size the guest sees (a grown overlay's, past its source's: docs/machines.md §4.5), and then the source's own size
+ * (`diskSize`: its surface's disk, web/surface.ts; the device reads and the guest sees by `size` alone).
  */
-function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
+export function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
   const s = d.source;
   const from: ReturnType<typeof sourceOf> & { size?: number } = sourceOf(s);
   return {
     type: 'blk',
     ...from,
-    ...(d.size !== undefined && d.size > (from.size ?? 0) ? { size: d.size } : {}),
+    ...(d.size !== undefined && d.size > (from.size ?? 0)
+      ? { size: d.size, ...(from.size !== undefined ? { diskSize: from.size } : {}) }
+      : {}),
     overlay: 'ramdisk' in s ? undefined : d.overlay,
     identity: d.identity,
     serial: d.serial,

@@ -20,6 +20,7 @@ import { corrupt, SnapshotError } from './snapshot-file.ts';
 import { fromWire, msg, MsgError, type Msg, type WireError } from './msg.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { FromDeviceWorker, ToDeviceWorker } from './device-worker.ts';
+import type { InspectAnswer, InspectQuery } from './surface.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
 import { cpuMask, type CpuFeature } from './cpu-features.ts';
@@ -1122,6 +1123,14 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** The disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts; `measure`: only their sizes): their files' bytes before and after. */
     compact: (measure = false) => devices.compact(measure),
     /**
+     * A disk's surface or one of its ranges (web/surface.ts), answered from the device's maps in memory: `query.disk`
+     * is the disk's place among the machine's disks (its blk devices, in slot order); `none` past them.
+     */
+    inspect(query: InspectQuery): Promise<InspectAnswer> {
+      const slot = specs.map((d, i) => (d.type === 'blk' ? i : -1)).filter((i) => i >= 0)[query.disk];
+      return slot === undefined ? Promise.resolve({ kind: 'none' }) : devices.inspect(slot, query);
+    },
+    /**
      * The balloon's free page hint (web/balloon.ts), with the machine running, right before a snapshot or a suspend:
      * the guest holds its free memory, zeroed, once it resolves (after `ms` at most); undefined without a balloon whose
      * driver hints. `release` gives it back after the save.
@@ -1686,6 +1695,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: Uint32Array) => d.blocks(i, blocks),
       compact: (measure?: boolean) => d.compact(measure),
+      inspect: (i: number, query: InspectQuery) => d.inspect(i, query),
       hint: (ms: number) => d.hint(ms),
       release: () => d.release(),
       output: () => text, flush: async () => { if (failed) throw failed; },
@@ -1714,6 +1724,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: Uint32Array) => d.blocks(i, blocks),
       compact: (measure?: boolean) => d.compact(measure),
+      inspect: (i: number, query: InspectQuery) => d.inspect(i, query),
       hint: (ms: number) => d.hint(ms),
       release: () => d.release(),
       output: () => text, flush: async () => {}, close: async () => (d.close(), d.stats()),
@@ -1729,7 +1740,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
   const asked = new Map<number, (m: DiskAnswer) => void>();
   let askId = 0;
-  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: Uint32Array } | { type: 'compact'; measure?: boolean } | { type: 'hint'; ms: number }) => new Promise<DiskAnswer>((resolve, reject) => {
+  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: Uint32Array } | { type: 'compact'; measure?: boolean } | { type: 'hint'; ms: number } | { type: 'inspect'; device: number; query: InspectQuery }) => new Promise<DiskAnswer>((resolve, reject) => {
     const id = askId++;
     asked.set(id, (a) => {
       asked.delete(id);
@@ -1788,6 +1799,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     written: async (i: number) => (await ask({ type: 'written', device: i })).written,
     blocks: async (i: number, blocks: Uint32Array) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
     compact: async (measure?: boolean) => (await ask({ type: 'compact', measure })).compacted ?? { before: 0, after: 0 },
+    inspect: async (i: number, query: InspectQuery): Promise<InspectAnswer> => (closing ? { kind: 'none' } : (await ask({ type: 'inspect', device: i, query })).inspected ?? { kind: 'none' }),
     // Bounded here too: a worker that closes meanwhile answers nothing.
     hint: async (ms: number) => (closing ? undefined : (await Promise.race([ask({ type: 'hint', ms }), new Promise<Partial<DiskAnswer>>((r) => setTimeout(() => r({}), ms + 2000))])).hinted),
     release: () => { if (!closing) worker.postMessage({ type: 'release' } satisfies ToDeviceWorker); },

@@ -1,7 +1,7 @@
 // The on-screen keyboard and the Keys menu on the page (docs/frontend.md "The on-screen keyboard", "Keys the browser
 // keeps"): what reaches the guest's keyboard port from clicks, a held key and two fingers chording; modifiers tapped
 // and latched, released after the next key or (Preferences) when tapped again; the screen keeps the focus; the
-// keyboard moved and resized, remembered; the menu's combinations and Hold Esc. The keyboard's port is kept on the
+// keyboard moved and resized, remembered (an older page's place too); the menu's combinations and Hold Esc. The keyboard's port is kept on the
 // page (the start message is intercepted) and the worker stopped at once, the guest's driver said to be up: nothing
 // boots (scripts/ci.sh runs it). ~20 s.
 import assert from 'node:assert/strict';
@@ -199,6 +199,30 @@ test('the on-screen keyboard moved and resized, remembered; Preferences keeps mo
   await showOsk(page);
   const kept = (await page.locator('#osk').boundingBox())!;
   assert.ok(Math.abs(kept.x - after.x) < 3 && Math.abs(kept.y - after.y) < 3 && Math.abs(kept.width - after.width) < 3, `kept: ${JSON.stringify([after, kept])}`);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the on-screen keyboard\'s place as an older page remembered it (`osk`): it comes back there, moved to the windows\' places', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open();
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}');
+    localStorage.setItem('waarm64.settings', JSON.stringify({ ...s, osk: { x: 100, y: 50, w: 700, wc: 300, layout: 'compact' } }));
+  });
+  await load(page);
+  await showOsk(page);
+  const osk = page.locator('#osk');
+  let b = (await osk.boundingBox())!;
+  assert.equal(await osk.getAttribute('data-layout'), 'compact', 'the forced layout');
+  assert.ok(Math.abs(b.x - 100) < 1 && Math.abs(b.y - 50) < 1 && Math.abs(b.width - 300) < 1, `where it was: ${JSON.stringify(b)}`);
+  const s = await page.evaluate(() => JSON.parse(localStorage.getItem('waarm64.settings') ?? '{}'));
+  assert.equal(s.osk, undefined, 'the old place dropped');
+  assert.equal(s.oskLayout, 'compact');
+  assert.deepEqual([s.windows.osk.x, s.windows.osk.y, s.windows.osk.sizes.full.w, s.windows.osk.sizes.compact.w], [100, 50, 700, 300]);
+  // The full layout: its own width.
+  await page.locator('#osk .layout').click();
+  b = (await osk.boundingBox())!;
+  assert.ok(Math.abs(b.x - 100) < 1 && Math.abs(b.width - 700) < 1, `the full layout's width: ${JSON.stringify(b)}`);
   assert.deepEqual(errors, []);
   await context.close();
 });

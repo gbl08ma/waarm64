@@ -14,7 +14,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Step`/`Steps`, `Disclosure`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
-| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
+| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-shape.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
@@ -510,6 +510,95 @@ HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its 
 network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:StorageBar.storage.clearShaders)**
 (vk/README.md "The shader cache"; the store's size counts what IndexedDB holds, deflated).
 
+### A disk's surface
+
+A disk's line ends with a "visualize" link (`VisualizeLine.svelte`), in the
+browser's Disks pane (`DisksPane.svelte` gives `DiskInfo.svelte` its `onvisualize`; the Add a disk wizard's list
+doesn't) and in a machine's Disks tab (`Disks.svelte`: "… · vda · visualize"). It opens the disk's map, as a
+defragmenter draws one, in a window floating over the page (`SurfaceWindow.svelte`, a `ui/FloatingWindow.svelte`, the
+on-screen keyboard's frame too: moved by its title bar, resized by its corner, its place remembered under
+`windows.surface`). One is open at a time
+(`areas/surface.svelte.ts` `surfaceWindow`); `App.svelte` mounts it after the Machines page, so it stays over the
+machine and the Machines page as the user goes between them, and a click on it leaves the keyboard's focus where it
+was (on the screen).
+
+- **Its title bar**: the disk's name and the overlay laid over it: [The disk alone](ui:disks:SurfaceWindow.alone) or
+  one of the disk's overlays; from a machine's Disks tab it starts on the overlay that attachment writes to, from the
+  Disks pane on the disk alone.
+- **The map** (`ui/BlockGrid.svelte`): a square is 4 MiB times the smallest power of two for which the whole view fits
+  the squares the window has room for (counted at 10 px; a small disk's few squares grow to 24 px), said over it
+  ([1 square = {{size}}](ui:disks:SurfaceWindow.scale)). The disk is each square's rim (no data, then four shades of
+  how full over the blocks examined: any block at all is the first; a qcow2 image's clusters with data counted so too,
+  per L2 table as its tables are read, the squares under a table not read yet hatched like an image not examined, and
+  one with no data seen but part not examined hatched too, never "no data"; other images flat, hatched, not
+  examined), the overlay a core inset in it (four shades of what it changed; hollow where it only zeroed or discarded
+  blocks). A remote image viewed live has a **tick** on a square whose bytes this browser keeps (in memory or in its
+  storage), a thin green bar (`--map-tick`) along its bottom edge, its whole width when all the square has on the
+  server is kept (a raw image's every block, a qcow2's blocks with data), the left half when part is
+  ([Partly kept in this browser](ui:disks:surface-look.legend.keptSome)): independent of the rim, so the rim always
+  says what the disk holds and the tick only that the bytes are here; with an overlay larger than
+  the disk (grown, [machines.md](machines.md) §4.5) the squares past the disk have no rim and the disk's end is
+  marked. Live, a square the guest read or wrote flashes. The legend (`SurfaceLegend.svelte`) shows only the looks
+  the view can show (`surface-look.ts` `legendOf`). The line under the map says the pointed square's numbers
+  (`cellWords`: where, the disk's blocks held of its blocks examined, how many aren't examined yet, how many with data
+  this browser keeps, the overlay's changed and zeroed, the activity; the
+  keyboard's cursor's square until the map loses the focus), else what the view holds as a whole; a screen reader is
+  told the line (an `aria-live` copy) when the square pointed at or the view changes, not as a live poll changes its
+  numbers (`wholeWords`: [The disk holds no data yet. Every block reads as zeros.](ui:disks:surface-look.empty)
+  for an empty one; for an image not examined, why: raw, its tables not read yet, too large, no permission to
+  read the file, a URL while its machine doesn't run here (`opaqueWords`); for a qcow2 partly examined, why the rest
+  isn't yet ([Some of the image's tables haven't been read yet, so the squares they cover aren't examined. They fill in as the guest reads them; the tables are never downloaded just for the map.](ui:disks:surface-look.why.tablesSome));
+  and for a remote image how much of it this browser keeps). Another overlay chosen (or the disk alone), the picture
+  before stays, dimmed, and the line says [Reading the map…](ui:disks:SurfaceWindow.reading) until the new one's first
+  answer (`SurfacePoll.stale`). **The overlay picker**
+  says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
+  the record keeps the numbers of the run before until the machine stops.
+- **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
+  32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
+  consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
+  fragmented it is there; blocks under a qcow2's table not read yet hatched, not examined, and a remote image's blocks
+  kept in this browser ticked), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
+  data (up to 4 MiB) and counts those that hold only zeros; where they are only an image's it doesn't read (not
+  examined, or a remote qcow2's), it isn't offered and the words say they can't be checked
+  ([The image's blocks aren't read here, so their contents can't be checked.](ui:disks:surface-look.range.uncheckable)).
+- **Where its numbers come from** (`surface-source.ts` `chooseSource`, Node-tested): **live** when the stored
+  machine on this page has the disk attached as the view shows it (through that overlay; the disk alone read-only,
+  written in place, or a ramdisk), from its loading to its stop (`holdsDisks`: its device worker has the files, or is
+  opening them; before its devices answer the window says it's reading): `inspect` to the run's worker (the run writes `current.inspect`: its
+  worker, the replies by id, the attachments it started with), the disk being its place in slot order; a stored disk
+  written in place answers as a blank disk under an overlay that is its store, shown as the disk (`asInPlace`).
+  Otherwise **from the files**: a job worker per ask (`surface-worker.ts`, `surface-job.ts`), read-only under the
+  shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too), one
+  of each kind (the map, a range) in flight: a newer ask ends the one before, its worker terminated. The job holds
+  the files' locks under `waarm64-surface-reader` (web/overlay.ts `SURFACE_READER_LOCK`), and the page's checks of
+  whether something has a disk's files open (web/overlay.ts `locksInUse`: `disks.ts` `inUse`, the resize's) leave out
+  the locks of a client that holds it, so a Delete, a Resize… or a Merge into the disk is never refused for the
+  window's reading (a machine's device worker never takes it). A merge holds `waarm64-merge:disks/<id>` from its
+  first check to its end (`mergeIntoDisk`), and a job of that disk waits for it before it starts; a stored disk whose
+  merge was interrupted is said so ([A merge into this disk was interrupted. It completes the next time the disk is used, and its map can be seen after that.](ui:disks:surface-job.merging)), not drawn
+  half merged. An overlay's view of a stored disk the machine here writes in place is said so too
+  ([The machine running in this tab writes this disk in place, so its overlays can't be read while it runs. The disk alone is shown live.](ui:disks:surface-source.inPlaceHere)): its store is the
+  machine's. A
+  file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, never
+  `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
+  (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters; a URL's image isn't examined offline
+  (its identity, which names the blocks kept in this browser, needs the server's answer; nothing is fetched). A
+  ramdisk not running has nothing to show ([A ramdisk holds data only while its machine runs. Its map can be seen
+  here while the machine runs in this tab.](ui:disks:surface-source.ramdisk)), the files of a machine running in
+  another tab are refused in words (`surface-job.inUse`), and every ask is bounded (5 s live, 20 s for a content
+  check, 30 s for a job: a worker that went away never answers). Transient machines (a test's `?machine=`) have no
+  link: their disks have no records.
+- **When it asks** (`surface-poll.svelte.ts`): live, every 500 ms while the document is visible, stretched so that
+  making the answers stays under 2% of the time (the next ask ≥ 50 × the answer's `cost`), and the device worker's
+  activity wrapper stays on only while it asks (devices.md "blk"); not live, once, again on
+  **[Refresh](ui:disks:SurfaceWindow.refresh)** and when the records change (once they've settled for 300 ms: a disk
+  action writes several). A new source (the machine started or stopped, another overlay, another run) drops what the old
+  one had in flight (its picture dimmed until the new one answers); a live answer a newer ask of the same source
+  replaced (a resize, a Refresh) is dropped, but its reads and writes flash with the next one (`carryActivity`); just
+  after the machine on this page stopped, a refusal that the files are in use is asked again for a few seconds (the
+  device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms).
+- `window.__surface` is the tests' view of it (web/app/hooks.ts).
+
 ### About
 
 **[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: a link to its
@@ -575,6 +664,12 @@ Page → worker:
   and the heap are answered with their `id` (web/app/run/replies.ts `Replies`); the page keeps the answer in
   `window.__profile`, `__timeline`, `__heap`, which bench/ waits on. `start.resume` false
   boots even if a suspended machine is there (it is dropped); otherwise a start resumes one.
+- `inspect {id, query}`: a question about the running machine's surfaces (web/surface.ts `InspectQuery`; the disk
+  surface visualizer, docs/plans/surface.md). The worker sends it to whoever answers its kind: a `disk-*` query to the
+  disk's device in the device worker (`Vm.inspect`: `query.disk` is the disk's place among the machine's disks, slot
+  order), which answers from the maps it has in memory; any other kind, or no machine, is answered `{kind: 'none'}`.
+  Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
+  device's activity wrapper on for ~3 s (devices.md "blk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 4 s without
@@ -625,6 +720,7 @@ Worker → page:
   it pins, which a kept snapshot's record takes), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
   `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
 - `profile {id, samples}`, `timeline {id, timeline}`, `heap {id, heap}`: the benchmarks' answers.
+- `inspected {id, answer}`: `inspect`'s answer (web/surface.ts `InspectAnswer`).
 - `serial` also has `replay` for a restored terminal's saved tail.
 - `stopped`.
 
@@ -1188,10 +1284,13 @@ page writes the context's output latency into the ring's header, and the guest g
 
 [Show the on-screen keyboard](ui:toolbar:KeysMenu.keys.osk) (the Keys menu) puts a PC keyboard over the machine, of 104
 keys, and ISO's, ABNT2's or JIS's extra keys when the machine's layout has them ("Layouts" below) (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
-guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its bar moves
-it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in a corner sat on the keypad's Enter);
-where it is and how wide is remembered (`settings().osk`), kept in the window, no wider than the window's width or
-height allow. The toolbar's menus open over it.
+guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its window is a
+`tool` `ui/FloatingWindow.svelte`, the frame the disk's surface has ("A disk's surface"): a slim bar that moves it,
+the ↔ grip in the bar resizing it by its width, its height following in its layout (`aspect`, `osk-shape.svelte.ts`:
+the keys scale with its width; a grip in a corner sat on the keypad's Enter); where it is and how wide is remembered
+(`settings().windows.osk`, a width per layout in its `sizes`; an older page's `settings().osk` is moved there once),
+kept in the window, no wider than the window's width or height allow; grown past the window's edge it is pushed back
+in. The toolbar's menus open over it.
 
 - **The compact layout** (`osk-layout.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
   600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,
@@ -1204,9 +1303,9 @@ height allow. The toolbar's menus open over it.
   modifier latched on one is used by a key on the next, and a pointer lets its key go wherever it lifts (a document
   listener), its key gone with the page another finger changed. The bar's button between the tabs and the grip
   ([Switch to the full keyboard](ui:osk:OskBar.toFull), [Switch to the compact keyboard](ui:osk:OskBar.toCompact)) forces the
-  other layout; the forced one is remembered (`settings().osk.layout`) until the window's width crosses the threshold
+  other layout; the forced one is remembered (`settings().oskLayout`) until the window's width crosses the threshold
   to where the automatic choice is the same (a phone turned to landscape and back is compact again). Each layout keeps
-  its own width (`w`, `wc`); the bar is a size container, and the title gives way to the tabs below 420 px. A
+  its own width (the frame's `sizeKey`), and the title gives way to the tabs in a bar narrower than 420 px. A
   layout's extra keys join the symbols' page (its two rows of punctuation share the width).
 - **The letters' page per layout** (`osk-layout.ts` `letterRows`): US's letter block (digits, Q–P, A–L with `;`, Z–M) and,
   in each row, the keys of the full keyboard's same row whose unshifted character is a letter with a capital on the
@@ -1254,8 +1353,8 @@ height allow. The toolbar's menus open over it.
   menu, Hold Esc). A key goes down with its first holder and up with its last, so the physical Shift pressed and let
   go doesn't release a Shift latched here, a menu's Ctrl+W doesn't release a latched Ctrl, and a second Hold Esc ends
   the first.
-- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it (its `pointerdown` and
-  `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
+- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it, nor do its bar's buttons
+  (its keys' `pointerdown` and a tool window's `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
   screen or the window loses the focus, or the guest's keyboard driver comes or goes, which moves the keys between
   the virtio keyboard and the built-in USB one or the serial console), `Input`'s `onRelease` tells the keyboard
   (`keys.released`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended

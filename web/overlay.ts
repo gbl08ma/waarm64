@@ -89,6 +89,13 @@ export type WritableDisk = Disk & {
   /** The overlay's generation, and `epoch` (both: overlays with a `meta`; a ramdisk has neither). */
   generation?(): number;
   epoch?(): void;
+  /**
+   * An overlay's map as it is now, read-only (web/surface.ts counts it): the arrays at the time of the call (`recs` is
+   * replaced as it grows), to be read before the next change.
+   */
+  leaves?(): Pick<MapLeaves, 'top' | 'recs' | 'n'>;
+  /** A ramdisk's chunks (1 MiB) in memory, by index (web/surface.ts). */
+  chunkKeys?(): Iterable<number>;
 };
 
 /** How many blocks a walk of `written()` yields. */
@@ -776,7 +783,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return data.read(out, { at: (e - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; } };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; }, leaves: () => ({ top, recs, n }) };
 }
 
 /**
@@ -837,6 +844,37 @@ export const overlayLock = (name: string) => `waarm64-overlay:${name}`;
 
 /** How long an opener waits for the overlay's previous holder (another machine, closing or in another tab). */
 export const OVERLAY_WAIT_MS = 10_000;
+
+/**
+ * The lock a disk surface job holds (shared) for as long as it holds files' locks (web/app/surface-job.ts, in a worker
+ * of its own): a client that holds it only reads a map, for moments, and is no machine. `locksInUse` leaves its holds
+ * out; a machine's device worker never takes it, so none of a machine's is.
+ */
+export const SURFACE_READER_LOCK = 'waarm64-surface-reader';
+
+/**
+ * The lock a merge into stored disk `disk` (`disks/<id>`) holds from its first check to its end (web/app/disks.ts
+ * `mergeIntoDisk`): the disk surface's jobs wait for it rather than read the disk half merged.
+ */
+export const mergeLock = (disk: string) => `waarm64-merge:${disk}`;
+
+/**
+ * The Web Locks held or asked for now in every tab and worker, by name (none where there are no Web Locks), but those
+ * of the clients that hold `SURFACE_READER_LOCK`: what tells whether a machine (or a disk job) has a disk's files open.
+ * A lock whose client isn't named counts.
+ */
+export async function locksInUse(): Promise<Set<string>> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
+  if (typeof navigator === 'undefined' || !navigator.locks) return new Set();
+  const q = await navigator.locks.query();
+  const held = q.held ?? [];
+  const readers = new Set(held.flatMap((l) => (l.name === SURFACE_READER_LOCK && l.clientId ? [l.clientId] : [])));
+  return new Set(
+    [...held, ...(q.pending ?? [])].flatMap((l) =>
+      l.name && l.name !== SURFACE_READER_LOCK && !(l.clientId && readers.has(l.clientId)) ? [l.name] : [],
+    ),
+  );
+}
 
 /**
  * Takes the Web Lock `waarm64-overlay:<name>` (exclusive, per origin: every tab

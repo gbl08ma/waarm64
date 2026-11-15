@@ -40,6 +40,7 @@ export function blockSource(data: SyncFile, mapFile: SyncFile, size: number): So
       return out;
     },
     held: () => mapBlocks(m, Math.ceil(size / BLOCK), true),
+    leaves: () => m, // read-only: it never changes
   };
 }
 

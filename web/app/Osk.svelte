@@ -8,7 +8,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import OskBar from './OskBar.svelte';
-  import { OskFrame, PAD } from './osk-frame.svelte.ts';
+  import FloatingWindow from './ui/FloatingWindow.svelte';
+  import type { Size } from './ui/floating-frame.svelte.ts';
+  import { OskShape, PLACE, unitIn } from './osk-shape.svelte.ts';
   import { legends, OskKeys, type ModifierMode, type Mods } from './osk.ts';
   import { fullKeys, keymapOf, pages, type Key } from './osk-layout.ts';
   import { t } from '../i18n.ts';
@@ -86,12 +88,13 @@
   const PAGES = $derived(pages(keymap));
   const PAGE_KEYS = $derived(Object.fromEntries(PAGES.map((p) => [p.id, label(p.keys)])));
 
-  const frame = new OskFrame();
+  const shape = new OskShape();
+  const compact = $derived(shape.layout === 'compact');
   let page = $state('main');
-  const labels = $derived(frame.layout === 'compact' ? PAGE_KEYS[page] : FULL);
+  const labels = $derived(compact ? PAGE_KEYS[page] : FULL);
   const px = (n: number) => `${n}px`;
   function switchLayout() {
-    frame.switchLayout();
+    shape.switchLayout();
     page = 'main';
   }
   /** A lock key's LED: lit or not (undefined: the key has none). */
@@ -103,7 +106,7 @@
 
   let root = $state<HTMLElement>();
   onMount(() => {
-    frame.fit();
+    shape.fit();
     return () => keys.releaseAll();
   });
   /** A press elsewhere (a click on the screen) while a finger holds a modifier uses it: Shift-click, not a tap. */
@@ -124,63 +127,59 @@
   }
 </script>
 
-<svelte:window onresize={frame.fit} />
+<svelte:window onresize={shape.fit} />
 <svelte:document onpointerdowncapture={elsewhere} onpointerupcapture={lift} onpointercancelcapture={lift} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
+<FloatingWindow
   id="osk"
-  bind:this={root}
-  data-layout={frame.layout}
-  style:left={px(frame.x)}
-  style:top={px(frame.y)}
-  style:width={px(frame.w)}
-  style:--u={px(frame.u)}
-  style:--pad={px(PAD)}
-  onmousedown={(e) => e.preventDefault()}
-  oncontextmenu={(e) => e.preventDefault()}
+  place={PLACE}
+  title={t('osk:Osk.title')}
+  tool
+  min={shape.min}
+  size={shape.size}
+  aspect={shape.height}
+  sizeKey={shape.layout}
+  at={shape.at}
+  barHeight={shape.dims.bar}
+  titleMin={shape.dims.titleMin}
+  data-layout={shape.layout}
+  bind:ref={root}
+  {onclose}
 >
-  <OskBar {frame} pages={PAGES} bind:page onswitch={switchLayout} {onclose} />
-  <div class="keys" style:height={px(frame.u * frame.dims.rows)} onpointerdown={keyDown}>
-    {#each labels as k (k.code)}
-      <div
-        class="key"
-        data-code={k.code}
-        data-state={keys.state(k.code)}
-        data-led={ledOf(k.code)}
-        class:named={!!k.name}
-        style:left={px(k.x * frame.u)}
-        style:top={px(k.y * frame.u)}
-        style:width={px(k.w * frame.u)}
-        style:height={px(k.h * frame.u)}
-      >
-        {#if k.name}
-          <span class="main">{k.name}</span>
-        {:else if k.legend?.top}
-          <span class="top">{k.legend.top}</span><span class="main">{k.legend.main}</span>
-        {:else}
-          <span class="main">{k.legend?.main}</span>
-        {/if}
-        {#if k.legend?.alt}<span class="alt">{k.legend.alt}</span>{/if}
-      </div>
-    {/each}
-  </div>
-</div>
+  {#snippet head()}
+    <OskBar {compact} pages={PAGES} bind:page onswitch={switchLayout} />
+  {/snippet}
+  {#snippet children({ w }: Size)}
+    {@const u = unitIn(shape.layout, w)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class={['keys', { compact }]} style:height={px(u * shape.dims.rows)} style:--u={px(u)} onpointerdown={keyDown}>
+      {#each labels as k (k.code)}
+        <div
+          class="key"
+          data-code={k.code}
+          data-state={keys.state(k.code)}
+          data-led={ledOf(k.code)}
+          class:named={!!k.name}
+          style:left={px(k.x * u)}
+          style:top={px(k.y * u)}
+          style:width={px(k.w * u)}
+          style:height={px(k.h * u)}
+        >
+          {#if k.name}
+            <span class="main">{k.name}</span>
+          {:else if k.legend?.top}
+            <span class="top">{k.legend.top}</span><span class="main">{k.legend.main}</span>
+          {:else}
+            <span class="main">{k.legend?.main}</span>
+          {/if}
+          {#if k.legend?.alt}<span class="alt">{k.legend.alt}</span>{/if}
+        </div>
+      {/each}
+    </div>
+  {/snippet}
+</FloatingWindow>
 
 <style>
-  #osk {
-    position: fixed;
-    z-index: 1;
-    box-sizing: border-box;
-    padding: 0 var(--pad) var(--pad);
-    background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-menu);
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: none;
-  }
   .keys {
     position: relative;
   }
@@ -207,7 +206,7 @@
     font-size: calc(var(--u) * 0.24);
     text-align: center;
   }
-  #osk[data-layout='compact'] .key.named {
+  .keys.compact .key.named {
     font-size: calc(var(--u) * 0.27);
   }
   .key .top {

@@ -8,6 +8,8 @@ import type { PageFolders } from './folders-live.ts';
 import type { FromWorker, Status } from './protocol.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker } from '../gpu-worker.ts';
+import type { Surface } from '../surface.ts';
+import type { SurfaceLook } from './surface-look.ts';
 
 /** The 3D screen read back (RGBA, top row first). */
 export type Grab = { width: number; height: number; pixels: Uint8Array };
@@ -53,6 +55,22 @@ declare global {
     __grown?: (Grown & { action: 'keep' | 'failed' | 'clear' })[];
     /** `?snd=`: the page's sound (tests and measurements). */
     __audio?: PageAudio;
+    /**
+     * The disk surface window's view (web/app/SurfaceWindow.svelte; tests/page-surface.test.ts): its disk and overlay,
+     * where its numbers come from, the last surface and its looks (`stale`: the source before's, until the new one
+     * answers), the square pinned, the answers taken so far.
+     */
+    __surface?: {
+      disk: string;
+      overlay?: string;
+      source: 'live' | 'offline' | 'unavailable';
+      live: boolean;
+      stale: boolean;
+      surface?: Surface;
+      look?: SurfaceLook;
+      pinned?: number;
+      answers: () => number;
+    };
     /** The page's live folders (tools/screens.ts). */
     __folders?: PageFolders;
   }

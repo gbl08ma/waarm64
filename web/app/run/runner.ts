@@ -157,6 +157,7 @@ export class Runner {
     const usb = ch.usb && this.d.usb.ports(ch.usb.port1);
     const r = new Run(m, { worker, input, ch, usb });
     m.run = r;
+    current.inspect = { worker, replies: this.d.replies.worker, attachments: m.stored?.record.attachments };
     const display = displayHandlers(this);
     // Not through `guard`: tests/page-cursor.test.ts finds the display's port by this handler's source.
     ch.display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {

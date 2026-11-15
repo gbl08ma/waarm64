@@ -36,7 +36,114 @@ export type Disk = {
   format: 'raw' | 'qcow2';
   /** Exactly `len` bytes at `off`, or undefined past the end or on a read error. */
   read(off: number, len: number): Promise<Uint8Array | undefined>;
+  /**
+   * A qcow2's clusters (the disk surface visualizer, web/surface.ts; never on a request's path): over the L2 tables
+   * read so far, the ones not read yet read with `load` first (it returns undefined where it can't without fetching: a
+   * remote image's not held in this browser), none of them when they'd be more than `ALLOCATION_MAX` bytes. The same
+   * object each time: it follows the tables as they are read (`known`, `missing`).
+   */
+  allocation?(load?: ReadAt): Allocation;
 };
+
+/**
+ * What a qcow2's clusters hold: its cluster size, and per cluster whether it has data (a data or compressed cluster;
+ * not an unallocated or zero one) and where its bytes are in the file. Per L2 table (`perTable` clusters each), whether
+ * its entries are known: a table not read yet isn't (its clusters read as unallocated here until it is).
+ */
+export type Allocation = {
+  clusterBytes: number;
+  size: number;
+  allocated(c: number): boolean;
+  /** The clusters one L2 table covers. */
+  perTable: number;
+  /** Whether table `t`'s entries are known: read, or none to read (an L1 entry without a table: unallocated). */
+  known(t: number): boolean;
+  /** How many tables aren't known yet (0: the allocation is whole). */
+  missing(): number;
+  /** Where cluster `c`'s bytes are in the file ([offset, bytes]: a data cluster's, a compressed one's packed bytes), if it has data. */
+  host(c: number): [number, number] | undefined;
+};
+
+/** The most bytes of L2 tables `allocation` reads (an image of 256 GiB at 64 KiB clusters). */
+export const ALLOCATION_MAX = 32 << 20;
+
+/** Whether L2 entry `k` (its index) of table `t` has data: compressed, or a standard cluster with an offset and (v3) no zero flag. */
+function hasData(t: DataView, k: number, version: number) {
+  const hi = t.getUint32(k * 8);
+  const lo = t.getUint32(k * 8 + 4);
+  if (hi & 0x4000_0000) return true; // bit 62: compressed
+  if (version === 3 && lo & 1) return false; // bit 0: reads as zeros
+  return (hi & 0x00ff_ffff) !== 0 || (lo & ~0x1ff) !== 0; // bits 9-55: the offset
+}
+
+/**
+ * An allocation over L2 tables `l2s` (by their index; one not there is unallocated), of an image whose L1 entries name
+ * a table where `hasTable` says, `fileSize` bytes long (a compressed cluster's bytes run at most to its end).
+ */
+function allocationOver(l2s: Map<number, DataView>, cs: number, size: number, version: number, l1Size: number, hasTable: (t: number) => boolean, fileSize: number): Allocation {
+  const per = cs / 8;
+  const x = BigInt(62 - (Math.log2(cs) - 8));
+  return {
+    clusterBytes: cs,
+    size,
+    perTable: per,
+    allocated(c) {
+      const t = l2s.get(Math.floor(c / per));
+      return !!t && hasData(t, c % per, version);
+    },
+    known: (t) => !hasTable(t) || l2s.has(t),
+    missing() {
+      let n = 0;
+      for (let t = 0; t < l1Size; t++) if (hasTable(t) && !l2s.has(t)) n++;
+      return n;
+    },
+    host(c) {
+      const t = l2s.get(Math.floor(c / per));
+      if (!t || !hasData(t, c % per, version)) return undefined;
+      const e = t.getBigUint64((c % per) * 8);
+      if (e & COMPRESSED) {
+        const off = Number(e & ((1n << x) - 1n));
+        const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
+        return [off, Math.max(0, Math.min(sectors * 512 - (off & 511), fileSize - off))];
+      }
+      return [Number(e & OFFSET_MASK), cs];
+    },
+  };
+}
+
+/**
+ * A qcow2's allocation read whole without blocking (an image file the disk surface's job worker opens: web/app/surface-job.ts):
+ * its header, L1 and every L2 table, at most `ALLOCATION_MAX` bytes of them; undefined for a raw image, one this reader
+ * refuses, or one whose tables are larger or can't be read.
+ */
+export async function readAllocation(read: ReadAtAsync, fileSize: number): Promise<Allocation | undefined> {
+  const head = fileSize >= HEADER ? await read(0, HEADER) : undefined;
+  if (!head || !isQcow2(head)) return undefined;
+  const h = new DataView(head.buffer, head.byteOffset, HEADER);
+  const version = h.getUint32(4);
+  const clusterBits = h.getUint32(20);
+  if ((version !== 2 && version !== 3) || h.getBigUint64(8) !== 0n || clusterBits < 9 || clusterBits > 21 || h.getUint32(32) !== 0) return undefined;
+  if (version === 3 && h.getBigUint64(72) & ~KNOWN_INCOMPATIBLE) return undefined;
+  const cs = 2 ** clusterBits;
+  const size = Number(h.getBigUint64(24));
+  const l1Size = h.getUint32(36);
+  const l1b = await read(Number(h.getBigUint64(40)), l1Size * 8);
+  if (!l1b) return undefined;
+  const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
+  const offs: [number, number][] = [];
+  for (let i = 0; i < l1Size; i++) {
+    const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+    if (off) offs.push([i, off]);
+  }
+  if (offs.length * cs > ALLOCATION_MAX) return undefined;
+  const l2s = new Map<number, DataView>();
+  for (const [i, off] of offs) {
+    const b = await read(off, cs);
+    if (!b) return undefined;
+    l2s.set(i, new DataView(b.buffer, b.byteOffset, cs));
+  }
+  return allocationOver(l2s, cs, size, version, l1Size, (t) => l2s.has(t), fileSize);
+}
 
 const MAGIC = 0x514649fb; // "QFI\xfb"
 const HEADER = 112; // enough for every field we read
@@ -241,7 +348,24 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
     }
     return out;
   };
-  return { size, format: 'qcow2', read };
+  /** Where L1 entry `i` names a table (0: none, unallocated). */
+  const l2Offset = (i: number) => Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+  let tables = 0;
+  for (let i = 0; i < l1Size; i++) if (l2Offset(i)) tables++;
+  /** The allocation over the tables read (they don't change while the image is open: it follows them as they come). */
+  const over = allocationOver(l2s, cs, size, version, l1Size, (t) => t < l1Size && l2Offset(t) !== 0, fileSize);
+  const allocation = (load?: ReadAt) => {
+    if (!load || tables * cs > ALLOCATION_MAX) return over;
+    for (let i = 0; i < l1Size; i++) {
+      const off = l2Offset(i);
+      if (off === 0 || l2s.has(i)) continue;
+      const b = load(off, cs);
+      // Kept as a request's read would keep it (it helps the guest's next read there).
+      if (b?.length === cs) l2s.set(i, new DataView(b.buffer, b.byteOffset, cs));
+    }
+    return over;
+  };
+  return { size, format: 'qcow2', read, allocation };
 }
 
 /** The cluster of the compressed L2 entry `e`, or undefined (a failed read, or bytes that don't unpack to a cluster). */

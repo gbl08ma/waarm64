@@ -4,7 +4,15 @@
 // overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before
 // them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Machines page confirms first.
 import { fromWire, MsgError } from '../msg.ts';
-import { overlayBytes, overlayMeta, removeOverlay, writeOwnSize } from '../overlay.ts';
+import {
+  locksInUse,
+  mergeLock,
+  overlayBytes,
+  overlayLock,
+  overlayMeta,
+  removeOverlay,
+  writeOwnSize,
+} from '../overlay.ts';
 import { sizeSeen, type GrowMark } from './disk-size.ts';
 import type { DiskJob, DiskJobResult } from './disk-worker.ts';
 import { runImport } from './import.ts';
@@ -40,10 +48,12 @@ export async function diskRef(d: DiskRecord, overlay?: string): Promise<DiskRef>
   return { source: await diskSource(d), overlay: overlay ? overlayDir(overlay) : undefined, identity: identityOf(d) };
 }
 
-/** Whether overlay or stored disk directory `path` is open now (a machine runs on it, in this tab or another). */
+/**
+ * Whether overlay or stored disk directory `path` is open now (a machine runs on it, in this tab or another, or a disk
+ * job has it), or about to be; a disk surface job reading its map doesn't count (web/overlay.ts `locksInUse`).
+ */
 export async function inUse(path: string) {
-  const held = await navigator.locks.query();
-  return [...(held.held ?? []), ...(held.pending ?? [])].some((l) => l.name === `waarm64-overlay:${path}`);
+  return (await locksInUse()).has(overlayLock(path));
 }
 
 /**
@@ -271,13 +281,19 @@ export async function importStored(
  * Merges overlay `overlay` into its stored disk (§4.4): every other overlay of the disk is deleted (they were over the
  * old bytes), then the overlay's record, then its blocks go into the disk and its files away (in the worker, resumed
  * at the disk's next opening if interrupted). Machines that had the deleted overlays chosen are left without one.
- * The caller confirmed (it lists `mergeCosts`).
+ * The caller confirmed (it lists `mergeCosts`). Returns the blocks merged.
  */
-export async function mergeIntoDisk(store: Store, overlay: string) {
+export async function mergeIntoDisk(store: Store, overlay: string): Promise<number> {
   const o = await store.get('overlays', overlay);
   if (!o) throw new MsgError('disks:disks.overlayGone');
   const d = await store.get('disks', o.disk);
   if (d?.kind !== 'stored') throw new MsgError('disks:disks.onlyStored');
+  // Held to the end: the disk surface's jobs wait for it (web/overlay.ts `mergeLock`).
+  return navigator.locks.request(mergeLock(diskDir(d.id)), () => merge(store, o, d));
+}
+
+/** `mergeIntoDisk`'s work, under its lock. */
+async function merge(store: Store, o: OverlayRecord, d: DiskRecord) {
   const others = (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
   for (const x of [o, ...others])
     if (await inUse(overlayDir(x.id))) throw new MsgError('disks:disks.overlayNamedRunning', { name: x.name });
