@@ -94,6 +94,7 @@ export async function resizeCosts(store: Store, t: ResizeTarget, size: number): 
     }
     if (grows) machines.push(m);
   }
+  machines.sort((a, b) => a.name.localeCompare(b.name)); // the store's order isn't stable; the confirmation lists them
   const held = await locksHeld();
   const snapshots = (await store.all('snapshots')).filter((s) =>
     s.shape.disks.some((x) => was.get(`${s.machine}/${x.serial}`) === x.size),
