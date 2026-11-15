@@ -4938,3 +4938,61 @@ parts), the suspend 186 (182-192); Debian's 63, 193, 68. Against these the pool'
 **The browser's memory grows with each load:** the desktop's was 3.3 GB resident before the first round's saves, 5.5
 before the second's and 7.2 before the third's (PSS 2.7, 4.9, 6.6); the transient rounds 3.4, 6.2, 7.9; Debian's
 transient 1.8 to 2.7, its stored rounds flat at 1.7-1.8. Which process holds it isn't found yet (docs/backlog.md).
+
+## SNAPZ loop 1: lz4_flex and crc32fast in the core (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, the persistent profile `target/snapz/profile`;
+nothing else ran. Raw: `results/snapz-1/` (`<guest>-<arm>.json`, three rounds each, joined from `rounds/` by
+`merge.ts`; `summary.txt`, `summary.json` from `bench/snapz/probe-summary.ts`; `run-ab.sh`, the driver; `ab.txt`, its
+log). **Built:** lz4_flex 0.14.2 (`safe-encode`, `safe-decode`, no defaults: the hash table on the stack, no
+allocation) behind codec 2's exports in place of `core/src/lz.rs` (removed; its contract tests ported to
+`core/src/codec.rs`), and crc32fast 1.5.5 behind a new export, `crc32(seed, src, len)`, which the writer and the
+reader take the frames' checksums through (`Codec.crc32`, `web/lz.ts`); the header's CRC stays JS's. ABI 68
+(docs/abi.md "SNAPZ: the snapshot codec and CRC").
+
+**The arms:** base = baa1e0b3 (the tree checked out and its wasm, core `d7814c3d…`, ABI 67), new = this loop's tree
+(core `0ffff6be…`, ABI 68), each wasm copied into the build's path before its round; each round's JSON records the
+commit and the core's hash, and a wrong pairing fails the page's ABI check. Alternated base, new, ×3 per guest, **each
+round a browser of its own** (`ROUNDS=1`): loop 0's growth of the browser's memory within a session (~2 GB a desktop
+round) can't build up across rounds or favour an arm (the RSS before each desktop save stayed 3.3-4.2 GB in every
+round of both arms). Both arms load the same warm file (written by the old codec: the new arm's load is the old
+format's compatibility, at speed); the resume loads each arm's own suspend. Median (range), ms:
+
+| desktop (689 MB file) | base | new | |
+|---|---|---|---|
+| kept: paused | 4,175 (4,162-4,221) | 3,786 (3,755-3,820) | −9.3% |
+| ... compress | 2,792 (2,787-2,810) | 2,554 (2,548-2,558) | −8.5% |
+| ... crc | 425 (418-428) | 293 (290-296) | −31% |
+| file: paused | 4,193 (4,192-4,302) | 3,792 (3,776-3,795) | −9.6% |
+| suspend: paused | 4,101 (4,085-4,113) | 3,729 (3,700-3,749) | −9.1% |
+| load (the old file): wall | 10,066 (10,041-10,369) | 9,232 (9,131-9,442) | −8.3% |
+| ... check's crc | 416 (415-421) | 272 (271-278) | −35% |
+| ... ram's unpack | 1,810 (1,684-1,814) | 1,145 (1,117-1,223) | 1.6x |
+| resume (its own suspend): wall | 8,343 (7,893-8,385) | 7,244 (7,184-7,423) | −13% |
+| ... unpack | 1,667 (1,647-1,689) | 999 (956-1,005) | 1.7x |
+| file's size, MB: kept / file / suspend | 690 / 693 / 676 | 676 / 679 / 661 | −2% |
+
+| Debian (97 MB file) | base | new | |
+|---|---|---|---|
+| kept: paused | 588 (575-604) | 530 (518-551) | −10% |
+| file: paused | 610 (601-618) | 543 (543-547) | −11% |
+| suspend: paused | 562 (556-571) | 506 (499-507) | −10% |
+| load: wall | 2,181 (2,179-2,372) | 2,077 (1,970-2,087) | −5% |
+| resume: wall | 2,035 (1,938-2,141) | 1,931 (1,827-2,016) | −5% |
+| file's size, MB (kept) | 97 | 95 | −2% |
+
+No range overlaps for any pause or load. **Against the eval's margins** (one thread, its harness): compression 8.5%
+faster on the page (the eval: 10-20%; the page's figure includes the copies in and out of the codec's memory, the
+same in both arms), decompression 1.6-1.7x (the eval: ~2x, its copies included too), the CRC 31-35% less time
+(crc32fast's 3.4 GB/s of the eval, less a copy of the stored bytes into the codec's buffer each time: 293 ms for the
+desktop's ~680 MB is 2.3 GB/s, the JS's 1.6). The copy is the one-thread path's; loop 2's workers take the CRC where
+`lz_compress` left the bytes (the exports' shape: docs/abi.md), so it wasn't optimized here.
+
+**Memory:** nothing added: the codec's instance is the one it was (two 1.1 MiB buffers now, 5% more, `lz_bound` being
+lz4_flex's larger bound). A save's added RSS: desktop kept 21 MiB (13-46; the base's rounds −165 to 274, noise of
+a settling browser), file 990 (the download's Blob, as before), suspend 182 (183); Debian 65, 186, 46 (61, 194, 66).
+
+**Compatibility:** `tests/fixtures/old-lz.waarm64snap` (52 KB, written by the old codec before its removal: CORE,
+DEVS, two RAM frames, three DISK runs, all codec 2; its content from `tests/old-lz-content.ts`) loads byte-exact
+(`tests/snapshot.test.ts`, and natively `core/src/codec.rs` `old_codec_frames_still_load`); the desktop's warm file
+loaded in every new-arm round above.

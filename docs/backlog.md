@@ -1451,6 +1451,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   thread; its load takes 9.8 s. The track takes lz4_flex as codec 2, the CRC into wasm, a pool of workers for the save
   and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
   in a restore, and a breakdown of the load's machine start.
+  Loop 1 (lz4_flex, crc32fast) is in; its one-thread CRC copies each frame's stored bytes into the codec's buffer
+  (the desktop's save: 293 ms of CRC, ~0.2 s of it crc32fast's), which the pool's workers (loop 2) avoid by taking the
+  CRC where `lz_compress` left the bytes.
 - **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
   test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
   stale entries, or the count of a run with TLB flushes at the same points

@@ -1,14 +1,17 @@
 // A VM through snapshot files (web/snapshot.ts, docs/platform.md "Snapshots"): the guest runs
 // under the JIT, is saved to a file (the core's state, the backends', RAM through the LZ codec),
 // closed, and a new VM started from the file runs on. Deterministic round-robin: the run takes
-// the steps of tests/steps.txt and prints what an unbroken run prints. Then what is refused.
+// the steps of tests/steps.txt and prints what an unbroken run prints. Then what is refused, and the codec itself:
+// a file its old LZ wrote still loads (tests/fixtures/old-lz.waarm64snap).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { lzCodec } from '../web/lz.ts';
 import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
 import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
-import { crc32, SnapshotError } from '../web/snapshot-file.ts';
+import { crc32 as zlibCrc32 } from 'node:zlib';
+import { applyRam, crc32, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter } from '../web/snapshot-file.ts';
+import { oldLzContent, OLD_LZ_HEADER } from './old-lz-content.ts';
 import { STEPS } from './steps.ts';
 import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, compileCore, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
 
@@ -124,6 +127,52 @@ test('parallel: litmus and the atomics stress on 4 vCPUs (JIT) through snapshot 
   poweredOff(r);
   assert.ok(r.files.length >= 5, `${r.files.length} snapshots`);
   assert.match(r.console, /litmus: all ok, 0 skipped\r?\nwaarm64: stress on 4 CPUs[^]*\nwaarm64: test ok\r?\n/);
+});
+
+test('the core\'s codec: a file the old LZ wrote (before lz4_flex) still loads, and its CRC-32 is zlib\'s', async () => {
+  const codec = await lzCodec(WASM);
+  // tests/fixtures/old-lz.waarm64snap: written by core/src/lz.rs (SNAPZ loop 1 replaced it), every frame codec 2.
+  const file = readFileSync(new URL('fixtures/old-lz.waarm64snap', import.meta.url));
+  const want = oldLzContent();
+  const s = await openSnapshot(new Blob([file]), { codecs: [codec] });
+  assert.deepEqual(s.header, OLD_LZ_HEADER);
+  const got = { CORE: [] as Uint8Array[], DEVS: [] as Uint8Array[], ram: new Uint8Array(want.ram.length), disk: new Map<number, Uint8Array>() };
+  for await (const f of s.frames()) {
+    if (f.tag === 'CORE' || f.tag === 'DEVS') got[f.tag].push(f.data);
+    else if (f.tag === 'RAM ') applyRam(got.ram, f.index, f.data);
+    else if (f.tag === 'DISK') for (const b of diskBlocks(f.index, f.data)) got.disk.set(b.block, b.data.slice());
+  }
+  assert.ok(Buffer.compare(Buffer.concat(got.CORE), want.core) === 0, 'CORE differs');
+  assert.ok(Buffer.compare(Buffer.concat(got.DEVS), want.devs) === 0, 'DEVS differs');
+  assert.ok(Buffer.compare(got.ram, want.ram) === 0, 'RAM differs');
+  assert.deepEqual([...got.disk.keys()], want.disk.map((b) => b.block));
+  for (const b of want.disk) assert.ok(Buffer.compare(got.disk.get(b.block)!, b.data) === 0, `block ${b.block} differs`);
+  assert.equal(s.times.unpack > 0, true);
+  // The same content written now (lz4_flex) reads back the same, at about the old size.
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, OLD_LZ_HEADER, { codec, concurrency: 1 });
+  await w.bytes('CORE', want.core);
+  await w.bytes('DEVS', want.devs);
+  await w.ram(want.ram);
+  await w.disk(want.disk);
+  await w.end();
+  const now = Buffer.concat(parts);
+  assert.ok(now.length < file.length * 1.1, `${now.length} bytes against the old ${file.length}`);
+  const again = await openSnapshot(new Blob([now]), { codecs: [codec] });
+  const ram = new Uint8Array(want.ram.length);
+  for await (const f of again.frames()) if (f.tag === 'RAM ') applyRam(ram, f.index, f.data);
+  assert.ok(Buffer.compare(ram, want.ram) === 0, 'RAM differs after a round trip');
+  // The core's CRC-32 (crc32fast), seeded and across the codec's buffer (a frame at most, so a header goes in parts).
+  assert.equal(codec.crc32!(new TextEncoder().encode('123456789')), 0xcbf43926);
+  assert.equal(codec.crc32!(new Uint8Array(0)), 0);
+  const big = new Uint8Array(3 * 2 ** 20 + 777).map((_, i) => (i * 2654435761) >>> 24);
+  for (const n of [1, 7, 8, 9, 1000, 2 ** 20 + 32, big.length]) {
+    const b = big.subarray(1, 1 + n);
+    assert.equal(codec.crc32!(b), zlibCrc32(b), `length ${n}`);
+    assert.equal(codec.crc32!(b), crc32(b), `JS's, length ${n}`);
+    const k = n >> 1;
+    assert.equal(codec.crc32!(b.subarray(k), codec.crc32!(b.subarray(0, k))), zlibCrc32(b), `seeded ${n}`);
+  }
 });
 
 test('a snapshot of another machine, another version or with a damaged state is refused', { skip }, async () => {

@@ -7,5 +7,10 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[dependencies]
+# The snapshot file's codec 2 (the LZ4 block format) and its frames' CRC-32 (docs/platform.md "The snapshot file").
+lz4_flex = { version = "0.14.2", default-features = false, features = ["safe-encode", "safe-decode"] }
+crc32fast = { version = "1.5", default-features = false }
+
 [dev-dependencies]
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }

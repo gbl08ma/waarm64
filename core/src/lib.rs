@@ -8,6 +8,7 @@
 #![feature(alloc_error_hook)]
 
 pub mod boot;
+pub mod codec;
 pub mod cpu;
 pub mod crypto;
 pub mod decode;
@@ -19,7 +20,6 @@ pub mod fw_cfg;
 pub mod gicv3;
 pub mod interp;
 pub mod jit;
-pub mod lz;
 pub mod mem;
 pub mod mmu;
 pub mod pl011;
@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 67;
+pub const ABI_VERSION: u32 = 68;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -958,16 +958,17 @@ pub unsafe extern "C" fn jit_call(cpu: *mut cpu::Cpu, idx: u32, k: u32, n: u32) 
     s
 }
 
-// LZ codec (LZ4 block format) for snapshot RAM chunks.
+// The snapshot file's codec 2 (the LZ4 block format, lz4_flex) and its frames' CRC-32 ([`codec`]; docs/abi.md
+// "SNAPZ: the snapshot codec and CRC"). No VM, no allocation: any instance on the memory, any bytes in it.
 
-/// The worst-case compressed size of `len` bytes ([`lz::bound`]).
+/// The worst-case compressed size of `len` bytes ([`codec::bound`]): `lz_compress` needs this much room.
 #[unsafe(no_mangle)]
 pub extern "C" fn lz_bound(len: usize) -> usize {
-    lz::bound(len)
+    codec::bound(len)
 }
 
-/// Compresses `len` bytes at `src` into `cap` bytes at `dst`; the compressed size, or 0 if it
-/// doesn't fit (`cap >= lz_bound(len)` always fits).
+/// Compresses `len` bytes at `src` into `cap` bytes at `dst`; the compressed size, or 0 if `cap` is under
+/// `lz_bound(len)`.
 ///
 /// # Safety
 /// `src` is readable for `len` bytes and `dst` writable for `cap` bytes, not overlapping, and
@@ -986,7 +987,7 @@ pub unsafe extern "C" fn lz_compress(
             core::slice::from_raw_parts_mut(dst, cap),
         )
     };
-    lz::compress(s, d).unwrap_or(0)
+    codec::compress(s, d).unwrap_or(0)
 }
 
 /// Decompresses `len` bytes at `src` into `cap` bytes at `dst`; the decompressed size, or
@@ -1008,7 +1009,17 @@ pub unsafe extern "C" fn lz_decompress(
             core::slice::from_raw_parts_mut(dst, cap),
         )
     };
-    lz::decompress(s, d).unwrap_or(usize::MAX)
+    codec::decompress(s, d).unwrap_or(usize::MAX)
+}
+
+/// The IEEE CRC-32 of `len` bytes at `src`, continued from `seed` (0 to start), as zlib's `crc32` ([`codec::crc32`]).
+///
+/// # Safety
+/// `src` is readable for `len` bytes, which nothing writes during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn crc32(seed: u32, src: *const u8, len: usize) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    codec::crc32(seed, unsafe { core::slice::from_raw_parts(src, len) })
 }
 
 #[cfg(test)]

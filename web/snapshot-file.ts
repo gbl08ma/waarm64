@@ -15,8 +15,9 @@
 // chunk without pages has no frame; a machine with spill memories numbers their chunks on from memory
 // 0's, each memory starting at a whole chunk: web/snapshot.ts `ramStarts`), DISK (a run of 1 to 256 consecutive overlay blocks, index =
 // the first block), BLOB (binary parts of DEVS: blob n's 1 MiB chunk k, index = n × 2^24 + k; a
-// file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 1 is deflate-raw; each frame is compressed alone, and
-// stored when compressing doesn't shrink it. Codecs plug in by id.
+// file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 1 is deflate-raw, 2 the LZ4 block format (web/lz.ts:
+// the core's lz4_flex); each frame is compressed alone, and stored when compressing doesn't shrink it. Codecs plug in by id,
+// and a codec with a CRC-32 of its own (the core's crc32fast) takes the frames' checksums.
 import { msg, MsgError, type Msg, type Params } from './msg.ts';
 
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
@@ -49,8 +50,16 @@ export async function asTemplate(file: Blob, on = true): Promise<Blob> {
 
 /** Appends bytes to the output, in order. */
 export type Sink = (bytes: Uint8Array) => void | Promise<void>;
-/** A frame codec: id as in the frame header. Pluggable so another codec (an LZ in the core, id 2) can be added later. */
-export type Codec = { id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array> };
+/**
+ * A frame codec: id as in the frame header (web/lz.ts is id 2). `crc32`, where it has one (the core's: web/lz.ts), is
+ * the IEEE CRC-32 as {@link crc32}, and takes the frames' checksums in the writer and the reader that have it.
+ */
+export type Codec = {
+  id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array>;
+  crc32?(bytes: Uint8Array, seed?: number): number;
+};
+/** A CRC-32 as {@link crc32}'s. */
+type Crc = (bytes: Uint8Array, seed?: number) => number;
 
 /**
  * Where a write's time went, in ms summed over its frames (tools read it: web/snapshot.ts `SavePhases`): RAM's zero-page
@@ -213,14 +222,15 @@ export function* diskBlocks(index: number, data: Uint8Array): Generator<{ block:
 // ---- writer ----
 
 /** The frame's CRC: its first 24 header bytes, then the stored bytes. */
-function frameCrc(head: Uint8Array, stored: Uint8Array) {
-  return crc32(stored, crc32(head.subarray(0, 24)));
+function frameCrc(head: Uint8Array, stored: Uint8Array, crc: Crc) {
+  return crc(stored, crc(head.subarray(0, 24)));
 }
 
 /** Writes a snapshot to a sink, a frame at a time: CORE and DEVS first, then RAM, DISK, and `end()`. */
 export class SnapshotWriter {
   #sink: Sink;
   #codec: Codec;
+  #crc: Crc;
   #concurrency: number;
   #inflight: Promise<void>[] = [];
   #tail: Promise<void> = Promise.resolve();
@@ -240,6 +250,7 @@ export class SnapshotWriter {
   constructor(sink: Sink, header: SnapshotHeader, opts: { codec?: Codec; concurrency?: number; blobs?: boolean } = {}) {
     this.#sink = sink;
     this.#codec = opts.codec ?? deflateCodec;
+    this.#crc = this.#codec.crc32 ? this.#codec.crc32.bind(this.#codec) : crc32;
     this.#concurrency = Math.max(1, Math.floor(opts.concurrency ?? 4));
     const json = new TextEncoder().encode(JSON.stringify(header));
     const out = new Uint8Array(8 + 4 + 4 + json.length + 4);
@@ -285,7 +296,7 @@ export class SnapshotWriter {
         this.times.compress += performance.now() - t;
         t = performance.now();
       }
-      const frame = encodeFrame(tag, id, index, raw.length, stored);
+      const frame = encodeFrame(tag, id, index, raw.length, stored, this.#crc);
       this.times.crc += performance.now() - t;
       return frame;
     })());
@@ -388,14 +399,14 @@ export class SnapshotWriter {
     if (this.#ended) throw new Error('the snapshot is already ended');
     await this.#drain(this.#concurrency - 1);
     this.#ended = true;
-    this.#push(Promise.resolve(encodeFrame('END ', 0, this.#frames, 0, new Uint8Array(0), true)));
+    this.#push(Promise.resolve(encodeFrame('END ', 0, this.#frames, 0, new Uint8Array(0), crc32, true)));
     await this.#drain(0);
     await this.#tail;
     return { bytes: this.#bytes, frames: this.#frames };
   }
 }
 
-function encodeFrame(tag: string, codec: number, index: number, rawLen: number, stored: Uint8Array, end = false) {
+function encodeFrame(tag: string, codec: number, index: number, rawLen: number, stored: Uint8Array, crc: Crc, end = false) {
   const out = new Uint8Array(FRAME_HEADER + stored.length);
   const v = new DataView(out.buffer);
   for (let i = 0; i < 4; i++) out[i] = tag.charCodeAt(i);
@@ -405,7 +416,7 @@ function encodeFrame(tag: string, codec: number, index: number, rawLen: number, 
   v.setUint32(16, rawLen, true);
   v.setUint32(20, stored.length, true);
   out.set(stored, FRAME_HEADER);
-  v.setUint32(24, end ? 0 : frameCrc(out, stored), true);
+  v.setUint32(24, end ? 0 : frameCrc(out, stored, crc), true);
   return out;
 }
 
@@ -482,6 +493,9 @@ export async function openSnapshot(
 ): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<{ tag: string; index: number; data: Uint8Array }>; times: ReadTimes }> {
   const codecs = new Map<number, Codec>([[1, deflateCodec]]);
   for (const c of opts.codecs ?? []) codecs.set(c.id, c);
+  // The frames' CRC through a codec that has one (the core's), else in JS; the header's is always JS's.
+  const withCrc = opts.codecs?.find((c) => c.crc32);
+  const crc: Crc = withCrc ? withCrc.crc32!.bind(withCrc) : crc32;
   const input = new Input(source instanceof Blob ? source.stream() : source);
   const times: ReadTimes = { read: 0, crc: 0, unpack: 0 };
   try {
@@ -526,11 +540,11 @@ export async function openSnapshot(
           const index = hi * 2 ** 32 + v.getUint32(8, true);
           const rawLen = v.getUint32(16, true);
           const storedLen = v.getUint32(20, true);
-          const crc = v.getUint32(24, true);
+          const frameCrcWant = v.getUint32(24, true);
           if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2)) throw corrupt(msg('snapshots:snapshot-file.damage.unknownKind'));
           if (v.getUint32(28, true) !== 0 || hi >= 2 ** 21) throw corrupt(msg('snapshots:snapshot-file.damage.frameFields'));
           if (tag === 'END ') {
-            if (rawLen !== 0 || storedLen !== 0 || crc !== 0 || codec !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
+            if (rawLen !== 0 || storedLen !== 0 || frameCrcWant !== 0 || codec !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
             if (index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: index, came: count }));
             if (await input.more()) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
             return;
@@ -548,7 +562,7 @@ export async function openSnapshot(
           times.read += performance.now() - t;
           if (!stored) throw truncated();
           t = performance.now();
-          const crcOk = frameCrc(headBytes, stored) === crc;
+          const crcOk = frameCrc(headBytes, stored, crc) === frameCrcWant;
           times.crc += performance.now() - t;
           if (!crcOk) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
           if (opts.check) {

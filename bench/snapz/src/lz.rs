@@ -1,3 +1,6 @@
+//! The core's own LZ codec as it was until SNAPZ loop 1 (then `core/src/lz.rs`; lz4_flex replaced it), kept here
+//! for the bench and `compat.mjs`.
+//!
 //! A small LZ codec in the LZ4 *block* format, written from the public format description
 //! (token = literal-length nibble | match-length nibble, 255-extension bytes, a 2-byte
 //! little-endian offset, minimum match 4; the last 5 bytes of a block are literals and the last

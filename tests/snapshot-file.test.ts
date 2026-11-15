@@ -2,7 +2,7 @@
 // frame kind (CORE and DEVS past 1 MiB, RAM with zero, random and compressible pages and a partial
 // last chunk from a shared-memory view, DISK runs and gaps), the reader fed 1-byte, random-sized and
 // Blob input, every refusal, truncation at every prefix and a flipped bit at every byte of a small
-// file, the stored codec for incompressible data, and a pluggable codec. Node only, no core.
+// file, the stored codec for incompressible data, a pluggable codec and one with its own CRC. Node only, no core.
 import assert from 'node:assert/strict';
 import { crc32 as zlibCrc32 } from 'node:zlib';
 import { test } from 'node:test';
@@ -245,6 +245,35 @@ test('a pluggable codec (id 2) round trips, and an unknown one is refused', asyn
   sameBytes(r.core, core, 'core');
   assert.ok(file.length < 400);
   await refused(readAll(whole(file)), 'corrupt', /damage\.codec \{codec=2\}/);
+});
+
+test('a codec\'s own CRC-32 takes the frames\' checksums, in the writer and the reader (a check pass too)', async () => {
+  const tail = (crc: (b: Uint8Array, seed?: number) => number): Codec => ({
+    id: 2,
+    async compress(raw) { let n = raw.length; while (n && raw[n - 1] === 0) n--; return raw.slice(0, n); },
+    async decompress(stored, rawLen) { const out = new Uint8Array(rawLen); out.set(stored); return out; },
+    crc32: crc,
+  });
+  const content = { core: random(3000, 4), ram: makeRam(MiB), disk: [{ block: 7, data: random(4096, 5) }] };
+  // A codec whose CRC is JS's writes the same bytes as JS's CRC does, and reads back.
+  const same = tail(crc32);
+  const plain: Codec = { ...same, crc32: undefined };
+  const a = (await write(content, { codec: same })).file;
+  const b = (await write(content, { codec: plain })).file;
+  assert.ok(Buffer.compare(a, b) === 0, 'a codec with JS\'s CRC wrote other bytes');
+  await restore(whole(a), MiB, { codecs: [same] });
+  // A codec whose CRC differs: its file fails JS's checks (the writer used it) and passes its own (the reader does).
+  const off = tail((bytes, seed = 0) => crc32(bytes, seed) ^ 1);
+  const c = (await write(content, { codec: off })).file;
+  await refused(readAll(whole(c), { codecs: [plain] }), 'corrupt', /damage\.checksum/);
+  await refused(readAll(whole(a), { codecs: [off] }), 'corrupt', /damage\.checksum/);
+  const r = await restore(whole(c), MiB, { codecs: [off] });
+  sameBytes(r.core, content.core, 'core');
+  const check = await openSnapshot(whole(a), { codecs: [off], check: true });
+  await refused((async () => { for await (const _ of check.frames()); })(), 'corrupt', /damage\.checksum/);
+  // The header's CRC is JS's either way.
+  const head = 20 + new DataView(a.buffer, a.byteOffset).getUint32(12, true);
+  assert.ok(Buffer.compare(a.subarray(0, head), c.subarray(0, head)) === 0, 'the header\'s CRC moved');
 });
 
 test('refusals: not a snapshot, a newer format, truncated, corrupt', async () => {

@@ -1,7 +1,8 @@
-// The snapshot file's codec 2 (docs/platform.md "The snapshot file"): the core's LZ (`core/src/lz.rs`,
-// the LZ4 block format), chosen by measurement over CompressionStream's deflate (bench/boot/REPORT.md
-// "M8 phase C loop 4"). It runs in a core instance of its own on a small memory, so a file can be
-// read before there is a VM, in Node and in a worker alike. Frames are at most 1 MiB + 32 bytes.
+// The snapshot file's codec 2 (docs/platform.md "The snapshot file"): the LZ4 block format through the core's
+// lz4_flex (`core/src/codec.rs`), chosen by measurement (bench/boot/REPORT.md "M8 phase C loop 4", then "SNAPZ:
+// compression across the emulator, measured"), and the frames' CRC-32 through the core's crc32fast. It runs in a core
+// instance of its own on a small memory, so a file can be read before there is a VM, in Node and in a worker alike.
+// Frames are at most 1 MiB + 32 bytes.
 import type { Codec } from './snapshot-file.ts';
 import { coreImports, unsigned } from './vm.ts';
 
@@ -22,6 +23,7 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
     lz_bound(len: number): number;
     lz_compress(src: number, len: number, dst: number, cap: number): number;
     lz_decompress(src: number, len: number, dst: number, cap: number): number;
+    crc32(seed: number, src: number, len: number): number;
     snapshot_version(): number;
     snapshot_version_min(): number;
   };
@@ -47,6 +49,15 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
       const n = ex.lz_decompress(src, stored.length, dst, rawLen) >>> 0;
       if (n !== rawLen) throw new Error('the frame does not unpack to its size');
       return bytes().slice(dst, dst + n);
+    },
+    crc32(data, seed = 0) {
+      let c = seed >>> 0;
+      for (let at = 0; at < data.length; at += cap) {
+        const part = data.subarray(at, Math.min(at + cap, data.length));
+        bytes().set(part, src);
+        c = ex.crc32(c, src, part.length) >>> 0;
+      }
+      return c;
     },
   };
 }

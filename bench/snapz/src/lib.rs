@@ -3,7 +3,6 @@
 //! 7 ruzstd Fastest, 8.. C zstd (feature czstd): 8 level -1 (fast 1), 9 level 1, 10 level 3, 11 fast 4.
 #![allow(clippy::missing_safety_doc)]
 
-#[path = "../../../core/src/lz.rs"]
 mod lz;
 
 use std::slice;

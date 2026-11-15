@@ -31,7 +31,7 @@ on the Machines page's **[About](ui:machines:MachinesPage.about)** pane ([fronte
 - A **section** is a table: `title` its heading (`null` continues the previous one's, as the copyleft references do
   under the permissive ones'), `intro` and `outro` paragraphs (Markdown), `columns` its cells' keys and headings.
   The sections: `derived` (code ported, copied or patched), `techniques` (ideas and papers, no code), `npm`,
-  `rust-net-ts` (the tailnet client's crates), `go-net-tailscale` (the Go backend, a test fixture), `toolchain` (the
+  `rust-net-ts` (the tailnet client's crates), `rust-core` (the core's crates: lz4_flex, crc32fast), `go-net-tailscale` (the Go backend, a test fixture), `toolchain` (the
   toolchains' libraries built into our binaries), `dev` (development dependencies, not distributed), `workloads`
   (fetched at build time), `media` (fixtures), `firmware`, `references-permissive`, `references-copyleft`.
 - An **entry** has an `id` (unique, lower case), a `name` (the project's), and `md`: its cells, Markdown, by column

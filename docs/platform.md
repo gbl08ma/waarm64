@@ -331,7 +331,7 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   virtio-gpu's resource table, scanout and cursor, whose pixels come back from the restored RAM,
   [devices.md](devices.md) "virtio-gpu"; 9p's in-memory tree refuses to be saved: [shares.md](shares.md) §6) with the serial input the guest hadn't been given, and
   RAM in 1 MiB chunks without their zero pages (the guest's free memory zero by then: the balloon's hint, devices.md
-  "balloon"), compressed by the core's LZ (`web/lz.ts`, an
+  "balloon"), compressed by the core's lz4_flex (`web/lz.ts`, an
   instance of the core of its own). A restore creates the VM without booting it, fills RAM from
   the file, has the core restore its state, starts the backends with theirs and serves the
   doorbell once. A parallel VM is paused first ("Pausing a VM").
@@ -375,10 +375,14 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   interrupts (found on the desktop guest's 2.5 GiB with 3D in use; `tests/snapshot-file.test.ts` "RAM past 2 GiB…").
   Snapshots of such machines saved before then are damaged in a way no check sees.
 - **The codec** is per frame (so frames could be made and read by several workers on the shared memory), and a
-  frame that doesn't shrink is stored (codec 0). The page writes **the core's LZ** (codec 2: `core/src/lz.rs`, the
-  LZ4 block format, through `web/lz.ts` on one worker); the reader also takes deflate-raw (codec 1,
-  `CompressionStream`). Settled by measurement (`bench/boot/REPORT.md` "M8 phase C loop 4"): the LZ saves 6 times
-  faster for a file 1.4 times larger.
+  frame that doesn't shrink is stored (codec 0). The page writes **codec 2, the LZ4 block format through lz4_flex**
+  in the core (`core/src/codec.rs`, its safe encoder and decoder; through `web/lz.ts` on one worker), and the frames'
+  CRC-32 goes through the core's crc32fast in the writer and the reader (the header's, read before any core instance
+  exists, stays JS's: `crc32` in `web/snapshot-file.ts`); the reader also takes deflate-raw (codec 1,
+  `CompressionStream`). Settled by measurement: an LZ saves 6 times faster than deflate for a file 1.4 times larger
+  (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's own LZ (`core/src/lz.rs`, which wrote
+  the same format: its files load, `tests/fixtures/old-lz.waarm64snap`) for a desktop save paused 9% less, its RAM
+  frames unpacked 1.6x faster and a 2% smaller file ("SNAPZ loop 1").
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,

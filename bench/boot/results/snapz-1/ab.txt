@@ -1,0 +1,97 @@
+== desktop round 1: base at baa1e0b3, core d7814c3d2c0f8c79, ABI export const ABI = 67
+rc=0  
+round 0 load {"wallMs":10369,"phases":{"check":756,"checkRead":327,"checkCrc":421,"state":104,"ram":2391,"apply":296,"disk":2048,"read":177,"crc":357,"unpack":1684,"prepare":1948,"start":2912,"total":
+round 0 kept {"wallMs":4463,"kind":"kept","bytes":689702238,"pausedMs":4162,"stateMs":223,"blobBytes":109066428,"hintMs":15,"hinted":910163968,"id":"e99b3f36c68d","phases":{"state":223,"blobs":42,"ram
+round 0 file {"wallMs":5047,"kind":"file","bytes":693139797,"pausedMs":4302,"stateMs":197,"blobBytes":109066428,"hintMs":5,"hinted":910163968,"phases":{"state":197,"blobs":46,"ram":3898,"disk":157,"sc
+round 0 suspend {"wallMs":4159,"kind":"suspend","bytes":675408820,"pausedMs":4085,"phases":{"state":173,"blobs":55,"ram":3674,"disk":0,"scan":455,"compress":2736,"crc":414,"sink":90,"close":175,"pause
+round 0 resume {"wallMs":7893,"phases":{"check":615,"checkRead":200,"checkCrc":409,"state":99,"ram":2372,"apply":286,"disk":0,"read":161,"crc":349,"unpack":1647,"prepare":2146,"start":2104,"total":733
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/desktop-base-1.json
+== desktop round 2: new at 0e920064, core 0ffff6be4582386c, ABI export const ABI = 68
+rc=0  
+round 0 load {"wallMs":9232,"phases":{"check":752,"checkRead":476,"checkCrc":271,"state":98,"ram":1960,"apply":393,"disk":2111,"read":213,"crc":331,"unpack":1117,"prepare":1875,"start":2323,"total":91
+round 0 kept {"wallMs":4056,"kind":"kept","bytes":675557755,"pausedMs":3820,"stateMs":227,"blobBytes":109066428,"hintMs":7,"hinted":905969664,"id":"4ea3ce59eb87","phases":{"state":227,"blobs":50,"ram"
+round 0 file {"wallMs":4564,"kind":"file","bytes":678927048,"pausedMs":3792,"stateMs":181,"blobBytes":109066428,"hintMs":5,"hinted":905969664,"phases":{"state":181,"blobs":44,"ram":3425,"disk":138,"sc
+round 0 suspend {"wallMs":3806,"kind":"suspend","bytes":661442599,"pausedMs":3729,"phases":{"state":169,"blobs":41,"ram":3297,"disk":0,"scan":457,"compress":2507,"crc":282,"sink":70,"close":211,"pause
+round 0 resume {"wallMs":7244,"phases":{"check":533,"checkRead":217,"checkCrc":312,"state":60,"ram":1753,"apply":293,"disk":0,"read":172,"crc":317,"unpack":1005,"prepare":2106,"start":2293,"total":674
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/desktop-new-2.json
+== desktop round 3: base at baa1e0b3, core d7814c3d2c0f8c79, ABI export const ABI = 67
+rc=0  
+round 0 load {"wallMs":10041,"phases":{"check":737,"checkRead":316,"checkCrc":416,"state":115,"ram":2638,"apply":381,"disk":2096,"read":218,"crc":359,"unpack":1814,"prepare":1769,"start":2503,"total":
+round 0 kept {"wallMs":4601,"kind":"kept","bytes":689850123,"pausedMs":4221,"stateMs":243,"blobBytes":109066428,"hintMs":9,"hinted":910163968,"id":"a5cfd47a7bcc","phases":{"state":243,"blobs":46,"ram"
+round 0 file {"wallMs":4908,"kind":"file","bytes":693284204,"pausedMs":4192,"stateMs":183,"blobBytes":109066428,"hintMs":4,"hinted":910163968,"phases":{"state":183,"blobs":47,"ram":3804,"disk":155,"sc
+round 0 suspend {"wallMs":4172,"kind":"suspend","bytes":675554468,"pausedMs":4113,"phases":{"state":168,"blobs":42,"ram":3673,"disk":0,"scan":438,"compress":2749,"crc":411,"sink":95,"close":223,"pause
+round 0 resume {"wallMs":8343,"phases":{"check":610,"checkRead":196,"checkCrc":408,"state":104,"ram":2471,"apply":323,"disk":0,"read":181,"crc":352,"unpack":1689,"prepare":2112,"start":2514,"total":78
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/desktop-base-3.json
+== desktop round 4: new at 0e920064, core 0ffff6be4582386c, ABI export const ABI = 68
+rc=0  
+round 0 load {"wallMs":9131,"phases":{"check":737,"checkRead":454,"checkCrc":278,"state":75,"ram":2084,"apply":450,"disk":2047,"read":239,"crc":329,"unpack":1145,"prepare":1820,"start":2182,"total":89
+round 0 kept {"wallMs":4099,"kind":"kept","bytes":675589196,"pausedMs":3755,"stateMs":227,"blobBytes":109066428,"hintMs":10,"hinted":910163968,"id":"599aaebe448b","phases":{"state":227,"blobs":45,"ram
+round 0 file {"wallMs":4472,"kind":"file","bytes":678939522,"pausedMs":3776,"stateMs":180,"blobBytes":109066428,"hintMs":5,"hinted":910163968,"phases":{"state":180,"blobs":44,"ram":3404,"disk":144,"sc
+round 0 suspend {"wallMs":3797,"kind":"suspend","bytes":661467469,"pausedMs":3700,"phases":{"state":173,"blobs":41,"ram":3262,"disk":0,"scan":433,"compress":2493,"crc":272,"sink":81,"close":218,"pause
+round 0 resume {"wallMs":7423,"phases":{"check":543,"checkRead":217,"checkCrc":322,"state":66,"ram":1771,"apply":312,"disk":0,"read":179,"crc":320,"unpack":999,"prepare":2054,"start":2364,"total":6799
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/desktop-new-4.json
+== desktop round 5: base at baa1e0b3, core d7814c3d2c0f8c79, ABI export const ABI = 67
+rc=0  
+round 0 load {"wallMs":10066,"phases":{"check":736,"checkRead":314,"checkCrc":415,"state":111,"ram":2698,"apply":429,"disk":2065,"read":227,"crc":356,"unpack":1810,"prepare":1883,"start":2463,"total":
+round 0 kept {"wallMs":4493,"kind":"kept","bytes":689774589,"pausedMs":4175,"stateMs":230,"blobBytes":109066428,"hintMs":8,"hinted":910163968,"id":"87a38f1c9e63","phases":{"state":230,"blobs":45,"ram"
+round 0 file {"wallMs":4922,"kind":"file","bytes":693261735,"pausedMs":4193,"stateMs":180,"blobBytes":109066428,"hintMs":6,"hinted":910163968,"phases":{"state":180,"blobs":47,"ram":3805,"disk":158,"sc
+round 0 suspend {"wallMs":4196,"kind":"suspend","bytes":675532159,"pausedMs":4101,"phases":{"state":178,"blobs":55,"ram":3671,"disk":0,"scan":456,"compress":2744,"crc":416,"sink":75,"close":192,"pause
+round 0 resume {"wallMs":8385,"phases":{"check":612,"checkRead":198,"checkCrc":409,"state":104,"ram":2437,"apply":310,"disk":0,"read":178,"crc":352,"unpack":1667,"prepare":2145,"start":2491,"total":77
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/desktop-base-5.json
+== desktop round 6: new at 0e920064, core 0ffff6be4582386c, ABI export const ABI = 68
+rc=0  
+round 0 load {"wallMs":9442,"phases":{"check":746,"checkRead":469,"checkCrc":272,"state":72,"ram":2209,"apply":500,"disk":2122,"read":234,"crc":332,"unpack":1223,"prepare":1877,"start":2265,"total":92
+round 0 kept {"wallMs":4003,"kind":"kept","bytes":675476540,"pausedMs":3786,"stateMs":230,"blobBytes":109066428,"hintMs":10,"hinted":905969664,"id":"cf7043c1c79d","phases":{"state":230,"blobs":44,"ram
+round 0 file {"wallMs":4594,"kind":"file","bytes":678909091,"pausedMs":3795,"stateMs":179,"blobBytes":109066428,"hintMs":8,"hinted":905969664,"phases":{"state":179,"blobs":45,"ram":3426,"disk":142,"sc
+round 0 suspend {"wallMs":3834,"kind":"suspend","bytes":661378957,"pausedMs":3749,"phases":{"state":168,"blobs":43,"ram":3294,"disk":0,"scan":440,"compress":2505,"crc":274,"sink":92,"close":233,"pause
+round 0 resume {"wallMs":7184,"phases":{"check":554,"checkRead":225,"checkCrc":326,"state":69,"ram":1621,"apply":251,"disk":0,"read":136,"crc":320,"unpack":956,"prepare":2212,"start":2137,"total":6592
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/desktop-new-6.json
+== debian round 1: base at baa1e0b3, core d7814c3d2c0f8c79, ABI export const ABI = 67
+rc=0  
+round 0 load {"wallMs":2372,"phases":{"check":105,"checkRead":45,"checkCrc":58,"state":5,"ram":407,"apply":70,"disk":441,"read":33,"crc":50,"unpack":265,"prepare":455,"start":794,"total":2207}}
+round 0 kept {"wallMs":789,"kind":"kept","bytes":96586582,"pausedMs":604,"stateMs":11,"blobBytes":0,"hintMs":40,"hinted":717225984,"id":"ebf430d61f2a","phases":{"state":11,"blobs":1,"ram":562,"disk":2
+round 0 file {"wallMs":876,"kind":"file","bytes":96761630,"pausedMs":618,"stateMs":6,"blobBytes":0,"hintMs":37,"hinted":717225984,"phases":{"state":6,"blobs":1,"ram":582,"disk":27,"scan":100,"compress
+round 0 suspend {"wallMs":680,"kind":"suspend","bytes":95436452,"pausedMs":571,"phases":{"state":5,"blobs":1,"ram":542,"disk":0,"scan":98,"compress":371,"crc":61,"sink":12,"close":20,"pause":0},"memor
+round 0 resume {"wallMs":2141,"phases":{"check":90,"checkRead":29,"checkCrc":58,"state":8,"ram":341,"apply":45,"disk":0,"read":22,"crc":48,"unpack":227,"prepare":437,"start":743,"total":1619}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-base-1.json
+== debian round 2: new at 0e920064, core 0ffff6be4582386c, ABI export const ABI = 68
+rc=0  
+round 0 load {"wallMs":2077,"phases":{"check":86,"checkRead":36,"checkCrc":48,"state":3,"ram":241,"apply":39,"disk":454,"read":20,"crc":46,"unpack":145,"prepare":406,"start":758,"total":1948}}
+round 0 kept {"wallMs":769,"kind":"kept","bytes":95229042,"pausedMs":551,"stateMs":11,"blobBytes":0,"hintMs":41,"hinted":717225984,"id":"4c49c6935053","phases":{"state":11,"blobs":1,"ram":509,"disk":2
+round 0 file {"wallMs":813,"kind":"file","bytes":95379538,"pausedMs":543,"stateMs":6,"blobBytes":0,"hintMs":40,"hinted":717225984,"phases":{"state":6,"blobs":1,"ram":509,"disk":26,"scan":97,"compress"
+round 0 suspend {"wallMs":645,"kind":"suspend","bytes":94019769,"pausedMs":507,"phases":{"state":4,"blobs":1,"ram":480,"disk":0,"scan":92,"compress":330,"crc":40,"sink":17,"close":17,"pause":0},"memor
+round 0 resume {"wallMs":1827,"phases":{"check":86,"checkRead":34,"checkCrc":47,"state":4,"ram":243,"apply":42,"disk":0,"read":19,"crc":44,"unpack":139,"prepare":393,"start":645,"total":1370}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-new-2.json
+== debian round 3: base at baa1e0b3, core d7814c3d2c0f8c79, ABI export const ABI = 67
+rc=0  
+round 0 load {"wallMs":2181,"phases":{"check":92,"checkRead":32,"checkCrc":58,"state":5,"ram":331,"apply":42,"disk":444,"read":21,"crc":49,"unpack":231,"prepare":423,"start":770,"total":2065}}
+round 0 kept {"wallMs":737,"kind":"kept","bytes":96578784,"pausedMs":588,"stateMs":11,"blobBytes":0,"hintMs":41,"hinted":717225984,"id":"2023c6db3c89","phases":{"state":11,"blobs":1,"ram":548,"disk":2
+round 0 file {"wallMs":840,"kind":"file","bytes":96790556,"pausedMs":601,"stateMs":6,"blobBytes":0,"hintMs":38,"hinted":717225984,"phases":{"state":6,"blobs":1,"ram":561,"disk":31,"scan":94,"compress"
+round 0 suspend {"wallMs":716,"kind":"suspend","bytes":95375627,"pausedMs":556,"phases":{"state":4,"blobs":1,"ram":529,"disk":0,"scan":94,"compress":365,"crc":58,"sink":11,"close":18,"pause":0},"memor
+round 0 resume {"wallMs":1938,"phases":{"check":88,"checkRead":28,"checkCrc":58,"state":5,"ram":325,"apply":40,"disk":0,"read":19,"crc":48,"unpack":219,"prepare":448,"start":654,"total":1519}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-base-3.json
+== debian round 4: new at 0e920064, core 0ffff6be4582386c, ABI export const ABI = 68
+rc=0  
+round 0 load {"wallMs":2087,"phases":{"check":85,"checkRead":38,"checkCrc":45,"state":4,"ram":242,"apply":41,"disk":461,"read":21,"crc":46,"unpack":144,"prepare":419,"start":736,"total":1947}}
+round 0 kept {"wallMs":682,"kind":"kept","bytes":95254314,"pausedMs":518,"stateMs":11,"blobBytes":0,"hintMs":39,"hinted":717225984,"id":"bb971a973892","phases":{"state":11,"blobs":1,"ram":480,"disk":2
+round 0 file {"wallMs":819,"kind":"file","bytes":95506185,"pausedMs":543,"stateMs":6,"blobBytes":0,"hintMs":38,"hinted":717225984,"phases":{"state":6,"blobs":1,"ram":510,"disk":25,"scan":97,"compress"
+round 0 suspend {"wallMs":637,"kind":"suspend","bytes":94179463,"pausedMs":506,"phases":{"state":4,"blobs":1,"ram":478,"disk":0,"scan":94,"compress":328,"crc":41,"sink":16,"close":18,"pause":0},"memor
+round 0 resume {"wallMs":1931,"phases":{"check":83,"checkRead":34,"checkCrc":48,"state":4,"ram":239,"apply":40,"disk":0,"read":18,"crc":44,"unpack":138,"prepare":437,"start":676,"total":1439}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-new-4.json
+== debian round 5: base at baa1e0b3, core d7814c3d2c0f8c79, ABI export const ABI = 67
+rc=0  
+round 0 load {"wallMs":2179,"phases":{"check":94,"checkRead":33,"checkCrc":58,"state":5,"ram":326,"apply":39,"disk":447,"read":20,"crc":49,"unpack":230,"prepare":418,"start":695,"total":1985}}
+round 0 kept {"wallMs":733,"kind":"kept","bytes":96552078,"pausedMs":575,"stateMs":11,"blobBytes":0,"hintMs":40,"hinted":717225984,"id":"3d44102d10c2","phases":{"state":11,"blobs":1,"ram":535,"disk":2
+round 0 file {"wallMs":889,"kind":"file","bytes":96738657,"pausedMs":610,"stateMs":6,"blobBytes":0,"hintMs":38,"hinted":717225984,"phases":{"state":6,"blobs":1,"ram":574,"disk":28,"scan":102,"compress
+round 0 suspend {"wallMs":707,"kind":"suspend","bytes":95392358,"pausedMs":562,"phases":{"state":4,"blobs":1,"ram":536,"disk":0,"scan":98,"compress":366,"crc":59,"sink":12,"close":17,"pause":0},"memor
+round 0 resume {"wallMs":2035,"phases":{"check":90,"checkRead":29,"checkCrc":58,"state":9,"ram":326,"apply":41,"disk":0,"read":20,"crc":47,"unpack":220,"prepare":500,"start":665,"total":1589}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-base-5.json
+== debian round 6: new at 0e920064, core 0ffff6be4582386c, ABI export const ABI = 68
+rc=0  
+round 0 load {"wallMs":1970,"phases":{"check":84,"checkRead":36,"checkCrc":46,"state":6,"ram":248,"apply":44,"disk":506,"read":21,"crc":45,"unpack":147,"prepare":305,"start":671,"total":1820}}
+round 0 kept {"wallMs":690,"kind":"kept","bytes":95256631,"pausedMs":530,"stateMs":12,"blobBytes":0,"hintMs":40,"hinted":717225984,"id":"7058a581b329","phases":{"state":12,"blobs":1,"ram":489,"disk":2
+round 0 file {"wallMs":807,"kind":"file","bytes":95448642,"pausedMs":547,"stateMs":7,"blobBytes":0,"hintMs":40,"hinted":717225984,"phases":{"state":7,"blobs":1,"ram":513,"disk":25,"scan":99,"compress"
+round 0 suspend {"wallMs":644,"kind":"suspend","bytes":94120118,"pausedMs":499,"phases":{"state":4,"blobs":1,"ram":472,"disk":0,"scan":94,"compress":323,"crc":42,"sink":13,"close":18,"pause":0},"memor
+round 0 resume {"wallMs":2016,"phases":{"check":86,"checkRead":37,"checkCrc":47,"state":4,"ram":245,"apply":43,"disk":0,"read":19,"crc":44,"unpack":140,"prepare":462,"start":716,"total":1513}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-new-6.json
+ALLDONE

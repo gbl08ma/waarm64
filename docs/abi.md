@@ -1,4 +1,4 @@
-# Host ABI (version 66)
+# Host ABI (version 68)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -89,11 +89,12 @@ Design notes for an ABI change go in this file before the code.
 - `vm_snapshot_size(vm)`, `vm_snapshot_save(vm, ptr, len)`, `vm_snapshot_restore(vm, ptr, len)`,
   `snapshot_version()` (ABI 30): a VM's state without its RAM, out and into a new VM ("M8 phase
   C: snapshots", below).
-- `lz_bound(len) -> usize`, `lz_compress(src, len, dst, cap) -> usize` (0: it doesn't fit),
-  `lz_decompress(src, len, dst, cap) -> usize` (`usize::MAX`: malformed) (ABI 30): the LZ4 block
-  format (`core/src/lz.rs`), the snapshot file's codec for RAM and disk blocks. They take no VM:
-  any instance on the memory may call them. The decompressor is for files a user chose: it never
-  reads or writes out of bounds, whatever the bytes.
+- `lz_bound(len) -> usize`, `lz_compress(src, len, dst, cap) -> usize` (0: `cap` is under `lz_bound(len)`),
+  `lz_decompress(src, len, dst, cap) -> usize` (`usize::MAX`: malformed or over `cap`) (ABI 30; lz4_flex since 68):
+  the LZ4 block format, the snapshot file's codec 2, and `crc32(seed, src, len) -> u32` (ABI 68): the IEEE CRC-32 of
+  `len` bytes continued from `seed` (zlib's `crc32`), the frames' checksum ("SNAPZ: the snapshot codec and CRC",
+  below). They take no VM and no allocation: any instance on the memory may call them, on any bytes in it (guest RAM
+  too). The decompressor is for files a user chose: it never reads or writes out of bounds, whatever the bytes.
 - **Addresses are u32, but JS sees a wasm `i32` as signed:** past 2 GiB of memory (a guest with
   2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/vm.ts`
   `unsigned` wraps the exports that return one, and `jit_install` unsigns its `ptr`.
@@ -537,6 +538,30 @@ implemented by this step).
   host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
   saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
 
+## SNAPZ: the snapshot codec and CRC (design note for ABI 68)
+
+The SNAPZ track's loop 1 (`SNAPZ-KICKOFF.md` decisions 1 and 4; measured in `bench/boot/REPORT.md` "SNAPZ:
+compression across the emulator, measured"): lz4_flex (its `safe-encode` and `safe-decode` features, no `alloc`:
+its hash table is on the stack) takes the place of the core's own LZ (`core/src/lz.rs`, removed) behind the same
+three exports, and crc32fast gives the frames' CRC-32 a fourth. `core/src/codec.rs` holds both, with the contract's
+tests.
+- **`lz_bound`, `lz_compress`, `lz_decompress`: the same signatures.** The format is the same (the LZ4 block
+  format; lz4_flex and the old codec read each other's output, `bench/snapz/compat.mjs`, so every file already
+  written loads: `tests/fixtures/old-lz.waarm64snap`). What changes: `lz_bound` is lz4_flex's
+  (`get_maximum_output_size`: 20 + len × 1.1, larger than the old `len + len/255 + 16`), and `lz_compress` refuses
+  (0) any `cap` under it rather than trying (lz4_flex checks up front); the decompressor's output for a malformed
+  block that it doesn't refuse (an offset of 0) is bytes of `dst`, never anything outside it. The frames' CRC
+  catches such a block before it is unpacked.
+- **`crc32(seed, src, len) -> u32`**, new: crc32fast's `Hasher::new_with_initial(seed)` over the bytes. With the
+  seed, a frame's CRC (its header's first 24 bytes, then the stored bytes) is two calls over two places, so the
+  stored bytes are checksummed where they are, as `lz_compress` left them or as the file's bytes were copied in.
+  JS sees the `i32` result signed: `>>> 0`.
+- **Shaped for a pool** (the track's loop 2: workers, each with its own core instance on the guest's memory): every
+  export takes addresses in the memory and nothing else (no VM, no allocation, no state between calls), so a worker
+  compresses a frame gathered at any address and checksums its output in place, and none of them need change for
+  it. A frame's gather (the zero-page scan) and anything that touches spill memories (which the core reaches only
+  through the `ram` imports) stay the host's; an export for those, if the pool wants one, is that loop's.
+
 ## Version history
 
 | ABI | What changed |
@@ -597,6 +622,7 @@ implemented by this step).
 | 63 | FEAT_FCMA: `VmConfig.features` bit 14; `ID_AA64ISAR1_EL1` FCMA = 1 |
 | 65 | FEAT_FP16 and FEAT_FHM: `VmConfig.features` bits 15 and 16 (FHM only with FP16); `ID_AA64PFR0_EL1` FP = AdvSIMD = 1, `ID_AA64ISAR0_EL1` FHM = 1 |
 | 67 | `vm_clock_skip` gone: the guest's clock after a restore is the guest agent's (docs/frontend.md "The guest's clock"), not a suspended guest's skip |
+| 68 | the snapshot codec through lz4_flex (`lz_bound`'s value, `lz_compress` refusing a `cap` under it) and `crc32(seed, src, len)` through crc32fast ("SNAPZ: the snapshot codec and CRC") |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

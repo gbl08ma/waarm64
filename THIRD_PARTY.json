@@ -1491,6 +1491,77 @@
       ]
     },
     {
+      "id": "rust-core",
+      "title": "Rust dependencies of the core (`core`)",
+      "intro": [
+        "Built into the core (`waarm64_core.wasm`, `scripts/build-wasm.sh`). Its direct dependencies (`Cargo.lock` pins them, with their own; licenses as their Cargo.toml says them)."
+      ],
+      "columns": [
+        {
+          "key": "crate",
+          "title": "Crate"
+        },
+        {
+          "key": "version",
+          "title": "Version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "Use"
+        }
+      ],
+      "entries": [
+        {
+          "id": "crate-lz4_flex",
+          "name": "lz4_flex",
+          "about": "core",
+          "url": "https://crates.io/crates/lz4_flex/0.14.2",
+          "version": "0.14.2",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/lz4_flex/0.14.2/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`lz4_flex` (features `safe-encode`, `safe-decode`; defaults off)",
+            "version": "0.14.2",
+            "license": "MIT",
+            "use": "the snapshot file's codec 2, the LZ4 block format (`core/src/codec.rs`; docs/platform.md \"The snapshot file\")"
+          }
+        },
+        {
+          "id": "crate-crc32fast",
+          "name": "crc32fast",
+          "about": "core",
+          "url": "https://crates.io/crates/crc32fast/1.5.5",
+          "version": "1.5.5",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/crc32fast/1.5.5/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/crc32fast/1.5.5/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`crc32fast` (defaults off)",
+            "version": "1.5.5",
+            "license": "MIT OR Apache-2.0",
+            "use": "the snapshot file's frames' CRC-32 (`core/src/codec.rs`)"
+          }
+        }
+      ]
+    },
+    {
       "id": "go-net-tailscale",
       "title": "Go dependencies of the Tailscale backend (`net/tailscale`, N2)",
       "intro": [

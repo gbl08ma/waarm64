@@ -1,0 +1,7 @@
+stored machine ca5943b8e9f8 file /home/gabriel.guest/Development/waarm64/target/snapz/debian-dd8f57e49299.waarm64snap
+round 0 load {"wallMs":2087,"phases":{"check":85,"checkRead":38,"checkCrc":45,"state":4,"ram":242,"apply":41,"disk":461,"read":21,"crc":46,"unpack":144,"prepare":419,"start":736,"total":1947}}
+round 0 kept {"wallMs":682,"kind":"kept","bytes":95254314,"pausedMs":518,"stateMs":11,"blobBytes":0,"hintMs":39,"hinted":717225984,"id":"bb971a973892","phases":{"state":11,"blobs":1,"ram":480,"disk":24,"scan":94,"compress":335,"crc":41,"sink":20,"pause":0,"close":18},"memory":{"before":{"rssMiB":1842,"pssMiB":1219},"peak":{"rssMiB":1913,"pssMiB":1288}}}
+round 0 file {"wallMs":819,"kind":"file","bytes":95506185,"pausedMs":543,"stateMs":6,"blobBytes":0,"hintMs":38,"hinted":717225984,"phases":{"state":6,"blobs":1,"ram":510,"disk":25,"scan":97,"compress":359,"crc":42,"sink":22,"pause":0,"close":0},"memory":{"before":{"rssMiB":1856,"pssMiB":1231},"peak":{"rssMiB":2042,"pssMiB":1408}}}
+round 0 suspend {"wallMs":637,"kind":"suspend","bytes":94179463,"pausedMs":506,"phases":{"state":4,"blobs":1,"ram":478,"disk":0,"scan":94,"compress":328,"crc":41,"sink":16,"close":18,"pause":0},"memory":{"before":{"rssMiB":1814,"pssMiB":1185},"peak":{"rssMiB":1860,"pssMiB":1231}}}
+round 0 resume {"wallMs":1931,"phases":{"check":83,"checkRead":34,"checkCrc":48,"state":4,"ram":239,"apply":40,"disk":0,"read":18,"crc":44,"unpack":138,"prepare":437,"start":676,"total":1439}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-1/debian-new-4.json
