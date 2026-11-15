@@ -18,7 +18,7 @@ Dev-only tools behind `bench/boot/REPORT.md` "SNAPZ: compression across the emul
 - `memwatch.ts <profile> <out.jsonl> [<stop-file>]` (SNAPZ loop 2b): the browser's memory by process every 50 ms,
   beside a probe run (docs/benchmarking.md "The snapshot probe").
 - `probe.ts <desktop|debian> [out.json]` (SNAPZ loop 0 on): a warm snapshot loaded on the page and saved as a kept
-  snapshot, to a file and as a suspend, then resumed, with the page's own phases and the browser's memory per round
+  snapshot (started from, since loop 3), to a file and as a suspend, then resumed, with the page's own phases and the browser's memory per round
   (docs/benchmarking.md "The snapshot probe"). It replaced the measuring session's `phases.patch` (the timing points,
   now the page's own) and `probe-save.ts` (git history has both).
 - The corpus: `bash bench/gpu/warm-snapshots.sh firefox`, then `corpus.ts target/snapbench/pages.waarm64snap

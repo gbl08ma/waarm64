@@ -158,8 +158,9 @@ on). Dev-only, alone like any Chromium session:
 
 - **The guests:** `desktop` loads `target/snapbench/pages.waarm64snap` (Firefox on a still page, 689 MB; above,
   "Starting from a snapshot"), `debian` `target/snapbench/debian-go.waarm64snap` (logged in, ~100 MB); `SNAPSHOT=<file>`
-  another of the same machine. A round: the file loaded (Load snapshot), then, `SETTLE_S` (20) apart, a kept snapshot
-  (deleted after), a file (Save a snapshot to a file: a download, deleted after) and a Suspend, then the page opened
+  another of the same machine. A round: the file loaded (Load snapshot), then, `SETTLE_S` (20) apart, a kept snapshot,
+  the machine started from it (`keptStart`: the Snapshots tab's Restore, the overlay replaced; the snapshot deleted
+  after), a file (Save a snapshot to a file: a download, deleted after) and a Suspend, then the page opened
   again (the resume). Each operation's wall time and phases, and for a save the browser's RSS and PSS (its processes:
   the one with the profile and its descendants, from `/proc/<pid>/smaps_rollup`) before it and at its peak (sampled
   every 250 ms), go to the JSON (default `bench/results/local/snapz-probe/`); `probe-summary.ts` gives medians and

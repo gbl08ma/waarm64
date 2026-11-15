@@ -406,6 +406,27 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   makes itself (RAM doesn't move while it is written): time lost, not the file. A view that isn't shared memory or
   4-aligned, and a writer of another codec, take the one-thread path too. The desktop's pause went from 3.79 s to
   ~1.1 s ("SNAPZ loop 2").
+- **A load's pool** (the same workers, `startPool`; the reader's `LoadPool`; `openSnapshot`'s `pool`): started by the
+  machine worker when a start has a snapshot (a picked file, a kept snapshot, a suspended copy: `openRestore` in
+  `web/app/worker-start.ts`), beside the header's checks, and closed once `bootVm` has filled RAM (or failed to), at a
+  refusal, or at the next restore. A Blob is read in 4 MiB
+  slices, four ahead (Chromium reads a picked file's stream at ~1.1 GB/s in 64 KiB chunks, four slices in flight at
+  ~3.2 GB/s; the one-thread reader reads a Blob so too). Through the pool each piece goes **whole to a worker**
+  (transferred, the least busy one, two pieces a worker at most) with the jobs of the frames in it; a frame across two
+  pieces is copied out and given alone. The machine worker parses every frame header and checks the file's structure
+  in file order, as on one thread; the workers take each frame's CRC in their own core instance and, for the restore
+  pass's RAM frames, unpack them and put their pages straight into guest RAM and the spill memories (`applyRam` on
+  the shared memories), posting back only the jobs they failed and their times. CORE, DEVS, BLOB and DISK frames are
+  read on the machine worker in the restore pass. **The check pass still comes first and ends only once every CRC is
+  in**: a damaged frame anywhere is refused before RAM or a disk is touched, and a refusal is the first failing
+  frame's (`tests/snapshot.test.ts` "a load's pool"; the page's refusal in tests/page-snapshot.test.ts). `placed()`
+  waits for every RAM frame given so far (the piece in hand given as a copy), so the restore pass's own refusal also
+  comes before the disks. **The fallback:** a frame a worker fails, or a piece whose worker failed, is read again from
+  the file and done on the machine worker (a damaged one refused there, as on one thread); no pool (it can't start, one
+  CPU), a stream or RAM not on shared memory is the one-thread reader. Copying frames into shared slots instead was
+  measured first: V8 copies into shared memory word by word, ~220 ms of the machine worker's time a pass for the
+  desktop's file, which whole pieces avoid. The desktop's load spends 1.13 s in the check pass, the state and RAM
+  against 3.13 s on one thread (wall 9.5 to 7.6 s), Debian's 0.13 s against 0.35 ("SNAPZ loop 3").
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
@@ -423,7 +444,7 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   renderer holds ~600 MiB more until the save ends and the browser's blob storage the file (~685 MiB) until the URL
   is revoked 60 s later (the SNAPZ track's loop 4, staging through OPFS, is to replace both: docs/backlog.md): a big
   snapshot taken every few seconds piles up in the browser's blob storage (tools space them out:
-  `bench/gpu/snapshot-3d.ts`). **In:** a `File` read as a stream.
+  `bench/gpu/snapshot-3d.ts`). **In:** a `File` (a Blob) read in 4 MiB slices, four ahead; a stream as it comes.
 - **Versions** (the user's call, 2026-10-01): the core's state has a format version of its own (`snapshot::VERSION`,
   [abi.md](abi.md) "M8 phase C"), bumped when a saved field changes and pinned by a unit test of a fixed machine's
   bytes, **not the wasm's input hash**: that would void every snapshot at every core change, the JIT's too, which

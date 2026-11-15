@@ -1,5 +1,6 @@
 // The snapshot probe (docs/benchmarking.md "The snapshot probe"; dev-only): a warm snapshot loaded on the page, then
-// saved as a kept snapshot, to a file (a download) and as a suspend, and resumed; per round, each operation's wall time
+// saved as a kept snapshot (and the machine started from it: `keptStart`), to a file (a download) and as a suspend, and
+// resumed; per round, each operation's wall time
 // and the page's own phases (`#message`'s `data-load` and `data-snapshot`: web/app/protocol.ts `LoadPhases`,
 // `SaveTimes`), and the browser's memory before and during each save.
 //
@@ -150,6 +151,21 @@ async function load(file: string) {
   await changed('load', before, 10_000);
   return round({ wallMs, phases: JSON.parse(await data('load')) });
 }
+/** A start from kept snapshot `id` (the Machines page's Snapshots tab, Restore), until it runs; the phases. */
+async function keptStart(id: string) {
+  const before = await data('load');
+  const t0 = performance.now();
+  await page.locator('#machines-open').click();
+  await page.locator('.machines [data-tab=snapshots]').click();
+  await page.locator(`.machines [data-snapshot="${id}"]`).getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
+  await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 60_000, polling: 20 });
+  await until(['running', 'failed', 'crashed', 'off']);
+  const wallMs = performance.now() - t0;
+  if ((await state()) !== 'running') throw new Error(`the kept snapshot didn't start: ${await messageText()}`);
+  await changed('load', before, 10_000);
+  if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
+  return round({ wallMs, phases: JSON.parse(await data('load')) });
+}
 /** A save by `start` (a click): until `data-snapshot` changes; its numbers, the wall time, the memory before and its peak. */
 async function save(kind: string, start: () => Promise<void>, done?: () => Promise<void>) {
   const before = await data('snapshot');
@@ -284,9 +300,14 @@ if (MODE === 'transient') {
     say(`round ${k} load`, r.load as Record<string, unknown>);
     await settle();
     const kept = await save('kept', () => page.locator('#save-snapshot').click());
-    await store(`(store, id) => store.deleteSnapshot(id)`, kept.id);
     r.kept = kept;
     say(`round ${k} kept`, kept);
+    await settle();
+    // The machine started from that kept snapshot (the Snapshots tab's Restore; its overlay replaced by the file's
+    // blocks: the probe answers no to keeping the changes), then the snapshot deleted.
+    r.keptStart = await keptStart(kept.id as string);
+    say(`round ${k} keptStart`, r.keptStart as Record<string, unknown>);
+    await store(`(store, id) => store.deleteSnapshot(id)`, kept.id);
     await settle();
     const deleted = await download();
     r.file = await save('file', async () => {

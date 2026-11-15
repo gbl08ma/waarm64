@@ -1,0 +1,31 @@
+== debian round 1: base at 85e2681e, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":2273
+round 0 keptStart {"wallMs":2396
+round 0 resume {"wallMs":2186
+== debian round 2: new at fb3daf5d, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":1965
+round 0 keptStart {"wallMs":2100
+round 0 resume {"wallMs":1837
+== debian round 3: new at fb3daf5d, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":1977
+round 0 keptStart {"wallMs":1887
+round 0 resume {"wallMs":1827
+== debian round 4: base at 85e2681e, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":1981
+round 0 keptStart {"wallMs":2123
+round 0 resume {"wallMs":2026
+== debian round 5: base at 85e2681e, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":2069
+round 0 keptStart {"wallMs":2309
+round 0 resume {"wallMs":1966
+== debian round 6: new at fb3daf5d, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":2067
+round 0 keptStart {"wallMs":2074
+round 0 resume {"wallMs":1896
+ALLDONE

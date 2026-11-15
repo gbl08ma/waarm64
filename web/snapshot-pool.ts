@@ -1,9 +1,14 @@
-// A save's pool (docs/platform.md "The snapshot file", SNAPZ's decision 2): workers that make RAM's frames from guest
-// RAM where it lies (web/snapshot-pool-worker.ts), for web/snapshot-file.ts's writer (`RamPool`). Chunk c goes to worker
-// c mod n; the writer writes the frames in order, so the file's bytes are the same for any n and for none. Started per
-// save before the pause (web/app/worker-snapshot.ts), closed after it: no worker stays between saves.
-import type { RamFrame, RamPool } from './snapshot-file.ts';
+// A snapshot's pool (docs/platform.md "The snapshot file", SNAPZ's decision 2): workers (web/snapshot-pool-worker.ts)
+// that make RAM's frames from guest RAM where it lies, for web/snapshot-file.ts's writer (`RamPool`), and that check a
+// reader's frames and put RAM's pages straight into guest RAM (`LoadPool`). For a save, chunk c goes to worker c mod n;
+// the writer writes the frames in order, so the file's bytes are the same for any n and for none. Started per save
+// before the pause (web/app/worker-snapshot.ts) and per load with the restore (web/app/worker.ts), closed after it: no
+// worker stays between them.
+import type { FrameTimes, LoadPool, RamFrame, RamPool } from './snapshot-file.ts';
 import type { PoolInit, PoolJob, PoolReply } from './snapshot-pool-worker.ts';
+
+/** What a load's piece came to: the jobs its worker failed, and the times. */
+type Loaded = { failed: number[] } & FrameTimes;
 
 /** At most this many workers: past ~6 the pool gave little more (bench/boot/REPORT.md "SNAPZ: compression…"). */
 export const POOL_MAX = 6;
@@ -17,10 +22,10 @@ export function poolSize(cores = globalThis.navigator?.hardwareConcurrency ?? 1)
 
 /**
  * A pool that is ready: `readyMs` from its start to its last worker's instance; `buffers()`, the frame buffers its
- * workers have made so far (each about 1 MiB; written frames' go back to their worker: `recycle`). `close` ends its
- * workers.
+ * workers have made so far for a save (each about 1 MiB; written frames' go back to their worker: `recycle`). `close`
+ * ends its workers.
  */
-export type SavePool = RamPool & { readyMs: number; buffers(): number; close(): void };
+export type SavePool = RamPool & LoadPool & { readyMs: number; buffers(): number; close(): void };
 
 type Handle = { post(m: PoolInit | PoolJob, transfer?: ArrayBuffer[]): void; terminate(): void };
 
@@ -47,7 +52,8 @@ async function spawn(heard: (m: PoolReply) => void, failed: (e: Error) => void):
 export async function startPool(module: WebAssembly.Module, n = poolSize(), timeoutMs = 10_000): Promise<SavePool | undefined> {
   if (n < 1) return undefined;
   const t0 = performance.now();
-  const waiting = new Map<number, { resolve(r: RamFrame): void; reject(e: Error): void; worker: number }>();
+  // A job's reply: a save's frame, or a load's times.
+  const waiting = new Map<number, { resolve(r: RamFrame | Loaded): void; reject(e: Error): void; worker: number }>();
   /** Each worker's frame buffers made so far (its last reply's). */
   const made: number[] = Array.from({ length: n }, () => 0);
   let broken: Error | undefined;
@@ -71,6 +77,7 @@ export async function startPool(module: WebAssembly.Module, n = poolSize(), time
       waiting.delete(m.id);
       if (m.type === 'done' && w) made[w.worker] = m.buffers;
       if (m.type === 'done') w?.resolve(m);
+      else if (m.type === 'loaded') w?.resolve({ failed: m.failed, crc: m.crc, unpack: m.unpack, apply: m.apply });
       else w?.reject(new Error(m.message));
     }
   };
@@ -95,19 +102,31 @@ export async function startPool(module: WebAssembly.Module, n = poolSize(), time
     return undefined;
   }
   let next = 0;
+  /** Each worker's load pieces not yet done: the next goes to the one with fewest. */
+  const busy: number[] = handles.map(() => 0);
+  const idlest = () => busy.indexOf(Math.min(...busy));
   /** Each worker's written frames' buffers, to go back with its next job. */
   const back: ArrayBuffer[][] = handles.map(() => []);
+  /** Job `m` (its `id` given here) on worker `k`, its reply as `T`; a broken pool's at once. */
+  function ask<T extends RamFrame | Loaded>(k: number, m: PoolJob, transfer?: ArrayBuffer[]): Promise<T> {
+    if (broken) return Promise.reject(broken);
+    return new Promise<T>((resolve, reject) => {
+      waiting.set(m.id, { resolve: resolve as (r: RamFrame | Loaded) => void, reject, worker: k });
+      handles[k].post(m, transfer);
+    });
+  }
   return {
     size: n,
     readyMs: performance.now() - t0,
     ram(buffer, off, len, index) {
       if (broken) return Promise.reject(broken);
-      const id = next++;
       const give = back[index % n].splice(0);
-      return new Promise<RamFrame>((resolve, reject) => {
-        waiting.set(id, { resolve, reject, worker: index % n });
-        handles[index % n].post({ type: 'ram', id, buffer, off, len, index, give }, give);
-      });
+      return ask<RamFrame>(index % n, { type: 'ram', id: next++, buffer, off, len, index, give }, give);
+    },
+    frames(piece, jobs) {
+      const k = idlest();
+      busy[k]++;
+      return ask<Loaded>(k, { type: 'frames', id: next++, piece, jobs }, [piece]).finally(() => busy[k]--);
     },
     buffers: () => made.reduce((a, b) => a + b, 0),
     recycle(frame, index) {

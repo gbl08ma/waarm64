@@ -740,9 +740,12 @@ for it after the hint, before the pause); and `close` (the output closed: a file
 after the resume, a suspended copy's before the stop). A start from a snapshot or a suspended copy posts `loaded` once
 it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
-touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames, `apply` their
-placing), `disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the machine's workers, the
-devices' state put back) and `total` (from the worker's start); over the restore's pass, `read`, `crc` and `unpack`.
+touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
+`disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the machine's workers, the
+devices' state put back) and `total` (from the worker's start); over the restore's pass, `read`, `crc`, `unpack` and
+`apply` (RAM's placing); `pool` (the load's workers, 0: the machine worker did it all: platform.md "A load's pool"),
+with which `checkCrc` and RAM's share of `crc`, `unpack` and `apply` are the workers' sums (CPU time, up to `pool` times
+their phase's wall).
 
 **Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
 file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the
@@ -756,7 +759,7 @@ as Reset disk says) is replaced by the snapshot's changes to the disk**. Then, t
 `exclusively`: `stop()`, a new worker with `start.snapshot` (the `File`).
 
 **The worker's start from a snapshot** downloads the core only (no kernel or initrd), compiles it
-once (the same module goes to `bootVm` and to the LZ codec, `lzCodec`), reads the header, and makes
+once (the same module goes to `bootVm`, to the LZ codec, `lzCodec`, and to the load's pool: platform.md "A load's pool"), reads the header, and makes
 the devices **as the header says** (`devices`, below) from what the page passed, with `ncpus` and the RAM size (`ramSize`) from
 the header (the status line shows them, not the page's `?ncpus=` or Machine menu). Then `readSnapshot` checks
 everything that can be refused before anything is touched (the whole file's checksums, the core's

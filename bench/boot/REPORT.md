@@ -5121,3 +5121,80 @@ storage holding the file (~685) and ~600 more in the renderer that falls back as
 bytes, held until the browser has taken them. Making the Blobs in the machine worker held only ~336 MiB there but
 paused the save 0.44 s longer (1.80 against 1.36 s): not taken; loop 4's staging through OPFS is to replace the
 download's memory (docs/backlog.md SNAPZ).
+
+## SNAPZ loop 3: the load's pool (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the persistent profile
+`target/snapz/profile`, nothing else running. Raw: `results/snapz-3/` (`rounds/<guest>-<arm>-<n>.{json,log}` and
+`.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
+driver; `ab-*.txt`, its logs; `readbench.ts` and `readbench.txt`, the read measurement below). **Built:** the load's
+pool (docs/platform.md "A load's pool"): the save's workers (`startPool`) take the check pass's CRCs and the restore
+pass's RAM frames (CRC, unpack, pages straight into guest RAM and the spill memories), for a picked file, a kept
+snapshot's start and a resume; a Blob is read in 4 MiB slices, four ahead, and each piece goes whole to a worker. The
+probe now also starts the machine from its kept snapshot (`keptStart`). No core or ABI change (core `a8deea54` in both
+arms).
+
+**Measured first** (this tree's probe on 85e2681e, one desktop round): a load 8.56 s = prepare 1.77, check 0.79 (read
+0.52, CRC 0.27), state 0.07, ram 1.77 (read 0.18, CRC 0.32, unpack 1.02, apply 0.32), disk 2.15, start 2.01. A first
+pool (frames copied into shared slots for the workers) took ram to ~0.95 s and left the check pass at ~0.74: both
+passes were then bound by reading. **The file's reads** (`readbench.ts`, the desktop's 689 MB File, three runs): its
+stream 593-1,057 ms in 64-69 KiB chunks; one slice at a time 1 MiB 976-1,054, 16 MiB 624-637; **4 MiB slices four in
+flight 213-228 ms** (3.2 GB/s), 16 MiB four in flight 180-229; 1 MiB slices read by 6 workers 278-283. With slices
+the check pass was ~0.45 s, of which ~0.22 s the machine worker's copies into the shared slots (V8 copies into
+shared memory word by word): pieces handed whole to the workers (transferred) took that away, the check pass to
+~0.28-0.36 s.
+
+**The A/B:** base = 85e2681e (loop 2b), new = this loop (the JSON's commit fb3daf5d is a local commit of this tree,
+squashed into this loop's); each round a browser of its own, base new new base base new for each guest. Median
+(range) of 3, ms; "share" = check + state + ram, the load's compression share:
+
+| desktop (689 MB file) | base | new | |
+|---|---|---|---|
+| load: wall | 9,518 (9,437-9,647) | 7,620 (7,603-8,129) | −20% |
+| ... share | 3,126 (3,019-3,160) | 1,133 (1,079-1,144) | 2.8x |
+| ... check (read / CRC) | 786 (509 / 271) | 434 (341 / 395 summed) | |
+| ... state | 75 | 82 | |
+| ... ram (CRC / unpack / apply, summed) | 2,268 (337 / 1,325 / 419) | 619 (454 / 794 / 741) | 3.7x |
+| ... prepare / disk / start | 1,896 / 2,155 / 2,269 | 1,954 / 2,155 / 2,216 | same |
+| kept snapshot's start: wall | 10,694 (10,408-11,040) | 8,376 (8,302-8,939) | −22% |
+| ... share | 3,214 (3,077-3,319) | 1,124 (1,116-1,230) | |
+| resume: wall | 8,232 (8,068-8,341) | 6,546 (6,489-6,790) | −20% |
+| ... share | 2,932 (2,887-3,026) | 1,122 (1,057-1,187) | |
+| saves' pauses: kept / file / suspend | 1,220 / 1,666 / 1,309 | 1,281 / 1,671 / 1,271 | ranges overlap |
+
+| Debian (97 MB file) | base | new | |
+|---|---|---|---|
+| load: wall | 2,069 (1,981-2,273) | 1,977 (1,965-2,067) | −4%, ranges overlap |
+| ... share | 354 (348-395) | 134 (130-135) | 2.6x |
+| kept snapshot's start: wall | 2,309 (2,123-2,396) | 2,074 (1,887-2,100) | −10% |
+| resume: wall | 2,026 (1,966-2,186) | 1,837 (1,827-1,896) | −9% |
+| saves' pauses: kept / file / suspend | 166 / 183 / 153 | 165 / 179 / 152 | same |
+
+No load's range overlaps but Debian's picked file's (its `start` was 70 ms longer in the new arm's rounds, 756 against
+829, the pool's six workers starting beside the machine's). **Against the projection** ("SNAPZ: compression…": the
+share from ~3.3 s to ~0.8 s): 3.13 to 1.13 s. What is left of it: the check pass ~0.4 s, read-bound (the file is read
+once a pass at ~3.2 GB/s at best); the state 0.08 s (the BLOB frames, on the machine worker); RAM ~0.6 s wall for ~2 s
+of the workers' CPU, `apply` up to 0.75 of it (pages copied from the instance into guest RAM, shared memory both, and
+fresh RAM's first touches). Not taken further here (docs/backlog.md SNAPZ). The rest of a load: the disk's blocks
+(2.2 s, loop 5) and the machine's start (prepare ~2 s, start ~2.2 s, loop 7).
+
+**Memory** (the whole browser, memwatch's 50 ms samples; before = the last sample before the operation, peak = during
+it): the desktop's load 1,546 → peak 3,427 MiB (base) against 1,555 → 3,255 (new), its kept start 3,316 → 5,309 against
+3,323 → 5,066: the new arm's peak 170-240 MiB lower (the one-thread reader's per-frame copies and 64 KiB chunks no
+longer pile up; the pool's six instances, ~90-140 MiB, are within it). Debian's load 1,439 → 1,778 against 1,447 →
+1,836 (+58 MiB at the peak: the pool), its kept start 1,733 → 2,139 against 1,737 → 1,847. The pool's own buffers: at
+most 12 pieces with the workers and 4 being read (64 MiB), each piece freed by its worker once done; the pool ends
+with the load.
+
+**Correctness:** `tests/snapshot.test.ts` "a load's pool": RAM in two views (the spill memory's at an offset of its
+buffer) restored by `readSnapshot` through pools of 1, 2, 3 and 6 and on one thread, byte-identical; RAM not on shared
+memory placed on the machine worker; a worker failing every third piece, one reporting each piece's first frame failed,
+a pool closed halfway: the same RAM; pieces of 4,099 B, 64 KiB + 7, 1 MiB + 17, 3 MiB and the default (frames and their
+headers across pieces), with a DISK frame after RAM's (`placed()` has every RAM frame in when it comes); a byte flipped
+in a RAM frame refused as "a checksum fails" by the check pass with and without a pool, the fresh RAM all zeros, and
+by the pooled restore pass on its own; for every piece size, a damaged frame refused. `tests/page-snapshot.test.ts`:
+a byte flipped in a RAM frame of a real snapshot refused on the page as not loaded, the disk untouched. Planted, each
+caught: the check pass returning before its CRCs are in (writes before the check finishes: the Node test, and the page
+test, whose refusal becomes "not restored"), a frame placed at the wrong address (the view's offset ignored), a
+worker's frame dropped, the frames a worker failed not redone, a failed worker's piece not redone, a frame across
+pieces not checked, one not placed, `placed()` without the piece in hand.

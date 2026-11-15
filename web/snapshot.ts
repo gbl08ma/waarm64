@@ -7,7 +7,7 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, readHeader, SnapshotError, SnapshotWriter, truncated, type Codec, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import { BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, readHeader, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
@@ -61,10 +61,12 @@ export type SavePhases = { state: number; blobs: number; ram: number; disk: numb
 /**
  * Where a restore's time went, ms (`readSnapshot`; the machine worker adds its own: web/app/protocol.ts `LoadPhases`):
  * the whole file's check pass (`check`, its reads and CRCs in `checkRead`, `checkCrc`), the CORE, DEVS and BLOB frames
- * (`state`), RAM's frames read and placed (`ram`, the placing in `apply`), the disks' blocks into their overlays
- * (`disk`); and over the restore's pass (after the check), the reads, the CRCs and the codec (`ReadTimes`).
+ * (`state`), RAM's frames read and placed (`ram`), the disks' blocks into their overlays (`disk`); over the restore's
+ * pass (after the check), the reads, the CRCs, the codec and RAM's placing (`ReadTimes`); and the workers of the pool
+ * that took the CRCs and RAM's frames (`pool`, 0: this thread; then `checkCrc`, and RAM's share of `crc`, `unpack` and
+ * `apply`, are their sums: CPU time).
  */
-export type RestorePhases = { check: number; checkRead: number; checkCrc: number; state: number; ram: number; apply: number; disk: number } & ReadTimes;
+export type RestorePhases = { check: number; checkRead: number; checkCrc: number; state: number; ram: number; disk: number; pool: number } & ReadTimes;
 
 /** A DISK frame's index: the device slot times this, plus the first block. */
 const SLOT = 2 ** 40;
@@ -153,10 +155,13 @@ export function otherVersion(header: SnapshotHeader, coreVersion: number): Snaps
  * `resume`: the file is a suspended machine's (`writeSnapshot`'s `suspend`: no disk blocks) and
  * the overlays are as that machine left them, which only the caller can know (web/overlay.ts
  * `suspended`): they are kept. Such a file is refused without `resume`, and any other with it.
+ *
+ * `pool`: workers that take both passes' CRCs and put RAM's frames into the new VM's RAM (docs/platform.md "A load's
+ * pool"; a Blob only, else this thread reads it all). The caller closes it once `fill` is done.
  */
 export async function readSnapshot(
   source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
-  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
+  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[]; pool?: LoadPool } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore; phases: RestorePhases }> {
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
@@ -165,7 +170,7 @@ export async function readSnapshot(
     at = performance.now();
     return at - was;
   };
-  const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, apply: 0, disk: 0, read: 0, crc: 0, unpack: 0 };
+  const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, disk: 0, pool: 0, read: 0, crc: 0, unpack: 0, apply: 0 };
   if (source instanceof Blob) {
     // Another version's file is refused by its header, before its frames are read (an older file may have frames of a
     // codec no longer read).
@@ -173,11 +178,13 @@ export async function readSnapshot(
     if (other) throw other;
     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
     // the file damaged halfway.
-    const check = await openSnapshot(source, { codec, check: true });
+    const check = await openSnapshot(source, { codec, check: true, pool: opts.pool });
     for await (const _ of check.frames()) void _;
     [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
   }
-  const s = await openSnapshot(source, { codec });
+  // With a pool, RAM's frames are checked, unpacked and placed by its workers (docs/platform.md "A load's pool").
+  const s = await openSnapshot(source, { codec, pool: opts.pool });
+  phases.pool = s.pooled;
   /** The restore pass's reading times so far, into `phases`. */
   const read = () => Object.assign(phases, s.times);
   const { header } = s;
@@ -275,13 +282,13 @@ export async function readSnapshot(
       const starts = ramStarts(views.map((v) => v.length));
       since();
       for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
-        const { index, data } = next.value;
+        const { index, place } = next.value;
         let k = views.length - 1;
         while (k > 0 && index < starts[k]) k--;
-        const t = performance.now();
-        applyRam(views[k], index - starts[k], data);
-        phases.apply += performance.now() - t;
+        place!(views[k], index - starts[k]);
       }
+      // Every RAM frame in (a pool's workers placing them): a refusal here comes before the disks are touched.
+      await s.placed();
       phases.ram = since();
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.

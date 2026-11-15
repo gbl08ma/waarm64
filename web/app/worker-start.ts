@@ -7,6 +7,7 @@ import { loadFlash, overlayMeta } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import type { DisplayFromPage, DisplayToPage, ScreenPng } from '../gpu-present.ts';
 import { readHeader, type SnapshotHeader } from '../snapshot-file.ts';
+import { startPool, type SavePool } from '../snapshot-pool.ts';
 import { otherVersion, readSnapshot, type RestorePhases, type SnapshotDisk } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import type { lzCodec } from '../lz.ts';
@@ -88,12 +89,55 @@ async function sameOverlays(header: SnapshotHeader, specs: DeviceSpec[]) {
 }
 
 /**
+ * The load's pool (docs/platform.md "A load's pool"), started by `openRestore` beside the header's checks; none (it
+ * can't start) is the machine worker doing it all.
+ */
+let loadPool: Promise<SavePool | undefined> | undefined;
+
+/**
+ * The load's pool ended: once `bootVm` has filled RAM (the restore's `fill` done, or failed), at a refusal, or at the
+ * next restore (a start that fails between the two leaves it to then, or to the worker's end).
+ */
+function endLoadPool() {
+  void loadPool?.then((p) => p?.close());
+  loadPool = undefined;
+}
+
+/**
  * The machine a snapshot (or a suspended machine, `resume`) says, and its restore: everything that can be refused is,
  * before anything is touched (the overlay is replaced inside `bootVm`; a resume keeps it: it is as the suspended
- * machine left it); its phases posted. `specs`: the devices the restore hands ramdisks their chunks through; `serial`,
- * the terminal's tail.
+ * machine left it); its phases posted. Its pool (`loadPool`) is awaited before the check pass. `specs`: the devices
+ * the restore hands ramdisks their chunks through; `serial`, the terminal's tail.
  */
 export async function openRestore(snapshot: Blob, m: StartMessage, machine: Machine, resume: boolean, lz: Lz) {
+  endLoadPool();
+  loadPool = startPool(lz.module).catch(() => undefined);
+  try {
+    const r = await restoreOf(snapshot, m, machine, resume, lz, loadPool);
+    const restore = r.restore;
+    const fill = restore.fill.bind(restore);
+    restore.fill = async (ram, spill) => {
+      try {
+        await fill(ram, spill);
+      } finally {
+        endLoadPool();
+      }
+    };
+    return r;
+  } catch (err) {
+    endLoadPool();
+    throw err;
+  }
+}
+
+async function restoreOf(
+  snapshot: Blob,
+  m: StartMessage,
+  machine: Machine,
+  resume: boolean,
+  lz: Lz,
+  pool: Promise<SavePool | undefined>,
+) {
   post({
     type: 'phase',
     text: resume ? msg('machine:worker-start.phase.resuming') : msg('snapshots:worker-start.phase.checking'),
@@ -109,6 +153,7 @@ export async function openRestore(snapshot: Blob, m: StartMessage, machine: Mach
     devices: h.specs,
     resume,
     plan: m.plan,
+    pool: await pool,
   });
   const plan: Plan = { ncpus: h.ncpus, ramMiB: h.ramMiB, here: h.slots, cpu: h.cpu, split: h.split };
   if (!resume) post({ type: 'phase', text: msg('snapshots:worker-start.phase.restoring') });

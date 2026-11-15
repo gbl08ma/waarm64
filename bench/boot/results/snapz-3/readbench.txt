@@ -1,0 +1,5 @@
+# readbench.ts on target/snapz/desktop-62b96998779f.waarm64snap (689 MB), Chromium 155.0.8059.84 headless, persistent
+# profile, 2026-11-15; ms for the whole file (sliceAxB: A MiB slices, B in flight; workersN: 1 MiB slices dealt to N workers)
+{"stream":1057,"chunkKiB":66,"slice1x1":1054,"slice4x1":773,"slice16x1":637,"slice4x4":228,"slice16x4":229,"slice1x8":321,"workers3":427,"workers6":283}
+{"stream":622,"chunkKiB":69,"slice1x1":1010,"slice4x1":724,"slice16x1":624,"slice4x4":218,"slice16x4":180,"slice1x8":282,"workers3":421,"workers6":280}
+{"stream":593,"chunkKiB":67,"slice1x1":976,"slice4x1":750,"slice16x1":633,"slice4x4":213,"slice16x4":193,"slice1x8":280,"workers3":428,"workers6":278}

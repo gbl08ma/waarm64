@@ -1451,8 +1451,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   thread; its load takes 9.8 s. The track takes lz4_flex as codec 2, the CRC into wasm, a pool of workers for the save
   and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
   in a restore, and a breakdown of the load's machine start.
-  Loops 1 (lz4_flex, crc32fast), 2 (the save's pool: the desktop's pause 3.80 to 1.07 s) and 2b (older files refused,
-  the save's garbage recycled) are in. Left:
+  Loops 1 (lz4_flex, crc32fast), 2 (the save's pool: the desktop's pause 3.80 to 1.07 s), 2b (older files refused,
+  the save's garbage recycled) and 3 (the load's pool: its check, state and RAM 3.13 to 1.13 s) are in. Left:
+  - **What is left of a load's compression share** (bench/boot/REPORT.md "SNAPZ loop 3", the desktop's 1.13 s): the
+    check pass ~0.4 s, bound by reading the file (~0.3 s at four 4 MiB slices in flight; the file is read twice, once
+    a pass); the state 0.08-0.10 s (109 MB of BLOB frames unpacked on the machine worker: a pool job that posts the
+    bytes back could take most of it); RAM ~0.6 s wall for ~1.7 s of the workers' CPU, of which `apply` 0.4-0.75 s
+    (pages copied out of each instance into guest RAM, shared memory both: V8's word-by-word copy, and fresh RAM's
+    page faults). A frame index at the file's end would let the restore pass's workers read their frames themselves.
+    The rest of the load is the disk's blocks (~2.2 s, loop 5) and the machine's start (prepare ~2 s, start ~2.2 s,
+    loop 7).
   - **A download's memory** (bench/boot/REPORT.md "SNAPZ loop 2b"): the desktop's file save adds ~1.1-1.2 GiB at
     its peak: the browser's blob storage the file (~685 MiB, until the download's URL is revoked 60 s later) and the
     renderer ~600 MiB more, which falls back as the save ends: by its timeline the page's Blobs' bytes, held until the
