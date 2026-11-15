@@ -102,8 +102,15 @@ Since decided (the user, 2026-10-17):
   machine's lock before it opens the disks, and only if it's free (`ifAvailable`): a second tab of a running machine
   (the page opens the last machine by default) says at once that it runs in another tab, with Retry, instead of
   waiting out the overlay's lock (10 s) for `disk-in-use` (tests/page-open.test.ts).
-- **Storage:** the Machines page shows `navigator.storage.estimate()` and what each overlay, machine (variable store
-  and snapshots), stored disk, folder in the browser and the remote disks' block cache take, and asks for `navigator.storage.persist()` the
+- **Storage:** the Machines page's storage bar shows `navigator.storage.estimate()`, and its info icon opens
+  [Storage in this browser](ui:machines:StorageDetails.title): what is used of the quota, then what each overlay,
+  machine (variable store and snapshots), stored disk, the remote disks' block cache and Vulkan's shaders take (each
+  directory's files' sizes; `storageReport`). Those are a part of what the origin holds, so a count that agrees is at
+  least their sum; when `estimate()`'s usage is short of it (past 1% or 16 MiB: `countBehind`) the bar gives the sum
+  alone, the icon is a warning and the dialog gives the three numbers apart (tests/page-modal.test.ts). Chromium's
+  count has been seen at 1.1 GB with 20 GB of files in the profile's `File System` directory, a stored disk's data
+  (2026-11-15, ungoogled-chromium on localhost, with an 11 GiB quota and 978 GB free; the cause isn't known).
+  `estimate()` counts the origin's other storage buckets (the remote disks' cache) too. The page asks for `navigator.storage.persist()` the
   first time something is stored (without it the browser may evict the origin's data under pressure); while the
   browser hasn't granted it, the storage bar offers [Protect from automatic deletion](ui:machines:StorageBar.storage.persist),
   which asks again, with a tooltip saying what it means, and while this tab's machine runs with the guest agent,

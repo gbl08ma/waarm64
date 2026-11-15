@@ -1,9 +1,12 @@
 <!--
   The Machines page's foot: the browser's storage, used and its quota (persisted or not: ask for it), what clears the
-  remote disks' cache and the shaders', what has the running guest hand back the space it freed, and what holds the bytes.
+  remote disks' cache and the shaders', what has the running guest hand back the space it freed. The icon after the
+  line opens what holds the bytes (StorageDetails.svelte); while the browser's count is short of the files listed there
+  (`behind`), the line gives the files' sum alone, and the icon is a warning.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
+  import StorageDetails from './StorageDetails.svelte';
   import type { Act } from './actions.svelte.ts';
   import { clearCaches } from '../diskcache.ts';
   import { t } from '../i18n.ts';
@@ -16,15 +19,32 @@
   let { storage, act }: Props = $props();
 
   const used = $derived(
-    storage.persisted
-      ? t('machines:StorageBar.storage.persisted', { used: storage.usage, quota: storage.quota })
-      : t('machines:StorageBar.storage', { used: storage.usage, quota: storage.quota }),
+    storage.behind
+      ? storage.persisted
+        ? t('machines:StorageBar.storage.counted.persisted', { used: storage.counted })
+        : t('machines:StorageBar.storage.counted', { used: storage.counted })
+      : storage.persisted
+        ? t('machines:StorageBar.storage.persisted', { used: storage.usage, quota: storage.quota })
+        : t('machines:StorageBar.storage', { used: storage.usage, quota: storage.quota }),
   );
-  const items = $derived(storage.items.filter((x) => x.bytes > 0));
+  const detailsTitle = $derived(
+    storage.behind ? t('machines:StorageBar.details.behind.title') : t('machines:StorageBar.details.title'),
+  );
+  let details = $state(false);
 </script>
 
 <footer class="storage">
-  <span>{used}</span>
+  <span class="used"
+    >{used}<Button
+      variant="plain"
+      icon={storage.behind ? 'alert-triangle' : 'info-circle'}
+      tone={storage.behind ? 'warn' : undefined}
+      data-action="storage-details"
+      title={detailsTitle}
+      aria-label={detailsTitle}
+      onclick={() => (details = true)}
+    /></span
+  >
   {#if !storage.persisted}
     <Button
       variant="plain"
@@ -64,15 +84,8 @@
       {t('machines:StorageBar.storage.trim')}
     </Button>
   {/if}
-  <details>
-    <summary>{t('machines:StorageBar.storage.items')}</summary>
-    <ul>
-      {#each items as it (it)}
-        <li>{t('machines:StorageBar.storage.item', { what: it.what, size: it.bytes })}</li>
-      {/each}
-    </ul>
-  </details>
 </footer>
+{#if details}<StorageDetails {storage} close={() => (details = false)} />{/if}
 
 <style>
   .storage {
@@ -86,7 +99,9 @@
     font-size: var(--text-sm);
     color: var(--text-dim);
   }
-  ul {
-    margin: var(--space-2) 0;
+  .used {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
   }
 </style>

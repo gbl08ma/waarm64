@@ -35,8 +35,27 @@ export async function storageReport(store: Store) {
   const shaders = (await shaderStoreSize().catch(() => ({ bytes: 0 }))).bytes;
   items.push({ what: msg('machines:storage-report.storage.shaders'), bytes: shaders });
   items.sort((a, b) => b.bytes - a.bytes);
-  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, items, remote, shaders };
+  const usage = est.usage ?? 0;
+  const counted = items.reduce((n, x) => n + x.bytes, 0);
+  return {
+    usage,
+    quota: est.quota ?? 0,
+    persisted,
+    items,
+    remote,
+    shaders,
+    counted,
+    behind: countBehind(usage, counted),
+  };
 }
+
+/**
+ * Whether the browser's count of the origin's usage (`estimate()`) is short of the files the page lists (`counted`:
+ * their sizes, a part of what the origin holds, so a count that agrees is at least this). Chromium's count has been
+ * seen 19 GiB short of a stored disk's files, which the profile's directory did hold (docs/machines.md "Storage").
+ * A file that grew between the two reads is no mismatch: the slack is 1% or 16 MiB, whichever is more.
+ */
+export const countBehind = (usage: number, counted: number) => counted - usage > Math.max(16 << 20, counted / 100);
 
 /** Asks the browser to keep this origin's storage under pressure (§2): once, the first time something is stored. */
 export async function askPersist() {

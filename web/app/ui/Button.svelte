@@ -6,6 +6,7 @@
     dim second part at the end), `link` (words that read as a link: a menu's Details…), `inline` (an icon inside a
     field's frame, beside its text: ValueField's Copy and Show).
   - `icon` (and `iconSize`): an icon before the words (alone, the button is a square of a control's height). `align`: `center` for a grid of keys.
+    `tone`: `warn` draws its words and icon in the warning colour (the storage bar's mismatch).
   - Everything else (`id`, `title`, `disabled`, `type`, `onclick`, `data-*`, `aria-*`) goes on the element, and `class`
     too (a test's hook; the parent's styles don't reach it: it places its buttons with its own wrapper). `ref` binds the
     element.
@@ -24,6 +25,7 @@
     /** A tool button with words beside its icon. */
     labelled?: boolean;
     align?: 'start' | 'center';
+    tone?: 'warn';
     ref?: HTMLButtonElement;
     class?: string;
     children?: Snippet;
@@ -34,6 +36,7 @@
     iconSize,
     labelled = false,
     align,
+    tone,
     ref = $bindable(),
     class: cls,
     children,
@@ -43,7 +46,7 @@
   const classes = $derived([
     'button',
     variant,
-    { labelled, center: align === 'center', square: !!icon && !children },
+    { labelled, center: align === 'center', square: !!icon && !children, 'tone-warn': tone === 'warn' },
     cls,
   ]);
 </script>
@@ -69,6 +72,9 @@
   }
   .button:hover {
     background: var(--hover-bg);
+  }
+  .tone-warn {
+    color: var(--warn-fg);
   }
   .button:disabled {
     opacity: 0.45;
