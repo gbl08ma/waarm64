@@ -2,15 +2,20 @@
 // discards; layers of different sizes; cells of several sizes and a short last one; a range's blocks and runs; the
 // ramdisk's chunks; blk's `inspect` with its activity wrapper, which comes with a query and goes once none asks
 // (the request put back as it was); the incremental counts against a whole walk; `Devices.inspect`; the job worker's
-// answers from files (web/app/surface-job.ts); and the time of a whole walk over 25,600 leaves.
+// answers from files (web/app/surface-job.ts); the time of a whole walk over 25,600 leaves; and live, end to end: a
+// disk under a grown overlay (the disk's own size), a stored disk written in place, the realtime wrappers under the
+// activity wrapper.
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { blk, Devices, zeroSource, type Ctx } from '../web/devices.ts';
+import { blk, Devices, zeroSource, type Ctx, type DeviceSpec } from '../web/devices.ts';
+import { blkSpec } from '../web/app/worker-devices.ts';
 import { lockOverlay, memFile, openOverlay, overlay, writeOwnSize } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { ramDisk } from '../web/ramdisk.ts';
 import { blockSource, zeroDisk } from '../web/stored.ts';
 import { surfaceJob } from '../web/app/surface-job.ts';
+import { asInPlace } from '../web/app/surface-source.ts';
+import { IoStats } from '../web/iostats.ts';
 import { cellBytesFor, cellCount, countRange, diskInspector, opaqueLayer, ramLayer, rangeCounts, rangeDetail, summarize, surfaceOf, type InspectAnswer, type Leaves, type Surface } from '../web/surface.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -129,20 +134,27 @@ test('a ramdisk: its chunks in memory', async () => {
 const [IN, OUT, DISCARD, ZEROES] = [0, 1, 11, 13];
 /** A blk device in Node over guest RAM `ram`, with a request helper (the status byte near its end). */
 function blkOf(size: number, overlaid = true) {
+  const image = { size, read: (off: number, len: number) => new Uint8Array(len).fill(7) };
+  const files = overlaid ? { data: memFile(), map: memFile(), meta: memFile(), close() {} } : undefined;
+  return blkWith((ctx) => blk(ctx, image, files, true));
+}
+/** A request helper over the blk device `make` builds. */
+function blkWith(make: (ctx: Ctx) => ReturnType<typeof blk>) {
   const ram = new Uint8Array(6 * MiB);
   const status = ram.length - 8192;
   const ctx = { ram: () => [ram] } as unknown as Ctx;
-  const image = { size, read: (off: number, len: number) => new Uint8Array(len).fill(7) };
-  const files = overlaid ? { data: memFile(), map: memFile(), meta: memFile(), close() {} } : undefined;
-  const b = blk(ctx, image, files, true);
-  const ask = async (type: number, sector: number, body: Uint8Array, room = 0) => {
-    const h = new DataView(ram.buffer, 0, 16);
+  const b = make(ctx);
+  /** A request submitted (`at`: where in RAM its header, body and status go, for several at once), and its status once it ended. */
+  const submit = (type: number, sector: number, body: Uint8Array, room = 0, at = 0) => {
+    const st = at ? at + 16 + body.length : status;
+    const h = new DataView(ram.buffer, at, 16);
     h.setUint32(0, type, true);
     h.setBigUint64(8, BigInt(sector), true);
-    ram.set(body, 16);
-    await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: body.length, mem: 0 }].filter((s) => s.len), write: [{ off: status, len: room + 1, mem: 0 }] });
-    return ram[status + room];
+    ram.set(body, at + 16);
+    const p = b.request({ w0: 0, queue: 0, read: [{ off: at, len: 16, mem: 0 }, { off: at + 16, len: body.length, mem: 0 }].filter((s) => s.len), write: [{ off: st, len: room + 1, mem: 0 }] });
+    return Promise.resolve(p).then(() => ram[st + room]);
   };
+  const ask = (type: number, sector: number, body: Uint8Array, room = 0) => submit(type, sector, body, room);
   const seg = (sector: number, sectors: number, flags = 0) => {
     const s = new DataView(new ArrayBuffer(16));
     s.setBigUint64(0, BigInt(sector), true);
@@ -150,7 +162,7 @@ function blkOf(size: number, overlaid = true) {
     s.setUint32(12, flags, true);
     return new Uint8Array(s.buffer);
   };
-  return { b, ask, seg };
+  return { b, ask, seg, submit };
 }
 const sectorOf = (bytes: number) => bytes / 512;
 
@@ -376,4 +388,99 @@ test('the time of a whole walk over 25,600 leaves (100 GiB written), and of reco
   const cells = time(() => summarize(m, 'overlay', size, cellBytesFor(size, 4096)));
   assert.equal(counts.held[5], LEAF - Math.ceil(LEAF / 7));
   t.diagnostic(`whole walk ${whole.toFixed(1)} ms, 16 ranges ${some.toFixed(3)} ms, a summary at 4,096 cells ${cells.toFixed(1)} ms (medians of 9)`);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Live, end to end through `Devices.open` with the specs the machine worker makes (web/app/worker-devices.ts `blkSpec`).
+
+const memory1 = () => new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+const devicesOf = (specs: DeviceSpec[], deterministic = true) =>
+  Devices.open({ memory: memory1(), shared: specs.map(() => 0), ram: 0, ramSize: 0, signal: 0, specs, deterministic }, () => {});
+
+test('live through a grown overlay: the disk keeps its own size (a blank disk, a stored disk), the overlay the grown one', async () => {
+  // A stored disk of 4 MiB with blocks 0-7, under an overlay grown to 12 MiB.
+  const st = await openOverlay('disks/surf-grown', 'id-g');
+  assert.ok(await overlay(zeroDisk(RANGE), st.data, st.map, st.meta).write(0, new Uint8Array(8 * BLOCK).fill(3)));
+  st.close();
+  await writeOwnSize('overlays/surf-grown-s', 3 * RANGE);
+  await writeOwnSize('overlays/surf-grown-b', 3 * RANGE);
+  const specs = [
+    blkSpec({ name: 's', source: { stored: 'disks/surf-grown', size: RANGE }, overlay: 'overlays/surf-grown-s', identity: 'id-g', size: 3 * RANGE }),
+    blkSpec({ name: 'b', source: { blank: RANGE }, overlay: 'overlays/surf-grown-b', identity: 'id-b', size: 3 * RANGE }),
+  ];
+  const d = await devicesOf(specs);
+  try {
+    for (const [i, held] of [[0, 8], [1, 0]] as const) {
+      const s = surfaceOfAnswer(await d.inspect(i, { kind: 'disk-surface', disk: i, cells: 3 }));
+      assert.equal(s.size, 3 * RANGE, `disk ${i}: the view spans the overlay`);
+      assert.equal(layer(s, 'disk').size, RANGE, `disk ${i}: the disk's own size, not the guest's`);
+      assert.equal(layer(s, 'overlay').size, 3 * RANGE);
+      assert.deepEqual([...layer(s, 'disk').held], [held, 0, 0]);
+      // The disk's range 0 block by block, its held blocks read for the content check (the stored disk's map and data).
+      const r = (await d.inspect(i, { kind: 'disk-range', disk: i, range: 0, content: true })) as Extract<InspectAnswer, { kind: 'disk-range' }>;
+      assert.deepEqual([r.detail.blocks[0], r.detail.blocks[7], r.detail.blocks[8]], [held ? 1 : 0, held ? 1 : 0, 0]);
+      assert.deepEqual(r.detail.content, { read: held, zeros: 0 });
+      assert.deepEqual(r.detail.runs, { disk: held ? 1 : 0, overlay: 0 });
+    }
+  } finally {
+    d.close();
+  }
+});
+
+test('live in place: a stored disk written in place (a blank source, the store its overlay) is shown as the disk, writes and all', async () => {
+  const size = 2 * RANGE;
+  const st = await openOverlay('disks/surf-inplace', 'id-p');
+  assert.ok(await overlay(zeroDisk(size), st.data, st.map, st.meta).write(0, new Uint8Array(4 * BLOCK).fill(2)));
+  st.close();
+  const files = await openOverlay('disks/surf-inplace', 'id-p');
+  const { b, ask, seg } = blkWith((ctx) => blk(ctx, zeroSource(size), files, true));
+  try {
+    assert.equal(await ask(OUT, sectorOf(RANGE), new Uint8Array(3 * BLOCK).fill(1)), 0);
+    assert.equal(await ask(ZEROES, 0, seg(sectorOf(BLOCK), 8, 1)), 0); // block 1 zeroed: it reads as nothing now
+    const s = surfaceOfAnswer(asInPlace(await b.inspect!({ kind: 'disk-surface', disk: 0, cells: 2 })));
+    assert.deepEqual(s.layers.map((l) => [l.id, l.size, [...l.held], [...l.zero]]), [['disk', size, [3, 3], [0, 0]]]);
+    const r = asInPlace(await b.inspect!({ kind: 'disk-range', disk: 0, range: 0, content: true })) as Extract<InspectAnswer, { kind: 'disk-range' }>;
+    assert.deepEqual([...r.detail.blocks.subarray(0, 5)], [1, 0, 1, 1, 0]);
+    assert.deepEqual(r.detail.runs, { disk: 2 });
+    assert.deepEqual(r.detail.content, { read: 3, zeros: 0 });
+  } finally {
+    b.close!();
+  }
+});
+
+test('blk inspect over the realtime wrappers (concurrent, stats): a write asked about while in flight is counted once it ended', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const size = 4 * RANGE;
+    let open!: () => void;
+    let gate = new Promise<void>((r) => (open = r));
+    const image = {
+      size,
+      read: (_off: number, len: number) => new Uint8Array(len).fill(7),
+      readAsync: async (_off: number, len: number) => {
+        await gate;
+        return new Uint8Array(len).fill(7);
+      },
+    };
+    const files = { data: memFile(), map: memFile(), meta: memFile(), close() {} };
+    const { b, submit } = blkWith((ctx) => blk(ctx, image, files, true, new IoStats(), undefined, true));
+    assert.ok(b.concurrent, 'concurrent: the source reads asynchronously');
+    const q = { kind: 'disk-surface', disk: 0, cells: 4, activity: true } as const;
+    const held = async () => [...layer(surfaceOfAnswer(await b.inspect!(q)), 'overlay').held];
+    assert.deepEqual(await held(), [0, 0, 0, 0]);
+    assert.deepEqual(await held(), [0, 0, 0, 0], 'warm');
+    // A read of the image held at its gate; a write behind it (it waits for every request before it).
+    const read = submit(IN, sectorOf(3 * RANGE), new Uint8Array(0), BLOCK, 0x10000);
+    const write = submit(OUT, sectorOf(2 * RANGE), new Uint8Array(2 * BLOCK).fill(1), 0, 0x20000);
+    const s = surfaceOfAnswer(await b.inspect!(q));
+    assert.deepEqual([...layer(s, 'overlay').held], [0, 0, 0, 0], 'the write not landed yet');
+    assert.deepEqual([...s.activity!], [0, 0, 2, 1], 'both seen at their submission');
+    open();
+    assert.deepEqual([await read, await write], [0, 0]);
+    gate = Promise.resolve();
+    assert.deepEqual(await held(), [0, 0, 2, 0], 'counted again once it ended');
+    b.close!();
+  } finally {
+    mock.timers.reset();
+  }
 });

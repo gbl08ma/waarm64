@@ -50,7 +50,8 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * `waarm64-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
  * is a disk kept in the browser (web/stored.ts: its OPFS directory, `disks/<id>`, read under its overlay; `size` given);
  * a `size` larger than the image's (a grown overlay, docs/machines.md §4.5) is what the guest sees, the image read as
- * zeros past its end;
+ * zeros past its end, and `diskSize` is then a stored or blank disk's own size (what its surface draws as the disk:
+ * web/surface.ts; nothing the guest sees or any I/O goes by it);
  * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source). A `url` disk is
  * read through a block cache whose blocks are kept in OPFS (web/diskcache.ts) unless `keep` is false.
  */
@@ -67,7 +68,7 @@ export type DeviceSpec =
   | { type: 'balloon' }
   | VsockSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][]; swap?: string };
+export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; diskSize?: number; ramInit?: [number, Uint8Array][]; swap?: string };
 
 /**
  * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
@@ -864,9 +865,10 @@ export async function fileSource(url: string): Promise<Source> {
  * A virtio-blk device over `src`, writable through `files` (an overlay) or by `src` itself (a ramdisk). `onFull`: a write
  * the browser's storage refused (a short write, `QuotaExceededError`) failed the guest's request, told once until a
  * write lands again (a ramdisk says so through its own `onFull`). `size`: the disk's size as the guest sees it (the
- * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too).
+ * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too);
+ * `diskSize`: then a stored or blank source's own size (its source is opened at the guest's), for the surface alone.
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void, size?: number): Backend {
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void, size?: number, diskSize?: number): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
@@ -1041,7 +1043,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return { before, after: size() };
     };
   }
-  const inspector = blkInspector(ctx, backend, plain, base, files ? rw : undefined);
+  const inspector = blkInspector(ctx, backend, plain, base, files ? rw : undefined, diskSize);
   backend.inspect = inspector.inspect;
   const close = backend.close!;
   backend.close = () => {
@@ -1076,14 +1078,15 @@ function rangesOfRequest(ram: Ram, r: Request): [number, number, boolean] | unde
  * outermost `backend.request` (the stats', concurrent and compaction wrappers are made before it, at the build, and
  * `Devices` calls `request` from the backend at each request), and the request it wrapped is put back as it was.
  */
-function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, base: Disk, ov: WritableDisk | undefined) {
+function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, base: Disk, ov: WritableDisk | undefined, diskSize?: number) {
   let disk: LiveDisk['disk'];
   if ('write' in src) {
     const ram = src;
     disk = { kind: 'ram', id: 'disk', size: ram.size, get chunks() { return ram.chunkKeys?.() ?? []; }, read: (b) => ram.block(b) };
   } else if (src.leaves) {
-    const s = src;
-    disk = { kind: 'map', id: 'disk', size: s.size, leaves: s.leaves!(), read: (b) => s.read(b * 4096, Math.min(4096, s.size - b * 4096)) };
+    // A stored or blank disk under a grown overlay is opened at the guest's size: its own is the spec's `diskSize`.
+    const [s, own] = [src, Math.min(src.size, diskSize ?? src.size)];
+    disk = { kind: 'map', id: 'disk', size: own, leaves: s.leaves!(), read: (b) => (b * 4096 < own ? s.read(b * 4096, Math.min(4096, own - b * 4096)) : undefined) };
   } else disk = liveImage(src, base);
   const o = ov?.leaves && ov;
   let inner: Backend['request'] | undefined;
@@ -1238,7 +1241,7 @@ export class Devices {
         case 'vsock': return vsockDevice(ctx, d);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull, d.size);
+          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull, d.size, d.diskSize);
         }
         case 'net': return net(ctx, d);
         case '9p': return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);
