@@ -113,3 +113,25 @@ wasm64 core was free there), B +31–40%, D +26–32%.
   encoder. How to turn it on safely is in [backlog.md](backlog.md).
 - TypeScript runs without a build step in Node (Node runs `.ts` directly): erasable syntax only. The browser gets it
   through Vite (the dev server compiles per request; `npm run dist` bundles; docs/frontend.md "The build").
+
+## Risks
+
+What could still bound the design, each with where it's measured or handled:
+- **Broadcast TLBI + `DSB` across workers:** the issuer waits for the targets' chunk boundaries. Waiting only for the
+  vCPUs running the TLBI's ASID left ~3K waits of 20–60 µs per userspace run on 4 vCPUs; a workload heavy in all-ASID or
+  kernel-range TLBIs would pay more ([platform.md](platform.md) "Broadcast maintenance").
+- **Wasm module compile latency:** batching, thresholds and tier-up keep compile pauses at ≤ 1.3 ms, and the vCPUs share
+  one code cache, so each module is compiled once ([jit.md](jit.md) "Sharing").
+- **The host's core topology bounds parallel SMP:** past the host's performance cores (4 on the M4), vCPU workers that
+  sleep and wake land on efficiency cores and scaling flattens. The default vCPU count has to account for it
+  ([backlog.md](backlog.md)).
+- **FP exactness** costing more than expected: it is confined to slow paths, and TestFloat and the differential test
+  catch regressions ([cpu.md](cpu.md)).
+- **The guest RAM ceiling:** memory 0 holds at most 3 GiB less 1 MiB of RAM. Past it, spill memories serve as NUMA nodes
+  (up to 16 GiB on the page): node 1 at 1.0–1.6× memory 0's time through the JIT's spill arm, nodes 2 and up 2–19×
+  ([spill-memories.md](spill-memories.md)). Chromium gives no catchable error when host RAM runs out (the renderer is
+  OOM-killed), so the page sizes guest RAM against host RAM up front ([frontend.md](frontend.md) "Errors").
+- **Linux arm64 has no V8 trap handler:** explicit bounds checks cost up to 27% there, which macOS and x86_64 users don't
+  pay, so our numbers from the dev VM are pessimistic for them ([v8.md](v8.md)).
+- **Cross-origin isolation** (COOP/COEP) is required for `SharedArrayBuffer`. It constrains embedding and third-party
+  resources.

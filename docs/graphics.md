@@ -14,7 +14,7 @@ frames reach the screen through the virgl renderer. Where the parts are describe
 
 ## Decisions
 
-These bind the graphics work; changing one is the user's call (PLAN.md).
+These bind the graphics work; changing one is the user's call ([decisions.md](decisions.md)).
 
 - **virtio-gpu is the display device**, 2D and 3D over the same device, with the guests' upstream drivers: no guest
   patches. `simple-framebuffer` stays for boot tests and guests without the driver.

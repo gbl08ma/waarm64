@@ -312,8 +312,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **A hosted image's first boot** runs its update jobs (`ldconfig.service`: `ConditionNeedsUpdate`): ~2–5 s of the
     guest's time, no more bytes (measured: 565 against 567 MB). Building with `/etc/.updated` and `/var/.updated`
     newer than `/usr` would skip it.
-- **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md
-  phase D's preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
+- **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md's
+  proposed preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
   before a first-boot script, which then gives this copy its own identity and per-machine setup. Every visitor resumes
   the same memory. **Built (BETTERAGENT):** a snapshot flagged as a template (`tools/snapshot-template.ts`) has the
   guest agent renew the kernel's entropy (and force the CRNG's reseed), `/etc/machine-id`, systemd's random seed and

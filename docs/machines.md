@@ -303,7 +303,7 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 
 Writable disks aren't qcow2 files: an image is a read-only base under an overlay, and a stored disk is the overlay's
 format itself (§4.4). So growing one is a size in a record, and for an overlay in its `meta` too (the user's design,
-2026-11-14: PLAN.md §3 "Growing a disk"). The page's [Resize…](ui:disks:Disks.resize) (frontend.md "The Machines page": the Disks pane's stored disks,
+2026-11-14). The page's [Resize…](ui:disks:Disks.resize) (frontend.md "The Machines page": the Disks pane's stored disks,
 ramdisks and overlays, a machine's Disks tab) opens one dialog over these. A machine's writable attachment with no overlay
 chosen yet (its first start would make one) is resized through the one it makes: `resize(store, { machine, attachment },
 size)` makes an empty overlay at `size` ("Changes", as the start names it; marked from the disk's size with the box),
@@ -526,7 +526,7 @@ reading a file handle back from IndexedDB off the record: backlog).
 
 ## 10. Ahead
 
-- **The preloaded image** (PLAN.md §3, proposed) would be a built-in machine: a URL disk and a snapshot fetched with
+- **The preloaded image** (PLAN.md, proposed) would be a built-in machine: a URL disk and a snapshot fetched with
   the page, restored with pins that match a fresh overlay (generation 0), so nothing forks. It needs a content
   identity for the image (a chunked image's manifest `id`: a URL's path can't tell a new image from the old one).
 - **A catalog** of hosted images would be a list of such machine definitions.

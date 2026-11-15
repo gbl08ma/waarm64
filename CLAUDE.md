@@ -5,8 +5,11 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 
 ## Where things are written down
 
-- **`PLAN.md`**: the decisions that bind, the milestones that built the emulator, **every track and its state**
-  (§3), the risks. When a decision changes, update PLAN.md (and the doc it affects) in the same change.
+- **`PLAN.md`**: the index of tracks and nothing else: one line per track (a name, a state with a date, links). Edit it
+  only when a track opens, changes state or ends, and keep the row a line: what a track did goes in its doc, its
+  numbers in its REPORT.md, its progress in its handover.
+- **[docs/decisions.md](docs/decisions.md)**: the decisions that bind. Changing one is the user's call; update it (and
+  the doc it affects) in the same change.
 - **`docs/`** ([index](docs/README.md)): how things work now, by topic. Read the relevant page
   before changing an area; update it with the change. State what exists; keep history out unless
   it's a finding worth not re-discovering (then say what was tried and why it lost). Loose ends go in
@@ -16,10 +19,11 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 - `THIRD_PARTY.json`: verified licenses of reference projects, the dependencies, and the attribution of ported code: the
   authoritative, machine-readable list (no THIRD_PARTY.md; [docs/third-party.md](docs/third-party.md) says how to keep it).
   Its rows marked `about` are what the page's About pane credits.
+- `docs/plans/`: a track's plan doc, when it needs one.
 - `<TRACK>-KICKOFF.md` and `<TRACK>-HANDOVER.md` in the repo root (e.g. `VK2-…`), **tracked** (so a fresh clone or a
   cloud session has them): the user's brief for a track (or one of its phases) and the notes that carry it from one
   session to the next. Several tracks can be open at once: `ls *-KICKOFF.md *-HANDOVER.md` shows which. Commit a
-  handover with the work it describes; when a track ends, its outcome moves into docs/ and its row in PLAN.md §3, and
+  handover with the work it describes; when a track ends, its outcome moves into docs/ and its row in PLAN.md, and
   its kickoff and handover are deleted in that commit (git history keeps them). A kickoff's content is the user's:
   change it only with their OK.
 
@@ -27,8 +31,8 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 
 The emulator is complete: M0–M7 built the CPU, the platform, the devices, the JIT and SMP, and M8 made it a machine
 to use in the browser. Work now runs as **tracks**, from the user's ideas and the backlog rather than a milestone
-plan (PLAN.md §2–§3). This section stays short: a track's progress goes in its handover, its row in PLAN.md §3 and
-its doc, never here. Facts most sessions need:
+plan (the tracks: PLAN.md). This section stays short: a track's progress goes in its handover and its doc, never
+here. Facts most sessions need:
 - The page (`web/app/`, [docs/frontend.md](docs/frontend.md)) starts no disk image: the user opens one. Debian 13
   through UEFI is the tests' guest (`?machine=debian`, `images/build.sh debian`); the desktop guest is Arch Linux with
   sway, PipeWire and Firefox (`images/arch/desktop.sh`). The page is deployed at `https://vm.tny.im` (`npm run dist`;
@@ -189,6 +193,10 @@ their code.**
   leaves ranked findings on a `review/<area>` branch. The supervisor triages them into fix loops or the backlog; each
   fix starts with its confirming test, failing first. (VK3's static review of one picture's path found six defects
   that fit the bug being chased and eight more besides, all missed by the loops that wrote the code.)
-- Work through a track's loops without check-ins (one commit and a short report per loop);
-  settle choices by measurement and ask only what can't be measured. The user is often watching:
-  give short status lines during long runs.
+- **How a track runs:** it starts from a kickoff brief the user confirms (goal, decisions taken, loops, what needs
+  their OK, validation, the end). Work through its loops without check-ins (one slice, one commit and a short report
+  per loop); settle choices by measurement and ask only what can't be measured: dependencies, host ABI changes (a
+  design note in [docs/abi.md](docs/abi.md) first), guest-visible changes and step counts, CPU features, FP semantics,
+  forcing TurboFan. The user is often watching: give short status lines during long runs.
+- **A track ends** with every test layer green, its numbers recorded, its docs updated, its loose ends in the backlog,
+  and its row in PLAN.md set to done.

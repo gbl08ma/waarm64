@@ -1,6 +1,6 @@
 // The page's machines (docs/frontend.md), in one place: image URLs, the
 // command line, RAM, the screen and the devices. `uefi` is the page's machine:
-// the user brings the disk (PLAN.md, M8 decision 1); `debian` is the tests' and
+// the user brings the disk (docs/decisions.md, "The page"); `debian` is the tests' and
 // benchmarks' guest on it; `buildroot` is the small test guest, for the page's
 // smoke test (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
 // nothing here depends on the dev server's layout beyond where target/ is.
@@ -244,7 +244,7 @@ export function numaNote(ramMiB: number, split?: number[], vulkan = false): Msg 
  * The host memory a machine needs, GiB: its RAM, ~1 GiB for the browser and the first vCPU's
  * worker, ~0.3 GiB per vCPU (bench/boot/REPORT.md "M8 loop 0": 2.3 GiB of RSS on 1 vCPU, 3.1 on
  * 4, with 1 GiB of guest RAM). Chromium has no catchable out-of-memory error (its renderer is
- * killed: PLAN.md §4 "Guest RAM ceiling"), so the page compares this with
+ * killed: docs/architecture.md "Risks"), so the page compares this with
  * `navigator.deviceMemory` before it starts a machine.
  */
 export const hostMemoryGiB = (ramMiB: number, ncpus: number, jitMiB = JIT_DEFAULT_MIB) =>

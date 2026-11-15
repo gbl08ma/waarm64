@@ -94,7 +94,7 @@ worker failure (`no3d`, which a switch clears): as that machine would run once o
   toolbar shows "AArch64 machine · no disk", then the machine made for the disk (named after its file); Suspend
   appears with a disk. 2 GiB, a 1024×768 screen on virtio-gpu, the same devices and network credential as `debian`;
   `ready` is a getty's login prompt. The page names no distribution. A preloaded image with a snapshot, loaded with
-  the page, is later work (PLAN.md, M8 decision 1).
+  the page, is later work (PLAN.md, proposed).
 - **`debian`**, the tests' and benchmarks' guest (`?machine=debian`; the page's own machine until 2026-10-17;
   `tests/debian-unattended.ts` `unattendedQuery()` asks for it): Debian's published nocloud qcow2, **unmodified,
   booted through UEFI** (M8 phase B: EDK2's `QEMU_EFI.fd` as the machine's `firmware`, then shim
@@ -652,7 +652,7 @@ buttons for the actions that apply. Checked on the page before a worker starts:
 - **The page's scripts didn't load** (xterm.js missing from `node_modules`, so the module graph
   fails): an `onerror` on the module's `<script>` tag says to run `npm start`.
 - **Too little memory** for the machine: Chromium has no catchable out-of-memory error (the
-  renderer is killed; PLAN.md §4 "Guest RAM ceiling"), so the page compares
+  renderer is killed; architecture.md "Risks"), so the page compares
   `navigator.deviceMemory` (GB, rounded down to a power of two, at most 8 in Chromium) with
   `hostMemoryGiB` in machine.ts: the guest's RAM + 1 GiB + 0.3 GiB per vCPU (M8 loop 0's RSS: 2.3
   GiB on 1 vCPU, 3.1 on 4, with 1 GiB of guest RAM), plus the JIT's budget past 160 MiB four times over

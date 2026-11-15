@@ -141,7 +141,7 @@ export class MemorySignal {
     return true;
   }
 
-  /** Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judged up front (true: it fits, or the device doesn't say). */
+  /** Chromium kills a renderer that runs out of memory without an error to catch (docs/architecture.md "Risks"): judged up front (true: it fits, or the device doesn't say). */
   fits() {
     const m = this.#machine;
     const need = hostMemoryGiB(m.ramMiB + m.ramdiskMiB(), m.ncpus, m.jitBudget());

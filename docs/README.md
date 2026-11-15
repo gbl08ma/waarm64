@@ -1,6 +1,6 @@
 # waarm64 documentation
 
-What exists and how it works, by topic. Decisions, and every track with its state, are in [`../PLAN.md`](../PLAN.md);
+What exists and how it works, by topic. The decisions that bind are in [decisions.md](decisions.md), every track with its state in [`../PLAN.md`](../PLAN.md);
 measurement journals in `bench/*/REPORT.md`; third-party code and licenses in
 [`../THIRD_PARTY.json`](../THIRD_PARTY.json) ([third-party.md](third-party.md)). These pages describe the current state: when something
 changes, edit the page rather than appending a dated note (dates and "how we got here" belong in
@@ -10,7 +10,8 @@ The network's pages are under `networking/`: the adapters and connections, then 
 
 | Page | Covers |
 |---|---|
-| [architecture.md](architecture.md) | threads (vCPU workers), the shared memory (layout A), design principles, the code map, the toolchain |
+| [decisions.md](decisions.md) | the decisions that bind the whole project (the guest ISA, the platform, the JIT, the page, graphics, the network…), the user's to change |
+| [architecture.md](architecture.md) | threads (vCPU workers), the shared memory (layout A), design principles, the code map, the toolchain, the risks |
 | [cpu.md](cpu.md) | the guest CPU: ISA and features, ID registers, exceptions, system registers, MMU and TLB, atomics, FP, crypto, the decoder |
 | [platform.md](platform.md) | memory map, boot and DTB, the run loop (round-robin and parallel SMP), broadcast maintenance, deterministic and realtime time, the GICv3, timer, PL011, PSCI |
 | [frontend.md](frontend.md) | the page (`web/app/`): its machines, the worker protocol, the screen, the serial terminal (xterm.js); `npm start`; `npm run dist` and the deployment at vm.tny.im |

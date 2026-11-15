@@ -94,7 +94,7 @@ match it step for step.
   lane is one FPMulAdd (FPAdd for FCADD) of the ARM ARM's elements, the negation before it (a NaN keeps it). Who uses it:
   nothing in the desktop (Arch) or Debian guests' binaries (every ELF's executable segments, then disassembled: three
   FP16 `fcmla` words in libgnutls and libleancrypto that are data); FFmpeg, libopus, FFTW, libjxl, Highway, Mesa and the
-  browsers have no FCMA path. Unadvertised (PLAN.md's rule), from kernels written as libraries would pick them from the
+  browsers have no FCMA path. Unadvertised (the rule in [decisions.md](decisions.md)), from kernels written as libraries would pick them from the
   hwcap (`bench/imgdecode/fcmak.c`, three rounds on the Mac): a complex multiply-accumulate by vector level with the
   v8.0 form (singles −1.1%, doubles −0.5%, rounds overlapping), but by a complex constant (FCMLA by element) **10%
   slower** and a radix-4 butterfly with FCADD **3% slower**, rounds apart. Each FCMLA or FCADD here is its shuffles,
@@ -113,7 +113,7 @@ match it step for step.
   `ID_AA64ISAR0_EL1.FHM` = 1, the `asimdfhm` hwcap; off by default too (`fhm: true`, `?fhm=1`), inline. Who uses them:
   of the desktop and Debian guests' binaries only Highway's `vqsort` on `float16_t` (libhwy_contrib's per-target
   code) and VapourSynth's filters (FP16 and FMLAL); no codec, browser (Chromium, Firefox), Mesa or ML runtime in the
-  images. Unadvertised (PLAN.md's rule), from kernels written as fp16 libraries pick them from the hwcaps
+  images. Unadvertised (the rule in [decisions.md](decisions.md)), from kernels written as fp16 libraries pick them from the hwcaps
   (`bench/imgdecode/fp16k.c`, three rounds on the Mac each): an axpy on halves in memory **27% faster** with FP16
   (FMLA .8h against FCVTL, FMLA .4s and FCVTN), but a half GEMM tile by element **2.05× slower**, a dot product 6%
   slower and scalar `_Float16` code (FMADD h) **2.1× slower**; FMLAL by vector **17% faster** than FCVTL and FMLA, by
@@ -131,7 +131,7 @@ match it step for step.
   to zeros of their sign, NaNs the default NaN, each of the three operations rounded **to odd**, an exact sum from
   2^128 infinite (the M4's result, where FPRound's round to odd would saturate). Inline in the JIT ([jit.md](jit.md)
   "BFloat16"). Who uses it: nothing in the desktop or Debian guests' binaries (the 566 files with BF16-shaped words have
-  them in data). Unadvertised (PLAN.md's rule), from kernels written as bf16 libraries pick their paths from
+  them in data). Unadvertised (the rule in [decisions.md](decisions.md)), from kernels written as bf16 libraries pick their paths from
   HWCAP2_BF16 (`bench/imgdecode/bf16k.c`, three rounds on the Mac, all apart): BFDOT's dot product **1.48× slower**
   than XNNPACK's shift-and-mask widening and FMLA, a GEMM tile with BFMMLA **2.61×** and with BFDOT by element
   **2.26× slower**, BFMLALB/T level (0.995), BFCVTN **16%** and scalar BFCVT **21% slower** than integer rounding. On
@@ -171,7 +171,7 @@ match it step for step.
   needs handlers, corpus groups (the generator knows how to avoid the rest), the ID fields, a decoder-sweep update and
   a `VmConfig.features` bit: a row of `web/cpu-features.ts`'s `CPU_BITS` (its bit and whether it is on by default), from
   which the page's `?<feature>=0|1`, the start message's and snapshots' `cpu` list and `bootVm`'s mask all follow; the codec A/B (bench/imgdecode/README.md "A CPU feature's A/B") runs on the Mac too.
-- **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
+- **Rule: an optional extension is advertised unless measured slower** ([decisions.md](decisions.md)): one that loses stays implemented,
   unadvertised. `ID_AA64DFR0_EL1` advertises
   v8.0 self-hosted debug with the architectural minimum (2 breakpoints, 2 watchpoints, 1 context
   comparator), all implemented: "Self-hosted debug" below.
@@ -503,7 +503,7 @@ SHA512H/H2/SU0/SU1, EOR3, RAX1, XAR, BCAX (FEAT_SHA512, FEAT_SHA3).
   SHA-512 +11-13%, its SHA-3 Keccak on them +83% at 16 KiB against its scalar code (which it runs
   on our MIDR all the same), no other workload slower (`bench/boot/REPORT.md` "M9: FEAT_SHA512 and
   FEAT_SHA3"). The rule for later extensions: **advertised unless measured slower than the paths
-  guests use without them** (a tie is advertised; PLAN.md).
+  guests use without them** (a tie is advertised; [decisions.md](decisions.md)).
 
 ## Decoder (`core/build.rs` ← `core/src/a64/a64.inc`)
 

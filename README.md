@@ -39,6 +39,6 @@ ssh -L 8080:127.0.0.1:8080 <the machine running npm start>
 ## More
 
 [`docs/`](docs/README.md) says how it works (start with [the page](docs/frontend.md)),
-[`PLAN.md`](PLAN.md) where it's going. Developing: [`CLAUDE.md`](CLAUDE.md) has the commands and
+[`PLAN.md`](PLAN.md) lists the tracks of work. Developing: [`CLAUDE.md`](CLAUDE.md) has the commands and
 conventions; `scripts/ci.sh` runs every test. MIT licensed ([`LICENSE`](LICENSE),
 [`THIRD_PARTY.json`](THIRD_PARTY.json)).

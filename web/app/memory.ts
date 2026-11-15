@@ -101,7 +101,7 @@ export function clearAlive(key: string) {
 
 /**
  * A mark no tab has renewed (`ALIVE_STALE_MS`): the machine was running when its tab went away without a clean
- * stop, most likely killed for memory (Chromium gives a page no out-of-memory error: PLAN.md §4). Undefined otherwise.
+ * stop, most likely killed for memory (Chromium gives a page no out-of-memory error: docs/architecture.md "Risks"). Undefined otherwise.
  */
 export function lastCrash(key: string, now = Date.now()): Alive | undefined {
   try {
