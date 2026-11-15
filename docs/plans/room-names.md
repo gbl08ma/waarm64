@@ -291,15 +291,15 @@ its region, the time, a nonce) and one byte more, `spread`. Servers subscribe to
 
 ### Size, and where it stops
 
-*Estimates*; N0 replaces them. An entry is 207 bytes; its anchor 300 to 900 (entries a calendar put in one block share
+*Estimates*; N0 replaces them. An entry is 207 bytes; its anchor 300 to 1,250 (the one measured was ~1,240 whole; entries a calendar put in one block share
 the anchor's tail and its header; how much is N0's to measure). Two entries a month: a name costs a server about 0.4 KB
-for its zone plus 1 to 2 KB a month it has been held.
+for its zone plus 1 to 3 KB a month it has been held.
 
 | Names, held six months on average | A server keeps | A new server's first sync through DERP (0.6 to 3 Mbit/s measured on public relays) |
 |---|---|---|
-| 1,000 | 7 to 14 MB | under a minute to 3 minutes |
-| 5,000 | 35 to 70 MB | 2 to 15 minutes |
-| 20,000 | 140 to 280 MB | too much for a tab |
+| 1,000 | 7 to 18 MB | under a minute to 4 minutes |
+| 5,000 | 35 to 90 MB | 2 to 20 minutes |
+| 20,000 | 140 to 360 MB | too much for a tab |
 
 A member keeps a few KB. So what grows with a room is each **server's** copy, and every new owner pays the first sync,
 in the background, before it serves. Past a few thousand long-held names it needs one of: servers that hold a share of
@@ -405,9 +405,11 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 ## Measure first (loop N0, no product code)
 
 1. **Time to anchor** from each calendar, over a week of stamps, the slowest as well as the usual: sets `REF_WINDOW`
-   and what the dialog promises. (One stamp made 2026-11-15 20:46 UTC: after 76 minutes still pending at all three; `alice` and `bob` each
-   named a Bitcoin transaction and said "waiting for 6 confirmations", so a calendar serves a proof only once its
-   block is 6 deep, an hour past the block at best.)
+   and what the dialog promises. (One stamp made 2026-11-15 20:46 UTC: at 76 minutes pending at all three, `alice` and `bob` each naming
+   a Bitcoin transaction and "waiting for 6 confirmations", so a calendar serves a proof only once its block is 6
+   deep; at 167 minutes anchored at `alice` and `bob`, still pending at `finney`. So between 1.3 and 2.8 hours at
+   the two that finished, and the third slower. The finished part was 1,036 bytes at each, on a receipt of 170 to
+   207: an anchor of about 1.2 KB before any sharing, more than the 0.9 this page first assumed.)
 2. **Proof of work**: BLAKE2s hashcash against Argon2id at a few memory sizes: time to make one in Chromium's wasm and
    natively, what a GPU does to each, **and the time to check the 10,000 and 60,000 entries** of a 1,000 and a
    5,000-name registry in the module's wasm. Picks the function and `POW_BITS`.
