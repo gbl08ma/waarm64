@@ -65,8 +65,11 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `BlockGrid`: a block map on a canvas (a defragmenter's squares: per cell a rim, a core inset in it and a flash;
      its room reported, hover and pick, a keyboard's cursor); `BlockSwatch`: a legend's cell drawn the same way, its
      words beside it (`block-grid.ts` the looks and the layout, `block-draw.ts` the drawing).
-   - `FloatingWindow`: a window over the page, moved by its title bar, resized by its corner, kept in the window and
-     remembered under a settings key (`floating-frame.svelte.ts`); a click on it leaves the focus where it was.
+   - `FloatingWindow`: a window over the page (the disk's surface, the on-screen keyboard), moved by its title bar,
+     resized by its corner, or with `aspect` (its height for a width) by its width alone from a ↔ in the bar; kept in
+     the window and remembered under a settings key, a size per shape (`sizeKey`: the keyboard's layouts;
+     `floating-frame.svelte.ts`); a click on it leaves the focus where it was. `tool`: a tool's slim bar, see-through,
+     nothing in it taking the focus.
    - `Modal` (a dialog's shell), `Pane` (a pane of the Machines page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.

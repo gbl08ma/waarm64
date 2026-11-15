@@ -1405,8 +1405,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 - **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
-  - The on-screen keyboard keeps its own frame (`osk-frame.svelte.ts`); moving it onto `ui/FloatingWindow.svelte`
-    (its sizes follow its layout, its grip is in its bar) would leave one window frame on the page.
   - A remote qcow2's blocks kept in this browser aren't shown: its rims are its clusters (counted), and kept would need
     a third rim treatment (or a mark) in `ui/BlockGrid`, and each cluster's host offset mapped to the cache's 1 MiB
     blocks. A remote raw image shows them (shades over the hatch).

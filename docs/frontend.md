@@ -14,7 +14,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Step`/`Steps`, `Disclosure`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
-| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
+| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-shape.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
@@ -514,8 +514,9 @@ network from then on); while Vulkan's translated shaders are kept, **[Clear Vulk
 A disk's line ends with a "visualize" link (`VisualizeLine.svelte`), in the
 browser's Disks pane (`DisksPane.svelte` gives `DiskInfo.svelte` its `onvisualize`; the Add a disk wizard's list
 doesn't) and in a machine's Disks tab (`Disks.svelte`: "… · vda · visualize"). It opens the disk's map, as a
-defragmenter draws one, in a window floating over the page (`SurfaceWindow.svelte`, a `ui/FloatingWindow.svelte`:
-moved by its title bar, resized by its corner, its place remembered under `windows.surface`). One is open at a time
+defragmenter draws one, in a window floating over the page (`SurfaceWindow.svelte`, a `ui/FloatingWindow.svelte`, the
+on-screen keyboard's frame too: moved by its title bar, resized by its corner, its place remembered under
+`windows.surface`). One is open at a time
 (`areas/surface.svelte.ts` `surfaceWindow`); `App.svelte` mounts it after the Machines page, so it stays over the
 machine and the Machines page as the user goes between them, and a click on it leaves the keyboard's focus where it
 was (on the screen).
@@ -1219,10 +1220,13 @@ page writes the context's output latency into the ring's header, and the guest g
 
 [Show the on-screen keyboard](ui:toolbar:KeysMenu.keys.osk) (the Keys menu) puts a PC keyboard over the machine, of 104
 keys, and ISO's, ABNT2's or JIS's extra keys when the machine's layout has them ("Layouts" below) (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
-guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its bar moves
-it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in a corner sat on the keypad's Enter);
-where it is and how wide is remembered (`settings().osk`), kept in the window, no wider than the window's width or
-height allow. The toolbar's menus open over it.
+guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its window is a
+`tool` `ui/FloatingWindow.svelte`, the frame the disk's surface has ("A disk's surface"): a slim bar that moves it,
+the ↔ grip in the bar resizing it by its width, its height following in its layout (`aspect`, `osk-shape.svelte.ts`:
+the keys scale with its width; a grip in a corner sat on the keypad's Enter); where it is and how wide is remembered
+(`settings().windows.osk`, a width per layout in its `sizes`; an older page's `settings().osk` is moved there once),
+kept in the window, no wider than the window's width or height allow; grown past the window's edge it is pushed back
+in. The toolbar's menus open over it.
 
 - **The compact layout** (`osk-layout.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
   600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,
@@ -1235,9 +1239,9 @@ height allow. The toolbar's menus open over it.
   modifier latched on one is used by a key on the next, and a pointer lets its key go wherever it lifts (a document
   listener), its key gone with the page another finger changed. The bar's button between the tabs and the grip
   ([Switch to the full keyboard](ui:osk:OskBar.toFull), [Switch to the compact keyboard](ui:osk:OskBar.toCompact)) forces the
-  other layout; the forced one is remembered (`settings().osk.layout`) until the window's width crosses the threshold
+  other layout; the forced one is remembered (`settings().oskLayout`) until the window's width crosses the threshold
   to where the automatic choice is the same (a phone turned to landscape and back is compact again). Each layout keeps
-  its own width (`w`, `wc`); the bar is a size container, and the title gives way to the tabs below 420 px. A
+  its own width (the frame's `sizeKey`), and the title gives way to the tabs in a bar narrower than 420 px. A
   layout's extra keys join the symbols' page (its two rows of punctuation share the width).
 - **The letters' page per layout** (`osk-layout.ts` `letterRows`): US's letter block (digits, Q–P, A–L with `;`, Z–M) and,
   in each row, the keys of the full keyboard's same row whose unshifted character is a letter with a capital on the
@@ -1285,8 +1289,8 @@ height allow. The toolbar's menus open over it.
   menu, Hold Esc). A key goes down with its first holder and up with its last, so the physical Shift pressed and let
   go doesn't release a Shift latched here, a menu's Ctrl+W doesn't release a latched Ctrl, and a second Hold Esc ends
   the first.
-- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it (its `pointerdown` and
-  `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
+- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it, nor do its bar's buttons
+  (its keys' `pointerdown` and a tool window's `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
   screen or the window loses the focus, or the guest's keyboard driver comes or goes, which moves the keys between
   the virtio keyboard and the built-in USB one or the serial console), `Input`'s `onRelease` tells the keyboard
   (`keys.released`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended
