@@ -571,6 +571,12 @@ Page → worker:
   and the heap are answered with their `id` (web/app/run/replies.ts `Replies`); the page keeps the answer in
   `window.__profile`, `__timeline`, `__heap`, which bench/ waits on. `start.resume` false
   boots even if a suspended machine is there (it is dropped); otherwise a start resumes one.
+- `inspect {id, query}`: a question about the running machine's surfaces (web/surface.ts `InspectQuery`; the disk
+  surface visualizer, docs/plans/surface.md). The worker sends it to whoever answers its kind: a `disk-*` query to the
+  disk's device in the device worker (`Vm.inspect`: `query.disk` is the disk's place among the machine's disks, slot
+  order), which answers from the maps it has in memory; any other kind, or no machine, is answered `{kind: 'none'}`.
+  Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
+  device's activity wrapper on for ~3 s (devices.md "blk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 4 s without
@@ -621,6 +627,7 @@ Worker → page:
   it pins, which a kept snapshot's record takes), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
   `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
 - `profile {id, samples}`, `timeline {id, timeline}`, `heap {id, heap}`: the benchmarks' answers.
+- `inspected {id, answer}`: `inspect`'s answer (web/surface.ts `InspectAnswer`).
 - `serial` also has `replay` for a restored terminal's saved tail.
 - `stopped`.
 

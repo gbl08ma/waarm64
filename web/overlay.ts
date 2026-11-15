@@ -89,6 +89,13 @@ export type WritableDisk = Disk & {
   /** The overlay's generation, and `epoch` (both: overlays with a `meta`; a ramdisk has neither). */
   generation?(): number;
   epoch?(): void;
+  /**
+   * An overlay's map as it is now, read-only (web/surface.ts counts it): the arrays at the time of the call (`recs` is
+   * replaced as it grows), to be read before the next change.
+   */
+  leaves?(): Pick<MapLeaves, 'top' | 'recs' | 'n'>;
+  /** A ramdisk's chunks (1 MiB) in memory, by index (web/surface.ts). */
+  chunkKeys?(): Iterable<number>;
 };
 
 /** How many blocks a walk of `written()` yields. */
@@ -776,7 +783,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return data.read(out, { at: (e - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; } };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; }, leaves: () => ({ top, recs, n }) };
 }
 
 /**

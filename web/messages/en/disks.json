@@ -1294,5 +1294,13 @@
   "ResizeDisk.busy.powerOff": {
     "message": "Powering off the machine…",
     "note": "Machines page: what runs while the Resize dialog powers off the machine on this page (its Power off button)."
+  },
+  "surface-job.inUse": {
+    "message": "A machine in another tab has this disk open: its map can be seen there, while it runs.",
+    "note": "The disk surface visualizer's window, in place of the map, when the disk (or the overlay chosen) is in use by a machine that runs in another tab: its files are locked, so this tab can't read what they hold."
+  },
+  "surface-job.unreadable": {
+    "message": "The disk's map can't be read from this browser's storage.",
+    "note": "The disk surface visualizer's window, in place of the map, when reading the files of the disk (or of the overlay chosen) failed for a reason it has no words of its own for."
   }
 }

@@ -54,7 +54,7 @@ export function swapHeader(size: number, label: string, uuid: Uint8Array = crypt
 }
 
 /** A ramdisk of `size` bytes (a multiple of 512), empty. `chunks()` says how many are held (tests: the memory given back). */
-export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: { sabBudget?: number; onFull?: () => void } = {}): WritableDisk & { chunks(): number; arenaBytes(): number; chunkList(): [number, Uint8Array][] } {
+export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: { sabBudget?: number; onFull?: () => void } = {}): WritableDisk & { chunks(): number; arenaBytes(): number; chunkList(): [number, Uint8Array][]; chunkKeys(): Iterable<number> } {
   // `init`: a restored ramdisk's chunks (a snapshot's blocks, written by web/snapshot.ts into another ramDisk: shared memory, not copied).
   const chunks = new Map<number, Uint8Array>(init);
   const budget = opts.sabBudget ?? SAB_BUDGET;
@@ -181,6 +181,7 @@ export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: {
     },
     zeroed: () => false,
     chunks: () => chunks.size,
+    chunkKeys: () => chunks.keys(),
     /** The bytes its wasm memories hold (chunks past `SAB_BUDGET`; what a trim doesn't give back to the host). */
     arenaBytes: () => arenas.reduce((n, a) => n + a.buffer.byteLength, 0),
     /** Hands its chunks over (to the device of a restored machine, which counts them from then on). */

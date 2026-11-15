@@ -10,6 +10,7 @@ import type { GuestWords } from './guest-unit.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import type { Msg, WireError } from '../msg.ts';
 import type { DevKnobs } from './run/dev-knobs.ts';
+import type { InspectAnswer, InspectQuery } from '../surface.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -199,6 +200,13 @@ export type ToWorker =
   | { type: 'snapshot-check'; id: number; what: 'snapshot' | 'suspend' }
   /** The disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts); answered by `compacted`. */
   | { type: 'compact'; id: number; measure?: boolean }
+  /**
+   * A question about the running machine's surfaces (web/surface.ts; the disk surface visualizer): a `disk-*` query is
+   * answered by the disk's device (`query.disk`: the disk's place among the machine's disks, slot order) from what it
+   * has in memory; answered by `inspected` with its `id`, `{ kind: 'none' }` without a machine or for a kind nothing
+   * answers.
+   */
+  | { type: 'inspect'; id: number; query: InspectQuery }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /**
@@ -312,6 +320,8 @@ export type FromWorker =
   | { type: 'snapshot-check'; id: number; refused?: WireError }
   /** `compact`'s answer: the bytes the overlays' files took before and after (none: no machine running). */
   | { type: 'compacted'; id: number; before?: number; after?: number }
+  /** `inspect`'s answer (its arrays transferred). */
+  | { type: 'inspected'; id: number; answer: InspectAnswer }
   /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size. */
   | { type: 'suspend-done'; id: number; bytes: number }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */

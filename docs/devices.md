@@ -1002,6 +1002,17 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   generation bumped and its `meta` naming the overlay first, so an interrupted merge is finished at the store's next
   opening (`resumeMerge`), before anything reads it (`tests/stored.test.ts`, with the resume left out as the planted
   bug).
+- **Its surface** (web/surface.ts, docs/plans/surface.md): `Backend.inspect` answers a disk's surface (per cell of
+  4 MiB × a power of two, the blocks the disk and its overlay hold) and one 4 MiB range block by block, from the maps
+  the device has in memory (the overlay's `leaves()`, a stored disk's `blockSource`, a ramdisk's chunks; an image is
+  not examined). A stored disk under an overlay doesn't change, so its per-range counts are taken once. Activity: a
+  query that asks for it puts a wrapper around the backend's outermost `request` (over the stats', concurrent and
+  compaction wrappers, which are made at the build), which reads the request's header and marks the ranges read
+  and written; an answer carries the marks per cell and clears them, and once no query asked for 3 s (or at
+  `close`) the request it wrapped is put back as it was. While nobody looks, nothing is added to the request path.
+  While the wrapper is on, the overlay's per-range counts are kept and only the ranges written since are counted
+  again: a whole walk of 25,600 leaves (100 GiB written) took 30 to 55 ms in Node (a cloud container, 2026-11-15:
+  `tests/surface.test.ts` prints it), a range's ~1 µs.
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in
