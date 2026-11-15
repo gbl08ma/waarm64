@@ -18,37 +18,37 @@ and must keep its steady state to a handful of long-lived neighbours.
 
 ### Cited Findings
 - No owner, no membership list, no directory in the protocol; "nothing lists who is in it"; an offline peer can't be
-  found — [repo: docs/networking/rooms.md "Decisions"](/home/user/waarm64/docs/networking/rooms.md)
+  found — [repo: docs/networking/rooms.md "Decisions"](docs/networking/rooms.md)
 - Layer 3 only: no broadcast or multicast between guests; a node's address is the room /48 plus the first 80 bits of
-  its WireGuard (X25519) node key, and a name is `<key base32, 52 chars>.<tag>.p2p.internal` — [repo: rooms.md](/home/user/waarm64/docs/networking/rooms.md)
+  its WireGuard (X25519) node key, and a name is `<key base32, 52 chars>.<tag>.p2p.internal` — [repo: rooms.md](docs/networking/rooms.md)
 - Finding a peer: the dialer publishes a sealed lookup as a Nostr **ephemeral** event (kind 26354, ~570 bytes on the
   wire) under the target's hourly tag on every relay of the link (six public defaults); the target calls back through
   DERP and the WireGuard handshake (IKpsk2 with the room's pre-shared key) decides. Resent after 1 s and 3 s, given up
-  at 6 s — [repo: rooms.md "Finding a peer"](/home/user/waarm64/docs/networking/rooms.md)
+  at 6 s — [repo: rooms.md "Finding a peer"](docs/networking/rooms.md)
 - Rate limits and caps: 8 lookups/s out per member, 64 lookups waiting; a target opens at most 128 MAC-valid events/s
   per relay, answers 16 call backs/s (64 queued, served within 4 s), lets in 16 trial handshakes/s (20 s each), holds
-  at most 1,024 peers; a peer is forgotten after 3 min without guest traffic — [repo: rooms.md](/home/user/waarm64/docs/networking/rooms.md)
+  at most 1,024 peers; a peer is forgotten after 3 min without guest traffic — [repo: rooms.md](docs/networking/rooms.md)
 - Connections on demand: at most 64 WebRTC connections (`MAX_RTC`), idle ones closed after 60 s, peers past the cap
   go through DERP; a peer's new connection at most every 2 s, own offers at most 4/s; the data channel is negotiated,
-  **unordered with no retransmits**, one WireGuard packet per message, dropped when more than 64 KiB is buffered — [repo: rooms.md "The direct path"](/home/user/waarm64/docs/networking/rooms.md)
+  **unordered with no retransmits**, one WireGuard packet per message, dropped when more than 64 KiB is buffered — [repo: rooms.md "The direct path"](docs/networking/rooms.md)
 - Cold-start latency measured on public servers (2026-11-11, DERP RTT 98 ms): first echo after lookup + call back +
   handshake 294–450 ms on most relays, ~1.4 s on some, ~1.3–1.4 s right after a 16-lookup burst; one relay
-  rate-limited the burst ("too many requests") — [repo: bench/net/REPORT.md "Rooms on public servers"](/home/user/waarm64/bench/net/REPORT.md)
+  rate-limited the burst ("too many requests") — [repo: bench/net/REPORT.md "Rooms on public servers"](bench/net/REPORT.md)
 - Throughput: 183 Mbit/s direct vs 126 Mbit/s via DERP on loopback in the dev VM; 50.9 vs 35.1 in a cloud session; a
-  bare data channel set up in 92 ms on loopback; "Loopback hides how often ICE fails across real NATs" — [repo: rooms.md "Numbers"](/home/user/waarm64/docs/networking/rooms.md)
+  bare data channel set up in 92 ms on loopback; "Loopback hides how often ICE fails across real NATs" — [repo: rooms.md "Numbers"](docs/networking/rooms.md)
 - Scale: 1,000 members cost the relay 16.9 REQ/s and 2.8 KB/s idle; a member costs ~1.4 MiB of linear memory and no
-  measurable idle CPU; nothing grows with room size — [repo: bench/net/REPORT.md "Rooms at scale"](/home/user/waarm64/bench/net/REPORT.md)
+  measurable idle CPU; nothing grows with room size — [repo: bench/net/REPORT.md "Rooms at scale"](bench/net/REPORT.md)
 - Relays: a tag filter (`#x`) is how a relay forwards; public relays' own terms (rate limits, PoW, payment) decide how
-  far they carry a room; DERP is tailcat's public relays, "rate-limited, best-effort and revocable" — [repo: rooms.md "What a room needs from a Nostr relay", "Decisions"](/home/user/waarm64/docs/networking/rooms.md)
+  far they carry a room; DERP is tailcat's public relays, "rate-limited, best-effort and revocable" — [repo: rooms.md "What a room needs from a Nostr relay", "Decisions"](docs/networking/rooms.md)
 - Crypto already in the tree: `k256` (BIP-340 Schnorr on secp256k1), BLAKE2s, ChaCha20-Poly1305, X25519; "an X25519
-  key can't sign" (so a lookup can't be checked against the key it names) — [repo: rooms.md](/home/user/waarm64/docs/networking/rooms.md)
-- Chromium has no `RTCPeerConnection` in workers but a data channel can be transferred to a worker at creation — [repo: rooms.md "Findings"](/home/user/waarm64/docs/networking/rooms.md)
+  key can't sign" (so a lookup can't be checked against the key it names) — [repo: rooms.md](docs/networking/rooms.md)
+- Chromium has no `RTCPeerConnection` in workers but a data channel can be transferred to a worker at creation — [repo: rooms.md "Findings"](docs/networking/rooms.md)
 - Storage on the page: IndexedDB for records, OPFS for bytes (`web/app/store.ts`); the page already calls
   `navigator.storage.persist()` and shows `navigator.storage.estimate()`; private windows have no OPFS (state in
-  memory until the tab closes) — [repo: docs/machines.md](/home/user/waarm64/docs/machines.md)
+  memory until the tab closes) — [repo: docs/machines.md](docs/machines.md)
 - The plan page already sketches names as per-TLD signed logs plus an append-only Merkle log on always-on relays with
-  independent witnesses; and notes spam in public rooms is open (PoW on lookups/fresh keys as a direction) — [repo: docs/plans/networking-p2p.md](/home/user/waarm64/docs/plans/networking-p2p.md)
-- The key miner does 26–34 M X25519 keys/s on 8 vCPUs, which calibrates what a PoW-on-key cost means here — [repo: rooms.md "The room and its names"](/home/user/waarm64/docs/networking/rooms.md)
+  independent witnesses; and notes spam in public rooms is open (PoW on lookups/fresh keys as a direction) — [repo: docs/plans/networking-p2p.md](docs/plans/networking-p2p.md)
+- The key miner does 26–34 M X25519 keys/s on 8 vCPUs, which calibrates what a PoW-on-key cost means here — [repo: rooms.md "The room and its names"](docs/networking/rooms.md)
 
 ### Inferences
 - A relay forwards an event to **every** subscriber of its `#x` tag, so a tag shared by many members is a ready-made
@@ -368,7 +368,7 @@ record on its own.
 
 ### Cited Findings
 - A room address is derived from the node key (the /48 plus its first 80 bits), so storing the 32-byte key makes a
-  stored AAAA redundant — [repo: rooms.md](/home/user/waarm64/docs/networking/rooms.md)
+  stored AAAA redundant — [repo: rooms.md](docs/networking/rooms.md)
 - BIP-340 Schnorr: 32-byte x-only public keys, 64-byte signatures (already available through `k256`) — [BIP-340, memory](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki)
 - Half-aggregation of Schnorr/EdDSA signatures is non-interactive and compresses n signatures to about half
   (32·n + 32 bytes); verification is one multi-scalar multiplication over all messages and keys — [Chalkias et al., ePrint 2021/350, memory](https://eprint.iacr.org/2021/350); [BIP-340 half-aggregation draft, memory](https://github.com/BlockstreamResearch/cross-input-aggregation/blob/master/half-aggregation.mediawiki)
@@ -426,13 +426,13 @@ disk images. The binding limits are connections (the room's own cap of 64, far b
   history with the site; Firefox prompts — [MDN, fetched](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria)
 - Firefox best-effort: min(10% of disk, 10 GiB) per site group; Safari ~60% of disk for browser apps and deletes
   script-written data of origins without interaction for 7 days when tracking prevention is on — [MDN, fetched](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria)
-- Private/incognito sessions may have different quotas and data is deleted at the session's end — [MDN, fetched](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria); the page's OPFS lives in memory off the record — [repo: docs/remote-disks.md, docs/machines.md](/home/user/waarm64/docs/machines.md)
+- Private/incognito sessions may have different quotas and data is deleted at the session's end — [MDN, fetched](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria); the page's OPFS lives in memory off the record — [repo: docs/remote-disks.md, docs/machines.md](docs/machines.md)
 - Data-channel message size: read `RTCSctpTransport.maxMessageSize`; the fallback when the remote SDP omits the
   attribute is 65,536 bytes — [WPT RTCSctpTransport-maxMessageSize, search](https://chromium.googlesource.com/external/w3c/web-platform-tests/+/8fadb381209a215280dc3ad96d0f135b6005f176/webrtc/RTCSctpTransport-maxMessageSize.html); Chromium advertises 262,144 — [MDN "Using WebRTC data channels", memory](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Using_data_channels)
 - Large messages without SCTP message interleaving monopolise the association — [Mozilla WebRTC blog, search](https://blog.mozilla.org/webrtc/large-data-channel-messages)
 - The room's measured channel: set up in 92 ms and 142–173 Mbit/s on loopback (Chromium 141, unreliable channel);
-  Chromium "queues megabytes before `send` throws" — [repo: rooms.md](/home/user/waarm64/docs/networking/rooms.md)
-- A room member's module costs ~1.4 MiB of linear memory — [repo: bench/net/REPORT.md](/home/user/waarm64/bench/net/REPORT.md)
+  Chromium "queues megabytes before `send` throws" — [repo: rooms.md](docs/networking/rooms.md)
+- A room member's module costs ~1.4 MiB of linear memory — [repo: bench/net/REPORT.md](bench/net/REPORT.md)
 
 ### Inferences
 - A registry copy of ≤25 MB fits either IndexedDB (records, queryable by name) or one OPFS file plus an in-memory
@@ -465,11 +465,11 @@ authenticated root.
 - NIP-11 `max_message_length` bounds incoming JSON and so the event size; examples and defaults seen: 65,535–65,536
   bytes in sample documents, 524,288 (512 K) as rnostr's default and in a sample document; one relay project raised
   its WebSocket limit from 500 KB to 10 MB — [NIP-11 mirror, search](https://nips.4rs.nl/nips/11); [rnostr example config, search](https://rust-digger.code-maven.com/src/rnostr-0.4.7/rnostr.example.toml)
-- The room's own test relay closes a connection on a message past 1 MiB — [repo: rooms.md "Tests"](/home/user/waarm64/docs/networking/rooms.md)
+- The room's own test relay closes a connection on a message past 1 MiB — [repo: rooms.md "Tests"](docs/networking/rooms.md)
 - NIP-77 lets a client reconcile its event set with a relay's by filter; a relay may answer `blocked:` when the query
   is too big, optionally with a maximum record count — [NIP-77, fetched](https://github.com/nostr-protocol/nips/blob/master/77.md)
 - Of 29 public relays tested for the rooms' ephemeral traffic, 21 carried it; some rate-limited a burst of 16 events —
-  [repo: bench/net/REPORT.md "Rooms on public servers"](/home/user/waarm64/bench/net/REPORT.md)
+  [repo: bench/net/REPORT.md "Rooms on public servers"](bench/net/REPORT.md)
 - Blossom: blobs addressed by SHA-256 over plain HTTP (`GET /<sha256>`, `HEAD`, `PUT /upload`, `PUT /mirror` BUD-04,
   `DELETE`, `GET /list/<pubkey>`), uploads authorised by a Nostr-signed kind 24242 event, a user's server list in
   kind 10063; the spec states no retention or size limits — [hzrd149/blossom, fetched](https://github.com/hzrd149/blossom)
@@ -541,7 +541,7 @@ range-reconciliation for catch-up plus epidemic push for live updates.
 - Bitcoin's Erlay replaces flooding of announcements with low-fanout flooding plus periodic sketch reconciliation —
   [Naumenko et al., arXiv 1905.10518, memory](https://arxiv.org/abs/1905.10518)
 - Trystero's Nostr strategy announces to everyone on a topic and builds a full mesh; its README advises splitting
-  users into groups — [repo: rooms.md "Decisions" (checked at 0.26.0)](/home/user/waarm64/docs/networking/rooms.md)
+  users into groups — [repo: rooms.md "Decisions" (checked at 0.26.0)](docs/networking/rooms.md)
 
 ### Inferences
 - SSB's lesson: unbounded logs + full replication = onboarding measured in minutes to hours and hundreds of MB; a

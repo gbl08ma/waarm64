@@ -2,8 +2,8 @@
 
 Human-chosen names in a room, registered first come by a key, for a term, with nothing of ours running and no
 administrator: `test123` beside today's `<key>.<tag>.p2p.internal`. Chosen with the user, 2026-11-15, from the options
-in [reports/Decentralized DNS for P2P rooms.md](../../reports/Decentralized%20DNS%20for%20P2P%20rooms.md) (its option
-3, changed as below; the research notes behind it are `research_notes/`). Nothing here is built; the numbers marked
+in [room-names-options.md](room-names-options.md) (its option 3, changed as below; the research notes behind it are
+`room-names-research/`). Nothing here is built; the numbers marked
 *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends
 [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call back, the module) it uses.
 

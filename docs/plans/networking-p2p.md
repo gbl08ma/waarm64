@@ -8,7 +8,7 @@ and findings are [networking/rooms.md](../networking/rooms.md); their loose ends
   come by a key for a term, each claim timestamped through OpenTimestamps, the registry copied between members with
   nothing stored on a relay). The direction first discussed (2026-10-18: TLDs held by keys, DNSSEC's formats, a
   Merkle log on always-on relays with witnesses) lost to it for needing servers nobody runs; the options weighed are
-  `reports/Decentralized DNS for P2P rooms.md`. Still open there: which suffixes names may use.
+  [room-names-options.md](room-names-options.md). Still open there: which suffixes names may use.
 - **Onion routing**, so that neither peers nor relays see who talks to whom from where: circuits through other
   members (or volunteer nodes), the address still the key's, as only the outer path changes. A track of its own if
   wanted; relay only covers hiding from peers until then.

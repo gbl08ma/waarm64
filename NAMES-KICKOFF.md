@@ -4,7 +4,8 @@
 handing it over.** Give a room human-chosen names (`test123` beside `<key>.<tag>.p2p.internal`): registered first come
 by a key, for a term, renewed by the page, with no server of ours, no room administrator and nothing stored on a
 relay. **The design is [docs/plans/room-names.md](docs/plans/room-names.md): read it first, whole.** How it was
-chosen: `reports/Decentralized DNS for P2P rooms.md` (seven options weighed) and the notes under `research_notes/`;
+chosen: [docs/plans/room-names-options.md](docs/plans/room-names-options.md) (seven options weighed) and the notes
+under `docs/plans/room-names-research/`;
 neither needs reading to build it. What it extends: [docs/networking/rooms.md](docs/networking/rooms.md).
 
 ## Decisions (binding; the user's, 2026-11-15)
@@ -141,4 +142,6 @@ and "What a room needs from a Nostr relay" updated, and its opening lines, which
 docs/frontend.md and docs/testing.md saying what's new; loose ends in docs/backlog.md (the lighter member modes, old
 history in chains, transfer and recovery keys, a connection that stays up without a machine); PLAN.md's row set to
 done with its links; docs/plans/room-names.md, plans/networking-p2p.md's bullet, this file and NAMES-HANDOVER.md
-deleted in that commit. `reports/` and `research_notes/` stay or go as the user says then.
+deleted in that commit. docs/plans/room-names-options.md and `room-names-research/` go with them, what they found
+that explains the design (why first come needs an orderer, what each option cost, why a chain on Bitcoin's clock
+won) rewritten into names.md as its "Why it is this way".

@@ -102,7 +102,7 @@ addressable and kind 7195 regular, neither assigned by any NIP)**
   our web of trust." — own probe
 - The project's own measurement (2026-11-11): 21 of Trystero's 29 Nostr relays carried a room's ephemeral events;
   nos.lol and relay.damus.io "carry no room"; three relays never answered a `limit: 0` REQ. —
-  `/home/user/waarm64/docs/networking/rooms.md` ("The defaults", "Numbers") and bench/net/REPORT.md "Rooms on public servers"
+  `docs/networking/rooms.md` ("The defaults", "Numbers") and bench/net/REPORT.md "Rooms on public servers"
 
 **Relay population and availability (academic)**
 - Wei & Tyson, data 2023-07-01 to 2023-12-31: 911 relays seen online, events retrieved from 712 (625 free, 87 paid);
