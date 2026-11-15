@@ -1307,9 +1307,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - `?display=simple` runs (the tests') are another shape than the same machine on the page, so their snapshots show
     as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, machines.md §1).
   - **A resizing guest of our own** (the user's idea, 2026-11-14; not scheduled, kept out of the loops for now). It
-    would go with growing a disk's size (Resize… on a writable disk: an overlay's own size, or a stored disk's or a
-    ramdisk's; proposed, not built yet), whose guest side is planned as the agent's job at the next boot: it grows the
-    partition that ends last (GPT or MBR, then `BLKPG_RESIZE_PARTITION`) and grows a mounted ext4, btrfs or xfs online.
+    would go with growing a disk's size (Resize… on a writable disk: machines.md §4.5), whose guest side is the
+    agent's job at the next boot: it grows the partition that ends last (GPT or MBR, then `BLKPG_RESIZE_PARTITION`) and
+    a mounted ext4, btrfs or xfs online (devices.md "A disk grown").
     The alternative: a small Buildroot image of ours that only resizes, booted with the disk attached read-write. It
     doesn't depend on an unknown guest (no agent, no systemd, a guest that never boots again, a kernel or filesystem the
     agent doesn't know), and it can do what an online grow can't: an unmounted filesystem, `e2fsck` before
@@ -1321,6 +1321,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     hosting (built in `images/`, fetched like the agent or served with the page), its boot time under the JIT (the
     Buildroot boot is seconds), and its tests (the native and page tests on Debian's layout, plus LVM and LUKS
     images).
+  - **Growing a disk's loose ends** (machines.md §4.5): the Overlays dialog's rows show what an overlay holds, not its
+    grown size; a writable attachment with no overlay chosen has no Resize… (the dialog would have to make one); the
+    dialog's Power off reaches only this page's machine (another tab's must be stopped there); deleting or merging away a
+    machine's grown overlay leaves it an empty one at the disk's size at its next start (both confirmations name what
+    goes, not the size); a stored disk grown before its `made` size was kept (2026-11-15) acts as made at its grown size
+    (its definition, its changes files); a definition's stored disk picked again always asks (`modified: 0`), grown or
+    not; the agent doesn't find a btrfs root shown as `/dev/root` (devices.md "A disk grown"); unmounted filesystems,
+    LVM and LUKS are left alone (the user's choice: "A resizing guest of our own" above).
 - **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): GNOME and
   KDE untested, and the agent's live layout doesn't reach them (devices.md "The keyboard layout in the running
   session": GNOME through the user's dconf `org.gnome.desktop.input-sources`, KDE through `kxkbrc` and its reload

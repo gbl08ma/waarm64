@@ -303,7 +303,7 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 
 Writable disks aren't qcow2 files: an image is a read-only base under an overlay, and a stored disk is the overlay's
 format itself (§4.4). So growing one is a size in a record, and for an overlay in its `meta` too (the user's design,
-2026-11-14: RESIZE-KICKOFF.md). The page's [Resize…](ui:disks:Disks.resize) (frontend.md "The Machines page": the Disks pane's stored disks,
+2026-11-14: PLAN.md §3 "Growing a disk"). The page's [Resize…](ui:disks:Disks.resize) (frontend.md "The Machines page": the Disks pane's stored disks,
 ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
 - **An overlay** (over a URL, file, blank or stored disk) has a **size of its own** (`OverlayRecord.size`, and the
   u64 at 32 in its `meta`, which the device worker reads at its opening: devices.md "blk"); absent, or a 32-byte

@@ -422,7 +422,7 @@ the root loop's (fake FITRIM: once per filesystem, a disk that doesn't discard, 
 compaction asked for (tests/overlay.test.ts, and on Buildroot `tests/trim.test.ts`: 4 MiB trimmed of 16, which a change
 leaves, given back), and Debian's end to end from the storage bar (`tests/page-agent.test.ts`).
 
-**A disk grown** (GROW; `agent/src/grow.rs`, `agent/src/table.rs`; the user's choices, RESIZE-KICKOFF.md): a disk grown
+**A disk grown** (GROW; `agent/src/grow.rs`, `agent/src/table.rs`; the user's choices, 2026-11-14: on by default, mounted filesystems only): a disk grown
 on the page while its machines were off (machines.md §4.5) carries a mark, and the page asks the guest for its side of
 it: GROW with the disk's serial (`waarm64-<attachment id>`; the agent compares the first 20 bytes, what virtio-blk's
 `GET_ID` gives) and the size the page expects the guest to see. The agent answers each GROW once with GROWN: a status
