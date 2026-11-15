@@ -256,7 +256,9 @@ its region, the time, a nonce) and one byte more, `spread`. Servers subscribe to
 - **What a member keeps**: each name it resolved, with its last entry and the earliest entry time it ever verified for
   that chain, persisted (small). While that chain covers now, another chain replaces it only by showing a run that
   starts earlier. So a member that knew a name refuses an impersonator after a reset, with no rule of its own.
-- A kept answer is used for 5 minutes, then asked again (the old one answers if no server does).
+- **A kept answer answers at once**, for as long as its chain is alive; one older than 5 minutes is also asked
+  again in the background, and the next query gets what came back. So only a name this member never resolved waits
+  on a server; the price is that a zone change or a lost name shows one query late.
 - Both say none: NXDOMAIN, kept 60 s. One says none: the other's answer stands.
 - **The dialog's check** for a name being typed must not tell a server which id someone is about to claim (it could
   guess the name and stamp too): it asks for `ids`, every id in the 1/256 of the registry that shares the id's first
@@ -307,7 +309,8 @@ owners, so the user's call); fewer renewals a term. None is in v1; the first is 
 
 - a pending name of this node's own answers this node's address (a server can be tried by name before its
   registration is public);
-- a name the member holds, fresh: AAAA from the slot the name asked opens, TTL 60; the module learns the key;
+- a name the member holds, its chain alive: AAAA from the slot the name asked opens, TTL 60; the module learns the key
+  (and asks again in the background when what it holds is older than 5 minutes);
 - otherwise the query waits while the names client asks: answered when the answer comes; SERVFAIL after 4 s (a first
   query that must also find servers takes 1 to 3 s on public relays, *estimate*; a guest's resolver retries);
 - NXDOMAIN at once for a reserved or ill-formed name, a name both servers don't have, and any such name in the 10
