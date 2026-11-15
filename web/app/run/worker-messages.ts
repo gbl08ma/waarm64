@@ -154,7 +154,12 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
       if (power.state === 'loading') x.d.messages.stateText(m.text);
     },
     'snapshot-progress': (m) => r.job(m.id)?.progress(m.phase, m.fraction),
-    'snapshot-chunk': (m) => r.job(m.id)?.chunk(m.data),
+    'snapshot-chunk': (m) => {
+      r.job(m.id)?.chunk(m.data);
+      // Copied by the job (a Blob of it): the buffer goes back for the save's next chunks.
+      const buffer = m.data.buffer as ArrayBuffer;
+      r.worker.postMessage({ type: 'snapshot-spare', id: m.id, buffer }, [buffer]);
+    },
     'snapshot-done': (m) => r.job(m.id, true)?.done(m),
     'suspend-done': (m) => r.job(m.id, true)?.done(m),
     'snapshot-error': (m) => r.job(m.id, true)?.error(fromWire(m.error)),

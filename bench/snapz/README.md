@@ -12,7 +12,11 @@ Dev-only tools behind `bench/boot/REPORT.md` "SNAPZ: compression across the emul
   numbers need; Playwright's default context is off the record), a coordinator worker (`www/coord.js`, the machine
   worker's stand-in) and pool workers (`www/pool.js`) reading the corpus from a SharedArrayBuffer. Plans in `plans/`;
   job types `single`, `pool`, `restore`, `crc`, `opfs`, `clusters`, `writable`. Pipe through `fmt.py` for pools.
-- `compat.mjs <corpus.bin>`: the old core LZ and lz4_flex read each other's output.
+- `compat.mjs <corpus.bin>`: the old core LZ and lz4_flex read each other's output. It and `run.ts`'s old-LZ arm are
+  why `src/lz.rs` stays: the page reads no file of the old LZ's any more (older files are refused by their state
+  version, SNAPZ loop 2b), but the format is the same, so both still run as the REPORT ran them.
+- `memwatch.ts <profile> <out.jsonl> [<stop-file>]` (SNAPZ loop 2b): the browser's memory by process every 50 ms,
+  beside a probe run (docs/benchmarking.md "The snapshot probe").
 - `probe.ts <desktop|debian> [out.json]` (SNAPZ loop 0 on): a warm snapshot loaded on the page and saved as a kept
   snapshot, to a file and as a suspend, then resumed, with the page's own phases and the browser's memory per round
   (docs/benchmarking.md "The snapshot probe"). It replaced the measuring session's `phases.patch` (the timing points,

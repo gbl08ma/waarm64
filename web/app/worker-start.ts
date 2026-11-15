@@ -6,8 +6,8 @@ import { VENUS_RESERVE } from '../ram.ts';
 import { loadFlash, overlayMeta } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import type { DisplayFromPage, DisplayToPage, ScreenPng } from '../gpu-present.ts';
-import { openSnapshot, type SnapshotHeader } from '../snapshot-file.ts';
-import { readSnapshot, type RestorePhases, type SnapshotDisk } from '../snapshot.ts';
+import { readHeader, type SnapshotHeader } from '../snapshot-file.ts';
+import { otherVersion, readSnapshot, type RestorePhases, type SnapshotDisk } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import type { lzCodec } from '../lz.ts';
 import { agentBinary } from './guest-agent.ts';
@@ -99,7 +99,10 @@ export async function openRestore(snapshot: Blob, m: StartMessage, machine: Mach
     text: resume ? msg('machine:worker-start.phase.resuming') : msg('snapshots:worker-start.phase.checking'),
   });
   const name = m.snapshot?.name ?? msg('machine:worker-start.suspendedMachine');
-  const { header } = await openSnapshot(snapshot, { codecs: [lz] });
+  const header = await readHeader(snapshot);
+  // Another version's file (an older one: they aren't migrated) is refused as that, before its devices are looked at.
+  const other = otherVersion(header, lz.snapshotVersion);
+  if (other) throw other;
   const h = fromHeader(header, m, machine, name);
   if (resume) await sameOverlays(header, h.specs);
   const { restore, phases } = await readSnapshot(snapshot, lz, lz.snapshotVersion, {

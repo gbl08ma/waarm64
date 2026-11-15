@@ -1,24 +1,32 @@
 // A save's pool worker (web/snapshot-pool.ts; docs/platform.md "The snapshot file"): RAM chunks made into frames where
 // guest RAM lies (shared memory), each scanned for its zero pages, its pages gathered into a core instance of its own
 // (web/lz.ts `codecCore`), compressed by the core's lz4_flex and its frame's CRC-32 taken by the core's crc32fast where
-// the codec left the bytes; the frame goes back whole, as web/snapshot-file.ts's writer encodes one.
+// the codec left the bytes; the frame goes back whole, as web/snapshot-file.ts's writer encodes one, in a buffer of the
+// frames' largest size: the coordinator gives each buffer back with a later job once the frame is written, so a save's
+// frames are a few buffers a worker, not a file's worth of garbage waiting for a GC (SNAPZ loop 2b).
 import { codecCore, MAX } from './lz.ts';
 import { frameHeader, gatherPages, scanChunk, type RamFrame } from './snapshot-file.ts';
 
-/** Coordinator → worker: the core first, then RAM chunks (`id` is the coordinator's). */
+/**
+ * Coordinator → worker: the core first, then RAM chunks (`id` is the coordinator's), each with the frames' buffers
+ * written since (`give`, transferred: this worker's own, to make frames in again).
+ */
 export type PoolInit = { type: 'init'; module: WebAssembly.Module };
-export type PoolJob = { type: 'ram'; id: number; buffer: SharedArrayBuffer; off: number; len: number; index: number };
-/** Worker → coordinator: ready (or why not), and each job's frame (or why not). */
+export type PoolJob = { type: 'ram'; id: number; buffer: SharedArrayBuffer; off: number; len: number; index: number; give: ArrayBuffer[] };
+/**
+ * Worker → coordinator: ready (or why not; `frame`: the size of its frames' buffers), and each job's frame (or why
+ * not), with how many buffers the worker has made so far (`buffers`).
+ */
 export type PoolReply =
-  | { type: 'ready' }
+  | { type: 'ready'; frame: number }
   | { type: 'failed'; message: string }
-  | ({ type: 'done'; id: number } & RamFrame)
+  | ({ type: 'done'; id: number; buffers: number } & RamFrame)
   | { type: 'error'; id: number; message: string };
 
 const BITMAP = 32;
 const PAGE = 4096;
 
-type Core = Awaited<ReturnType<typeof codecCore>> & { src: number; dst: number; cap: number };
+type Core = Awaited<ReturnType<typeof codecCore>> & { src: number; dst: number; cap: number; free: ArrayBuffer[]; made: number };
 
 async function init(module: WebAssembly.Module): Promise<Core> {
   const core = await codecCore(module);
@@ -26,7 +34,7 @@ async function init(module: WebAssembly.Module): Promise<Core> {
   // `dst` has the frame's header before the stored bytes, so the CRC runs over the frame as it lies.
   const [src, dst] = [core.ex.thread_alloc(MAX, 16) >>> 0, core.ex.thread_alloc(cap + 32, 16) >>> 0];
   if (!cap || !src || !dst) throw new Error('no memory for the snapshot codec');
-  return { ...core, src, dst, cap };
+  return { ...core, src, dst, cap, free: [], made: 0 };
 }
 
 /** Chunk `index`'s frame (null: zero pages only) from the `len` bytes at `off` of `buffer`. */
@@ -52,7 +60,9 @@ function ram(c: Core, buffer: SharedArrayBuffer, off: number, len: number, index
   const head = frameHeader('RAM ', packed ? 2 : 0, index, rawLen, stored);
   mem.set(head.subarray(0, 24), c.dst);
   const crc = c.ex.crc32(c.ex.crc32(0, c.dst, 24), c.dst + 32, stored) >>> 0;
-  const frame = mem.slice(c.dst, c.dst + 32 + stored);
+  // In a buffer given back (all are the largest frame's size), else a new one.
+  const frame = new Uint8Array(c.free.pop() ?? (c.made++, new ArrayBuffer(c.cap + 32)), 0, 32 + stored);
+  frame.set(mem.subarray(c.dst, c.dst + 32 + stored));
   frame.set(head.subarray(24), 24);
   new DataView(frame.buffer).setUint32(24, crc, true);
   return { frame, pages, scan, compress, crc: performance.now() - t };
@@ -63,14 +73,15 @@ function serve(post: (m: PoolReply, transfer?: ArrayBuffer[]) => void, listen: (
   listen((m) => {
     if (m.type === 'init') {
       core = init(m.module);
-      core.then(() => post({ type: 'ready' }), (e: unknown) => post({ type: 'failed', message: String((e as Error)?.message ?? e) }));
+      core.then((c) => post({ type: 'ready', frame: c.cap + 32 }), (e: unknown) => post({ type: 'failed', message: String((e as Error)?.message ?? e) }));
       return;
     }
     const { id } = m;
     if (!core) return post({ type: 'error', id, message: 'a job before the core' }); // i18n-ignore: never shown (the writer makes a failed chunk itself)
     core.then((c) => {
+      for (const b of m.give ?? []) if (b.byteLength === c.cap + 32) c.free.push(b);
       const r = ram(c, m.buffer, m.off, m.len, m.index);
-      post({ type: 'done', id, ...r }, r.frame ? [r.frame.buffer as ArrayBuffer] : []);
+      post({ type: 'done', id, ...r, buffers: c.made }, r.frame ? [r.frame.buffer as ArrayBuffer] : []);
     }).catch((e: unknown) => post({ type: 'error', id, message: String((e as Error)?.message ?? e) }));
   });
 }

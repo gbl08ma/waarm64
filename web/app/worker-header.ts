@@ -65,15 +65,7 @@ function slotsOf(h: SnapshotHeader, m: StartMessage, machine: Machine, name: str
       msg('snapshots:worker-header.devicesUnknown', { name }),
       new MsgError('snapshots:worker-header.devicesUnknown.cause', { machine: machine.title }),
     );
-  // A snapshot from before the clock device (virtio-rtc), the notify socket (virtio-vsock) or the balloon is made
-  // without it: none holds state the guest needs, and the rest is the same.
-  const without = (...k: string[]) => all.filter((s) => !k.includes(s.kind));
-  const lists = [[], ['clock'], ['vsock'], ['clock', 'vsock']].flatMap((k) => [
-    without(...k),
-    without(...k, 'balloon'),
-  ]);
-  const here = lists.find((l) => kinds.join() === l.map((s) => s.kind).join());
-  if (!here)
+  if (kinds.join() !== all.map((s) => s.kind).join())
     throw failure(
       'snapshot',
       msg('snapshots:worker-header.otherDevices', { name }),
@@ -83,7 +75,7 @@ function slotsOf(h: SnapshotHeader, m: StartMessage, machine: Machine, name: str
         machine: machine.title,
       }),
     );
-  return here;
+  return all;
 }
 
 /** Memory 0's RAM, and the spill memories' (docs/spill-memories.md), as they were. */
@@ -118,8 +110,7 @@ export function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine,
   const specs = here.map((s) => device(s, m, machine));
   const split = memoryOf(h, machine, name);
   const ram = (split.ramSize + split.spill.reduce((a, b) => a + b, 0)) / 2 ** 20;
-  // A snapshot from before the header said (ABI 34 and older) had none of them.
-  const cpu: unknown = h.cpu ?? [];
+  const cpu: unknown = h.cpu;
   if (!Array.isArray(cpu) || !cpu.every(isCpuFeature))
     throw failure(
       'snapshot',

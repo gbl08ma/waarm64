@@ -753,8 +753,8 @@ login prompt; no host side can connect (the device takes no host connections), s
 command line only, which a UEFI boot's loader owns).
 
 It is the last slot, after the disks (machines.md §4.1), so it moved no machine's disks, and it is left out of the
-shape's hash (`shape.ts` `hashed`): a snapshot or suspended machine from before it restores without it
-(`worker-header.ts` `slotsOf`), as one from before the clock does. Linux's driver is `vmw_vsock_virtio_transport`
+shape's hash (`shape.ts` `hashed`); a snapshot without it (one from before it, of an older state version) is refused
+(`worker-header.ts` `slotsOf`). Linux's driver is `vmw_vsock_virtio_transport`
 (`CONFIG_VIRTIO_VSOCKETS`, a module in Debian's and Arch's kernels, loaded by its modalias). Tests: `tests/vsock.test.ts`
 (the device through hand-built queues, both closes, the refusals, the credit, a restore, the page's end, the
 credential; the agent's connection: both ways, the guest's credit and the device's, one at a time, the page's reset,
@@ -780,8 +780,8 @@ a device kind of their own (docs/frontend.md "The guest's clock").
 ### balloon (ID 5): free memory left out of snapshots
 
 `{type: 'balloon'}` (`web/balloon.ts`; Linux's `virtio_balloon`, a module Debian's udev loads), on every machine of the
-page (after the notify socket: web/app/shape.ts `slots`, out of the shape's hash, and a snapshot from before restores
-without it: web/app/worker-header.ts `slotsOf`). It never inflates (`num_pages` stays 0): it is there for what the guest
+page (after the notify socket: web/app/shape.ts `slots`, out of the shape's hash; a snapshot without it is refused:
+web/app/worker-header.ts `slotsOf`). It never inflates (`num_pages` stays 0): it is there for what the guest
 says of its free memory, so that a snapshot, which leaves zero pages out (platform.md "The snapshot file"), leaves that
 memory out too. Features FREE_PAGE_HINT (3) and REPORTING (5), not PAGE_POISON (without it Linux turns reporting off only
 in a guest that poisons or zeroes what it frees, whose free pages are what they are already); four queues of 128,
@@ -1443,10 +1443,9 @@ guest share without copies (Venus's ring, its command streams, its reply buffers
   `round(4 × (60 log10 level + 100))`: the guest's mixer shows the page's percentage. A guest's write that changes a
   value is said on `port` (`mixer`: the page's menu follows); the page's changes there (`SndFromPage`) set the values
   and, if the driver took the feature, notify it with `VIRTIO_SND_EVT_CTL_NOTIFY` (mask VALUE) on an event buffer,
-  held until one comes. The values survive a virtio reset and are in the snapshot (`controls`; one from before them
-  keeps the page's), and a restore says them on `port`.
-- **An output stream (0) and an input stream (1)** (the input since audio S4: older snapshots, with one, still
-  load): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
+  held until one comes. The values survive a virtio reset and are in the snapshot (`controls`; a device without
+  `mixer` has none, and keeps the page's), and a restore says them on `port`.
+- **An output stream (0) and an input stream (1)** (the input since audio S4; a saved state has both): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
   8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels, and the direction. Each stream has its own
   state machine and parameters; the control log names stream 1 (`PCM_START#1`). Linux derives its limits from that: periods
   2–16 of 160–122,880 bytes, a buffer of up to 245,760. `SET_PARAMS` takes those; unoffered features, formats,

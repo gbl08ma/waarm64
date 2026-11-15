@@ -7,7 +7,7 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, readHeader, SnapshotError, SnapshotWriter, truncated, type Codec, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
@@ -131,9 +131,17 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
 }
 
 /**
+ * Why a snapshot of `header` can't be restored by a core whose state version is `coreVersion` (the running core's
+ * `snapshot_version`, which reads only its own: an older file is refused, not migrated), or none.
+ */
+export function otherVersion(header: SnapshotHeader, coreVersion: number): SnapshotError | undefined {
+  if (header.coreVersion === coreVersion) return undefined;
+  return new SnapshotError('snapshots:snapshot.otherVersion', { format: header.coreVersion, reads: coreVersion }, 'other-version');
+}
+
+/**
  * Opens a snapshot for a restore: its header, and what `bootVm` takes as `restore`. `coreVersion`
- * is the running core's `snapshot_version` (it reads that and older formats down to the codec's
- * `snapshotVersionMin`, when it is the codec's own); `devices` the device specs of the machine it will
+ * is the running core's `snapshot_version` (`otherVersion`, checked first); `devices` the device specs of the machine it will
  * start (the `BootOptions.devices`), whose writable disks must be the ones the snapshot pins:
  * the same identity, or the same SHA-256 (`sha256` hashes a slot's base image: seconds, so only
  * asked when the identity differs and the file has the hash). Everything that can be refused is
@@ -147,7 +155,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
  * `suspended`): they are kept. Such a file is refused without `resume`, and any other with it.
  */
 export async function readSnapshot(
-  source: ReadableStream<Uint8Array> | Blob, codec: Codec & { snapshotVersion?: number; snapshotVersionMin?: number }, coreVersion: number,
+  source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
   opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore; phases: RestorePhases }> {
   let at = performance.now();
@@ -159,23 +167,22 @@ export async function readSnapshot(
   };
   const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, apply: 0, disk: 0, read: 0, crc: 0, unpack: 0 };
   if (source instanceof Blob) {
+    // Another version's file is refused by its header, before its frames are read (an older file may have frames of a
+    // codec no longer read).
+    const other = otherVersion(await readHeader(source), coreVersion);
+    if (other) throw other;
     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
     // the file damaged halfway.
-    const check = await openSnapshot(source, { codecs: [codec], check: true });
+    const check = await openSnapshot(source, { codec, check: true });
     for await (const _ of check.frames()) void _;
     [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
   }
-  const s = await openSnapshot(source, { codecs: [codec] });
+  const s = await openSnapshot(source, { codec });
   /** The restore pass's reading times so far, into `phases`. */
   const read = () => Object.assign(phases, s.times);
   const { header } = s;
-  // The codec's core reads back to its `snapshotVersionMin` (a caller naming another version means another core).
-  const min = codec.snapshotVersion === coreVersion ? Math.min(codec.snapshotVersionMin ?? coreVersion, coreVersion) : coreVersion;
-  if (typeof header.coreVersion !== 'number' || header.coreVersion > coreVersion || header.coreVersion < min) {
-    throw min === coreVersion
-      ? new SnapshotError('snapshots:snapshot.otherVersion', { format: header.coreVersion, reads: coreVersion }, 'other-version')
-      : new SnapshotError('snapshots:snapshot.otherVersion.range', { format: header.coreVersion, min, max: coreVersion }, 'other-version');
-  }
+  const other = otherVersion(header, coreVersion);
+  if (other) throw other;
   if (!!header.suspend !== !!opts.resume) {
     throw header.suspend
       ? new SnapshotError('snapshots:snapshot.suspended', {}, 'other-disk')
@@ -374,7 +381,7 @@ export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Modul
       const parts: Uint8Array[] = [];
       const t = performance.now();
       if (!(await vm.pause())) throw new Error('the machine ended as it was paused');
-      const w = await writeSnapshot(vm, (b) => { parts.push(b); }, { machine: 'test' }, codec);
+      const w = await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
       const saveMs = performance.now() - t;
       await vm.flush();
       hvc += vm.hvc();

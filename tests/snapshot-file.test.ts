@@ -2,7 +2,8 @@
 // frame kind (CORE and DEVS past 1 MiB, RAM with zero, random and compressible pages and a partial
 // last chunk from a shared-memory view, DISK runs and gaps), the reader fed 1-byte, random-sized and
 // Blob input, every refusal, truncation at every prefix and a flipped bit at every byte of a small
-// file, the stored codec for incompressible data, a pluggable codec and one with its own CRC. Node only, no core.
+// file, the stored codec for incompressible data, a pluggable codec and its CRC, the header read alone. Node only, no
+// core: the codecs are tests/snapshot-codecs.ts's (JS ones under the page's id).
 import assert from 'node:assert/strict';
 import { crc32 as zlibCrc32 } from 'node:zlib';
 import { test } from 'node:test';
@@ -11,9 +12,10 @@ import { runInNewContext } from 'node:vm';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import type { Vm } from '../web/vm.ts';
 import {
-  applyRam, crc32, deflateCodec, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter,
+  applyRam, crc32, diskBlocks, openSnapshot, readHeader, SnapshotError, SnapshotWriter,
   type Codec, type SnapshotHeader,
 } from '../web/snapshot-file.ts';
+import { deflateCodec, storedCodec } from './snapshot-codecs.ts';
 
 const MiB = 1 << 20;
 const HEADER: SnapshotHeader = { format: 1, coreVersion: 3, abi: 30, created: '2026-10-01T00:00:00Z', machine: { ram: 1 } };
@@ -41,7 +43,7 @@ type Content = { core?: Uint8Array; devs?: Uint8Array; ram?: Uint8Array; disk?: 
 
 async function write(c: Content, opts: { codec?: Codec; concurrency?: number } = {}) {
   const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, HEADER, opts);
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, HEADER, { ...opts, codec: opts.codec ?? deflateCodec });
   if (c.core) await w.bytes('CORE', c.core);
   if (c.devs) await w.bytes('DEVS', c.devs);
   const ram = c.ram ? await w.ram(c.ram) : undefined;
@@ -66,15 +68,18 @@ function streamOf(file: Uint8Array, sizes: (i: number) => number) {
 }
 const whole = (f: Uint8Array) => streamOf(f, () => f.length);
 
-async function readAll(src: ReadableStream<Uint8Array> | Blob, opts?: { codecs?: Codec[] }) {
-  const s = await openSnapshot(src, opts);
+/** Opens `src` with `codec` (deflate's, the writer's default here). */
+const open = (src: ReadableStream<Uint8Array> | Blob, codec: Codec = deflateCodec) => openSnapshot(src, { codec });
+
+async function readAll(src: ReadableStream<Uint8Array> | Blob, opts?: { codec?: Codec }) {
+  const s = await open(src, opts?.codec);
   const frames: Frame[] = [];
   for await (const f of s.frames()) frames.push(f);
   return { header: s.header, frames };
 }
 
 /** Restores what a file holds into fresh buffers. */
-async function restore(src: ReadableStream<Uint8Array> | Blob, ramSize: number, opts?: { codecs?: Codec[] }) {
+async function restore(src: ReadableStream<Uint8Array> | Blob, ramSize: number, opts?: { codec?: Codec }) {
   const { header, frames } = await readAll(src, opts);
   const core: Uint8Array[] = [];
   const devs: Uint8Array[] = [];
@@ -215,39 +220,41 @@ test('the writer bounds what is in flight and keeps frames in order', async () =
     id: 2,
     async compress(raw) { active++; peak = Math.max(peak, active); await new Promise((r) => setTimeout(r, 5 - Math.min(4, raw.length >> 18))); active--; return raw.subarray(0, raw.length >> 1); },
     async decompress(stored, n) { const out = new Uint8Array(n); out.set(stored); return out; },
+    crc32,
   };
   const core = new Uint8Array(20 * MiB);
   const { file } = await write({ core }, { codec: slow, concurrency: 3 });
   assert.ok(peak <= 3 && peak >= 2, `peak ${peak}`);
-  const frames = (await readAll(whole(file), { codecs: [slow] })).frames;
+  const frames = (await readAll(whole(file), { codec: slow })).frames;
   assert.deepEqual(frames.map((f) => f.index), Array.from({ length: 20 }, (_, i) => i));
 });
 
-test('incompressible data is stored (codec 0), compressible is deflated', async () => {
+test('incompressible data is stored (codec 0), compressible is compressed (the codec\'s id)', async () => {
   const { file } = await write({ core: random(1000, 5) });
   const codecOf = (f: Uint8Array) => new DataView(f.buffer, f.byteOffset).getUint32(16 + JSON.stringify(HEADER).length + 4 + 4, true);
   assert.equal(codecOf(file), 0);
   const z = await write({ core: new Uint8Array(1000) });
-  assert.equal(codecOf(z.file), 1);
+  assert.equal(codecOf(z.file), 2);
   assert.ok(z.file.length < file.length);
 });
 
-test('a pluggable codec (id 2) round trips, and an unknown one is refused', async () => {
+test('a pluggable codec round trips, and a frame of another codec is refused', async () => {
   // A toy run codec: bytes as-is but each byte doubled-free: just reverse, which shrinks nothing, so shrink by dropping a zero tail.
   const tail: Codec = {
     id: 2,
     async compress(raw) { let n = raw.length; while (n && raw[n - 1] === 0) n--; return raw.slice(0, n); },
     async decompress(stored, rawLen) { const out = new Uint8Array(rawLen); out.set(stored); return out; },
+    crc32,
   };
   const core = new Uint8Array(5000); core.set([1, 2, 3]);
   const { file } = await write({ core }, { codec: tail });
-  const r = await restore(whole(file), 65536, { codecs: [tail] });
+  const r = await restore(whole(file), 65536, { codec: tail });
   sameBytes(r.core, core, 'core');
   assert.ok(file.length < 400);
-  await refused(readAll(whole(file)), 'corrupt', /damage\.codec \{codec=2\}/);
+  await refused(readAll(whole(file), { codec: { ...tail, id: 3 } }), 'corrupt', /damage\.codec \{codec=2\}/);
 });
 
-test('a codec\'s own CRC-32 takes the frames\' checksums, in the writer and the reader (a check pass too)', async () => {
+test('the codec\'s CRC-32 takes the frames\' checksums, in the writer and the reader (a check pass too); the header\'s is JS\'s', async () => {
   const tail = (crc: (b: Uint8Array, seed?: number) => number): Codec => ({
     id: 2,
     async compress(raw) { let n = raw.length; while (n && raw[n - 1] === 0) n--; return raw.slice(0, n); },
@@ -255,21 +262,18 @@ test('a codec\'s own CRC-32 takes the frames\' checksums, in the writer and the 
     crc32: crc,
   });
   const content = { core: random(3000, 4), ram: makeRam(MiB), disk: [{ block: 7, data: random(4096, 5) }] };
-  // A codec whose CRC is JS's writes the same bytes as JS's CRC does, and reads back.
-  const same = tail(crc32);
-  const plain: Codec = { ...same, crc32: undefined };
+  // A codec whose CRC is the IEEE one (zlib's) writes frames that check as zlib's CRC says.
+  const same = tail((b, seed = 0) => zlibCrc32(b, seed));
   const a = (await write(content, { codec: same })).file;
-  const b = (await write(content, { codec: plain })).file;
-  assert.ok(Buffer.compare(a, b) === 0, 'a codec with JS\'s CRC wrote other bytes');
-  await restore(whole(a), MiB, { codecs: [same] });
-  // A codec whose CRC differs: its file fails JS's checks (the writer used it) and passes its own (the reader does).
+  await restore(whole(a), MiB, { codec: tail(crc32) });
+  // A codec whose CRC differs: its file fails the IEEE CRC's checks (the writer used it) and passes its own (the reader does).
   const off = tail((bytes, seed = 0) => crc32(bytes, seed) ^ 1);
   const c = (await write(content, { codec: off })).file;
-  await refused(readAll(whole(c), { codecs: [plain] }), 'corrupt', /damage\.checksum/);
-  await refused(readAll(whole(a), { codecs: [off] }), 'corrupt', /damage\.checksum/);
-  const r = await restore(whole(c), MiB, { codecs: [off] });
+  await refused(readAll(whole(c), { codec: same }), 'corrupt', /damage\.checksum/);
+  await refused(readAll(whole(a), { codec: off }), 'corrupt', /damage\.checksum/);
+  const r = await restore(whole(c), MiB, { codec: off });
   sameBytes(r.core, content.core, 'core');
-  const check = await openSnapshot(whole(a), { codecs: [off], check: true });
+  const check = await openSnapshot(whole(a), { codec: off, check: true });
   await refused((async () => { for await (const _ of check.frames()); })(), 'corrupt', /damage\.checksum/);
   // The header's CRC is JS's either way.
   const head = 20 + new DataView(a.buffer, a.byteOffset).getUint32(12, true);
@@ -279,13 +283,13 @@ test('a codec\'s own CRC-32 takes the frames\' checksums, in the writer and the 
 test('refusals: not a snapshot, a newer format, truncated, corrupt', async () => {
   const { file } = await write({ core: random(3000, 1), ram: makeRam(65536), disk: [{ block: 2, data: random(4096, 2) }] });
   const dv = (f: Uint8Array) => new DataView(f.buffer, f.byteOffset, f.length);
-  await refused(openSnapshot(whole(new TextEncoder().encode('SQLite format 3\0 and a long tail of text'))), 'not-snapshot');
-  await refused(openSnapshot(whole(new Uint8Array(0))), 'not-snapshot');
-  await refused(openSnapshot(whole(file.slice(0, 5))), 'not-snapshot');
+  await refused(open(whole(new TextEncoder().encode('SQLite format 3\0 and a long tail of text'))), 'not-snapshot');
+  await refused(open(whole(new Uint8Array(0))), 'not-snapshot');
+  await refused(open(whole(file.slice(0, 5))), 'not-snapshot');
   const newer = file.slice(); dv(newer).setUint32(8, 3, true);
-  await refused(openSnapshot(whole(newer)), 'newer-format', /snapshot-file\.newerFormat \{format=3, reads=2\}/);
+  await refused(open(whole(newer)), 'newer-format', /snapshot-file\.newerFormat \{format=3, reads=2\}/);
   const old = file.slice(); dv(old).setUint32(8, 0, true);
-  await refused(openSnapshot(whole(old)), 'corrupt');
+  await refused(open(whole(old)), 'corrupt');
   const hl = dv(file).getUint32(12, true);
   const frames0 = 16 + hl + 4;
   const trunc = file.slice(0, file.length - 10);
@@ -293,9 +297,16 @@ test('refusals: not a snapshot, a newer format, truncated, corrupt', async () =>
   await refused(readAll(whole(file.slice(0, file.length - 32))), 'truncated', /snapshot-file\.truncated/); // no END
   await refused(readAll(whole(concat([file, new Uint8Array(1)]))), 'corrupt', /damage\.afterEnd/);
   const badHeaderCrc = file.slice(); badHeaderCrc[16] ^= 1;
-  await refused(openSnapshot(whole(badHeaderCrc)), 'corrupt', /damage\.headerChecksum/);
+  await refused(open(whole(badHeaderCrc)), 'corrupt', /damage\.headerChecksum/);
   const hugeHeader = file.slice(); dv(hugeHeader).setUint32(12, 0x7fffffff, true);
-  await refused(openSnapshot(whole(hugeHeader)), 'corrupt');
+  await refused(open(whole(hugeHeader)), 'corrupt');
+  // The header alone: the same checks, nothing past it read.
+  assert.deepEqual(await readHeader(new Blob([file])), HEADER);
+  assert.deepEqual(await readHeader(whole(file.slice(0, 20 + hl))), HEADER);
+  await refused(readHeader(new Blob([new TextEncoder().encode('SQLite format 3\0 and a long tail of text')])), 'not-snapshot');
+  await refused(readHeader(new Blob([newer])), 'newer-format');
+  await refused(readHeader(new Blob([badHeaderCrc])), 'corrupt', /damage\.headerChecksum/);
+  await refused(readHeader(new Blob([file.slice(0, 20 + hl - 1)])), 'truncated');
   const badCrc = file.slice(); badCrc[frames0 + 32 + 5] ^= 1; // a stored byte
   await refused(readAll(whole(badCrc)), 'corrupt', /damage\.checksum/);
   // The END's count: patch the last 32 bytes.
@@ -332,9 +343,10 @@ test('refusals: well-formed frames that say impossible things', async () => {
   await refused(ok([hand('NOPE', 0, 0, 3, new Uint8Array(3)), END(1)]), 'corrupt');
   await refused(ok([hand('CORE', 0, 0, MiB + 33, new Uint8Array(MiB + 33)), END(1)]), 'corrupt');
   await refused(ok([hand('CORE', 0, 0, MiB + 1, new Uint8Array(MiB + 1)), END(1)]), 'corrupt'); // CORE is at most 1 MiB
-  await refused(ok([hand('CORE', 1, 0, 4, new Uint8Array(9)), END(1)]), 'corrupt'); // stored > raw
+  await refused(ok([hand('CORE', 2, 0, 4, new Uint8Array(9)), END(1)]), 'corrupt'); // stored > raw
   await refused(ok([hand('CORE', 0, 0, 9, new Uint8Array(4)), END(1)]), 'corrupt'); // codec 0 with other lengths
-  await refused(ok([hand('CORE', 1, 0, 100, new Uint8Array([1, 2, 3])), END(1)]), 'corrupt'); // not deflate
+  await refused(ok([hand('CORE', 2, 0, 100, new Uint8Array([1, 2, 3])), END(1)]), 'corrupt', /damage\.unpack/); // not the codec's
+  await refused(ok([hand('CORE', 1, 0, 100, new Uint8Array([1, 2, 3])), END(1)]), 'corrupt', /damage\.codec \{codec=1\}/); // deflate-raw: not read since SNAPZ loop 2b
   await refused(ok([hand('CORE', 7, 0, 3, new Uint8Array(3)), END(1)]), 'corrupt', /damage\.codec \{codec=7\}/);
   await refused(ok([hand('CORE', 0, 0, 3, new Uint8Array(3))]), 'truncated');
   await refused(ok([hand('DISK', 0, 0, 4095, new Uint8Array(4095)), END(1)]), 'corrupt');
@@ -357,9 +369,9 @@ test('refusals: well-formed frames that say impossible things', async () => {
   assert.throws(() => [...diskBlocks(0, new Uint8Array(100))], (e) => e instanceof SnapshotError && e.problem === 'corrupt');
   assert.throws(() => [...diskBlocks(0, new Uint8Array(0))], (e) => e instanceof SnapshotError);
   assert.deepEqual([...diskBlocks(7, concat([page, page]))].map((b) => b.block), [7, 8]);
-  // A deflate bomb: valid deflate that expands far past its stated size.
-  const bomb = await deflateCodec.compress(new Uint8Array(20 * MiB));
-  await refused(ok([hand('CORE', 1, 0, 1000, bomb), END(1)]), 'corrupt');
+  // A codec that unpacks to another size than the frame says (the core's stops at it: web/lz.ts).
+  const long = await deflateCodec.compress(new Uint8Array(2000));
+  await refused(ok([hand('CORE', 2, 0, 1000, long), END(1)]), 'corrupt', /damage\.unpackSize/);
 });
 
 test('a small file: every prefix is refused as truncated (or not-snapshot below the magic), every flipped bit is refused', async () => {
@@ -385,7 +397,7 @@ test('a small file: every prefix is refused as truncated (or not-snapshot below 
 });
 
 test('the writer reports sink failures', async () => {
-  const w = new SnapshotWriter(() => { throw new Error('disk full'); }, HEADER, { concurrency: 2 });
+  const w = new SnapshotWriter(() => { throw new Error('disk full'); }, HEADER, { codec: deflateCodec, concurrency: 2 });
   await assert.rejects(async () => { await w.bytes('CORE', random(100, 1)); await w.bytes('CORE', random(100, 1)); await w.end(); }, /disk full/);
 });
 
@@ -394,7 +406,7 @@ test('throughput on 256 MiB of RAM (informational)', async (t) => {
   const zero = new Uint8Array(size);
   let t0 = performance.now();
   const sink = () => {};
-  let w = new SnapshotWriter(sink, HEADER);
+  let w = new SnapshotWriter(sink, HEADER, { codec: deflateCodec });
   await w.ram(zero);
   const zeroMs = performance.now() - t0;
   const ram = new Uint8Array(size);
@@ -402,14 +414,14 @@ test('throughput on 256 MiB of RAM (informational)', async (t) => {
   for (let p = 0; p < size / 4096; p += 3) ram[p * 4096 + 100] = p & 255 || 1; // a third of the pages touched
   const parts: Uint8Array[] = [];
   t0 = performance.now();
-  w = new SnapshotWriter((b) => { parts.push(b.slice()); }, HEADER, { concurrency: 4 });
+  w = new SnapshotWriter((b) => { parts.push(b.slice()); }, HEADER, { codec: deflateCodec, concurrency: 4 });
   await w.ram(ram);
   const { bytes } = await w.end();
   const saveMs = performance.now() - t0;
   const file = concat(parts);
   t0 = performance.now();
   const out = new Uint8Array(size);
-  const s = await openSnapshot(whole(file));
+  const s = await open(whole(file));
   for await (const f of s.frames()) applyRam(out, f.index, f.data);
   const loadMs = performance.now() - t0;
   sameBytes(out, ram, 'restored ram');
@@ -423,7 +435,7 @@ test('the reader lets go of the chunks of the stream as it consumes them', async
   setFlagsFromString('--expose-gc');
   const gc = runInNewContext('gc') as () => void;
   const ram = random(24 * MiB, 5);
-  const { file } = await write({ ram }, { codec: { id: 0, compress: async (b) => b, decompress: async (b) => b } });
+  const { file } = await write({ ram }, { codec: storedCodec });
   const refs: WeakRef<Uint8Array>[] = [];
   let at = 0;
   const stream = new ReadableStream<Uint8Array>({
@@ -435,7 +447,7 @@ test('the reader lets go of the chunks of the stream as it consumes them', async
       at += chunk.length;
     },
   }, { highWaterMark: 0 });
-  const s = await openSnapshot(stream);
+  const s = await open(stream, storedCodec);
   let frames = 0;
   let checked = false;
   for await (const f of s.frames()) {
@@ -482,7 +494,7 @@ test('a state\'s Uint8Arrays (the display\'s 3D contents) travel as BLOB frames,
   // DEVS naming a blob longer, or shorter, than its frames: refused.
   const made = async (length: number, bytes: number) => {
     const parts: Uint8Array[] = [];
-    const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { ...HEADER, coreVersion: 7, ramSize: 65536, disks: [] }, { blobs: true });
+    const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { ...HEADER, coreVersion: 7, ramSize: 65536, disks: [] }, { codec: deflateCodec, blobs: true });
     await w.bytes('CORE', random(10, 1));
     await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify({ devices: [{ d: { $blob: 0, length } }], input: [] })));
     await w.blob(0, random(bytes, 5));

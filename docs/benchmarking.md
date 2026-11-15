@@ -168,7 +168,11 @@ on). Dev-only, alone like any Chromium session:
   path (`bench/boot/results/snapz-1/run-ab.sh` and `merge.ts`, which joins the rounds into one file an arm; loop 2's
   `snapz-2/run-ab.sh` for arms that differ in JS only). Since loop 2 a save's `scan`, `compress` and `crc` are the
   pool's workers' sums (CPU time; `pool` says how many): compare its wall by `ram` and `pausedMs`. A pause of ~1 s
-  gets ~4 of the 250 ms memory samples: its peak is coarse.
+  gets ~4 of the 250 ms memory samples: its peak is coarse. **By process:** `bench/snapz/memwatch.ts <profile>
+  <out.jsonl> [<stop-file>]` beside it samples every 50 ms (`MS`) each of the browser's processes by type (browser,
+  renderer, gpu-process, utility by sub-type: RSS, anonymous, shmem), node's modules only, so one copy serves every
+  arm (loop 2b's `bench/boot/results/snapz-2b/run-ab.sh` and `summary.py`, which takes each save's peak against the
+  sample before it). The renderer holds the page and all its workers: a save's garbage shows there.
 - **A stored machine:** the warm files were saved by transient machines (opened by URL), which keep no snapshots, so
   the probe makes "SNAPZ desktop" (or debian) in the profile, of the files' shape (vCPUs, RAM, 3D, a network card, the
   clock; the disks by URL), and a copy of the file under that machine's header, `target/snapz/<guest>-<hash>.waarm64snap`

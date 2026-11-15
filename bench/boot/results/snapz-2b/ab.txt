@@ -1,0 +1,79 @@
+== desktop round 1: base at 7b7b4342, core 0ffff6be4582386c, export const ABI = 68
+rc=0  
+round 0 kept {"wallMs":1587,"kind":"kept","bytes":675423243,"pausedMs":1337
+round 0 file {"wallMs":2504,"kind":"file","bytes":678802045,"pausedMs":1619
+round 0 suspend {"wallMs":1229,"kind":"suspend","bytes":661362965,"pausedMs":1104
+== desktop round 2: new at 6535bb0d, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":1538,"kind":"kept","bytes":675489532,"pausedMs":1173
+round 0 file {"wallMs":2397,"kind":"file","bytes":678914253,"pausedMs":1397
+round 0 suspend {"wallMs":1298,"kind":"suspend","bytes":661372940,"pausedMs":1169
+== desktop round 3: wblob at be434c73, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":1548,"kind":"kept","bytes":675610806,"pausedMs":1169
+round 0 file {"wallMs":2546,"kind":"file","bytes":678891876,"pausedMs":1697
+round 0 suspend {"wallMs":1394,"kind":"suspend","bytes":661385844,"pausedMs":1266
+ALLDONE
+== desktop round 1: new at 6535bb0d, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":1539,"kind":"kept","bytes":675518427,"pausedMs":1184
+round 0 file {"wallMs":2326,"kind":"file","bytes":678901019,"pausedMs":1354
+round 0 suspend {"wallMs":1305,"kind":"suspend","bytes":661431508,"pausedMs":1162
+== desktop round 2: wblob at be434c73, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":1548,"kind":"kept","bytes":675578847,"pausedMs":1188
+round 0 file {"wallMs":2748,"kind":"file","bytes":678923026,"pausedMs":1844
+round 0 suspend {"wallMs":1335,"kind":"suspend","bytes":661379963,"pausedMs":1227
+== desktop round 3: base at 7b7b4342, core 0ffff6be4582386c, export const ABI = 68
+rc=0  
+round 0 kept {"wallMs":1797,"kind":"kept","bytes":675473223,"pausedMs":1341
+round 0 file {"wallMs":2703,"kind":"file","bytes":678807404,"pausedMs":1587
+round 0 suspend {"wallMs":1303,"kind":"suspend","bytes":661297761,"pausedMs":1175
+ALLDONE
+== desktop round 1: wblob at be434c73, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":1596,"kind":"kept","bytes":675534157,"pausedMs":1241
+round 0 file {"wallMs":2599,"kind":"file","bytes":678870622,"pausedMs":1796
+round 0 suspend {"wallMs":1208,"kind":"suspend","bytes":661420768,"pausedMs":1102
+== desktop round 2: base at 7b7b4342, core 0ffff6be4582386c, export const ABI = 68
+rc=0  
+round 0 kept {"wallMs":1782,"kind":"kept","bytes":675454094,"pausedMs":1435
+round 0 file {"wallMs":2542,"kind":"file","bytes":678847964,"pausedMs":1584
+round 0 suspend {"wallMs":1298,"kind":"suspend","bytes":661404976,"pausedMs":1162
+== desktop round 3: new at 6535bb0d, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":1449,"kind":"kept","bytes":675408974,"pausedMs":1184
+round 0 file {"wallMs":2415,"kind":"file","bytes":678812552,"pausedMs":1359
+round 0 suspend {"wallMs":1296,"kind":"suspend","bytes":661318001,"pausedMs":1175
+ALLDONE
+== debian round 1: base at 7b7b4342, core 0ffff6be4582386c, export const ABI = 68
+rc=0  
+round 0 kept {"wallMs":371,"kind":"kept","bytes":95277446,"pausedMs":174
+round 0 file {"wallMs":477,"kind":"file","bytes":95506757,"pausedMs":187
+round 0 suspend {"wallMs":313,"kind":"suspend","bytes":94155420,"pausedMs":172
+== debian round 2: new at 6535bb0d, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":380,"kind":"kept","bytes":95340912,"pausedMs":164
+round 0 file {"wallMs":467,"kind":"file","bytes":95590237,"pausedMs":172
+round 0 suspend {"wallMs":279,"kind":"suspend","bytes":94217672,"pausedMs":145
+== debian round 3: new at 6535bb0d, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":376,"kind":"kept","bytes":95302506,"pausedMs":163
+round 0 file {"wallMs":484,"kind":"file","bytes":95541411,"pausedMs":166
+round 0 suspend {"wallMs":277,"kind":"suspend","bytes":94151595,"pausedMs":144
+== debian round 4: base at 7b7b4342, core 0ffff6be4582386c, export const ABI = 68
+rc=0  
+round 0 kept {"wallMs":369,"kind":"kept","bytes":95296147,"pausedMs":198
+round 0 file {"wallMs":461,"kind":"file","bytes":95508676,"pausedMs":186
+round 0 suspend {"wallMs":271,"kind":"suspend","bytes":94158435,"pausedMs":148
+== debian round 5: base at 7b7b4342, core 0ffff6be4582386c, export const ABI = 68
+rc=0  
+round 0 kept {"wallMs":323,"kind":"kept","bytes":95252628,"pausedMs":172
+round 0 file {"wallMs":474,"kind":"file","bytes":95584669,"pausedMs":172
+round 0 suspend {"wallMs":287,"kind":"suspend","bytes":94197737,"pausedMs":151
+== debian round 6: new at 6535bb0d, core a8deea545dc27dff, export const ABI = 69
+rc=0  
+round 0 kept {"wallMs":374,"kind":"kept","bytes":95290010,"pausedMs":168
+round 0 file {"wallMs":475,"kind":"file","bytes":95459133,"pausedMs":167
+round 0 suspend {"wallMs":279,"kind":"suspend","bytes":94109413,"pausedMs":145
+ALLDONE

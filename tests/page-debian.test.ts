@@ -31,6 +31,7 @@ import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { MACHINES, readiness, readyWatcher } from '../web/app/machine.ts';
 import { SnapshotWriter } from '../web/snapshot-file.ts';
+import { coreStateVersion, storedCodec } from './snapshot-codecs.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
@@ -228,7 +229,7 @@ const opfs = (page: Page) => page.evaluate(async () => {
 /** A snapshot with nothing in it but a header: what the page checks before it touches anything. */
 async function headerOnly(name: string, header: Record<string, unknown>) {
   const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: new Date().toISOString(), ...header });
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: await coreStateVersion(), abi: 0, created: new Date().toISOString(), ...header }, { codec: storedCodec });
   await w.end();
   const path = join(dir, name);
   writeFileSync(path, Buffer.concat(parts));

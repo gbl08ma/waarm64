@@ -73,9 +73,20 @@ function meta(r: Running) {
 }
 
 type Out = { sink: Sink; close: () => Promise<void>; abort: () => Promise<void> };
+/** The buffers the page gave back (`snapshot-spare`) for the save in progress (its id): its next chunks go in them. */
+let spare: { id: number; buffers: ArrayBuffer[] } | undefined;
+/** A chunk's buffer back from the page, for save `id`'s next chunks. */
+export function spareBuffer(id: number, buffer: ArrayBuffer) {
+  if (spare?.id === id) spare.buffers.push(buffer);
+}
+/** A frame's largest size (a RAM chunk's codec bound, and its header): a chunk buffer holds any. */
+const CHUNK_BUFFER = (1 << 20) + 4096;
+
 /**
- * Where a snapshot goes: the picked file's stream (`handle`), the store's file `keep`, or the page in chunks. Opened
- * before the machine is paused, closed (flushed) after it resumed; `abort` drops whatever is still open.
+ * Where a snapshot goes: the picked file's stream (`handle`), the store's file `keep`, or the page in chunks (each
+ * copied into a buffer the page gave back, else a new one, and transferred: the page copies it into a Blob and gives
+ * it back, so a file's worth of buffers never waits for a GC in this worker or the page). Opened before the machine is
+ * paused, closed (flushed) after it resumed; `abort` drops whatever is still open.
  */
 async function output(id: number, handle?: FileSystemFileHandle, keep?: string): Promise<Out> {
   let out = await handle?.createWritable();
@@ -86,11 +97,16 @@ async function output(id: number, handle?: FileSystemFileHandle, keep?: string):
     await out?.abort().catch(() => undefined);
     throw err;
   }
+  spare = out || kept ? undefined : { id, buffers: [] };
   const sink: Sink = async (chunk) => {
     if (kept) return kept.write(chunk);
     if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
-    const copy = chunk.slice(); // a transferred buffer must be ours alone
-    post({ type: 'snapshot-chunk', id, data: copy }, [copy.buffer]);
+    const have = spare?.buffers.pop();
+    const buffer =
+      have && have.byteLength >= chunk.length ? have : new ArrayBuffer(Math.max(chunk.length, CHUNK_BUFFER));
+    const copy = new Uint8Array(buffer, 0, chunk.length);
+    copy.set(chunk); // the sink's bytes are its only until it returns (web/snapshot-file.ts `Sink`)
+    post({ type: 'snapshot-chunk', id, data: copy }, [buffer]);
   };
   return {
     sink,
@@ -99,9 +115,11 @@ async function output(id: number, handle?: FileSystemFileHandle, keep?: string):
       out = undefined;
       kept?.close();
       kept = undefined;
+      spare = undefined;
     },
     // Left open only by a failure (the one reported); an abort that fails has nothing to add to it.
     abort: async () => {
+      if (spare?.id === id) spare = undefined;
       await out?.abort().catch(() => undefined);
       await kept?.abort().catch(() => undefined);
     },

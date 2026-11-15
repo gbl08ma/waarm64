@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 68;
+pub const ABI_VERSION: u32 = 69;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -846,12 +846,6 @@ pub unsafe extern "C" fn vm_jit_gauge(vm: *const vm::Vm) -> *const u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn snapshot_version() -> u32 {
     snapshot::VERSION
-}
-
-/// The oldest format version [`vm_snapshot_restore`] reads (`snapshot::VERSION_MIN`; ABI 54).
-#[unsafe(no_mangle)]
-pub extern "C" fn snapshot_version_min() -> u32 {
-    snapshot::VERSION_MIN
 }
 
 /// Gets the VM ready to be saved: takes the completions the backends left

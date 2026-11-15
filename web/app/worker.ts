@@ -28,7 +28,7 @@ import { sessionOf, type Session } from './worker-header.ts';
 import { asked } from './worker-profile.ts';
 import { post, state } from './worker-post.ts';
 import { status } from './worker-status.ts';
-import { checkSnapshot, saveSnapshot, suspend, TAIL, type Running } from './worker-snapshot.ts';
+import { checkSnapshot, saveSnapshot, spareBuffer, suspend, TAIL, type Running } from './worker-snapshot.ts';
 import {
   loadPhases,
   bootOptions,
@@ -72,12 +72,13 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     case 'suspend':
       void suspend(running(), m.id);
       break;
+    case 'snapshot-spare':
+      return spareBuffer(m.id, m.buffer);
     case 'snapshot-check':
       void checkSnapshot(running(), m.id, m.what);
       break;
     case 'wake':
-      vm?.wake();
-      break;
+      return vm?.wake();
     case 'up':
       return up?.();
     case 'stop':

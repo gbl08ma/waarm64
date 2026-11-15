@@ -11,6 +11,7 @@ import type { Channels } from './start-message.ts';
 /** A save in progress (a snapshot, a suspend): the worker's messages for it, by its id (web/app/run/worker-messages.ts). */
 export type SnapshotJob = {
   progress(phase: Msg, fraction: number): void;
+  /** The file's next bytes (no handle, no keep), theirs only during the call: it copies what it keeps. */
   chunk(data: Uint8Array): void;
   done(m: Extract<FromWorker, { type: 'snapshot-done' | 'suspend-done' }>): void;
   error(e: unknown): void;

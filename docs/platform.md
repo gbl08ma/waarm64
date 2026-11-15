@@ -377,19 +377,23 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
 - **The codec** is per frame (so frames could be made and read by several workers on the shared memory), and a
   frame that doesn't shrink is stored (codec 0). The page writes **codec 2, the LZ4 block format through lz4_flex**
   in the core (`core/src/codec.rs`, its safe encoder and decoder; through `web/lz.ts` on one worker), and the frames'
-  CRC-32 goes through the core's crc32fast in the writer and the reader (the header's, read before any core instance
-  exists, stays JS's: `crc32` in `web/snapshot-file.ts`); the reader also takes deflate-raw (codec 1,
-  `CompressionStream`). Settled by measurement: an LZ saves 6 times faster than deflate for a file 1.4 times larger
-  (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's own LZ (`core/src/lz.rs`, which wrote
-  the same format: its files load, `tests/fixtures/old-lz.waarm64snap`) for a desktop save paused 9% less, its RAM
-  frames unpacked 1.6x faster and a 2% smaller file ("SNAPZ loop 1").
+  CRC-32 goes through the core's crc32fast in the writer and the reader: both are given the codec (the header's CRC,
+  read before any core instance exists, stays JS's: `crc32` in `web/snapshot-file.ts`, and `readHeader` reads a
+  header alone). Codecs 0 and 2 are all the reader takes. Settled by measurement: an LZ saves 6 times faster than
+  deflate for a file 1.4 times larger (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's
+  own LZ (`core/src/lz.rs`, same format) for a desktop save paused 9% less, its RAM frames unpacked 1.6x faster and a
+  2% smaller file ("SNAPZ loop 1").
 - **A save's pool** (`web/snapshot-pool.ts`, `web/snapshot-pool-worker.ts`; the writer's `RamPool`): RAM's frames are
   made by `min(navigator.hardwareConcurrency − 1, 6)` workers (`poolSize`; the paused machine's vCPU threads are idle).
   Each has a core instance of its own on a small memory (`codecCore` in `web/lz.ts`: the core's imports stubbed, none
   of web/vm.ts loaded) and reads guest RAM where it lies: a job is a shared buffer (memory 0's, or a spill memory's:
   every RAM view is a `SharedArrayBuffer`), an offset, a length and the chunk's index. The worker scans the chunk for
   zero pages, gathers its pages into its instance's memory, compresses them there and takes the frame's CRC over the
-  header and the bytes where `lz_compress` left them (no copy), and posts the frame back whole (transferred). Chunk c
+  header and the bytes where `lz_compress` left them (no copy), and posts the frame back whole (transferred), in a
+  buffer of the largest frame's size that the writer gives back to that worker with a later job once the sink has
+  written it (`RamPool.recycle`; a sink's bytes are its only until it returns): a save's frames are a few buffers a
+  worker, not a file's worth of garbage waiting for a GC, which had added ~350 MiB to the desktop's suspend ("SNAPZ
+  loop 2b"). Chunk c
   goes to worker c mod n, three in flight a worker; the machine worker writes the frames in order. Each frame is
   compressed alone with the same codec and rule (stored when it doesn't shrink), so **the file's bytes don't depend on
   the pool's size**, nor on whether there is one (`tests/snapshot.test.ts` "a save's pool"). The pool covers RAM
@@ -405,15 +409,27 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
-  a truncated file.
-- **Out:** `showSaveFilePicker` (called on the click), else a Blob download, which holds the whole file in the page
-  until its URL is revoked 60 s later: a big snapshot taken every few seconds piles up in the browser's blob storage
-  (tools space them out: `bench/gpu/snapshot-3d.ts`). **In:** a `File` read as a stream.
+  a truncated file. **Older files are refused, not read** (SNAPZ-KICKOFF.md decision 7): the header's `coreVersion`
+  is checked first (`otherVersion`, in `readSnapshot` before the check pass and in the machine worker's restore before
+  the devices), so a file of an older state version, which may also hold deflate-raw frames (codec 1, no longer
+  read) or a device list from before the clock, the notify socket or the balloon, gets
+  the other version's refusal (`snapshots:snapshot.otherVersion`: made by another version of this web app), a kept
+  snapshot when restored and a suspended machine at its start (dropped, the machine booting, with the note
+  [Couldn't resume the suspended machine](ui:machine:worker.notResumed)).
+  A state of this version must name the machine's devices exactly (`slotsOf`) and its vCPU features (`cpu`).
+- **Out:** `showSaveFilePicker` (called on the click), else a Blob download: the machine worker posts the frames to
+  the page as they are written (`snapshot-chunk`, each copied into a buffer the page gave back, `snapshot-spare`), the
+  page copies each into a Blob at once and gives the buffer back. For the desktop's 679 MB file the
+  renderer holds ~600 MiB more until the save ends and the browser's blob storage the file (~685 MiB) until the URL
+  is revoked 60 s later (the SNAPZ track's loop 4, staging through OPFS, is to replace both: docs/backlog.md): a big
+  snapshot taken every few seconds piles up in the browser's blob storage (tools space them out:
+  `bench/gpu/snapshot-3d.ts`). **In:** a `File` read as a stream.
 - **Versions** (the user's call, 2026-10-01): the core's state has a format version of its own (`snapshot::VERSION`,
   [abi.md](abi.md) "M8 phase C"), bumped when a saved field changes and pinned by a unit test of a fixed machine's
   bytes, **not the wasm's input hash**: that would void every snapshot at every core change, the JIT's too, which
-  never changes what is saved. The header's `abi` is recorded, not checked. A state of a version the core doesn't
-  read is refused; there is no migration (backlog "Snapshots"). So a file loads into another build of the core with
+  never changes what is saved. The header's `abi` is recorded, not checked. A restore reads its own version only
+  (`snapshot_version`; ABI 69 removed `snapshot_version_min` and the older versions' readers): another is refused;
+  there is no migration (backlog "Snapshots"). So a file loads into another build of the core with
   the same state version, which is what benchmarks start from ([benchmarking.md](benchmarking.md) "Starting from a
   snapshot"; `tests/snapshot.test.ts` "a snapshot loads into another build of the core…").
 - **The base's identity** (on the disk pins above): a chosen file's name, size and modification time, a URL's path,

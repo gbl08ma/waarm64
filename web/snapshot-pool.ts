@@ -15,10 +15,14 @@ export function poolSize(cores = globalThis.navigator?.hardwareConcurrency ?? 1)
   return Math.max(0, Math.min(cores - 1, POOL_MAX));
 }
 
-/** A pool that is ready: `readyMs` from its start to its last worker's instance. `close` ends its workers. */
-export type SavePool = RamPool & { readyMs: number; close(): void };
+/**
+ * A pool that is ready: `readyMs` from its start to its last worker's instance; `buffers()`, the frame buffers its
+ * workers have made so far (each about 1 MiB; written frames' go back to their worker: `recycle`). `close` ends its
+ * workers.
+ */
+export type SavePool = RamPool & { readyMs: number; buffers(): number; close(): void };
 
-type Handle = { post(m: PoolInit | PoolJob): void; terminate(): void };
+type Handle = { post(m: PoolInit | PoolJob, transfer?: ArrayBuffer[]): void; terminate(): void };
 
 /** A worker, its replies to `heard` and its failure to `failed`. */
 async function spawn(heard: (m: PoolReply) => void, failed: (e: Error) => void): Promise<Handle> {
@@ -26,13 +30,13 @@ async function spawn(heard: (m: PoolReply) => void, failed: (e: Error) => void):
     const w = new Worker(new URL('./snapshot-pool-worker.ts', import.meta.url), { type: 'module' });
     w.onmessage = (e: MessageEvent<PoolReply>) => heard(e.data);
     w.onerror = (e) => failed(new Error(`a snapshot pool worker failed: ${e.message}`));
-    return { post: (m) => w.postMessage(m), terminate: () => w.terminate() };
+    return { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => w.terminate() };
   }
   const { Worker: NodeWorker } = await import('node:worker_threads');
   const w = new NodeWorker(new URL(NODE_WORKER.pool, import.meta.url));
   w.on('message', heard);
   w.on('error', (e: Error) => failed(new Error(`a snapshot pool worker failed: ${e.message}`)));
-  return { post: (m) => w.postMessage(m), terminate: () => void w.terminate() };
+  return { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => void w.terminate() };
 }
 
 /**
@@ -43,7 +47,9 @@ async function spawn(heard: (m: PoolReply) => void, failed: (e: Error) => void):
 export async function startPool(module: WebAssembly.Module, n = poolSize(), timeoutMs = 10_000): Promise<SavePool | undefined> {
   if (n < 1) return undefined;
   const t0 = performance.now();
-  const waiting = new Map<number, { resolve(r: RamFrame): void; reject(e: Error): void }>();
+  const waiting = new Map<number, { resolve(r: RamFrame): void; reject(e: Error): void; worker: number }>();
+  /** Each worker's frame buffers made so far (its last reply's). */
+  const made: number[] = Array.from({ length: n }, () => 0);
   let broken: Error | undefined;
   const fail = (e: Error) => {
     broken ??= e;
@@ -51,15 +57,19 @@ export async function startPool(module: WebAssembly.Module, n = poolSize(), time
     waiting.clear();
   };
   let ready = 0;
+  /** The size of the workers' frame buffers (their `ready`'s): a frame in one is given back to its worker. */
+  let frameSize = 0;
   let settle: (ok: boolean) => void = () => {};
   const started = new Promise<boolean>((resolve) => { settle = resolve; });
   const heard = (m: PoolReply) => {
     if (m.type === 'ready') {
+      frameSize = m.frame;
       if (++ready === n) settle(true);
     } else if (m.type === 'failed') settle(false);
     else {
       const w = waiting.get(m.id);
       waiting.delete(m.id);
+      if (m.type === 'done' && w) made[w.worker] = m.buffers;
       if (m.type === 'done') w?.resolve(m);
       else w?.reject(new Error(m.message));
     }
@@ -85,16 +95,25 @@ export async function startPool(module: WebAssembly.Module, n = poolSize(), time
     return undefined;
   }
   let next = 0;
+  /** Each worker's written frames' buffers, to go back with its next job. */
+  const back: ArrayBuffer[][] = handles.map(() => []);
   return {
     size: n,
     readyMs: performance.now() - t0,
     ram(buffer, off, len, index) {
       if (broken) return Promise.reject(broken);
       const id = next++;
+      const give = back[index % n].splice(0);
       return new Promise<RamFrame>((resolve, reject) => {
-        waiting.set(id, { resolve, reject });
-        handles[index % n].post({ type: 'ram', id, buffer, off, len, index });
+        waiting.set(id, { resolve, reject, worker: index % n });
+        handles[index % n].post({ type: 'ram', id, buffer, off, len, index, give }, give);
       });
+    },
+    buffers: () => made.reduce((a, b) => a + b, 0),
+    recycle(frame, index) {
+      // Only a worker's own buffers (a frame the writer made itself, after a failure, is of its own size).
+      const b = frame.buffer;
+      if (!broken && b instanceof ArrayBuffer && b.byteLength === frameSize && !b.detached) back[index % n].push(b);
     },
     close() {
       end();

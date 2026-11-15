@@ -1451,12 +1451,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   thread; its load takes 9.8 s. The track takes lz4_flex as codec 2, the CRC into wasm, a pool of workers for the save
   and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
   in a restore, and a breakdown of the load's machine start.
-  Loops 1 (lz4_flex, crc32fast) and 2 (the save's pool: the desktop's pause 3.80 to 1.07 s) are in. Left from loop 2:
-  - **The save's memory with the pool** (bench/boot/REPORT.md "SNAPZ loop 2"): the pool's six instances add ~90-140
-    MiB while a save runs (Debian's kept and file saves +88, the desktop's kept +142); the desktop's file and suspend
-    saves added more again (+316, +347 over loop 1; four workers alike), which the pool's instances don't explain:
-    perhaps the output's buffering (the download's Blob parts, OPFS) behind a sink fed 3.5x faster, perhaps the
-    probe's 250 ms samples of a 1.1 s pause. Not looked into; transient (the RSS before each next save is loop 1's).
+  Loops 1 (lz4_flex, crc32fast), 2 (the save's pool: the desktop's pause 3.80 to 1.07 s) and 2b (older files refused,
+  the save's garbage recycled) are in. Left:
+  - **A download's memory** (bench/boot/REPORT.md "SNAPZ loop 2b"): the desktop's file save adds ~1.1-1.2 GiB at
+    its peak: the browser's blob storage the file (~685 MiB, until the download's URL is revoked 60 s later) and the
+    renderer ~600 MiB more, which falls back as the save ends: by its timeline the page's Blobs' bytes, held until the
+    browser has taken them (the chunk buffers themselves go back to the worker). Blobs made in the machine worker instead held only ~340 MiB in the renderer but paused the save 0.44 s
+    longer (1.80 s against 1.36), not taken. Loop 4's staging through OPFS (a file on disk, then copied or handed to
+    the download) is to replace both; what is left of a kept snapshot's and a suspend's (+90 and +205 MiB on the
+    desktop) is the pool's six instances while it runs and, for a 3D machine, its read-back state (109 MB of BLOB
+    contents held through the save).
   - **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
     read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (mostly their reads through the device worker),
     and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go

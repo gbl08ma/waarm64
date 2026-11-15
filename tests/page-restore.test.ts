@@ -56,7 +56,7 @@ const keepSnapshot = (page: Page, id: string, pin: Record<string, unknown>) =>
   page.evaluate(async ([id, pin]) => {
     const { Store, snapshotPath } = await import('/web/app/store.ts' as string);
     const { page: p } = await import('/web/app/page.ts' as string);
-    const { SnapshotWriter } = await import('/web/snapshot-file.ts' as string);
+    const { SnapshotWriter, crc32 } = await import('/web/snapshot-file.ts' as string);
     const { opfsDir } = await import('/web/overlay.ts' as string);
     const store = await Store.open();
     const m = await store.get('machines', id);
@@ -66,7 +66,8 @@ const keepSnapshot = (page: Page, id: string, pin: Record<string, unknown>) =>
     const sid = 'eeeeeeeeeee1';
     const header = { format: 1, coreVersion: 0, abi: 0, created: new Date().toISOString(), shape, shapeHash: hash, disks: pins };
     const parts: Uint8Array[] = [];
-    const w = new SnapshotWriter((b: Uint8Array) => { parts.push(b.slice()); }, header);
+    const stored = { id: 0, compress: async (b: Uint8Array) => b, decompress: async (b: Uint8Array) => b, crc32 };
+    const w = new SnapshotWriter((b: Uint8Array) => { parts.push(b.slice()); }, header, { codec: stored });
     await w.end();
     const path: string = snapshotPath(id, sid);
     const dir = await opfsDir(path.slice(0, path.lastIndexOf('/')), true);

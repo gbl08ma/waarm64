@@ -1,8 +1,8 @@
 // A VM through snapshot files (web/snapshot.ts, docs/platform.md "Snapshots"): the guest runs
 // under the JIT, is saved to a file (the core's state, the backends', RAM through the LZ codec),
 // closed, and a new VM started from the file runs on. Deterministic round-robin: the run takes
-// the steps of tests/steps.txt and prints what an unbroken run prints. Then what is refused, and the codec itself:
-// a file its old LZ wrote still loads (tests/fixtures/old-lz.waarm64snap).
+// the steps of tests/steps.txt and prints what an unbroken run prints. Then what is refused (an older file by its
+// version, before its frames are read), the codec's CRC-32, and a save's pool.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -10,9 +10,8 @@ import { lzCodec } from '../web/lz.ts';
 import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
 import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
 import { crc32 as zlibCrc32 } from 'node:zlib';
-import { applyRam, crc32, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, type RamPool } from '../web/snapshot-file.ts';
+import { applyRam, crc32, frameHeader, openSnapshot, SnapshotError, SnapshotWriter, type RamPool, type SnapshotHeader } from '../web/snapshot-file.ts';
 import { poolSize, startPool } from '../web/snapshot-pool.ts';
-import { oldLzContent, OLD_LZ_HEADER } from './old-lz-content.ts';
 import { STEPS } from './steps.ts';
 import { ABI, CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, compileCore, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
 
@@ -130,39 +129,10 @@ test('parallel: litmus and the atomics stress on 4 vCPUs (JIT) through snapshot 
   assert.match(r.console, /litmus: all ok, 0 skipped\r?\nwaarm64: stress on 4 CPUs[^]*\nwaarm64: test ok\r?\n/);
 });
 
-test('the core\'s codec: a file the old LZ wrote (before lz4_flex) still loads, and its CRC-32 is zlib\'s', async () => {
+const HEADER: SnapshotHeader = { format: 1, coreVersion: 6, abi: 69, created: '2026-11-15T00:00:00Z', machine: 'pool' };
+
+test('the core\'s codec: its CRC-32 is zlib\'s', async () => {
   const codec = await lzCodec(WASM);
-  // tests/fixtures/old-lz.waarm64snap: written by core/src/lz.rs (SNAPZ loop 1 replaced it), every frame codec 2.
-  const file = readFileSync(new URL('fixtures/old-lz.waarm64snap', import.meta.url));
-  const want = oldLzContent();
-  const s = await openSnapshot(new Blob([file]), { codecs: [codec] });
-  assert.deepEqual(s.header, OLD_LZ_HEADER);
-  const got = { CORE: [] as Uint8Array[], DEVS: [] as Uint8Array[], ram: new Uint8Array(want.ram.length), disk: new Map<number, Uint8Array>() };
-  for await (const f of s.frames()) {
-    if (f.tag === 'CORE' || f.tag === 'DEVS') got[f.tag].push(f.data);
-    else if (f.tag === 'RAM ') applyRam(got.ram, f.index, f.data);
-    else if (f.tag === 'DISK') for (const b of diskBlocks(f.index, f.data)) got.disk.set(b.block, b.data.slice());
-  }
-  assert.ok(Buffer.compare(Buffer.concat(got.CORE), want.core) === 0, 'CORE differs');
-  assert.ok(Buffer.compare(Buffer.concat(got.DEVS), want.devs) === 0, 'DEVS differs');
-  assert.ok(Buffer.compare(got.ram, want.ram) === 0, 'RAM differs');
-  assert.deepEqual([...got.disk.keys()], want.disk.map((b) => b.block));
-  for (const b of want.disk) assert.ok(Buffer.compare(got.disk.get(b.block)!, b.data) === 0, `block ${b.block} differs`);
-  assert.equal(s.times.unpack > 0, true);
-  // The same content written now (lz4_flex) reads back the same, at about the old size.
-  const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, OLD_LZ_HEADER, { codec, concurrency: 1 });
-  await w.bytes('CORE', want.core);
-  await w.bytes('DEVS', want.devs);
-  await w.ram(want.ram);
-  await w.disk(want.disk);
-  await w.end();
-  const now = Buffer.concat(parts);
-  assert.ok(now.length < file.length * 1.1, `${now.length} bytes against the old ${file.length}`);
-  const again = await openSnapshot(new Blob([now]), { codecs: [codec] });
-  const ram = new Uint8Array(want.ram.length);
-  for await (const f of again.frames()) if (f.tag === 'RAM ') applyRam(ram, f.index, f.data);
-  assert.ok(Buffer.compare(ram, want.ram) === 0, 'RAM differs after a round trip');
   // The core's CRC-32 (crc32fast), seeded and across the codec's buffer (a frame at most, so a header goes in parts).
   assert.equal(codec.crc32!(new TextEncoder().encode('123456789')), 0xcbf43926);
   assert.equal(codec.crc32!(new Uint8Array(0)), 0);
@@ -193,10 +163,14 @@ function poolRam(chunks: number) {
   return ram;
 }
 
-/** A file of RAM (`views`, memory 0's then a spill memory's, numbered on), through `pool` or this thread; its progress. */
-async function poolFile(views: Uint8Array[], codec: Awaited<ReturnType<typeof lzCodec>>, pool?: RamPool) {
+/**
+ * A file of RAM (`views`, memory 0's then a spill memory's, numbered on), through `pool` or this thread; its progress.
+ * `later`: the sink takes each frame's bytes a task later (a written frame's buffer goes back to its worker only then).
+ */
+async function poolFile(views: Uint8Array[], codec: Awaited<ReturnType<typeof lzCodec>>, pool?: RamPool, later = false) {
   const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, OLD_LZ_HEADER, { codec, concurrency: 1 });
+  const sink = later ? async (b: Uint8Array) => { await new Promise((r) => setTimeout(r, 0)); parts.push(b.slice()); } : (b: Uint8Array) => { parts.push(b.slice()); };
+  const w = new SnapshotWriter(sink, HEADER, { codec, concurrency: 1 });
   await w.bytes('CORE', new Uint8Array(3000).fill(9));
   const seen: number[] = [];
   const counts = [];
@@ -213,7 +187,7 @@ test('a save\'s pool: the file is byte-identical for any pool size and for none,
   assert.equal(one.pooled, 0);
   // Read back: every page where it was.
   const back = views.map((v) => new Uint8Array(v.length));
-  for await (const f of (await openSnapshot(new Blob([one.file]), { codecs: [codec] })).frames()) {
+  for await (const f of (await openSnapshot(new Blob([one.file]), { codec })).frames()) {
     if (f.tag === 'RAM ') applyRam(back[f.index >= 64 ? 1 : 0], f.index % 64, f.data);
   }
   for (const [k, v] of views.entries()) assert.ok(Buffer.compare(back[k], v) === 0, `view ${k} differs after a round trip`);
@@ -227,10 +201,14 @@ test('a save\'s pool: the file is byte-identical for any pool size and for none,
     const pool = await startPool(WASM, n);
     assert.ok(pool, `a pool of ${n} starts`);
     try {
-      const r = await poolFile(views, codec, pool);
+      const r = await poolFile(views, codec, pool, n === 2);
       assert.equal(r.pooled, n);
       assert.ok(r.times.compress > 0 && r.times.scan > 0, `${n}: the workers' times are counted`);
       same(r, `a pool of ${n}`);
+      // A written frame's buffer goes back to its worker: a few a worker (three in flight, and those written since its
+      // last job), not one a frame.
+      const frames = r.counts.reduce((a, c) => a + c.frames, 0);
+      assert.ok(pool.buffers() <= n * 5 && (n > 2 || pool.buffers() < frames / 2), `a pool of ${n} made ${pool.buffers()} buffers for ${frames} frames`);
     } finally {
       pool.close();
     }
@@ -270,7 +248,7 @@ test('a snapshot of another machine, another version or with a damaged state is 
     if (r.kind === Exit.DEVICE) await vm.settle();
   }
   const parts: Uint8Array[] = [];
-  const w = await writeSnapshot(vm, (b) => { parts.push(b); }, { machine: 'test' }, codec);
+  const w = await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
   await vm.close();
   const file = new Blob(parts as BlobPart[]);
   assert.equal(w.bytes, file.size);
@@ -290,6 +268,13 @@ test('a snapshot of another machine, another version or with a damaged state is 
   assert.equal(await refused({ ...o, devices: [...o.devices!, { type: 'rng' }] }), 'other-machine');
   assert.equal(await refused({ ...o, crypto: false }), 'other-machine');
   assert.equal(await refused(o, file, codec.snapshotVersion + 1), 'other-version');
+  // An older file (SNAPZ-KICKOFF.md decision 7: not read) is refused by its version, before its frames are read: here
+  // one of codec 1 (deflate-raw, which the reader no longer takes), which a check pass would call damage.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const old = reheaded(bytes, (h) => { h.coreVersion = codec.snapshotVersion - 1; });
+  const at = 20 + new DataView(old.buffer).getUint32(12, true);
+  old.set(frameHeader('CORE', 1, 0, 4, 4).subarray(0, 24), at); // the first frame says codec 1 (its CRC now fails too)
+  await assert.rejects(readSnapshot(new Blob([old]), codec, codec.snapshotVersion), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-version' && e.msg.key === 'snapshots:snapshot.otherVersion');
   assert.equal(await refused(o, file.slice(0, file.size - 40)), 'truncated');
   // The core's state changed under a valid checksum: a file written with the core's version word bumped.
   const { header, restore } = await readSnapshot(file, codec, codec.snapshotVersion);
@@ -385,7 +370,7 @@ test('a VM started from a snapshot saves the same state: the core\'s bytes and t
   const before = await vm.snapshot();
   assert.notDeepEqual(before.host.devices[1], { s: '0', word: '0', left: 0 }, 'the rng was never read');
   const parts: Uint8Array[] = [];
-  await writeSnapshot(vm, (b) => { parts.push(b); }, {}, codec);
+  await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, {}, codec);
   await vm.close();
   const { restore } = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion);
   vm = await bootVm(WASM, { ...o, restore });
@@ -425,7 +410,7 @@ test('a snapshot carries the disk\'s changes: a restore replaces the overlay wit
   const at = whole.steps - 400_000;
   assert.equal((await run(at)).kind === Exit.PSCI, false);
   const parts: Uint8Array[] = [];
-  const w = await writeSnapshot(vm, (b) => { parts.push(b); }, {}, codec);
+  const w = await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, {}, codec);
   const file = new Blob(parts as BlobPart[]);
   assert.ok(w.diskBlocks > 0, 'no block of the disk in the file');
   poweredOff({ ...(await run(Infinity)), console: out });

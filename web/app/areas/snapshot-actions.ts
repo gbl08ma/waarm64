@@ -114,7 +114,10 @@ export class SnapshotActions {
     );
   }
 
-  /** The snapshot written by the worker: its messages (`chunk`: the file's bytes, without a handle or a keep) until it's done. */
+  /**
+   * The snapshot written by the worker: its messages (`chunk`: the file's bytes, without a handle or a keep, which it
+   * copies) until it's done.
+   */
   #write(
     r: Run,
     send: Omit<Extract<ToWorker, { type: 'snapshot' }>, 'id'>,
@@ -192,6 +195,7 @@ export class SnapshotActions {
     try {
       this.#holdInput(r);
       await this.#dropCaches();
+      // Each chunk copied into a Blob at once (its buffer goes back to the worker: web/app/run/worker-messages.ts).
       const done = await this.#write(r, { type: 'snapshot', handle, whole: o.whole }, (data) => {
         parts.push(new Blob([data as Uint8Array<ArrayBuffer>]));
       });

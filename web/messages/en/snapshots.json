@@ -187,10 +187,6 @@
     "message": "This snapshot is incomplete. The file was cut short while it was written or copied. Download or copy it again.",
     "note": "Error headline when a snapshot file ends early, shown when it's restored or loaded."
   },
-  "snapshot-file.damage.expands": {
-    "message": "a compressed frame expands past its stated size",
-    "note": "A detail placed in the parentheses of “This snapshot is damaged (…).” (the error of a snapshot that can't be read, shown when it's restored or loaded): a compressed part unpacks to more bytes than it says."
-  },
   "snapshot-file.damage.memoryBlockSize": {
     "message": "a memory block has an impossible size",
     "note": "A detail placed in the parentheses of “This snapshot is damaged (…).” (the error of a snapshot that can't be read, shown when it's restored or loaded): a block of the machine's memory has a size no snapshot writes."
@@ -282,10 +278,6 @@
   "snapshot.otherVersion": {
     "message": "This snapshot was made by another version of this web app. Its machine state is format {{format}}, and this version reads format {{reads}}. Open it in the version that made it.",
     "note": "Error headline when a snapshot's machine state is of a format this page doesn't read, shown when it's restored or loaded; {{format}} is the snapshot's format number, {{reads}} the one this page reads."
-  },
-  "snapshot.otherVersion.range": {
-    "message": "This snapshot was made by another version of this web app. Its machine state is format {{format}}, and this version reads formats {{min}} to {{max}}. Open it in the version that made it.",
-    "note": "Error headline when a snapshot's machine state is of a format this page doesn't read, shown when it's restored or loaded, where this page reads several; {{format}} is the snapshot's format number, {{min}} and {{max}} the oldest and newest this page reads."
   },
   "snapshot.suspended": {
     "message": "This file holds a suspended machine's memory without its disks' changes, so it can only resume in the browser that suspended it. To take a machine elsewhere, save a snapshot to a file instead.",

@@ -13,7 +13,8 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
+import { readHeader, SnapshotWriter } from '../web/snapshot-file.ts';
+import { coreStateVersion, storedCodec } from './snapshot-codecs.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
@@ -116,7 +117,7 @@ async function drop(page: Page, path: string) {
 /** A snapshot with nothing in it but a header: what the page and the worker check before they touch anything. */
 async function headerOnly(name: string, header: Record<string, unknown>) {
   const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: new Date().toISOString(), ...header });
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: await coreStateVersion(), abi: 0, created: new Date().toISOString(), ...header }, { codec: storedCodec });
   await w.end();
   const path = join(dir, name);
   writeFileSync(path, Buffer.concat(parts));
@@ -152,7 +153,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const bytes = readFileSync(first.path);
   assert.equal(bytes.subarray(0, 8).toString('latin1'), 'WAARMSNP');
   assert.ok(bytes.length > 100_000 && bytes.length < 120e6, `a plausible size: ${bytes.length}`);
-  const header = (await openSnapshot(new Blob([bytes]))).header;
+  const header = await readHeader(new Blob([bytes]));
   assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', MACHINES.buildroot.label, 2, null, ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk', 'balloon']]);
   assert.match(String(header.serial), /saved-state/);
   assert.equal((header.disks as { sha256?: string }[])[0].sha256, undefined, 'no hash of the base image is written');
@@ -352,6 +353,37 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await page.locator('[data-action=back]').click();
   await running(page);
   assert.equal(await suspendFile(), undefined);
+  assert.equal(await susvar(), '');
+  // A suspended machine kept by an older page (its state of an older version: older files aren't read, SNAPZ-KICKOFF.md
+  // decision 7) is refused as that, in the page's words, and the machine boots instead: no crash, no hang.
+  await onSerial(page, 'SUSVAR=four\n');
+  assert.equal(await susvar(), 'four');
+  await suspend();
+  const version = await coreStateVersion();
+  await page.evaluate(async (older) => {
+    const { crc32 } = await import('/web/snapshot-file.ts' as string);
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('waarm64-buildroot');
+    const file = await (await dir.getFileHandle('suspend')).getFile();
+    const len = new DataView(await file.slice(12, 16).arrayBuffer()).getUint32(0, true);
+    const header = JSON.parse(await file.slice(16, 16 + len).text());
+    header.coreVersion = older;
+    const json = new TextEncoder().encode(JSON.stringify(header));
+    const top = new Uint8Array(20 + json.length);
+    top.set(new Uint8Array(await file.slice(0, 12).arrayBuffer()));
+    new DataView(top.buffer).setUint32(12, json.length, true);
+    top.set(json, 16);
+    new DataView(top.buffer).setUint32(16 + json.length, crc32(json), true);
+    const rest = file.slice(20 + len);
+    const out = await (await dir.getFileHandle('suspend')).createWritable();
+    await out.write(new Blob([top, rest]));
+    await out.close();
+  }, version - 1);
+  await page.reload();
+  // The note, while the machine boots (its detail says why).
+  const why = words('snapshots:snapshot.otherVersion', { format: version - 1, reads: version }).source;
+  await page.waitForFunction(([head, src]) => (document.getElementById('message-text')?.textContent ?? '').includes(head) && new RegExp(src).test(document.getElementById('message-details')?.textContent ?? ''), [t('machine:worker.notResumed'), why] as const, { timeout: 60_000, polling: 20 });
+  await running(page);
+  assert.equal(await suspendFile(), undefined, 'the older suspended machine was dropped');
   assert.equal(await susvar(), '');
   // A snapshot file is still what leaves the browser: a suspended machine's file is not offered anywhere.
   assert.deepEqual(errors, []);

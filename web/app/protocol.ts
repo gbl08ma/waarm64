@@ -192,6 +192,8 @@ export type ToWorker =
    * `snapshot-done` or `snapshot-error`, each message of it with its `id`.
    */
   | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean }
+  /** A `snapshot-chunk`'s buffer back (transferred), its bytes copied: save `id`'s next chunks are copied into it. */
+  | { type: 'snapshot-spare'; id: number; buffer: ArrayBuffer }
   /**
    * Whether a snapshot or a suspend (`what`) would be refused now by a device (Vulkan in use, a video decoding),
    * asked before the page touches the machine (its USB ports, its input); answered by `snapshot-check`.
@@ -308,7 +310,10 @@ export type FromWorker =
   | { type: 'phase'; text: Msg }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */
   | { type: 'snapshot-progress'; id: number; phase: Msg; fraction: number }
-  /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
+  /**
+   * The next bytes of the file, when the save had no `handle` (transferred, in order): the page copies them (into a
+   * Blob) and gives the buffer back (`snapshot-spare`), so a file's worth of them never waits for a GC.
+   */
   | { type: 'snapshot-chunk'; id: number; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */

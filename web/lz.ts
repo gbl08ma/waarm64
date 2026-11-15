@@ -16,7 +16,6 @@ export type CodecExports = {
   lz_decompress(src: number, len: number, dst: number, cap: number): number;
   crc32(seed: number, src: number, len: number): number;
   snapshot_version(): number;
-  snapshot_version_min(): number;
 };
 
 /**
@@ -34,7 +33,7 @@ export async function codecCore(wasm: BufferSource | WebAssembly.Module): Promis
   }
   const instance = await WebAssembly.instantiate(module, imports);
   const raw = instance.exports as unknown as CodecExports;
-  for (const name of ['thread_alloc', 'lz_bound', 'lz_compress', 'lz_decompress', 'crc32', 'snapshot_version', 'snapshot_version_min'] as const) {
+  for (const name of ['thread_alloc', 'lz_bound', 'lz_compress', 'lz_decompress', 'crc32', 'snapshot_version'] as const) {
     if (typeof raw[name] !== 'function') throw new Error(`the core has no ${name}`);
   }
   return { ex: raw, memory };
@@ -42,10 +41,10 @@ export async function codecCore(wasm: BufferSource | WebAssembly.Module): Promis
 
 /**
  * The LZ codec on an instance of the core `wasm` (its bytes or its compiled module), and that
- * core's `snapshot_version` (the format of the machine state it saves) and `snapshot_version_min`
- * (the oldest it reads); `module`, the core it runs (a save's pool starts its workers on it).
+ * core's `snapshot_version` (the format of the machine state it saves and reads); `module`, the core it runs (a save's
+ * pool starts its workers on it).
  */
-export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<Codec & { snapshotVersion: number; snapshotVersionMin: number; module: WebAssembly.Module }> {
+export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<Codec & { snapshotVersion: number; module: WebAssembly.Module }> {
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const { ex, memory } = await codecCore(module);
   const cap = ex.lz_bound(MAX) >>> 0;
@@ -57,7 +56,6 @@ export async function lzCodec(wasm: BufferSource | WebAssembly.Module): Promise<
     id: 2,
     module,
     snapshotVersion: ex.snapshot_version(),
-    snapshotVersionMin: ex.snapshot_version_min(),
     async compress(raw) {
       if (raw.length > MAX) throw new RangeError(`a ${raw.length}-byte frame is over the codec's ${MAX}`);
       bytes().set(raw, src);

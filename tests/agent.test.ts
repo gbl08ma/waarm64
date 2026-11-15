@@ -21,6 +21,7 @@ import { answer, GrowActions, type Marks } from '../web/app/areas/grow-actions.t
 import type { GrowDisk, ResizeTarget } from '../web/app/resize.ts';
 import { msgOf } from '../web/msg.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
+import { storedCodec } from './snapshot-codecs.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
@@ -1613,12 +1614,12 @@ test("the link: RENEW once after a template's restore, at the first HELLO of an 
 
 test("a template (tools/snapshot-template.ts, web/snapshot-file.ts `asTemplate`): the header's flag set and dropped, the frames untouched", async () => {
   const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: '2026-11-13T00:00:00Z', name: 'demo ☃' });
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: '2026-11-13T00:00:00Z', name: 'demo ☃' }, { codec: storedCodec });
   await w.bytes('CORE', new Uint8Array(3000).map((_, i) => i * 7));
   await w.end();
   const file = new Blob(parts as BlobPart[]);
   const read = async (b: Blob) => {
-    const s = await openSnapshot(b, { check: true });
+    const s = await openSnapshot(b, { codec: storedCodec, check: true });
     const frames: string[] = [];
     for await (const f of s.frames()) frames.push(`${f.tag}:${f.index}:${f.data.length}:${f.data[100]}`);
     return { header: s.header, frames };

@@ -26,7 +26,7 @@ import { startServer } from '../../tools/serve.ts';
 import { chromiumEnv } from '../../tools/nosme.ts';
 import { answerAsks } from '../../tests/page-ask.ts';
 import { credentialsQuery } from '../../tests/debian-unattended.ts';
-import { crc32, openSnapshot, type SnapshotHeader } from '../../web/snapshot-file.ts';
+import { crc32, readHeader, type SnapshotHeader } from '../../web/snapshot-file.ts';
 import { commit, CORE_PATH, sha } from '../snapshot-start.ts';
 import { t } from '../../web/i18n.ts';
 import { words } from '../../tests/words.ts';
@@ -198,10 +198,10 @@ async function storedMachine(): Promise<string> {
 
 /** The header of the snapshot kept as `id` of machine `m`, read from OPFS on the page. */
 const keptHeader = (m: string, id: string) => page.evaluate(async ([m, id]) => {
-  const { openSnapshot } = await import('/web/snapshot-file.ts' as string);
+  const { readHeader } = await import('/web/snapshot-file.ts' as string);
   let dir = await navigator.storage.getDirectory();
   for (const p of ['machines', m, 'snapshots']) dir = await dir.getDirectoryHandle(p);
-  return (await openSnapshot(await (await dir.getFileHandle(id)).getFile())).header;
+  return readHeader(await (await dir.getFileHandle(id)).getFile());
 }, [m, id]) as Promise<SnapshotHeader>;
 
 /** The file's frames under `header` (its length and CRC made again): written to `to`. */
@@ -227,7 +227,7 @@ async function rewrite(from: string, to: string, header: SnapshotHeader) {
  * in the machine's first seconds (then deleted), the frames the file's. Made once per machine shape.
  */
 async function storedCopy(m: string, url: string) {
-  const warmHeader = (await openSnapshot(await openAsBlob(warm))).header;
+  const warmHeader = await readHeader(await openAsBlob(warm));
   await page.goto(url);
   await until(['booting', 'running'], 120_000);
   const s = await save('kept', () => page.locator('#save-snapshot').click());

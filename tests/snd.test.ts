@@ -417,12 +417,10 @@ test('snd: save and restore keep the stream, the log and the sink; held messages
   for (const bad of [null, {}, { ...state, streams: [{ ...started, state: 'playing' }] }, { ...state, log: 'x' }, { ...state, streams: [{ ...started, params: null }] }, { ...state, streams: [started, started, started] }, { ...state, sink: { frames: 1 } }, { ...state, source: { frames: 1 } }]) {
     assert.throws(() => rig().dev.restore(bad), /no state for the sound device/, JSON.stringify(bad));
   }
-  // A state from before the input stream (the output's `state` and `params`) loads: the input is new.
-  const old = rig();
-  old.dev.restore({ state: 'started', params: started.params, log: state.log, sink: state.sink });
-  assert.equal(old.dev.snd.streams[0].state, 'started');
-  assert.equal(old.dev.snd.streams[1].state, 'none');
-  assert.equal(old.status(pcm(R_PCM_STOP)), S_OK);
+  // One stream (a state from before the input stream: older snapshots are refused) is no state either.
+  for (const bad of [{ ...state, streams: [started] }, { state: 'started', params: started.params, log: state.log, sink: state.sink }]) {
+    assert.throws(() => rig().dev.restore(bad), /no state for the sound device/, JSON.stringify(bad));
+  }
 });
 
 test('snd: toF32 converts S16, S32 and FLOAT', () => {

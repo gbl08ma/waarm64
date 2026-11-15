@@ -467,14 +467,10 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
 - `snapshot_version() -> u32`: `snapshot::VERSION`, for the file's header and the host's refusal
   message. It is bumped when a saved field is added, removed or changes meaning; a unit test
   pins the bytes of a fixed machine's state, so a layout change without the bump fails.
-  `snapshot_version_min() -> u32` (ABI 54): the oldest version a restore still reads (`snapshot::VERSION_MIN`), when a
-  newer layout only added something an older state can lack: version 3 added a suspended guest after the devices, so a
-  version 2 state was a version 3 one without it; version 4 added fields inside the devices' (a transport's SHMSel, an
-  xHCI endpoint's walk waiting for room), so it reads only itself; version 5 added what the xHCI's Controller Save State
-kept, at the end of the xHCI's (a version 4 controller has none, and a CRS after it reports a Save/Restore Error), so
-it reads 4 and 5; version 6 added a byte to each virtio transport's (its reset carried over a suspend: devices.md
-"Across a suspend"), absent from 4 and 5, whose suspended guest has its live devices marked at the restore, as the
-suspend marks them. The host accepts a file whose version is in that range.
+  A restore reads that version only (`vm_snapshot_restore` returns 1 for any other), and the host refuses a file of
+  another version by its header before it reads its frames (`web/snapshot.ts` `otherVersion`): older files aren't
+  migrated (SNAPZ-KICKOFF.md decision 7; `snapshot_version_min` and the older versions' readers went in ABI 69, "SNAPZ:
+  older files refused").
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
@@ -538,6 +534,17 @@ implemented by this step).
   host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
   saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
 
+## SNAPZ: older files refused (design note for ABI 69)
+
+The SNAPZ track's loop 2b (`SNAPZ-KICKOFF.md` decision 7: old snapshot files need not load; decision 4: the ABI).
+**`snapshot_version_min` is gone**, and a restore reads `snapshot::VERSION` (6) only: the readers of versions 4 and 5
+(the xHCI's state without its Controller Save State, a virtio transport's without its carried reset, a format 5
+suspended guest's devices marked at the restore) are removed with it. The host checks the header's `coreVersion`
+against `snapshot_version()` before it reads a frame (`web/snapshot.ts` `otherVersion`, also first in the machine
+worker's restore, `web/app/worker-start.ts`), so an older file, which may hold frames of a codec no longer read
+(deflate-raw, codec 1), is refused as another version's (`snapshots:snapshot.otherVersion`), not as damaged. No other
+export changes.
+
 ## SNAPZ: the snapshot codec and CRC (design note for ABI 68)
 
 The SNAPZ track's loop 1 (`SNAPZ-KICKOFF.md` decisions 1 and 4; measured in `bench/boot/REPORT.md` "SNAPZ:
@@ -546,8 +553,7 @@ its hash table is on the stack) takes the place of the core's own LZ (`core/src/
 three exports, and crc32fast gives the frames' CRC-32 a fourth. `core/src/codec.rs` holds both, with the contract's
 tests.
 - **`lz_bound`, `lz_compress`, `lz_decompress`: the same signatures.** The format is the same (the LZ4 block
-  format; lz4_flex and the old codec read each other's output, `bench/snapz/compat.mjs`, so every file already
-  written loads: `tests/fixtures/old-lz.waarm64snap`). What changes: `lz_bound` is lz4_flex's
+  format; lz4_flex and the old codec read each other's output, `bench/snapz/compat.mjs`). What changes: `lz_bound` is lz4_flex's
   (`get_maximum_output_size`: 20 + len × 1.1, larger than the old `len + len/255 + 16`), and `lz_compress` refuses
   (0) any `cap` under it rather than trying (lz4_flex checks up front); the decompressor's output for a malformed
   block that it doesn't refuse (an offset of 0) is bytes of `dst`, never anything outside it. The frames' CRC
@@ -623,6 +629,7 @@ tests.
 | 65 | FEAT_FP16 and FEAT_FHM: `VmConfig.features` bits 15 and 16 (FHM only with FP16); `ID_AA64PFR0_EL1` FP = AdvSIMD = 1, `ID_AA64ISAR0_EL1` FHM = 1 |
 | 67 | `vm_clock_skip` gone: the guest's clock after a restore is the guest agent's (docs/frontend.md "The guest's clock"), not a suspended guest's skip |
 | 68 | the snapshot codec through lz4_flex (`lz_bound`'s value, `lz_compress` refusing a `cap` under it) and `crc32(seed, src, len)` through crc32fast ("SNAPZ: the snapshot codec and CRC") |
+| 69 | `snapshot_version_min` gone: a restore reads `snapshot::VERSION` only, older files are refused ("SNAPZ: older files refused") |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

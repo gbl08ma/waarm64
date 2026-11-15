@@ -868,7 +868,7 @@ impl Transport {
             .map(|b| b.load(Ordering::Relaxed))
             .collect();
         w.raw(&config);
-        // Format 6: the reset carried over a suspend (`suspending`, `carried`).
+        // The reset carried over a suspend (`suspending`, `carried`).
         w.u8(self.suspended_live as u8 | (self.carried.is_some() as u8) << 1);
         if let Some(f) = self.carried {
             w.u64(f);
@@ -882,14 +882,7 @@ impl Transport {
     /// `Corrupt` for a queue outside RAM, a chain that doesn't walk, or
     /// chains that don't fit the ring at once (a save checks both:
     /// [`Transport::repostable`]).
-    /// A state of format 5 has no carried reset: the VM marks a suspended guest's live devices (`suspending`).
-    pub fn restore(
-        &mut self,
-        r: &mut Reader,
-        mem: &Mem,
-        sh: &DevShared,
-        version: u32,
-    ) -> snapshot::Result<()> {
+    pub fn restore(&mut self, r: &mut Reader, mem: &Mem, sh: &DevShared) -> snapshot::Result<()> {
         const CORRUPT: snapshot::Error = snapshot::Error::Corrupt;
         self.dev_features_sel = r.u32()?;
         self.drv_features_sel = r.u32()?;
@@ -931,19 +924,17 @@ impl Transport {
         for (c, &b) in sh.config.iter().zip(r.raw(CONFIG_SIZE)?) {
             c.store(b, Ordering::Relaxed);
         }
-        if version >= 6 {
-            let flags = r.u8()?;
-            if flags & !3 != 0 {
+        let flags = r.u8()?;
+        if flags & !3 != 0 {
+            return Err(CORRUPT);
+        }
+        self.suspended_live = flags & 1 != 0;
+        if flags & 2 != 0 {
+            let f = r.u64()?;
+            if f & !self.offered() != 0 {
                 return Err(CORRUPT);
             }
-            self.suspended_live = flags & 1 != 0;
-            if flags & 2 != 0 {
-                let f = r.u64()?;
-                if f & !self.offered() != 0 {
-                    return Err(CORRUPT);
-                }
-                self.carried = Some(f);
-            }
+            self.carried = Some(f);
         }
         // The chains the old backend held (or hadn't answered), for the new one.
         let indirect = self.driver_features & F_INDIRECT_DESC != 0;

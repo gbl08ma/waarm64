@@ -1,7 +1,6 @@
 //! The snapshot file's codec 2 and its frames' checksum (docs/platform.md "The snapshot file"; docs/abi.md "SNAPZ: the
 //! snapshot codec and CRC"): the LZ4 *block* format through lz4_flex (its safe encoder and decoder, no allocation),
-//! and the IEEE CRC-32 through crc32fast. The core's own LZ wrote the same format until SNAPZ loop 1; the files it
-//! wrote still load (`old_codec_frames_still_load`).
+//! and the IEEE CRC-32 through crc32fast.
 //!
 //! The decompressor reads files a user chose: any input gives `None` or a result, never a panic or an access
 //! outside its slices (the tests below throw truncations, flipped bits and garbage at it).
@@ -263,28 +262,6 @@ mod tests {
         assert_eq!(decompress(&e, &mut d), None);
         e.push(1);
         assert_eq!(decompress(&e, &mut d), None);
-    }
-
-    /// The frames of `tests/fixtures/old-lz.waarm64snap` (written by the core's own LZ, `core/src/lz.rs`, before
-    /// lz4_flex): every compressed one unpacks to its raw length (tests/snapshot.test.ts compares what they hold).
-    #[test]
-    fn old_codec_frames_still_load() {
-        let f = include_bytes!("../../tests/fixtures/old-lz.waarm64snap");
-        let u32_at = |o: usize| u32::from_le_bytes(f[o..o + 4].try_into().unwrap()) as usize;
-        let mut o = 20 + u32_at(12);
-        let mut unpacked = 0;
-        while &f[o..o + 4] != b"END " {
-            let (codec, raw, stored) = (u32_at(o + 4), u32_at(o + 16), u32_at(o + 20));
-            let body = &f[o + 32..o + 32 + stored];
-            assert_eq!(crc32(crc32(0, &f[o..o + 24]), body), u32_at(o + 24) as u32);
-            if codec == 2 {
-                let mut d = vec![0u8; raw];
-                assert_eq!(decompress(body, &mut d), Some(raw));
-                unpacked += 1;
-            }
-            o += 32 + stored;
-        }
-        assert_eq!(unpacked, 7);
     }
 
     #[test]

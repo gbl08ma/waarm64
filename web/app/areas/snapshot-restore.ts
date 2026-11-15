@@ -3,7 +3,7 @@
 import { errorText, msg, MsgError, t, text } from '../../i18n.ts';
 import { msgOf } from '../../msg.ts';
 import { opfsDir, overlayBytes } from '../../overlay.ts';
-import { openSnapshot, SnapshotError, type SnapshotHeader } from '../../snapshot-file.ts';
+import { readHeader, SnapshotError, type SnapshotHeader } from '../../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../../snapshot.ts';
 import { ask } from '../ask.svelte.ts';
 import { shapeDiff } from '../shape-diff.ts';
@@ -193,7 +193,7 @@ export class SnapshotRestore {
     const rec = await this.#c.machine.store.get('snapshots', id);
     if (!s || rec?.machine !== s.record.id) return;
     const file = await (await opfsFile(snapshotPath(rec.machine, id))).getFile();
-    const { header } = await openSnapshot(file);
+    const header = await readHeader(file);
     await this.#restore(new File([file], `${rec.name}.waarm64snap`), header, id, rec.name);
   }
 
@@ -228,7 +228,7 @@ export class SnapshotRestore {
     if (pw.busy()) return;
     let header: SnapshotHeader;
     try {
-      header = (await openSnapshot(file)).header;
+      header = await readHeader(file);
     } catch (e) {
       if (!(e instanceof SnapshotError)) throw e;
       return void ask.alert(t('snapshots:snapshot-restore.notSnapshot', { name: file.name, why: msgOf(e) }), {

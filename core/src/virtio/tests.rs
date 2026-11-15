@@ -670,9 +670,7 @@ fn queue_num_zero_is_the_maximum() {
 fn restored(t: &T, state: &[u8]) -> (snapshot::Result<()>, Transport, Box<DevShared>) {
     let (mut n, sh) = (Transport::new(entry()), Box::<DevShared>::default());
     let mut r = Reader(state);
-    let res = n
-        .restore(&mut r, &t.mem, &sh, snapshot::VERSION)
-        .and_then(|()| r.end());
+    let res = n.restore(&mut r, &t.mem, &sh).and_then(|()| r.end());
     (res, n, sh)
 }
 
@@ -852,10 +850,7 @@ fn held_chains_past_a_request_ring_cannot_be_saved() {
     t.complete(7, 0);
     assert!(t.t.repostable(&t.mem));
     let (mut n, sh) = (Transport::new(*t.t.entry()), Box::<DevShared>::default());
-    assert_eq!(
-        n.restore(&mut Reader(&saved(&t)), &t.mem, &sh, snapshot::VERSION),
-        Ok(())
-    );
+    assert_eq!(n.restore(&mut Reader(&saved(&t)), &t.mem, &sh), Ok(()));
     assert_eq!(core::iter::from_fn(|| sh.req.pop_request()).count(), 33);
 }
 
@@ -1019,8 +1014,7 @@ fn the_selected_shared_memory_region_is_in_the_state() {
     let sh = Box::<DevShared>::default();
     let mut r = Reader(&state);
     assert_eq!(
-        n.restore(&mut r, &t.mem, &sh, snapshot::VERSION)
-            .and_then(|()| r.end()),
+        n.restore(&mut r, &t.mem, &sh).and_then(|()| r.end()),
         Ok(())
     );
     (t.t, t.sh) = (n, sh);

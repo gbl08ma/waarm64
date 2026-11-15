@@ -224,8 +224,7 @@ impl Vm {
         if r.u32().map_err(|_| Error::Format)? != snapshot::MAGIC {
             return Err(Error::Format);
         }
-        let version = r.u32().map_err(|_| Error::Format)?;
-        if !(snapshot::VERSION_MIN..=snapshot::VERSION).contains(&version) {
+        if r.u32().map_err(|_| Error::Format)? != snapshot::VERSION {
             return Err(Error::Format);
         }
         let config = self.config_words();
@@ -297,10 +296,10 @@ impl Vm {
             fw_cfg.restore(&mut r)?;
         }
         for (t, sh) in p.virtio.iter_mut().zip(&self.shared.devices) {
-            t.restore(&mut r, &self.mem, sh, version)?;
+            t.restore(&mut r, &self.mem, sh)?;
         }
         if let Some(x) = &mut p.xhci {
-            x.restore(&mut r, version)?;
+            x.restore(&mut r)?;
         }
         if !r.0.is_empty() {
             let (c, entry, context) = (r.u32()? as usize, r.u64()?, r.u64()?);
@@ -314,10 +313,6 @@ impl Vm {
             }
             p.suspended = Some((c, entry, context));
             self.shared.suspended.store(true, Ordering::Release);
-            if version < 6 {
-                // Format 5 didn't keep which devices were live at the suspend: they are those live now.
-                p.virtio.iter_mut().for_each(Transport::suspending);
-            }
         }
         r.end()?;
         // Each vCPU's place in its run loop.

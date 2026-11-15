@@ -1,8 +1,7 @@
 // Snapshot file (docs/platform.md "The snapshot file"): the container a saved
-// machine is written to and read back from, streamed both ways (RAM is up to GiBs). Pure platform
-// APIs (CompressionStream, ReadableStream, Blob), so it runs in Node and in a worker. It knows
-// nothing of the core: CORE is opaque bytes, DEVS is JSON the caller makes, RAM and DISK are cut
-// here.
+// machine is written to and read back from, streamed both ways (RAM is up to GiBs). Platform APIs
+// only (ReadableStream, Blob), so it runs in Node and in a worker. It knows nothing of the core but
+// through its codec: CORE is opaque bytes, DEVS is JSON the caller makes, RAM and DISK are cut here.
 //
 //   File  = "WAARMSNP"  u32 version (1, or 2 with BLOB frames)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
 //   Frame = u32 tag  u32 codec  u64 index  u32 rawLen  u32 storedLen  u32 crc  u32 reserved (0), then
@@ -15,9 +14,10 @@
 // chunk without pages has no frame; a machine with spill memories numbers their chunks on from memory
 // 0's, each memory starting at a whole chunk: web/snapshot.ts `ramStarts`), DISK (a run of 1 to 256 consecutive overlay blocks, index =
 // the first block), BLOB (binary parts of DEVS: blob n's 1 MiB chunk k, index = n × 2^24 + k; a
-// file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 1 is deflate-raw, 2 the LZ4 block format (web/lz.ts:
-// the core's lz4_flex); each frame is compressed alone, and stored when compressing doesn't shrink it. Codecs plug in by id,
-// and a codec with a CRC-32 of its own (the core's crc32fast) takes the frames' checksums.
+// file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 2 the LZ4 block format
+// (web/lz.ts: the core's lz4_flex); each frame is compressed alone, and stored when compressing doesn't shrink it. The
+// writer and the reader are given their codec, whose CRC-32 (the core's crc32fast) takes the frames' checksums; the
+// header's is this file's own (`crc32`: read before there is a codec). A frame of another codec is refused.
 import { msg, MsgError, type Msg, type Params } from './msg.ts';
 
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
@@ -48,15 +48,18 @@ export async function asTemplate(file: Blob, on = true): Promise<Blob> {
   return new Blob([head, file.slice(20 + len)]);
 }
 
-/** Appends bytes to the output, in order. */
+/**
+ * Appends bytes to the output, in order. The bytes are the sink's only until it returns (or its promise resolves): a
+ * sink copies what it keeps (a pool's frame buffer goes back to its worker then: web/snapshot-pool.ts).
+ */
 export type Sink = (bytes: Uint8Array) => void | Promise<void>;
 /**
- * A frame codec: id as in the frame header (web/lz.ts is id 2). `crc32`, where it has one (the core's: web/lz.ts), is
- * the IEEE CRC-32 as {@link crc32}, and takes the frames' checksums in the writer and the reader that have it.
+ * A frame codec: id as in the frame header (web/lz.ts is id 2), and the IEEE CRC-32 as {@link crc32}'s (the core's:
+ * web/lz.ts), which takes the frames' checksums in the writer and the reader.
  */
 export type Codec = {
   id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array>;
-  crc32?(bytes: Uint8Array, seed?: number): number;
+  crc32(bytes: Uint8Array, seed?: number): number;
 };
 /** A CRC-32 as {@link crc32}'s. */
 type Crc = (bytes: Uint8Array, seed?: number) => number;
@@ -137,37 +140,6 @@ export function crc32(bytes: Uint8Array, seed = 0): number {
   for (; i < n; i++) c = (c >>> 8) ^ t[(c ^ bytes[i]) & 255];
   return ~c >>> 0;
 }
-
-// ---- codecs ----
-
-/** Reads a stream to its end (at most `limit` bytes: more is a refusal, so a bomb can't fill memory). */
-async function collect(stream: ReadableStream<Uint8Array>, limit: number) {
-  const reader = stream.getReader();
-  const parts: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    if (total > limit) {
-      reader.cancel().catch(() => {});
-      throw corrupt(msg('snapshots:snapshot-file.damage.expands'));
-    }
-    parts.push(value);
-  }
-  if (parts.length === 1) return parts[0];
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const p of parts) { out.set(p, at); at += p.length; }
-  return out;
-}
-
-/** Codec 1: raw deflate through the platform's `CompressionStream` (available in Node and in every worker). */
-export const deflateCodec: Codec = {
-  id: 1,
-  compress: (raw) => collect(new Blob([new Uint8Array(raw)]).stream().pipeThrough(new CompressionStream('deflate-raw')), Infinity),
-  decompress: (stored, rawLen) => collect(new Blob([new Uint8Array(stored)]).stream().pipeThrough(new DecompressionStream('deflate-raw')), rawLen),
-};
 
 // ---- RAM and DISK frames ----
 
@@ -253,8 +225,14 @@ export type RamFrame = { frame: Uint8Array | null; pages: number; scan: number; 
  * Workers that make RAM's frames from guest RAM where it lies (shared memory; web/snapshot-pool.ts): `ram` is chunk
  * `index`'s frame from the `len` bytes at `off` of `buffer`, encoded whole as this writer encodes one (its codec, the
  * same CRC: the file's bytes don't depend on who made a frame); `size` workers, each taking a chunk at a time.
+ * `recycle`, where the pool has it, takes chunk `index`'s frame back once the sink has written it (its buffer goes to
+ * the worker's next frame: a save's frames don't wait for a GC, SNAPZ loop 2b).
  */
-export type RamPool = { size: number; ram(buffer: SharedArrayBuffer, off: number, len: number, index: number): Promise<RamFrame> };
+export type RamPool = {
+  size: number;
+  ram(buffer: SharedArrayBuffer, off: number, len: number, index: number): Promise<RamFrame>;
+  recycle?(frame: Uint8Array, index: number): void;
+};
 
 /** Writes a snapshot to a sink, a frame at a time: CORE and DEVS first, then RAM, DISK, and `end()`. */
 export class SnapshotWriter {
@@ -276,13 +254,13 @@ export class SnapshotWriter {
   pooled = 0;
 
   /**
-   * `concurrency` frames may be compressed at once (default 4), each at most 1 MiB; they are written in order. `blobs`:
-   * the file will have BLOB frames (version 2; without, version 1, which every reader takes).
+   * `codec` makes the frames; `concurrency` of them may be compressed at once (default 4), each at most 1 MiB; they are
+   * written in order. `blobs`: the file will have BLOB frames (version 2; without, version 1).
    */
-  constructor(sink: Sink, header: SnapshotHeader, opts: { codec?: Codec; concurrency?: number; blobs?: boolean } = {}) {
+  constructor(sink: Sink, header: SnapshotHeader, opts: { codec: Codec; concurrency?: number; blobs?: boolean }) {
     this.#sink = sink;
-    this.#codec = opts.codec ?? deflateCodec;
-    this.#crc = this.#codec.crc32 ? this.#codec.crc32.bind(this.#codec) : crc32;
+    this.#codec = opts.codec;
+    this.#crc = this.#codec.crc32.bind(this.#codec);
     this.#concurrency = Math.max(1, Math.floor(opts.concurrency ?? 4));
     const json = new TextEncoder().encode(JSON.stringify(header));
     const out = new Uint8Array(8 + 4 + 4 + json.length + 4);
@@ -426,6 +404,7 @@ export class SnapshotWriter {
         if (frame) {
           this.#frames++;
           counts.frames++;
+          pool.recycle?.(frame, index);
         }
         progress?.(base + len, ram.length);
       });
@@ -577,51 +556,68 @@ class Input {
   close() { this.#reader.cancel().catch(() => {}); }
 }
 
+/** Reads the magic, the version and the header off `input` (a `SnapshotError` for a file that isn't one this reads). */
+async function header(input: Input): Promise<{ header: SnapshotHeader; version: number }> {
+  const magic = await input.take(8);
+  if (!magic || MAGIC.some((b, i) => magic[i] !== b)) {
+    throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
+  }
+  const fixed = await input.take(8);
+  if (!fixed) throw truncated();
+  const fv = new DataView(fixed.buffer, fixed.byteOffset, 8);
+  const version = fv.getUint32(0, true);
+  if (version > VERSION) {
+    throw new SnapshotError('snapshots:snapshot-file.newerFormat', { format: version, reads: VERSION }, 'newer-format');
+  }
+  if (version < 1) throw corrupt(msg('snapshots:snapshot-file.damage.formatNumber'));
+  const headerLen = fv.getUint32(4, true);
+  if (headerLen > MAX_HEADER) throw corrupt(msg('snapshots:snapshot-file.damage.headerLong'));
+  const json = await input.take(headerLen);
+  const crcBytes = json && (await input.take(4));
+  if (!json || !crcBytes) throw truncated();
+  if (new DataView(crcBytes.buffer, crcBytes.byteOffset, 4).getUint32(0, true) !== crc32(json)) throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
+  let h: SnapshotHeader;
+  try {
+    h = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json));
+  } catch {
+    throw corrupt(msg('snapshots:snapshot-file.damage.headerUnreadable'));
+  }
+  if (typeof h !== 'object' || h === null || Array.isArray(h) || h.format !== 1) throw corrupt(msg('snapshots:snapshot-file.damage.headerUnknown'));
+  return { header: h, version };
+}
+
+/**
+ * A snapshot's header, without its frames (what a list of kept snapshots shows, what a restore checks first): the
+ * magic, the version and the header's CRC checked as {@link openSnapshot} checks them; nothing else is read.
+ */
+export async function readHeader(source: ReadableStream<Uint8Array> | Blob): Promise<SnapshotHeader> {
+  const input = new Input(source instanceof Blob ? source.slice(0, 16 + MAX_HEADER + 4).stream() : source);
+  try {
+    return (await header(input)).header;
+  } finally {
+    input.close();
+  }
+}
+
 /**
  * Opens a snapshot for reading: checks its magic, version and header (throws a `SnapshotError`
- * before anything else is read), then `frames()` yields each frame, CRC-verified and decompressed,
- * as it arrives. A stream shorter than the magic is `not-snapshot`; a file that ends later without
- * its end marker is `truncated`. `frames()` reads the stream once; the end of the file is checked
- * when it finishes. With `check`, frames come without their data: their checksums and the file's
- * structure are verified, nothing is unpacked. `times`: where the reading's time went so far (`ReadTimes`).
+ * before anything else is read), then `frames()` yields each frame, CRC-verified (through `codec`'s
+ * CRC-32) and decompressed (by `codec`, or stored), as it arrives. A stream shorter than the magic
+ * is `not-snapshot`; a file that ends later without its end marker is `truncated`. `frames()` reads
+ * the stream once; the end of the file is checked when it finishes. With `check`, frames come
+ * without their data: their checksums and the file's structure are verified, nothing is unpacked.
+ * `times`: where the reading's time went so far (`ReadTimes`).
  */
 export async function openSnapshot(
   source: ReadableStream<Uint8Array> | Blob,
-  opts: { codecs?: Codec[]; check?: boolean } = {},
+  opts: { codec: Codec; check?: boolean },
 ): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<{ tag: string; index: number; data: Uint8Array }>; times: ReadTimes }> {
-  const codecs = new Map<number, Codec>([[1, deflateCodec]]);
-  for (const c of opts.codecs ?? []) codecs.set(c.id, c);
-  // The frames' CRC through a codec that has one (the core's), else in JS; the header's is always JS's.
-  const withCrc = opts.codecs?.find((c) => c.crc32);
-  const crc: Crc = withCrc ? withCrc.crc32!.bind(withCrc) : crc32;
+  const { codec } = opts;
+  const crc: Crc = codec.crc32.bind(codec);
   const input = new Input(source instanceof Blob ? source.stream() : source);
   const times: ReadTimes = { read: 0, crc: 0, unpack: 0 };
   try {
-    const magic = await input.take(8);
-    if (!magic || MAGIC.some((b, i) => magic[i] !== b)) {
-      throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
-    }
-    const fixed = await input.take(8);
-    if (!fixed) throw truncated();
-    const fv = new DataView(fixed.buffer, fixed.byteOffset, 8);
-    const version = fv.getUint32(0, true);
-    if (version > VERSION) {
-      throw new SnapshotError('snapshots:snapshot-file.newerFormat', { format: version, reads: VERSION }, 'newer-format');
-    }
-    if (version < 1) throw corrupt(msg('snapshots:snapshot-file.damage.formatNumber'));
-    const headerLen = fv.getUint32(4, true);
-    if (headerLen > MAX_HEADER) throw corrupt(msg('snapshots:snapshot-file.damage.headerLong'));
-    const json = await input.take(headerLen);
-    const crcBytes = json && (await input.take(4));
-    if (!json || !crcBytes) throw truncated();
-    if (new DataView(crcBytes.buffer, crcBytes.byteOffset, 4).getUint32(0, true) !== crc32(json)) throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
-    let header: SnapshotHeader;
-    try {
-      header = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json));
-    } catch {
-      throw corrupt(msg('snapshots:snapshot-file.damage.headerUnreadable'));
-    }
-    if (typeof header !== 'object' || header === null || Array.isArray(header) || header.format !== 1) throw corrupt(msg('snapshots:snapshot-file.damage.headerUnknown'));
+    const { header: head, version } = await header(input);
 
     async function* frames() {
       try {
@@ -633,7 +629,7 @@ export async function openSnapshot(
           if (!h) throw truncated();
           const v = new DataView(h.buffer, h.byteOffset, FRAME_HEADER);
           const tag = String.fromCharCode(h[0], h[1], h[2], h[3]);
-          const codec = v.getUint32(4, true);
+          const id = v.getUint32(4, true);
           const hi = v.getUint32(12, true);
           const index = hi * 2 ** 32 + v.getUint32(8, true);
           const rawLen = v.getUint32(16, true);
@@ -642,14 +638,14 @@ export async function openSnapshot(
           if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2)) throw corrupt(msg('snapshots:snapshot-file.damage.unknownKind'));
           if (v.getUint32(28, true) !== 0 || hi >= 2 ** 21) throw corrupt(msg('snapshots:snapshot-file.damage.frameFields'));
           if (tag === 'END ') {
-            if (rawLen !== 0 || storedLen !== 0 || frameCrcWant !== 0 || codec !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
+            if (rawLen !== 0 || storedLen !== 0 || frameCrcWant !== 0 || id !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
             if (index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: index, came: count }));
             if (await input.more()) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
             return;
           }
           if (rawLen === 0 || rawLen > MAX_RAW || storedLen > rawLen) throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
-          if (codec === 0 ? storedLen !== rawLen : !codecs.has(codec)) {
-            throw corrupt(codec === 0 ? msg('snapshots:snapshot-file.damage.frameSize') : msg('snapshots:snapshot-file.damage.codec', { codec }));
+          if (id === 0 ? storedLen !== rawLen : id !== codec.id) {
+            throw corrupt(id === 0 ? msg('snapshots:snapshot-file.damage.frameSize') : msg('snapshots:snapshot-file.damage.codec', { codec: id }));
           }
           if (tag === 'CORE' || tag === 'DEVS' || tag === 'BLOB' ? rawLen > CHUNK : tag === 'DISK' ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE : false) {
             throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
@@ -670,11 +666,11 @@ export async function openSnapshot(
             continue;
           }
           let data: Uint8Array;
-          if (codec === 0) data = stored.slice();
+          if (id === 0) data = stored.slice();
           else {
             try {
               t = performance.now();
-              data = await codecs.get(codec)!.decompress(stored, rawLen);
+              data = await codec.decompress(stored, rawLen);
               times.unpack += performance.now() - t;
             } catch (e) {
               if (e instanceof SnapshotError) throw e;
@@ -691,7 +687,7 @@ export async function openSnapshot(
       }
     }
 
-    return { header, frames, times };
+    return { header: head, frames, times };
   } catch (e) {
     input.close();
     throw e;

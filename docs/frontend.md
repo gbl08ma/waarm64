@@ -559,6 +559,9 @@ Page → worker:
   stream, or, without one, back in `snapshot-chunk` messages, or with `keep` into that OPFS file (a kept snapshot,
   machines.md §5.2); `whole` puts a disk written in place in it whole. Answered by `snapshot-done` or
   `snapshot-error`.
+- `snapshot-spare {id, buffer}`: a `snapshot-chunk`'s buffer back (transferred) once the page has copied its bytes
+  into a Blob: the save's next chunks are copied into it, so no file's worth of chunks waits for a GC
+  (platform.md "The snapshot file", Out).
 - `snapshot-check {id, what}`: whether a device would refuse a snapshot or a suspend (`what`) now (Vulkan in use, a
   video decoding: web/vm.ts `refusal`, each backend's `refusal`, the GPU worker's `snapshotRefusal` behind the calls
   before it); answered by `snapshot-check {id, refused?}`, the error the save would end with. The page asks it first
@@ -616,7 +619,7 @@ Worker → page:
 - `notice {message}`: what the devices say while the machine runs on (a ramdisk out of memory, the storage full), a
   message.
 - `snapshot-progress {id, phase, fraction}` (the phase a message), `snapshot-chunk {id, data}` (transferred; without a
-  handle), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins}` (the file is complete; the ms
+  handle; the page gives its buffer back: `snapshot-spare`), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins}` (the file is complete; the ms
   from the pause request to the resume, and of the devices' state in it; the bytes of their binary parts; the disks
   it pins, which a kept snapshot's record takes), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
   `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
@@ -887,15 +890,16 @@ while it resumes (under a second on Debian) may be lost, as on a machine still w
 pointers and before the disks in `slots`), on transient machines unless `?clock=0` (`?clock=` turns it either way on any machine), on machines made from now on
 (their Settings' "Clock device"), and off on machines made before it, whose shape is as it was. A guest with a driver
 for it gets a PTP clock that reads the browser's time (chrony's `refclock PHC` keeps its clock there through
-anything) and a read-only RTC. A snapshot or a suspended machine from before the device restores without it (it holds
-no state: `fromHeader` takes the layout without `clock` when that's the file's).
+anything) and a read-only RTC. A snapshot's devices must be the machine's (`slotsOf`): one saved with the device off
+(`?clock=0`) is refused on a page with it on, and the other way.
 
 **Limits.** No hash of the base image is written (nothing computes or caches it off the save path
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
 (name, size, modification time) or URL. The network across a snapshot isn't handled: the guest
 keeps its DHCP lease and its connections are gone with the Tailscale client's. The guest's clock
 lags by the time the file sat around until something sets it (the RTC is current), unless the guest agent sets it
-(above). A snapshot is for the core versions that read its format (`snapshot_version_min` to `snapshot_version`).
+(above). A snapshot is for the core that reads its state version (`snapshot_version`); older files are refused
+(platform.md "The snapshot file", Refusals).
 
 ## The screen
 

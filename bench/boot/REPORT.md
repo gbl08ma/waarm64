@@ -5057,3 +5057,67 @@ same file (the writer makes those chunks itself); a view not on shared memory is
 caught by it: frames written as they finish rather than in order; a worker's frame dropped; the pool's replies matched
 to the wrong job; the worker's CRC over the stored bytes only; a failed chunk not made by the writer. The page tests'
 `checkSave` (tests/snapshot-phases.ts) now has every save on a host with a thread to spare go through a pool.
+
+## SNAPZ loop 2b: older files refused; the save's unexplained memory found and cut (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the persistent profile
+`target/snapz/profile`, nothing else running. Raw: `results/snapz-2b/` (`rounds/<guest>-<arm>-<n>.{json,log}` and
+`.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
+driver; `ab.txt`, its log; `rounds/diag-*`, the first diagnosis on 7b7b4342 and one with the recycling alone).
+
+**Part 1, older files refused** (SNAPZ-KICKOFF.md decision 7; ABI 69, docs/abi.md "SNAPZ: older files refused"):
+gone are codec 1 (deflate-raw) in the reader and as the writer's default (the writer and the reader are given their
+codec, whose CRC-32 takes the frames'; `readHeader` reads a header alone with the JS CRC), the old-LZ fixture and its
+tests, the core's readers of state versions 4 and 5 (`snapshot_version_min`, the xHCI's state without its CSS state,
+a transport's without its carried reset, a format 5 suspended guest's devices), and the page's fallbacks for files of
+those versions (a device list without the clock, the notify socket or the balloon, a header without `cpu`, the sound
+device's one-stream state). Version 1 files (no BLOB frames) are still what most saves write. An older file is refused
+by its header's `coreVersion` before its frames are read (`otherVersion`, also first in the machine worker's restore),
+so it gets "made by another version of this web app", not "damaged": tests/snapshot.test.ts (an older header over a
+codec 1 frame) and tests/page-snapshot.test.ts (a suspended machine in OPFS rewritten to the older version: the page
+boots instead with [Couldn't resume the suspended machine](ui:machine:worker.notResumed) and the refusal as its
+detail). Planted: no version check (both fail), the check after the check pass (the Node test fails: "damaged").
+bench/snapz's copy of the old LZ stays (compat.mjs and run.ts run as before; README).
+
+**Part 2, where the memory went.** `bench/snapz/memwatch.ts` sampled each of the browser's processes every 50 ms
+beside the probe. On 7b7b4342 every save's extra was the **renderer's** (the page and all its workers), and it grew
+with the bytes written, falling back at a GC: a desktop suspend climbed steadily by ~540 MiB through its 1.1 s pause, a
+kept snapshot in a sawtooth of ~300-400 MiB (its GCs fell inside the pause: +120 at the peak), the file +1,120 MiB
+in the renderer and +685 in the browser process (the download's blob storage). The garbage: each RAM frame a pool
+worker made was a new ~1 MiB ArrayBuffer, transferred to the machine worker and dropped after the sink wrote it (a
+file's worth, 660 MB, waiting for a GC), and on the download path each chunk again (copied for the page, kept by it
+as a Blob, its buffer dropped). **Built:** the frames' buffers are recycled (`RamPool.recycle`: after the sink wrote a
+frame its buffer goes back to its worker with that worker's next job; a sink's bytes are its only until it returns),
+and the page gives each download chunk's buffer back once it has copied it into a Blob (`snapshot-spare`). A pool
+now makes a few buffers a worker (tests: a pool of 1 or 2 made at most 5 a worker for 24 frames; planted, no
+recycling and a buffer given back before the sink wrote it, both caught).
+
+Base = 7b7b4342 (core `0ffff6be`, ABI 68), new = this loop (core `a8deea54`, ABI 69), wblob = new with the download's
+Blob made in the machine worker instead (an arm only; the JSON's commits 6535bb0d and be434c73 are local commits of
+this tree and of that arm, squashed into this loop's); each round a browser of its own, the desktop in a Latin
+square, Debian base new new base base new. Median (range) of 3; memory = the peak over the sample before the save,
+MiB, the whole browser (memwatch's 50 ms) and its renderer:
+
+| desktop | pause base | new | wblob | memory base | new | wblob | renderer base | new |
+|---|---|---|---|---|---|---|---|---|
+| kept | 1,341 (1,337-1,435) | 1,184 (1,173-1,184) | 1,188 | +125 (124-155) | +89 (71-90) | +90 | +122 | +85 |
+| file | 1,587 (1,584-1,619) | 1,359 (1,354-1,397) | 1,796 (1,697-1,844) | +1,560 (1,472-1,570) | +1,238 (1,223-1,257) | +1,012 | +1,120 | +615 |
+| suspend | 1,162 (1,104-1,175) | 1,169 (1,162-1,175) | 1,227 | +535 (533-538) | +206 (205-210) | +169 | +535 | +205 |
+
+| Debian | pause base | new | memory base | new |
+|---|---|---|---|---|
+| kept | 174 (172-198) | 164 (163-168) | +150 (139-156) | +66 (63-70) |
+| file | 186 (172-187) | 167 (166-172) | +331 (329-343) | +207 (206-208) |
+| suspend | 151 (148-172) | 145 (144-145) | +139 (130-397) | +54 (53-308) |
+
+The desktop's suspend added 535 → 206 MiB, its kept snapshot 125 → 89, its file 1,560 → 1,238; Debian's saves
+84-124 MiB less. The pauses got shorter too, without overlap but for the suspend's (the same): the desktop's kept
+−12%, file −14% (fewer GCs in the pause; the probe's own 250 ms RSS agrees: kept −2 against +129, suspend +180
+against +494). Loads and resumes don't change (desktop load 9.3 s against 9.6, resume 8.5 / 8.5; Debian 2.2 / 2.0,
+1.8 / 2.0: noise, nothing on that path changed). **What is left**, by the timelines: a suspend's +205 is the pool's six
+instances (~90-140, decision 8) and the desktop's 3D state read back (109 MB of BLOB contents held through the save);
+a kept snapshot's the same, part of it hidden by a GC early in the save. The file's +1,238 is the browser's blob
+storage holding the file (~685) and ~600 more in the renderer that falls back as the save ends: the page's Blobs'
+bytes, held until the browser has taken them. Making the Blobs in the machine worker held only ~336 MiB there but
+paused the save 0.44 s longer (1.80 against 1.36 s): not taken; loop 4's staging through OPFS is to replace the
+download's memory (docs/backlog.md SNAPZ).

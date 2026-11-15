@@ -8,7 +8,7 @@ import { readFileSync, openSync, writeSync, closeSync } from 'node:fs';
 
 const [inp, outp] = process.argv.slice(2);
 const codec = await lzCodec(readFileSync(new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url)));
-const s = await openSnapshot(openReadStream(inp), { codecs: [codec] });
+const s = await openSnapshot(openReadStream(inp), { codec });
 const fd = openSync(outp, 'w');
 const sum: Record<string, { frames: number; bytes: number }> = {};
 for await (const f of s.frames()) {
