@@ -231,7 +231,11 @@ Button; a wizard's steps are `ui/Step.svelte`, a fold `ui/Disclosure.svelte`, nu
 dialog looks like the others by using them. The wizards' particular layout (the Network wizard's
 sub-steps and disclosures) is in their own components.
 A disk in a list is `DiskInfo.svelte` (its kind's icon, name and line), and a disk's kind in words and icon is
-`disk-kind.ts`.
+`disk-kind.ts`. **A disk's or an overlay's space** shows what it holds with the size its guest sees ("1.2 GiB of 64 GiB
+used"), where the layout has room and both are known: an overlay's row in the Overlays dialog and its entry in a
+machine's Changes in list (`disk-lines.ts`), a stored disk's line (`DiskInfo.svelte`; written in place, its line on
+the machine's Disks tab), the Resize dialog's size now, a stored disk's Delete confirmation. A ramdisk's, a URL's, a
+file's and a blank disk's show the size alone (a ramdisk holds nothing between runs; the others are read-only bases).
 
 **Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~2 s) checks them
 with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10) and
@@ -441,10 +445,10 @@ Duplicate, Export the definition, Delete; then tabs:
   keep the size the guest sees; a switch to an overlay of another size asks first, naming the snapshots it orphans
   (machines.md §4.5 "Variants keep the attachment's size"). **[Resize…](ui:disks:Disks.resize)** on each writable
   disk is a shortcut to the Resize dialog (below) for what the machine writes to: its chosen overlay, the stored disk
-  written in place, or the ramdisk (`resize.ts` `attachmentTarget`; none on a read-only disk, or before an overlay is
-  chosen); the disk's line shows the size the guest sees (a grown overlay's). Overlays… opens the disk's
-  **Overlays** dialog (`Overlays.svelte`, also from the Disks pane below): every overlay of the disk with what it holds,
-  when it was made and the machines that write to it; Rename, Delete (a machine that wrote to it is left without one,
+  written in place, or the ramdisk (`resize.ts` `attachmentTarget`; none on a read-only disk); with no overlay chosen yet, the dialog
+  says so and its OK makes one, empty and named "Changes" as a start would, at the new size, and chooses it; the disk's line shows the size the guest sees (a grown overlay's). Overlays… opens the disk's
+  **Overlays** dialog (`Overlays.svelte`, also from the Disks pane below): every overlay of the disk with what it holds of the size
+  its guest sees, when it was made and the machines that write to it; Rename, Delete (a machine that wrote to it is left without one,
   and makes a new one at its next boot), [Resize…](ui:disks:Overlays.resizeButton) (over the dialog), Merge into the disk (a stored disk) and Export… each (the Export wizard's steps take the dialog's place, the list being the step before them: Back from the first returns to it). [Add a disk…](ui:disks:Disks.add) opens a
   wizard (`AddDisk.svelte`; what it makes is `add-disk.ts`): the source first (**a disk already in this browser**, a file read where it is, a file
   copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already

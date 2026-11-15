@@ -1,7 +1,8 @@
 <!--
   Resize… (docs/machines.md §4.5): a dialog over the Machines page that grows a stored disk, a ramdisk or an overlay,
   opened from the Disks pane (a disk's card, an overlay's row in Overlays…) and from a machine's Disks tab (its
-  attachment's overlay, stored disk written in place or ramdisk). The size now, the new one (MiB or GiB, rounded up to
+  attachment's overlay, one made for it where it has none yet, its stored disk written in place or ramdisk). The size
+  now and what it holds, the new one (MiB or GiB, rounded up to
   a whole MiB), the guest's growth at its next start (on by default; not for a ramdisk) and what `resizeCosts` says as
   the size is typed: the machines whose disk grows, a running one (the machine on this page powered off from here, as
   the page's other edits do), the snapshots it orphans, or why the size is refused.
@@ -17,23 +18,25 @@
   import type { Dialog } from './ui/dialog.ts';
   import { msg, t } from '../i18n.ts';
   import { errorView } from './usb-problems.ts';
-  import { resize, resizeCosts, sizeNow, type ResizeCosts, type ResizeTarget } from './resize.ts';
+  import { resize, resizeCosts, sizeNow, type ResizeCosts, type ResizeWhat } from './resize.ts';
   import type { Store } from './store.ts';
   import type { MachineRecord } from './shape.ts';
   import { current } from './areas/current.svelte.ts';
 
   type Props = {
     store: Store;
-    target: ResizeTarget;
+    target: ResizeWhat;
     /** The disk's or the overlay's name. */
     name: string;
     /** A ramdisk: empty at every start, so no growth in the guest. */
     ramdisk: boolean;
+    /** The machine's name, where the dialog was opened from its Disks tab (an attachment with no overlay yet names it). */
+    machine?: string;
     act: Act;
     offFirst: (m: MachineRecord) => Promise<boolean>;
     close: () => void;
   };
-  let { store, target, name, ramdisk, act, offFirst, close }: Props = $props();
+  let { store, target, name, ramdisk, machine, act, offFirst, close }: Props = $props();
 
   const MiB = 1024 ** 2;
   const GiB = 1024 ** 3;
@@ -47,6 +50,8 @@
   const runner = new Actions();
 
   let now = $state<number>();
+  /** What the overlay or stored disk holds now (none known: a ramdisk, a stored disk not read yet). */
+  let held = $state<number>();
   let amount = $state<number | null>(null);
   let unit = $state<Unit>('GiB');
   let grow = $state(true);
@@ -60,8 +65,9 @@
 
   onMount(() => {
     sizeNow(store, target).then(
-      (n) => {
+      ({ size: n, held: h }) => {
         now = n;
+        held = h;
         // The next whole GiB past it (or 256 MiB under a GiB): a size that grows it.
         unit = n >= GiB ? 'GiB' : 'MiB';
         amount = Math.floor(n / UNITS[unit] / STEP[unit]) * STEP[unit] + STEP[unit];
@@ -140,7 +146,14 @@
 
 <Modal id="resize-disk" bind:this={dialog} title={t('disks:ResizeDisk.title', { name })} onclose={close}>
   <Note size="md">{t('disks:ResizeDisk.note')}</Note>
-  {#if now !== undefined}<Note size="md" data-now>{t('disks:ResizeDisk.now', { size: now })}</Note>{/if}
+  {#if now !== undefined}<Note size="md" data-now
+      >{held === undefined
+        ? t('disks:ResizeDisk.now', { size: now })
+        : t('disks:ResizeDisk.nowHeld', { size: now, held })}</Note
+    >{/if}
+  {#if 'attachment' in target}<Note size="md" data-new-overlay
+      >{t('disks:ResizeDisk.newOverlay', { name: t('disks:page-disks.overlayName'), machine: machine ?? '' })}</Note
+    >{/if}
   <Field label={t('disks:ResizeDisk.size')}
     ><span class="line"
       ><input type="number" min="1" step={STEP[unit]} bind:value={amount} data-field="resize-size" /><select

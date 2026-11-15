@@ -191,8 +191,8 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   }, id);
   // The list shows the move too (it rereads after the store): the rows are keyed, so the blank disk's row moves without
   // being replaced, and a locator resolved before then holds its disabled box and waits for it forever.
-  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:disk-kind.blank') }, { start: true }) }).waitFor();
-  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:disk-kind.url') }, { start: true }) }).waitFor();
+  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: words('disks:disk-lines.meta', { kind: t('disks:disk-kind.blank') }, { start: true }) }).waitFor();
+  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: words('disks:disk-lines.meta', { kind: t('disks:disk-kind.url') }, { start: true }) }).waitFor();
   await m.locator('[data-attachment]').nth(1).getByRole('checkbox', { name: t('disks:Disks.readOnly') }).check();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);

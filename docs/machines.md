@@ -78,7 +78,7 @@ Since decided (the user, 2026-10-17):
 | **Variable store** | the EFI flash bank (1 MiB), **per machine** (its boot entries are the machine's, e.g. after an install from an ISO onto a blank disk) | OPFS `machines/<id>/flash` |
 | **Snapshot** | id, name, created, size, the shape and its hash, the pins (§5.1); the `WAARMSNP` file | OPFS `machines/<id>/snapshots/<id>`, its record in IndexedDB `snapshots` |
 | **Suspended copy** | a snapshot without the overlays' blocks (§5.3) | OPFS `machines/<id>/suspend` |
-| **Stored disk** | an imported image in the overlay's sparse block format (§4.4), with a generation | OPFS `disks/<id>/` |
+| **Stored disk** | an imported image in the overlay's sparse block format (§4.4), with a generation and what it holds (`DiskRecord.bytes`: read at its import, after a run written in place or a merge, and once at the page's opening for a record from before it was kept) | OPFS `disks/<id>/` |
 | **Connection** | a tailnet or tailcat, the browser's (networking/adapters.md) | IndexedDB `connections` |
 | **Folder** | a shared folder, the browser's: a folder on this computer (its directory handle) or a folder in the browser, a name, Read-only (shares.md §2.1) | IndexedDB `folders`; a folder in the browser's files in OPFS `folders/<id>/` |
 
@@ -304,7 +304,11 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 Writable disks aren't qcow2 files: an image is a read-only base under an overlay, and a stored disk is the overlay's
 format itself (§4.4). So growing one is a size in a record, and for an overlay in its `meta` too (the user's design,
 2026-11-14: PLAN.md §3 "Growing a disk"). The page's [Resize…](ui:disks:Disks.resize) (frontend.md "The Machines page": the Disks pane's stored disks,
-ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
+ramdisks and overlays, a machine's Disks tab) opens one dialog over these. A machine's writable attachment with no overlay
+chosen yet (its first start would make one) is resized through the one it makes: `resize(store, { machine, attachment },
+size)` makes an empty overlay at `size` ("Changes", as the start names it; marked from the disk's size with the box),
+chooses it, under the machine's lock (no files to lock yet), and only that machine's disk grows (`resizeCosts`); an
+overlay made meanwhile (a start) is resized as itself.
 - **An overlay** (over a URL, file, blank or stored disk) has a **size of its own** (`OverlayRecord.size`, and the
   u64 at 32 in its `meta`, which the device worker reads at its opening: devices.md "blk"); absent, or a 32-byte
   `meta` from before sizes: none. Per overlay, not per disk: overlays are a base's named variants (rule 3), and a

@@ -144,12 +144,22 @@ export async function refreshOverlay(store: Store, id: string) {
   return next;
 }
 
-/** A stored disk's generation from its files into its record (after a machine wrote it in place). */
+/** A stored disk's generation and bytes from its files into its record (after a machine wrote it in place, a merge). */
 export async function refreshStored(store: Store, id: string) {
   const d = await store.get('disks', id);
   if (d?.kind !== 'stored') return;
-  const meta = await overlayMeta(diskDir(id));
-  if (meta.generation !== d.generation) await store.put('disks', { ...d, generation: meta.generation });
+  const [meta, bytes] = await Promise.all([overlayMeta(diskDir(id)), overlayBytes(diskDir(id))]);
+  if (meta.generation !== d.generation || bytes !== d.bytes)
+    await store.put('disks', { ...d, generation: meta.generation, bytes });
+}
+
+/**
+ * The stored disks whose records don't say what they hold yet (made before `DiskRecord.bytes` was kept) read from their
+ * files once, when the page opens; those a machine has open now are left for their next refresh.
+ */
+export async function fillStoredBytes(store: Store) {
+  for (const d of await store.all('disks'))
+    if (d.kind === 'stored' && d.bytes === undefined && !(await inUse(diskDir(d.id)))) await refreshStored(store, d.id);
 }
 
 /** Loads a changes file (Export's "changes only") into a new overlay of `d`, named after the file. */
@@ -249,6 +259,7 @@ export async function importStored(
       format: r.format === 'qcow2' ? 'qcow2' : 'raw',
       identity,
       generation: (await overlayMeta(diskDir(id))).generation,
+      bytes: await overlayBytes(diskDir(id)),
       created: Date.now(),
     };
     await store.put('disks', d);

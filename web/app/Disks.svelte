@@ -1,8 +1,8 @@
 <!--
   A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached;
   per writable disk its overlays (switch, new empty; Overlays… opens the disk's overlays, Overlays.svelte: rename, delete,
-  merge into a stored disk, resize, export each), Resize… on a writable disk (ResizeDisk.svelte: its chosen overlay, the
-  stored disk written in place, or the ramdisk), export (the Export wizard: the changes or the whole disk) and import (a changes file becomes a new
+  merge into a stored disk, resize, export each), Resize… on a writable disk (ResizeDisk.svelte: its chosen overlay, one
+  made for it where none is chosen yet, the stored disk written in place, or the ramdisk), export (the Export wizard: the changes or the whole disk) and import (a changes file becomes a new
   overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
 <script lang="ts">
@@ -21,16 +21,16 @@
   import { ask } from './ask.svelte.ts';
   import { msg, MsgError, t, text } from '../i18n.ts';
   import type { Store, OverlayRecord } from './store.ts';
-  import type { Attachment, DiskRecord, MachineRecord } from './shape.ts';
+  import type { DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
   import { bytesText, editAttachment } from './machines.ts';
   import { newEmptyOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
   import { inBar, page } from './page.ts';
   import { diskKind } from './disk-kind.ts';
-  import { attachmentTarget, type ResizeTarget } from './resize.ts';
+  import { attachmentTarget, type ResizeWhat } from './resize.ts';
   import { switchAsked } from './switch-asked.ts';
-  import { sizeSeen } from './disk-size.ts';
+  import { attachmentLine, overlayOption } from './disk-lines.ts';
 
   type Props = {
     store: Store;
@@ -45,13 +45,6 @@
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();
 
   const plain = (m: MachineRecord) => $state.snapshot(m);
-  /** Disk `d`'s size as its guest sees it through attachment `a` (a grown overlay's own). */
-  const seen = (d: DiskRecord, a: Attachment) =>
-    sizeSeen(
-      d,
-      a,
-      overlays.find((o) => o.id === a.overlay),
-    );
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string) {
     const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), {
@@ -129,8 +122,8 @@
   let overlaysOpen = $state<string>();
   const overlaysShown = $derived(overlaysOpen ? disks.get(overlaysOpen) : undefined);
   /** The Resize dialog open: what it grows, its name, and whether it's a ramdisk. */
-  let resizing = $state<{ target: ResizeTarget; name: string; ramdisk: boolean }>();
-  function openResize(target: ResizeTarget, d: DiskRecord) {
+  let resizing = $state<{ target: ResizeWhat; name: string; ramdisk: boolean }>();
+  function openResize(target: ResizeWhat, d: DiskRecord) {
     const o = 'overlay' in target ? overlays.find((x) => x.id === target.overlay) : undefined;
     resizing = { target, name: o?.name ?? d.name, ramdisk: d.kind === 'ramdisk' };
   }
@@ -139,7 +132,7 @@
 <CardList empty={machine.attachments.length ? undefined : t('disks:Disks.none')}>
   {#each machine.attachments as a, i (a.id)}
     {@const d = disks.get(a.disk)}
-    {@const target = attachmentTarget(a, d)}
+    {@const target = attachmentTarget(machine, a, d)}
     <Card data-attachment={a.id}>
       <div class="row">
         <span class="kind" title={d ? diskKind(d.kind).text : ''}
@@ -148,11 +141,12 @@
         <strong>{d?.name ?? t('disks:Disks.missing')}</strong>
         <Note inline class="meta"
           >{d
-            ? t('disks:Disks.meta', {
-                kind: diskKind(d.kind).text,
-                size: bytesText(seen(d, a)),
-                letter: String.fromCharCode(97 + i),
-              })
+            ? attachmentLine(
+                d,
+                a,
+                i,
+                overlays.find((o) => o.id === a.overlay),
+              )
             : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</Note
         >
         <span class="grow"></span>
@@ -206,11 +200,7 @@
               data-field="overlay"
             >
               {#if !a.overlay}<option value="">{t('disks:Disks.overlays.none')}</option>{/if}
-              {#each overlaysOf(d.id) as o (o.id)}<option value={o.id}
-                  >{o.fork
-                    ? t('disks:Disks.overlays.forked', { name: o.name, size: bytesText(o.bytes) })
-                    : t('disks:Disks.overlays.option', { name: o.name, size: bytesText(o.bytes) })}</option
-                >{/each}
+              {#each overlaysOf(d.id) as o (o.id)}<option value={o.id}>{overlayOption(d, a, o)}</option>{/each}
             </select>
           </label>
           <Button icon="plus" onclick={() => newOverlay(a.id)} title={t('disks:Disks.newEmpty.title')}
@@ -276,6 +266,7 @@
     target={resizing.target}
     name={resizing.name}
     ramdisk={resizing.ramdisk}
+    machine={machine.name}
     {act}
     {offFirst}
     close={() => (resizing = undefined)}

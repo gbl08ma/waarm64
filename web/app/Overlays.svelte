@@ -1,6 +1,6 @@
 <!--
   A disk's overlays (docs/machines.md §4): a dialog over the Machines page, opened by Overlays… on a disk in the Disks pane or
-  on a machine's Disks tab. Each overlay with what it holds, when it was made and the machines that write to it; Rename,
+  on a machine's Disks tab. Each overlay with what it holds of the size its guest sees, when it was made and the machines that write to it; Rename,
   Delete, Resize… (ResizeDisk.svelte, over this dialog), Merge into the disk (a stored disk) and Export. Export's steps
   (ExportSteps.svelte) take the dialog's place, the list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.
 -->
@@ -138,9 +138,11 @@
         <Card data-overlay={o.id}>
           <strong>{o.name}</strong>
           <Note inline
-            >{o.fork
-              ? t('disks:Overlays.meta.forked', { size: bytesText(o.bytes), when: new Date(o.created) })
-              : t('disks:Overlays.meta', { size: bytesText(o.bytes), when: new Date(o.created) })} · {users.length
+            >{t(o.fork ? 'disks:Overlays.meta.forked' : 'disks:Overlays.meta', {
+              held: bytesText(o.bytes),
+              size: bytesText(Math.max(disk.size, o.size ?? 0)),
+              when: new Date(o.created),
+            })} · {users.length
               ? t('disks:Overlays.usedBy', { machines: users })
               : t('disks:Overlays.usedByNone')}</Note
           >

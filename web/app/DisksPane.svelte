@@ -45,7 +45,9 @@
     const bytes = mine.reduce((n, o) => n + o.bytes, 0);
     const what =
       d.kind === 'stored'
-        ? msg('disks:DisksPane.delete.stored', { size: bytesText(d.size) })
+        ? d.bytes === undefined
+          ? msg('disks:DisksPane.delete.stored', { size: bytesText(d.size) })
+          : msg('disks:DisksPane.delete.storedHeld', { held: bytesText(d.bytes), size: bytesText(d.size) })
         : d.kind === 'file' || d.kind === 'url'
           ? msg('disks:DisksPane.delete.remote')
           : msg('disks:DisksPane.delete.disk');

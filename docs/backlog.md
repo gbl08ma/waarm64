@@ -1321,9 +1321,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     hosting (built in `images/`, fetched like the agent or served with the page), its boot time under the JIT (the
     Buildroot boot is seconds), and its tests (the native and page tests on Debian's layout, plus LVM and LUKS
     images).
-  - **Growing a disk's loose ends** (machines.md §4.5): the Overlays dialog's rows show what an overlay holds, not its
-    grown size; a writable attachment with no overlay chosen has no Resize… (the dialog would have to make one); the
-    dialog's Power off reaches only this page's machine (another tab's must be stopped there); deleting or merging away a
+  - **Growing a disk's loose ends** (machines.md §4.5): the Resize dialog's Power off reaches only this page's machine (another tab's must be stopped there); deleting or merging away a
     machine's grown overlay leaves it an empty one at the disk's size at its next start (both confirmations name what
     goes, not the size); a stored disk grown before its `made` size was kept (2026-11-15) acts as made at its grown size
     (its definition, its changes files); a definition's stored disk picked again always asks (`modified: 0`), grown or
@@ -1680,6 +1678,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
+  end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
+  passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.
 - [B] **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
   case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two

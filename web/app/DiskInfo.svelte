@@ -1,5 +1,5 @@
 <!--
-  A disk as the lists of disks show it (docs/machines.md §4): its kind's icon, its name, and a line with its kind, size,
+  A disk as the lists of disks show it (docs/machines.md §4): its kind's icon, its name, and a line with its kind, size (and what a stored disk holds of it),
   overlays (a ramdisk has none) and the machines it's attached to. In the Disks pane and Add a disk… › A disk already in
   this browser. One element: a row (the icon, then the name over its line) that takes the room its parent gives it.
 -->
@@ -17,7 +17,11 @@
   const bytes = $derived(overlays.reduce((n, o) => n + o.bytes, 0));
   /** Its line: its kind and size, its overlays (a ramdisk has none), the machines that have it. */
   const line = $derived.by(() => {
-    const parts = [t('disks:DiskInfo.meta', { kind: kind.text, size: bytesText(disk.size) })];
+    const parts = [
+      disk.kind === 'stored' && disk.bytes !== undefined
+        ? t('disks:DiskInfo.meta.held', { kind: kind.text, held: bytesText(disk.bytes), size: bytesText(disk.size) })
+        : t('disks:DiskInfo.meta', { kind: kind.text, size: bytesText(disk.size) }),
+    ];
     if (disk.kind !== 'ramdisk')
       parts.push(
         bytes

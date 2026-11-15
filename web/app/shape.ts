@@ -51,6 +51,11 @@ export type DiskRecord = {
   sha256?: string;
   /** `stored`: the store's generation (its `meta`, as the page last read it): written in place or merged into, it moves (§4.4). */
   generation?: number;
+  /**
+   * `stored`: the bytes its block store holds on OPFS (its written blocks and map, as an overlay's `bytes`), as the page
+   * last read them (its import, a run written in place, a merge); absent on a record from before it was kept, until then.
+   */
+  bytes?: number;
   /** `stored`: a grow pending in the guest (its partition and filesystem, at its next start: §4.5). */
   grow?: GrowMark;
   /**

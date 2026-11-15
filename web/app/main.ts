@@ -12,6 +12,7 @@ import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import { current } from './areas/current.svelte.ts';
 import { isLive, power } from './areas/power.svelte.ts';
 import { records } from './areas/records.svelte.ts';
+import { fillStoredBytes } from './disks.ts';
 import { sound } from './areas/sound.svelte.ts';
 import { usb } from './areas/usb.svelte.ts';
 import { AgentActions } from './areas/agent-actions.ts';
@@ -123,6 +124,7 @@ const folders = new PageFolders({ store, me: () => machineTitle(machine) });
 window.__folders = folders; // tools/screens.ts's hook
 void folders.refresh();
 void records.watch(store);
+void fillStoredBytes(store).catch((e: unknown) => console.warn('waarm64: the stored disks could not be read:', e));
 store.onChange((c) => {
   void net.refresh();
   void folders.refresh();

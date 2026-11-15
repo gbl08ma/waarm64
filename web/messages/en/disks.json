@@ -23,6 +23,10 @@
     "message": "{{kind}}, {{size}}",
     "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{size}} its size."
   },
+  "DiskInfo.meta.held": {
+    "message": "{{kind}}, {{held}} of {{size}} used",
+    "note": "A disk stored in this browser in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{held}} what its store holds in the browser, {{size}} its size."
+  },
   "DiskInfo.overlays_one": {
     "message": "{{count}} overlay",
     "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, its overlay empty, in its small line. {{count}} is 1."
@@ -147,9 +151,13 @@
     "message": "Missing disk",
     "note": "Machines page, Disks: shown in place of a disk's name when the machine attaches a disk whose record is gone."
   },
-  "Disks.meta": {
+  "disk-lines.meta": {
     "message": "{{kind}}, {{size}} · vd{{letter}}",
     "note": "Machines page, Disks: the small line beside a disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…). The size is what the guest sees: a grown overlay's own size when it's larger than the disk's."
+  },
+  "disk-lines.meta.held": {
+    "message": "{{kind}}, {{held}} of {{size}} used · vd{{letter}}",
+    "note": "Machines page, Disks: the small line beside the name of a disk stored in this browser and written in place. {{kind}} is what it is (Disks.kind.*), {{held}} what its store holds in the browser, {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…)."
   },
   "Disks.meta.missing": {
     "message": "· vd{{letter}}",
@@ -203,13 +211,13 @@
     "message": "(a new overlay, at the next boot)",
     "note": "Machines page, Disks: the item of a disk's Changes in list when the machine has no overlay chosen yet: its next start makes one."
   },
-  "Disks.overlays.option": {
-    "message": "{{name}} ({{size}})",
-    "note": "Machines page, Disks: an overlay in a disk's Changes in list. {{name}} is its name, {{size}} what it holds."
+  "disk-lines.option": {
+    "message": "{{name}} ({{held}} of {{size}})",
+    "note": "Machines page, Disks: an overlay in a disk's Changes in list. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
   },
-  "Disks.overlays.forked": {
-    "message": "{{name}} ({{size}}, forked)",
-    "note": "Machines page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{size}} what it holds."
+  "disk-lines.forked": {
+    "message": "{{name}} ({{held}} of {{size}}, forked)",
+    "note": "Machines page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
   },
   "Disks.newEmpty.title": {
     "message": "A new, empty overlay: the disk contents will be reset to those of the disk image. The current overlay is kept.",
@@ -904,12 +912,12 @@
     "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the note under the title."
   },
   "Overlays.meta": {
-    "message": "{{size}} of changes, created {{when}}",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under an overlay's name, before who uses it. {{size}} is what it holds, {{when}} when it was made (date and time)."
+    "message": "{{held}} of {{size}} used, created {{when}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under an overlay's name, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
   },
   "Overlays.meta.forked": {
-    "message": "{{size}} of changes, created {{when}} when a snapshot was restored",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under the name of an overlay that a snapshot's restore forked off another, before who uses it. {{size}} is what it holds, {{when}} when it was made (date and time)."
+    "message": "{{held}} of {{size}} used, created {{when}} when a snapshot was restored",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under the name of an overlay that a snapshot's restore forked off another, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
   },
   "Overlays.usedBy": {
     "message": "used by {{machines}}",
@@ -1119,6 +1127,10 @@
     "message": "the disk ({{size}}) stored in this browser",
     "note": "Machines page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{size}} is the disk's size."
   },
+  "DisksPane.delete.storedHeld": {
+    "message": "the disk ({{held}} of {{size}} used) stored in this browser",
+    "note": "Machines page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{held}} is what its store holds in the browser, {{size}} the disk's size."
+  },
   "DisksPane.delete.remote": {
     "message": "what this browser keeps of the disk",
     "note": "Machines page, Disks pane: what deleting a file's or a URL's disk deletes, in the confirmation (DisksPane.delete.confirm)."
@@ -1206,6 +1218,14 @@
   "ResizeDisk.now": {
     "message": "Its size now: {{size, bytes}}.",
     "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it). {{size}}: in KiB, MiB or GiB."
+  },
+  "ResizeDisk.nowHeld": {
+    "message": "Its size now: {{size, bytes}}, of which {{held, bytes}} used.",
+    "note": "Resize dialog (Machines page: Resize… on a stored disk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it) and what the overlay or the stored disk holds in the browser. {{size}}, {{held}}: in KiB, MiB or GiB."
+  },
+  "ResizeDisk.newOverlay": {
+    "message": "This disk has no overlay yet: a new empty one, {{name}}, is made at the new size and used by {{machine}}.",
+    "note": "Resize dialog, opened from Resize… on a writable disk in a machine's Disks tab that has no overlay chosen yet (its first start would make one): what OK does besides the size. {{name}} is the new overlay's name (page-disks.overlayName), {{machine}} the machine's name."
   },
   "ResizeDisk.size": {
     "message": "New size",

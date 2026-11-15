@@ -11,6 +11,7 @@ import { startServer } from '../tools/serve.ts';
 import { baseHash, hashSource, loadChanges } from '../web/changes.ts';
 import type { Source } from '../web/devices.ts';
 import { msgOf } from '../web/msg.ts';
+import { t } from '../web/i18n.ts';
 import { lockOverlay, openOverlay, overlay, overlayMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';
 import { changedClusters, nonZeroClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
@@ -69,10 +70,10 @@ test('resize: grow only, in sectors, of an overlay, a stored disk or a ramdisk (
   await assert.rejects(resize(store, { overlay: 'ffffffffffff' }, 16 * MiB), said('machines:resize.gone'));
   await assert.rejects(resize(store, { overlay: w.oa.id }, MAX_RESIZE + 512), said('machines:resize.tooLarge'), 'past the cap');
   // What a machine's Disks tab resizes: its overlay, its stored disk in place, its ramdisk.
-  assert.deepEqual(w.A.attachments.map((a) => attachmentTarget(a, [w.url, w.stored, w.ram].find((d) => d.id === a.disk))), [{ overlay: w.oa.id }, { overlay: w.os.id }, { disk: w.ram.id }]);
-  assert.deepEqual(attachmentTarget(w.B.attachments[1], w.stored), { disk: w.stored.id });
-  assert.equal(attachmentTarget({ ...w.B.attachments[0], readOnly: true }, w.url), undefined, 'none read-only');
-  assert.equal(attachmentTarget({ ...w.B.attachments[0], overlay: undefined }, w.url), undefined, 'none without an overlay');
+  assert.deepEqual(w.A.attachments.map((a) => attachmentTarget(w.A, a, [w.url, w.stored, w.ram].find((d) => d.id === a.disk))), [{ overlay: w.oa.id }, { overlay: w.os.id }, { disk: w.ram.id }]);
+  assert.deepEqual(attachmentTarget(w.B, w.B.attachments[1], w.stored), { disk: w.stored.id });
+  assert.equal(attachmentTarget(w.B, { ...w.B.attachments[0], readOnly: true }, w.url), undefined, 'none read-only');
+  assert.deepEqual(attachmentTarget(w.B, { ...w.B.attachments[0], overlay: undefined }, w.url), { machine: w.B.id, attachment: w.B.attachments[0].id }, 'without an overlay: the one to make');
 
   const before = await w.shapeNow(w.A);
   const costs = await resize(store, { overlay: w.oa.id }, 16 * MiB + 512, { grow: true });
@@ -585,4 +586,70 @@ test('finding 13: a resize reads its target again under the lock (an overlay for
   }) as Store['put'];
   await resize(store, { disk: w.ram.id }, 4 * MiB);
   assert.equal(free, false, "A's lock held by the resize");
+});
+
+test("an attachment with no overlay chosen: Resize makes one at the new size (\"Changes\", marked) and chooses it; only its machine's disk grows; one made meanwhile is resized as itself", async () => {
+  const w = await world();
+  const { store } = w;
+  const machine = (name: string, aid: string): MachineRecord => ({ id: `${name}${w.url.id}`.slice(-12), name, ncpus: 1, ramMiB: 512, display: '2d', created: 0, modified: 0, attachments: [{ id: `${aid}${w.url.id}`.slice(-12), disk: w.url.id, readOnly: false }] });
+  const C = machine('cc', 'c1');
+  await store.put('machines', C);
+  const snapC = await w.snap(C, 'sc');
+  const at = { machine: C.id, attachment: C.attachments[0].id };
+  const costs = await resizeCosts(store, at, 16 * MiB);
+  assert.equal(costs.size, 8 * MiB);
+  assert.equal(costs.held, 0, 'nothing held: the overlay is to make');
+  assert.deepEqual(costs.machines.map((m) => m.name), ['cc'], "A's and B's overlays of the same disk don't grow");
+  assert.deepEqual(costs.snapshots.map((s) => s.id), [snapC.id]);
+  await assert.rejects(resizeCosts(store, at, 8 * MiB), said('machines:resize.notLarger'));
+  await assert.rejects(resizeCosts(store, { machine: w.B.id, attachment: w.B.attachments[1].id }, 16 * MiB), said('machines:resize.notResizable'), 'in place: the disk is the target');
+  await assert.rejects(resizeCosts(store, { machine: C.id, attachment: 'ffffffffffff' }, 16 * MiB), said('machines:resize.gone'));
+
+  // Its machine running: refused, nothing made.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let granted!: () => void;
+  const got = new Promise<void>((r) => (granted = r));
+  void navigator.locks.request(machineLock(C.id), () => (granted(), held));
+  await got;
+  const before = (await store.all('overlays')).length;
+  await assert.rejects(resize(store, at, 16 * MiB, { grow: true }), said('machines:resize.running'));
+  assert.equal((await store.all('overlays')).length, before);
+  release();
+
+  await resize(store, at, 16 * MiB, { grow: true });
+  const c = (await store.get('machines', C.id))!;
+  const o = c.attachments[0].overlay ? await store.get('overlays', c.attachments[0].overlay) : undefined;
+  assert.ok(o, 'chosen');
+  assert.deepEqual([o.name, o.disk, o.size, o.grow], [t('disks:page-disks.overlayName'), w.url.id, 16 * MiB, { from: 8 * MiB, to: 16 * MiB }]);
+  assert.equal((await overlayMeta(overlayDir(o.id))).size, 16 * MiB, 'in its meta, which the device worker reads');
+  assert.equal((await w.shapeNow(c)).disks[0].size, 16 * MiB);
+  assert.equal((await w.shapeNow(w.A)).disks[0].size, 8 * MiB);
+  // Asked again of the attachment: it's that overlay's resize now (none made).
+  await resize(store, at, 32 * MiB);
+  assert.equal((await store.all('overlays')).length, before + 1);
+  assert.deepEqual([(await store.get('overlays', o.id))!.size, (await store.get('overlays', o.id))!.grow], [32 * MiB, undefined]);
+
+  // One made while the resize waited for the machine's lock (a start): resized, not replaced.
+  const D = machine('dd', 'd1');
+  await store.put('machines', D);
+  const mine = await createOverlay(store, w.url, 'Started');
+  const locks = navigator.locks as LockManager & { request: LockManager['request'] };
+  const request = locks.request;
+  locks.request = (async (name: string, ...rest: unknown[]) => {
+    if (name === machineLock(D.id)) {
+      locks.request = request;
+      const d = (await store.get('machines', D.id))!;
+      await store.put('machines', { ...d, attachments: [{ ...d.attachments[0], overlay: mine.id }] });
+    }
+    return (request as (...a: unknown[]) => Promise<unknown>).call(locks, name, ...rest);
+  }) as LockManager['request'];
+  try {
+    await resize(store, { machine: D.id, attachment: D.attachments[0].id }, 16 * MiB);
+  } finally {
+    locks.request = request;
+  }
+  assert.equal((await store.get('machines', D.id))!.attachments[0].overlay, mine.id);
+  assert.equal((await store.get('overlays', mine.id))!.size, 16 * MiB);
+  assert.equal((await store.all('overlays')).length, before + 2, 'no other made');
 });
