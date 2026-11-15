@@ -33,6 +33,25 @@ export async function hashSource(src: Source, progress: (done: number) => void, 
 }
 
 /**
+ * How much of base `src` its hash covers (`baseHash`): all of it; but a stored disk grown since it was made (`made`,
+ * its size then: docs/machines.md §4.5) only up to the larger of that and the end of the last block it holds, the rest
+ * reading as zeros. So growing it doesn't change its hash (the changes files exported from its overlays still import),
+ * and a disk whose bytes past its old end were written does change it.
+ */
+export function hashedSize(src: Source, made?: number) {
+  if (made === undefined || made >= src.size || !src.held) return src.size;
+  let end = 0;
+  for (const b of src.held()) end = (b + 1) * 4096;
+  return Math.min(src.size, Math.max(made, end));
+}
+
+/** The hash a changes file names base `src` by (`hashSource` of its first `hashedSize` bytes). */
+export function baseHash(src: Source, made: number | undefined, progress: (done: number) => void) {
+  const size = hashedSize(src, made);
+  return hashSource(size === src.size ? src : { size, read: (off, len) => src.read(off, len) }, progress);
+}
+
+/**
  * Replaces overlay `overlayName` (over `base`, whose identity is `identity`: `diskIdentity`) with
  * the blocks of the changes file `changes`. The overlay, and the firmware's variable store beside
  * it, are deleted first: the changes are the whole of what the disk has written. Refuses, before
@@ -43,6 +62,8 @@ export async function hashSource(src: Source, progress: (done: number) => void, 
 export async function loadChanges(o: {
   changes: Source;
   base: Source;
+  /** A stored base grown since it was made: its size then (`hashedSize`). */
+  made?: number;
   label: string;
   overlay: string;
   identity: string;
@@ -54,9 +75,11 @@ export async function loadChanges(o: {
   if (!c) throw new MsgError('disks:changes.notChanges');
   if (!c.hash) throw new MsgError('disks:changes.notOurs', { backing: c.backingName });
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : o.base.read(off, len)), o.base.size);
-  // A changes file may be larger than its base (a grown overlay's export, docs/machines.md §4.5): the overlay takes its size.
-  if (c.size < base.size) throw new MsgError('disks:changes.otherSize', { size: c.size, backing: c.backingName, label: o.label, baseSize: base.size });
-  const hash = await hashSource(o.base, (done) => progress(msg('disks:changes.checkingBase'), done, o.base.size));
+  // A changes file may be larger than its base (a grown overlay's export, docs/machines.md §4.5): the overlay takes its
+  // size. A stored base grown since is the size its hash covers (`hashedSize`); the overlay over it is as large as it.
+  const hashed = hashedSize(o.base, o.made);
+  if (c.size < hashed) throw new MsgError('disks:changes.otherSize', { size: c.size, backing: c.backingName, label: o.label, baseSize: hashed });
+  const hash = await baseHash(o.base, o.made, (done) => progress(msg('disks:changes.checkingBase'), done, hashed));
   if (hash !== c.hash) {
     throw new MsgError('disks:changes.otherBase', { backing: c.backingName, hash: c.hash.slice(0, 12), label: o.label, baseHash: hash.slice(0, 12) });
   }

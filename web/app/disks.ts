@@ -4,7 +4,8 @@
 // overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before
 // them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Machines page confirms first.
 import { fromWire, MsgError } from '../msg.ts';
-import { overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
+import { overlayBytes, overlayMeta, removeOverlay, writeOwnSize } from '../overlay.ts';
+import { sizeSeen, type GrowMark } from './disk-size.ts';
 import type { DiskJob, DiskJobResult } from './disk-worker.ts';
 import { runImport } from './import.ts';
 import type { DiskRef } from './protocol.ts';
@@ -30,7 +31,7 @@ export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
     case 'ramdisk':
       return { ramdisk: d.size };
     case 'stored':
-      return { stored: diskDir(d.id), size: d.size };
+      return { stored: diskDir(d.id), size: d.size, ...(d.made ? { made: d.made } : {}) };
   }
 }
 
@@ -47,7 +48,8 @@ export async function inUse(path: string) {
 
 /**
  * A new, empty overlay of disk `d` (its files are made when a machine first opens it). `size`: its own size where it is
- * larger than the disk's (a grown overlay's fork, §4.5: the restore's worker writes it into its meta with the blocks).
+ * larger than the disk's (a grown overlay's fork, §4.5), written into its meta first (the record after its bytes: an
+ * export or a device opening it before the restore's worker fills it sees it too); `grow`: its grow mark.
  */
 export async function createOverlay(
   store: Store,
@@ -55,8 +57,10 @@ export async function createOverlay(
   name: string,
   fork?: OverlayRecord['fork'],
   size?: number,
+  grow?: GrowMark,
 ): Promise<OverlayRecord> {
   const now = Date.now();
+  const own = size !== undefined && size > d.size;
   const o: OverlayRecord = {
     id: newId(),
     name,
@@ -67,9 +71,26 @@ export async function createOverlay(
     created: now,
     modified: now,
     fork,
-    ...(size !== undefined && size > d.size ? { size } : {}),
+    ...(own ? { size } : {}),
+    ...(own && grow ? { grow } : {}),
   };
+  if (own) await writeOwnSize(overlayDir(o.id), size);
   await store.put('overlays', o);
+  return o;
+}
+
+/**
+ * New empty: a new overlay of machine `m`'s attachment `attachment`'s disk, attached; at the size its guest saw (§4.5:
+ * an attachment's disk doesn't shrink by taking a new variant, nor its snapshots orphan), marked to grow where that's
+ * past the disk's (its base's partition doesn't fill it). The machine is off.
+ */
+export async function newEmptyOverlay(store: Store, m: MachineRecord, attachment: string, name: string) {
+  const a = m.attachments.find((x) => x.id === attachment);
+  const d = a && (await store.get('disks', a.disk));
+  if (!a || !d) throw new MsgError('disks:disks.notThisDisk');
+  const size = sizeSeen(d, a, a.overlay ? await store.get('overlays', a.overlay) : undefined);
+  const o = await createOverlay(store, d, name, undefined, size, { from: d.size, to: size });
+  await switchOverlay(store, m, attachment, o.id);
   return o;
 }
 
@@ -104,17 +125,20 @@ export async function deleteOverlay(store: Store, id: string) {
   await removeOverlay(overlayDir(id));
 }
 
-/** Reads an overlay's generation and size from its files into its record (after a machine stopped). */
+/** Reads an overlay's generation, bytes and own size from its files into its record (after a machine stopped). */
 export async function refreshOverlay(store: Store, id: string) {
   const o = await store.get('overlays', id);
   if (!o) return undefined;
   const [meta, bytes] = await Promise.all([overlayMeta(overlayDir(id)), overlayBytes(overlayDir(id))]);
-  if (meta.generation === o.generation && bytes === o.bytes) return o;
+  // A meta past its record (a resize cut off between the two, §4.5): the device opened it at that size, so it's the size.
+  const size = meta.size > (o.size ?? 0) ? meta.size : o.size;
+  if (meta.generation === o.generation && bytes === o.bytes && size === o.size) return o;
   const next = {
     ...o,
     generation: meta.generation,
     bytes,
     modified: meta.generation !== o.generation ? Date.now() : o.modified,
+    ...(size === undefined ? {} : { size }),
   };
   await store.put('overlays', next);
   return next;
@@ -272,7 +296,8 @@ export async function mergeIntoDisk(store: Store, overlay: string) {
  */
 async function growForMerge(store: Store, d: DiskRecord, o: OverlayRecord) {
   const size = Math.max(d.size, o.size ?? 0);
-  if (size > d.size) await store.put('disks', { ...d, size, ...(o.grow ? { grow: o.grow } : {}) });
+  if (size > d.size)
+    await store.put('disks', { ...d, size, made: d.made ?? d.size, ...(o.grow ? { grow: o.grow } : {}) });
   return size;
 }
 

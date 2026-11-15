@@ -327,7 +327,12 @@ ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
   device's sector, and QEMU's rule for a qcow2's virtual size), a URL, file or blank disk itself, a machine using it
   running, and the overlay's or stored disk's lock held (a machine the records don't show running, an export, a merge:
   the lock Merge into the disk takes); it then writes an overlay's `meta` (`writeOwnSize`, a writable stream: from the
-  page) and its record, or the disk's record, under that lock.
+  page) and its record, or the disk's record, under that lock, reading the record again once it holds the lock (a merge
+  that forgot the overlay meanwhile isn't undone; a rename stays). A ramdisk has no files to lock: its machines' locks
+  are taken instead (each only if free, as a start takes it), so none starts while its record changes. An overlay's
+  record refused after its `meta` was written puts the `meta` back; cut off between the two (a tab closed), the next
+  `refreshOverlay` takes a `meta` past its record into it (the device opened it at that size). A stored disk's first
+  resize keeps the size it was made with (`DiskRecord.made`: its identity doesn't hold it).
 - **An upper bound:** `MAX_RESIZE` (8 TiB) refuses a larger size (`resize.tooLarge`). It is the qcow2 export's: our
   4 KiB clusters and QEMU's largest L1 table (32 MiB) make 8 TiB the largest qcow2 `qemu-img` opens (8 TiB + 1 GiB
   is refused). The overlay's map no longer bounds it (it grows with what's written: devices.md "blk"); what an
@@ -337,15 +342,42 @@ ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
 - **The grow mark** (`GrowMark`, `{ from, to }`, on the overlay's or stored disk's record, not an attachment's:
   whichever machine boots it next does it): `grow` sets it (`from` stays the size before the first resize the guest
   hasn't followed), a resize without it clears it, `growMark`/`clearGrowMark` read and clear it, `growFailed` notes a
-  failure on it (`failed`: the next one clears it). A ramdisk gets none (empty at every start). The run's agent follows
+  failure on it (`failed`: the next one clears it). A ramdisk gets none (empty at every start). A stored disk's mark is
+  followed only by the guests that see the disk's size (written in place, or through an overlay smaller than it): one
+  whose overlay was grown past it saw no change, and its answer would clear the mark for the others. The run's agent follows
   it (`growsOf`: the stored machine's marked disks, their serials and sizes): GROW at each agent's HELLO, the mark
   cleared by a final GROWN and the answer said once (devices.md "A disk grown", "The page's side").
-- **What follows the size:** a restore's fork takes the size the snapshot had (its record's `size`, the plan's, which
-  the worker writes into the fork's `meta`); exports open the overlay with its `meta`, so a whole disk's qcow2 or raw
+- **What follows the size:** a restore's fork takes the size the snapshot had (its record's `size` and its `meta`,
+  written by the page when it makes the fork, so an export or a start after a failed restore sees it too; the worker
+  writes it again with the blocks); an earlier fork is reused only at that size (one grown since is another disk);
+  exports open the overlay with its `meta`, so a whole disk's qcow2 or raw
   is the grown size and a changes-only qcow2 may be larger than its backing file; Import changes takes a changes file
   larger than its base (the base's hash still decides) into an overlay of that size; Merge into the disk of a grown
   overlay grows the stored disk first (its mark with it), so a merge resumed at the next opening copies at that size.
-- **A definition** (§6) carries a grown overlay's size (`overlaySize`, `grownSize`): the imported machine's attachment
+- **A fork keeps a standing mark** (the rule, 2026-11-15): a restore's new fork takes the grow mark of the overlay the
+  snapshot pinned when that mark still stands and the snapshot was taken past its `from` (`{ from, to: the snapshot's
+  size }`). A mark that stands means no run since the resize got the guest's GROWN, so a snapshot taken at the new size
+  is of a guest whose partition was still the old one; its restored guest needs the grow as much. Taken before the
+  resize (at `from`), the fork is at the old size and needs none. The resized overlay keeps its own mark (its blocks are
+  still the old partition's). A reused fork keeps what it has. A stray mark is harmless: the agent's grow is idempotent
+  (NOTHING, "already fills").
+- **Variants keep the attachment's size** (the rule, 2026-11-15; §5.1: the size is in the shape): [New empty](ui:disks:Disks.newEmpty) makes
+  the new overlay at the size the attachment's guest saw (`newEmptyOverlay`), marked to grow from the disk's size (its
+  base's partition doesn't fill it), so switching to a fresh variant orphans nothing; changes imported (Import changes…)
+  go into an overlay at least that large too (`keepSize`, marked from what the changes hold). A switch to an existing
+  overlay can't change that overlay's size (other machines may use it, and its own partition table is its own), so a
+  switch the guest would see at another size asks first, naming the snapshots it orphans (`sizeOrphans`,
+  `switch-asked.ts`), as Import changes does for changes of a larger disk. Merging and deleting an overlay are asked
+  already (their confirmations name what goes); a machine left without an overlay gets an empty one at the disk's
+  size at its next start.
+- **A stored disk's changes files** (Export's changes only, from its overlays): the base hash covers the disk as it was
+  made (`made`), or up to the end of the last block it holds where that is further (web/changes.ts `hashedSize`,
+  `baseHash`, both the export's and the import's). So growing a stored disk keeps its changes files importable (its
+  bytes past the old end read as zeros, which a hash at the old size already said), while writing past its old end (in
+  place, a merge) changes the hash, as any write to it does. A disk never grown hashes its whole size, as before.
+- **A definition** (§6) carries a grown overlay's size (`overlaySize`, `grownSize`; at most `MAX_RESIZE`, or the
+  definition is damaged), and a grown stored disk as the size it was made with (`size`, the image another browser picks)
+  with the size its writable attachment sees as `overlaySize`: the imported machine's attachment
   gets an empty overlay at that size, marked to grow (`withGrownOverlay`), so its guest sees the same disk and grows its
   base's last partition into it at its first start with the agent.
 
@@ -373,10 +405,13 @@ The file's format, what the core saves and the page's toolbar and header fields:
   display it ran with and the page's CPU features. "Now" below is the same rule on the page as it is opened.
 - **Orphaned:** a kept snapshot whose shape hash differs from its machine's now (the user changed RAM, added a
   disk, turned shared folders on…, or it was taken under an address that changed the machine and the page is opened
-  without it). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
+  without it). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. An overlay's own size does
+  (§4.5): a resize, or a switch to an overlay of another size, orphans the snapshots made at the size before; both ask
+  first, naming them. The Snapshots tab says what
   differs (`shapeDiff`, from the two shapes), and offers [Create a machine like it](ui:snapshots:Snapshots.like) (`machineLike`: a new machine
   from its shape, disks the browser has attached again by identity, blank disks and ramdisks made again, files picked
-  again) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).
+  again; at the sizes the snapshot had: a grown overlay's as an empty overlay at that size, marked to grow; a ramdisk
+  grown since as another of the old size; a stored disk grown since refused, as it can't be seen smaller) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).
 
 ### 5.2 Save, keep, restore
 
@@ -398,7 +433,12 @@ The file's format, what the core saves and the page's toolbar and header fields:
   disks the confirmation named). The worker refuses a **keep** whose overlay isn't at the generation the plan names
   ([A disk this snapshot was to keep as it is was written to after the restore was planned, so the snapshot no longer fits it. Nothing was changed. Restore the snapshot again.](ui:snapshots:snapshot.keptMoved)), so the snapshot's RAM never lands on a disk that moved on.
 - **Repeated restores don't pile up forks:** a restore that would fork attaches an earlier fork of the same snapshot
-  whose generation hasn't moved since (still 1) instead (**reuse**).
+  whose generation hasn't moved since (still 1), at the snapshot's size, instead (**reuse**).
+- **On the records as they are:** the page reads the machine's records again before it plans a restore of a machine
+  that is off, and again once it has stopped (the Machines page or another tab may have changed them while the
+  questions were open: the shape is checked again then); `commit` plans on the record and disks the store has then and
+  writes back that record with its attachments' overlays changed, never the one the page planned on, and the start
+  opens the record the commit wrote (tests/page-restore.test.ts).
 - **Import a file** copies it into the machine's snapshots after the header check (one of another shape is kept,
   orphaned).
 - **A template** (`template: true` in the header, set only by `tools/snapshot-template.ts`, never by the page): its
@@ -430,7 +470,9 @@ copy stale.
   (`overlaySize`, §4.5). No handles, overlays' contents, snapshots or file contents.
 - **Import a definition:** a new machine (the name made unique, the same shape). A disk the browser has by identity is
   attached again; URL, blank and ramdisk disks come back as they were; an `overlaySize` gives the attachment an empty
-  overlay at that size, marked to grow (its base's partition doesn't fill it: the guest grows it at its first start); file disks, and stored disks the browser
+  overlay at that size, marked to grow (its base's partition doesn't fill it: the guest grows it at its first start; a
+  grown stored disk the browser doesn't have comes back as its image at the size it was made with, under such an
+  overlay); file disks, and stored disks the browser
   doesn't have, are picked at the machine's first start (the same flow as a handle without permission, §3.2): a
   picked file with the same name, size and date is taken; one that differs is hashed against the definition's hash
   when it has one; otherwise the user is asked, and taking it anyway makes it another disk's identity (its overlays
@@ -450,7 +492,8 @@ budget, the status bar.
 
 - `web/app/store.ts` (records, the sweep, the `BroadcastChannel`), `web/app/shape.ts` (the slots, the shape and its
   hash; `shape-diff.ts`: what differs, in words), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/snapshots.ts`
-  (the shape now, the restore's plan, a machine like a snapshot), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
+  (the shape now, the restore's plan), `web/app/machine-like.ts` (a machine like a snapshot), `web/app/switch-asked.ts`
+  (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Machines page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
 - `web/devices.ts`: the `zero` and `ram` sources, a stored disk under an overlay or written in place, the generation

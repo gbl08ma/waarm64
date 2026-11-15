@@ -437,7 +437,9 @@ Duplicate, Export the definition, Delete; then tabs:
   [Whole disk](ui:disks:ExportSteps.whole), then the format, each explained: compressed or uncompressed qcow2, the
   whole disk also raw; the format's choice saves, Back returns to the first step; a machine on this page running from
   it stops while the file is written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
-  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. **[Resize…](ui:disks:Disks.resize)** on each writable
+  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. New empty and Import changes
+  keep the size the guest sees; a switch to an overlay of another size asks first, naming the snapshots it orphans
+  (machines.md §4.5 "Variants keep the attachment's size"). **[Resize…](ui:disks:Disks.resize)** on each writable
   disk is a shortcut to the Resize dialog (below) for what the machine writes to: its chosen overlay, the stored disk
   written in place, or the ramdisk (`resize.ts` `attachmentTarget`; none on a read-only disk, or before an overlay is
   chosen); the disk's line shows the size the guest sees (a grown overlay's). Overlays… opens the disk's

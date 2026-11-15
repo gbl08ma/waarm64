@@ -71,6 +71,30 @@
     "message": "Couldn't create the overlay",
     "note": "Machines page: the error headline when New empty fails to make the overlay or switch the disk to it; why is the detail under it."
   },
+  "switch-asked.orphans_one": {
+    "message": "The guest sees {{name}} as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this switch.",
+    "note": "Machines page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans a kept snapshot. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
+  },
+  "switch-asked.orphans_other": {
+    "message": "The guest sees {{name}} as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this switch: {{list}}.",
+    "note": "Machines page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans kept snapshots. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+  },
+  "switch-asked.title": {
+    "message": "Switch to another size?",
+    "note": "Machines page, a machine's Disks tab: the title of the question disks:switch-asked.orphans."
+  },
+  "switch-asked.ok": {
+    "message": "Switch",
+    "note": "Machines page, a machine's Disks tab: the confirm button of the question disks:switch-asked.orphans: switches the disk to the overlay chosen."
+  },
+  "disk-changes.changes.orphans_one": {
+    "message": "Its disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this.",
+    "note": "Appended (on a line of its own) to the question asked before a changes file is imported into a stored machine's disk (Import changes…), when the changes file's disk is larger than the disk the machine sees now (it was exported from a resized overlay) and that orphans a kept snapshot. {{size}}: the changes' disk size; {{now}}: the size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
+  },
+  "disk-changes.changes.orphans_other": {
+    "message": "Its disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this: {{list}}.",
+    "note": "Appended (on a line of its own) to the question asked before a changes file is imported into a stored machine's disk (Import changes…), when the changes file's disk is larger than the disk the machine sees now (it was exported from a resized overlay) and that orphans kept snapshots. {{size}}: the changes' disk size; {{now}}: the size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+  },
   "Disks.busy.switch": {
     "message": "Switching the overlay",
     "note": "Machines page: the busy line (shown with a trailing …) while the disk switches to the overlay chosen in its Changes in list."

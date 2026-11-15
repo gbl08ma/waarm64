@@ -23,16 +23,19 @@ origin/main, committed, pushed.
 | 4 | **GROW from the page:** sent at HELLO for marked disks, the mark cleared on GROWN, the answer shown; a machine definition carrying a grown overlay's size. **No new Debian boot** (the user, 2026-11-15: CI's runtime stays as it is): the grow and `df` ride on an existing ci-machines.sh boot that writes a stored disk in place ("a disk stored in the browser (2)"); the Disks tab's in-place shortcut joins tests/page-resize.test.ts (no guest); ci.sh only cheap tests | done |
 | 5 | Out-of-context reviews of the track's code (the agent's GROW, the page's resize), then their fix loops | 5a done |
 | 5a | **The agent review's fixes** (findings in `bench/results/local/resize/review-agent-grow.md`, local): a growth within the entry array's sectors (the new backup's entries over the old backup header, no longer zeroed after), a cut run completed (the primary's header repaired from a whole backup with its entries; the backup under the new entries taken as the run's own), the filesystem's ioctl only on the partition's filesystem (st_dev; btrfs's fsid and devid from its superblock), mounts by `major:minor` (`/dev/root`), a GROW that doesn't read answered BAD_REQUEST, ext4's resize under `MemoryMax=32M` measured (no unit change) | done |
-| 5b | **The page review's fixes** (findings in `bench/results/local/resize/review-page-resize.md`, local) | next |
-| 6 | Track end: docs settled, the CI scripts (ci.sh, ci-debian.sh --platform, ci-machines.sh), PLAN.md row done, kickoff and handover deleted | |
+| 5b | **The page review's fixes** (findings in `bench/results/local/resize/review-page-resize.md`, local): all 13 confirmed by failing tests and fixed (a restore on the records as they are, the stored disk's mark only where its size is seen, forks reused and marked by size, the fork's `meta`, a refused record's `meta` put back, Create a machine like it at the snapshot's sizes, variants keeping the size or asking, `overlaySize` capped, a grown stored disk's definition and changes files (`made`), a resize re-reading under its lock and a ramdisk's taking its machines' locks); BAD_REQUEST kept and said once | done |
+| 6 | Track end: docs settled, the CI scripts (ci.sh, ci-debian.sh --platform, ci-machines.sh), PLAN.md row done, kickoff and handover deleted | next |
 
 ## State
 
-Loops 1–4, 2c and 5a done. Sizes in the host (docs/machines.md §4.5; `sizeSeen`, web/app/disk-size.ts), the two-level
-overlay map (docs/devices.md "blk"), the page's Resize… and grow marks (web/app/resize.ts, `ResizeDisk.svelte`,
-tests/page-resize.test.ts), GROW from the page (`web/app/areas/grow-actions.ts`; the end-to-end check on
-ci-machines.sh's page-stored in-place boot) and the agent's GROW (docs/devices.md "A disk grown"; agent/src/grow.rs,
-table.rs: cut runs completed by the next GROW, the filesystem checked to be the partition's, BAD_REQUEST = 8 for a
-GROW that doesn't read; the page takes it as a failure). Next: 5b, the page review's findings.
+Loops 1–5b done. Sizes in the host and their rules (docs/machines.md §4.5, including the rules decided in 5b: a fork
+keeps a standing mark, variants keep the attachment's size or ask, a stored disk's changes files hash it as made), the
+two-level overlay map (docs/devices.md "blk"), the page's Resize… and grow marks, GROW from the page and the agent's
+GROW (docs/devices.md "A disk grown"); a restore plans and commits on the records as they are (§5.2). Next: loop 6.
 
-Open: the Overlays dialog's rows show what an overlay holds, not its grown size.
+Open, for the track's end (backlog or settle):
+- The Overlays dialog's rows show what an overlay holds, not its grown size.
+- Deleting or merging away a machine's grown overlay leaves it to an empty one at the disk's size at its next start
+  (both confirmations name what goes; the size isn't said).
+- A stored disk grown before 5b has no `made`: its definition and changes files act as before (its grown size).
+- A definition's stored disk picked again always asks (its date is unknown: `modified: 0`), grown or not.

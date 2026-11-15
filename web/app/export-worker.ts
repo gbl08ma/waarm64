@@ -3,7 +3,7 @@
 // synchronous reads (a `File`'s slices, HTTP ranges) are worker-only, and it takes the overlay's
 // Web Lock, so the machine must have stopped (the page stops it first). The output goes to a file
 // handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
-import { hashSource } from '../changes.ts';
+import { baseHash, hashedSize } from '../changes.ts';
 import { diskIdentity, type Source } from '../devices.ts';
 import { msg, MsgError, toWire, type Msg } from '../msg.ts';
 import { countOf, openOverlay, overlay, type WritableDisk } from '../overlay.ts';
@@ -113,7 +113,9 @@ async function writeImage(
   let backing;
   if (r.mode === 'changes') {
     if (!disk) throw new Error('changes asked of a disk without an overlay');
-    const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
+    const made = 'stored' in r.disk.source ? r.disk.source.made : undefined;
+    const total = hashedSize(src, made);
+    const hash = await baseHash(src, made, (done) => progress(msg('disks:export-worker.readingBase'), done, total));
     backing = { name: r.baseName, format: base.format, hash };
     clusters = progressOf(changedClusters(disk), countOf(disk.written()), (done, total) =>
       progress(msg('disks:export-worker.writingChanges'), done, total),

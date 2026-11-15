@@ -95,19 +95,26 @@ export class SnapshotRestore {
       : msg('snapshots:snapshot-restore.ownDisk', { machine: this.#c.machine.spec.title });
   }
 
+  /** Why snapshot `name` (its `header`) can't be restored onto the stored machine as the page has it now: another shape (what differs). */
+  async #otherShape(s: Stored, header: SnapshotHeader, name: string) {
+    const now = await this.#c.machine.about();
+    if (!now) return msg('snapshots:snapshot-restore.restore.otherVersion');
+    if (header.shapeHash === now.shapeHash) return undefined;
+    const why = header.shape
+      ? shapeDiff(header.shape as Shape, now.shape)
+          .map((m) => text(m))
+          .join('; ')
+      : msg('snapshots:snapshot-restore.restore.otherVersion');
+    return msg('snapshots:snapshot-restore.restore.otherShape', { name, machine: s.record.name, why });
+  }
+
   /** The restore's plan for the stored machine, or none (said why: another shape, or it can't be planned). */
   async #plan(s: Stored, header: SnapshotHeader, key: string, name: string) {
     const now = await this.#c.machine.about();
     if (!now) return undefined;
-    if (header.shapeHash !== now.shapeHash) {
-      const why = header.shape
-        ? shapeDiff(header.shape as Shape, now.shape)
-            .map((m) => text(m))
-            .join('; ')
-        : msg('snapshots:snapshot-restore.restore.otherVersion');
-      void ask.alert(t('snapshots:snapshot-restore.restore.otherShape', { name, machine: s.record.name, why }), {
-        title: t('snapshots:snapshot-restore.restore.cant'),
-      });
+    const other = await this.#otherShape(s, header, name);
+    if (other) {
+      void ask.alert(t(other.key, other.params), { title: t('snapshots:snapshot-restore.restore.cant') });
       return undefined;
     }
     try {
@@ -133,8 +140,15 @@ export class SnapshotRestore {
    * Restores a snapshot onto the stored machine (docs/machines.md §5.2): refused when its shape isn't the machine's
    * (it says what differs); else each writable disk keeps its overlay where it is as the snapshot pinned it, and forks
    * (or, if the user says, is replaced) where it moved on. `key` identifies the snapshot for reusing an earlier fork.
+   * The machine's records are read again first while it's off (the Machines page, or another tab, may have changed
+   * them since the page read them) and once it has stopped: the shape is checked and the plan made again on those, and
+   * the start runs on the record the restore wrote.
    */
-  async #restore(s: Stored, file: File, header: SnapshotHeader, key: string, name: string) {
+  async #restore(file: File, header: SnapshotHeader, key: string, name: string) {
+    const { power: pw, runner, messages, terminal } = this.#c;
+    if (!isLive(power.state) && !(await pw.reloadStored())) return;
+    const s = this.#c.machine.stored;
+    if (!s) return;
     const plan = await this.#plan(s, header, key, name);
     if (!plan) return;
     const running = isLive(power.state);
@@ -147,19 +161,26 @@ export class SnapshotRestore {
     )
       return;
     const replace = await replaceForks(plan);
-    const { power: pw, runner, messages, terminal } = this.#c;
     if (pw.busy()) return; // a save began while the questions were open: said, nothing restored
     await pw.exclusively(async () => {
       await runner.stop();
+      const failed = (cause: unknown) =>
+        messages.setState('failed', new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause }), [
+          runner.d.later.problems().retry,
+        ]);
+      // The records as they are now (what changed while the questions were open), the shape checked on them.
+      if (!(await pw.reloadStored())) return;
+      const now = this.#c.machine.stored;
+      const other = now ? await this.#otherShape(now, header, name) : undefined;
+      if (!now || other) return failed(other && new MsgError(other.key, other.params));
       let disks: DiskPlan[];
       try {
         disks = await plan.commit(replace);
       } catch (e) {
-        messages.setState('failed', new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause: e }), [
-          runner.d.later.problems().retry,
-        ]);
-        return;
+        return failed(e);
       }
+      // The record the commit wrote (its forks attached) is the one the start opens.
+      if (!(await pw.reloadStored())) return;
       terminal.term.reset();
       runner.start(file, true, disks);
     });
@@ -173,7 +194,7 @@ export class SnapshotRestore {
     if (!s || rec?.machine !== s.record.id) return;
     const file = await (await opfsFile(snapshotPath(rec.machine, id))).getFile();
     const { header } = await openSnapshot(file);
-    await this.#restore(s, new File([file], `${rec.name}.waarm64snap`), header, id, rec.name);
+    await this.#restore(new File([file], `${rec.name}.waarm64snap`), header, id, rec.name);
   }
 
   /** Whether a transient machine can load `header`'s snapshot: its machine, and its disk by name (said if not). */
@@ -214,7 +235,7 @@ export class SnapshotRestore {
         title: t('snapshots:snapshot-restore.notSnapshot.title'),
       });
     }
-    if (m.stored) return this.#restore(m.stored, file, header, `file:${header.created}`, file.name);
+    if (m.stored) return this.#restore(file, header, `file:${header.created}`, file.name);
     const label = typeof header.label === 'string' ? header.label : String(header.machine);
     if (!this.#fits(file, header, label)) return;
     const overlay = overlayName(m);

@@ -8,18 +8,20 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { hashSource, loadChanges } from '../web/changes.ts';
+import { baseHash, hashSource, loadChanges } from '../web/changes.ts';
 import type { Source } from '../web/devices.ts';
 import { msgOf } from '../web/msg.ts';
-import { lockOverlay, openOverlay, overlay, overlayMeta, writeOwnSize } from '../web/overlay.ts';
+import { lockOverlay, openOverlay, overlay, overlayMeta, writeMeta, writeOwnSize } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';
 import { changedClusters, nonZeroClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
 import { machineLock } from '../web/app/machines.ts';
 import { sizeSeen } from '../web/app/disk-size.ts';
-import { serialOf, shapeOf, slots, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
-import { attachmentTarget, clearGrowMark, growFailed, growMark, growsOf, MAX_RESIZE, resize, resizeCosts } from '../web/app/resize.ts';
+import { serialOf, shapeHash, shapeOf, slots, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
+import { attachmentTarget, clearGrowMark, growFailed, growMark, growsOf, keepSize, MAX_RESIZE, resize, resizeCosts, sizeOrphans } from '../web/app/resize.ts';
+import { createOverlay, newEmptyOverlay, refreshOverlay } from '../web/app/disks.ts';
 import { exportDefinition, importDefinition, parseDefinition } from '../web/app/definitions.ts';
 import { planRestore } from '../web/app/snapshots.ts';
+import { machineLike } from '../web/app/machine-like.ts';
 import { overlayDir, Store, type OverlayRecord, type SnapshotRecord } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { openStored, openStoredForWriting, zeroDisk } from '../web/stored.ts';
@@ -332,4 +334,255 @@ test("in Chromium (OPFS, from a page): an overlay's own size written into a meta
     await browser.close();
     server.close();
   }
+});
+
+// ---- The page review's findings (RESIZE loop 5b; bench/results/local/resize/review-page-resize.md) ----
+
+/** The slot attachment `i` of machine `m` takes (no network, 2D). */
+const slotOf = (m: MachineRecord, i: number) => slots({ nets: 0, display: '2d', attachments: m.attachments }).findIndex((s) => s.attachment === i);
+const disksOf = async (store: Store) => new Map((await store.all('disks')).map((d) => [d.id, d]));
+/** Overlay `id`'s meta made with `generation` (and its own `size`), as a machine's run leaves it. */
+async function metaAt(id: string, generation: number, size = 0) {
+  const f = await openOverlay(overlayDir(id), undefined);
+  assert.ok(writeMeta(f.meta, { generation, merging: '', size }));
+  f.close();
+}
+
+test('finding 1: a restore commits on the machine record as it is when it commits, not the one it was planned on (edits since stay)', async () => {
+  const w = await world();
+  const { store } = w;
+  const planned = (await store.get('machines', w.A.id))!; // the page's record, as it loaded it
+  const pins = [{ slot: slotOf(w.A, 0), identity: 'x', size: 8 * MiB, blocks: 1, overlay: overlayDir(w.oa.id), generation: 7 }];
+  const plan = await planRestore(store, planned, await disksOf(store), { name: 'snap', key: 'k', pins }, { display: '2d', devices: [] });
+  assert.equal(plan.forks.length, 1);
+  // Meanwhile (the Machines page, another tab): renamed, its URL disk switched to another overlay.
+  const third = await createOverlay(store, w.url, 'Third');
+  const edited = structuredClone((await store.get('machines', w.A.id))!);
+  edited.name = 'renamed';
+  edited.attachments[0].overlay = third.id;
+  await store.put('machines', edited);
+  const steps = await plan.commit(false);
+  const m = (await store.get('machines', w.A.id))!;
+  assert.equal(m.name, 'renamed', 'the edit made since stays');
+  const write = steps.find((s) => s.action === 'write');
+  assert.ok(write && write.action === 'write');
+  assert.equal(write.overlay, overlayDir(m.attachments[0].overlay!), 'the worker fills the overlay the record attaches');
+  assert.ok(![w.oa.id, third.id].includes(m.attachments[0].overlay!), 'a fork');
+  assert.equal(m.attachments[1].overlay, w.os.id, 'the other disks as they are');
+});
+
+test("finding 2: a stored disk's grow mark goes only to the machines whose disk it grew (not through an overlay larger already)", async () => {
+  const w = await world();
+  const { store } = w;
+  // X's overlay of the stored disk was grown past its new size before (that grow done: no mark).
+  const ox: OverlayRecord = { ...w.os, id: 'c0000000000x', name: 'x' };
+  await store.put('overlays', ox);
+  const X: MachineRecord = { ...w.A, id: 'b0000000000x', name: 'xx', attachments: [{ id: 'a0000000000x', disk: w.stored.id, readOnly: false, overlay: ox.id }] };
+  await store.put('machines', X);
+  await resize(store, { overlay: ox.id }, 32 * MiB);
+  const costs = await resize(store, { disk: w.stored.id }, 16 * MiB, { grow: true });
+  assert.deepEqual(costs.machines.map((m) => m.name).sort(), ['aa', 'bb'], 'its disk grows for A and B, not X');
+  assert.deepEqual(await growsOf(store, X.id), [], "X's guest saw no change: no GROW for it");
+  assert.deepEqual((await growsOf(store, w.A.id)).map((g) => [g.serial, g.size]), [[serialOf(w.A.attachments[1].id), 16 * MiB]]);
+  // An overlay of its own below the disk's new size: the disk's grow is its guest's too.
+  await resize(store, { overlay: w.os.id }, 18 * MiB);
+  await resize(store, { disk: w.stored.id }, 20 * MiB, { grow: true });
+  assert.deepEqual((await growsOf(store, w.A.id)).map((g) => g.size), [20 * MiB]);
+});
+
+test("finding 3: an earlier fork grown since isn't reused: the snapshot's disk had another size", async () => {
+  const w = await world();
+  const { store } = w;
+  const fork: OverlayRecord = { ...w.ob, id: 'c0000000000f', name: 'snap', fork: { snapshot: 'k', generation: 1 }, generation: 1, size: 16 * MiB };
+  await store.put('overlays', fork);
+  await metaAt(fork.id, 1, 16 * MiB);
+  const pins = [{ slot: slotOf(w.A, 0), identity: 'x', size: 8 * MiB, blocks: 1, overlay: overlayDir(w.oa.id), generation: 7 }];
+  const plan = await planRestore(store, (await store.get('machines', w.A.id))!, await disksOf(store), { name: 'snap', key: 'k', pins }, { display: '2d', devices: [] });
+  assert.deepEqual(plan.forks.map((f) => f.reused), [false], 'a new fork, at the snapshot\'s size');
+  // At the size it was forked at, it's reused.
+  await store.put('overlays', { ...fork, size: undefined });
+  await metaAt(fork.id, 1, 0);
+  const again = await planRestore(store, (await store.get('machines', w.A.id))!, await disksOf(store), { name: 'snap', key: 'k', pins }, { display: '2d', devices: [] });
+  assert.deepEqual(again.forks.map((f) => f.reused), [true]);
+});
+
+test("finding 4: a grown overlay made by the page (a restore's fork) has its size in its meta at once, not only after the worker's fill", async () => {
+  const w = await world();
+  const o = await createOverlay(w.store, w.url, 'f', { snapshot: 'k', generation: 1 }, 16 * MiB);
+  assert.equal(o.size, 16 * MiB);
+  assert.equal((await overlayMeta(overlayDir(o.id))).size, 16 * MiB, 'what an export opens it at');
+  const plain = await createOverlay(w.store, w.url, 'g');
+  assert.equal((await overlayMeta(overlayDir(plain.id))).size, 0);
+});
+
+test("finding 5: a resize whose record write is refused leaves the overlay's meta at the record's size; a meta past its record is taken into it", async () => {
+  const w = await world();
+  const { store } = w;
+  const put = store.put.bind(store);
+  let refuse = true;
+  store.put = (async (kind: Parameters<Store['put']>[0], r: Parameters<Store['put']>[1]) => {
+    if (kind === 'overlays' && refuse) {
+      refuse = false;
+      throw new Error('refused');
+    }
+    return put(kind, r);
+  }) as Store['put'];
+  await assert.rejects(resize(store, { overlay: w.oa.id }, 16 * MiB, { grow: true }), /refused/);
+  assert.equal((await store.get('overlays', w.oa.id))!.size, undefined);
+  assert.equal((await overlayMeta(overlayDir(w.oa.id))).size, 0, 'the meta as the record says');
+  // Cut off between the two (a tab closed): the meta has it, the record not; the next refresh takes it.
+  await writeOwnSize(overlayDir(w.oa.id), 12 * MiB);
+  await refreshOverlay(store, w.oa.id);
+  assert.equal((await store.get('overlays', w.oa.id))!.size, 12 * MiB);
+  assert.equal(await sizeNowOf(store, w.oa.id), 12 * MiB, 'Resize… says the size the guest sees');
+});
+const sizeNowOf = async (store: Store, id: string) => (await resizeCosts(store, { overlay: id }, MAX_RESIZE)).size;
+
+test("finding 6: a restore's fork of a snapshot taken after a resize its guest hadn't followed keeps the grow mark", async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { overlay: w.oa.id }, 16 * MiB, { grow: true });
+  const pins = (size: number) => [{ slot: slotOf(w.A, 0), identity: 'x', size, blocks: 1, overlay: overlayDir(w.oa.id), generation: 7 }];
+  const fork = async (size: number) => {
+    const plan = await planRestore(store, (await store.get('machines', w.A.id))!, await disksOf(store), { name: 'snap', key: `k${size}`, pins: pins(size) }, { display: '2d', devices: [] });
+    await plan.commit(false);
+    const m = (await store.get('machines', w.A.id))!;
+    return (await store.get('overlays', m.attachments[0].overlay!))!;
+  };
+  const after = await fork(16 * MiB);
+  assert.notEqual(after.id, w.oa.id);
+  assert.deepEqual(after.grow, { from: 8 * MiB, to: 16 * MiB }, 'taken at the new size, the partition not grown yet');
+  assert.deepEqual((await growsOf(store, w.A.id)).map((g) => g.marks.map((x) => x.target)), [[{ overlay: after.id }]]);
+  assert.deepEqual((await store.get('overlays', w.oa.id))!.grow, { from: 8 * MiB, to: 16 * MiB }, 'the resized overlay keeps its own');
+  const before = await fork(8 * MiB);
+  assert.equal(before.grow, undefined, 'taken before the resize: the fork is at the old size, nothing to grow');
+});
+
+test("finding 7: a machine like a snapshot gets the disk sizes the snapshot had (a grown overlay's, a ramdisk grown since)", async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { overlay: w.oa.id }, 16 * MiB);
+  const shape = await w.shapeNow(w.A); // the URL disk seen at 16 MiB, the ramdisk at 2 MiB
+  const hash = await shapeHash(shape);
+  await resize(store, { disk: w.ram.id }, 3 * MiB);
+  const like = await machineLike(store, { id: 'eeeeeeeeeee7', machine: w.A.id, name: 'snap', shape });
+  assert.equal(await shapeHash(await w.shapeNow(like)), hash, "the snapshot's shape");
+  // A stored disk grown since can't be seen smaller: refused, said why.
+  await resize(store, { disk: w.stored.id }, 6 * MiB);
+  await assert.rejects(machineLike(store, { id: 'eeeeeeeeeee8', machine: w.A.id, name: 'snap', shape }), (e: unknown) => msgOf((e as Error).cause)?.key === 'snapshots:machine-like.storedDiskGrown.cause');
+});
+
+test('finding 8: New empty keeps the size its attachment had (marked to grow); a switch to an overlay of another size says what it orphans; changes imported keep it too', async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { overlay: w.oa.id }, 16 * MiB);
+  const s = await w.snap(w.A, 'kept');
+  const before = await shapeHash(await w.shapeNow(w.A));
+  const a = w.A.attachments[0].id;
+  const m = (await store.get('machines', w.A.id))!;
+  const o = await newEmptyOverlay(store, m, a, 'fresh');
+  assert.equal(o.size, 16 * MiB);
+  assert.deepEqual(o.grow, { from: 8 * MiB, to: 16 * MiB }, "its base's partition doesn't fill it");
+  assert.equal((await overlayMeta(overlayDir(o.id))).size, 16 * MiB);
+  assert.equal(await shapeHash(await w.shapeNow((await store.get('machines', w.A.id))!)), before, 'the same shape: nothing orphaned');
+  // A switch to B's overlay (8 MiB): the snapshots made at 16 MiB are orphaned, and the switch says so first.
+  assert.deepEqual((await sizeOrphans(store, w.A.id, a, { overlay: w.ob.id })).map((x) => x.id), [s.id]);
+  assert.deepEqual(await sizeOrphans(store, w.A.id, a, { overlay: w.oa.id }), [], 'the same size: none');
+  // Changes imported into a new overlay smaller than the attachment's: grown to it, marked.
+  const imported = await createOverlay(store, w.url, 'imported');
+  const kept = await keepSize(store, imported, 16 * MiB);
+  assert.deepEqual([kept.size, kept.grow], [16 * MiB, { from: 8 * MiB, to: 16 * MiB }]);
+  assert.equal((await overlayMeta(overlayDir(imported.id))).size, 16 * MiB);
+});
+
+test("finding 10: a definition's overlaySize past MAX_RESIZE is damaged", async () => {
+  const w = await world();
+  await resize(w.store, { overlay: w.oa.id }, 16 * MiB);
+  const def = await exportDefinition(w.store, w.A.id);
+  const bad = { ...def, disks: [{ ...def.disks[0], overlaySize: MAX_RESIZE + 512 }, ...def.disks.slice(1)] };
+  assert.throws(() => parseDefinition(JSON.stringify(bad)), /damaged/);
+  const ok = { ...def, disks: [{ ...def.disks[0], overlaySize: MAX_RESIZE }, ...def.disks.slice(1)] };
+  parseDefinition(JSON.stringify(ok));
+});
+
+test("finding 11: a grown stored disk's definition asks for the image it was made from, under an overlay at the grown size, marked", async () => {
+  const w = await world();
+  await resize(w.store, { disk: w.stored.id }, 6 * MiB);
+  const def = await exportDefinition(w.store, w.B.id);
+  const sd = def.disks[1];
+  assert.deepEqual([sd.kind, sd.size, sd.overlaySize], ['stored', 4 * MiB, 6 * MiB], 'the size made with, and the grown one');
+  // Another browser: the stored disk becomes a file to pick, of the size it was made with, under a grown overlay.
+  const other = new Store(memoryRecords(), memoryFiles(), { channel: false });
+  const { machine } = await importDefinition(other, parseDefinition(JSON.stringify(def)));
+  const d = (await other.get('disks', machine.attachments[1].disk))!;
+  assert.deepEqual([d.kind, d.size, (d.identity as { bytes: number }).bytes], ['file', 4 * MiB, 4 * MiB]);
+  const o = (await other.get('overlays', machine.attachments[1].overlay!))!;
+  assert.deepEqual([o.size, o.grow], [6 * MiB, { from: 4 * MiB, to: 6 * MiB }]);
+  const ds = new Map((await other.all('disks')).map((x) => [x.id, x]));
+  const os = new Map((await other.all('overlays')).map((x) => [x.id, x]));
+  assert.equal(shapeOf(machine, (i) => ds.get(i), { overlays: (i) => os.get(i) }).disks[1].size, 6 * MiB, 'the guest sees the grown size');
+});
+
+test("finding 12: a changes file exported from a stored disk's overlay still imports after the disk grew", async () => {
+  const path = `disks/hashed-${process.pid}`;
+  const made = 16 * 4096;
+  let f = await openStoredForWriting(path, 'stored', made);
+  assert.ok(await overlay(zeroDisk(made), f.data, f.map, f.meta).write(0, new Uint8Array(made).fill(5)));
+  f.close();
+  // The export, before the grow: changes over the stored disk, its hash of the disk as made.
+  const src = await openStored(path, made);
+  const name = `overlays/hashed-${process.pid}`;
+  const g = await openOverlay(name, 'hashed');
+  const d = overlay(openDisk((off, len) => src.read(off, len)!, made), g.data, g.map, g.meta, made);
+  assert.ok(await d.write(4096, new Uint8Array(4096).fill(7)));
+  const parts: Uint8Array[] = [];
+  const sink: Sink = (chunk, at) => { if (at === undefined) parts.push(chunk.slice()); else parts[0] = chunk.slice(); };
+  await writeQcow2({ size: d.size, clusters: changedClusters(d), backing: { name: 'stored.img', format: 'raw', hash: await baseHash(src, undefined, () => {}) }, sink });
+  const changes = new Uint8Array(Buffer.concat(parts));
+  g.close();
+  src.close();
+  // The disk grown to four times that (its record; nothing written past its old end): the file still loads.
+  const grown = await openStored(path, 4 * made);
+  const back = `overlays/hashed-back-${process.pid}`;
+  await loadChanges({ changes: source(changes), base: grown, made, label: 'stored.img', overlay: back, identity: 'hashed' });
+  const h = await openOverlay(back, 'hashed');
+  const e = overlay(openDisk((off, len) => grown.read(off, len)!, 4 * made), h.data, h.map, h.meta, 4 * made);
+  assert.equal((await e.read(4096, 1))![0], 7);
+  assert.equal((await e.read(0, 1))![0], 5);
+  h.close();
+  // Written past its old end since: its bytes aren't the ones the file was made over any more.
+  grown.close();
+  f = await openStoredForWriting(path, 'stored', 4 * made);
+  assert.ok(await overlay(zeroDisk(4 * made), f.data, f.map, f.meta).write(3 * made, new Uint8Array(4096).fill(9)));
+  f.close();
+  const written = await openStored(path, 4 * made);
+  await assert.rejects(loadChanges({ changes: source(changes), base: written, made, label: 'stored.img', overlay: back, identity: 'hashed' }), (e: unknown) => /otherSize|otherBase/.test(msgOf(e)?.key ?? ''));
+  written.close();
+});
+
+test('finding 13: a resize reads its target again under the lock (an overlay forgotten meanwhile stays gone); a ramdisk resize holds its machines\' locks', async () => {
+  const w = await world();
+  const { store } = w;
+  const locks = navigator.locks as LockManager & { request: LockManager['request'] };
+  const request = locks.request;
+  const path = overlayDir(w.oa.id);
+  locks.request = (async (name: string, ...rest: unknown[]) => {
+    if (name === `waarm64-overlay:${path}`) await store.forget('overlays', w.oa.id); // a merge's, between the read and the write
+    return (request as (...a: unknown[]) => Promise<unknown>).call(locks, name, ...rest);
+  }) as LockManager['request'];
+  try {
+    await assert.rejects(resize(store, { overlay: w.oa.id }, 16 * MiB), said('machines:resize.gone'));
+  } finally {
+    locks.request = request;
+  }
+  assert.equal(await store.get('overlays', w.oa.id), undefined, 'not brought back');
+  // A ramdisk: while its record is written, a start of a machine that has it (its lock, ifAvailable) is refused.
+  const put = store.put.bind(store);
+  let free: boolean | undefined;
+  store.put = (async (kind: Parameters<Store['put']>[0], r: Parameters<Store['put']>[1]) => {
+    if (kind === 'disks' && r.id === w.ram.id) free = await locks.request(machineLock(w.A.id), { ifAvailable: true }, (l) => l !== null);
+    return put(kind, r);
+  }) as Store['put'];
+  await resize(store, { disk: w.ram.id }, 4 * MiB);
+  assert.equal(free, false, "A's lock held by the resize");
 });

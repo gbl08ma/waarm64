@@ -9,6 +9,8 @@ import { ask } from '../ask.svelte.ts';
 import { loadChangesInto, switchOverlay } from '../disks.ts';
 import { runImport } from '../import.ts';
 import { isRunning } from '../machines.ts';
+import { sizeSeen } from '../disk-size.ts';
+import { keepSize, sizeOrphans } from '../resize.ts';
 import type { DiskRecord, MachineRecord } from '../shape.ts';
 import type { Core } from '../run/core.ts';
 import { inUse, progressText } from '../run/messages.ts';
@@ -44,9 +46,14 @@ export class DiskChanges {
     return a && disk ? { m, attachment: a.id, disk, here } : undefined;
   }
 
-  /** The question: what the file goes into, and what it replaces. */
+  /**
+   * The question: what the file goes into, and what it replaces; and, where its disk is larger than the one the
+   * machine sees now (a grown overlay's changes, §4.5), the snapshots that orphans.
+   */
   async #question(file: File, into: Into, running: boolean) {
     const pm = this.#c.machine;
+    const size = (await changesHeader(file))?.size ?? 0;
+    const orphans = into.m ? await sizeOrphans(pm.store, into.m.id, into.attachment, { size }) : [];
     const written = into.m ? 0 : await overlayBytes(into.overlay).catch(() => 0);
     const onto = pm.chosen ? diskName(pm) : msg('disks:disk-actions.machineDisk', { machine: pm.spec.title });
     const what = into.m
@@ -54,9 +61,16 @@ export class DiskChanges {
       : written
         ? msg('disks:disk-changes.changes.replace.size', { disk: onto, size: written })
         : msg('disks:disk-changes.changes.replace', { disk: onto });
-    const question = running
+    const asked = running
       ? t('disks:disk-changes.changes.confirm.running', { name: file.name, into: what })
       : t('disks:disk-changes.changes.confirm', { name: file.name, into: what });
+    const m = into.m;
+    const a = m?.attachments.find((x) => x.id === into.attachment);
+    const now = m && a ? sizeSeen(into.disk, a, a.overlay ? await pm.store.get('overlays', a.overlay) : undefined) : 0;
+    const list = orphans.map((x) => t('disks:ResizeDisk.snapshot', { name: x.name, machine: m?.name ?? '' }));
+    const question = orphans.length
+      ? `${asked}\n${t('disks:disk-changes.changes.orphans', { size, now, count: orphans.length, list })}`
+      : asked;
     return ask.confirm(question, {
       title: t('disks:disk-changes.changes.title'),
       ok: t('disks:disk-changes.changes.ok'),
@@ -108,7 +122,11 @@ export class DiskChanges {
     const pm = this.#c.machine;
     const progress = (phase: string, f: number) => this.#c.messages.stateText(progressText(phase, f));
     if (into.m) {
-      const o = await loadChangesInto(pm.store, into.disk, file, progress, (await sourceOf(pm, into.disk)).source);
+      const a = into.m.attachments.find((x) => x.id === into.attachment);
+      const had = a?.overlay ? await pm.store.get('overlays', a.overlay) : undefined;
+      const loaded = await loadChangesInto(pm.store, into.disk, file, progress, (await sourceOf(pm, into.disk)).source);
+      // At least the size its guest saw (§4.5): taking changes doesn't shrink the disk, nor orphan its snapshots.
+      const o = a ? await keepSize(pm.store, loaded, sizeSeen(into.disk, a, had)) : loaded;
       await switchOverlay(pm.store, into.m, into.attachment, o.id);
       if (into.here) await pm.rereadRecord(into.m.id);
     } else

@@ -195,6 +195,10 @@
     "message": "It failed again (error {{errno}}), and won't be tried again. Grow the partition and filesystem yourself in the guest (growpart, then resize2fs, btrfs filesystem resize or xfs_growfs).",
     "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar), the second time a grow failed in the guest: the page stops asking. {{errno}}: the guest's error number (Linux errno)."
   },
+  "grow-actions.badRequest": {
+    "message": "The guest agent didn't understand the request to grow {{disk}} (it may be older or newer than this page), so nothing was grown. It's asked again at the machine's next start; once the agent and the page agree, the disk grows.",
+    "note": "Notice in the message bar (under the toolbar), once per page load, when the guest agent answered the page's ask to grow a disk the Machines page resized (disks:ResizeDisk.grow) by saying it couldn't read the ask: the agent in the guest and the page are of different versions. {{disk}}: the disk's name (as the machine's Disks tab names it)."
+  },
   "runner.workerFailed": {
     "message": "The emulator stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that runs the machine failed (the machine has crashed; Show serial log and the like follow); the browser's error is the detail under it."

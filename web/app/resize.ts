@@ -118,13 +118,38 @@ export function attachmentTarget(a: Attachment, d: DiskRecord | undefined): Resi
 }
 
 /** Takes overlay or stored disk `path`'s lock (no machine opens it meanwhile), or refuses: something has it open. */
-async function lockFor(path: string | undefined) {
-  if (!path) return () => undefined; // a ramdisk: its machines' locks are what tells
+async function lockFor(path: string) {
   const inUse = () => refused(new MsgError('machines:resize.inUse'));
   if ((await locksHeld()).has(overlayLock(path))) throw inUse();
   return lockOverlay(path, RESIZE_WAIT_MS).catch((e: unknown) => {
     throw (e as { problem?: string }).problem === 'overlay-in-use' ? inUse() : e;
   });
+}
+
+/**
+ * Takes the machine locks of `machines` (a ramdisk's: it has no files of its own to lock), each only if it's free, so
+ * that none of them starts while its ramdisk's record changes (a start takes its machine's lock the same way); or
+ * refuses, naming those that run.
+ */
+async function lockMachines(machines: MachineRecord[]) {
+  const releases: (() => void)[] = [];
+  const release = () => releases.forEach((r) => r());
+  const busy: MachineRecord[] = [];
+  for (const m of machines) {
+    const held = await new Promise<(() => void) | undefined>((got) => {
+      void navigator.locks.request(machineLock(m.id), { ifAvailable: true }, (l) => {
+        if (!l) return got(undefined);
+        return new Promise<void>((done) => got(done));
+      });
+    });
+    if (held) releases.push(held);
+    else busy.push(m);
+  }
+  if (busy.length) {
+    release();
+    throw refused(new MsgError('machines:resize.running', { machines: busy.map((m) => m.name), count: busy.length }));
+  }
+  return release;
 }
 
 /**
@@ -144,16 +169,34 @@ export async function resize(store: Store, t: ResizeTarget, size: number, opts: 
         count: costs.running.length,
       }),
     );
-  const { o, d } = await target(store, t);
-  const mark = (had: GrowMark | undefined) => ({
-    grow: opts.grow ? { from: had?.from ?? costs.size, to: size } : undefined,
-  });
-  const release = await lockFor(o ? overlayDir(o.id) : d.kind === 'stored' ? diskDir(d.id) : undefined);
+  const first = await target(store, t);
+  const release =
+    first.o || first.d.kind === 'stored'
+      ? await lockFor(first.o ? overlayDir(first.o.id) : diskDir(first.d.id))
+      : await lockMachines(await store.machinesWith(first.d.id));
   try {
+    // Read again under the lock: what changed while it was waited for (a merge forgot the overlay, a rename) counts.
+    const { o, d, size: now } = await target(store, t);
+    if (size <= now) throw refused(new MsgError('machines:resize.notLarger', { size, now })); // grown meanwhile
+    const mark = (had: GrowMark | undefined) => ({
+      grow: opts.grow ? { from: had?.from ?? costs.size, to: size } : undefined,
+    });
     if (o) {
-      await writeOwnSize(overlayDir(o.id), size); // the bytes first: the device worker reads it there
-      await store.put('overlays', { ...o, size, modified: Date.now(), ...mark(o.grow) });
-    } else await store.put('disks', { ...d, size, ...(d.kind === 'stored' ? mark(d.grow) : {}) });
+      const dir = overlayDir(o.id);
+      await writeOwnSize(dir, size); // the bytes first: the device worker reads it there
+      try {
+        await store.put('overlays', { ...o, size, modified: Date.now(), ...mark(o.grow) });
+      } catch (e) {
+        // The record refused: the meta back to what it says, or the guest would see a size the records don't.
+        await writeOwnSize(dir, o.size ?? 0).catch(() => undefined); // the failure thrown is the one to report
+        throw e;
+      }
+    } else
+      await store.put('disks', {
+        ...d,
+        size,
+        ...(d.kind === 'stored' ? { made: d.made ?? d.size, ...mark(d.grow) } : {}),
+      });
   } finally {
     release();
   }
@@ -164,9 +207,9 @@ export async function resize(store: Store, t: ResizeTarget, size: number, opts: 
 export const grownSize = (d: DiskRecord, a: Attachment, o?: { size?: number }) =>
   !a.readOnly && !a.inPlace && d.kind !== 'ramdisk' && (o?.size ?? 0) > d.size ? o?.size : undefined;
 
-/** Whether `v` is a size a definition's disk of `size` bytes may carry (`grownSize`): larger, in whole sectors. */
+/** Whether `v` is a size a definition's disk of `size` bytes may carry (`grownSize`): larger, in whole sectors, at most `MAX_RESIZE`. */
 export const validGrownSize = (v: unknown, size: number) =>
-  Number.isSafeInteger(v) && (v as number) > size && (v as number) % SECTOR === 0;
+  Number.isSafeInteger(v) && (v as number) > size && (v as number) <= MAX_RESIZE && (v as number) % SECTOR === 0;
 
 /**
  * Attachment `a` of disk `d`, made from a definition that carries its overlay's `size` (`grownSize`): given an empty
@@ -234,6 +277,13 @@ export async function growsOf(store: Store, id: string): Promise<GrowDisk[]> {
   return out;
 }
 
+/**
+ * A stored disk's mark, as a guest that sees it through overlay `o` (none: in place) follows it: only where the disk's
+ * size is what that guest sees (an overlay larger already hid the disk's growth: its guest saw no change).
+ */
+const diskMark = (d: DiskRecord, o: OverlayRecord | undefined) =>
+  d.kind === 'stored' && (o?.size ?? 0) < d.size ? d.grow : undefined;
+
 /** Attachment `a`'s marks, if it has any (`growsOf`). */
 async function growOf(store: Store, a: Attachment): Promise<GrowDisk | undefined> {
   const d = await store.get('disks', a.disk);
@@ -243,7 +293,8 @@ async function growOf(store: Store, a: Attachment): Promise<GrowDisk | undefined
   if (!inPlace && !o) return undefined;
   const marks: GrowDisk['marks'] = [];
   if (o?.grow) marks.push({ target: { overlay: o.id }, mark: o.grow });
-  if (d.kind === 'stored' && d.grow) marks.push({ target: { disk: d.id }, mark: d.grow });
+  const disk = diskMark(d, o);
+  if (disk) marks.push({ target: { disk: d.id }, mark: disk });
   return marks.length ? { serial: serialOf(a.id), name: d.name, size: sizeSeen(d, a, o), marks } : undefined;
 }
 
@@ -256,4 +307,46 @@ export async function clearGrowMark(store: Store, t: ResizeTarget) {
     const d = await store.get('disks', t.disk);
     if (d?.grow) await store.put('disks', { ...d, grow: undefined });
   }
+}
+
+/**
+ * Overlay `o`, new and nobody's yet (an empty one, changes just imported), grown to `size` where its guest would see
+ * less (its meta, then its record): it keeps the size its attachment's guest saw (§4.5), so the machine's shape, and
+ * its snapshots, stay as they were. Marked to grow from what it holds (its partition fills at most that). Returns it.
+ */
+export async function keepSize(store: Store, o: OverlayRecord, size: number): Promise<OverlayRecord> {
+  const d = await store.get('disks', o.disk);
+  const had = Math.max(d?.size ?? 0, o.size ?? 0);
+  if (size <= had) return o;
+  await writeOwnSize(overlayDir(o.id), size);
+  const grown = { ...o, size, grow: { from: had, to: size } };
+  await store.put('overlays', grown);
+  return grown;
+}
+
+/**
+ * The kept snapshots of machine `machine` that its attachment `attachment` orphans by seeing its disk through `to` (an
+ * overlay switched to, or changes of a disk of `size` imported: kept at least at the size now, `keepSize`) at another
+ * size than now (§5.1: the size is in the shape): those made at the size it sees now. None when the size stays.
+ */
+export async function sizeOrphans(
+  store: Store,
+  machine: string,
+  attachment: string,
+  to: { overlay: string } | { size: number },
+) {
+  const m = await store.get('machines', machine);
+  const a = m?.attachments.find((x) => x.id === attachment);
+  const d = a && (await store.get('disks', a.disk));
+  if (!a || !d) return [];
+  const now = sizeSeen(d, a, a.overlay ? await store.get('overlays', a.overlay) : undefined);
+  const after =
+    'size' in to
+      ? Math.max(now, to.size)
+      : sizeSeen(d, { ...a, overlay: to.overlay }, await store.get('overlays', to.overlay));
+  if (after === now) return [];
+  const serial = serialOf(a.id);
+  return (await store.snapshotsOf(machine)).filter((s) =>
+    s.shape.disks.some((x) => x.serial === serial && x.size === now),
+  );
 }

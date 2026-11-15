@@ -512,7 +512,9 @@ have attached a fork) and sends GROW for each writable attachment whose overlay 
 (machines.md §4.5), with its serial and the size the guest sees (`sizeSeen`); a transient machine has no records, a
 read-only attachment or a ramdisk no mark. A stored disk's mark is the disk's, sent through whichever machine boots it
 first with the agent (written in place, or through its overlay, which then holds the grown table: the disk itself and
-other machines' overlays over it don't), and the next one finds it cleared. Each GROWN (the link's `onGrown`, whichever
+other machines' overlays over it don't), and the next one finds it cleared; only through an overlay whose own size is
+below the disk's (an overlay grown past it already hid the disk's growth: its guest saw no change, and an answer from it
+would clear a mark another machine's guest still needs). Each GROWN (the link's `onGrown`, whichever
 connection it comes on) is matched to the run's disks by serial against the marks then, one at a time: a GROWN whose
 mark is gone (a duplicate, one another answer cleared) says nothing. **What clears the mark** (`answer`):
 - a final answer: grown (the partition and filesystem, or the filesystem of a disk without a table), nothing left to
@@ -523,7 +525,10 @@ mark is gone (a duplicate, one another answer cleared) says nothing. **What clea
 - FAILED (either step, or the filesystem's step not reached, or a status the page doesn't know): kept once, with
   `failed` on the mark, and said with "tries again at the next start" (a failure may pass: a busy disk, the 5 s lock;
   a table written but not told to the kernel is completed by the next GROW); a second FAILED clears it and says to grow
-  it by hand. A failure that lasts is said twice, not at every start.
+  it by hand. A failure that lasts is said twice, not at every start;
+- BAD_REQUEST (the agent didn't read the GROW: a page and an agent of different versions, not a failure of the disk):
+  kept as it is (no `failed`), and said once in the page's life (`machine:grow-actions.badRequest`),
+  so an agent that reads it grows the disk at a later start.
 A run that ends before its GROWN keeps the mark: the next start asks again, and a grow done already answers NOTHING
 (cleared then, "already fills"). A restored guest is asked again for what still stands (the GROW is idempotent); a mark
 cleared before a snapshot isn't (a resize orphans the snapshots from before it, so a restorable guest saw the new size).

@@ -24,11 +24,12 @@
   import type { Attachment, DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
   import { bytesText, editAttachment } from './machines.ts';
-  import { createOverlay, switchOverlay } from './disks.ts';
+  import { newEmptyOverlay, switchOverlay } from './disks.ts';
   import { URL_SLOW } from './urlcheck.ts';
   import { inBar, page } from './page.ts';
   import { diskKind } from './disk-kind.ts';
   import { attachmentTarget, type ResizeTarget } from './resize.ts';
+  import { switchAsked } from './switch-asked.ts';
   import { sizeSeen } from './disk-size.ts';
 
   type Props = {
@@ -52,7 +53,7 @@
       overlays.find((o) => o.id === a.overlay),
     );
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
-  async function newOverlay(attachment: string, disk: DiskRecord) {
+  async function newOverlay(attachment: string) {
     const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), {
       title: t('disks:Disks.newOverlay.title'),
       ok: t('disks:Disks.newOverlay.ok'),
@@ -61,14 +62,18 @@
     await act(t('disks:Disks.busy.newOverlay'), async () => {
       if (!(await offFirst(machine))) return;
       try {
-        const o = await createOverlay(store, disk, name);
-        await switchOverlay(store, plain(machine), attachment, o.id);
+        await newEmptyOverlay(store, plain(machine), attachment, name); // at the size the guest sees (§4.5)
       } catch (e) {
         throw new MsgError('disks:Disks.failed.newOverlay', {}, { cause: e });
       }
     });
   }
-  async function switchTo(attachment: string, overlay: string) {
+  /** The disk switched to another overlay; one its guest sees at another size asks first (`switchAsked`). */
+  async function switchTo(select: HTMLSelectElement, attachment: string, overlay: string) {
+    if (!(await switchAsked(store, machine, attachment, overlay))) {
+      select.value = machine.attachments.find((x) => x.id === attachment)?.overlay ?? '';
+      return;
+    }
     await act(t('disks:Disks.busy.switch'), async () => {
       if (!(await offFirst(machine))) return;
       await switchOverlay(store, plain(machine), attachment, overlay).catch((e: unknown) => {
@@ -197,7 +202,7 @@
             >{t('disks:Disks.overlays.label')}
             <select
               value={a.overlay ?? ''}
-              onchange={(e) => switchTo(a.id, e.currentTarget.value)}
+              onchange={(e) => switchTo(e.currentTarget, a.id, e.currentTarget.value)}
               data-field="overlay"
             >
               {#if !a.overlay}<option value="">{t('disks:Disks.overlays.none')}</option>{/if}
@@ -208,7 +213,7 @@
                 >{/each}
             </select>
           </label>
-          <Button icon="plus" onclick={() => newOverlay(a.id, d)} title={t('disks:Disks.newEmpty.title')}
+          <Button icon="plus" onclick={() => newOverlay(a.id)} title={t('disks:Disks.newEmpty.title')}
             >{t('disks:Disks.newEmpty')}</Button
           >
           {#if overlaysOf(d.id).length}<Button

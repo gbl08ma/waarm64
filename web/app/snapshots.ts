@@ -10,17 +10,14 @@ import { makeRoom } from '../diskcache.ts';
 import { openSnapshot } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
-import type { OverlaySizes } from './disk-size.ts';
+import type { GrowMark, OverlaySizes } from './disk-size.ts';
 import {
   adaptersOf,
-  canonical,
   CPU_DEFAULT,
-  macsOf,
   newId,
   shapeHash,
   shapeOf,
   slots,
-  uniqueName,
   type CpuFeature,
   type DeviceKind,
   type DiskRecord,
@@ -29,7 +26,7 @@ import {
   type Shape,
 } from './shape.ts';
 import { overlayDir, snapshotPath, type Store } from './store.ts';
-import { msg, MsgError, t, type Msg } from '../i18n.ts';
+import { msg, MsgError, type Msg } from '../i18n.ts';
 
 /** The machine's shape and its hash as it would run now (its disks and overlays by id: an overlay's own size counts, §4.5). */
 export async function currentShape(
@@ -64,8 +61,11 @@ type Restoring = {
   m: MachineRecord;
   disks: Map<string, DiskRecord>;
   snap: Snap;
+  run: RunShape;
   bySlot: ReturnType<typeof slots>;
 };
+/** The shape the machine runs with (its display, and its devices: the address's over the record's). */
+type RunShape = { display: Display | 'none'; devices?: DeviceKind[] };
 /** What a pinned disk's overlay calls for. */
 type Step = {
   slot: number;
@@ -74,18 +74,38 @@ type Step = {
   action: 'keep' | 'reuse' | 'fork' | 'fork-whole';
   /** The disk's size as the snapshot saw it (a grown overlay's: its fork is as grown, §4.5). */
   size: number;
+  /** The overlay the snapshot pinned (`overlays/<id>`, or `disks/<id>` written in place). */
+  pinned: string;
   /** A kept overlay's generation (as pinned), or the reused fork's. */
   generation?: number;
   reuse?: string;
   replaceable?: { overlay: string; name: string; bytes: number };
 };
 
-/** An earlier fork of snapshot `key` from disk `d` that hasn't moved since: attached again rather than forking once more. */
-async function earlierFork(store: Store, d: DiskRecord, key: string) {
+/**
+ * An earlier fork of snapshot `key` from disk `d` that hasn't moved since, at the size the snapshot had (`size`: a fork
+ * grown since is another disk to the guest): attached again rather than forking once more.
+ */
+async function earlierFork(store: Store, d: DiskRecord, key: string, size: number) {
   for (const o of await store.overlaysOf(d.id))
-    if (o.fork?.snapshot === key && (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation)
+    if (
+      o.fork?.snapshot === key &&
+      Math.max(d.size, o.size ?? 0) === size &&
+      (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation
+    )
       return { id: o.id, generation: o.fork.generation };
   return undefined;
+}
+
+/**
+ * The grow mark a new fork of the snapshot carries (§4.5): the pinned overlay's, where it still stands and the snapshot
+ * was taken past its `from` (after the resize, its guest not having grown into it: a standing mark means no run since
+ * did), up to the size the snapshot had. None otherwise (taken before the resize, or the guest grew it).
+ */
+async function forkMark(store: Store, pinned: string, size: number): Promise<GrowMark | undefined> {
+  const id = pinned.startsWith('overlays/') ? pinned.slice('overlays/'.length) : undefined;
+  const g = id ? (await store.get('overlays', id))?.grow : undefined;
+  return g && size > g.from && size <= g.to ? { from: g.from, to: size } : undefined;
 }
 
 /** What pin `p` calls for as its overlay is on disk now: a step, or why the restore is refused. */
@@ -94,7 +114,7 @@ async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }): Prom
   const a = at === undefined ? undefined : r.m.attachments[at];
   const d = a && r.disks.get(a.disk);
   if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${r.m.name} doesn't have`);
-  const step = { slot: p.slot, attachment: a.id, disk: d, size: p.size || d.size };
+  const step = { slot: p.slot, attachment: a.id, disk: d, size: p.size || d.size, pinned: p.overlay };
   const keep: Step = { ...step, action: 'keep', generation: p.generation };
   const pinned = async () => (await overlayMeta(p.overlay)).generation === p.generation;
   if (p.overlay.startsWith('disks/')) {
@@ -110,10 +130,10 @@ async function stepOf(r: Restoring, p: SnapshotDisk & { overlay: string }): Prom
 /** A disk whose overlay moved on: an earlier fork attached again, or a new fork (`replaceable`: the attached overlay). */
 async function forkStep(
   r: Restoring,
-  step: Pick<Step, 'slot' | 'attachment' | 'disk' | 'size'>,
+  step: Pick<Step, 'slot' | 'attachment' | 'disk' | 'size' | 'pinned'>,
   attached?: string,
 ): Promise<Step> {
-  const reuse = await earlierFork(r.store, step.disk, r.snap.key);
+  const reuse = await earlierFork(r.store, step.disk, r.snap.key, step.size);
   const current = attached ? await r.store.get('overlays', attached) : undefined;
   const replaceable = current ? { overlay: current.id, name: current.name, bytes: current.bytes } : undefined;
   const action = reuse ? 'reuse' : 'fork';
@@ -151,18 +171,36 @@ async function commitStep(r: Restoring, s: Step, replace: boolean): Promise<Disk
   }
   if (replace && s.action === 'fork' && a.overlay) return write(a.overlay);
   // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).
-  const o = await createOverlay(r.store, s.disk, r.snap.name, { snapshot: r.snap.key, generation: 1 }, s.size);
+  const fork = { snapshot: r.snap.key, generation: 1 };
+  const o = await createOverlay(r.store, s.disk, r.snap.name, fork, s.size, await forkMark(r.store, s.pinned, s.size));
   a.overlay = o.id;
   a.inPlace = undefined;
   return write(o.id, s.action === 'fork-whole');
 }
 
+/** Machine `id` and its disks as the store has them now. */
+async function fresh(store: Store, id: string) {
+  const m = await store.get('machines', id);
+  if (!m) throw new MsgError('machine:page-machine.noMachine', { id });
+  const disks = new Map<string, DiskRecord>();
+  for (const a of m.attachments) {
+    const d = await store.get('disks', a.disk);
+    if (!d) throw new MsgError('machine:page-machine.noDisk', { name: m.name, id: a.disk });
+    disks.set(d.id, d);
+  }
+  return { m, disks };
+}
+
 /**
- * The restore made so: planned again (the guest may have written between the plan and the stop, and a disk kept as
- * the plan found it would take the snapshot's RAM over writes made after it). A disk that moved since forks (its
- * overlay stays as it is); `replace` holds only for the disks the user was asked about (`asked`).
+ * The restore made so: planned again on the machine's record and disks as they are now (the guest may have written
+ * between the plan and the stop, and a disk kept as the plan found it would take the snapshot's RAM over writes made
+ * after it; the record may have been edited since the page read it: what the restore writes back is that record with
+ * its attachments' overlays changed, never the one it planned on). A disk that moved since forks (its overlay stays as
+ * it is); `replace` holds only for the disks the user was asked about (`asked`).
  */
-async function commit(r: Restoring, asked: Set<string>, replace: boolean): Promise<DiskPlan[]> {
+async function commit(planned: Restoring, asked: Set<string>, replace: boolean): Promise<DiskPlan[]> {
+  const now = await fresh(planned.store, planned.m.id);
+  const r: Restoring = { ...planned, ...now, bySlot: runSlots(now.m, planned.run) };
   const { steps, refused } = await survey(r);
   if (refused) throw new MsgError(refused.key, refused.params);
   const plan: DiskPlan[] = steps.flatMap((s) =>
@@ -175,7 +213,7 @@ async function commit(r: Restoring, asked: Set<string>, replace: boolean): Promi
 }
 
 /** The slots the pins name, as the machine runs on the page (its shape's display and devices). */
-function runSlots(m: MachineRecord, run: { display: Display | 'none'; devices?: DeviceKind[] }) {
+function runSlots(m: MachineRecord, run: RunShape) {
   const has = (k: DeviceKind, own: boolean | undefined) => (run.devices ? run.devices.includes(k) : own);
   return slots({
     nets: adaptersOf(m).length,
@@ -198,9 +236,9 @@ export async function planRestore(
   m: MachineRecord,
   disks: Map<string, DiskRecord>,
   snap: Snap,
-  run: { display: Display | 'none'; devices?: DeviceKind[] } = { display: m.display },
+  run: RunShape = { display: m.display },
 ): Promise<RestorePlan> {
-  const r: Restoring = { store, m, disks, snap, bySlot: runSlots(m, run) };
+  const r: Restoring = { store, m, disks, snap, run, bySlot: runSlots(m, run) };
   const planned = await survey(r);
   const forks = planned.steps.filter((s) => s.action !== 'keep');
   /** The attachments the user was asked to replace rather than fork (a fresh fork with an overlay attached). */
@@ -211,94 +249,6 @@ export async function planRestore(
     refused: planned.refused,
     commit: (replace) => commit(r, asked, replace),
   };
-}
-
-/**
- * A disk of a snapshot's shape the browser doesn't have, made again: a blank disk or ramdisk under its id, a URL disk
- * from the snapshot's URLs (`urls`), a file disk to be picked again; a stored disk can't be.
- */
-function diskLike(sd: Shape['disks'][number], urls: Record<number, string> | undefined, now: number): DiskRecord {
-  const i = sd.identity;
-  const base = { size: sd.size, created: now };
-  switch (i.kind) {
-    case 'stored':
-      throw new MsgError('snapshots:snapshots.storedDiskGone', undefined, {
-        cause: new MsgError('snapshots:snapshots.storedDiskGone.cause'),
-      });
-    case 'url':
-      return {
-        id: newId(),
-        kind: 'url',
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a path ending in '/' names no file
-        name: i.path.split('/').pop() || t('snapshots:snapshots.urlDisk'),
-        url: urls?.[sd.slot] ?? i.path,
-        identity: i,
-        ...base,
-      };
-    case 'file':
-      return { id: newId(), kind: 'file', name: i.name, identity: i, ...base };
-    default:
-      return {
-        id: i.id,
-        kind: i.kind,
-        name: i.kind === 'blank' ? t('snapshots:snapshots.blankDisk') : t('snapshots:snapshots.ramdisk'),
-        identity: i,
-        ...base,
-      };
-  }
-}
-
-/**
- * A new machine like the one snapshot `snap` was taken of (§5.1 "Make a machine like it"): its settings and disks from
- * the shape, each disk the browser has (by identity) attached again, a blank disk or ramdisk made again under its id,
- * a URL disk from the snapshot's URLs; a file disk is recorded to be picked again; a stored disk the browser no longer
- * has can't be made. The attachments take the snapshot's serials, so the shape is the snapshot's. The snapshot moves
- * to the new machine. Returns it.
- */
-export async function machineLike(
-  store: Store,
-  snap: { id: string; machine: string; name: string; shape: Shape; urls?: Record<number, string> },
-): Promise<MachineRecord> {
-  const disks = await store.all('disks');
-  const now = Date.now();
-  const attachments: MachineRecord['attachments'] = [];
-  for (const sd of snap.shape.disks) {
-    const want = canonical(sd.identity);
-    let d = disks.find((x) => canonical(x.identity) === want);
-    if (!d) {
-      d = diskLike(sd, snap.urls, now);
-      await store.put('disks', d);
-      disks.push(d);
-    }
-    attachments.push({
-      id: sd.serial.replace(/^waarm64-/, ''),
-      disk: d.id,
-      readOnly: sd.readOnly,
-      ...(sd.swap && d.kind === 'ramdisk' ? { swap: true as const } : {}),
-    });
-  }
-  const taken = (await store.all('machines')).map((m) => m.name);
-  const m: MachineRecord = {
-    id: newId(),
-    name: uniqueName(t('snapshots:snapshots.like', { name: snap.name }), taken),
-    ncpus: snap.shape.ncpus,
-    ramMiB: snap.shape.ramMiB,
-    ...(snap.shape.split ? { ramSplit: snap.shape.split } : {}),
-    display: snap.shape.display === '3d' ? '3d' : '2d',
-    adapters: macsOf(snap.shape).map((mac) => ({ id: newId(), mac })),
-    usb: snap.shape.usb === true,
-    mouse: snap.shape.devices.includes('mouse'),
-    touch: snap.shape.devices.includes('touch'),
-    clock: snap.shape.devices.includes('clock'),
-    ...(snap.shape.devices.includes('9p') ? { shares: true } : {}),
-    ...(snap.shape.jitMiB ? { jitMiB: snap.shape.jitMiB } : {}),
-    attachments,
-    created: now,
-    modified: now,
-  };
-  await store.put('machines', m);
-  await moveSnapshot(store, snap.id, m.id);
-  return m;
 }
 
 /** Moves kept snapshot `id` to machine `to` (its file, then its record). */

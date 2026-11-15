@@ -53,6 +53,11 @@ export type DiskRecord = {
   generation?: number;
   /** `stored`: a grow pending in the guest (its partition and filesystem, at its next start: §4.5). */
   grow?: GrowMark;
+  /**
+   * `stored`, once grown: the size it was made with (its import's), which its identity doesn't keep. A definition asks
+   * for an image of that size (§6), and its changes files' base hash covers that much (§4.5).
+   */
+  made?: number;
   created: number;
 };
 

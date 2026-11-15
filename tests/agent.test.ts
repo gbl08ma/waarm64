@@ -1482,9 +1482,13 @@ test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HE
   // Not yet (the guest's disk is smaller), not found: kept, nothing said.
   a.grown(S1, GROWN_PART.NOT_YET, GROWN_FS.SKIPPED);
   a.grown(S3, GROWN_PART.NOT_FOUND, GROWN_FS.SKIPPED);
+  // BAD_REQUEST (an agent of another version didn't read the GROW): kept, said once however often it comes.
+  a.grown(S1, GROWN_PART.BAD_REQUEST, GROWN_FS.SKIPPED, 22);
+  a.grown(S1, GROWN_PART.BAD_REQUEST, GROWN_FS.SKIPPED, 22);
   await settle();
   assert.deepEqual([...w.marks.keys()], ['o1', 'd3']);
-  assert.deepEqual(said, [{ key: 'machine:grow-actions.grown', cause: undefined }]);
+  assert.deepEqual(w.marks.get('o1'), { from: 1, to: 2 }, 'no failure noted');
+  assert.deepEqual(said, [{ key: 'machine:grow-actions.grown', cause: undefined }, { key: 'machine:grow-actions.badRequest', cause: undefined }]);
   // A restore (its agent connects again): GROW again for what still stands; its late GROWN for S1 on a third connection.
   a.connect(CAP.TIME | CAP.GROW);
   await settle();
@@ -1503,7 +1507,7 @@ test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HE
   await settle();
   assert.equal(w.marks.size, 0);
   assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.notGrown', cause: 'machine:grow-actions.failedAgain' });
-  assert.equal(said.length, 4);
+  assert.equal(said.length, 5);
   g.end();
   a.close();
 
@@ -1555,6 +1559,8 @@ test("a GROWN's answer (web/app/areas/grow-actions.ts `answer`): what clears the
     [P.FAILED, F.SKIPPED, true, 'clear', 'notGrown', 'failedAgain'],
     [P.NOT_YET, F.SKIPPED, false, 'keep', '', ''],
     [P.NOT_FOUND, F.SKIPPED, true, 'keep', '', ''],
+    [P.BAD_REQUEST, F.SKIPPED, false, 'keep', 'badRequest', ''],
+    [P.BAD_REQUEST, F.SKIPPED, true, 'keep', 'badRequest', ''],
     [99, F.GROWN, false, 'failed', 'notGrown', 'failed'],
   ];
   for (const [part, fs, before, action, key, cause] of cases)

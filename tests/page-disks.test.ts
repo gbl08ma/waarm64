@@ -141,7 +141,9 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     await setGen(`overlays/${a.id}`, 4);
     await setGen(`disks/${s.id}`, 7);
     const out: Record<string, unknown> = {};
-    const plan = async (p: unknown[], key = 'snap-1') => planRestore(store, structuredClone(m), disks, { name: 'snap', key, pins: p });
+    // The restore plans and commits on the machine's record as the store has it (each plan below starts from `rec`).
+    const on = async (rec: unknown, p: unknown[], key = 'snap-1') => { await store.put('machines', structuredClone(rec)); return planRestore(store, structuredClone(rec), disks, { name: 'snap', key, pins: p }); };
+    const plan = async (p: unknown[], key = 'snap-1') => on(m, p, key);
     // Everything as pinned: nothing written.
     const same = await plan(pins(4, 7));
     out.same = { kept: same.kept, forks: same.forks.length, plan: await same.commit(false) };
@@ -153,11 +155,11 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     const fork = after.attachments[0].overlay;
     // The fork hasn't moved since (its generation is still the restore's, 1): the same snapshot again reuses it.
     await setGen(`overlays/${fork}`, 1);
-    const again = await planRestore(store, structuredClone({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }), disks, { name: 'snap', key: 'snap-1', pins: pins(3, 7) });
+    const again = await on({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }, pins(3, 7));
     out.reused = { forks: again.forks.map((f: { reused: boolean }) => f.reused), plan: (await again.commit(false)).map((p: { action: string }) => p.action) };
     // Once it moved, it isn't reused; replace writes into the attached overlay instead of forking.
     await setGen(`overlays/${fork}`, 2);
-    const replace = await planRestore(store, structuredClone({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }), disks, { name: 'snap', key: 'snap-1', pins: pins(3, 7) });
+    const replace = await on({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }, pins(3, 7));
     out.replace = { reused: replace.forks.map((f: { reused: boolean }) => f.reused), plan: (await replace.commit(true)).map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]) };
     // Written in place and moved on: refused without the whole disk, forked into an overlay with it.
     out.refused = (await plan(pins(4, 6))).refused?.key ?? null;

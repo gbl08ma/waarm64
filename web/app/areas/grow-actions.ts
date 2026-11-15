@@ -6,7 +6,8 @@
 // a final answer, the disk grown or why it can't be (the user's to do, said once); NOT_FOUND and NOT_YET (the guest
 // doesn't have the disk, or not at its new size) keep it silently for the next start; FAILED keeps it once (an error
 // may pass: a busy disk, a full journal; a partition written but not told to the kernel is completed by the next GROW)
-// and the second clears it, so a failure that lasts is said twice, not at every start. A run that ends before its GROWN
+// and the second clears it, so a failure that lasts is said twice, not at every start; BAD_REQUEST (the agent didn't
+// read the GROW: another version's) keeps it and is said once in the page's life. A run that ends before its GROWN
 // keeps the mark (the next start asks again; the agent's grow is idempotent: NOTHING where it was done).
 import { CAP, GROWN_FS, GROWN_PART, type Grown } from '../../agent-frame.ts';
 import { msg, MsgError, type Msg } from '../../msg.ts';
@@ -56,6 +57,9 @@ function fsCause(fs: number): MsgError {
 export function answer(g: Grown, disk: string, failedBefore: boolean): Answer {
   const known = (Object.values(P) as number[]).includes(g.part) && (Object.values(F) as number[]).includes(g.fs);
   if (g.part === P.NOT_FOUND || g.part === P.NOT_YET) return { action: 'keep' };
+  // The agent didn't read the page's GROW: another version's (a skew, not a failure). Kept for an agent that reads it,
+  // said once (`GrowActions`); nothing was done.
+  if (g.part === P.BAD_REQUEST) return { action: 'keep', notice: msg('machine:grow-actions.badRequest', { disk }) };
   const why = known && TABLE_CAUSE[g.part];
   if (why) return { action: 'clear', notice: short(false, disk, g.size, why()) };
   // A step failed (or the filesystem's wasn't reached, or a status this page doesn't know).
@@ -95,6 +99,8 @@ export class GrowActions {
   /** The run's machine's marks (none: a transient machine, which has no records). */
   readonly #marks: () => Marks | undefined;
   #run: Run | undefined;
+  /** The disks whose kept answer was said (a version skew, BAD_REQUEST): once in the page's life, not at every start. */
+  readonly #said = new Set<string>();
 
   /**
    * The message bar, where each answer is said once; the store and the page's stored machine (`id`, none for a
@@ -150,7 +156,13 @@ export class GrowActions {
       disk.marks.some((m) => m.mark.failed),
     );
     if (typeof window !== 'undefined') (window.__grown ??= []).push({ ...g, action: a.action }); // the tests' hook
-    if (a.action === 'keep') return;
+    if (a.action === 'keep') {
+      if (a.notice && !this.#said.has(disk.serial)) {
+        this.#said.add(disk.serial);
+        this.#messages.notify(a.notice);
+      }
+      return;
+    }
     for (const m of disk.marks) await (a.action === 'clear' ? run.marks.clear(m.target) : run.marks.failed(m.target));
     if (a.notice) this.#messages.notify(a.notice);
   }

@@ -18,7 +18,8 @@
   import { shapeDiff } from './shape-diff.ts';
   import { snapshotPath } from './store.ts';
   import { t, text } from '../i18n.ts';
-  import { importSnapshot, machineLike } from './snapshots.ts';
+  import { importSnapshot } from './snapshots.ts';
+  import { machineLike } from './machine-like.ts';
   import { opfsDir } from '../overlay.ts';
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { records } from './areas/records.svelte.ts';

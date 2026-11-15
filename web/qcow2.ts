@@ -295,7 +295,8 @@ async function inflateParts(parts: Uint8Array[], size: number) {
 }
 
 /** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and hash (web/changes.ts `hashSource`). */
-export type ChangesHeader = { backingName: string; hash?: string };
+/** `size`: the virtual size of the disk the changes are of (a grown overlay's may be past its base's). */
+export type ChangesHeader = { backingName: string; hash?: string; size: number };
 
 const EXT_BASE_HASH = 0x57414d32; // "WAM2" (web/qcow2-write.ts)
 
@@ -318,7 +319,7 @@ export function changesHeader(head: Uint8Array): ChangesHeader | undefined {
     if (type === EXT_BASE_HASH) hash = dec.decode(head.subarray(at + 8, at + 8 + len));
     at += 8 + Math.ceil(len / 8) * 8;
   }
-  return { backingName: dec.decode(head.subarray(nameAt, nameAt + nameLen)), hash };
+  return { backingName: dec.decode(head.subarray(nameAt, nameAt + nameLen)), hash, size: Number(h.getBigUint64(24)) };
 }
 
 /** One 4 KiB block of the disk that a changes file holds (the overlay's block size). */

@@ -9,9 +9,11 @@
 // browser the first start offers one click each (docs/usb.md "The page"). All are left out when there's nothing to say.
 // The network adapters go as their MACs (`machine.macs`, left out for one at the default), without their connections.
 // A grown overlay goes as its size (`overlaySize`, docs/machines.md §4.5): the import gives the attachment an empty
-// overlay of that size, marked to grow (its base's partition doesn't fill it), so the machine sees the same disk.
+// overlay of that size, marked to grow (its base's partition doesn't fill it), so the machine sees the same disk; a
+// stored disk grown since it was made, as the size it was made with (the image to pick) and the size seen as `overlaySize`.
 import { MsgError } from '../msg.ts';
 import { grownSize, validGrownSize, withGrownOverlay } from './resize.ts';
+import { sizeSeen } from './disk-size.ts';
 import { sharesPathError } from './shares-mount.ts';
 import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
 import { validKeyboard } from './keyboard.ts';
@@ -92,18 +94,23 @@ const onOf = <K extends string>(m: Partial<Record<K, boolean>>, keys: readonly K
 /** The fields of `o` that are set (not empty, zero or false), in its order. */
 const setOf = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v)) as Partial<T>;
 
-/** An attachment's disk as a definition says it (`o`: its overlay's record, if it has one). */
+/**
+ * An attachment's disk as a definition says it (`o`: its overlay's record, if it has one). A stored disk grown since it
+ * was made (`made`) says the size it was made with, which another browser asks for in the image to pick (§6), and, for a
+ * writable attachment, the size its guest sees as `overlaySize`: the imported machine's overlay over that image.
+ */
 function diskOf(d: DiskRecord, a: Attachment, o?: OverlayRecord): DefinitionDisk {
+  const made = d.kind === 'stored' && !a.readOnly && d.made !== undefined && d.made < d.size ? d.made : undefined;
   return {
     kind: d.kind,
     name: d.name,
-    size: d.size,
+    size: made ?? d.size,
     identity: d.identity,
     ...setOf({ url: d.url, sha256: d.sha256 }),
     readOnly: a.readOnly,
     ...onOf(a, ['inPlace', 'swap']),
     serial: a.id,
-    ...setOf({ overlaySize: grownSize(d, a, o) }),
+    ...setOf({ overlaySize: made === undefined ? grownSize(d, a, o) : sizeSeen(d, a, o) }),
   };
 }
 

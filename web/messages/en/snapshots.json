@@ -143,27 +143,31 @@
     "message": "The disk {{disk}} has been written in place since this snapshot was taken, and the snapshot doesn't include the whole disk. It can only be restored onto that disk as it was then.",
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” in a notice when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk of the machine written in place (without an overlay) that has changed since."
   },
-  "snapshots.storedDiskGone": {
+  "machine-like.storedDiskGone": {
     "message": "Couldn't create the machine",
-    "note": "Error of Create a machine like it (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:snapshots.storedDiskGone.cause); a disk the snapshot was taken with was stored in this browser and has been deleted."
+    "note": "Error of Create a machine like it (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:machine-like.storedDiskGone.cause); a disk the snapshot was taken with was stored in this browser and has been deleted."
   },
-  "snapshots.storedDiskGone.cause": {
+  "machine-like.storedDiskGone.cause": {
     "message": "One of the snapshot's disks was stored in this browser and has since been deleted.",
-    "note": "Error details: the cause under the headline snapshots:snapshots.storedDiskGone, on the line under it in the same place; what happened, and what the user can do if anything."
+    "note": "Error details: the cause under the headline snapshots:machine-like.storedDiskGone, on the line under it in the same place; what happened, and what the user can do if anything."
   },
-  "snapshots.urlDisk": {
+  "machine-like.storedDiskGrown.cause": {
+    "message": "{{disk}} is stored in this browser and has grown since this snapshot was taken, and a disk can't be made smaller again.",
+    "note": "Error details: the cause under the headline snapshots:machine-like.storedDiskGone (Create a machine like it, Machines page, Snapshots tab), on the line under it: a disk the snapshot was taken with is stored in the browser and was resized (Resize…) to a larger size since. {{disk}}: the disk's name."
+  },
+  "machine-like.urlDisk": {
     "message": "disk",
     "note": "Name given to a disk that Create a machine like it adds again from its URL when the URL ends without a file name; shown in the Machines page's disk lists."
   },
-  "snapshots.blankDisk": {
+  "machine-like.blankDisk": {
     "message": "Blank disk",
     "note": "Name given to a blank disk that Create a machine like it makes again (the snapshot's machine had one); shown in the Machines page's disk lists."
   },
-  "snapshots.ramdisk": {
+  "machine-like.ramdisk": {
     "message": "Ramdisk",
     "note": "Name given to a ramdisk that Create a machine like it makes again (the snapshot's machine had one); shown in the Machines page's disk lists."
   },
-  "snapshots.like": {
+  "machine-like.like": {
     "message": "Like {{name}}",
     "note": "Name of the machine Create a machine like it creates (Machines page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already."
   },

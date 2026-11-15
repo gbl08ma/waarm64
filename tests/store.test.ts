@@ -445,7 +445,7 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
 });
 
 test("Make a machine like it: a swap ramdisk in the snapshot's shape comes back as one, made again under its id", async () => {
-  const { machineLike } = await import('../web/app/snapshots.ts');
+  const { machineLike } = await import('../web/app/machine-like.ts');
   const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
   const ram = disk('d00000000002', { kind: 'ramdisk', name: 'Ramdisk', size: 64 << 20, identity: { kind: 'ramdisk', id: 'd00000000002', bytes: 64 << 20 } }); // i18n-ignore: a name the test gives
   const was = machine({ attachments: [machine().attachments[0], { id: 'a00000000002', disk: ram.id, readOnly: false, swap: true }] });

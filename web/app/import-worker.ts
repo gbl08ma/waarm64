@@ -18,6 +18,7 @@ self.onmessage = async (e: MessageEvent<ImportRequest>) => {
   loadChanges({
     changes: blobSource(changes),
     base,
+    made: 'stored' in d.source ? d.source.made : undefined,
     label,
     overlay: d.overlay,
     identity:
