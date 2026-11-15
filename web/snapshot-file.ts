@@ -52,6 +52,14 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
 /** A frame codec: id as in the frame header. Pluggable so another codec (an LZ in the core, id 2) can be added later. */
 export type Codec = { id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array> };
 
+/**
+ * Where a write's time went, in ms summed over its frames (tools read it: web/snapshot.ts `SavePhases`): RAM's zero-page
+ * scan and gather (`scan`), the codec (`compress`), the frame's encoding and CRC (`crc`), and the waits on the sink (`sink`).
+ */
+export type WriteTimes = { scan: number; compress: number; crc: number; sink: number };
+/** Where a read's time went, in ms summed over its frames: the input's reads, the CRCs, the codec (`unpack`). */
+export type ReadTimes = { read: number; crc: number; unpack: number };
+
 const MAGIC = new TextEncoder().encode('WAARMSNP');
 const VERSION = 2;
 /** A BLOB frame's index: the blob times this, plus the chunk. */
@@ -222,6 +230,8 @@ export class SnapshotWriter {
   #failed: unknown = undefined;
   #hasFailed = false;
   #index = new Map<string, number>();
+  /** Where the time went so far (`WriteTimes`). */
+  readonly times: WriteTimes = { scan: 0, compress: 0, crc: 0, sink: 0 };
 
   /**
    * `concurrency` frames may be compressed at once (default 4), each at most 1 MiB; they are written in order. `blobs`:
@@ -246,7 +256,9 @@ export class SnapshotWriter {
   #push(bytes: Promise<Uint8Array>) {
     const written = this.#tail.then(() => bytes).then(async (b) => {
       this.#bytes += b.length;
+      const t = performance.now();
       await this.#sink(b);
+      this.times.sink += performance.now() - t;
     });
     this.#tail = written;
     written.catch((e) => { if (!this.#hasFailed) { this.#hasFailed = true; this.#failed = e; } });
@@ -266,11 +278,16 @@ export class SnapshotWriter {
     this.#push((async () => {
       let id = 0;
       let stored = raw;
+      let t = performance.now();
       if (codec.id !== 0) {
         const packed = await codec.compress(raw);
         if (packed.length < raw.length) { id = codec.id; stored = packed; }
+        this.times.compress += performance.now() - t;
+        t = performance.now();
       }
-      return encodeFrame(tag, id, index, raw.length, stored);
+      const frame = encodeFrame(tag, id, index, raw.length, stored);
+      this.times.crc += performance.now() - t;
+      return frame;
     })());
     await this.#drain(this.#concurrency);
   }
@@ -312,13 +329,14 @@ export class SnapshotWriter {
         words = new Uint32Array(src.buffer, 0, len >> 2);
         off = 0;
       }
+      const t = performance.now();
       const bitmap = new Uint8Array(BITMAP);
       let present = 0;
       for (let p = 0; p < len / PAGE; p++) {
         if (!zeroPage(words, off + p * PAGE)) { bitmap[p >> 3] |= 1 << (p & 7); present++; }
       }
-      if (present) {
-        const raw = new Uint8Array(BITMAP + present * PAGE);
+      const raw = present ? new Uint8Array(BITMAP + present * PAGE) : undefined;
+      if (raw) {
         raw.set(bitmap, 0);
         let at = BITMAP;
         for (let p = 0; p < len / PAGE; p++) {
@@ -326,6 +344,9 @@ export class SnapshotWriter {
           raw.set(src.subarray(off + p * PAGE, off + (p + 1) * PAGE), at);
           at += PAGE;
         }
+      }
+      this.times.scan += performance.now() - t;
+      if (raw) {
         pages += present;
         frames++;
         await this.#frame('RAM ', first + base / CHUNK, raw);
@@ -453,15 +474,16 @@ class Input {
  * as it arrives. A stream shorter than the magic is `not-snapshot`; a file that ends later without
  * its end marker is `truncated`. `frames()` reads the stream once; the end of the file is checked
  * when it finishes. With `check`, frames come without their data: their checksums and the file's
- * structure are verified, nothing is unpacked.
+ * structure are verified, nothing is unpacked. `times`: where the reading's time went so far (`ReadTimes`).
  */
 export async function openSnapshot(
   source: ReadableStream<Uint8Array> | Blob,
   opts: { codecs?: Codec[]; check?: boolean } = {},
-): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<{ tag: string; index: number; data: Uint8Array }> }> {
+): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<{ tag: string; index: number; data: Uint8Array }>; times: ReadTimes }> {
   const codecs = new Map<number, Codec>([[1, deflateCodec]]);
   for (const c of opts.codecs ?? []) codecs.set(c.id, c);
   const input = new Input(source instanceof Blob ? source.stream() : source);
+  const times: ReadTimes = { read: 0, crc: 0, unpack: 0 };
   try {
     const magic = await input.take(8);
     if (!magic || MAGIC.some((b, i) => magic[i] !== b)) {
@@ -493,7 +515,9 @@ export async function openSnapshot(
       try {
         let count = 0;
         for (;;) {
+          const th = performance.now();
           const h = await input.take(FRAME_HEADER);
+          times.read += performance.now() - th;
           if (!h) throw truncated();
           const v = new DataView(h.buffer, h.byteOffset, FRAME_HEADER);
           const tag = String.fromCharCode(h[0], h[1], h[2], h[3]);
@@ -519,9 +543,14 @@ export async function openSnapshot(
             throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
           }
           const headBytes = h.slice(0, 24); // `h` is a view of the input's buffer, which the next take may reuse
+          let t = performance.now();
           const stored = await input.take(storedLen);
+          times.read += performance.now() - t;
           if (!stored) throw truncated();
-          if (frameCrc(headBytes, stored) !== crc) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
+          t = performance.now();
+          const crcOk = frameCrc(headBytes, stored) === crc;
+          times.crc += performance.now() - t;
+          if (!crcOk) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
           if (opts.check) {
             // Checked, not unpacked: a pass over a file before a restore touches anything.
             count++;
@@ -532,7 +561,9 @@ export async function openSnapshot(
           if (codec === 0) data = stored.slice();
           else {
             try {
+              t = performance.now();
               data = await codecs.get(codec)!.decompress(stored, rawLen);
+              times.unpack += performance.now() - t;
             } catch (e) {
               if (e instanceof SnapshotError) throw e;
               throw corrupt(msg('snapshots:snapshot-file.damage.unpack'));
@@ -548,7 +579,7 @@ export async function openSnapshot(
       }
     }
 
-    return { header, frames };
+    return { header, frames, times };
   } catch (e) {
     input.close();
     throw e;

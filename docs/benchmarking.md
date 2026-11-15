@@ -146,6 +146,35 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   160 MiB the pages session's first flush came 133 s in, against before 120 s after a boot) and the counts are lower
   (269 MB compiled against 308 at 320 MiB). Compare arms within one mode, never across. A boot benchmark stays a boot.
 
+## The snapshot probe
+
+`bench/snapz/probe.ts` times a snapshot's load and its saves on the page, by the page's own phases (docs/frontend.md
+"Snapshots": `#message`'s `data-load` and `data-snapshot`), for the SNAPZ track (`bench/boot/REPORT.md` "SNAPZ loop 0"
+on). Dev-only, alone like any Chromium session:
+
+    WAARM64_PROFILE=target/snapz/profile WAARM64_DOWNLOADS=target/snapz/downloads ROUNDS=3 \
+      node bench/snapz/probe.ts <desktop|debian> [out.json]
+    node bench/snapz/probe-summary.ts <out.json>... [--json <summary.json>]
+
+- **The guests:** `desktop` loads `target/snapbench/pages.waarm64snap` (Firefox on a still page, 689 MB; above,
+  "Starting from a snapshot"), `debian` `target/snapbench/debian-go.waarm64snap` (logged in, ~100 MB); `SNAPSHOT=<file>`
+  another of the same machine. A round: the file loaded (Load snapshot), then, `SETTLE_S` (20) apart, a kept snapshot
+  (deleted after), a file (Save a snapshot to a file: a download, deleted after) and a Suspend, then the page opened
+  again (the resume). Each operation's wall time and phases, and for a save the browser's RSS and PSS (its processes:
+  the one with the profile and its descendants, from `/proc/<pid>/smaps_rollup`) before it and at its peak (sampled
+  every 250 ms), go to the JSON (default `bench/results/local/snapz-probe/`); `probe-summary.ts` gives medians and
+  ranges per operation. Alternate arms by rounds of their own (`CORE=` isn't there yet: each arm is a checkout).
+- **A stored machine:** the warm files were saved by transient machines (opened by URL), which keep no snapshots, so
+  the probe makes "SNAPZ desktop" (or debian) in the profile, of the files' shape (vCPUs, RAM, 3D, a network card, the
+  clock; the disks by URL), and a copy of the file under that machine's header, `target/snapz/<guest>-<hash>.waarm64snap`
+  (made once: the header taken from a kept snapshot of the machine's first seconds; its pins name no overlay, so every
+  load writes the disk's blocks, replacing the overlay). `MODE=transient` loads the file itself on the transient
+  machine and saves to a file only: what `bench/boot/REPORT.md` "SNAPZ: compression across the emulator, measured"
+  measured (its 9.8 s load and 4.15-4.25 s pause): loop 0's transient and stored loads were 9.9 and 9.8 s, their file saves' pauses
+  4.34 and 4.31 s.
+- **A persistent profile, always** (`WAARM64_PROFILE`, a fixed port: `WAARM64_PORT`, default 8197): Playwright's
+  default context is off the record, where every OPFS call costs ~250 µs and a save's disk blocks alone took 2.3-2.6 s.
+
 ## Screening an A/B
 
 The pages session at 320 MiB no longer flushes, so it doesn't exercise the cache a JIT lane tunes, and its counts

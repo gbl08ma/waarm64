@@ -11,6 +11,7 @@ import type { lzCodec } from '../lz.ts';
 import type { Machine } from './machine.ts';
 import { header, type Session } from './worker-header.ts';
 import { post, progress, state, throttled } from './worker-post.ts';
+import type { SaveTimes } from './protocol.ts';
 
 /**
  * How long the guest may take to hand over its free memory before a save (the balloon's hint, web/balloon.ts): its
@@ -124,12 +125,15 @@ async function hint(r: Running, id: number) {
 async function pausedWrite(r: Running, id: number, sink: Sink, lz: Codec, o: { whole: boolean }) {
   const v = r.vm;
   progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
+  const t0 = performance.now();
   if (!(await v.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
+  const pause = performance.now() - t0;
   try {
-    return await writeSnapshot(v, sink, meta(r), lz, {
+    const w = await writeSnapshot(v, sink, meta(r), lz, {
       omit: (slot) => !o.whole && r.inPlace(slot),
       progress: throttled(id, msg('snapshots:worker-snapshot.phase.writing')),
     });
+    return { ...w, pause };
   } finally {
     v.resume();
   }
@@ -178,9 +182,11 @@ export async function saveSnapshot(
       r.vm.release(); // the guest's free memory back to it, the save done or not
     }
     progress(id, msg('snapshots:worker-snapshot.phase.finishing'), 1);
+    const t1 = performance.now();
     await out.close();
-    const { bytes, stateMs, blobBytes, pins } = w;
-    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted });
+    const { bytes, stateMs, blobBytes, pins, pause } = w;
+    const phases: SaveTimes = { ...w.phases, pause, close: performance.now() - t1 };
+    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted, phases });
   } catch (err) {
     fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
   } finally {
@@ -189,7 +195,7 @@ export async function saveSnapshot(
   }
 }
 
-/** Writes the suspended copy beside the overlay in `home`; its size. */
+/** Writes the suspended copy beside the overlay in `home`; its size and where the time went (but the pause's). */
 async function writeSuspended(r: Running, home: string, id: number, lz: Codec) {
   const out = await suspendWriter(home, makeRoom);
   try {
@@ -197,8 +203,9 @@ async function writeSuspended(r: Running, home: string, id: number, lz: Codec) {
       suspend: true,
       progress: throttled(id, msg('machine:worker-snapshot.phase.suspending')),
     });
+    const t = performance.now();
     out.close();
-    return w.bytes;
+    return { bytes: w.bytes, phases: { ...w.phases, close: performance.now() - t } };
   } catch (err) {
     await out.abort();
     throw err;
@@ -240,13 +247,16 @@ export async function suspend(r: Running | undefined, id: number) {
     // A restored machine's balloon gives the hinted memory back (web/balloon.ts `restore`); a failed suspend here.
     await hint(r, id);
     progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
+    const t0 = performance.now();
     if (!(await r.vm.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
     paused = true;
-    const bytes = await writeSuspended(r, home, id, lz);
+    const pause = performance.now() - t0;
+    const { bytes, phases } = await writeSuspended(r, home, id, lz);
+    const pausedMs = performance.now() - t0;
     // From here the machine must not run: the file is only good for the disk as it is now.
     closing = true;
     await r.close();
-    post({ type: 'suspend-done', id, bytes });
+    post({ type: 'suspend-done', id, bytes, pausedMs, phases: { ...phases, pause } });
     state('suspended', { note: msg('machine:worker-snapshot.suspended', { size: bytes }) });
   } catch (err) {
     if (paused && !closing) r.vm.resume();

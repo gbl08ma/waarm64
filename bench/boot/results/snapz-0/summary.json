@@ -1,0 +1,1454 @@
+{
+ "desktop (desktop, stored, 3 rounds)": {
+  "load": {
+   "wallMs": {
+    "median": 9757,
+    "min": 9537,
+    "max": 10183,
+    "n": 3
+   },
+   "check": {
+    "median": 678,
+    "min": 651,
+    "max": 755,
+    "n": 3
+   },
+   "checkRead": {
+    "median": 252,
+    "min": 218,
+    "max": 323,
+    "n": 3
+   },
+   "checkCrc": {
+    "median": 424,
+    "min": 418,
+    "max": 424,
+    "n": 3
+   },
+   "state": {
+    "median": 101,
+    "min": 100,
+    "max": 102,
+    "n": 3
+   },
+   "ram": {
+    "median": 2375,
+    "min": 2294,
+    "max": 2447,
+    "n": 3
+   },
+   "apply": {
+    "median": 287,
+    "min": 251,
+    "max": 324,
+    "n": 3
+   },
+   "disk": {
+    "median": 2123,
+    "min": 2112,
+    "max": 2132,
+    "n": 3
+   },
+   "read": {
+    "median": 166,
+    "min": 148,
+    "max": 186,
+    "n": 3
+   },
+   "crc": {
+    "median": 355,
+    "min": 350,
+    "max": 359,
+    "n": 3
+   },
+   "unpack": {
+    "median": 1686,
+    "min": 1654,
+    "max": 1713,
+    "n": 3
+   },
+   "prepare": {
+    "median": 1907,
+    "min": 1882,
+    "max": 2026,
+    "n": 3
+   },
+   "start": {
+    "median": 2231,
+    "min": 2114,
+    "max": 2765,
+    "n": 3
+   },
+   "total": {
+    "median": 9520,
+    "min": 9297,
+    "max": 9978,
+    "n": 3
+   }
+  },
+  "kept": {
+   "wallMs": {
+    "median": 4526,
+    "min": 4376,
+    "max": 4700,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 4216,
+    "min": 4130,
+    "max": 4427,
+    "n": 3
+   },
+   "MB": {
+    "median": 690,
+    "min": 690,
+    "max": 690,
+    "n": 3
+   },
+   "state": {
+    "median": 237,
+    "min": 224,
+    "max": 240,
+    "n": 3
+   },
+   "blobs": {
+    "median": 46,
+    "min": 44,
+    "max": 49,
+    "n": 3
+   },
+   "ram": {
+    "median": 3804,
+    "min": 3731,
+    "max": 3965,
+    "n": 3
+   },
+   "disk": {
+    "median": 128,
+    "min": 115,
+    "max": 164,
+    "n": 3
+   },
+   "scan": {
+    "median": 560,
+    "min": 448,
+    "max": 677,
+    "n": 3
+   },
+   "compress": {
+    "median": 2807,
+    "min": 2791,
+    "max": 2831,
+    "n": 3
+   },
+   "crc": {
+    "median": 434,
+    "min": 419,
+    "max": 435,
+    "n": 3
+   },
+   "sink": {
+    "median": 100,
+    "min": 75,
+    "max": 144,
+    "n": 3
+   },
+   "pause": {
+    "median": 0,
+    "min": 0,
+    "max": 1,
+    "n": 3
+   },
+   "close": {
+    "median": 177,
+    "min": 159,
+    "max": 241,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 5475,
+    "min": 3328,
+    "max": 7215,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 5500,
+    "min": 3597,
+    "max": 7267,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 4856,
+    "min": 2716,
+    "max": 6596,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 4876,
+    "min": 2980,
+    "max": 6642,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 52,
+    "min": 25,
+    "max": 269,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 46,
+    "min": 20,
+    "max": 264,
+    "n": 3
+   }
+  },
+  "file": {
+   "wallMs": {
+    "median": 5323,
+    "min": 5072,
+    "max": 5818,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 4310,
+    "min": 4287,
+    "max": 4445,
+    "n": 3
+   },
+   "MB": {
+    "median": 693,
+    "min": 693,
+    "max": 693,
+    "n": 3
+   },
+   "state": {
+    "median": 188,
+    "min": 182,
+    "max": 195,
+    "n": 3
+   },
+   "blobs": {
+    "median": 48,
+    "min": 44,
+    "max": 49,
+    "n": 3
+   },
+   "ram": {
+    "median": 3898,
+    "min": 3888,
+    "max": 4005,
+    "n": 3
+   },
+   "disk": {
+    "median": 170,
+    "min": 165,
+    "max": 198,
+    "n": 3
+   },
+   "scan": {
+    "median": 515,
+    "min": 510,
+    "max": 635,
+    "n": 3
+   },
+   "compress": {
+    "median": 2922,
+    "min": 2911,
+    "max": 2923,
+    "n": 3
+   },
+   "crc": {
+    "median": 428,
+    "min": 426,
+    "max": 430,
+    "n": 3
+   },
+   "sink": {
+    "median": 128,
+    "min": 121,
+    "max": 134,
+    "n": 3
+   },
+   "pause": {
+    "median": 1,
+    "min": 0,
+    "max": 4,
+    "n": 3
+   },
+   "close": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 5165,
+    "min": 3416,
+    "max": 6719,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 6159,
+    "min": 4393,
+    "max": 7750,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 4542,
+    "min": 2799,
+    "max": 6096,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 5524,
+    "min": 3766,
+    "max": 7116,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 994,
+    "min": 977,
+    "max": 1031,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 982,
+    "min": 967,
+    "max": 1020,
+    "n": 3
+   }
+  },
+  "suspend": {
+   "wallMs": {
+    "median": 4375,
+    "min": 4148,
+    "max": 4418,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 4275,
+    "min": 4061,
+    "max": 4344,
+    "n": 3
+   },
+   "MB": {
+    "median": 675,
+    "min": 675,
+    "max": 676,
+    "n": 3
+   },
+   "state": {
+    "median": 176,
+    "min": 167,
+    "max": 186,
+    "n": 3
+   },
+   "blobs": {
+    "median": 63,
+    "min": 41,
+    "max": 68,
+    "n": 3
+   },
+   "ram": {
+    "median": 3820,
+    "min": 3634,
+    "max": 3903,
+    "n": 3
+   },
+   "disk": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "scan": {
+    "median": 560,
+    "min": 438,
+    "max": 656,
+    "n": 3
+   },
+   "compress": {
+    "median": 2756,
+    "min": 2732,
+    "max": 2758,
+    "n": 3
+   },
+   "crc": {
+    "median": 413,
+    "min": 407,
+    "max": 420,
+    "n": 3
+   },
+   "sink": {
+    "median": 97,
+    "min": 77,
+    "max": 101,
+    "n": 3
+   },
+   "close": {
+    "median": 210,
+    "min": 174,
+    "max": 213,
+    "n": 3
+   },
+   "pause": {
+    "median": 0,
+    "min": 0,
+    "max": 1,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 5847,
+    "min": 4105,
+    "max": 7607,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 6033,
+    "min": 4297,
+    "max": 7789,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 5223,
+    "min": 3485,
+    "max": 6985,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 5408,
+    "min": 3678,
+    "max": 7167,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 186,
+    "min": 182,
+    "max": 192,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 185,
+    "min": 182,
+    "max": 193,
+    "n": 3
+   }
+  },
+  "resume": {
+   "wallMs": {
+    "median": 8454,
+    "min": 8041,
+    "max": 8652,
+    "n": 3
+   },
+   "check": {
+    "median": 599,
+    "min": 595,
+    "max": 604,
+    "n": 3
+   },
+   "checkRead": {
+    "median": 183,
+    "min": 182,
+    "max": 188,
+    "n": 3
+   },
+   "checkCrc": {
+    "median": 407,
+    "min": 407,
+    "max": 409,
+    "n": 3
+   },
+   "state": {
+    "median": 97,
+    "min": 92,
+    "max": 97,
+    "n": 3
+   },
+   "ram": {
+    "median": 2619,
+    "min": 2555,
+    "max": 2661,
+    "n": 3
+   },
+   "apply": {
+    "median": 373,
+    "min": 359,
+    "max": 406,
+    "n": 3
+   },
+   "disk": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "read": {
+    "median": 205,
+    "min": 194,
+    "max": 221,
+    "n": 3
+   },
+   "crc": {
+    "median": 349,
+    "min": 348,
+    "max": 354,
+    "n": 3
+   },
+   "unpack": {
+    "median": 1741,
+    "min": 1720,
+    "max": 1752,
+    "n": 3
+   },
+   "prepare": {
+    "median": 2081,
+    "min": 1958,
+    "max": 2174,
+    "n": 3
+   },
+   "start": {
+    "median": 2498,
+    "min": 2118,
+    "max": 2722,
+    "n": 3
+   },
+   "total": {
+    "median": 7919,
+    "min": 7551,
+    "max": 7999,
+    "n": 3
+   }
+  }
+ },
+ "debian (debian, stored, 3 rounds)": {
+  "load": {
+   "wallMs": {
+    "median": 2212,
+    "min": 2089,
+    "max": 2275,
+    "n": 3
+   },
+   "check": {
+    "median": 96,
+    "min": 95,
+    "max": 99,
+    "n": 3
+   },
+   "checkRead": {
+    "median": 35,
+    "min": 34,
+    "max": 35,
+    "n": 3
+   },
+   "checkCrc": {
+    "median": 59,
+    "min": 59,
+    "max": 62,
+    "n": 3
+   },
+   "state": {
+    "median": 5,
+    "min": 4,
+    "max": 5,
+    "n": 3
+   },
+   "ram": {
+    "median": 336,
+    "min": 322,
+    "max": 366,
+    "n": 3
+   },
+   "apply": {
+    "median": 44,
+    "min": 39,
+    "max": 54,
+    "n": 3
+   },
+   "disk": {
+    "median": 460,
+    "min": 447,
+    "max": 463,
+    "n": 3
+   },
+   "read": {
+    "median": 22,
+    "min": 20,
+    "max": 26,
+    "n": 3
+   },
+   "crc": {
+    "median": 49,
+    "min": 48,
+    "max": 50,
+    "n": 3
+   },
+   "unpack": {
+    "median": 230,
+    "min": 227,
+    "max": 246,
+    "n": 3
+   },
+   "prepare": {
+    "median": 376,
+    "min": 365,
+    "max": 436,
+    "n": 3
+   },
+   "start": {
+    "median": 699,
+    "min": 659,
+    "max": 806,
+    "n": 3
+   },
+   "total": {
+    "median": 2020,
+    "min": 1918,
+    "max": 2101,
+    "n": 3
+   }
+  },
+  "kept": {
+   "wallMs": {
+    "median": 786,
+    "min": 728,
+    "max": 791,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 589,
+    "min": 579,
+    "max": 601,
+    "n": 3
+   },
+   "MB": {
+    "median": 97,
+    "min": 97,
+    "max": 97,
+    "n": 3
+   },
+   "state": {
+    "median": 12,
+    "min": 11,
+    "max": 12,
+    "n": 3
+   },
+   "blobs": {
+    "median": 1,
+    "min": 1,
+    "max": 1,
+    "n": 3
+   },
+   "ram": {
+    "median": 549,
+    "min": 538,
+    "max": 559,
+    "n": 3
+   },
+   "disk": {
+    "median": 25,
+    "min": 25,
+    "max": 27,
+    "n": 3
+   },
+   "scan": {
+    "median": 98,
+    "min": 96,
+    "max": 99,
+    "n": 3
+   },
+   "compress": {
+    "median": 380,
+    "min": 371,
+    "max": 386,
+    "n": 3
+   },
+   "crc": {
+    "median": 61,
+    "min": 59,
+    "max": 62,
+    "n": 3
+   },
+   "sink": {
+    "median": 23,
+    "min": 18,
+    "max": 24,
+    "n": 3
+   },
+   "pause": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "close": {
+    "median": 19,
+    "min": 18,
+    "max": 32,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 1816,
+    "min": 1801,
+    "max": 1816,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 1872,
+    "min": 1864,
+    "max": 1891,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 1215,
+    "min": 1204,
+    "max": 1222,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 1276,
+    "min": 1265,
+    "max": 1288,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 63,
+    "min": 56,
+    "max": 75,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 61,
+    "min": 54,
+    "max": 73,
+    "n": 3
+   }
+  },
+  "file": {
+   "wallMs": {
+    "median": 870,
+    "min": 849,
+    "max": 944,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 609,
+    "min": 606,
+    "max": 615,
+    "n": 3
+   },
+   "MB": {
+    "median": 97,
+    "min": 97,
+    "max": 97,
+    "n": 3
+   },
+   "state": {
+    "median": 6,
+    "min": 4,
+    "max": 6,
+    "n": 3
+   },
+   "blobs": {
+    "median": 1,
+    "min": 1,
+    "max": 1,
+    "n": 3
+   },
+   "ram": {
+    "median": 573,
+    "min": 566,
+    "max": 574,
+    "n": 3
+   },
+   "disk": {
+    "median": 33,
+    "min": 28,
+    "max": 34,
+    "n": 3
+   },
+   "scan": {
+    "median": 99,
+    "min": 95,
+    "max": 101,
+    "n": 3
+   },
+   "compress": {
+    "median": 399,
+    "min": 398,
+    "max": 402,
+    "n": 3
+   },
+   "crc": {
+    "median": 62,
+    "min": 62,
+    "max": 65,
+    "n": 3
+   },
+   "sink": {
+    "median": 21,
+    "min": 21,
+    "max": 22,
+    "n": 3
+   },
+   "pause": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "close": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 1695,
+    "min": 1687,
+    "max": 1714,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 1907,
+    "min": 1877,
+    "max": 1911,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 1093,
+    "min": 1090,
+    "max": 1118,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 1297,
+    "min": 1266,
+    "max": 1305,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 193,
+    "min": 182,
+    "max": 224,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 179,
+    "min": 173,
+    "max": 215,
+    "n": 3
+   }
+  },
+  "suspend": {
+   "wallMs": {
+    "median": 683,
+    "min": 680,
+    "max": 689,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 559,
+    "min": 558,
+    "max": 567,
+    "n": 3
+   },
+   "MB": {
+    "median": 95,
+    "min": 95,
+    "max": 95,
+    "n": 3
+   },
+   "state": {
+    "median": 4,
+    "min": 4,
+    "max": 6,
+    "n": 3
+   },
+   "blobs": {
+    "median": 1,
+    "min": 1,
+    "max": 1,
+    "n": 3
+   },
+   "ram": {
+    "median": 531,
+    "min": 529,
+    "max": 541,
+    "n": 3
+   },
+   "disk": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "scan": {
+    "median": 96,
+    "min": 95,
+    "max": 97,
+    "n": 3
+   },
+   "compress": {
+    "median": 365,
+    "min": 363,
+    "max": 373,
+    "n": 3
+   },
+   "crc": {
+    "median": 58,
+    "min": 58,
+    "max": 60,
+    "n": 3
+   },
+   "sink": {
+    "median": 12,
+    "min": 11,
+    "max": 12,
+    "n": 3
+   },
+   "close": {
+    "median": 17,
+    "min": 17,
+    "max": 18,
+    "n": 3
+   },
+   "pause": {
+    "median": 0,
+    "min": 0,
+    "max": 1,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 1809,
+    "min": 1809,
+    "max": 1824,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 1877,
+    "min": 1843,
+    "max": 1899,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 1210,
+    "min": 1205,
+    "max": 1217,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 1277,
+    "min": 1239,
+    "max": 1293,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 68,
+    "min": 34,
+    "max": 75,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 67,
+    "min": 34,
+    "max": 76,
+    "n": 3
+   }
+  },
+  "resume": {
+   "wallMs": {
+    "median": 1916,
+    "min": 1869,
+    "max": 1943,
+    "n": 3
+   },
+   "check": {
+    "median": 92,
+    "min": 92,
+    "max": 93,
+    "n": 3
+   },
+   "checkRead": {
+    "median": 30,
+    "min": 30,
+    "max": 32,
+    "n": 3
+   },
+   "checkCrc": {
+    "median": 59,
+    "min": 59,
+    "max": 59,
+    "n": 3
+   },
+   "state": {
+    "median": 5,
+    "min": 5,
+    "max": 8,
+    "n": 3
+   },
+   "ram": {
+    "median": 331,
+    "min": 331,
+    "max": 332,
+    "n": 3
+   },
+   "apply": {
+    "median": 42,
+    "min": 41,
+    "max": 43,
+    "n": 3
+   },
+   "disk": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "read": {
+    "median": 20,
+    "min": 20,
+    "max": 21,
+    "n": 3
+   },
+   "crc": {
+    "median": 48,
+    "min": 47,
+    "max": 48,
+    "n": 3
+   },
+   "unpack": {
+    "median": 224,
+    "min": 222,
+    "max": 224,
+    "n": 3
+   },
+   "prepare": {
+    "median": 398,
+    "min": 359,
+    "max": 420,
+    "n": 3
+   },
+   "start": {
+    "median": 576,
+    "min": 558,
+    "max": 691,
+    "n": 3
+   },
+   "total": {
+    "median": 1424,
+    "min": 1387,
+    "max": 1480,
+    "n": 3
+   }
+  }
+ },
+ "desktop-transient (desktop, transient, 3 rounds)": {
+  "load": {
+   "wallMs": {
+    "median": 9905,
+    "min": 9546,
+    "max": 10414,
+    "n": 3
+   },
+   "check": {
+    "median": 679,
+    "min": 645,
+    "max": 709,
+    "n": 3
+   },
+   "checkRead": {
+    "median": 247,
+    "min": 218,
+    "max": 299,
+    "n": 3
+   },
+   "checkCrc": {
+    "median": 420,
+    "min": 402,
+    "max": 422,
+    "n": 3
+   },
+   "state": {
+    "median": 97,
+    "min": 97,
+    "max": 103,
+    "n": 3
+   },
+   "ram": {
+    "median": 2654,
+    "min": 2359,
+    "max": 3156,
+    "n": 3
+   },
+   "apply": {
+    "median": 388,
+    "min": 276,
+    "max": 599,
+    "n": 3
+   },
+   "disk": {
+    "median": 1851,
+    "min": 1747,
+    "max": 1897,
+    "n": 3
+   },
+   "read": {
+    "median": 237,
+    "min": 164,
+    "max": 352,
+    "n": 3
+   },
+   "crc": {
+    "median": 351,
+    "min": 351,
+    "max": 355,
+    "n": 3
+   },
+   "unpack": {
+    "median": 1789,
+    "min": 1690,
+    "max": 1970,
+    "n": 3
+   },
+   "prepare": {
+    "median": 2117,
+    "min": 1934,
+    "max": 2304,
+    "n": 3
+   },
+   "start": {
+    "median": 2327,
+    "min": 2128,
+    "max": 2466,
+    "n": 3
+   },
+   "total": {
+    "median": 9679,
+    "min": 9332,
+    "max": 10258,
+    "n": 3
+   }
+  },
+  "file": {
+   "wallMs": {
+    "median": 5200,
+    "min": 5067,
+    "max": 5670,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 4335,
+    "min": 4225,
+    "max": 4644,
+    "n": 3
+   },
+   "MB": {
+    "median": 690,
+    "min": 690,
+    "max": 690,
+    "n": 3
+   },
+   "state": {
+    "median": 225,
+    "min": 203,
+    "max": 270,
+    "n": 3
+   },
+   "blobs": {
+    "median": 50,
+    "min": 49,
+    "max": 58,
+    "n": 3
+   },
+   "ram": {
+    "median": 3909,
+    "min": 3822,
+    "max": 4168,
+    "n": 3
+   },
+   "disk": {
+    "median": 143,
+    "min": 122,
+    "max": 144,
+    "n": 3
+   },
+   "scan": {
+    "median": 541,
+    "min": 469,
+    "max": 690,
+    "n": 3
+   },
+   "compress": {
+    "median": 2897,
+    "min": 2885,
+    "max": 2955,
+    "n": 3
+   },
+   "crc": {
+    "median": 429,
+    "min": 426,
+    "max": 451,
+    "n": 3
+   },
+   "sink": {
+    "median": 119,
+    "min": 118,
+    "max": 146,
+    "n": 3
+   },
+   "pause": {
+    "median": 1,
+    "min": 0,
+    "max": 1,
+    "n": 3
+   },
+   "close": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 6152,
+    "min": 3365,
+    "max": 7867,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 6669,
+    "min": 4388,
+    "max": 8409,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 5511,
+    "min": 2725,
+    "max": 7226,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 6022,
+    "min": 3742,
+    "max": 7758,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 542,
+    "min": 517,
+    "max": 1023,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 532,
+    "min": 511,
+    "max": 1017,
+    "n": 3
+   }
+  }
+ },
+ "debian-transient (debian, transient, 3 rounds)": {
+  "load": {
+   "wallMs": {
+    "median": 2352,
+    "min": 2147,
+    "max": 2437,
+    "n": 3
+   },
+   "check": {
+    "median": 100,
+    "min": 93,
+    "max": 101,
+    "n": 3
+   },
+   "checkRead": {
+    "median": 34,
+    "min": 30,
+    "max": 40,
+    "n": 3
+   },
+   "checkCrc": {
+    "median": 62,
+    "min": 59,
+    "max": 64,
+    "n": 3
+   },
+   "state": {
+    "median": 5,
+    "min": 4,
+    "max": 7,
+    "n": 3
+   },
+   "ram": {
+    "median": 394,
+    "min": 341,
+    "max": 402,
+    "n": 3
+   },
+   "apply": {
+    "median": 58,
+    "min": 44,
+    "max": 65,
+    "n": 3
+   },
+   "disk": {
+    "median": 403,
+    "min": 401,
+    "max": 414,
+    "n": 3
+   },
+   "read": {
+    "median": 28,
+    "min": 23,
+    "max": 45,
+    "n": 3
+   },
+   "crc": {
+    "median": 49,
+    "min": 49,
+    "max": 50,
+    "n": 3
+   },
+   "unpack": {
+    "median": 260,
+    "min": 237,
+    "max": 263,
+    "n": 3
+   },
+   "prepare": {
+    "median": 476,
+    "min": 381,
+    "max": 543,
+    "n": 3
+   },
+   "start": {
+    "median": 767,
+    "min": 751,
+    "max": 875,
+    "n": 3
+   },
+   "total": {
+    "median": 2198,
+    "min": 2048,
+    "max": 2214,
+    "n": 3
+   }
+  },
+  "file": {
+   "wallMs": {
+    "median": 817,
+    "min": 816,
+    "max": 828,
+    "n": 3
+   },
+   "pausedMs": {
+    "median": 614,
+    "min": 613,
+    "max": 618,
+    "n": 3
+   },
+   "MB": {
+    "median": 97,
+    "min": 97,
+    "max": 97,
+    "n": 3
+   },
+   "state": {
+    "median": 11,
+    "min": 11,
+    "max": 12,
+    "n": 3
+   },
+   "blobs": {
+    "median": 1,
+    "min": 1,
+    "max": 1,
+    "n": 3
+   },
+   "ram": {
+    "median": 572,
+    "min": 571,
+    "max": 577,
+    "n": 3
+   },
+   "disk": {
+    "median": 28,
+    "min": 27,
+    "max": 28,
+    "n": 3
+   },
+   "scan": {
+    "median": 101,
+    "min": 97,
+    "max": 106,
+    "n": 3
+   },
+   "compress": {
+    "median": 401,
+    "min": 400,
+    "max": 403,
+    "n": 3
+   },
+   "crc": {
+    "median": 62,
+    "min": 61,
+    "max": 62,
+    "n": 3
+   },
+   "sink": {
+    "median": 20,
+    "min": 19,
+    "max": 21,
+    "n": 3
+   },
+   "pause": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "close": {
+    "median": 0,
+    "min": 0,
+    "max": 0,
+    "n": 3
+   },
+   "rssBeforeMiB": {
+    "median": 2281,
+    "min": 1840,
+    "max": 2719,
+    "n": 3
+   },
+   "rssPeakMiB": {
+    "median": 2441,
+    "min": 1985,
+    "max": 2880,
+    "n": 3
+   },
+   "pssBeforeMiB": {
+    "median": 1658,
+    "min": 1219,
+    "max": 2096,
+    "n": 3
+   },
+   "pssPeakMiB": {
+    "median": 1814,
+    "min": 1358,
+    "max": 2252,
+    "n": 3
+   },
+   "rssAddedMiB": {
+    "median": 160,
+    "min": 145,
+    "max": 161,
+    "n": 3
+   },
+   "pssAddedMiB": {
+    "median": 156,
+    "min": 139,
+    "max": 156,
+    "n": 3
+   }
+  }
+ }
+}

@@ -8,6 +8,7 @@ import type { FromGpuWorker } from '../../gpu-worker.ts';
 import type { EvdevEvent } from '../../input.ts';
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { keys } from '../areas/keys.svelte.ts';
+import { messageBar } from '../areas/message-bar.svelte.ts';
 import { power } from '../areas/power.svelte.ts';
 import { status } from '../areas/status.svelte.ts';
 import { graphics, type Graphics } from '../statusbar-graphics.ts';
@@ -144,6 +145,9 @@ export function workerHandlers(x: Runner, r: Run): Handlers<FromWorker> {
     compacted: (m) => x.d.replies.worker.answer(m.id, m),
     'snapshot-check': (m) => x.d.replies.worker.answer(m.id, m),
     restored: (m) => x.d.agent.restored(m.template),
+    loaded: (m) => {
+      messageBar.load = JSON.stringify(m.phases);
+    },
     phase: (m) => {
       bootCard.line = text(m.text);
       bootCard.progress = undefined;

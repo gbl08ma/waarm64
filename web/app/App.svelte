@@ -93,6 +93,7 @@
     hidden={!messageBar.text}
     data-kind={messageBar.kind}
     data-snapshot={messageBar.snapshot || undefined}
+    data-load={messageBar.load || undefined}
     bodyId="message-body"
     actionsId="message-actions"
     dismissId="message-close"

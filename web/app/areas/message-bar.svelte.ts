@@ -10,6 +10,7 @@ export const messageBar = $state<{
   kind: MessageKind;
   actions: Action[];
   snapshot: string;
+  load: string;
 }>({
   /** The headline (none: the bar is hidden). */
   text: '',
@@ -17,6 +18,8 @@ export const messageBar = $state<{
   details: [],
   kind: 'warn',
   actions: [],
-  /** The last snapshot written (its bytes, pause and id), for tools: `#message[data-snapshot]`. */
+  /** The last snapshot written (its bytes, pause, id and phases), for tools: `#message[data-snapshot]`. */
   snapshot: '',
+  /** The last start from a snapshot or a suspended copy (its phases: protocol.ts `LoadPhases`), for tools: `#message[data-load]`. */
+  load: '',
 });

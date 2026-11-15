@@ -7,7 +7,7 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
+import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
@@ -49,6 +49,22 @@ export type SnapshotDisk = { slot: number; identity: string; size: number; block
  */
 export type DiskPlan = { slot: number; action: 'keep'; generation: number } | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
 
+/**
+ * Where a save's time went, ms (`writeSnapshot`; tools read it in `#message`'s `data-snapshot`, docs/frontend.md
+ * "Snapshots"): the devices' state taken (`state`: a 3D renderer's read-back is in it), the CORE, DEVS and BLOB frames
+ * (`blobs`), RAM's (`ram`), the disks' blocks read and framed and the end (`disk`); and over all of those, where the
+ * writer's time went (`WriteTimes`: RAM's scan, the codec, the frames' encoding and CRC, the sink).
+ */
+export type SavePhases = { state: number; blobs: number; ram: number; disk: number } & WriteTimes;
+
+/**
+ * Where a restore's time went, ms (`readSnapshot`; the machine worker adds its own: web/app/protocol.ts `LoadPhases`):
+ * the whole file's check pass (`check`, its reads and CRCs in `checkRead`, `checkCrc`), the CORE, DEVS and BLOB frames
+ * (`state`), RAM's frames read and placed (`ram`, the placing in `apply`), the disks' blocks into their overlays
+ * (`disk`); and over the restore's pass (after the check), the reads, the CRCs and the codec (`ReadTimes`).
+ */
+export type RestorePhases = { check: number; checkRead: number; checkCrc: number; state: number; ram: number; apply: number; disk: number } & ReadTimes;
+
 /** A DISK frame's index: the device slot times this, plus the first block. */
 const SLOT = 2 ** 40;
 const BLOCK = 4096;
@@ -76,9 +92,17 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const blobs: Uint8Array[] = [];
   const devs = JSON.stringify(state.host, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v));
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
+  let at = performance.now();
+  /** The ms since the last call (or `at`'s start). */
+  const since = () => {
+    const was = at;
+    at = performance.now();
+    return at - was;
+  };
   await w.bytes('CORE', state.core);
   await w.bytes('DEVS', new TextEncoder().encode(devs));
   for (const [n, b] of blobs.entries()) await w.blob(n, b);
+  const blobsMs = since();
   // Memory 0's RAM, then each spill memory's (node 1's after Venus's arena and window in memory 1), their chunks numbered
   // on (`ramStarts`); the progress is over all of it.
   const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
@@ -89,6 +113,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
     const r = await w.ram(views[k], opts.progress && ((done) => opts.progress!(before + done, total)), starts[k]);
     [ram.pages, ram.frames] = [ram.pages + r.pages, ram.frames + r.frames];
   }
+  const ramMs = since();
   for (const d of disks) {
     await w.disk((async function* () {
       for (let k = 0; k < d.blocks.length; k += 256) {
@@ -99,7 +124,8 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
     })());
   }
   const end = await w.end();
-  return { ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
+  const phases: SavePhases = { state: stateMs, blobs: blobsMs, ram: ramMs, disk: since(), ...w.times };
+  return { ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned, phases };
 }
 
 /**
@@ -121,14 +147,25 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
 export async function readSnapshot(
   source: ReadableStream<Uint8Array> | Blob, codec: Codec & { snapshotVersion?: number; snapshotVersionMin?: number }, coreVersion: number,
   opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
-): Promise<{ header: SnapshotHeader; restore: Restore }> {
+): Promise<{ header: SnapshotHeader; restore: Restore; phases: RestorePhases }> {
+  let at = performance.now();
+  /** The ms since the last call (or `at`'s start). */
+  const since = () => {
+    const was = at;
+    at = performance.now();
+    return at - was;
+  };
+  const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, apply: 0, disk: 0, read: 0, crc: 0, unpack: 0 };
   if (source instanceof Blob) {
     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
     // the file damaged halfway.
     const check = await openSnapshot(source, { codecs: [codec], check: true });
     for await (const _ of check.frames()) void _;
+    [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
   }
   const s = await openSnapshot(source, { codecs: [codec] });
+  /** The restore pass's reading times so far, into `phases`. */
+  const read = () => Object.assign(phases, s.times);
   const { header } = s;
   // The codec's core reads back to its `snapshotVersionMin` (a caller naming another version means another core).
   const min = codec.snapshotVersion === coreVersion ? Math.min(codec.snapshotVersionMin ?? coreVersion, coreVersion) : coreVersion;
@@ -209,6 +246,8 @@ export async function readSnapshot(
   }
   if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt(msg('snapshots:snapshot.damage.blobMissing'));
   if (!Array.isArray(host?.devices) || !Array.isArray(host.input) || host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)) throw corrupt(msg('snapshots:snapshot.damage.devices'));
+  phases.state = since();
+  read();
   const restore: Restore = {
     core: join(parts.CORE),
     host,
@@ -225,12 +264,16 @@ export async function readSnapshot(
       }
       const views = [ram, ...spill];
       const starts = ramStarts(views.map((v) => v.length));
+      since();
       for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
         const { index, data } = next.value;
         let k = views.length - 1;
         while (k > 0 && index < starts[k]) k--;
+        const t = performance.now();
         applyRam(views[k], index - starts[k], data);
+        phases.apply += performance.now() - t;
       }
+      phases.ram = since();
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
       const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();
@@ -278,10 +321,12 @@ export async function readSnapshot(
         for (const r of rams) r.spec.ramInit = r.disk.chunkList();
       } finally {
         for (const o of open.values()) if (o !== 'skip') o.close();
+        phases.disk = since();
+        read();
       }
     },
   };
-  return { header, restore };
+  return { header, restore, phases };
 }
 
 /** A disk identity (`diskIdentity`'s JSON) for a message: a file in words, a URL's path as it is. */

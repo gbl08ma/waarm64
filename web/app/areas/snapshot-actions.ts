@@ -197,9 +197,19 @@ export class SnapshotActions {
       });
       if (!handle) download(new Blob(parts), suggestedName);
       parts.length = 0;
-      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted } = done;
-      // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes, the balloon's hint.
-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted });
+      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, phases } = done;
+      // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes, the balloon's
+      // hint, where the time went (protocol.ts `SaveTimes`).
+      messageBar.snapshot = JSON.stringify({
+        kind: 'file',
+        bytes,
+        pausedMs,
+        stateMs,
+        blobBytes,
+        hintMs,
+        hinted,
+        phases,
+      });
       this.#saved(r, 'file', handle?.name ?? suggestedName, done);
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.noFile'));
@@ -249,8 +259,18 @@ export class SnapshotActions {
         });
         return done;
       });
-      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted } = done;
-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, id });
+      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, phases } = done;
+      messageBar.snapshot = JSON.stringify({
+        kind: 'kept',
+        bytes,
+        pausedMs,
+        stateMs,
+        blobBytes,
+        hintMs,
+        hinted,
+        id,
+        phases,
+      });
       this.#saved(r, 'kept', name, done);
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.nothingKept'));
@@ -281,8 +301,13 @@ export class SnapshotActions {
       {
         progress: this.#progress,
         chunk: () => undefined,
-        // The `suspended` state that follows ends it (web/app/run/worker-messages.ts).
-        done: () => undefined,
+        // The `suspended` state that follows ends it (web/app/run/worker-messages.ts); for tools, its numbers.
+        done: (m) => {
+          if (m.type === 'suspend-done') {
+            const { bytes, pausedMs, phases } = m;
+            messageBar.snapshot = JSON.stringify({ kind: 'suspend', bytes, pausedMs, phases });
+          }
+        },
         // It runs on.
         error: (e) => {
           power.saving = false;

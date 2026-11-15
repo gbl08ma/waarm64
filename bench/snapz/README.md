@@ -13,9 +13,9 @@ Dev-only tools behind `bench/boot/REPORT.md` "SNAPZ: compression across the emul
   worker's stand-in) and pool workers (`www/pool.js`) reading the corpus from a SharedArrayBuffer. Plans in `plans/`;
   job types `single`, `pool`, `restore`, `crc`, `opfs`, `clusters`, `writable`. Pipe through `fmt.py` for pools.
 - `compat.mjs <corpus.bin>`: the core's LZ and lz4_flex read each other's output.
-- `phases.patch` (`git apply`; never commit it applied) times the page's save and load by phase; `probe-save.ts
-  <file.waarm64snap>` loads the desktop snapshot on the page and saves it twice, printing the phases (run with
-  `WAARM64_PROFILE=<dir>` and `WAARM64_DOWNLOADS=<dir>`, both under `target/`). Its timers print through the page's
-  console: add `|| t.startsWith('TIMING')` to bench/gpu/guest-session.ts's console filter for the load's.
+- `probe.ts <desktop|debian> [out.json]` (SNAPZ loop 0 on): a warm snapshot loaded on the page and saved as a kept
+  snapshot, to a file and as a suspend, then resumed, with the page's own phases and the browser's memory per round
+  (docs/benchmarking.md "The snapshot probe"). It replaced the measuring session's `phases.patch` (the timing points,
+  now the page's own) and `probe-save.ts` (git history has both).
 - The corpus: `bash bench/gpu/warm-snapshots.sh firefox`, then `corpus.ts target/snapbench/pages.waarm64snap
   target/snapbench/corpus-pages.bin` (1.68 GB).

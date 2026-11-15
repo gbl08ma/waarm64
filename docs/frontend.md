@@ -200,7 +200,7 @@ machines, save settings…), complete before the components mount; an action tha
 A control with no place of its own for an error (the toolbar, its menus, the file pickers, a pane its action closes)
 runs it through `page.ts` `inBar(f)`: such actions say how they went in the message bar, and their errors go there too.
 What still escapes (a promise dropped outside an action) is shown in the message bar (`unhandledrejection`). Ids the tests and tools use stay (`#state`,
-`#message[data-snapshot]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
+`#message[data-snapshot]` and `[data-load]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`: `FilePickers.svelte` owns them, and a
 button opens one with `file-pickers.ts` `openPicker('disk' | 'snapshot' | 'changes')`). **Actions** a click starts that can fail
 run through one runner (`actions.svelte.ts` `Actions`: `run(what, f)` says what runs in `busy` and keeps the error in
@@ -715,11 +715,26 @@ Preferences' switch (devices.md "The caches dropped before a snapshot"), then th
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
-tools), and the machine runs as before. Only the writing is between pause and resume: the picked
+tools: below), and the machine runs as before. Only the writing is between pause and resume: the picked
 file's stream is opened before and closed (flushed) after, and nothing is hashed. One save at a
 time: while it runs Restart, Power off, Suspend, Snapshot and Load snapshot are disabled, and a disk's Export, Open
 disk and Import changes say to wait. The run loop is not disturbed by the pause
 (`runAsync` keeps returning `BUDGET`), the status timer and the flash keeper only read.
+
+**Where a save's and a load's time went, for tools** (always on: a few `performance.now()` calls a frame; read by
+`bench/snapz/probe.ts`, benchmarking.md "The snapshot probe"). `#message`'s `data-snapshot` is the last save's JSON:
+`kind` (`file`, `kept` or `suspend`), `bytes`, `pausedMs` (a suspend's: from the pause to its copy written),
+`stateMs`, `blobBytes`, `hintMs` and `hinted` (not a suspend's), a kept one's `id`, and `phases` (ms; protocol.ts
+`SaveTimes`, web/snapshot.ts `SavePhases`): `pause` (the vCPUs stopping), `state` (the devices' state: a 3D renderer's
+read-back), `blobs` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames), `disk` (the disks' blocks read and framed,
+and the end); over all the frames, `scan` (RAM's zero-page scan and gather), `compress` (the codec), `crc` (the frame's
+encoding and CRC) and `sink` (the waits on the output); and `close` (the output closed: a file's or a kept snapshot's
+after the resume, a suspended copy's before the stop). A start from a snapshot or a suspended copy posts `loaded` once
+it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
+`prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
+touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames, `apply` their
+placing), `disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the machine's workers, the
+devices' state put back) and `total` (from the worker's start); over the restore's pass, `read`, `crc` and `unpack`.
 
 **Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
 file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the

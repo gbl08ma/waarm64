@@ -20,6 +20,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
+import { checkSave } from './snapshot-phases.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -111,6 +112,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
     const before = await page.locator('#message').getAttribute('data-snapshot');
     await page.locator('#save-snapshot').click();
     await page.waitForFunction(([b, src]) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && new RegExp(src!).test(document.getElementById('message-text')?.textContent ?? ''), [before, words('snapshots:snapshot-actions.kept', {}, { start: true }).source] as const, { timeout: 120_000 });
+    checkSave(JSON.parse((await page.locator('#message').getAttribute('data-snapshot'))!), 'kept');
     keepAs = name;
     await page.locator('#machines-open').click();
     await page.locator('.machines [data-tab=snapshots]').click();

@@ -15,6 +15,7 @@ import { msg, MsgError } from '../msg.ts';
 import { dropSuspend, saveFlash, suspended } from '../overlay.ts';
 import { lzCodec } from '../lz.ts';
 import type { SnapshotHeader } from '../snapshot-file.ts';
+import type { RestorePhases } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import { firmwareFiles } from './firmware-files.ts';
 import { MACHINES, readiness, type Machine } from './machine.ts';
@@ -29,6 +30,7 @@ import { post, state } from './worker-post.ts';
 import { status } from './worker-status.ts';
 import { checkSnapshot, saveSnapshot, suspend, TAIL, type Running } from './worker-snapshot.ts';
 import {
+  loadPhases,
   bootOptions,
   checkSplit,
   devicesOf,
@@ -203,6 +205,7 @@ async function prepare(m: StartMessage, machine: Machine, snapshot: boolean) {
 }
 
 async function start(m: StartMessage, note?: unknown): Promise<void> {
+  const t0 = performance.now();
   const machine: Machine = (current = MACHINES[m.config.machine]);
   home = m.home;
   state('loading');
@@ -221,14 +224,16 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   };
   const parts = await prepare(m, machine, !!snapshot);
   if (!parts || stopped()) return;
+  const prepared = performance.now();
   ramMiB = m.config.ram.mib;
   let plan = planOf(m, machine);
   let restore: Restore | undefined;
   let specs: DeviceSpec[] | undefined;
   let header: SnapshotHeader | undefined;
+  let restored: RestorePhases | undefined;
   if (snapshot) {
     try {
-      ({ plan, restore, specs, header } = await fromSnapshot(m, machine, snapshot, !!resume));
+      ({ plan, restore, specs, header, phases: restored } = await fromSnapshot(m, machine, snapshot, !!resume));
     } catch (err) {
       if (resume && !stopped()) return bootInstead(err);
       throw err;
@@ -248,6 +253,8 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   }
   if (stopped()) return; // `stop` closes it
   await booted(vm, m, { header, resume: !!resume, note });
+  // A start from a snapshot says where its time went, once it runs (for tools: `#message[data-load]`).
+  if (restored) post({ type: 'loaded', phases: loadPhases(t0, prepared, restored) });
   const marker = m.config.dev.guestReadyOnly ? undefined : machine.ready; // `?ready=guest`: only the guest's signs
   return run({ ...machine, ready: marker }, plan, ioOf(plan, m, machine, devices), !!restore);
 }

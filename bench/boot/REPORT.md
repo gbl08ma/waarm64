@@ -4891,3 +4891,50 @@ overlay's per-block writes (2.25 s) and the machine's start (~4.3 s), neither of
 **Decided (the user, 2026-11-15):** lz4_flex replaces the core's LZ (codec 2), crc32fast takes the CRC into wasm, and
 the save and the load go through a pool; a picked file is staged through OPFS when there's room, else written
 directly. zstd (C: clang for wasm32 in every build) was not taken. The work: the SNAPZ track (`SNAPZ-KICKOFF.md`).
+
+## SNAPZ loop 0: the probe and the baseline (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, a persistent profile (`target/snapz/profile`),
+this loop's tree (on c0297bd8); nothing else ran. Raw: `results/snapz-0/` (`<guest>.json` per round, `summary.txt` and
+`summary.json` from `bench/snapz/probe-summary.ts`, the logs). **Built:** the page's save and load time themselves by
+phase, always (docs/frontend.md "Snapshots": `#message`'s `data-snapshot` for every save, a kept one, a file and a
+suspend, with its `kind` and `phases`; `data-load` for a start from a snapshot or a suspended copy), and
+`bench/snapz/probe.ts` (docs/benchmarking.md "The snapshot probe"), which replaced the measuring session's
+`phases.patch` and `probe-save.ts`. Three rounds each, `SETTLE_S=20`; median (range), ms.
+
+**Does it measure what the REPORT did?** The transient machine (`MODE=transient`: the file itself, a download) loaded
+the desktop file in 9,905 (9,546-10,414) and paused 4,335 (4,225-4,644) for the file: the entry above's 9.8 s and
+4.15-4.25 s. The stored machine (the probe's default: the same frames under its header) loaded in 9,757
+(9,537-10,183) and paused 4,310 (4,287-4,445) for a file. Same thing measured.
+
+**The desktop guest** (`target/snapbench/pages.waarm64snap`, 689 MB; a stored machine):
+
+| save | paused | state | blobs | ram (scan / compress / crc / sink) | disk | close | MB |
+|---|---|---|---|---|---|---|---|
+| kept | 4,216 (4,130-4,427) | 237 | 46 | 3,804 (560 / 2,807 / 434 / 100) | 128 | 177 | 690 |
+| file (a download) | 4,310 (4,287-4,445) | 188 | 48 | 3,898 (515 / 2,922 / 428 / 128) | 170 | 0 | 693 |
+| suspend | 4,275 (4,061-4,344) | 176 | 63 | 3,820 (560 / 2,756 / 413 / 97) | 0 | 210 | 675 |
+
+(`scan`, `compress`, `crc`, `sink` are summed over all the frames: RAM's are nearly all of them. `close`: a kept
+snapshot's file closed after the resume, a suspended copy's before the stop. The vCPUs stop in 0-4 ms.)
+
+| load | total | prepare | check (read / crc) | state | ram (read / crc / unpack / apply) | disk | start | wall |
+|---|---|---|---|---|---|---|---|---|
+| a file | 9,520 (9,297-9,978) | 1,907 | 678 (252 / 424) | 101 | 2,375 (166 / 355 / 1,686 / 287) | 2,123 | 2,231 | 9,757 |
+| the resume | 7,919 (7,551-7,999) | 2,081 | 599 (183 / 407) | 97 | 2,619 (205 / 349 / 1,741 / 373) | 0 | 2,498 | 8,454 |
+
+`prepare` is the core fetched and compiled (and the firmware's files); `start` the rest to `running` (bootVm's own
+work, the machine's workers, the 3D state put back): the entry above's "~4.3 s, the machine started" is these two.
+The disk's 11,952 blocks into the overlay, one 4 KiB write each: 2.1 s (loop 5's).
+
+**Debian** (`target/snapbench/debian-go.waarm64snap`, 97 MB now: the balloon's hint leaves 700 MB of free memory out;
+a stored machine): kept pauses 589 (579-601: ram 549, of it compress 380, scan 98, crc 61), a file 609 (606-615),
+a suspend 559 (558-567); a load 2,020 (1,918-2,101: prepare 376, check 96, ram 336 with unpack 230, disk 460 for 2,103
+blocks, start 699), a resume 1,424 (1,387-1,480). The transient machine: load 2,198, file 614.
+
+**Memory** (the browser's processes, RSS summed and PSS; added = the peak during a save over the memory before it):
+the desktop's kept save added 52 MiB (25-269), the file 994 (977-1,031: the page holds the download's 690 MB of Blob
+parts), the suspend 186 (182-192); Debian's 63, 193, 68. Against these the pool's instances (loop 2) state theirs.
+**The browser's memory grows with each load:** the desktop's was 3.3 GB resident before the first round's saves, 5.5
+before the second's and 7.2 before the third's (PSS 2.7, 4.9, 6.6); the transient rounds 3.4, 6.2, 7.9; Debian's
+transient 1.8 to 2.7, its stored rounds flat at 1.7-1.8. Which process holds it isn't found yet (docs/backlog.md).

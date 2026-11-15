@@ -19,6 +19,7 @@ import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
 import { words } from './words.ts';
 import { MACHINES } from '../web/app/machine.ts';
+import { checkLoad, checkSave } from './snapshot-phases.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -84,6 +85,7 @@ async function save(page: Page, name: string) {
   await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000 });
   const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
+  checkSave(info, 'file');
   return { path, filename: download.suggestedFilename(), ...info };
 }
 
@@ -205,6 +207,9 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await p2.setInputFiles('#load-snapshot-input', first.path);
   await loadingSnapshot(p2);
   await running(p2);
+  // Where the load's time went, for tools (posted right after `running`).
+  await p2.waitForFunction(() => !!document.getElementById('message')?.dataset.load, null, { timeout: 10_000 });
+  checkLoad(await p2.evaluate(() => document.getElementById('message')?.dataset.load));
   console.log(`# snapshot load (buildroot): ${((performance.now() - t0) / 1000).toFixed(2)} s from the choice to running`);
   asked('confirm', words('snapshots:snapshot-restore.load.confirm', { name: 'first.waarm64snap', replaces: t('snapshots:snapshot-restore.load.replaces.running') }, { whole: true }));
   assert.match(dialogs.at(-1)!, words('snapshots:snapshot-restore.load.holds.when.cpus', { label: MACHINES.buildroot.label, count: 2 }));
@@ -302,6 +307,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
     assert.match((await message(page))!, words('machine:worker-snapshot.suspended', {}, { start: true }));
     assert.ok((await suspendFile())! > 100_000, 'the suspended machine is beside the overlay');
     assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
+    checkSave(JSON.parse((await page.evaluate(() => document.getElementById('message')?.dataset.snapshot)) ?? '{}'), 'suspend');
   };
   assert.equal(await page.locator('#suspend').isEnabled(), true);
   await onSerial(page, 'SUSVAR=one\n');
@@ -314,6 +320,8 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await running(page);
   console.log(`# suspend (buildroot): resumed ${((performance.now() - t0) / 1000).toFixed(2)} s after the reload`);
   assert.match((await message(page))!, words('machine:worker.resumed', {}, { start: true }));
+  await page.waitForFunction(() => !!document.getElementById('message')?.dataset.load, null, { timeout: 10_000 });
+  checkLoad(await page.evaluate(() => document.getElementById('message')?.dataset.load));
   assert.equal(await suspendFile(), undefined, 'a resumed machine has no suspended copy');
   assert.equal(await susvar(), 'one');
   // Opened again without a suspend: it boots (a new shell). The planted bug (the copy kept after a resume) resumes the old one here.

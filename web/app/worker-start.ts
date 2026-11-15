@@ -7,7 +7,7 @@ import { loadFlash, overlayMeta } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import type { DisplayFromPage, DisplayToPage, ScreenPng } from '../gpu-present.ts';
 import { openSnapshot, type SnapshotHeader } from '../snapshot-file.ts';
-import { readSnapshot, type SnapshotDisk } from '../snapshot.ts';
+import { readSnapshot, type RestorePhases, type SnapshotDisk } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import type { lzCodec } from '../lz.ts';
 import { agentBinary } from './guest-agent.ts';
@@ -18,6 +18,7 @@ import { failure } from './worker-errors.ts';
 import { checkDisks, CORE, download } from './worker-fetch.ts';
 import { fromHeader } from './worker-header.ts';
 import { post } from './worker-post.ts';
+import type { LoadPhases } from './protocol.ts';
 
 type Lz = Awaited<ReturnType<typeof lzCodec>>;
 
@@ -101,10 +102,31 @@ export async function openRestore(snapshot: Blob, m: StartMessage, machine: Mach
   const { header } = await openSnapshot(snapshot, { codecs: [lz] });
   const h = fromHeader(header, m, machine, name);
   if (resume) await sameOverlays(header, h.specs);
-  const { restore } = await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume, plan: m.plan });
+  const { restore, phases } = await readSnapshot(snapshot, lz, lz.snapshotVersion, {
+    devices: h.specs,
+    resume,
+    plan: m.plan,
+  });
   const plan: Plan = { ncpus: h.ncpus, ramMiB: h.ramMiB, here: h.slots, cpu: h.cpu, split: h.split };
   if (!resume) post({ type: 'phase', text: msg('snapshots:worker-start.phase.restoring') });
-  return { header, plan, restore, specs: h.specs, serial: typeof header.serial === 'string' ? header.serial : '' };
+  return {
+    header,
+    plan,
+    restore,
+    phases,
+    specs: h.specs,
+    serial: typeof header.serial === 'string' ? header.serial : '',
+  };
+}
+
+/**
+ * A start from a snapshot's phases (`LoadPhases`): from `t0` (the start) to now, `prepared` the parts' end; `start` is
+ * what `prepare` and the restore's own phases leave of the total.
+ */
+export function loadPhases(t0: number, prepared: number, r: RestorePhases): LoadPhases {
+  const total = performance.now() - t0;
+  const prepare = prepared - t0;
+  return { ...r, prepare, start: total - prepare - r.check - r.state - r.ram - r.disk, total };
 }
 
 /**

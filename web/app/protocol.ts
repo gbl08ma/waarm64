@@ -7,7 +7,7 @@ import type { FolderSpec } from '../9p-folders.ts';
 import type { Credential, MachineName } from './machine.ts';
 import type { CpuFeature, Display, Shape } from './shape.ts';
 import type { GuestWords } from './guest-unit.ts';
-import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
+import type { DiskPlan, RestorePhases, SavePhases, SnapshotDisk } from '../snapshot.ts';
 import type { Msg, WireError } from '../msg.ts';
 import type { DevKnobs } from './run/dev-knobs.ts';
 
@@ -257,6 +257,20 @@ export type StartDisk = {
 /** A disk for the disk jobs (export, changes in): its source, the overlay of its changes and what that overlay belongs to (default `diskIdentity`'s). */
 export type DiskRef = { source: DiskSource; overlay?: string; identity?: string };
 
+/**
+ * Where a save's time went, ms (`snapshot-done`, `suspend-done`; the page puts it in `#message`'s `data-snapshot`):
+ * web/snapshot.ts `SavePhases`, with the worker's wait for the vCPUs to stop (`pause`) and the output's close (`close`:
+ * a picked file's stream or a kept snapshot's file after the resume, not paused; a suspended copy's before the stop).
+ */
+export type SaveTimes = SavePhases & { pause: number; close: number };
+/**
+ * Where a start from a snapshot's time went, ms (`loaded`; the page puts it in `#message`'s `data-load`): the core
+ * fetched and compiled and the machine's parts (`prepare`), web/snapshot.ts `RestorePhases` (the check pass, the state,
+ * RAM, the disks' blocks), the rest of the machine's start to `running` (`start`: its workers, the devices' state put
+ * back), and from the worker's start to `running` (`total`).
+ */
+export type LoadPhases = RestorePhases & { prepare: number; start: number; total: number };
+
 /** Worker → page. */
 export type FromWorker =
   /**
@@ -286,6 +300,8 @@ export type FromWorker =
    * a template (a snapshot whose header has `template: true`), its agent renews the guest's identity too.
    */
   | { type: 'restored'; template: boolean }
+  /** A start from a snapshot or a suspended copy posted `running`: where its time went (for tools). */
+  | { type: 'loaded'; phases: LoadPhases }
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
   | { type: 'phase'; text: Msg }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */
@@ -305,6 +321,7 @@ export type FromWorker =
       pins: SnapshotDisk[];
       hintMs?: number;
       hinted?: number;
+      phases: SaveTimes;
     }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
   | { type: 'snapshot-error'; id: number; error: WireError }
@@ -312,8 +329,8 @@ export type FromWorker =
   | { type: 'snapshot-check'; id: number; refused?: WireError }
   /** `compact`'s answer: the bytes the overlays' files took before and after (none: no machine running). */
   | { type: 'compacted'; id: number; before?: number; after?: number }
-  /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size. */
-  | { type: 'suspend-done'; id: number; bytes: number }
+  /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size, the pause's ms and where they went. */
+  | { type: 'suspend-done'; id: number; bytes: number; pausedMs: number; phases: SaveTimes }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
   | { type: 'profile'; id: number; samples: [string, number][] }
   /** `heap`'s answer (web/vm.ts `heapUse`). */

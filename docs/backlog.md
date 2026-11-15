@@ -1457,10 +1457,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`alpine-user-snapshots`). Saving TLB contents would need entries re-validated against the
   page tables at restore (they hold host addresses), which is most of a walk.
 - **A tracked benchmark case for the page** (`page_debian`: page load to `running` with a fresh
-  profile, measured today only by ad-hoc drivers and the end-to-end test; a snapshot
-  load to `running`, a suspend and its resume, the file's size and the pause): the lane's numbers
-  are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
-  exit").
+  profile, measured today only by ad-hoc drivers and the end-to-end test). A snapshot's load, its saves, a suspend and
+  its resume have `bench/snapz/probe.ts` (benchmarking.md "The snapshot probe"), outside `bench/run.ts`.
+- **The browser's memory grows with each load of a big snapshot** (bench/boot/REPORT.md "SNAPZ loop 0"): on the
+  desktop guest (2.5 GiB of RAM) the probe's browser had 3.3 GB resident before the first round's saves, 5.5 before
+  the second's and 7.2 before the third's (PSS alike); the transient machine's rounds (a load and a download each)
+  3.4, 6.2, 7.9. Debian's (1 GiB) grew 1.8 to 2.7 GB on the transient machine, not on the stored one, whose rounds
+  end with the page opened again. Not found yet: which process holds it (the old machine's memories collected late,
+  the downloads' Blobs, the 3D state), and whether a user who loads snapshots repeatedly runs out of memory.
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
