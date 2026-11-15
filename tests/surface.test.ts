@@ -11,7 +11,7 @@ import { openDisk } from '../web/qcow2.ts';
 import { ramDisk } from '../web/ramdisk.ts';
 import { blockSource, zeroDisk } from '../web/stored.ts';
 import { surfaceJob } from '../web/app/surface-job.ts';
-import { cellBytesFor, cellCount, countRange, opaqueLayer, ramLayer, rangeCounts, rangeDetail, summarize, surfaceOf, type InspectAnswer, type Leaves, type Surface } from '../web/surface.ts';
+import { cellBytesFor, cellCount, countRange, diskInspector, opaqueLayer, ramLayer, rangeCounts, rangeDetail, summarize, surfaceOf, type InspectAnswer, type Leaves, type Surface } from '../web/surface.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
 const BLOCK = 4096;
@@ -316,6 +316,35 @@ test('surface job: a stored disk and an overlay of another size from their files
   } finally {
     release();
   }
+});
+
+test('diskInspector: while watched, a change the marks missed (a request in flight when the wrapper went on) is caught up by the full walk every fullMs', async () => {
+  const size = 4 * RANGE;
+  const o = overlay(zeroDisk(size), memFile(), memFile());
+  let clock = 0;
+  let installed = 0;
+  const inspector = diskInspector(
+    { disk: { kind: 'blank', id: 'disk', size }, overlay: { id: 'overlay', size, leaves: () => o.leaves!(), read: (b) => o.block(b) } },
+    { install: () => installed++, uninstall: () => undefined, idleMs: 1e9, fullMs: 10_000, now: () => clock },
+  );
+  const q = { kind: 'disk-surface', disk: 0, cells: 4, activity: true } as const;
+  const held = async () => [...layer(surfaceOfAnswer(await inspector.inspect(q)), 'overlay').held];
+  assert.deepEqual(await held(), [0, 0, 0, 0], 'the first walk');
+  assert.deepEqual(await held(), [0, 0, 0, 0], 'the second, warm from here');
+  assert.equal(installed, 1);
+  // Written without a mark (as a request that started before the wrapper and ended after both walks).
+  assert.ok(await o.write(2 * RANGE, new Uint8Array(3 * BLOCK).fill(5)));
+  clock = 5_000;
+  assert.deepEqual(await held(), [0, 0, 0, 0], 'only the marked ranges are counted again');
+  clock = 10_000;
+  assert.deepEqual(await held(), [0, 0, 3, 0], 'the full walk every fullMs');
+  // And the marks say the rest between full walks again.
+  assert.ok(await o.write(0, new Uint8Array(BLOCK).fill(5)));
+  clock = 12_000;
+  assert.deepEqual(await held(), [0, 0, 3, 0], 'unmarked, not seen until the next full walk');
+  clock = 20_000;
+  assert.deepEqual(await held(), [1, 0, 3, 0]);
+  inspector.close();
 });
 
 // ---------------------------------------------------------------------------------------------------------------------

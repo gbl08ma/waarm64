@@ -28,6 +28,8 @@ export type SurfaceJob = {
   overlay?: string;
   /** The disk's size (its record's). */
   size: number;
+  /** The overlay's own size (its record's, where larger than the disk's: grown), which its files say too once written. */
+  overlaySize?: number;
   /** What the disk is: a block store, nothing (a blank disk), or an image not examined (a file's, a URL's). */
   baseKind: 'stored' | 'blank' | 'opaque';
   query: InspectQuery;
@@ -87,7 +89,12 @@ function layerOf(disk: DetailLayer, cellBytes: number): SurfaceLayer {
 async function answer(job: SurfaceJob, stored: Open | undefined, over: Open | undefined): Promise<InspectAnswer> {
   const disk = diskOf(job, stored);
   const ov = job.overlay
-    ? { kind: 'map' as const, id: 'overlay', size: over?.size ?? job.size, leaves: over?.map ?? NO_LEAVES }
+    ? {
+        kind: 'map' as const,
+        id: 'overlay',
+        size: Math.max(over?.size ?? job.size, job.overlaySize ?? 0),
+        leaves: over?.map ?? NO_LEAVES,
+      }
     : undefined;
   const size = Math.max(job.size, ov?.size ?? 0);
   const q = job.query;
@@ -112,7 +119,7 @@ export async function surfaceJob(job: SurfaceJob, waitMs = SURFACE_WAIT_MS): Pro
   let over: Open | undefined;
   try {
     if (job.baseKind === 'stored' && job.stored) stored = await openRead(job.stored, job.size, false, waitMs);
-    if (job.overlay) over = await openRead(job.overlay, job.size, true, waitMs);
+    if (job.overlay) over = await openRead(job.overlay, Math.max(job.size, job.overlaySize ?? 0), true, waitMs);
     return await answer(job, stored, over);
   } catch (e) {
     if ((e as { problem?: string }).problem === 'overlay-in-use')

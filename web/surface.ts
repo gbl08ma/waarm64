@@ -275,6 +275,12 @@ export type LiveDisk = {
 
 /** How long the activity wrapper stays without a query that asks for it (ms). */
 export const ACTIVITY_IDLE_MS = 3000;
+/**
+ * How often, while the wrapper is on, an answer walks the overlay's leaves whole instead of counting again only the
+ * ranges written since (ms): what a request in flight when the wrapper went on changed after the walks that followed
+ * is caught up then (a hole the marks can't see).
+ */
+export const FULL_WALK_MS = 10_000;
 
 /** Bits of an activity mark (a byte per range): read, written, and changed since the overlay's counts were taken. */
 const READ = 1;
@@ -286,7 +292,8 @@ const DIRTY = 4;
  * wrapper around the disk's requests (`watch` marks the ranges a request reads or writes), and once no query asked
  * for `idleMs` (or at `close`) `uninstall` takes it away: while nobody looks, nothing is added to the request path.
  * While the wrapper is on, the overlay's per-range counts are kept and only the ranges written since are counted
- * again (a whole walk of a large overlay's leaves takes tens of ms).
+ * again (a whole walk of a large overlay's leaves takes tens of ms), and one answer every `fullMs` (`FULL_WALK_MS`)
+ * walks it whole all the same.
  */
 export function diskInspector(live: LiveDisk, hooks: {
   /**
@@ -296,6 +303,9 @@ export function diskInspector(live: LiveDisk, hooks: {
   install(mark: (first: number, last: number, write: boolean) => void): void;
   uninstall(): void;
   idleMs?: number;
+  fullMs?: number;
+  /** The clock the full walks go by (ms; tests). */
+  now?: () => number;
 }) {
   const size = Math.max(live.disk.size, live.overlay?.size ?? 0);
   const ranges = rangesOf(size);
@@ -308,6 +318,10 @@ export function diskInspector(live: LiveDisk, hooks: {
   let warm = false;
   let idle: ReturnType<typeof setTimeout> | undefined;
   const idleMs = hooks.idleMs ?? ACTIVITY_IDLE_MS;
+  const fullMs = hooks.fullMs ?? FULL_WALK_MS;
+  const now = hooks.now ?? (() => performance.now());
+  /** When the overlay's leaves were last walked whole with the wrapper on. */
+  let walked = 0;
 
   const mark = (first: number, last: number, write: boolean) => {
     const m = marks;
@@ -344,12 +358,14 @@ export function diskInspector(live: LiveDisk, hooks: {
   const overlayCounts = (o: NonNullable<LiveDisk['overlay']>): RangeCounts => {
     const m = o.leaves();
     if (!marks) return rangeCounts(m, o.size);
-    if (!counts || !warm) {
+    if (!counts || !warm || now() - walked >= fullMs) {
       // The first walk with the wrapper on: a request that was running when it went on wasn't marked, so the next
-      // answer walks again, and only after it do the marks say all that changed.
+      // answer walks again, and only after it do the marks say all that changed. A walk every `fullMs` catches up what
+      // such a request changed after both.
       warm = counts !== undefined;
       for (let r = 0; r < marks.length; r++) marks[r] &= ~DIRTY;
       counts = rangeCounts(m, o.size);
+      walked = now();
       return counts;
     }
     const blocks = Math.ceil(o.size / UNIT);
