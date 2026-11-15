@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, DROPPED, FRAME, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, encodeDisplay, encodeKeymap, encodeTime, DESKTOP, DROPPED, decodeGrown, encodeGrow, FRAME, GROWN_FS, GROWN_PART, LEASED, RENEWED, TRIMMED, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
@@ -254,6 +254,9 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_TTY_CONFIG\b/m);
   // POWER's logind request (logind grants it to a caller with CAP_SYS_BOOT).
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_BOOT\b/m);
+  // GROW: ext4's online resize takes CAP_SYS_RESOURCE; the disk's node is written (no device policy closes /dev).
+  assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_RESOURCE\b/m);
+  assert.doesNotMatch(unit, /^(DevicePolicy|DeviceAllow)=/m);
   assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_VSOCK$/m);
   assert.doesNotMatch(unit, /^(ProtectClock|PrivateNetwork)=/m);
   // X11 (step 5): the private /tmp keeps the X server's sockets (read-only; none there is no failure).
@@ -1137,6 +1140,14 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   // TRIM and TRIMMED (agent/src/trim.rs `status`).
   assert.deepEqual([FRAME.TRIM, FRAME.TRIMMED, CAP.TRIM], [20, 21, 2048]);
   assert.deepEqual([TRIMMED.TRIMMED, TRIMMED.NONE, TRIMMED.FAILED], [0, 1, 2]);
+  // GROW and GROWN (agent/src/frame.rs `decode_grow` and `grown`, agent/src/grow.rs `part` and `fs`).
+  assert.deepEqual([FRAME.GROW, FRAME.GROWN, CAP.GROW], [30, 31, 131072]);
+  assert.deepEqual([...encodeGrow('waarm64-abc', 5 * 2 ** 30)], [11, ...new TextEncoder().encode('waarm64-abc'), 0, 0, 0, 64, 1, 0, 0, 0]);
+  const grownBytes = new Uint8Array([11, ...new TextEncoder().encode('waarm64-abc'), 0, 5, 28, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0]);
+  assert.deepEqual(decodeGrown(grownBytes), { serial: 'waarm64-abc', part: GROWN_PART.GROWN, fs: GROWN_FS.FAILED, errno: 28, size: 0x1_0000_0200 });
+  assert.equal(decodeGrown(grownBytes.subarray(0, grownBytes.length - 1)), undefined);
+  assert.deepEqual(Object.values(GROWN_PART), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(Object.values(GROWN_FS), [0, 1, 2, 3, 4, 5, 6]);
   // KEYMAP (agent/src/keymap.rs pins the same bytes): four strings, a u8 length each; the model pc105 by default.
   assert.deepEqual([FRAME.KEYMAP, CAP.KEYMAP], [22, 4096]);
   assert.deepEqual([...encodeKeymap({ layout: 'de', variant: 'neo', vc: 'de-latin1' })], [2, 100, 101, 5, 112, 99, 49, 48, 53, 3, 110, 101, 111, 9, ...new TextEncoder().encode('de-latin1')]);

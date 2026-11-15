@@ -10,7 +10,8 @@
 // filesystems trimmed on the page's request); KEYMAP, `CAP.KEYMAP` (the machine's keyboard layout for the running session);
 // COPY and COPIED, `CAP.COPY` (the text console's screen as text, for the host's clipboard); OS, `CAP.OS` (the guest's
 // OS named, for the status bar); POWER and POWERED, `CAP.POWER` (the guest powers off or reboots itself); DROP and
-// DROPPED, `CAP.DROP` (the guest's caches dropped before a snapshot).
+// DROPPED, `CAP.DROP` (the guest's caches dropped before a snapshot); GROW and GROWN, `CAP.GROW` (a disk the page grew
+// grown in the guest: its last partition and mounted filesystem).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -73,6 +74,10 @@ export const FRAME = {
   DROP: 28,
   /** The agent's: a u8 status (`DROPPED`), what became of DROP. */
   DROPPED: 29,
+  /** The page's: a disk it grew (`encodeGrow`), whose last partition and mounted filesystem the guest is to grow. */
+  GROW: 30,
+  /** The agent's: what became of a GROW (`decodeGrown`). */
+  GROWN: 31,
 } as const;
 
 /** LEASE's payload (agent/src/lease.rs `decode`): a u8 count, then the MACs (6 bytes each) of the cards to renew. */
@@ -144,6 +149,71 @@ export const DROPPED = {
   /** The kernel's switch couldn't be written. */
   FAILED: 1,
 } as const;
+
+/**
+ * GROW's payload (agent/src/frame.rs `decode_grow`): a u8 length and the disk's serial as the guest sees it
+ * (`waarm64-<attachment id>`; the agent compares its first 20 bytes, what the device gives), then u64 the size in bytes
+ * the page expects the guest's disk to have (the agent answers NOT_YET while it's smaller).
+ */
+export function encodeGrow(serial: string, size: number): Uint8Array {
+  const s = new TextEncoder().encode(serial);
+  if (s.length > 255) throw new RangeError(`a GROW serial of ${s.length} bytes`);
+  const out = new Uint8Array(1 + s.length + 8);
+  out[0] = s.length;
+  out.set(s, 1);
+  new DataView(out.buffer).setBigUint64(1 + s.length, BigInt(size), true);
+  return out;
+}
+
+/** GROWN's partition statuses (agent/src/grow.rs `part`): what became of the disk's last partition. */
+export const GROWN_PART = {
+  /** The partition that ends last grew (its table written, the kernel told). */
+  GROWN: 0,
+  /** It already reaches the disk's end (to the last whole MiB). */
+  NOTHING: 1,
+  /** No disk in the guest has the serial. */
+  NOT_FOUND: 2,
+  /** The guest's disk is smaller than GROW's size (not the grown disk yet). */
+  NOT_YET: 3,
+  /** No partition table: the filesystem is the whole disk's. */
+  NO_TABLE: 4,
+  /** The new space doesn't follow a partition the agent grows (MBR's extended partition ends last, or none). */
+  NOT_LAST: 5,
+  /** The table doesn't add up (a CRC, a header, a partition outside the disk): left alone. */
+  BAD_TABLE: 6,
+  /** A step failed: `errno` says how. */
+  FAILED: 7,
+} as const;
+
+/** GROWN's filesystem statuses (agent/src/grow.rs `fs`). */
+export const GROWN_FS = {
+  GROWN: 0,
+  /** It already has the partition's size. */
+  NOTHING: 1,
+  /** Not mounted: left alone (only mounted filesystems are grown). */
+  NOT_MOUNTED: 2,
+  /** Not ext2/3/4, btrfs or xfs. */
+  UNSUPPORTED: 3,
+  /** The partition holds another block device (LVM, LUKS, md): left alone. */
+  STACKED: 4,
+  /** Its grow failed: `errno` says how. */
+  FAILED: 5,
+  /** Not tried: the partition's step didn't get there. */
+  SKIPPED: 6,
+} as const;
+
+/** A GROWN: GROW's serial, the statuses, the failed step's errno (0 for none), the partition's (or disk's) size now. */
+export type Grown = { serial: string; part: number; fs: number; errno: number; size: number };
+
+/** GROWN's payload: a u8 length and the serial, u8 part, u8 fs, u32 errno, u64 size (bytes); undefined if short. */
+export function decodeGrown(p: Uint8Array): Grown | undefined {
+  const f = fields(p);
+  const [serial, part, fs, errno] = [f.str(), f.u8(), f.u8(), f.u32()];
+  const [lo, hi] = [f.u32(), f.u32()];
+  if (serial === undefined || part === undefined || fs === undefined || errno === undefined || lo === undefined || hi === undefined)
+    return undefined;
+  return { serial, part, fs, errno, size: hi * 2 ** 32 + lo };
+}
 
 /** COPIED's statuses (agent/src/screen.rs `status`). */
 export const COPIED = {
@@ -249,6 +319,8 @@ export const CAP = {
   POWER: 1 << 15,
   /** DROP and DROPPED: the guest's caches dropped on the page's request (the agent's). */
   DROP: 1 << 16,
+  /** GROW and GROWN: a disk the page grew grown in the guest too (the agent's; the page sends GROW to an agent that says it). */
+  GROW: 1 << 17,
   // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
 } as const;
 

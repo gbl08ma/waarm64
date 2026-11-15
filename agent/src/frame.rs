@@ -67,6 +67,11 @@ pub const POWERED: u8 = 27;
 pub const DROP: u8 = 28;
 /// The agent's: a u8 status, what became of DROP (`drop::status`).
 pub const DROPPED: u8 = 29;
+/// The page's: a disk it grew (`decode_grow`: its serial and the size the page expects), whose last partition and
+/// filesystem are to grow into the new space (src/grow.rs).
+pub const GROW: u8 = 30;
+/// The agent's: what became of a GROW (`grown`: the serial, a status per step, an errno, the size now).
+pub const GROWN: u8 = 31;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -112,6 +117,8 @@ pub mod cap {
     pub const POWER: u32 = 1 << 15;
     /// DROP and DROPPED: the guest's caches dropped on the page's request (before a snapshot).
     pub const DROP: u32 = 1 << 16;
+    /// GROW and GROWN: a disk the page grew grown in the guest too (its last partition, its mounted filesystem).
+    pub const GROW: u32 = 1 << 17;
     // Reserved: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
@@ -333,6 +340,27 @@ pub fn more(id: u32, n: u32) -> [u8; 8] {
 pub fn decode_more(p: &[u8]) -> Option<(u32, u32)> {
     let mut r = Fields(p);
     Some((r.u32()?, r.u32()?))
+}
+
+/// GROW's payload: a u8 length and the disk's serial (ASCII), then u64 the size in bytes the page expects the guest's
+/// disk to have; None if short.
+pub fn decode_grow(p: &[u8]) -> Option<(&str, u64)> {
+    let mut r = Fields(p);
+    let serial = r.str()?;
+    Some((serial, u64::from_le_bytes(r.take(8)?.try_into().ok()?)))
+}
+
+/// GROWN's payload: a u8 length and the serial (GROW's), u8 the partition's status (`grow::part`), u8 the
+/// filesystem's (`grow::fs`), u32 the failed step's errno (0 for none), u64 the partition's (or the whole disk's) size
+/// in bytes now.
+pub fn grown(serial: &str, a: crate::grow::Answer, out: &mut Vec<u8>) {
+    let s = &serial.as_bytes()[..serial.len().min(255)];
+    out.push(s.len() as u8);
+    out.extend_from_slice(s);
+    out.push(a.part);
+    out.push(a.fs);
+    out.extend_from_slice(&a.errno.to_le_bytes());
+    out.extend_from_slice(&a.size.to_le_bytes());
 }
 
 /// A payload read field by field (little-endian); None past its end.
@@ -590,6 +618,31 @@ mod tests {
             ),
             (12, 0, 1, 2, 3)
         );
+    }
+
+    #[test]
+    fn grow_and_grown_as_the_page_has_them() {
+        // The same bytes as tests/agent.test.ts "frames: GROW and GROWN".
+        assert_eq!((GROW, GROWN, cap::GROW), (30, 31, 131072));
+        let mut p = vec![11];
+        p.extend_from_slice(b"waarm64-abc");
+        p.extend_from_slice(&(5u64 << 30).to_le_bytes());
+        assert_eq!(decode_grow(&p), Some(("waarm64-abc", 5 << 30)));
+        assert_eq!(decode_grow(&p[..p.len() - 1]), None);
+        let mut out = Vec::new();
+        grown(
+            "waarm64-abc",
+            crate::grow::Answer {
+                part: crate::grow::part::GROWN,
+                fs: crate::grow::fs::FAILED,
+                errno: 28,
+                size: 0x1_0000_0200,
+            },
+            &mut out,
+        );
+        let mut want = p[..12].to_vec();
+        want.extend_from_slice(&[0, 5, 28, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0]);
+        assert_eq!(out, want);
     }
 
     #[test]

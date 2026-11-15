@@ -125,7 +125,8 @@ shape. It sets the guest's clock (TIME, below; frontend.md "The guest's clock"),
 clipboard (`MachineRecord.clipboard`, `?clipboard=1`; what the page's HELLO says) shares it ([clipboard.md](clipboard.md)),
 and on one with virtio-gpu's screen sets the session's outputs to the page's size (DISPLAY, "The screen's size" below);
 it says when the guest's graphical session is up (DESKTOP, "The desktop's state" below), it trims the guest's
-filesystems when the page asks (TRIM, "Disk space handed back" below), it names the guest's OS (OS, "The guest's OS"
+filesystems when the page asks (TRIM, "Disk space handed back" below), it grows a disk the page grew into its new space
+(GROW, "A disk grown" below), it names the guest's OS (OS, "The guest's OS"
 below), and it powers the guest off or reboots it cleanly for the toolbar (POWER, "Power off and restart from the
 guest" below).
 The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__agent`), made by
@@ -138,7 +139,7 @@ COPY's stale screen); a connection's end and the run's (the link's `close`) sett
 take down what the page shows the agent can do (the storage bar's trim, Power off's clean shutdown).
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 166 KB).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 201,168 bytes, its gzip 118,555, 2026-11-15).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: the build's gzip (an ELF file a server decoded is gzipped), or
 nothing) and hands it to the guest as the fw_cfg files **`opt/waarm64/agent.000`**, `.001`, … (its gzip in pieces of
 4 KiB: `agentFiles`), with a unit as SMBIOS credentials
@@ -158,7 +159,8 @@ network namespace from the host's CID), the kernel's tunables, modules and logs 
 sets), …) with the capabilities it needs: `CAP_SYS_TIME` for the clock, `CAP_SYS_ADMIN` for TIOCSTI, `CAP_SETUID` and
 `CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the user's process by then),
 `CAP_SYS_TTY_CONFIG` for the consoles' keymap (KEYMAP's `loadkeys`: KDSKBENT), `CAP_SYS_BOOT` for POWER's request
-(logind grants a power-off to a caller that has it; else polkit decides, and a guest may have none); no DAC override.
+(logind grants a power-off to a caller that has it; else polkit decides, and a guest may have none), `CAP_SYS_RESOURCE`
+for GROW's ext4 resize ("A disk grown" below); no DAC override.
 
 **Its connection** (`agent/src/vsock.rs`: `struct sockaddr_vm` of its own, which rustix lacks): a stream to the host's
 CID 2 on `AGENT_PORT` (8574), blocking. When it ends (the page's reset, a restore's transport reset, the page gone) the
@@ -420,6 +422,60 @@ the root loop's (fake FITRIM: once per filesystem, a disk that doesn't discard, 
 compaction asked for (tests/overlay.test.ts, and on Buildroot `tests/trim.test.ts`: 4 MiB trimmed of 16, which a change
 leaves, given back), and Debian's end to end from the storage bar (`tests/page-agent.test.ts`).
 
+**A disk grown** (GROW; `agent/src/grow.rs`, `agent/src/table.rs`; the user's choices, RESIZE-KICKOFF.md): a disk grown
+on the page while its machines were off (machines.md §4.5) carries a mark, and the page asks the guest for its side of
+it: GROW with the disk's serial (`waarm64-<attachment id>`; the agent compares the first 20 bytes, what virtio-blk's
+`GET_ID` gives) and the size the page expects the guest to see. The agent answers each GROW once with GROWN: a status
+for the partition's step and one for the filesystem's, the failed step's errno, the partition's (or whole disk's) size.
+One disk at a time (the others wait), each in a forked child polled by its pidfd that writes GROWN's payload into a pipe
+(a child that ends without one: FAILED, errno 0); a GROW for a disk already waiting or running is answered by that
+one's GROWN. By syscalls and ioctls only, no guest program:
+1. **The disk**: the `/sys/block/*` entry whose `serial` matches (none: NOT_FOUND); its node opened read-write, its
+   size by `lseek` (smaller than GROW's size: NOT_YET, nothing written), its `LOCK_EX` taken (as partitioning tools do:
+   udev doesn't probe it meanwhile; 5 s at most), its logical sector size from `queue/logical_block_size`.
+2. **The table** (`table.rs`): GPT if LBA 1 has its signature, else MBR (the signature, boot flags 0 or 0x80, a slot in
+   use, not a FAT boot sector), else none (NO_TABLE: the filesystem step on the whole disk). **GPT**: both headers'
+   CRCs, sizes and layouts, the entry array's CRC and the backup's entries equal to the primary's, every partition
+   inside the usable space, the backup inside the disk; anything else is BAD_TABLE and nothing is written. The partition
+   whose last LBA is highest grows (Debian's root, p1, ends after p14 and p15; whatever its entry index), its end aligned
+   down to 1 MiB within the new last usable LBA; the backup's entries and header move to the disk's last sectors.
+   Written backup first (its entries, its header, fsync), then the primary (its entries before its header, fsync): a
+   crash between them leaves the old primary naming the old backup, still whole, or the new backup with a primary
+   whose CRC fails over to it. Then the old backup header is zeroed (a stale table's inside the grown partition) and a
+   pure protective MBR's 0xEE entry covers the disk again (a hybrid MBR is left alone). A disk grown by less than the
+   next whole MiB moves only the backup (NOTHING). **MBR**: the last-ending primary, its end within 2^32 sectors (the
+   format's 32-bit LBAs) aligned down to 1 MiB, its end CHS rewritten (1023/254/63 past CHS's reach); an extended
+   partition that ends last isn't grown, nor its logical ones (NOT_LAST, as a GPT without partitions).
+3. **The kernel**: the partition of that number in sysfs (its start must be the table's: else FAILED, EINVAL), told its
+   new length by `BLKPG_RESIZE_PARTITION` on the disk (online, mounted or not) when its size there is smaller: so a GROW
+   after one that wrote the table but failed here completes it. GROWN when the kernel's partition grew, else NOTHING.
+4. **The filesystem**, only if mounted: a partition with `holders` (LVM, LUKS, md) is STACKED; its mount
+   (`/proc/self/mountinfo`, trim.rs `mounts`: the source `/dev/<name>`, or a node with its device number) else
+   NOT_MOUNTED (the user's choice: only mounted filesystems are grown); ext2/3/4, btrfs and xfs grow, any other is
+   UNSUPPORTED. On the first of its mount points that opens: ext4 `EXT4_IOC_RESIZE_FS` (the size in its blocks),
+   btrfs `BTRFS_IOC_RESIZE` "`<devid>:max`" (the devid by `BTRFS_IOC_FS_INFO` and `BTRFS_IOC_DEV_INFO`, the device's
+   path or node; the one device's if it has one), xfs `XFS_IOC_FSGROWFSDATA` (its blocks past `XFS_IOC_FSGEOMETRY`'s
+   data blocks, its imaxpct kept). GROWN if `statfs`'s block count grew, else NOTHING (a second GROW finds nothing);
+   an ioctl's error is FAILED with its errno.
+
+Grow only: nothing shrinks (the new ends are past the old or nothing is written), no write reaches past the device's
+end (`table::Fd` refuses it). **The unit's sandbox**: the node is root's (no DAC override), `ProtectSystem=strict`
+leaves `/dev` writable and nothing in the unit closes the device policy; BLKPG and btrfs's and xfs's ioctls take
+CAP_SYS_ADMIN, ext4's resize CAP_SYS_RESOURCE too (added to the unit's bounding set for it). The resize ioctls want a
+writable mount (`mnt_want_write_file`), which the sandbox's read-only binds aren't: the agent reaches the filesystem
+through a detached clone of its mount with the read-only flag cleared (`open_tree` `OPEN_TREE_CLONE`, `mount_setattr`;
+the agent's alone, gone when closed; a kernel without them, before 5.12, gets the mount point itself). Measured on loop
+devices under the unit's properties (`systemd-run`, 2026-11-15): resize2fs fails EROFS through the read-only bind,
+the agent without CAP_SYS_RESOURCE grows the partition and gets EPERM for ext4, with it ext4, btrfs and xfs grow
+(df's sizes), the kernel's partition is the table's and `sgdisk -v` finds no problems. Tests: `table.rs` on image files
+made in the test (Debian's layout, a plain GPT, 4 KiB sectors, a partition after free space, a growth smaller than a
+MiB, each CRC corrupted, a table past the disk, MBR within 32 bits, an extended partition last, a FAT boot sector), each
+grown table re-parsed and, where the dev VM has them, `sfdisk --verify` and `sgdisk -v` on tables they wrote;
+`serve_test.rs` through the root loop with sysfs, the nodes and the mount table the test's and BLKPG and the
+filesystem's grow faked (found or not, not yet, grown then nothing, one answer per disk, MBR unmounted, a cut serial,
+a whole disk's btrfs, LVM's holders, xfs failing, vfat, BLKPG failing then completed, a corrupt table untouched); the
+real ioctls on a loop device: `grow.rs`'s ignored `a_real_disk`, run by hand as root (no CI script has it).
+
 **The keyboard layout in the running session** (KEYMAP; `agent/src/keymap.rs`, `web/app/areas/keyboard-follow.ts`;
 the user's decisions, 2026-11-13): the machine's layout setting reaches the guest's disk at every boot without the agent
 (frontend.md "The keyboard layout"); the agent sets it in the running session too. The page says KEYMAP (XKB's layout,
@@ -525,7 +581,7 @@ to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each connection (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent), `CAP.TIME` (bit 4: TIME), `CAP.DISPLAY` (bit 5: DISPLAY), `CAP.RENEW` (bit 6: RENEW, the agent's; the page sends RENEW to an agent that says it), `CAP.LEASE` (bit 7), `CAP.DESKTOP` (bit 10: DESKTOP), `CAP.TRIM` (bit 11: TRIM, the agent's), `CAP.KEYMAP` (bit 12: KEYMAP; the page's says it always), `CAP.COPY` (bit 13: COPY, the agent's), `CAP.OS` (bit 14: OS; the page's says it always), `CAP.POWER` (bit 15: POWER, the agent's), `CAP.DROP` (bit 16: DROP, the agent's), `CAP.GROW` (bit 17: GROW, the agent's). The page's says the clipboard's three and COPY only on a machine that shares it, DISPLAY only on one with virtio-gpu's screen, DESKTOP always (`pageCaps`), and the agent runs its session child only for one of them |
 | DISPLAY (14) | u32 width, u32 height (LE; none of them 0) | the page's, to an agent whose HELLO has `CAP.DISPLAY`: the size the guest's display was asked for, at each change and at each agent's HELLO. The session child sets the compositor's outputs to it ("The screen's size" above) |
 | RENEW (15) | the host's random bytes (64; the agent uses at most 512) | the page's, once after the restore of a template, at the first HELLO of an agent that says `CAP.RENEW` ("A template's identity" below) |
 | RENEWED (16) | u8 renewed, u8 failed (bits: 1 the kernel's entropy, 2 the machine id, 4 the random seed, 8 the SSH host keys) | the agent's, when RENEW's work is done (the keys' helper ended); what isn't there is in neither (`AgentLink.renewed`) |
@@ -542,6 +598,8 @@ to the side that offers, request ids to the side that requests:
 | POWERED (27) | u8 status: 0 taken, 1 refused (an inhibitor) or failed, 2 no tool, 3 busy (an earlier request still runs) | the agent's, when its tool ended (`AgentLink.power`'s answer; the connection's end first: `gone`) |
 | DROP (28) | none | the page's, to an agent whose HELLO has `CAP.DROP` (bit 16), right before a snapshot or Suspend ("The caches dropped before a snapshot" above) |
 | DROPPED (29) | u8 status: 0 dropped, 1 the kernel's switch couldn't be written | the agent's, when the child ended (`AgentLink.dropCaches`'s answer) |
+| GROW (30) | u8 length and the disk's serial (ASCII), u64 the size in bytes the page expects the guest's disk to have | the page's, to an agent whose HELLO has `CAP.GROW` (bit 17), for a disk it grew ("A disk grown" above) |
+| GROWN (31) | u8 length and GROW's serial, u8 the partition's status (0 grown, 1 nothing to grow, 2 no such disk, 3 not at the size yet, 4 no partition table, 5 the space doesn't follow a partition it grows, 6 a bad table, 7 failed), u8 the filesystem's (0 grown, 1 nothing to grow, 2 not mounted, 3 unsupported, 4 stacked: LVM, LUKS, md, 5 failed, 6 not tried), u32 the failed step's errno (0 none), u64 the partition's (or whole disk's) size in bytes now | the agent's, once per GROW (`GROWN_PART`, `GROWN_FS`, `decodeGrown`) |
 | TIME (13) | u64 nanoseconds since the Unix epoch (LE): the host's wall clock as the page sent it | the page's, to an agent whose HELLO has `CAP.TIME` and under Preferences' switch (`web/app/areas/agent-actions.ts`): at each agent's HELLO, after a save's pause, when the host's own sleep shows. The agent sets CLOCK_REALTIME to it (`clock_settime`) unless the guest's clock is within 50 ms of it, and logs the step. (10 was SYNC, before vsock: a stream begun afresh after a restore; unused) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |

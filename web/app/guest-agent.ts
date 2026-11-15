@@ -97,7 +97,12 @@ RNDADDENTROPY and RNDRESEEDCRNG take CAP_SYS_ADMIN, which it has. KEYMAP's `load
 agent/src/keymap.rs) takes CAP_SYS_TTY_CONFIG (KDSKBENT). POWER's request to logind (agent/src/power.rs) takes
 CAP_SYS_BOOT: logind grants a power-off to a caller that has it (else polkit decides, and a guest may have none).
 DROP (agent/src/drop.rs) writes `/proc/sys/vm/drop_caches`, the one file of `/proc/sys` writable through
-`ProtectKernelTunables` (the deeper path's mount wins).
+`ProtectKernelTunables` (the deeper path's mount wins). GROW (agent/src/grow.rs) writes a disk's partition table on its
+node (`/dev`, which `ProtectSystem=strict` leaves writable, and no DeviceAllow or PrivateDevices closes; the node is
+root's, so no DAC override), tells the kernel by BLKPG (CAP_SYS_ADMIN) and grows the filesystem by its ioctl, which
+wants a writable mount: the agent makes a detached clone of the read-only bind writable (`open_tree`, `mount_setattr`:
+CAP_SYS_ADMIN), as resize2fs under this sandbox shows (EROFS without). ext4's resize takes CAP_SYS_RESOURCE too (EPERM
+without; both measured 2026-11-15 on loop devices under these properties).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/waarm64 is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -110,7 +115,7 @@ RestartSec=5s
 Nice=10
 MemoryMax=32M
 OOMScoreAdjust=500
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_TTY_CONFIG CAP_SYS_BOOT
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_TIME CAP_SETUID CAP_SETGID CAP_KILL CAP_SYS_TTY_CONFIG CAP_SYS_BOOT CAP_SYS_RESOURCE
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only

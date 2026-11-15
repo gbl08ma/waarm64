@@ -53,6 +53,50 @@ fn record_trim(point: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// The tests' BLKPG (in the agent's forked child): the partition's sysfs `size` (sectors of 512) takes the new
+/// length, as the kernel's does; a `blkpg-fails` file beside it fails (EBUSY).
+fn fake_resize(
+    sys: &str,
+    _disk: rustix::fd::BorrowedFd<'_>,
+    _pno: u32,
+    _start: u64,
+    len: u64,
+) -> io::Result<()> {
+    let p = std::path::Path::new(sys);
+    if p.join("blkpg-fails").exists() {
+        return Err(io::Errno::BUSY);
+    }
+    std::fs::write(p.join("size"), format!("{}\n", len / 512)).unwrap();
+    Ok(())
+}
+
+/// The tests' filesystem grow: a mount point with `fails` fails (ENOSPC); else its `size` file is the filesystem's
+/// size, which grows to `bytes` if smaller, with a line in its `grown`.
+fn fake_grow_fs(kind: &str, point: &str, dev: &str, bytes: u64) -> io::Result<bool> {
+    let p = std::path::Path::new(point);
+    if !p.is_dir() {
+        return Err(io::Errno::NOENT);
+    }
+    if p.join("fails").exists() {
+        return Err(io::Errno::NOSPC);
+    }
+    let had: u64 = std::fs::read_to_string(p.join("size"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+    if bytes <= had {
+        return Ok(false);
+    }
+    std::fs::write(p.join("size"), bytes.to_string()).unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(p.join("grown"))
+        .unwrap();
+    std::io::Write::write_all(&mut f, format!("{kind} {dev} {bytes}\n").as_bytes()).unwrap();
+    Ok(true)
+}
+
 /// The test child's ACK serials: this, with the type of the frame it got.
 const ECHO: u32 = 0xec40_0000;
 
@@ -165,6 +209,11 @@ impl Harness {
             net: s("net"),
         };
         let trim_table = s("mountinfo");
+        let grow = crate::grow::Paths {
+            sys_block: s("sys/block"),
+            dev: s("dev"),
+            mountinfo: s("mountinfo"),
+        };
         let drop_caches = s("drop_caches");
         let (environment, loadkeys) = (s("environment"), s("loadkeys"));
         let screen = crate::screen::Paths {
@@ -201,6 +250,11 @@ impl Harness {
                 mountinfo: trim_table,
             };
             a.fitrim = record_trim;
+            a.grow = grow;
+            a.grow_ops = crate::grow::Ops {
+                resize_part: fake_resize,
+                grow_fs: fake_grow_fs,
+            };
             a.drop = crate::drop::Paths { drop_caches };
             a.environment = environment;
             a.loadkeys_at = vec![loadkeys];
@@ -1201,5 +1255,276 @@ fn powers_off_or_reboots_as_asked_and_says_if_taken() {
     assert_eq!(
         h.page.next(frame::POWERED, 5000).as_deref(),
         Some(&[status::TAKEN][..])
+    );
+}
+
+/// GROWN's fields: the serial, the partition's and the filesystem's statuses, the errno, the size.
+fn grown(p: &[u8]) -> (String, u8, u8, u32, u64) {
+    let n = p[0] as usize;
+    let r = &p[1 + n..];
+    (
+        String::from_utf8(p[1..1 + n].to_vec()).unwrap(),
+        r[0],
+        r[1],
+        u32::from_le_bytes(r[2..6].try_into().unwrap()),
+        u64::from_le_bytes(r[6..14].try_into().unwrap()),
+    )
+}
+
+/// GROW's payload.
+fn grow_frame(serial: &str, size: u64) -> Vec<u8> {
+    let mut p = vec![serial.len() as u8];
+    p.extend_from_slice(serial.as_bytes());
+    p.extend_from_slice(&size.to_le_bytes());
+    p
+}
+
+#[test]
+fn grows_a_disks_last_partition_and_its_mounted_filesystem() {
+    use crate::grow::{fs, part};
+    use crate::table::image;
+    const MIB: u64 = 1 << 20;
+    let mut h = Harness::start("grow");
+    let root = h.root.clone();
+    let r = |p: &str| root.join(p);
+    let w = |p: &str, text: &str| {
+        let p = r(p);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    };
+    std::fs::create_dir_all(r("dev")).unwrap();
+    // A disk in sysfs (its partitions numbered, started and sized as the kernel has them) and its node, an image.
+    let disk = |name: &str, serial: &str, parts: &[(&str, u32, u64, u64)], size: u64| {
+        w(&format!("sys/block/{name}/serial"), &format!("{serial}\n"));
+        w(
+            &format!("sys/block/{name}/queue/logical_block_size"),
+            "512\n",
+        );
+        std::fs::create_dir_all(r(&format!("sys/block/{name}/holders"))).unwrap();
+        for &(p, n, start, len) in parts {
+            w(
+                &format!("sys/block/{name}/{p}/partition"),
+                &format!("{n}\n"),
+            );
+            w(
+                &format!("sys/block/{name}/{p}/start"),
+                &format!("{start}\n"),
+            );
+            w(&format!("sys/block/{name}/{p}/size"), &format!("{len}\n"));
+            std::fs::create_dir_all(r(&format!("sys/block/{name}/{p}/holders"))).unwrap();
+        }
+        image::file(&r(&format!("dev/{name}")), size)
+    };
+    let ask = |h: &mut Harness, serial: &str, size: u64| {
+        h.page.send(frame::GROW, &grow_frame(serial, size));
+        grown(&h.page.next(frame::GROWN, 5000).expect("a GROWN"))
+    };
+    h.page.send(frame::HELLO, &hello_with(frame::cap::TIME));
+    let a = frame::Hello::decode(&h.page.next(frame::HELLO, 2000).unwrap()).unwrap();
+    assert_ne!(a.caps & frame::cap::GROW, 0, "the agent grows disks");
+
+    // Debian's layout, its root mounted as ext4.
+    let vda = disk(
+        "vda",
+        "waarm64-d1",
+        &[
+            ("vda1", 1, 16384, 47104),
+            ("vda14", 14, 2048, 6144),
+            ("vda15", 15, 8192, 8192),
+        ],
+        32 * MIB,
+    );
+    image::debian(&vda, 32 * MIB);
+    std::fs::create_dir(r("root")).unwrap();
+    let mounts = |extra: &str| {
+        format!(
+            "1 0 254:1 / {gone} rw - ext4 /dev/vda1 rw\n2 1 254:1 / {root} rw - ext4 /dev/vda1 rw\n\
+             3 1 254:15 / {root}/boot/efi rw - vfat /dev/vda15 rw\n{extra}",
+            gone = r("gone").display(),
+            root = r("root").display(),
+        )
+    };
+    w("mountinfo", &mounts(""));
+    assert_eq!(
+        ask(&mut h, "waarm64-nope", MIB),
+        ("waarm64-nope".into(), part::NOT_FOUND, fs::SKIPPED, 0, 0)
+    );
+    assert_eq!(
+        ask(&mut h, "waarm64-d1", 64 * MIB),
+        ("waarm64-d1".into(), part::NOT_YET, fs::SKIPPED, 0, 32 * MIB),
+        "the disk not at its grown size yet"
+    );
+    vda.set_len(64 * MIB).unwrap();
+    let p1 = (129023 - 16384 + 1) * 512;
+    assert_eq!(
+        ask(&mut h, "waarm64-d1", 64 * MIB),
+        ("waarm64-d1".into(), part::GROWN, fs::GROWN, 0, p1)
+    );
+    assert_eq!(
+        image::gpt_parts(&vda, 512).unwrap(),
+        vec![(0, 16384, 129023), (13, 2048, 8191), (14, 8192, 16383)]
+    );
+    assert_eq!(
+        std::fs::read_to_string(r("sys/block/vda/vda1/size")).unwrap(),
+        format!("{}\n", p1 / 512),
+        "the kernel told"
+    );
+    assert_eq!(
+        std::fs::read_to_string(r("root/grown")).unwrap(),
+        format!("ext4 /dev/vda1 {p1}\n"),
+        "the filesystem grown once, at its mount point the unit reaches"
+    );
+    // Again: nothing to grow.
+    assert_eq!(
+        ask(&mut h, "waarm64-d1", 64 * MIB),
+        ("waarm64-d1".into(), part::NOTHING, fs::NOTHING, 0, p1)
+    );
+    // One GROW per disk at a time: a second for it while the first waits or runs is answered by the first's GROWN.
+    for s in ["waarm64-d1", "waarm64-d1", "waarm64-nope"] {
+        h.page.send(frame::GROW, &grow_frame(s, 64 * MIB));
+    }
+    let mut got = Vec::new();
+    while let Some(p) = h.page.next(frame::GROWN, 1000) {
+        got.push(grown(&p).0);
+    }
+    assert_eq!(
+        got,
+        vec!["waarm64-d1".to_owned(), "waarm64-nope".to_owned()]
+    );
+
+    // An MBR's last primary, not mounted; the serial as the device cuts it (20 bytes).
+    let vdb = disk(
+        "vdb",
+        "waarm64-0123456789ab",
+        &[("vdb1", 1, 2048, 30720)],
+        16 * MIB,
+    );
+    image::mbr(&vdb, &[(0, 0x83, 2048, 30720)]);
+    vdb.set_len(32 * MIB).unwrap();
+    assert_eq!(
+        ask(&mut h, "waarm64-0123456789abcdef", 32 * MIB),
+        (
+            "waarm64-0123456789abcdef".into(),
+            part::GROWN,
+            fs::NOT_MOUNTED,
+            0,
+            (65536 - 2048) * 512
+        )
+    );
+    // A whole disk's btrfs, mounted, no table.
+    disk("vdc", "waarm64-c", &[], 48 * MIB);
+    std::fs::create_dir(r("srv")).unwrap();
+    // An LVM physical volume on a partition: grown, its filesystems (the volume's) left alone.
+    let vdd = disk("vdd", "waarm64-d", &[("vdd1", 1, 2048, 30720)], 16 * MIB);
+    image::gpt(&vdd, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    w("sys/block/vdd/vdd1/size", "30687\n");
+    std::fs::create_dir(r("sys/block/vdd/vdd1/holders/dm-0")).unwrap();
+    vdd.set_len(32 * MIB).unwrap();
+    // xfs whose grow fails; a vfat; a partition the kernel won't resize.
+    let vde = disk("vde", "waarm64-e", &[("vde1", 1, 2048, 30687)], 16 * MIB);
+    image::gpt(&vde, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    vde.set_len(32 * MIB).unwrap();
+    std::fs::create_dir(r("data")).unwrap();
+    std::fs::write(r("data/fails"), "").unwrap();
+    let vdf = disk("vdf", "waarm64-f", &[("vdf1", 1, 2048, 30687)], 16 * MIB);
+    image::gpt(&vdf, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    vdf.set_len(32 * MIB).unwrap();
+    std::fs::create_dir(r("win")).unwrap();
+    let vdg = disk("vdg", "waarm64-g", &[("vdg1", 1, 2048, 30687)], 16 * MIB);
+    image::gpt(&vdg, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    vdg.set_len(32 * MIB).unwrap();
+    std::fs::write(r("sys/block/vdg/vdg1/blkpg-fails"), "").unwrap();
+    // A table whose backup header is corrupt.
+    let vdh = disk("vdh", "waarm64-h", &[("vdh1", 1, 2048, 30687)], 16 * MIB);
+    image::gpt(&vdh, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    std::os::unix::fs::FileExt::write_all_at(&vdh, &[1], 16 * MIB - 512 + 60).unwrap();
+    vdh.set_len(32 * MIB).unwrap();
+    w(
+        "mountinfo",
+        &mounts(&format!(
+            "4 1 0:40 / {srv} rw - btrfs /dev/vdc rw\n5 1 254:65 / {data} rw - xfs /dev/vde1 rw\n\
+             6 1 254:81 / {win} rw - vfat /dev/vdf1 rw\n",
+            srv = r("srv").display(),
+            data = r("data").display(),
+            win = r("win").display(),
+        )),
+    );
+    let gpt16to32 = (65536 - 34) / 2048 * 2048 - 2048;
+    assert_eq!(
+        ask(&mut h, "waarm64-c", 48 * MIB),
+        ("waarm64-c".into(), part::NO_TABLE, fs::GROWN, 0, 48 * MIB)
+    );
+    assert_eq!(
+        std::fs::read_to_string(r("srv/grown")).unwrap(),
+        format!("btrfs /dev/vdc {}\n", 48 * MIB)
+    );
+    assert_eq!(
+        ask(&mut h, "waarm64-d", 32 * MIB),
+        (
+            "waarm64-d".into(),
+            part::GROWN,
+            fs::STACKED,
+            0,
+            gpt16to32 * 512
+        )
+    );
+    assert_eq!(
+        ask(&mut h, "waarm64-e", 32 * MIB),
+        (
+            "waarm64-e".into(),
+            part::GROWN,
+            fs::FAILED,
+            28,
+            gpt16to32 * 512
+        ),
+        "the filesystem's errno (ENOSPC)"
+    );
+    assert_eq!(
+        ask(&mut h, "waarm64-f", 32 * MIB),
+        (
+            "waarm64-f".into(),
+            part::GROWN,
+            fs::UNSUPPORTED,
+            0,
+            gpt16to32 * 512
+        )
+    );
+    assert_eq!(
+        ask(&mut h, "waarm64-g", 32 * MIB),
+        (
+            "waarm64-g".into(),
+            part::FAILED,
+            fs::SKIPPED,
+            16,
+            30687 * 512
+        ),
+        "BLKPG's errno (EBUSY)"
+    );
+    // The table written, the kernel not told: the next GROW tells it.
+    std::fs::remove_file(r("sys/block/vdg/vdg1/blkpg-fails")).unwrap();
+    assert_eq!(
+        ask(&mut h, "waarm64-g", 32 * MIB),
+        (
+            "waarm64-g".into(),
+            part::GROWN,
+            fs::NOT_MOUNTED,
+            0,
+            gpt16to32 * 512
+        )
+    );
+    let before = std::fs::read(r("dev/vdh")).unwrap();
+    assert_eq!(
+        ask(&mut h, "waarm64-h", 32 * MIB),
+        (
+            "waarm64-h".into(),
+            part::BAD_TABLE,
+            fs::SKIPPED,
+            0,
+            32 * MIB
+        )
+    );
+    assert!(
+        std::fs::read(r("dev/vdh")).unwrap() == before,
+        "a bad table: nothing written"
     );
 }

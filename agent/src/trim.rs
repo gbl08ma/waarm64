@@ -62,11 +62,18 @@ fn unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The filesystems to trim in a mount table (`/proc/self/mountinfo`'s lines): each block device's (a source under
-/// `/dev/`) whose filesystem isn't read-only (its superblock's options), with its mount points in the table's order
-/// (the first that opens is trimmed: the others are the same filesystem's binds); in the order first seen.
-pub fn targets(mountinfo: &str) -> Vec<(String, Vec<String>)> {
-    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+/// A mount in the table: its mount point, filesystem type and source (escapes read back), and whether its
+/// superblock is read-only.
+pub struct Mount {
+    pub point: String,
+    pub kind: String,
+    pub source: String,
+    pub ro: bool,
+}
+
+/// The mounts in a mount table (`/proc/self/mountinfo`'s lines), in its order; lines that aren't one are skipped.
+pub fn mounts(mountinfo: &str) -> Vec<Mount> {
+    let mut out = Vec::new();
     for line in mountinfo.lines() {
         let fields: Vec<&str> = line.split(' ').collect();
         // id, parent, major:minor, root, mount point, options, optional fields…, "-", type, source, superblock options.
@@ -76,17 +83,28 @@ pub fn targets(mountinfo: &str) -> Vec<(String, Vec<String>)> {
         if dash < 6 || fields.len() < dash + 4 {
             continue;
         }
-        let (point, source, sb) = (
-            unescape(fields[4]),
-            unescape(fields[dash + 2]),
-            fields[dash + 3],
-        );
-        if !source.starts_with("/dev/") || sb.split(',').any(|o| o == "ro") {
+        out.push(Mount {
+            point: unescape(fields[4]),
+            kind: unescape(fields[dash + 1]),
+            source: unescape(fields[dash + 2]),
+            ro: fields[dash + 3].split(',').any(|o| o == "ro"),
+        });
+    }
+    out
+}
+
+/// The filesystems to trim in a mount table: each block device's (a source under `/dev/`) whose filesystem isn't
+/// read-only (its superblock's options), with its mount points in the table's order (the first that opens is
+/// trimmed: the others are the same filesystem's binds); in the order first seen.
+pub fn targets(mountinfo: &str) -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    for m in mounts(mountinfo) {
+        if !m.source.starts_with("/dev/") || m.ro {
             continue;
         }
-        match out.iter_mut().find(|(s, _)| *s == source) {
-            Some((_, points)) => points.push(point),
-            None => out.push((source, vec![point])),
+        match out.iter_mut().find(|(s, _)| *s == m.source) {
+            Some((_, points)) => points.push(m.point),
+            None => out.push((m.source, vec![m.point])),
         }
     }
     out

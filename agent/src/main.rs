@@ -31,6 +31,7 @@ mod clip;
 mod console;
 mod drop;
 mod frame;
+mod grow;
 mod keymap;
 mod lease;
 mod logind;
@@ -45,6 +46,7 @@ mod serve_test;
 mod session;
 #[cfg(test)]
 mod sway_test;
+mod table;
 mod trim;
 mod vsock;
 mod wire;
@@ -76,7 +78,8 @@ const CAPS: u32 = frame::cap::TYPE
     | frame::cap::COPY
     | frame::cap::OS
     | frame::cap::POWER
-    | frame::cap::DROP;
+    | frame::cap::DROP
+    | frame::cap::GROW;
 
 /// How far the guest's clock may be from the host's TIME before the agent sets it: a frame's way from the page takes a
 /// few milliseconds, and a clock set for nothing is a step that NTP clients and logs see.
@@ -192,6 +195,13 @@ struct Agent {
     drop: drop::Paths,
     dropping: Option<lease::Job>,
     dropped: Option<u8>,
+    /// GROW's paths and ioctls (the tests' fake them), the one running, those waiting (serial, size), and GROWN's
+    /// payloads to send.
+    grow: grow::Paths,
+    grow_ops: grow::Ops,
+    growing: Option<grow::Running>,
+    grow_queue: Vec<(String, u64)>,
+    grown: Vec<Vec<u8>>,
     /// KEYMAP: the layout the session has and the page's that differs (for the children); the boot's file of it
     /// (the tests' is theirs); the consoles' `loadkeys`, running.
     keymap: keymap::Current,
@@ -261,6 +271,11 @@ impl Agent {
             drop: drop::Paths::default(),
             dropping: None,
             dropped: None,
+            grow: grow::Paths::default(),
+            grow_ops: grow::Ops::default(),
+            growing: None,
+            grow_queue: Vec::new(),
+            grown: Vec::new(),
             keymap: keymap::Current::default(),
             environment: "/etc/environment".into(),
             loadkeys_at: keymap::places("loadkeys"),
@@ -286,6 +301,28 @@ impl Agent {
         };
         a.watch();
         a
+    }
+
+    /// Starts the next GROW waiting, if none runs.
+    fn grow_next(&mut self) {
+        while self.growing.is_none() && !self.grow_queue.is_empty() {
+            let (serial, size) = self.grow_queue.remove(0);
+            match grow::spawn(&self.grow, self.grow_ops, &serial, size) {
+                Ok(g) => self.growing = Some(g),
+                Err(e) => {
+                    log("grow: fork", Some(e));
+                    self.grown.push(grow::payload(
+                        &serial,
+                        grow::Answer {
+                            part: grow::part::FAILED,
+                            fs: grow::fs::SKIPPED,
+                            errno: e.raw_os_error() as u32,
+                            size: 0,
+                        },
+                    ));
+                }
+            }
+        }
     }
 
     /// Adds the watches on logind's directories that aren't there yet.
@@ -585,6 +622,7 @@ enum Tag {
     Lease,
     Trim,
     Drop,
+    Grow,
     Loadkeys,
     Power,
 }
@@ -634,6 +672,10 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if let Some(j) = &s.agent.dropping {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
             tags.push(Tag::Drop);
+        }
+        if let Some(g) = &s.agent.growing {
+            fds.push(PollFd::new(&g.job.pidfd, PollFlags::IN));
+            tags.push(Tag::Grow);
         }
         if let Some(j) = &s.agent.loadkeys {
             fds.push(PollFd::new(&j.pidfd, PollFlags::IN));
@@ -693,6 +735,12 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
                     if let Some(j) = s.agent.dropping.take() {
                         s.agent.dropped = Some(drop::done(j));
                     }
+                }
+                Tag::Grow => {
+                    if let Some(g) = s.agent.growing.take() {
+                        s.agent.grown.push(grow::done(g));
+                    }
+                    s.agent.grow_next();
                 }
                 Tag::Power => {
                     if let Some(j) = s.agent.powering.take() {
@@ -759,6 +807,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         }
         if let Some(st) = s.agent.dropped.take() {
             frame::encode(frame::DROPPED, &[st], &mut s.out);
+        }
+        for p in core::mem::take(&mut s.agent.grown) {
+            frame::encode(frame::GROWN, &p, &mut s.out);
         }
         if let Some(st) = s.agent.powered.take() {
             frame::encode(frame::POWERED, &[st], &mut s.out);
@@ -857,6 +908,21 @@ impl Session<'_> {
                         self.agent.trimmed = Some(trim::status::FAILED);
                     }
                 }
+            }
+            // A disk the page grew, grown in the guest (src/grow.rs): one disk at a time, the others waiting; a GROW for
+            // a disk already running or waiting is answered by that one's GROWN.
+            frame::GROW => {
+                let Some((serial, size)) = frame::decode_grow(payload) else {
+                    return;
+                };
+                let a = &mut *self.agent;
+                if a.growing.as_ref().is_some_and(|g| g.serial == serial)
+                    || a.grow_queue.iter().any(|(s, _)| s == serial)
+                {
+                    return;
+                }
+                a.grow_queue.push((serial.to_owned(), size));
+                a.grow_next();
             }
             // The caches dropped before a snapshot (src/drop.rs). One run at a time, as TRIM's.
             frame::DROP if self.agent.dropping.is_none() => match drop::spawn(&self.agent.drop) {
