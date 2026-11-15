@@ -7,7 +7,7 @@
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
 import type { Source } from './devices.ts';
 import { MsgError } from './msg.ts';
-import { mapEntry, openOverlay, overlay, overlayMeta, readMap, readMeta, removeOverlay, storageFullError, withRoom, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
+import { mapBlocks, mapEntry, openOverlay, overlay, overlayMeta, readMap, readMeta, removeOverlay, storageFullError, withRoom, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
 import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 
 const BLOCK = 4096;
@@ -39,6 +39,7 @@ export function blockSource(data: SyncFile, mapFile: SyncFile, size: number): So
       }
       return out;
     },
+    held: () => mapBlocks(m, Math.ceil(size / BLOCK), true),
   };
 }
 
@@ -154,7 +155,8 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number, ma
   try {
     ov = await openOverlay(overlayPath, undefined, undefined, { readOnly: true });
   } catch (e) {
-    if ((e as DOMException).name !== 'NotFoundError') throw e; // deleted already: the copy was done
+    // Deleted already, or one of its files: the copy was done, and its deletion (below) was interrupted or has been made.
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
   }
   if (ov) {
     try {
@@ -172,8 +174,8 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number, ma
     } finally {
       ov.close();
     }
-    await removeOverlay(overlayPath);
   }
+  await removeOverlay(overlayPath); // what is left of it (none is fine)
   const m = readMeta(files.meta);
   if (!writeMeta(files.meta, { ...m, merging: '' })) throw new MsgError('disks:stored.stateWriteFailed');
   return blocks;

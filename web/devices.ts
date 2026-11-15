@@ -22,7 +22,7 @@ import { IoStats } from './iostats.ts';
 import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts';
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
-import { openOverlay, overlay, storageNumbers, type OverlayFiles, type WritableDisk } from './overlay.ts';
+import { blockList, openOverlay, overlay, storageNumbers, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { inflatePool } from './inflate-pool.ts';
@@ -317,7 +317,7 @@ export type Backend = {
   /** Why `save` would refuse now (`unsaveable` in its state), or undefined: asked before a snapshot touches the machine. */
   refusal?(): Promise<WireError | undefined>;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
-  written?(): { blocks: number[]; generation?: number }; blocks?(blocks: number[]): Uint8Array;
+  written?(): { blocks: Uint32Array; generation?: number }; blocks?(blocks: Uint32Array): Uint8Array;
   /** A disk's overlay compacted once no request of its runs (web/overlay.ts `compact`; `measure`: only its size): the bytes its files took before and after. */
   compact?(measure?: boolean): Promise<{ before: number; after: number }>;
 };
@@ -736,6 +736,8 @@ export type Source = {
   span?(off: number, len: number): [number, number];
   /** The same as `read`, without blocking (`fetch`: a remote disk's, which several requests then read at once, R4). */
   readAsync?(off: number, len: number): Promise<Uint8Array | undefined>;
+  /** The 4 KiB blocks that may read as other than zeros, ascending (every other block reads as zeros), where the source knows them: a stored disk's held blocks, a blank disk's none. */
+  held?(): Iterable<number>;
 };
 
 /**
@@ -826,7 +828,7 @@ export const diskIdentity = (d: { url?: string; file?: Blob; source?: string; id
   d.identity ?? JSON.stringify(d.file ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size } : d.url ? { path: new URL(d.url, 'http://x').pathname, size } : { source: d.source, size });
 
 /** A blank disk's bytes: zeros. */
-export const zeroSource = (size: number): Source => ({ size, read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined) });
+export const zeroSource = (size: number): Source => ({ size, read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined), held: () => [] });
 
 /** An image in a local file (`file:` URLs, Node only: its boots and the JIT's). */
 export async function fileSource(url: string): Promise<Source> {
@@ -963,7 +965,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     written: rw && (() => {
       const generation = rw.generation?.();
       rw.epoch?.();
-      return { blocks: rw.written(), generation };
+      return { blocks: blockList(rw), generation };
     }),
     blocks: rw && ((blocks) => {
       const out = new Uint8Array(blocks.length * 4096);
@@ -1199,12 +1201,12 @@ export class Devices {
   }
 
   /** Device `i`'s changed blocks (4 KiB each, ascending) if it is a disk with an overlay, for a snapshot. */
-  written(i: number): { blocks: number[]; generation?: number } | undefined {
+  written(i: number): { blocks: Uint32Array; generation?: number } | undefined {
     return this.backends[i]?.written?.();
   }
 
   /** The bytes of `blocks` (some of `written(i)`), one after the other. */
-  blocks(i: number, blocks: number[]): Uint8Array {
+  blocks(i: number, blocks: Uint32Array): Uint8Array {
     return this.backends[i].blocks!(blocks);
   }
 

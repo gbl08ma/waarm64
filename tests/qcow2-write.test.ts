@@ -120,7 +120,7 @@ for (const compress of [false, true]) {
       const out = memorySink();
       const hash = await hashed(base);
       const r = await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', hash }, compress, sink: out.sink });
-      assert.equal(r.clusters, rw.written().length);
+      assert.equal(r.clusters, [...rw.written()].length);
       assert.equal(out.bytes().length, r.bytes);
       writeFileSync(join(dir, 'changes.qcow2'), out.bytes());
       qemu('check', join(dir, 'changes.qcow2'));

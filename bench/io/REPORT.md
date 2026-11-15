@@ -185,3 +185,31 @@ exported whole; `page.jsonl`), ms, rounds 1–3: boot A 29717 (the session's fir
 | grown to 8 TiB (`MAX_RESIZE` now) | (8 GiB / 8 GiB) | 8,224 B / 8.0 MiB |
 
 What an opening keeps past the leaves is the top table, 4 bytes per 4 MiB of disk.
+
+## Ordered flushes (2026-11-15, RESIZE loop 2c): the overlay's write order durable, at no cost the suite sees
+
+A review found that the overlay's "data before its map entry" held only while the OS kept its page cache: nothing was
+flushed between dependent writes, so after a power loss a map entry could point at a reused slot's old bytes (another
+block's), or past `data`'s end once a compaction's cut was durable before the entries it moved. `ORDERED`
+(web/overlay.ts; docs/devices.md "blk") adds the flushes that make the order durable: `data` before the map entries of
+a request that maps new slots (one flush per such request), the map before a freed slot is reused, a compaction's
+copies before their entries, the map before `data` is cut. A/B in one session on the dev VM (Lima vz, 8 vCPUs, arm64,
+18 GiB), Chromium 155.0.8059.84 headless, at `2f0c3153` + this loop: A `ORDERED = false`, B `true`, swapped in the
+checkout between runs, alternated A B B A A B (`results/2026-11-15-ordered-flushes/`, with `summary.py`). bench/io's
+suite (`--only io`, 5 boots a run: each run's median, KiB/s, dd in MiB/s):
+
+| job | A (3 rounds) | B (3 rounds) | B/A, medians |
+|---|---|---|---|
+| random 4 KiB read (base) | 5855–5926 | 5852–5886 | −0.2% |
+| sequential 128 KiB / 1 MiB read | 116611–117294 / 295056–298368 | 116057–116355 / 292327–294664 | −0.6% / −0.6% (apart) |
+| sequential 1 MiB write, first writes | 221405–223672 | 219919–221405 | −1.3% |
+| the same with `fsync` | 150311–170666 | 138847–154566 | −1.9% |
+| random 4 KiB write / with `fsync` | 4264–4348 / 3075–3112 | 4304–4329 / 3056–3093 | +0.4% / −0.3% |
+| held 1 MiB / 4 KiB reads | 423653–425984 / 8288–8329 | 419840–423794 / 8252–8338 | −0.6% / +0.2% |
+| `dd` read / write `conv=fsync` | 61.6–62.3 / 23.5–23.7 | 61.4–61.6 / 23.4–23.6 | −0.8% / −0.8% |
+
+The writes' rounds overlap (the first writes' at one value, 221405); the base reads are apart by 0.6%, under the ~1%
+floor, and the change doesn't touch reads. A fresh write's extra `data` flush is cheap on this host (Chromium's
+`flush` on a file the guest just wrote); the suite has no discards, so reuse's map flush isn't exercised, and it costs
+one flush per write that reuses slots after a trim. Kept on. Not measured: the Mac's or the user's x86_64 host, where
+a flush may cost more.

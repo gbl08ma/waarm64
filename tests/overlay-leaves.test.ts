@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { memFile, overlay, readMap, type SyncFile } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';
-import { changedClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
+import { changedClusters, nonZeroClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
 import { blockSource, zeroDisk } from '../web/stored.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -53,7 +53,7 @@ test('writes, zeroings, discards and reads across leaf boundaries match a model,
   assert.ok(same(await d.read(0, size), model));
   assert.ok(same(await overlay(base, data, map).read(0, size), model), 'reopened');
   // The blocks written, in order, are the leaves' (and only those).
-  const w = d.written();
+  const w = [...d.written()];
   assert.ok(w.every((b, k) => k === 0 || b > w[k - 1]), 'ascending');
   assert.equal(readMap(map, Math.ceil(size / BLOCK)).n, 4, 'a leaf per range written');
 });
@@ -77,12 +77,12 @@ test('a write at the end of a 1 TiB overlay (and its start) leaves a map file of
   assert.equal(m.top.byteLength, (blocks / LEAF) * 4, 'the top table: 4 bytes per 4 MiB (1 MiB per TiB)');
   assert.ok(m.recs.byteLength <= 2 * REC_BYTES, 'two leaves in memory');
   const tail = [-64, -63, -62, -61, -5, -4, -3, -2, -1].map((k) => blocks + k);
-  assert.deepEqual(d.written(), [0, ...tail]);
+  assert.deepEqual([...d.written()], [0, ...tail]);
   assert.deepEqual(tail.map((b) => d.zeroed(b)), [true, true, true, true, false, false, false, false, false]);
   const r = overlay(zeroDisk(64 << 20), data, map, undefined, size); // reopened
   assert.ok(same(await r.read(0, 1024), Uint8Array.from({ length: 1024 }, (_, k) => (k >= 512 ? 0x11 : 0))));
   assert.ok(same(await r.read(size - 33 * 512 - 512, 34 * 512), Uint8Array.from({ length: 34 * 512 }, (_, k) => (k >= 512 ? 0x22 : 0))));
-  assert.deepEqual(r.written(), d.written());
+  assert.deepEqual([...r.written()], [...d.written()]);
   // A changes-only qcow2 of it: those blocks, the zeroed ones as zero clusters, at the grown size.
   const parts: Uint8Array[] = [];
   const sink: Sink = (chunk, at) => { if (at === undefined) parts.push(chunk.slice()); else parts[0] = chunk.slice(); };
@@ -95,13 +95,13 @@ test('a write at the end of a 1 TiB overlay (and its start) leaves a map file of
     got.push(block);
     assert.ok(same(bytes, (await r.read(block * BLOCK, BLOCK))!), `block ${block} as the overlay reads it`);
   }
-  assert.deepEqual(got, d.written());
+  assert.deepEqual(got, [...d.written()]);
   // A snapshot's walk (the device's `written` and `blocks`) into a fresh overlay, as a restore writes it: the same disk.
   const [data2, map2] = [memFile(), memFile()];
   const back = overlay({ size, format: 'raw', read: async () => undefined }, data2, map2);
-  for (const b of r.written()) assert.ok(r.zeroed(b) ? await back.zero(b * BLOCK, BLOCK) : await back.write(b * BLOCK, r.block(b)!));
-  assert.deepEqual(back.written(), r.written());
-  for (const b of r.written()) assert.ok(same(await back.read(b * BLOCK, BLOCK), (await r.read(b * BLOCK, BLOCK))!));
+  for (const b of [...r.written()]) assert.ok(r.zeroed(b) ? await back.zero(b * BLOCK, BLOCK) : await back.write(b * BLOCK, r.block(b)!));
+  assert.deepEqual([...back.written()], [...r.written()]);
+  for (const b of [...r.written()]) assert.ok(same(await back.read(b * BLOCK, BLOCK), (await r.read(b * BLOCK, BLOCK))!));
   assert.equal(map2.getSize(), HEAD + 2 * REC_BYTES);
 });
 
@@ -113,13 +113,13 @@ test('a whole disk zeroed (a restore with the whole disk) makes its leaves in a 
   const d = overlay({ size, format: 'raw', read: async () => undefined }, memFile(), counted);
   assert.ok(await d.zero(0, size));
   assert.ok(writes.length <= 5, `${writes.length} map writes`);
-  assert.equal(d.written().length, size / BLOCK);
-  assert.ok(d.written().every((b) => d.zeroed(b)));
+  assert.equal([...d.written()].length, size / BLOCK);
+  assert.ok([...d.written()].every((b) => d.zeroed(b)));
   assert.ok((await d.read(size - 3 * RANGE, 3 * RANGE))!.every((x) => x === 0));
 });
 
 /** A flat map (from before leaves) with its data: block `b` -> its slot's fill, or 'zero', for `blocks` blocks. */
-function flatOverlay(blocks: number, mapped: Map<number, number | 'zero'>, slots: number) {
+function flatOverlay(blocks: number, mapped: Map<number, number | 'zero'>, slots: number, slotOf?: Map<number, number>) {
   const entries = new Uint32Array(Math.max(...mapped.keys()) + 1);
   const data = memFile();
   data.truncate(slots * BLOCK);
@@ -127,6 +127,13 @@ function flatOverlay(blocks: number, mapped: Map<number, number | 'zero'>, slots
   const free = new Set(Array.from({ length: slots }, (_, k) => k));
   for (const [b, v] of mapped) {
     if (v === 'zero') { entries[b] = 0xffffffff; continue; }
+    if (slotOf?.has(b)) {
+      const s = slotOf.get(b)!;
+      free.delete(s);
+      data.write(new Uint8Array(BLOCK).fill(v), { at: s * BLOCK });
+      entries[b] = s + 1;
+      continue;
+    }
     while (!free.has(slot)) slot++;
     free.delete(slot);
     data.write(new Uint8Array(BLOCK).fill(v), { at: slot * BLOCK });
@@ -167,16 +174,18 @@ test('a flat map from before leaves reads as it is without being changed, and th
   assert.equal(map.getSize(), HEAD + 4 * REC_BYTES, 'three leaves converted, moved down, and one new');
   assert.equal(data.getSize(), 6 * BLOCK, 'the new block took a free slot');
   for (const disk of [d, overlay(base, data, map)]) assert.ok(same(await disk.read(0, blocks * BLOCK), model));
-  assert.deepEqual(d.written(), [1, 2, 5000, 7000, 9000]);
+  assert.deepEqual([...d.written()], [1, 2, 5000, 7000, 9000]);
   assert.ok(same(blockSource(data, map, blocks * BLOCK).read(0, blocks * BLOCK) as Uint8Array, model.map((x) => (x === 0x5a ? 0 : x))), "a stored disk's reader reads the new format (over zeros)");
-  // A dense flat map (its leaves don't fit in its room): converted in place after it, read the same.
-  const dense = new Map<number, number | 'zero'>(Array.from({ length: 2 * LEAF }, (_, b) => [b, 1 + (b % 200)]));
-  const f = flatOverlay(2 * LEAF, dense, 2 * LEAF * 2);
-  const e = overlay(openDisk((off, len) => new Uint8Array(len).fill(0x5a), 2 * RANGE), f.data, f.map);
+  // A dense flat map (its leaves don't fit in its room: three, the third with 5 entries): converted in place after it,
+  // read the same.
+  const dense = new Map<number, number | 'zero'>(Array.from({ length: 2 * LEAF + 5 }, (_, b) => [b, 1 + (b % 200)]));
+  const f = flatOverlay(3 * LEAF, dense, (2 * LEAF + 5) * 2);
+  const e = overlay(openDisk((off, len) => new Uint8Array(len).fill(0x5a), 3 * RANGE), f.data, f.map);
   assert.ok(await e.write(0, new Uint8Array(BLOCK).fill(9)));
   dense.set(0, 9);
-  assert.equal(f.map.getSize(), 2 * LEAF * 4 + 2 * REC_BYTES, 'the records after the flat map');
-  assert.ok(same(await overlay(openDisk((off, len) => new Uint8Array(len).fill(0x5a), 2 * RANGE), f.data, f.map).read(0, 2 * RANGE), modelOf(2 * LEAF, dense)));
+  const flatBytes = (2 * LEAF + 5) * 4;
+  assert.equal(f.map.getSize(), HEAD + Math.ceil((flatBytes - HEAD) / REC_BYTES) * REC_BYTES + 3 * REC_BYTES, 'the records after the flat map (a whole number of records past the header)');
+  assert.ok(same(await overlay(openDisk((off, len) => new Uint8Array(len).fill(0x5a), 3 * RANGE), f.data, f.map).read(0, 3 * RANGE), modelOf(3 * LEAF, dense)));
 });
 
 /** A memory file that logs its writes and truncations (in order), to replay any prefix of them. */
@@ -195,14 +204,18 @@ const replay = (start: Uint8Array, ops: ReturnType<typeof logging>['ops']) => {
   return f;
 };
 
-test('a conversion interrupted after any of its writes still reads the flat map, and the next change converts it', async () => {
-  for (const [what, mapped] of [
-    ['sparse (moved down)', new Map<number, number | 'zero'>([[1, 0x11], [2, 'zero'], [5000, 0x22], [9000, 0x33]])],
-    ['dense (left after)', new Map<number, number | 'zero'>(Array.from({ length: 2 * LEAF + 5 }, (_, b) => [b, 1 + (b % 200)]))],
-    ['a few blocks (shorter than the header)', new Map<number, number | 'zero'>([[0, 0x11], [2, 0x12]])],
+// Its last case: three leaves (ranges 0, 3, 4), moved down to 16. Until the last cut, a reading from 16 takes the file
+// past them as records too; the fourth's range word is the flat map's entry 4106 (slot 7 + 1: range 7, which has no
+// leaf), and its entries include block 3500's (slot 3), which range 7's block 7586 would read.
+test('a conversion interrupted after any of its writes still reads the flat map, and the next change converts it; the blocks then trim and compact', async () => {
+  for (const [what, mapped, slotOf] of [
+    ['sparse (moved down)', new Map<number, number | 'zero'>([[1, 0x11], [2, 'zero'], [5000, 0x22], [9000, 0x33]]), undefined],
+    ['dense (left after)', new Map<number, number | 'zero'>(Array.from({ length: 2 * LEAF + 5 }, (_, b) => [b, 1 + (b % 200)])), undefined],
+    ['a few blocks (shorter than the header)', new Map<number, number | 'zero'>([[0, 0x11], [2, 0x12]]), undefined],
+    ['moved down, a slot number where a record past them would have its range', new Map<number, number | 'zero'>([[1, 0x11], [3500, 0x22], [4106, 0x33]]), new Map([[1, 0], [3500, 3], [4106, 7]])],
   ] as const) {
     const blocks = 10 * LEAF;
-    const { data, map } = flatOverlay(blocks, mapped, 2 * mapped.size + 2);
+    const { data, map } = flatOverlay(blocks, mapped, Math.max(2 * mapped.size + 2, 8), slotOf);
     const flat = fileBytes(map);
     const dataBytes = fileBytes(data);
     const base = openDisk((off, len) => new Uint8Array(len).fill(0x5a), blocks * BLOCK);
@@ -222,6 +235,11 @@ test('a conversion interrupted after any of its writes still reads the flat map,
       const want = model.slice().fill(0x55, 8000 * BLOCK, 8001 * BLOCK);
       assert.ok(same(await overlay(base, dk, m).read(0, blocks * BLOCK), want), `${what}: converted after ${k} of ${log.ops.length}`);
       assert.equal(new DataView(fileBytes(m).buffer).getUint32(0, true), 0xfffffffe, `${what}: two-level after ${k}`);
+      // All but the last block it had trimmed, and the rest compacted: each block's entry moves with it.
+      const keep = [...mapped.keys()].at(-1)!;
+      for (const b of mapped.keys()) if (b !== keep) { assert.ok(d.discard(b * BLOCK, BLOCK)); want.fill(0, b * BLOCK, (b + 1) * BLOCK); }
+      assert.ok(d.compact!(), `${what}: compacted after ${k}`);
+      for (const disk of [d, overlay(base, dk, m)]) assert.ok(same(await disk.read(0, blocks * BLOCK), want), `${what}: trimmed and compacted after ${k} of ${log.ops.length}`);
     }
   }
 });
@@ -279,6 +297,62 @@ test("a conversion the storage refuses fails the change, and leaves the flat map
   assert.ok(await d.write(1 * BLOCK, new Uint8Array(BLOCK).fill(9)), 'with room');
   mapped.set(1, 9);
   assert.ok(same(await overlay(base, data, map).read(0, blocks * BLOCK), modelOf(blocks, mapped)));
+});
+
+/** `f` with the reads `short` picks coming back one byte short (an I/O error, a read cut off). */
+const shortReads = (f: SyncFile, short: (at: number, len: number) => boolean): SyncFile => ({
+  ...f,
+  read: (buf, o) => (short(o.at, buf.length) ? Math.max(0, f.read(buf.subarray(0, buf.length - 1), o)) : f.read(buf, o)),
+});
+
+test("a map that reads back short refuses the opening (an overlay's, a stored disk's reader's), rather than reading as empty", async () => {
+  const size = 8 * RANGE;
+  const unreadable = (e: unknown) => (e as { msg?: { key: string } }).msg?.key === 'disks:overlay.mapUnreadable';
+  // A two-level map: three leaves.
+  const [data, map] = [memFile(), memFile()];
+  const d = overlay(zeroDisk(size), data, map);
+  for (const r of [0, 3, 5]) assert.ok(await d.write(r * RANGE, new Uint8Array(BLOCK).fill(r + 1)));
+  // A flat one: entries up to block 5000.
+  const flat = flatOverlay(8 * LEAF, new Map<number, number | 'zero'>([[1, 0x11], [5000, 0x22]]), 4);
+  for (const [what, m, short] of [
+    ['the records', map, (at: number) => at >= HEAD],
+    ['the header', map, (at: number) => at === 0],
+    ['a flat map', flat.map, () => true],
+  ] as const) {
+    const f = shortReads(m, short);
+    assert.throws(() => overlay(zeroDisk(size), what === 'a flat map' ? flat.data : data, f), unreadable, `${what}: the overlay`);
+    assert.throws(() => blockSource(data, f, size), unreadable, `${what}: a stored disk's reader`);
+  }
+  assert.equal((await overlay(zeroDisk(size), data, map).read(5 * RANGE, 1))![0], 6, 'read whole, the map is as it was');
+});
+
+test("the blocks written are walked, not listed; a whole export of a stored disk reads the blocks it holds, not its size", async () => {
+  // 16 GiB zeroed: 4 Mi blocks, which a list would hold in 32 MB.
+  const size = 16 * 2 ** 30;
+  const z = overlay(zeroDisk(size), memFile(), memFile());
+  assert.ok(await z.zero(0, size));
+  const before = process.memoryUsage().heapUsed;
+  const it = z.written()[Symbol.iterator]();
+  const first = [it.next().value, it.next().value, it.next().value];
+  const grew = process.memoryUsage().heapUsed - before;
+  assert.deepEqual(first, [0, 1, 2]);
+  assert.ok(grew < 8 << 20, `${(grew / 2 ** 20).toFixed(1)} MiB of heap for the first blocks`);
+  // A stored disk of 1 GiB with two blocks (one zeros) and a block zeroed: a qcow2 export of it whole.
+  const gib = 2 ** 30;
+  const [data, inner] = [memFile(), memFile()];
+  const store = overlay(zeroDisk(gib), data, inner);
+  assert.ok(await store.write(5 * BLOCK, new Uint8Array(BLOCK).fill(1)));
+  assert.ok(await store.write(6 * BLOCK, new Uint8Array(BLOCK)));
+  assert.ok(await store.write(gib - BLOCK, new Uint8Array(BLOCK).fill(2)));
+  assert.ok(await store.zero(9 * BLOCK, BLOCK));
+  const src = blockSource(data, inner, gib);
+  let reads = 0;
+  const disk = openDisk((off, len) => { reads++; return src.read(off, len); }, gib);
+  const opening = reads; // the format's detection
+  const got: number[] = [];
+  for await (const c of nonZeroClusters(disk, 1 << 20, undefined, src.held?.())) got.push(c.index);
+  assert.deepEqual(got, [5, gib / BLOCK - 1]);
+  assert.ok(reads - opening <= 2, `${reads - opening} reads of the disk (its held blocks: two runs)`);
 });
 
 test('a compaction moves blocks across leaves: their entries in each leaf follow, reopened too', async () => {

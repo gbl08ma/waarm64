@@ -551,6 +551,10 @@
     "message": "This browser's storage is full. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage.",
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.)."
   },
+  "overlay.mapUnreadable": {
+    "message": "The disk's block map can't be read from this browser's storage.",
+    "note": "Error (the cause under a machine's failed start, an export's, a merge's or a stored disk's opening) when the file that says where a disk's written blocks are (its overlay's, or a disk stored in this browser's) reads back shorter than it is: the disk isn't opened, rather than read as if nothing had been written to it."
+  },
   "overlay.storageFull.numbers": {
     "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). Free up space on the Machines page, whose bottom bar shows what takes this browser's storage.",
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). {{used}} is what this web app's storage holds, {{quota}} what the browser says it gives it (in a private window the browser refuses writes well before it)."

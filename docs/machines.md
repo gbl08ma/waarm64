@@ -286,7 +286,8 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   disk's generation is bumped and its `meta` names the overlay being merged, the overlay's blocks are written into
   the disk (its zero blocks as zeros), the overlay is deleted, the marker removed (`mergeOverlay`). Interrupted, the
   disk finishes the merge at its next opening (`resumeMerge`: writing the same blocks again is harmless) before
-  anything reads it.
+  anything reads it; an overlay that can't be opened any more (gone, or its deletion, a file at a time in OPFS, cut
+  off) has had its blocks copied, and what is left of it is deleted.
 - **Writing in place and snapshots:** a disk written in place has no earlier state to fork from. A kept snapshot pins
   the disk's generation and restores it only while it matches; otherwise a file carrying the whole disk forks it into
   an overlay, and one without is refused with the reason. **A downloaded snapshot can't be self-contained** without
@@ -294,7 +295,9 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   restores only onto this disk at this generation). A suspended copy works as with overlays. The attachment's UI says
   that writing in place gives up forking and overlays' variants.
 - **Exports** of a stored disk are whole-disk ones (qcow2 or raw, compressed or not); "changes only" applies to its
-  overlays.
+  overlays. A qcow2 of a stored disk (or of an overlay over one) reads only the blocks the store (and the overlay)
+  holds, its leaves walked (`Source.held`), so a disk grown to a TiB that holds a few GB reads those; a raw one is
+  the whole size by nature.
 
 ### 4.5 Growing a disk
 
@@ -382,7 +385,9 @@ The file's format, what the core saves and the page's toolbar and header fields:
   differs (the notice points to Create a machine like it). Then per writable disk (`planRestore`, web/app/snapshots.ts; the page
   passes the plan to the worker as `start.plan`): the attached overlay is the pinned one at the pinned generation →
   **keep** (nothing written: the restore is RAM and state); otherwise → **fork**: a new overlay named after the
-  snapshot gets its blocks and is attached (at the size the snapshot had: §4.5), and the old overlay stays as it was. The confirmation says which disks
+  snapshot gets its blocks and is attached (at the size the snapshot had: §4.5), and the old overlay stays as it was
+  (an overlay written by a restore is over zeros: a disk whose size isn't a multiple of 4 KiB has a last block shorter
+  than the overlay's, whose write reads the rest). The confirmation says which disks
   fork, and offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost). A
   ramdisk takes the snapshot's blocks. Transient machines have no plan: a restore replaces their overlays.
 - **The plan is made twice:** once for the confirmation, while the guest may still run, and again once the machine

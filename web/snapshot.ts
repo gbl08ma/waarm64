@@ -15,6 +15,7 @@ import { msg, MsgError, type Param } from './msg.ts';
 import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, withRoom, writeMeta, type WritableDisk } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
 import { isZero } from './qcow2-write.ts';
+import { zeroDisk } from './stored.ts';
 import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
 /**
@@ -254,8 +255,9 @@ export async function readSnapshot(
           await removeOverlay(t.name);
           const files = await openOverlay(t.name, t.identity);
           if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size })))) throw await full();
-          // Whole blocks are written, so the base is never read; no meta: its generation is set.
-          const disk = overlay({ size: t.size, format: 'raw', read: async () => undefined }, files.data, files.map);
+          // Over zeros: the file's blocks are written whole, but the disk's last one may be shorter than 4 KiB, and its
+          // write reads the rest of its block (none: zeros). No meta: its generation is set.
+          const disk = overlay(zeroDisk(t.size), files.data, files.map);
           open.set(slot, { disk, close: files.close, size: t.size });
           if (t.whole && !(await lands(() => disk.zero(0, t.size)))) throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
         }

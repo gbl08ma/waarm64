@@ -104,7 +104,7 @@ test('blocks the guest discarded or zeroed come back as zeros without slots', as
     const files = await openOverlay(name, ident(name));
     try {
       const d = overlay(openDisk((o, l) => base.slice(o, o + l), base.length), files.data, files.map);
-      assert.deepEqual(d.written().map((b) => [b, d.zeroed(b)]), [[10, false], [11, true], [12, false], [299, true], [300, true]]);
+      assert.deepEqual([...d.written()].map((b) => [b, d.zeroed(b)]), [[10, false], [11, true], [12, false], [299, true], [300, true]]);
       assert.equal(files.data.getSize(), 2 * 4096);
     } finally {
       files.close();

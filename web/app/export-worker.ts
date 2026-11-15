@@ -6,7 +6,7 @@
 import { hashSource } from '../changes.ts';
 import { diskIdentity, type Source } from '../devices.ts';
 import { msg, MsgError, toWire, type Msg } from '../msg.ts';
-import { openOverlay, overlay, type WritableDisk } from '../overlay.ts';
+import { countOf, openOverlay, overlay, type WritableDisk } from '../overlay.ts';
 import { openDisk, type Disk } from '../qcow2.ts';
 import {
   changedClusters,
@@ -115,12 +115,19 @@ async function writeImage(
     if (!disk) throw new Error('changes asked of a disk without an overlay');
     const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
     backing = { name: r.baseName, format: base.format, hash };
-    clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) =>
+    clusters = progressOf(changedClusters(disk), countOf(disk.written()), (done, total) =>
       progress(msg('disks:export-worker.writingChanges'), done, total),
     );
   } else {
-    clusters = nonZeroClusters(whole, 1 << 20, (done) =>
-      progress(msg('disks:export-worker.writingDisk'), done, whole.size),
+    // A source that knows its held blocks (a stored disk, a blank one) under a raw base: only those (and the
+    // overlay's) are read, not the whole size.
+    const held =
+      base.format === 'raw' && src.held ? (disk ? union(disk.written(), src.held()) : src.held()) : undefined;
+    clusters = nonZeroClusters(
+      whole,
+      1 << 20,
+      (done) => progress(msg('disks:export-worker.writingDisk'), done, whole.size),
+      held,
     );
   }
   const pool = r.compress ? deflatePool() : undefined;
@@ -128,6 +135,24 @@ async function writeImage(
     return (await writeQcow2({ size: whole.size, clusters, backing, compress: pool, sink })).clusters;
   } finally {
     pool?.close();
+  }
+}
+
+/** Two ascending walks of blocks as one, each block once. */
+function* union(a: Iterable<number>, b: Iterable<number>) {
+  const [x, y] = [a[Symbol.iterator](), b[Symbol.iterator]()];
+  let [p, q] = [x.next(), y.next()];
+  while (!p.done || !q.done) {
+    if (q.done || (!p.done && p.value < q.value)) {
+      yield p.value;
+      p = x.next();
+    } else if (p.done || q.value < p.value) {
+      yield q.value;
+      q = y.next();
+    } else {
+      yield p.value;
+      [p, q] = [x.next(), y.next()];
+    }
   }
 }
 

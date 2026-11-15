@@ -97,6 +97,44 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   assert.equal((await overlayMeta(name)).generation, 3, 'a replaced overlay goes on from its generation (2), never back to one a snapshot pinned');
 });
 
+// A disk whose size isn't a multiple of 4 KiB (a raw image of any size, a disk resized to a multiple of 512): its last
+// block is partial, and GPT's backup header there means it is always written. The restore writes it into an emptied
+// overlay, whose write reads the rest of the block from its base.
+test("a restore of a disk whose size isn't a multiple of 4 KiB, its last block written: forked and replaced", async () => {
+  const module = await compileCore(WASM);
+  const codec = await lzCodec(module);
+  const ODD = 10 * 4096 + 512;
+  const name = `odd-${process.pid}`;
+  const zeros = { size: ODD, format: 'raw' as const, read: async (_o: number, len: number) => new Uint8Array(len) };
+  const f = await openOverlay(name, 'odd-disk');
+  const d = overlay(zeros, f.data, f.map, f.meta);
+  assert.ok(await d.write(ODD - 512, new Uint8Array(512).fill(0x77)));
+  assert.ok(await d.write(4096, new Uint8Array(4096).fill(0x66)));
+  f.close();
+  const devices = (): DeviceSpec[] => [{ type: 'blk', source: 'zero', size: ODD, overlay: name, identity: 'odd-disk' }];
+  const o: BootOptions = { ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', jit: 0 };
+  const vm = await bootVm(module, { ...o, devices: devices() });
+  await vm.runAsync(10_000);
+  await vm.settle();
+  const parts: Uint8Array[] = [];
+  await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
+  await vm.close();
+  const file = new Blob(parts as BlobPart[]);
+  const bytesOf = async (overlayName: string) => {
+    const g = await openOverlay(overlayName, 'odd-disk');
+    const all = (await overlay(zeros, g.data, g.map).read(0, ODD))!;
+    g.close();
+    return [all[4096], all[ODD - 513], all[ODD - 512], all[ODD - 1]];
+  };
+  const fork = `${name}-fork`;
+  const r = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices(), plan: [{ slot: 0, action: 'write', overlay: fork, identity: 'odd-disk', size: ODD }] });
+  await (await bootVm(module, { ...o, devices: devices(), restore: r.restore })).close();
+  assert.deepEqual(await bytesOf(fork), [0x66, 0, 0x77, 0x77], 'forked');
+  const r2 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: devices() });
+  await (await bootVm(module, { ...o, devices: devices(), restore: r2.restore })).close();
+  assert.deepEqual(await bytesOf(name), [0x66, 0, 0x77, 0x77], 'replaced');
+});
+
 // A grown overlay (docs/machines.md §4.5): over an image smaller than the guest's size, the device opens it at that
 // size (the spec's, as the page gives it), a snapshot pins that size, and a restore's fork keeps it in its meta.
 test("a grown overlay over a smaller image: the device opens it at the guest's size, a snapshot pins it, a fork keeps it", async () => {

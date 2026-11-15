@@ -498,7 +498,7 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
   // A snapshot's `written` pins the generation (1: this opening's first change moved it) and sets the next change to
   // move it again (docs/machines.md §3.3): writes after a snapshot are another generation.
   const pinned = b.written!();
-  assert.deepEqual(pinned, { blocks: [0, 1, 2, 3, 10], generation: 1 });
+  assert.deepEqual({ ...pinned, blocks: [...pinned!.blocks] }, { blocks: [0, 1, 2, 3, 10], generation: 1 });
   assert.equal(await ask(b, OUT, 0, new Uint8Array(512).fill(9)), OK);
   assert.equal(b.written!().generation, 2, 'a write after the snapshot moved the generation');
   assert.equal(b.written!().generation, 2, 'reading it alone moves nothing');

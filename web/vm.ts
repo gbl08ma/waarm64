@@ -1109,7 +1109,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * (docs/machines.md §5.1: what the snapshot pins; asking moves the next change's generation on);
      * `diskBlocks` reads some of them.
      */
-    async disks(): Promise<{ slot: number; identity: string; size: number; blocks: number[]; overlay?: string; generation?: number; ram?: boolean }[]> {
+    async disks(): Promise<{ slot: number; identity: string; size: number; blocks: Uint32Array; overlay?: string; generation?: number; ram?: boolean }[]> {
       const out = [];
       for (const [slot, d] of specs.entries()) {
         if (d.type !== 'blk' || !(d.overlay || d.source === 'ram')) continue;
@@ -1118,7 +1118,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       }
       return out;
     },
-    diskBlocks: (slot: number, blocks: number[]) => devices.blocks(slot, blocks),
+    diskBlocks: (slot: number, blocks: Uint32Array) => devices.blocks(slot, blocks),
     /** The disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts; `measure`: only their sizes): their files' bytes before and after. */
     compact: (measure = false) => devices.compact(measure),
     /**
@@ -1684,7 +1684,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       save: async () => d.save(),
       refusal: () => d.refusal(),
       written: async (i: number) => d.written(i),
-      blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
+      blocks: async (i: number, blocks: Uint32Array) => d.blocks(i, blocks),
       compact: (measure?: boolean) => d.compact(measure),
       hint: (ms: number) => d.hint(ms),
       release: () => d.release(),
@@ -1712,7 +1712,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       save: async () => d.save(),
       refusal: () => d.refusal(),
       written: async (i: number) => d.written(i),
-      blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
+      blocks: async (i: number, blocks: Uint32Array) => d.blocks(i, blocks),
       compact: (measure?: boolean) => d.compact(measure),
       hint: (ms: number) => d.hint(ms),
       release: () => d.release(),
@@ -1729,7 +1729,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
   const asked = new Map<number, (m: DiskAnswer) => void>();
   let askId = 0;
-  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: number[] } | { type: 'compact'; measure?: boolean } | { type: 'hint'; ms: number }) => new Promise<DiskAnswer>((resolve, reject) => {
+  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: Uint32Array } | { type: 'compact'; measure?: boolean } | { type: 'hint'; ms: number }) => new Promise<DiskAnswer>((resolve, reject) => {
     const id = askId++;
     asked.set(id, (a) => {
       asked.delete(id);
@@ -1786,7 +1786,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       worker.postMessage({ type: 'refusal' });
     }),
     written: async (i: number) => (await ask({ type: 'written', device: i })).written,
-    blocks: async (i: number, blocks: number[]) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
+    blocks: async (i: number, blocks: Uint32Array) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
     compact: async (measure?: boolean) => (await ask({ type: 'compact', measure })).compacted ?? { before: 0, after: 0 },
     // Bounded here too: a worker that closes meanwhile answers nothing.
     hint: async (ms: number) => (closing ? undefined : (await Promise.race([ask({ type: 'hint', ms }), new Promise<Partial<DiskAnswer>>((r) => setTimeout(() => r({}), ms + 2000))])).hinted),

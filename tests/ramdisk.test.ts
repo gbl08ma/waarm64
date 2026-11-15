@@ -44,7 +44,7 @@ test('the ramdisk reads what was written and zeros elsewhere, and gives whole ch
   // The blocks a snapshot carries: exactly the non-zero ones, with their bytes.
   const nonzero = [];
   for (let b = 0; b * 4096 < size; b++) if (model.subarray(b * 4096, (b + 1) * 4096).some((x) => x !== 0)) nonzero.push(b);
-  assert.deepEqual(d.written(), nonzero);
+  assert.deepEqual([...d.written()], nonzero);
   for (const b of nonzero.slice(0, 20)) {
     const want = new Uint8Array(4096);
     want.set(model.subarray(b * 4096, Math.min(size, (b + 1) * 4096)));
@@ -54,7 +54,7 @@ test('the ramdisk reads what was written and zeros elsewhere, and gives whole ch
   // fstrim: everything discarded, nothing held.
   assert.ok(d.discard(0, size));
   assert.equal(d.chunks(), 0);
-  assert.deepEqual(d.written(), []);
+  assert.deepEqual([...d.written()], []);
   // Out of range.
   assert.equal(await d.write(size - 512, new Uint8Array(1024)), false);
   assert.equal(await d.read(size, 1), undefined);
@@ -91,7 +91,7 @@ test('past its budget of SharedArrayBuffers the ramdisk takes slots in wasm memo
   assert.equal(d.arenaBytes(), 9 * RAM_CHUNK);
   got = await d.read(0, size);
   assert.ok(got && Buffer.compare(got, model) === 0, 'a reused slot is zeroed');
-  assert.deepEqual(d.written().slice(0, 3), [0, 256, 257]);
+  assert.deepEqual([...d.written()].slice(0, 3), [0, 256, 257]);
   // Handed over (a restore), the chunks read the same in the ramdisk that takes them.
   const next = ramDisk(size, d.chunkList(), { sabBudget: 4 * RAM_CHUNK });
   assert.equal(d.chunks(), 0);

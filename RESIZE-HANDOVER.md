@@ -19,17 +19,20 @@ origin/main, committed, pushed.
 | 2 | **The page:** Resize… in the global Disks pane (stored disk card, overlay rows, ramdisk card) and the machine's Disks tab shortcut; the dialog with the box on; the confirmation (machines, orphaned snapshots); i18n; page tests | done |
 | 2b | **A two-level map** (the user's OK, 2026-11-14): the overlay's map as leaves of 1,024 entries (4 MiB of disk each) made at a first write, under a top table, in memory and in the `map` file, so both grow with what's written, not the disk's size (the flat map is 4 bytes per 4 KiB block: 1 GiB per TiB in memory, and a write near the end, as GPT's backup header, makes the file that long); leaf before top entry; old maps converted at their first opening (a version in `meta`); opening, compaction, exports and snapshots walk only leaves; `MAX_RESIZE` raised; an I/O A/B in Chromium | done |
 | 3 | **The agent's GROW:** GPT and MBR growth, `BLKPG_RESIZE_PARTITION`, online ext4, btrfs, xfs grow; the frames and capability; native tests on image files | done |
-| 2c | **The map review's fixes** (a static review after 2b, findings in `bench/results/local/resize/review-overlay-map.md`, local): a restore's overlay over a base that can't read (a disk not a multiple of 4 KiB with its last block written), an interrupted conversion's stale records, a short map read as empty, an interrupted merge's leaked files, a failed compaction's lost free slots, the stored disk's export and `written()` walking leaves; the missing flushes between dependent writes measured, kept if within the floor (else the user's call); one block per call in restore/merge/import to the backlog | next |
-| 4 | **GROW from the page:** sent at HELLO for marked disks, the mark cleared on GROWN, the answer shown; a machine definition carrying a grown overlay's size. **No new Debian boot** (the user, 2026-11-15: CI's runtime stays as it is): the grow and `df` ride on an existing ci-machines.sh boot that writes a stored disk in place ("a disk stored in the browser (2)"); the Disks tab's in-place shortcut joins tests/page-resize.test.ts (no guest); ci.sh only cheap tests |  |
+| 2c | **The map review's fixes** (a static review after 2b, findings in `bench/results/local/resize/review-overlay-map.md`, local): a restore's overlay over a base that can't read (a disk not a multiple of 4 KiB with its last block written), an interrupted conversion's stale records, a short map read as empty, an interrupted merge's leaked files, a failed compaction's lost free slots, the stored disk's export and `written()` walking leaves; the missing flushes between dependent writes measured, kept if within the floor (else the user's call); one block per call in restore/merge/import to the backlog | done |
+| 4 | **GROW from the page:** sent at HELLO for marked disks, the mark cleared on GROWN, the answer shown; a machine definition carrying a grown overlay's size. **No new Debian boot** (the user, 2026-11-15: CI's runtime stays as it is): the grow and `df` ride on an existing ci-machines.sh boot that writes a stored disk in place ("a disk stored in the browser (2)"); the Disks tab's in-place shortcut joins tests/page-resize.test.ts (no guest); ci.sh only cheap tests | next |
 | 5 | Out-of-context review of the track's code, then the fix loop | |
 | 6 | Track end: docs settled, the CI scripts (ci.sh, ci-debian.sh --platform, ci-machines.sh), PLAN.md row done, kickoff and handover deleted | |
 
 ## State
 
-Loops 1–3 done. Sizes in the host (docs/machines.md §4.5): an overlay's own size in its `meta` and record, a stored
+Loops 1–3 and 2c done. Sizes in the host (docs/machines.md §4.5): an overlay's own size in its `meta` and record, a stored
 disk's and a ramdisk's in their record; what the guest sees is `sizeSeen` (web/app/disk-size.ts). web/app/resize.ts:
 `resizeCosts`, `resize(..., { grow })`, `growMark`/`clearGrowMark`, `sizeNow`, `attachmentTarget`, `MAX_RESIZE`
-(8 TiB). The overlay's map is two-level (docs/devices.md "blk"). The page (frontend.md "The Machines page"):
+(8 TiB). The overlay's map is two-level (docs/devices.md "blk"); loop 2c fixed the map review's findings (a short map read
+refuses the opening, dead records, the conversion's copy-down safe against an untruncated tail, `written()` walked,
+a stored disk's whole export reading its held blocks; the flushes between dependent writes (`ORDERED`, on: no cost the suite sees,
+bench/io/REPORT.md "Ordered flushes")). The page (frontend.md "The Machines page"):
 `ResizeDisk.svelte`, opened from the Disks pane, the Overlays dialog's rows and a machine's Disks tab;
 tests/page-resize.test.ts. The grow mark `{ from, to }` sits on the overlay's or stored disk's record.
 

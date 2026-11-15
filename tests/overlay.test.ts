@@ -71,11 +71,11 @@ test('discarded and zeroed blocks read as zeros, give their slots back, and stay
   }
   const all = await d.read(0, size);
   assert.ok(all && Buffer.compare(all, model) === 0);
-  assert.deepEqual(d.written(), [...held].sort((a, b) => a - b));
+  assert.deepEqual([...d.written()], [...held].sort((a, b) => a - b));
   // Every slot belongs to one block: zeroed blocks have none, and none is left over at the end of the file.
-  const slotted = d.written().filter((b) => !d.zeroed(b));
+  const slotted = [...d.written()].filter((b) => !d.zeroed(b));
   assert.ok(data.getSize() <= 41 * 4096, `${data.getSize() / 4096} slots for 41 blocks`);
-  for (const b of d.written()) if (d.zeroed(b)) assert.ok(d.block(b)!.every((x) => x === 0));
+  for (const b of [...d.written()]) if (d.zeroed(b)) assert.ok(d.block(b)!.every((x) => x === 0));
   // Everything discarded: the data file is empty, and the disk reads as zeros where it was written.
   assert.ok(d.discard(0, size));
   assert.equal(data.getSize(), 0);
@@ -287,6 +287,110 @@ test('a crash after any single OPFS write leaves every block as the base or some
   }
 });
 
+test('a compaction that fails part way keeps the slots its moves freed: the next writes take them before the file grows', async () => {
+  const size = 400 * 4096;
+  const base = openDisk((off, len) => new Uint8Array(len).fill(7), size);
+  const [data, inner] = [memFile(), memFile()];
+  let refuseIn = Infinity; // the map write that is refused, counted down
+  const map = { ...inner, write: (b: Uint8Array, o: { at: number }) => (--refuseIn === 0 ? 0 : inner.write(b, o)) };
+  const d = overlay(base, data, map);
+  for (let b = 0; b < 100; b++) assert.ok(await d.write(b * 4096, new Uint8Array(4096).fill(b + 1)));
+  assert.ok(d.discard(0, 50 * 4096)); // 50 free slots: below what a change compacts for
+  assert.equal(data.getSize(), 100 * 4096);
+  refuseIn = 3; // the third move's entry (its write back after it lands)
+  assert.equal(d.compact!(), false, 'refused');
+  refuseIn = Infinity;
+  for (let b = 0; b < 100; b++) {
+    const want = b < 50 ? 0 : b + 1;
+    for (const disk of [d, overlay(base, data, map)]) assert.equal((await disk.read(b * 4096, 1))![0], want, `block ${b}`);
+  }
+  // 98 blocks are held in 100 slots: 50 fresh writes fill the free ones and two more.
+  for (let b = 200; b < 250; b++) assert.ok(await d.write(b * 4096, new Uint8Array(4096).fill(b - 100)));
+  assert.equal(data.getSize(), 100 * 4096, `${data.getSize() / 4096} slots for 100 blocks`);
+  for (let b = 200; b < 250; b++) assert.equal((await overlay(base, data, map).read(b * 4096, 1))![0], b - 100);
+});
+
+/**
+ * The overlay's files under a crash where the OS wrote back only some of what wasn't flushed: each file's operations
+ * (writes, truncations, flushes) logged in the order made across both, to replay what a crash after any of them leaves
+ * with one file as written and the other as of its last flush (the two orders the OS may have written them in).
+ */
+function crashLog() {
+  const ops: { file: 'data' | 'map'; op: 'write' | 'truncate' | 'flush'; at?: number; bytes?: Uint8Array; size?: number }[] = [];
+  const logged = (file: 'data' | 'map') => {
+    const f = memFile();
+    return Object.assign(f, {
+      write: ((w) => (buf: Uint8Array, o: { at: number }) => { ops.push({ file, op: 'write', at: o.at, bytes: buf.slice() }); return w(buf, o); })(f.write),
+      truncate: ((t) => (size: number) => { ops.push({ file, op: 'truncate', size }); t(size); })(f.truncate),
+      flush: () => { ops.push({ file, op: 'flush' }); },
+    });
+  };
+  /** The files after the first `k` operations, with `lagging`'s writes since its last flush lost. */
+  const after = (k: number, lagging: 'data' | 'map') => {
+    const files = { data: memFile(), map: memFile() };
+    const last = ops.slice(0, k).findLastIndex((o) => o.file === lagging && o.op === 'flush');
+    ops.slice(0, k).forEach((o, i) => {
+      if (o.file === lagging && i > last) return;
+      if (o.op === 'write') files[o.file].write(o.bytes!, { at: o.at! });
+      else if (o.op === 'truncate') files[o.file].truncate(o.size!);
+    });
+    return files;
+  };
+  return { ops, data: logged('data'), map: logged('map'), after };
+}
+
+test('ordered: a crash where the OS wrote back either file before the other (power loss) leaves every block readable, as the base, zeros it was given, or something written to it', async () => {
+  const blocks = 96;
+  const size = blocks * 4096;
+  const base = openDisk((off, len) => new Uint8Array(len).fill(0xee), size);
+  /** Block `b`'s `v`-th write: its number and the version in every u32. */
+  const tag = (b: number, v: number) => new Uint8Array(new Uint32Array(1024).fill((b << 8) | v).buffer);
+  const failures = (ordered: boolean) => {
+    const log = crashLog();
+    const d = overlay(base, log.data, log.map, undefined, 0, { ordered });
+    const may = new Map<number, Set<number>>(); // what each block may read as: u32s
+    const allow = (b: number, x: number) => { if (!may.has(b)) may.set(b, new Set([0xeeeeeeee])); may.get(b)!.add(x); };
+    let v = 0;
+    const run = async () => {
+      const put = async (b: number, n: number) => {
+        v++;
+        const bytes = new Uint8Array(n * 4096);
+        for (let k = 0; k < n; k++) { bytes.set(tag(b + k, v), k * 4096); allow(b + k, ((b + k) << 8) | v); }
+        assert.ok(await d.write(b * 4096, bytes));
+      };
+      const trim = (b: number, n: number) => { for (let k = 0; k < n; k++) allow(b + k, 0); assert.ok(d.discard(b * 4096, n * 4096)); };
+      await put(0, 16); await put(20, 30); await put(60, 4); // fresh slots
+      trim(0, 12); trim(24, 20); // freed slots
+      await put(70, 20); await put(5, 3); // the freed slots reused
+      d.flush();
+      trim(70, 18); // half free: compacted, the end cut off
+      await put(50, 4); await put(90, 6);
+      assert.ok(d.compact!());
+      await put(1, 2);
+    };
+    return run().then(async () => {
+      let bad = 0;
+      for (let k = 0; k <= log.ops.length; k++) {
+        for (const lagging of ['data', 'map'] as const) {
+          const f = log.after(k, lagging);
+          const all = await overlay(base, f.data, f.map, undefined, 0, { ordered }).read(0, size);
+          if (!all) { bad++; continue; }
+          const u = new Uint32Array(all.buffer);
+          for (let b = 0; b < blocks; b++) {
+            const x = u[b * 1024];
+            if (!(may.get(b) ?? new Set([0xeeeeeeee])).has(x) || !u.subarray(b * 1024, (b + 1) * 1024).every((y) => y === x)) { bad++; break; }
+          }
+        }
+      }
+      return { bad, ops: log.ops.length, flushes: log.ops.filter((o) => o.op === 'flush').length };
+    });
+  };
+  const on = await failures(true);
+  assert.equal(on.bad, 0, `ordered: ${on.bad} of ${2 * (on.ops + 1)} crash points leave a block unreadable or another's (${on.flushes} flushes)`);
+  const off = await failures(false);
+  assert.ok(off.bad > 0, 'unordered: the test sees the hazard');
+});
+
 test("the overlay's generation moves once per opening, before its first change, and not for an opening that only reads", async () => {
   const size = 16 * 4096;
   const base = openDisk((off, len) => new Uint8Array(len), size);
@@ -403,7 +507,7 @@ test('a grown overlay (its own size in its meta): past its base it reads zeros, 
   d = overlay(base, data, map, meta); // reopened
   assert.equal(d.size, size);
   assert.equal(Buffer.compare((await d.read(0, size))!, want), 0, 'reopened, it reads what was written');
-  assert.deepEqual(d.written(), [3, 8, 9, 10, 15]);
+  assert.deepEqual([...d.written()], [3, 8, 9, 10, 15]);
   // Without a meta, the guest's size given grows it the same way; a size under the base's is the base's.
   assert.equal(overlay(base, data, map, undefined, size).size, size);
   assert.equal(Buffer.compare((await overlay(base, data, map, undefined, size).read(0, size))!, want), 0);

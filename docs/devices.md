@@ -848,7 +848,14 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3), for a stored
   disk the overlay being merged into it, and the overlay's **own size** (a u64 at 32: a grown overlay's,
   docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
-  slot is written before its map entry, so a crash leaks a slot but never maps garbage.
+  slot is written before its map entry, so a crash leaks a slot but never maps garbage: a block reads as the base, as
+  something written to it, or as zeros it was given, never as another block's data or an I/O error. **Against an OS
+  crash or a power loss too** (`ORDERED`): the OS may write either file back first, so the order is made durable by
+  flushes where one write depends on another: a write's new data is flushed before its map entries (one `data` flush
+  per request that maps new slots), a slot freed by a discard or a move is reused only once the map that freed it is
+  flushed, a compaction's copies are flushed before their entries move, and `data` is cut only once the map entries
+  that left its end are flushed. They cost nothing bench/io's suite can see (bench/io/REPORT.md "Ordered flushes");
+  `tests/overlay.test.ts` replays every crash point with either file as of its last flush.
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
   past it), as an unwritten block does. So the map file and the memory grow with what's written, not with the disk's
@@ -856,25 +863,36 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   made the file that long). The `map` file: a 16-byte header (u32 `0xfffffffe`, u32 version 2, u64 where the records
   start), then the leaves' **records** in the order they were made, 4,104 bytes each: the 1,024 entries, then the
   range + 1 (the leaf's top entry), then 0. **The top table** (range → record, 4 bytes per 4 MiB: 1 MiB per TiB) is
-  rebuilt in memory at opening from the records, which are read whole (`readMap`); the leaves are kept in memory as
-  the file has them. **Crash and refusal:** a leaf is one appending write, its entries before its top entry, and an
+  rebuilt in memory at opening from the records, which are read whole (`readMap`, 256 records a read); the leaves are
+  kept in memory as the file has them. A range's leaf is its first record; a record without a range, or a later one
+  for a range that has one, is **dead** (zeros in memory, so no walk sees its entries; dead records at the file's end
+  are cut off at the opening's first change). **A map that reads back short** (an I/O error, a read cut off) refuses
+  the opening ([The disk's block map can't be read from this browser's storage.](ui:disks:overlay.mapUnreadable)):
+  taken as empty, the disk would read as its base, every slot would be free, and the next writes would land on other
+  blocks' data. **Crash and refusal:** a leaf is one appending write, its entries before its top entry, and an
   opening counts only records the file holds whole, so a write that lands in part (refused, or cut by a crash) leaves
   no leaf; refused, the file is cut back and the change fails (its slots free). A new leaf's entries map only blocks
   whose data is written already (a run's data, then its leaves). Entries in a leaf that exists are written over in
   place (`putMap`: inside the file, so they need no room; one that falls short anyway is written back as it was). A
   zeroing of whole ranges without leaves makes up to 256 leaves (1 MiB) in one write (a restore with the whole disk).
   Everything that walks the map walks the leaves only: the opening's free slots, compaction (a slot's owner is its
-  entry's place in the leaves), `written` (the leaves in their ranges' order) for exports, snapshots and merges, and
-  a stored disk's reader (web/stored.ts `blockSource`).
+  entry's place in the leaves), `written` (the leaves in their ranges' order, walked as it's taken, never a list:
+  a snapshot sends the device's as a `Uint32Array`, 4 bytes a block) for exports, snapshots and merges, and
+  a stored disk's reader (web/stored.ts `blockSource`, whose `held` gives a whole export the blocks it holds: a
+  qcow2 of a stored disk reads its data, not its size).
   **A flat map** (from before leaves: no header) is read as it is (its leaves built in memory, the file untouched):
   an opening that only reads (a stored disk under its machines' overlays, read-only handles in several workers)
   never changes it. The first change of a writable opening converts it (`convert`) before anything else: a trailer
   (u32 `0xfffffffd`, 0, u64 the flat map's length) at where the records will end, the records into the room before
-  it (after the flat map), then the header over the flat map's first entries (inside the file) is the switch; then,
-  where the records fit in the flat map's room, they're copied down to 16 and the header moved to them, and the file
-  cut after them (a dense flat map keeps its room: ~2× the records). Interrupted anywhere, the file reads as the flat
-  map (the trailer bounds it) or as the converted one, and the next change converts it again; refused, it is cut back
-  to the flat map and the change fails. (A version in `meta` was the brief's suggestion; the header keeps the map
+  it (after the flat map, a whole number of records past the header), then the header over the flat map's first
+  entries (inside the file) is the switch; then, where the records fit in the flat map's room, they're copied down to
+  16, the rest of the room zeroed, the header moved to them, and the file cut after them (a dense flat map keeps its
+  room: ~2× the records). Until that cut, a reading from 16 takes the room as records too: zeroed, they're dead, and
+  so is the records' first copy after them (each a range's second record), where the room's stale entries would have
+  been read as leaves. Interrupted anywhere, the file reads as the flat map (the trailer bounds it) or as the
+  converted one, and the next change converts it again; refused, it is cut back to the flat map and the change
+  fails. (A conversion interrupted in that window by the code before 2026-11-15, whose records weren't a whole number
+  of records past 16, can't be told from its leaves.) (A version in `meta` was the brief's suggestion; the header keeps the map
   file self-describing, since several readers open it without its `meta`: a stored disk's reader, a merge's copy, a
   restore's writes. Leaves in a file of their own would have needed every opener to open a fourth file.)
   Debian's boot on the page leaves its overlay a map of 74 KB (18 leaves) where the flat one was 1.7 MB; imported as a
@@ -894,7 +912,8 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   a backing file; blocks it doesn't hold stay the base's), a `WRITE_ZEROES`'s whole blocks too,
   held or not. Slots no block maps (those, and leaked ones) are found at open and taken by the
   next first writes; free slots at the end of `data` are cut off, and once half of `data` is free
-  the blocks in its highest slots are copied down (copy, then the map entry) and the file shrinks.
+  the blocks in its highest slots are copied down (copy, then the map entry, 256 at a time) and the file shrinks (a
+  compaction that fails part way keeps the moves it made, and the slots they freed are free).
   Measured on Buildroot: an 8 MiB file written and deleted leaves 8.3 MiB of `data`; after
   `fstrim`, 132 KiB. A changes file carries the zero blocks as zero clusters (no data), and
   Load changes and a snapshot's restore keep them without slots. Opened

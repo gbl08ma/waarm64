@@ -284,8 +284,34 @@ export async function* changedClusters(disk: WritableDisk): AsyncGenerator<DataC
   }
 }
 
-/** The disk's clusters that aren't all zeros, in disk order, read `chunk` bytes at a time. */
-export async function* nonZeroClusters(disk: Disk, chunk = 1 << 20, progress?: (done: number) => void): AsyncGenerator<DataCluster> {
+/**
+ * The disk's clusters that aren't all zeros, in disk order, read `chunk` bytes at a time. With `held` (the blocks that
+ * may not be zeros, ascending: a stored disk's, `Source.held`), only those are read, a run of consecutive ones at a time:
+ * an export of a large disk that holds little reads what it holds, not its size.
+ */
+export async function* nonZeroClusters(disk: Disk, chunk = 1 << 20, progress?: (done: number) => void, held?: Iterable<number>): AsyncGenerator<DataCluster> {
+  if (held) {
+    let run: number[] = [];
+    const flush = async function* () {
+      const at = run[0] * CLUSTER;
+      const bytes = await disk.read(at, Math.min(run.length * CLUSTER, disk.size - at));
+      if (!bytes) throw new MsgError('disks:qcow2-write.diskUnreadable', { offset: at });
+      for (let c = 0; c < bytes.length; c += CLUSTER) {
+        const data = bytes.subarray(c, c + CLUSTER);
+        if (!isZero(data)) yield { index: run[0] + c / CLUSTER, data: pad(data) };
+      }
+      progress?.(at + bytes.length);
+      run = [];
+    };
+    for (const b of held) {
+      if (b * CLUSTER >= disk.size) break;
+      if (run.length && (b !== run[run.length - 1] + 1 || run.length * CLUSTER >= chunk)) yield* flush();
+      run.push(b);
+    }
+    if (run.length) yield* flush();
+    progress?.(disk.size);
+    return;
+  }
   for (let off = 0; off < disk.size; off += chunk) {
     const bytes = await disk.read(off, Math.min(chunk, disk.size - off));
     if (!bytes) throw new MsgError('disks:qcow2-write.diskUnreadable', { offset: off });

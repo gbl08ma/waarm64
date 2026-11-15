@@ -23,7 +23,7 @@ export type ToDeviceWorker =
   | { type: 'save' }
   | { type: 'refusal' }
   | { type: 'written'; id: number; device: number }
-  | { type: 'blocks'; id: number; device: number; blocks: number[] }
+  | { type: 'blocks'; id: number; device: number; blocks: Uint32Array }
   | { type: 'compact'; id: number; measure?: boolean }
   | { type: 'hint'; id: number; ms: number }
   | { type: 'release' }
@@ -38,7 +38,7 @@ export type FromDeviceWorker =
   | { type: 'drained' }
   | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
   | { type: 'refusal'; refused?: WireError }
-  | { type: 'disk'; id: number; written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; hinted?: Hinted; error?: string }
+  | { type: 'disk'; id: number; written?: { blocks: Uint32Array; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; hinted?: Hinted; error?: string }
   | { type: 'closed'; stats?: unknown };
 
 // The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).

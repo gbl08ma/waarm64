@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { chromium } from 'playwright-core';
+import { startServer } from '../tools/serve.ts';
 import { openOverlay, overlay, overlayMeta, readMeta, writeMeta } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { importImage, mergeOverlay, openStored, openStoredForWriting, storedEstimate, zeroDisk } from '../web/stored.ts';
@@ -89,4 +91,40 @@ test('a merge writes the overlay into the stored disk, moves its generation and 
   src.close();
   assert.equal((await overlayMeta(disk2)).merging, '');
   await assert.rejects(openOverlay('overlays/test-merge-2', undefined, undefined, { readOnly: true }), /no overlay/);
+});
+
+// OPFS removes an overlay's directory a file at a time: a tab closed meanwhile leaves some of its files, and the merge
+// that was deleting it resumes at the store's next opening (in Node an overlay is whole or gone).
+test('in Chromium (OPFS): a merge resumed after its overlay was partly deleted (its map gone, its data left) deletes the rest', async () => {
+  const server = await startServer();
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/tests/browser/core.html`);
+    const src = `
+      const { openOverlay, opfsDir, overlay, overlayMeta, readMeta, writeMeta } = await import('ORIGIN/web/overlay.ts');
+      const { resumeMerge, zeroDisk } = await import('ORIGIN/web/stored.ts');
+      const size = 64 * 4096, disk = 'disks/partly-merged', ov = 'overlays/partly-merged';
+      let f = await openOverlay(disk, 'stored');
+      f.close();
+      const o = await openOverlay(ov, 'over-it');
+      await overlay(zeroDisk(size), o.data, o.map, o.meta).write(4096, new Uint8Array(4096).fill(1));
+      o.close();
+      // The copy done, the store still marked, and the overlay's deletion cut off after its map.
+      f = await openOverlay(disk, 'stored');
+      writeMeta(f.meta, { ...readMeta(f.meta), merging: ov });
+      f.close();
+      await (await opfsDir(ov)).removeEntry('map');
+      await resumeMerge(disk, size);
+      const left = await opfsDir(ov).then(() => true, (e) => (e.name === 'NotFoundError' ? false : e.name));
+      postMessage({ left, merging: (await overlayMeta(disk)).merging });`;
+    const got = await page.evaluate(async (src) => {
+      const w = new Worker(URL.createObjectURL(new Blob([src.replaceAll('ORIGIN', location.origin)], { type: 'text/javascript' })), { type: 'module' });
+      return await new Promise((resolve, reject) => { w.onmessage = (e) => resolve(e.data); w.onerror = (e) => reject(new Error(e.message)); });
+    }, src);
+    assert.deepEqual(got, { left: false, merging: '' });
+  } finally {
+    await browser.close();
+    server.close();
+  }
 });

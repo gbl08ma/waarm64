@@ -56,7 +56,7 @@ async function held(name: string) {
   const files = await openOverlay(name, diskIdentity({ url: DISK.href }, size));
   try {
     const d = overlay(openDisk(() => undefined, size), files.data, files.map);
-    const w = d.written();
+    const w = [...d.written()];
     return { blocks: w.length, zeroed: w.filter((b) => d.zeroed(b)).length, data: files.data.getSize() };
   } finally {
     files.close();
