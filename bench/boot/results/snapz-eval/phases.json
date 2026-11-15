@@ -1,0 +1,21 @@
+{
+ "what": "The page's save and load of target/snapbench/pages.waarm64snap (Arch Linux ARM, sway, Firefox; 4 vCPUs, 2560 MiB) with bench/snapz/phases.patch applied; bench/snapz/probe-save.ts, two saves 20 s apart (the download path). ms.",
+ "host": { "machine": "M4 dev VM (Lima, 8 vCPUs)", "chromium": "155.0.8059.84", "commit": "40751074", "date": "2026-11-15" },
+ "offTheRecord": {
+  "note": "Playwright's newContext(): OPFS in memory, ~250 us a sync-handle call",
+  "load": { "loadMs": 15311 },
+  "saves": [
+   { "pausedMs": 6376, "stateMs": 219, "bytes": 689795374, "phases": { "sink": 133, "compress": 2935, "frame+crc": 441, "blobsTotal": 49, "scan+gather": 345, "ramTotal": 3839, "diskTotal": 2261 } },
+   { "pausedMs": 6731, "stateMs": 184, "bytes": 693296875, "phases": { "sink": 128, "compress": 2917, "frame+crc": 436, "blobsTotal": 47, "scan+gather": 419, "ramTotal": 3868, "diskTotal": 2626 } }
+  ]
+ },
+ "persistent": {
+  "note": "WAARM64_PROFILE: a profile on disk, as a user's",
+  "load": { "loadMs": 9782, "phases": { "r.check.read": 242, "r.check.crc": 424, "r.checkTotal": 674, "r.read": 184, "r.crc": 347, "r.decompress": 1688, "r.applyRam": 313, "r.ramDone": 3209, "r.diskDone": 5454 } },
+  "saves": [
+   { "pausedMs": 4148, "stateMs": 218, "bytes": 689916482, "hintMs": 11, "hinted": 910163968, "phases": { "sink": 118, "compress": 2894, "frame+crc": 422, "blobsTotal": 50, "scan+gather": 305, "ramTotal": 3720, "diskTotal": 145 } },
+   { "pausedMs": 4251, "stateMs": 187, "bytes": 693289998, "hintMs": 8, "hinted": 910163968, "phases": { "sink": 125, "compress": 2920, "frame+crc": 431, "blobsTotal": 45, "scan+gather": 402, "ramTotal": 3838, "diskTotal": 175 } }
+  ]
+ },
+ "makingTheFile": { "pausedMs": 7456, "wallMs": 9110, "note": "bench/gpu/warm-snapshots.sh's save, off the record" }
+}

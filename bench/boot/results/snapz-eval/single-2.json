@@ -1,0 +1,577 @@
+{
+ "host": {
+  "cpu": "aarch64",
+  "nproc": 8,
+  "chromium": "155.0.8059.84",
+  "date": "2026-11-15T13:24:32.170Z"
+ },
+ "corpus": "../../../../target/snapbench/corpus-pages.bin",
+ "results": [
+  {
+   "job": {
+    "type": "crc"
+   },
+   "MB": 268.435456,
+   "jsMBs": 742.8888470006183,
+   "wasmMBs": 3441.2596117737226
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "core",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "core",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 3365.6200000047684,
+   "compMs": 3022.8599996566772,
+   "crcMs": 331.85500037670135,
+   "writeMs": 0.36500000953674316,
+   "decompMs": 1629.2649995088577,
+   "dcrcMs": 340.4500005245209,
+   "compMBs": 503.17458836094005,
+   "decompMBs": 933.5659554820816
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "lz4flex",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2792.764999985695,
+   "compMs": 2478.4749990701675,
+   "crcMs": 310.52000081539154,
+   "writeMs": 0.35500001907348633,
+   "decompMs": 717.4350001811981,
+   "dcrcMs": 315.3049998283386,
+   "compMBs": 613.6944437892788,
+   "decompMBs": 2120.089395716467
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2868.5950000286102,
+   "compMs": 2555.6250030994415,
+   "crcMs": 309.4649977684021,
+   "writeMs": 0.18999993801116943,
+   "decompMs": 757.254998087883,
+   "dcrcMs": 318.20000195503235,
+   "compMBs": 595.1680446682558,
+   "decompMBs": 2008.6052120364845
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "snap",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "snap",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 668608455,
+   "ratio": 2.2749134035404923,
+   "wallMs": 2591.9499999284744,
+   "compMs": 2273.9850006103516,
+   "crcMs": 313.32999980449677,
+   "writeMs": 0.20499980449676514,
+   "decompMs": 1009.4050002098083,
+   "dcrcMs": 321.2249997854233,
+   "compMBs": 668.8814286777384,
+   "decompMBs": 1506.8543703308874
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 2526.0849999189377,
+   "compMs": 2216.170001268387,
+   "crcMs": 305.0949982404709,
+   "writeMs": 0.18999993801116943,
+   "decompMs": 992.4350008964539,
+   "dcrcMs": 308.17499911785126,
+   "compMBs": 686.3310734869016,
+   "decompMBs": 1532.6206095372254
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 2791.149999976158,
+   "compMs": 2525.0950006246567,
+   "crcMs": 260.68999898433685,
+   "writeMs": 0.21500015258789062,
+   "decompMs": 1107.4899997711182,
+   "dcrcMs": 262.15500020980835,
+   "compMBs": 602.3640043735896,
+   "decompMBs": 1373.3996120184797
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 3138.7200000286102,
+   "compMs": 2906.614998936653,
+   "crcMs": 229.86000108718872,
+   "writeMs": 0.27499985694885254,
+   "decompMs": 1436.4050027132034,
+   "dcrcMs": 229.77499723434448,
+   "compMBs": 523.2981790008128,
+   "decompMBs": 1058.9118898409267
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 3127.8249999284744,
+   "compMs": 2896.295002579689,
+   "crcMs": 228.60999751091003,
+   "writeMs": 0.14499998092651367,
+   "decompMs": 1424.5000026226044,
+   "dcrcMs": 230.10999739170074,
+   "compMBs": 525.1627802572747,
+   "decompMBs": 1067.7615536677317
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 2810.1050000190735,
+   "compMs": 2545.199998021126,
+   "crcMs": 259.88000226020813,
+   "writeMs": 0.2899998426437378,
+   "decompMs": 1104.309997677803,
+   "dcrcMs": 261.3750023841858,
+   "compMBs": 597.605821618178,
+   "decompMBs": 1377.3544921249363
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 2599.195000052452,
+   "compMs": 2285.8699966669083,
+   "crcMs": 305.9250034093857,
+   "writeMs": 0.38000011444091797,
+   "decompMs": 984.2300058603287,
+   "dcrcMs": 308.3599941730499,
+   "compMBs": 665.4036923437691,
+   "decompMBs": 1545.3972414409884
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "snap",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "snap",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 668608455,
+   "ratio": 2.2749134035404923,
+   "wallMs": 2651.320000052452,
+   "compMs": 2328.585001707077,
+   "crcMs": 317.9999978542328,
+   "writeMs": 0.22499990463256836,
+   "decompMs": 1039.0349979400635,
+   "dcrcMs": 329.2300020456314,
+   "compMBs": 653.1976865284888,
+   "decompMBs": 1463.883641085726
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2931.524999976158,
+   "compMs": 2613.6649990081787,
+   "crcMs": 314.77000164985657,
+   "writeMs": 0.22999989986419678,
+   "decompMs": 772.2149995565414,
+   "dcrcMs": 325.09000051021576,
+   "compMBs": 581.9515265258523,
+   "decompMBs": 1969.6928146610426
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "lz4flex",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2773.664999961853,
+   "compMs": 2455.0849997997284,
+   "crcMs": 315.8100004196167,
+   "writeMs": 0.18499982357025146,
+   "decompMs": 733.9149996042252,
+   "dcrcMs": 320.0750004053116,
+   "compMBs": 619.5412118619422,
+   "decompMBs": 2072.4829671286684
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "core",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 1
+   },
+   "codec": "core",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 3306.4500000476837,
+   "compMs": 2973.515001177788,
+   "crcMs": 323.90499901771545,
+   "writeMs": 0.7150001525878906,
+   "decompMs": 1422.5899994373322,
+   "dcrcMs": 325.5950006246567,
+   "compMBs": 511.5246889279295,
+   "decompMBs": 1069.195155738197
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "core",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "core",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 3313.0999999046326,
+   "compMs": 2979.615000605583,
+   "crcMs": 324.1849991083145,
+   "writeMs": 0.21499979496002197,
+   "decompMs": 1428.455005288124,
+   "dcrcMs": 326.79999470710754,
+   "compMBs": 510.47747299260584,
+   "decompMBs": 1064.8052128832744
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "lz4flex",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2774.539999961853,
+   "compMs": 2455.7950003147125,
+   "crcMs": 315.7449995279312,
+   "writeMs": 0.23000025749206543,
+   "decompMs": 743.0999964475632,
+   "dcrcMs": 323.74500358104706,
+   "compMBs": 619.3620948837663,
+   "decompMBs": 2046.866294269093
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2929.5199999809265,
+   "compMs": 2611.0049983263016,
+   "crcMs": 315.41500091552734,
+   "writeMs": 0.25000035762786865,
+   "decompMs": 767.2800000905991,
+   "dcrcMs": 325.66999995708466,
+   "compMBs": 582.544398411724,
+   "decompMBs": 1982.3615053440724
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "snap",
+    "wasm": "plain",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "snap",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 668608455,
+   "ratio": 2.2749134035404923,
+   "wallMs": 2642.149999976158,
+   "compMs": 2320.4400012493134,
+   "crcMs": 317.63999819755554,
+   "writeMs": 0.27999985218048096,
+   "decompMs": 1037.0749959945679,
+   "dcrcMs": 327.8700039386749,
+   "compMBs": 655.4904824865487,
+   "decompMBs": 1466.6502826454866
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 2588.600000023842,
+   "compMs": 2274.0300014019012,
+   "crcMs": 309.389998793602,
+   "writeMs": 0.24500000476837158,
+   "decompMs": 1010.8749988079071,
+   "dcrcMs": 316.99000120162964,
+   "compMBs": 668.8681921796602,
+   "decompMBs": 1504.6631262952374
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 2846.8849999904633,
+   "compMs": 2576.965002655983,
+   "crcMs": 264.16999793052673,
+   "writeMs": 0.22999989986419678,
+   "decompMs": 1123.3899991512299,
+   "dcrcMs": 265.4650008678436,
+   "compMBs": 590.2394228995481,
+   "decompMBs": 1353.9610795442381
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "decomp": true,
+    "round": 2
+   },
+   "codec": "zstd1",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 3181.7999999523163,
+   "compMs": 2944.9950025081635,
+   "crcMs": 233.30499732494354,
+   "writeMs": 0.2399998903274536,
+   "decompMs": 1470.5700010061264,
+   "dcrcMs": 234.13499903678894,
+   "compMBs": 516.4784098800126,
+   "decompMBs": 1034.3107332254517
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "zstd3",
+    "wasm": "czstd",
+    "decomp": true,
+    "sample": 4
+   },
+   "codec": "zstd3",
+   "frames": 394,
+   "raw": 378716480,
+   "stored": 111692455,
+   "ratio": 3.3907078145967873,
+   "wallMs": 1098.664999961853,
+   "compMs": 1044.4350008964539,
+   "crcMs": 53.91499924659729,
+   "writeMs": 0.034999966621398926,
+   "decompMs": 407.9549994468689,
+   "dcrcMs": 54.74000060558319,
+   "compMBs": 362.60416366259466,
+   "decompMBs": 928.3290571594604
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "miniz1",
+    "wasm": "plain",
+    "decomp": true,
+    "sample": 4
+   },
+   "codec": "miniz1",
+   "frames": 394,
+   "raw": 378716480,
+   "stored": 135450382,
+   "ratio": 2.7959794162854408,
+   "wallMs": 1583.7599999904633,
+   "compMs": 1517.4499990940094,
+   "crcMs": 65.76000106334686,
+   "writeMs": 0.11000001430511475,
+   "decompMs": 952.9200007915497,
+   "dcrcMs": 65.60999917984009,
+   "compMBs": 249.5742727774305,
+   "decompMBs": 397.42735978404954
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "fflate1",
+    "wasm": "plain",
+    "decomp": true,
+    "sample": 4
+   },
+   "codec": "fflate1",
+   "frames": 394,
+   "raw": 378716480,
+   "stored": 121466865,
+   "ratio": 3.1178583558569657,
+   "wallMs": 4771.910000085831,
+   "compMs": 4712.715000271797,
+   "crcMs": 58.68999910354614,
+   "writeMs": 0.08000016212463379,
+   "decompMs": 1860.4149992465973,
+   "dcrcMs": 59.27500081062317,
+   "compMBs": 80.36057346522296,
+   "decompMBs": 203.56559163055923
+  },
+  {
+   "job": {
+    "type": "single",
+    "codec": "cstream",
+    "wasm": "plain",
+    "decomp": true,
+    "sample": 4
+   },
+   "codec": "cstream",
+   "frames": 394,
+   "raw": 378716480,
+   "stored": 115998249,
+   "ratio": 3.2648465236746804,
+   "wallMs": 4684.129999995232,
+   "compMs": 4629.46000123024,
+   "crcMs": 54.03999876976013,
+   "writeMs": 0.059999942779541016,
+   "decompMs": 843.7450001239777,
+   "dcrcMs": 52.99999988079071,
+   "compMBs": 81.80575702119886,
+   "decompMBs": 448.85182127817336
+  },
+  {
+   "job": {
+    "type": "crc"
+   },
+   "MB": 268.435456,
+   "jsMBs": 1706.1394853968663,
+   "wasmMBs": 3372.304722608015
+  }
+ ]
+}

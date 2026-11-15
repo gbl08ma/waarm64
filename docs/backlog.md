@@ -1446,10 +1446,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **A step, not a slew:** the agent sets CLOCK_REALTIME at once (past 50 ms off). A guest with chrony or timesyncd
     sees a step it didn't make; none was seen to mind on Debian (`tests/page-clock.test.ts`), but a long-running
     guest whose NTP client disciplines the clock may log it.
-- **One worker compresses RAM** (the core's LZ): 0.44 s for 304 MB of pages. Four would take it
-  to 0.15 s (`bench/boot/REPORT.md` "M8 phase C loop 4"); chunks must then be dealt out
-  interleaved, not as ranges. And the file's blocks are copied through the codec's own instance
-  (a second copy each way): compressing in place in the VM's memory would save it.
+- **Snapshots' compression and wiring (the SNAPZ track, `SNAPZ-KICKOFF.md`; measured: bench/boot/REPORT.md "SNAPZ:
+  compression across the emulator, measured")**: a desktop guest's save pauses 4.2 s, 2.9 s of it the core's LZ on one
+  thread; its load takes 9.8 s. The track takes lz4_flex as codec 2, the CRC into wasm, a pool of workers for the save
+  and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
+  in a restore, and a breakdown of the load's machine start.
 - **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
   test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
   stale entries, or the count of a run with TLB flushes at the same points
@@ -1460,11 +1461,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   load to `running`, a suspend and its resume, the file's size and the pause): the lane's numbers
   are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
   exit").
-- **Save snapshot's pause is the file's write** (1.4 s for Debian's 175 MB through the picked
-  file's stream; dropped, 2026-10-18, the user): holding the compressed file in memory and writing
-  it after the resume would cut the pause to the compression's ~0.5 s, but the file is the guest's
-  used RAM plus the disk's changes, so the page would briefly need up to a second copy of the
-  guest's RAM, enough to crash it with a big guest on a small host.
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
@@ -1476,20 +1472,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **A held chain the guest overwrote** (it changed a buffer it had given a device) makes the
   machine unsaveable until that queue is reset (`vm_snapshot_size` = `u64::MAX`): only a broken
   guest does it; the page would say so and offer nothing.
-- **fflate elsewhere in the emulator** (the user's idea, 2026-11-09; fflate came in for Vulkan's shader store, VK4 T49
-  follow-up: bench/vulkan/REPORT.md, vk/README.md "The shader cache"): where the emulator compresses through the
-  platform's streams, a synchronous codec, another level or a better ratio might help. Candidates: the snapshot file's
-  codec 1 (`web/snapshot-file.ts`, CompressionStream's deflate-raw, asynchronous; codec 2, the core's LZ, won the
-  default by speed: bench/boot/REPORT.md "M8 phase C loop 4", so a level of fflate's would be a size option, not the
-  default); qcow2's compressed clusters, read through DecompressionStream (`web/qcow2.ts` `inflate`, the only
-  asynchronous part of virtio-blk's path, with web/inflate-pool.ts's workers: docs/devices.md) and written through
-  CompressionStream (`web/qcow2-write.ts` `deflate`: CompressionStream has no window setting and QEMU inflates with a 4 KiB window, its
-  comment says; whether a codec with one changes what a cluster can be, to check); the guest agent's gzip
-  (`web/app/guest-agent.ts`).
-  To measure, each place: the ratio, the speed against CompressionStream/DecompressionStream in Chromium (on its
-  thread and with its stream overhead: per-call cost on small inputs like a 64 KiB cluster may matter more than
-  throughput), and whether being synchronous matters there (a sync inflate in virtio-blk's request path would drop the
-  async step and maybe the pool; elsewhere it may not). Nothing implemented.
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [networking/tailnet.md](networking/tailnet.md), [frontend.md](frontend.md) "Network")
 

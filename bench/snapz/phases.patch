@@ -1,0 +1,216 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index 74f87c22..fcba5351 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -133,7 +133,7 @@ export async function openSession(o: SessionOptions) {
+     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
+     if (t.startsWith('waarm64-slow ')) return void slow.push(t.slice(11));
+     if (t.startsWith('virgl') || t.startsWith('venus')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
+-    if (m.type() === 'error' || t.startsWith('venus')) console.log(`[page ${m.type()}] ${t.slice(0, 400)}`);
++    if (m.type() === 'error' || t.startsWith('venus') || t.startsWith('TIMING')) console.log(`[page ${m.type()}] ${t.slice(0, 400)}`);
+     // CONSOLE_FILE=<path>: the renderers' lines whole (a shader that didn't compile comes with its code).
+     if (process.env.CONSOLE_FILE && (t.startsWith('virgl') || t.startsWith('venus'))) appendFileSync(process.env.CONSOLE_FILE, `${t}\n`);
+   });
+diff --git a/web/app/areas/snapshot-actions.ts b/web/app/areas/snapshot-actions.ts
+index 64912db2..20153d65 100644
+--- a/web/app/areas/snapshot-actions.ts
++++ b/web/app/areas/snapshot-actions.ts
+@@ -199,7 +199,7 @@ export class SnapshotActions {
+       parts.length = 0;
+       const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted } = done;
+       // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes, the balloon's hint.
+-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted });
++      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, phases: (done as unknown as { phases: unknown }).phases });
+       this.#saved(r, 'file', handle?.name ?? suggestedName, done);
+     } catch (e) {
+       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.noFile'));
+@@ -250,7 +250,7 @@ export class SnapshotActions {
+         return done;
+       });
+       const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted } = done;
+-      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, id });
++      messageBar.snapshot = JSON.stringify({ bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, id, phases: (done as unknown as { phases: unknown }).phases });
+       this.#saved(r, 'kept', name, done);
+     } catch (e) {
+       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.nothingKept'));
+diff --git a/web/app/worker-snapshot.ts b/web/app/worker-snapshot.ts
+index d8ea02ce..0891e9e8 100644
+--- a/web/app/worker-snapshot.ts
++++ b/web/app/worker-snapshot.ts
+@@ -179,8 +179,8 @@ export async function saveSnapshot(
+     }
+     progress(id, msg('snapshots:worker-snapshot.phase.finishing'), 1);
+     await out.close();
+-    const { bytes, stateMs, blobBytes, pins } = w;
+-    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted });
++    const { bytes, stateMs, blobBytes, pins, phases } = w;
++    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted, phases } as never);
+   } catch (err) {
+     fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
+   } finally {
+diff --git a/web/snapshot-file.ts b/web/snapshot-file.ts
+index 7c15bc6d..fbb20dd3 100644
+--- a/web/snapshot-file.ts
++++ b/web/snapshot-file.ts
+@@ -52,6 +52,9 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
+ /** A frame codec: id as in the frame header. Pluggable so another codec (an LZ in the core, id 2) can be added later. */
+ export type Codec = { id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array> };
+ 
++/** TEMP bench: time per phase of a write. */
++export const phases: Record<string, number> = {};
++const tick = (k: string, t: number) => { phases[k] = (phases[k] ?? 0) + performance.now() - t; };
+ const MAGIC = new TextEncoder().encode('WAARMSNP');
+ const VERSION = 2;
+ /** A BLOB frame's index: the blob times this, plus the chunk. */
+@@ -246,7 +249,9 @@ export class SnapshotWriter {
+   #push(bytes: Promise<Uint8Array>) {
+     const written = this.#tail.then(() => bytes).then(async (b) => {
+       this.#bytes += b.length;
++      const t = performance.now();
+       await this.#sink(b);
++      tick('sink', t);
+     });
+     this.#tail = written;
+     written.catch((e) => { if (!this.#hasFailed) { this.#hasFailed = true; this.#failed = e; } });
+@@ -267,10 +272,15 @@ export class SnapshotWriter {
+       let id = 0;
+       let stored = raw;
+       if (codec.id !== 0) {
++        const t = performance.now();
+         const packed = await codec.compress(raw);
++        tick('compress', t);
+         if (packed.length < raw.length) { id = codec.id; stored = packed; }
+       }
+-      return encodeFrame(tag, id, index, raw.length, stored);
++      const t = performance.now();
++      const f = encodeFrame(tag, id, index, raw.length, stored);
++      tick('frame+crc', t);
++      return f;
+     })());
+     await this.#drain(this.#concurrency);
+   }
+@@ -312,6 +322,7 @@ export class SnapshotWriter {
+         words = new Uint32Array(src.buffer, 0, len >> 2);
+         off = 0;
+       }
++      const ts = performance.now();
+       const bitmap = new Uint8Array(BITMAP);
+       let present = 0;
+       for (let p = 0; p < len / PAGE; p++) {
+@@ -326,6 +337,7 @@ export class SnapshotWriter {
+           raw.set(src.subarray(off + p * PAGE, off + (p + 1) * PAGE), at);
+           at += PAGE;
+         }
++        tick('scan+gather', ts);
+         pages += present;
+         frames++;
+         await this.#frame('RAM ', first + base / CHUNK, raw);
+@@ -519,9 +531,12 @@ export async function openSnapshot(
+             throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
+           }
+           const headBytes = h.slice(0, 24); // `h` is a view of the input's buffer, which the next take may reuse
++          let tt = performance.now();
+           const stored = await input.take(storedLen);
++          tick(opts.check ? 'r.check.read' : 'r.read', tt); tt = performance.now();
+           if (!stored) throw truncated();
+           if (frameCrc(headBytes, stored) !== crc) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
++          tick(opts.check ? 'r.check.crc' : 'r.crc', tt);
+           if (opts.check) {
+             // Checked, not unpacked: a pass over a file before a restore touches anything.
+             count++;
+@@ -532,7 +547,9 @@ export async function openSnapshot(
+           if (codec === 0) data = stored.slice();
+           else {
+             try {
++              const td = performance.now();
+               data = await codecs.get(codec)!.decompress(stored, rawLen);
++              tick('r.decompress', td);
+             } catch (e) {
+               if (e instanceof SnapshotError) throw e;
+               throw corrupt(msg('snapshots:snapshot-file.damage.unpack'));
+diff --git a/web/snapshot.ts b/web/snapshot.ts
+index aebca188..a8590b22 100644
+--- a/web/snapshot.ts
++++ b/web/snapshot.ts
+@@ -7,7 +7,7 @@
+ // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
+ // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
+ // file's blocks before the new VM's backends open them.
+-import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
++import { phases, applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
+ import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
+ import { ramDisk } from './ramdisk.ts';
+ import { lzCodec } from './lz.ts';
+@@ -60,6 +60,7 @@ const BLOCK = 4096;
+  * image's hash, if the caller has it.
+  */
+ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean } = {}) {
++  for (const k of Object.keys(phases)) delete phases[k];
+   const t0 = performance.now();
+   const state = await vm.snapshot();
+   // How long the devices' state took (a 3D machine's renderer read back is in it): tools split a snapshot's pause with it.
+@@ -78,7 +79,9 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
+   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
+   await w.bytes('CORE', state.core);
+   await w.bytes('DEVS', new TextEncoder().encode(devs));
++  let tp = performance.now();
+   for (const [n, b] of blobs.entries()) await w.blob(n, b);
++  phases.blobsTotal = performance.now() - tp; tp = performance.now();
+   // Memory 0's RAM, then each spill memory's (node 1's after Venus's arena and window in memory 1), their chunks numbered
+   // on (`ramStarts`); the progress is over all of it.
+   const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
+@@ -89,6 +92,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
+     const r = await w.ram(views[k], opts.progress && ((done) => opts.progress!(before + done, total)), starts[k]);
+     [ram.pages, ram.frames] = [ram.pages + r.pages, ram.frames + r.frames];
+   }
++  phases.ramTotal = performance.now() - tp; tp = performance.now();
+   for (const d of disks) {
+     await w.disk((async function* () {
+       for (let k = 0; k < d.blocks.length; k += 256) {
+@@ -99,7 +103,8 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
+     })());
+   }
+   const end = await w.end();
+-  return { ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
++  phases.diskTotal = performance.now() - tp;
++  return { phases: { ...phases }, ...end, pages: ram.pages, state: state.core.length, stateMs, devsBytes: devs.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
+ }
+ 
+ /**
+@@ -122,12 +127,15 @@ export async function readSnapshot(
+   source: ReadableStream<Uint8Array> | Blob, codec: Codec & { snapshotVersion?: number; snapshotVersionMin?: number }, coreVersion: number,
+   opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
+ ): Promise<{ header: SnapshotHeader; restore: Restore }> {
++  for (const k of Object.keys(phases)) delete phases[k];
++  const tr0 = performance.now();
+   if (source instanceof Blob) {
+     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
+     // the file damaged halfway.
+     const check = await openSnapshot(source, { codecs: [codec], check: true });
+     for await (const _ of check.frames()) void _;
+   }
++  phases['r.checkTotal'] = performance.now() - tr0;
+   const s = await openSnapshot(source, { codecs: [codec] });
+   const { header } = s;
+   // The codec's core reads back to its `snapshotVersionMin` (a caller naming another version means another core).
+@@ -229,8 +237,11 @@ export async function readSnapshot(
+         const { index, data } = next.value;
+         let k = views.length - 1;
+         while (k > 0 && index < starts[k]) k--;
++        const ta = performance.now();
+         applyRam(views[k], index - starts[k], data);
++        phases['r.applyRam'] = (phases['r.applyRam'] ?? 0) + performance.now() - ta;
+       }
++      phases['r.ramDone'] = performance.now() - tr0;
+       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
+       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
+       const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();
+@@ -275,6 +286,8 @@ export async function readSnapshot(
+           }
+         }
+         for (const o of open.values()) if (o !== 'skip') o.disk.flush();
++        phases['r.diskDone'] = performance.now() - tr0;
++        console.log('TIMING ' + JSON.stringify(Object.fromEntries(Object.entries(phases).map(([k, v]) => [k, Math.round(v)]))));
+         for (const r of rams) r.spec.ramInit = r.disk.chunkList();
+       } finally {
+         for (const o of open.values()) if (o !== 'skip') o.close();

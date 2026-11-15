@@ -1,0 +1,111 @@
+[
+{
+"type": "crc"
+},
+{
+"type": "single",
+"codec": "core",
+"decomp": true,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "lz4flex",
+"decomp": true,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "snap",
+"decomp": true,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "zstd-4",
+"decomp": true,
+"wasm": "czstd"
+},
+{
+"type": "single",
+"codec": "zstd-1",
+"decomp": true,
+"wasm": "czstd"
+},
+{
+"type": "single",
+"codec": "zstd1",
+"decomp": true,
+"wasm": "czstd"
+},
+{
+"type": "single",
+"codec": "lz4flex",
+"decomp": true,
+"wasm": "safe",
+"label": "lz4flex-safe"
+},
+{
+"type": "single",
+"codec": "miniz1",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "miniz2",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "fflate1",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "fflate3",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "ruzstd",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "zstd3",
+"decomp": true,
+"sample": 4,
+"wasm": "czstd"
+},
+{
+"type": "single",
+"codec": "cstream",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "fflate6",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+},
+{
+"type": "single",
+"codec": "miniz6",
+"decomp": true,
+"sample": 4,
+"wasm": "plain"
+}
+]

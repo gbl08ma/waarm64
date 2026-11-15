@@ -1,0 +1,35 @@
+{
+ "host": {
+  "cpu": "aarch64",
+  "nproc": 8,
+  "chromium": "155.0.8059.84",
+  "date": "2026-11-15T13:28:43.582Z"
+ },
+ "corpus": "../../../../target/snapbench/corpus-small.bin",
+ "results": [
+  {
+   "job": {
+    "type": "opfs"
+   },
+   "MB": 50.331648,
+   "seq4kMs": 11.940000057220459,
+   "rand4kMs": 17.68999993801117,
+   "oneReadMs": 10.5,
+   "mibReadsMs": 2.450000047683716,
+   "write4kMs": 42.14999997615814,
+   "write1mMs": 22.960000038146973
+  },
+  {
+   "job": {
+    "type": "opfs"
+   },
+   "MB": 50.331648,
+   "seq4kMs": 10.670000076293945,
+   "rand4kMs": 13.049999952316284,
+   "oneReadMs": 9.240000009536743,
+   "mibReadsMs": 2.6699999570846558,
+   "write4kMs": 47.16500008106232,
+   "write1mMs": 20.105000019073486
+  }
+ ]
+}

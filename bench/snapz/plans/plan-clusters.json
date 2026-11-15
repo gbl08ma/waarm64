@@ -1,0 +1,1 @@
+[{"type": "clusters", "op": "inflate", "size": 65536, "count": 1500}, {"type": "clusters", "op": "deflate", "size": 4096, "count": 8000}, {"type": "clusters", "op": "inflate", "size": 65536, "count": 1500}, {"type": "clusters", "op": "deflate", "size": 4096, "count": 8000}, {"type": "writable", "mb": 680, "chunk": 450000}, {"type": "writable", "mb": 680, "chunk": 450000}]

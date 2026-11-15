@@ -4791,3 +4791,103 @@ transfer cache for fetched pages". Planted, each failing both: never scanning; d
 global maps; a bump clearing them; global fetches not marked. Skipping the IS by-VA flushes on the other vCPUs fails
 the bare-metal test too. `isb.bin` came out of `build.sh` different (the clang here), rebuilt with the others. No step
 count moved. CI: `scripts/ci.sh` (794 s) and `scripts/ci-jit.sh` pass.
+
+## SNAPZ: compression across the emulator, measured (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, commit 40751074; nothing else ran. Tools:
+`bench/snapz/` (its README); raw: `results/snapz-eval/`. The question (the user's): which codec and which wiring makes
+snapshot operations on a multi-hundred-MB machine fastest at about today's ratio; the snapshot's codec 2, qcow2's
+clusters, the export. Format compatibility with existing snapshots was not required. The guest's agent is out of scope:
+the page ships it already compressed (zopfli).
+
+**The guest:** `target/snapbench/pages.waarm64snap` (`bench/gpu/warm-snapshots.sh firefox`: Arch Linux ARM, sway,
+Firefox on a still page; 4 vCPUs, 2560 MiB), a 689 MB file: 1.52 GB of non-zero RAM pages in 1,577 frames, 109 MB of
+3D state (138 BLOB frames), 49 MB of disk blocks (11,952), 1.4 MB of CORE and DEVS. The core's LZ gets 2.26x on its
+RAM (3.3x on loop 4's Alpine image: a desktop's pages pack worse).
+
+**Today's save and load on the page** (`phases.json`; the page's code timed by `bench/snapz/phases.patch`, two saves):
+
+| | ms |
+|---|---|
+| save: the pause | 4,148-4,251 |
+| ... the devices' state (3D read back) | 187-218 |
+| ... RAM: compress (the core's LZ, one thread, ~520 MB/s) | 2,894-2,920 |
+| ... RAM: the frames' CRC (JS) and encoding | 422-431 |
+| ... RAM: the zero-page scan and the gather | 305-402 |
+| ... the sink (the download path's `snapshot-chunk` posts) | 118-125 |
+| ... the disk's blocks | 145-175 |
+| load (Load snapshot to `running`) | 9,782 |
+| ... the check pass: read 242, CRC (JS) 424 | 674 |
+| ... RAM: read 184, CRC 347, decompress 1,688, `applyRam` 313 | to 3,209 from the start |
+| ... the disk's blocks into the overlay, one 4 KiB write each | 2,245 |
+| ... the rest (the machine started: workers, the core, the 3D state restored) | ~4,300 |
+
+**Off the record, OPFS costs ~250 µs a call.** Playwright's default context (`browser.newContext()`) is off the
+record: OPFS lives in memory behind IPC, and every sync-handle `read` or `write` costs 210-300 µs whatever its size
+(50 MB in 4 KiB reads: 2.6 s; in 1 MiB reads: 25 ms; `opfs.json`). In a profile on disk (`WAARM64_PROFILE`) a 4 KiB
+read is ~1 µs (12 ms; `opfs-persistent.json`). So the page tests' and benches' snapshot numbers overstate the disk's
+part: the same save paused 6.4-6.7 s off the record (the disk's blocks 2.3-2.6 s) and the load took 15.3 s; the warm
+snapshot's own save, 7.5 s. An incognito window pays it too. Measure snapshots with a persistent profile.
+
+**The codecs on one thread** (`single-2.json`; 3 rounds, alternated, each after a 64-frame warm-up: a new module's
+first frames run in Liftoff; the RAM frames whole, the slow codecs on every fourth; MB/s of raw bytes, the copies in
+and out of the codec's memory included):
+
+| codec | ratio | compress | decompress |
+|---|---|---|---|
+| the core's LZ (`core/src/lz.rs`) | 2.26 | 503-512 | 934-1,069 |
+| lz4_flex 0.14.2 (unsafe paths) | 2.31 | 614-620 | 2,047-2,120 |
+| lz4_flex, `safe-encode` + `safe-decode` | 2.31 | 582-595 | 1,970-2,009 |
+| snap 1.1.2 (raw) | 2.27 | 653-669 | 1,464-1,507 |
+| zstd 1.5.7 (C, through zstd-safe), level −4 | 2.37 | 665-686 | 1,505-1,545 |
+| zstd −1 | 2.77 | 590-602 | 1,354-1,377 |
+| zstd 1 | 3.14 | 516-525 | 1,034-1,068 |
+| zstd 3 | 3.39 | 363 | 928 |
+| miniz_oxide 0.9.1, level 1 (deflate-raw) | 2.80 | 250 | 397 |
+| fflate 0.8.3, level 1 | 3.12 | 80 | 204 |
+| `CompressionStream('deflate-raw')` | 3.26 | 82 | 449 |
+
+ruzstd 0.9.1's encoder ("Fastest") was 123 MB/s at 2.34x (a first run, its JSON not kept: it shared the machine with
+the warm snapshots' making); miniz_oxide 6 and fflate 6, 40-52 MB/s. CRC-32: crc32fast 1.5 in wasm 3.4 GB/s; the
+page's JS slicing-by-8 0.5-0.7 GB/s cold and 1.7 warm. **lz4_flex and the core's LZ read each other's output**
+(`bench/snapz/compat.mjs`: 800 frames each way, byte-exact): both write the LZ4 block format, so lz4_flex can be codec
+2 with every existing file still readable.
+
+**The wiring: a pool of workers** (`pool-1.json`; 3 rounds). Frames are dealt to `n` workers (frame c to worker
+c mod n, three in flight each), each reading its raw frame straight from a SharedArrayBuffer (guest RAM's stand-in),
+compressing it in its own instance and taking the CRC in wasm; the coordinator writes them in order. The frames were
+gathered beforehand, so the scan (~0.35 s on one thread) is not in these. Wall ms for the 1.52 GB:
+
+| codec | n=1 | 2 | 4 | 6 | 4, the OPFS sink | 4, CRC in JS | restore n=1 | restore n=4 |
+|---|---|---|---|---|---|---|---|---|
+| the core's LZ | 3,149-3,171 | 1,650-1,669 | 872-875 | 689-717 | 1,114-1,376 | 955-1,043 | 2,088-2,220 | 571-575 |
+| lz4_flex (safe) | 2,783-2,826 | 1,452-1,481 | 757-770 | 598-608 | 967-1,008 | 836-867 | 1,449-1,462 | 404-412 |
+| zstd −4 | 2,443-2,453 | 1,288-1,296 | 682-688 | 557-566 | 901-925 | 788-824 | 1,639 | 462 |
+| zstd −1 | 2,729-2,730 | 1,428-1,438 | 757-767 | 621-632 | 939-942 | 844-885 | 1,686-1,695 | 476-501 |
+| zstd 1 | 3,070-3,134 | 1,596-1,602 | 840-843 | 694-698 | 1,005-1,051 | 928-946 | 1,966-1,970 | 538-545 |
+
+The pool scales near-linearly to 4 (3.6x) and gives ~20% more at 6; the codec adds 10-20% over the core's LZ at any
+`n`. The OPFS sink (a sync access handle written by the coordinator between dispatches) adds ~0.2-0.25 s at 4.
+"restore": each worker CRCs its stored frame, decompresses it and writes it into a shared output.
+
+**The picked file's stream** (`clusters-1.json`'s `writable`: `createWritable` on an OPFS file, as on a picked one):
+680 MB in 450 KB writes in 1.50-1.72 s, ~430 MB/s, awaited one by one or eight in flight alike. A pool makes ~0.8 GB/s
+of output: on that path the stream becomes the pause.
+
+**qcow2's clusters** (`clusters-1.json`; 1,500 non-zero 64 KiB pieces of the corpus deflated at level 6 by fflate, 2.89x;
+8,000 4 KiB pieces; µs a cluster, two runs):
+
+| | DecompressionStream / CompressionStream | fflate | miniz_oxide in wasm |
+|---|---|---|---|
+| inflate a 64 KiB cluster (a disk's read) | 393-410 | 301-332 | 159-163, synchronous |
+| deflate a 4 KiB cluster (an export), level 6 | 307 (3.06x) | 86-87 (3.09x) | 66 (3.12x) |
+| the same, level 1 | | 68-70 (2.97x) | 20-21 (2.81x) |
+
+**Where this leaves the snapshot's wait** (projected for this guest, a kept snapshot or a suspend, 4 workers): the
+pause from 4.2 s to ~1.2-1.3 s (the state 0.2, RAM ~0.9 with lz4_flex and the scan dealt out too, the disk's blocks
+0.15), ~1.0-1.1 s with 6; the load's compression share from ~3.3 s to ~0.8 s (9.8 s to ~7 s), the rest being the
+overlay's per-block writes (2.25 s) and the machine's start (~4.3 s), neither of them compression.
+
+**Decided (the user, 2026-11-15):** lz4_flex replaces the core's LZ (codec 2), crc32fast takes the CRC into wasm, and
+the save and the load go through a pool; a picked file is staged through OPFS when there's room, else written
+directly. zstd (C: clang for wasm32 in every build) was not taken. The work: the SNAPZ track (`SNAPZ-KICKOFF.md`).

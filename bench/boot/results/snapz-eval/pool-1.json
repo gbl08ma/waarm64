@@ -1,0 +1,2071 @@
+{
+ "host": {
+  "cpu": "aarch64",
+  "nproc": 8,
+  "chromium": "155.0.8059.84",
+  "date": "2026-11-15T13:37:49.097Z"
+ },
+ "corpus": "../../../../target/snapbench/corpus-pages.bin",
+ "results": [
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "core",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 3171.1749999523163,
+   "MBs": 479.6412484403639
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 2,
+    "round": 0
+   },
+   "codec": "core",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1649.8400000333786,
+   "MBs": 921.9235416581167
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 874.2649999856949,
+   "MBs": 1739.7772254692657
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 6,
+    "round": 0
+   },
+   "codec": "core",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 693.875,
+   "MBs": 2192.075425689065
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "sink": "opfs",
+    "round": 0
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1376.0350000858307,
+   "MBs": 1105.3689302271566
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "crc": "js",
+    "round": 0
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1043.0349999666214,
+   "MBs": 1458.2696995294261
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2804.8150000572205,
+   "MBs": 542.2911443246595
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 2,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 1451.5749999284744,
+   "MBs": 1047.8455030397656
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 756.7250000238419,
+   "MBs": 2010.0120069405366
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 6,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 601.0999999046326,
+   "MBs": 2530.404818235432
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "sink": "opfs",
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 1008.3949999809265,
+   "MBs": 1508.3636234102407
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "crc": "js",
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 855.539999961853,
+   "MBs": 1777.855314851228
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 2453.0950000286102,
+   "MBs": 620.0437960952431
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 1287.914999961853,
+   "MBs": 1180.9990069570208
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 682.0849999189377,
+   "MBs": 2229.9659663836123
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 556.8149999380112,
+   "MBs": 2731.6547438006014
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 900.9450000524521,
+   "MBs": 1688.2565927014937
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 824.079999923706,
+   "MBs": 1845.7265509911874
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 2729.0049999952316,
+   "MBs": 557.3556428085172
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 1438.335000038147,
+   "MBs": 1057.4910128444762
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 766.8050000667572,
+   "MBs": 1983.589486072184
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 631.7800000905991,
+   "MBs": 2407.5253027665967
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 942.3650000095367,
+   "MBs": 1614.0522366435587
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 850.9350000619888,
+   "MBs": 1787.4765239286153
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 3134.0950000286102,
+   "MBs": 485.3159639341229
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 1599.2749999761581,
+   "MBs": 951.0724147020838
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 840.039999961853,
+   "MBs": 1810.6594163004988
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 694.0199999809265,
+   "MBs": 2191.6174404798157
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 1051.4950000047684,
+   "MBs": 1446.5369174300422
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 946.204999923706,
+   "MBs": 1607.5019008805095
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 3070.139999985695,
+   "MBs": 495.4257252135365
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 1601.6949999332428,
+   "MBs": 949.6354399953767
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 841.8949999809265,
+   "MBs": 1806.6698769258155
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 697.6699999570847,
+   "MBs": 2180.1515560272933
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 1004.7300000190735,
+   "MBs": 1513.8657509690415
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 935.4250000715256,
+   "MBs": 1626.027031438862
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 2728.905000090599,
+   "MBs": 557.3760669387547
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 1427.5999999046326,
+   "MBs": 1065.442936467924
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 757.454999923706,
+   "MBs": 2008.074850853455
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 621.3099999427795,
+   "MBs": 2448.095694806266
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 939.4649999141693,
+   "MBs": 1619.0345953696653
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 844.3799999952316,
+   "MBs": 1801.3528695712705
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 2442.829999923706,
+   "MBs": 622.6492781108404
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 1289.5249999761581,
+   "MBs": 1179.524504005833
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 687.5449999570847,
+   "MBs": 2212.2571411252206
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 565.5749999284744,
+   "MBs": 2689.3450668653263
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 925.4950000047684,
+   "MBs": 1643.4733153525012
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 788.0950000286102,
+   "MBs": 1930.003788813255
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2826.079999923706,
+   "MBs": 538.2106437330373
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 2,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 1480.664999961853,
+   "MBs": 1027.2589249014372
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 769.5,
+   "MBs": 1976.6424119558153
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 6,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 608.2949999570847,
+   "MBs": 2500.474829001239
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "sink": "opfs",
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 966.8849999904633,
+   "MBs": 1573.1202118297442
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "crc": "js",
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 866.9150000810623,
+   "MBs": 1754.5276478752517
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "core",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 3165.2099999189377,
+   "MBs": 480.5451568897337
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 2,
+    "round": 1
+   },
+   "codec": "core",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1664.0999999046326,
+   "MBs": 914.0233976847353
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 872.1399999856949,
+   "MBs": 1744.016254299709
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 6,
+    "round": 1
+   },
+   "codec": "core",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 717.0149999856949,
+   "MBs": 2121.331263683948
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "sink": "opfs",
+    "round": 1
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1114,
+   "MBs": 1365.3737307001795
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "crc": "js",
+    "round": 1
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 997.5499999523163,
+   "MBs": 1524.7620029800073
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 1,
+    "round": 2
+   },
+   "codec": "core",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 3148.9099999666214,
+   "MBs": 483.03264812780384
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 2,
+    "round": 2
+   },
+   "codec": "core",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1669.1900000572205,
+   "MBs": 911.2361899770898
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "round": 2
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 874.710000038147,
+   "MBs": 1738.8921310304745
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 6,
+    "round": 2
+   },
+   "codec": "core",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 688.7949999570847,
+   "MBs": 2208.2424176928803
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "sink": "opfs",
+    "round": 2
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 1116.2249999046326,
+   "MBs": 1362.6520962439943
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "crc": "js",
+    "round": 2
+   },
+   "codec": "core",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "ratio": 2.259081587634375,
+   "wallMs": 955.4650000333786,
+   "MBs": 1591.9226093544648
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 1,
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 2783.1299999952316,
+   "MBs": 546.5164530591837
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 2,
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 1463.679999947548,
+   "MBs": 1039.1795584106546
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 768.4050000905991,
+   "MBs": 1979.459186003036
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 6,
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 598.1899999380112,
+   "MBs": 2542.714415415871
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "sink": "opfs",
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 1006.9249999523163,
+   "MBs": 1510.565668815482
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "crc": "js",
+    "round": 2
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "ratio": 2.3073704515992812,
+   "wallMs": 836.0749999284744,
+   "MBs": 1819.246283084798
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 2445.9099999666214,
+   "MBs": 621.8652100938942
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 1295.9249999523163,
+   "MBs": 1173.699354558301
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 686.8600000143051,
+   "MBs": 2214.463407344032
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 563.3450000286102,
+   "MBs": 2699.990833188814
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 917.3899999856949,
+   "MBs": 1657.9931501582944
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 2
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "ratio": 2.365127419826519,
+   "wallMs": 796.1600000858307,
+   "MBs": 1910.4530946493473
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 2730.104999899864,
+   "MBs": 557.1310759314343
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 1436.6749999523163,
+   "MBs": 1058.7128863873063
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 758.4849998950958,
+   "MBs": 2005.3479451938658
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 623.4450000524521,
+   "MBs": 2439.712141202563
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 940.8600000143051,
+   "MBs": 1616.6340751832088
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 2
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "ratio": 2.771209094323295,
+   "wallMs": 884.9400000572205,
+   "MBs": 1718.7903540371663
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 2
+   },
+   "codec": "zstd1",
+   "n": 1,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 3075.6599999666214,
+   "MBs": 494.536566465899
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 2,
+    "round": 2
+   },
+   "codec": "zstd1",
+   "n": 2,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 1595.6449999809265,
+   "MBs": 953.2360493832786
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 2
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 843.1749999523163,
+   "MBs": 1803.9272228019306
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 6,
+    "round": 2
+   },
+   "codec": "zstd1",
+   "n": 6,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 697.8500000238419,
+   "MBs": 2179.5892182389257
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "sink": "opfs",
+    "round": 2
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "opfs",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 1007.7150000333786,
+   "MBs": 1509.3814580011401
+  },
+  {
+   "job": {
+    "type": "pool",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "crc": "js",
+    "round": 2
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "window": 3,
+   "sink": "none",
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "ratio": 3.1441623501400033,
+   "wallMs": 928.2400000095367,
+   "MBs": 1638.6132207019443
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "core",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "wallMs": 2219.6650000810623,
+   "MBs": 685.2504030763434
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "core",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "wallMs": 575.3150000572205,
+   "MBs": 2643.8148420408293
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "wallMs": 1461.585000038147,
+   "MBs": 1040.6690927727786
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "wallMs": 411.61500000953674,
+   "MBs": 3695.264594256184
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "wallMs": 1639.4099999666214,
+   "MBs": 927.7888606455787
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "wallMs": 461.7649999856949,
+   "MBs": 3293.9402857451737
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "wallMs": 1694.789999961853,
+   "MBs": 897.4718614307588
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "wallMs": 500.50999999046326,
+   "MBs": 3038.9529400591027
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "wallMs": 1969.960000038147,
+   "MBs": 772.1102641528489
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 0
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "wallMs": 545.4900000095367,
+   "MBs": 2788.367038760395
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "core",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "wallMs": 2088.0950000286102,
+   "MBs": 728.4277468118833
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "core",
+    "wasm": "plain",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "core",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 673294114,
+   "wallMs": 571.2250000238419,
+   "MBs": 2662.744690684958
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "wallMs": 1448.6599999666214,
+   "MBs": 1049.9539823250768
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "lz4flex",
+    "wasm": "safe",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "lz4flex",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 659203352,
+   "wallMs": 404.00999999046326,
+   "MBs": 3764.823484656083
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "wallMs": 1638.545000076294,
+   "MBs": 928.2786471712268
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-4",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "zstd-4",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 643105451,
+   "wallMs": 461.77499997615814,
+   "MBs": 3293.8689536647325
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "wallMs": 1685.6699999570847,
+   "MBs": 902.3274638800735
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd-1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "zstd-1",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 548867402,
+   "wallMs": 475.75999999046326,
+   "MBs": 3197.0454347370296
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 1,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 1,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "wallMs": 1965.8050000667572,
+   "MBs": 773.742225677698
+  },
+  {
+   "job": {
+    "type": "restore",
+    "codec": "zstd1",
+    "wasm": "czstd",
+    "n": 4,
+    "round": 1
+   },
+   "codec": "zstd1",
+   "n": 4,
+   "frames": 1577,
+   "raw": 1521026336,
+   "stored": 483762022,
+   "wallMs": 537.6950000524521,
+   "MBs": 2828.790180030731
+  }
+ ]
+}

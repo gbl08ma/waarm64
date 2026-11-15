@@ -1,0 +1,105 @@
+{
+ "host": {
+  "cpu": "aarch64",
+  "nproc": 8,
+  "chromium": "155.0.8059.84",
+  "date": "2026-11-15T13:39:38.492Z"
+ },
+ "corpus": "../../../../target/snapbench/corpus-pages.bin",
+ "results": [
+  {
+   "job": {
+    "type": "clusters",
+    "op": "inflate",
+    "size": 65536,
+    "count": 1500
+   },
+   "size": 65536,
+   "clusters": 1500,
+   "ratio": 2.894108467890408,
+   "dstreamUsPer": 409.84333332379657,
+   "fflateUsPer": 300.92999998728436,
+   "minizUsPer": 162.88333336512247
+  },
+  {
+   "job": {
+    "type": "clusters",
+    "op": "deflate",
+    "size": 4096,
+    "count": 8000
+   },
+   "size": 4096,
+   "clusters": 8000,
+   "cstreamUsPer": 308.0481249988079,
+   "cstreamRatio": 3.061372159544501,
+   "fflate6UsPer": 85.67874999344349,
+   "fflate6Ratio": 3.09234910666047,
+   "fflate1UsPer": 68.16187499463558,
+   "fflate1Ratio": 2.967262585261938,
+   "miniz6UsPer": 66.55750000476837,
+   "miniz6Ratio": 3.1214295934158867,
+   "miniz1UsPer": 19.833750009536743,
+   "miniz1Ratio": 2.8140647588713716
+  },
+  {
+   "job": {
+    "type": "clusters",
+    "op": "inflate",
+    "size": 65536,
+    "count": 1500
+   },
+   "size": 65536,
+   "clusters": 1500,
+   "ratio": 2.894108467890408,
+   "dstreamUsPer": 392.74000000953674,
+   "fflateUsPer": 332.0166666507721,
+   "minizUsPer": 159.0766666730245
+  },
+  {
+   "job": {
+    "type": "clusters",
+    "op": "deflate",
+    "size": 4096,
+    "count": 8000
+   },
+   "size": 4096,
+   "clusters": 8000,
+   "cstreamUsPer": 306.62562499940395,
+   "cstreamRatio": 3.061372159544501,
+   "fflate6UsPer": 87.4781249910593,
+   "fflate6Ratio": 3.09234910666047,
+   "fflate1UsPer": 70.31687501072884,
+   "fflate1Ratio": 2.967262585261938,
+   "miniz6UsPer": 66.3893750011921,
+   "miniz6Ratio": 3.1214295934158867,
+   "miniz1UsPer": 20.802499994635582,
+   "miniz1Ratio": 2.8140647588713716
+  },
+  {
+   "job": {
+    "type": "writable",
+    "mb": 680,
+    "chunk": 450000
+   },
+   "MB": 680,
+   "chunk": 450000,
+   "awaitWriteMs": 1721.039999961853,
+   "awaitCloseMs": 1.3650000095367432,
+   "pipelinedWriteMs": 1670.1050000190735,
+   "pipelinedCloseMs": 14.180000066757202
+  },
+  {
+   "job": {
+    "type": "writable",
+    "mb": 680,
+    "chunk": 450000
+   },
+   "MB": 680,
+   "chunk": 450000,
+   "awaitWriteMs": 1705.9749999046326,
+   "awaitCloseMs": 0.3500000238418579,
+   "pipelinedWriteMs": 1494.75,
+   "pipelinedCloseMs": 15.305000066757202
+  }
+ ]
+}
