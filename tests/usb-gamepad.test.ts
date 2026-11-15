@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import type { UsbResult } from '../web/usb-device.ts';
 import { BUTTONS, GAMEPAD_PRODUCT, GAMEPAD_VENDOR, REPORT_LENGTH, UsbGamepad, padReport, type PadState } from '../web/usb-gamepad.ts';
 import { Usb } from '../web/usb.ts';
+import { eventually, until } from './until.ts';
 import { listPads, padName, PadFeed, padState, POLL_MS, REST, RUMBLE_MS, type PadLike } from '../web/app/gamepads.ts';
 
 let tag = 0;
@@ -193,19 +194,20 @@ test('the page\'s usb-pad messages reach the game pad through the glue, and its 
   try {
     const device = { api: 'virtual', kind: 'gamepad', index: 0, name: 'Pad' } as const;
     channel.port2.postMessage({ type: 'usb-attach', connector: 1, device });
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => answers.length > 0, 'the attach answered');
     assert.deepEqual(answers, [{ type: 'usb-state', connector: 1, state: 'attached', device, speed: 'full' }]);
     const gp = (usb as unknown as { plugged: { dev: UsbGamepad }[] }).plugged[1].dev;
     assert.equal(string((await control(gp, 0x80, 6, 0x303, 0x409, 255)).data!), 'waarm64-pad-1', 'the serial is the connector\'s');
     channel.port2.postMessage({ type: 'usb-pad', connector: 1, pad: pad({ pressed: press(9), axes: [0, -1] }) });
     channel.port2.postMessage({ type: 'usb-pad', connector: 2, pad: pad({ pressed: press(0) }) });
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => xpad(gp.report()).get('START') === 1, 'the pad state reached the device');
+    await new Promise((r) => setTimeout(r, 20)); // for an answer that shouldn't come
     const e = xpad(gp.report());
     assert.deepEqual([e.get('START'), e.get('A'), e.get('ABS_Y')], [1, 0, -32767]);
     assert.equal(answers.length, 1, 'states get no answer');
     await configure(gp);
     await out(gp, 0x00, 0x08, 0x00, 0, 0xff, 0, 0, 0);
-    await new Promise((r) => setTimeout(r, 20));
+    await until(() => answers.length > 1, 'the rumble');
     assert.deepEqual(answers.slice(1), [{ type: 'usb-rumble', connector: 1, strong: 0, weak: 1 }]);
   } finally {
     usb.close();
@@ -246,8 +248,7 @@ test('the page\'s feed: pad names, states, a send per change, at rest while hidd
     assert.equal(sent.length, 3, 'another pad at that place isn\'t it');
     // Polled while attached: a change is sent within the poll's period.
     pads = [null, g];
-    await new Promise((r) => setTimeout(r, POLL_MS * 4));
-    assert.deepEqual(sent.at(-1), [2, padState(g)]);
+    await eventually(() => assert.deepEqual(sent.at(-1), [2, padState(g)]));
     feed.stop();
     pads = [null, { ...g, axes: [] }];
     await new Promise((r) => setTimeout(r, POLL_MS * 4));
@@ -276,7 +277,7 @@ test('the page\'s feed plays the guest\'s rumble on the host\'s pad, again while
     feed.rumble(1, 1, 0.5);
     const effect = ['dual-rumble', { startDelay: 0, duration: RUMBLE_MS, strongMagnitude: 1, weakMagnitude: 0.5 }];
     assert.deepEqual(calls, [effect]);
-    await new Promise((r) => setTimeout(r, AGAIN * 2.5));
+    await until(() => calls.length >= 2, 'played again');
     assert.ok(calls.length >= 2 && calls.every((c) => JSON.stringify(c) === JSON.stringify(effect)), `played again: ${JSON.stringify(calls)}`);
     feed.rumble(1, 0, 0);
     const n = calls.length;

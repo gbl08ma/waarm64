@@ -11,6 +11,7 @@ import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
 import { SoftPower } from '../web/app/run/soft-power.ts';
 import type { Msg } from '../web/msg.ts';
+import { until } from './until.ts';
 
 const ports: MessagePort[] = [];
 after(() => ports.forEach((p) => p.close()));
@@ -38,9 +39,11 @@ function agent(caps: number, answer: (type: number, payload: Uint8Array) => { ty
   return {
     link,
     got,
-    connect() {
+    /** Connects and says HELLO: resolves once the link heard it. */
+    async connect() {
       c.port2.postMessage({ type: 'open', open: true, conn });
       hello();
+      assert.ok(await link.hello(10_000), 'the HELLO heard');
     },
     hello,
     drop() {
@@ -52,8 +55,7 @@ function agent(caps: number, answer: (type: number, payload: Uint8Array) => { ty
 
 test("a run's end (`close`) settles what waits on its link at once: an ask, a HELLO's wait", async () => {
   const a = agent(CAP.TIME | CAP.TRIM);
-  a.connect();
-  await settle();
+  await a.connect();
   const t0 = performance.now();
   const trim = a.link.trim(10_000);
   const c = new MessageChannel();
@@ -85,8 +87,7 @@ test("a late answer to an ask that gave up isn't the next ask's", async () => {
   const text = (s: string) => new Uint8Array([COPIED.OK, ...new TextEncoder().encode(s)]);
   // The first COPY's answer comes after its ask gave up; the second's at once.
   const a = agent(CAP.TIME | CAP.COPY, (type) => (type === FRAME.COPY ? (n++ === 0 ? { type: FRAME.COPIED, payload: text('old'), delay: 150 } : { type: FRAME.COPIED, payload: text('new'), delay: 250 }) : undefined));
-  a.connect();
-  await settle();
+  await a.connect();
   assert.equal(await a.link.copy(50), undefined, 'gave up');
   assert.deepEqual(await a.link.copy(2000), { status: COPIED.OK, text: 'new' }, "not the first one's late answer");
   a.link.close();
@@ -96,12 +97,12 @@ test("the close listeners: called when the agent's connection ends", async () =>
   const a = agent(CAP.TIME);
   let closed = 0;
   a.link.onClose.push(() => closed++);
-  a.connect();
-  await settle();
+  await a.connect();
   assert.equal(closed, 0);
   a.drop();
+  await until(() => closed > 0, 'the close listener');
   await settle();
-  assert.equal(closed, 1);
+  assert.equal(closed, 1, 'once');
   a.link.close();
 });
 
@@ -115,31 +116,28 @@ test("a trim the run's end cut short isn't joined by the next run's; Free unused
   }, shown);
   const old = agent(CAP.TIME | CAP.TRIM); // never answers
   run.link = trims.follow(old.link);
-  old.connect();
-  await settle();
+  await old.connect();
   assert.equal(shown.canTrim, true);
   const cut = trims.trim();
-  await settle();
+  await until(() => old.got.some((f) => f.type === FRAME.TRIM), 'the TRIM asked');
   trims.end();
   old.link.close();
   run.link = undefined;
   await cut;
   const fresh = agent(CAP.TIME | CAP.TRIM, (type) => (type === FRAME.TRIM ? { type: FRAME.TRIMMED, payload: new Uint8Array([TRIMMED.TRIMMED]) } : undefined));
   run.link = trims.follow(fresh.link);
-  fresh.connect();
-  await settle();
+  await fresh.connect();
   const r = await trims.trim();
   assert.equal(r.status, TRIMMED.TRIMMED, "the new run's own trim");
   assert.ok(fresh.got.some((f) => f.type === FRAME.TRIM));
   fresh.drop();
-  await settle();
-  assert.equal(shown.canTrim, false, 'no agent connected: no button');
+  await until(() => !shown.canTrim, 'no agent connected: no button');
   fresh.link.close();
 });
 
 test('LEASE names the connected cards by their MACs; none connected after the grace: no LEASE, no flap', async () => {
   const a = agent(CAP.TIME | CAP.LEASE, (type) => (type === FRAME.LEASE ? { type: FRAME.LEASED, payload: new Uint8Array([LEASED.RENEWED]) } : undefined));
-  a.connect();
+  await a.connect();
   const flaps: number[] = [];
   const deps = (connected: { index: number; mac: string }[]) => ({ whenConnected: () => Promise.resolve(connected), link: () => a.link, flap: (i: number) => flaps.push(i), waits: { grace: 50, agent: 500, leased: 500 } });
   assert.equal(await new LeaseActions(deps([{ index: 1, mac: '52:54:00:12:34:57' }])).restored(), 'agent');
@@ -159,17 +157,15 @@ test("SoftPower: a HELLO while one is pending clears it (the agent came back: th
   const a = agent(CAP.TIME | CAP.POWER, (type) => (type === FRAME.POWER && answer !== undefined ? { type: FRAME.POWERED, payload: new Uint8Array([answer]) } : undefined));
   const run = { link: a.link as AgentLink | undefined };
   const soft = new SoftPower(run, shown, messages, 200);
-  a.connect();
-  await settle();
+  await a.connect();
   // The connection ends under the request: taken, pending; the agent connects again: not shutting down after all.
   const r = soft.request('off');
-  await settle();
+  await until(() => a.got.some((f) => f.type === FRAME.POWER), 'the POWER asked');
   a.drop();
   assert.equal(await r, true);
   assert.equal(shown.soft, 'off');
-  a.connect();
-  await settle();
-  assert.equal(shown.soft, undefined, 'cleared by the HELLO');
+  await a.connect();
+  await until(() => shown.soft === undefined, 'cleared by the HELLO');
   // BUSY (a request of an earlier one still running in the guest): the hard one, said.
   answer = POWERED.BUSY;
   assert.equal(await soft.request('reboot'), false);

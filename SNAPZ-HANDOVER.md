@@ -32,6 +32,7 @@ persistent profile `target/snapz/profile`, a fresh browser per round):
 | 2 | The save's pool | done (REPORT "SNAPZ loop 2") |
 | 2b | Old-format code removed (kickoff decision 7); the file and suspend saves' unexplained memory found and cut (decision 8) | done (REPORT "SNAPZ loop 2b") |
 | 3 | The load's pool | done (REPORT "SNAPZ loop 3") |
+| flakes | Timing-dependent tests fixed (the user's request, 2026-11-15): condition waits (`tests/until.ts`, docs/testing.md "Waiting in tests") | done |
 | 3r | The out-of-context review of the pool, save and load (`review/snapz-3`) | next |
 | 4 | The review's findings; a picked file staged through OPFS | |
 | 5 | The disk's blocks, batched | |

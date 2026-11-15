@@ -814,6 +814,26 @@ The dev VM sees no real USB devices, but the Mac mini that hosts it does. A by-h
   guest and read back in short pieces. Interactive bash drops the rest of a command line when a child dies of
   SIGINT, so stop a timed run with `timeout` (SIGTERM) or a count, not `timeout -s INT`.
 
+## Waiting in tests
+
+A test waits for an effect on its condition, never for a fixed time: `until(cond, what, ms)` and `eventually(check, ms)`
+in `tests/until.ts` poll every 2 ms up to a generous deadline (10 s), then fail with `what` or the check's last
+assertion. A fixed settle before an assert (`setTimeout(r, 30)`, then `deepEqual`) fails whenever the process stalls
+past it, however long it is: when a descheduled process resumes, Node runs the due timer before the message it was
+waiting for (timers come before the poll phase), and `scripts/ci.sh` runs every file at once beside the native
+guest-image tests. Under `scripts/ci.sh`'s load and a reproduction (24 spinning shells, 8 copies of the files at a
+time), the MessageChannel tests failed that way in up to two runs in three: the agent link's (`tests/agent.test.ts`,
+`agent-link`, `agent-power`), the game pad's glue (`usb-gamepad`), the network's local connection (`network`), the GPU's
+flush pacing (`gpu`). A link's
+own wait does too: `await link.hello(ms)` for its HELLO, a one-shot `onHello` listener (`nextHello` in
+`tests/agent.test.ts`) when the same agent's HELLO comes again. A fixed settle stays only before a check that
+something did *not* happen (`eventually` would pass at once), after the positive wait. A timing that is the behavior
+under test is measured so load can't break it or widened with the reason in the test: `gpu.test.ts`'s flush pacing
+takes a run again when the process stalled past a frame between its synchronous sends, and checks that replies went
+together by the task they came in, not by milliseconds apart; the clipboard's REQUEST_WAIT restart runs on a 1 s
+wait. An effect that goes through the thread pool (crypto's hashes: the clipboard's read-back of a written image) is
+waited on too, never given a fixed `quiet()`.
+
 ## A test file that never ends
 
 `node --test`'s spec reporter prints a file's results only when the file's process ends (only the first file's stream as they come),
