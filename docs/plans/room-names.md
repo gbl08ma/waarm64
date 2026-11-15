@@ -29,6 +29,7 @@ explorers a page can reach.
 - **Name owners serve the registry** and are found by an ephemeral "who serves the registry?" message; nothing about
   the sender goes in a room's link. Members who only use names announce nothing beyond what rooms.md already says.
 - **OpenTimestamps is acceptable** as the clock.
+- **A room connection may run without a guest** to publish names ("The names agent").
 - **The registry never holds a name in words**: names are looked up by a hash, and where a name points is sealed
   under the name ("Names nobody lists"). Which names are acceptable is then each resolver's rule, not the registry's.
 - Left out on purpose: which suffixes names may use (a rule every node enforces, decided later; the default below needs
@@ -238,10 +239,18 @@ connection's key and are in its export). It needs no running machine:
 - **On every page load**, and hourly while open, for each title: fetch finished anchors for pending entries; renew
   when due (mine, sign, stamp); mark a claim public once anchored.
 - **When the connection's room runs**, the titles go to the module in its config and as they change; the module
-  serves them, pushes them to its servers and resolves them. A page can't run a room without a machine today
-  (`PageNetwork.connect` refuses), so a renewal made with the machine off reaches the room when the machine next
-  starts; the title is safe meanwhile, and a renewal is published with its pending anchor at once so that any member
-  can finish it. A room connection that runs without a guest, to publish sooner, is a later step.
+  serves them, pushes them to its servers and resolves them.
+- **When it doesn't** (the machine is off, or the page is on another machine's), the agent publishes by itself: for a
+  title with entries the room hasn't had, it runs that connection's room **without a guest**, for as long as pushing
+  takes (find servers, sync, a minute at most), then closes it. The module runs without a guest already (the tests
+  and benchmarks do); what's new is the page's path to it, which today refuses when the machine is off
+  (`PageNetwork.connect`): the agent starts a room worker of its own under the key's lock (`roomKeyLock`: one running
+  per key, so it waits if the connection runs elsewhere and gives way to a machine that starts), with incoming off and
+  no guest's port, so nothing reaches or leaves a guest. It doesn't serve the registry in that minute. A renewal is
+  published with its pending anchor, which any member can finish, so one short visit is enough: nobody need wait for
+  the Bitcoin proof with the page open. With no server online there's nobody to push to; the title is safe and the
+  next visit tries again. (The user, 2026-11-15: such connections may have a life apart from a guest's. This is the
+  least of it that renewals need; a room connection that stays up without a machine isn't planned.)
 - **Losing**: when the module learns a better chain for one of the titles, the agent stops renewing it and the page
   says so.
 
@@ -306,8 +315,9 @@ and `scripts/ci-machines.sh` from N5.
 - **N3** The resolver, persistence (`store`), headers through `Fetch`, with a pretend calendar and explorer for the
   tests (`tests/net/ots-calendar.ts`, no dependency, as the tests' relay). tests/page-room.test.ts: two Debian guests,
   one name, by full name and by the short one, a label under it, a zone change, NXDOMAIN against SERVFAIL.
-- **N4** The agent: owner keys, titles, the worker, stamping, collecting, renewing on load, handing titles to the
-  module. Tests with the pretend calendar: a claim held back until anchored, a renewal with the machine off, a lost
+- **N4** The agent: owners' secrets, titles, the worker, stamping, collecting, renewing on load, handing titles to
+  the module, publishing without a guest. Tests with the pretend calendar: a claim held back until anchored, a renewal
+  with the machine off that a second member then resolves, the key's lock against a machine starting meanwhile, a lost
   name, a title surviving export and import.
 - **N5** The page: the dialog, the adapter's states, the details, the Machines page's dates, the catalog,
   docs/frontend.md.
@@ -317,7 +327,7 @@ and `scripts/ci-machines.sh` from N5.
 - **The end**: `docs/networking/names.md` from this page, rooms.md's decisions and "What a room needs from a Nostr
   relay" updated, the leftovers in the backlog, this page and plans/networking-p2p.md's bullet gone.
 
-## What needs the user's OK
+## What changes that needed the user's OK (given 2026-11-15, all of it)
 
 - **rooms.md's decisions that change**: "no directory in the protocol" and "the only names are names that are keys"
   (a registry of names, not of members, joins the protocol); a name's owner is discoverable and serves the registry.
