@@ -42,7 +42,14 @@ to brush against:
 11. **The module's interface** (docs/networking/tailnet.md "The module"; not docs/abi.md's, no version number) may
     grow as the spec says. Wire changes that stop older pages from serving or syncing names are fine (rooms are
     pre-release); one that stops them meeting in a room at all is asked.
-12. Not decided, and not this track's: which suffixes names may use. Names live under the room's existing
+12. **What a relay sees of names** (OK given 2026-11-15, after the design review): a room's servers share one tag and
+    askers publish under it, so a relay can tell which IP addresses serve or ask for names in one room (and which
+    room, for an ID it can guess). Accepted; key lookups keep rooms.md's property. Don't add machinery against it.
+13. **"Open this page at least every 2 weeks"** (OK given the same day): renewal at half a term.
+14. **Reserved names** (OK given the same day): the resolver and the dialog refuse a compiled list (`wpad`,
+    `localhost`, labels that are top-level domains, and the like: the spec's "Names"); the list may grow in the loops
+    by the same reasoning (what a guest asks unprompted or trusts by habit) without asking.
+15. Not decided, and not this track's: which suffixes names may use. Names live under the room's existing
     `<tag>.p2p.internal`.
 
 Where the spec and this file differ, this file wins. Where a measurement or the code contradicts the spec, the

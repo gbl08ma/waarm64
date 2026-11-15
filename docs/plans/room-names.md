@@ -374,7 +374,7 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked |
 | Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below |
 
-## What changes that needed the user's OK (given 2026-11-15, all of it; the last two since the review, **still to give**)
+## What changes that needed the user's OK (given 2026-11-15, all of it)
 
 - **rooms.md's decisions that change**: "no directory in the protocol" and "the only names are names that are keys"
   (a registry of names, not of members, joins the protocol); a name's owner is discoverable and serves the registry.
@@ -387,12 +387,13 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 - **The module's interface** grows (titles in the config, per-name persistence, the `ts_names_*` exports); it is
   tailnet.md "The module"'s, not docs/abi.md's, and has no version number.
 - **Added with hashed names, not asked for**: zones sealed under the name, and an owner key per name.
-- **Still to give: what a relay sees.** All of a room's servers subscribe to one tag and all askers publish under it,
+- **What a relay sees** (since the review). All of a room's servers subscribe to one tag and all askers publish under it,
   so a relay learns which IP addresses serve names and which ask for them in one room (and, for an ID it can guess,
   like `global`, which room). rooms.md says today that a relay "can't tell which room or address a tag stands for";
   for key lookups that stays true. The remedy rooms already name applies (one's own relays, or a VPN under them).
-- **Still to give: "every 2 weeks"**, where the first draft said 3 (renewing at half a term, not a third, halves what
+- **"Every 2 weeks"** (since the review), where the first draft said 3 (renewing at half a term, not a third, halves what
   servers carry).
+- **Reserved names** (since the review): the list in "Names".
 
 ## Measure first (loop N0, no product code)
 
