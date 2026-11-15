@@ -43,7 +43,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 1. **A pattern seen twice becomes a component.** The primitives are in `web/app/ui/`, each with a header that says
    what it's for:
    - `Button`: `variant` `bordered` (the default), `plain`, `primary`, `danger`, `tool` (`labelled`), `item` (a menu's
-     command), `link` (words that read as a link), `inline` (an icon inside a field's frame); `icon`; the rest of its props go on the `<button>`, `ref` binds it.
+     command), `link` (words that read as a link), `inline` (an icon inside a field's frame); `icon`; `tone` `warn` (words and icon in the warning colour); the rest of its props go on the `<button>`, `ref` binds it.
    - `Card` in a `CardList`: the bordered rows of the panes and dialogs (the main column, `actions` beside it;
      `empty` for the list's empty line).
    - `Note`: fine print, `tone` `dim`/`warn`/`error`/`ok`, `size` `sm`/`md`, `inline` for a row's small line.

@@ -572,6 +572,115 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await context.close();
 });
 
+test("the storage bar's details: the browser's numbers when they agree, the three apart when its count is short", async () => {
+  for (const behind of [false, true]) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await answerAsks(page);
+    // A count short of the files as Chromium was seen to give it (docs/machines.md "Storage"): usage 1 MiB.
+    if (behind)
+      await page.addInitScript(() => {
+        const real = navigator.storage.estimate.bind(navigator.storage);
+        navigator.storage.estimate = async () => ({
+          ...(await real()),
+          usage: 1 << 20,
+        });
+      });
+    await page.goto(`${base}/web/app/`);
+    // A stored disk's files: 40 MiB of data.
+    await page.evaluate(async () => {
+      const { Store } = await import("/web/app/store.ts" as string);
+      const store = await Store.open();
+      await store.writing(async () => {
+        const root = await navigator.storage.getDirectory();
+        const dir = await (
+          await root.getDirectoryHandle("disks", { create: true })
+        ).getDirectoryHandle("d1", { create: true });
+        const w = await (
+          await dir.getFileHandle("data", { create: true })
+        ).createWritable();
+        await w.write(new Uint8Array(40 << 20));
+        await w.close();
+        const identity = { kind: "stored", id: "d1", bytes: 64 << 20 };
+        await store.put("disks", {
+          id: "d1",
+          name: "big.img",
+          kind: "stored",
+          size: 64 << 20,
+          identity,
+          generation: 1,
+        });
+      });
+      store.close();
+    });
+    await page.click("#machines-open");
+    const icon = page.locator("[data-action=storage-details]");
+    await icon.waitFor();
+    const est = await page.evaluate(() => navigator.storage.estimate());
+    const line = await page.locator(".storage .used").textContent();
+    if (behind) {
+      assert.equal(
+        await icon.getAttribute("title"),
+        t("machines:StorageBar.details.behind.title"),
+      );
+      assert.match(line!, /^40 MiB /);
+      assert.equal(
+        line,
+        t("machines:StorageBar.storage.counted", { used: 40 << 20 }),
+      );
+    } else {
+      assert.equal(
+        await icon.getAttribute("title"),
+        t("machines:StorageBar.details.title"),
+      );
+      assert.equal(
+        line,
+        t("machines:StorageBar.storage", { used: est.usage, quota: est.quota }),
+      );
+    }
+    await icon.click();
+    const dialog = page.locator("#storage-details");
+    await dialog.waitFor();
+    assert.equal(
+      await dialog.locator("h2").textContent(),
+      t("machines:StorageDetails.title"),
+    );
+    assert.match(
+      (await dialog.locator("[data-items]").textContent())!,
+      /40 MiB/,
+    );
+    if (behind) {
+      assert.equal(await dialog.locator("[data-summary]").count(), 0);
+      assert.equal(
+        await dialog.locator("[data-number=counted]").textContent(),
+        t("machines:StorageDetails.behind.counted", { size: 40 << 20 }),
+      );
+      assert.equal(
+        await dialog.locator("[data-number=usage]").textContent(),
+        t("machines:StorageDetails.behind.usage", { size: 1 << 20 }),
+      );
+      assert.equal(
+        await dialog.locator("[data-number=quota]").textContent(),
+        t("machines:StorageDetails.behind.quota", { size: est.quota }),
+      );
+    } else {
+      assert.equal(await dialog.locator("[data-behind]").count(), 0);
+      const free = (est.quota ?? 0) - (est.usage ?? 0);
+      assert.equal(
+        await dialog.locator("[data-summary]").textContent(),
+        t("machines:StorageDetails.summary", {
+          used: est.usage,
+          quota: est.quota,
+          free,
+        }),
+      );
+    }
+    await dialog.locator("button").click();
+    await dialog.waitFor({ state: "detached" });
+    await context.close();
+  }
+});
+
 test("the storage footer shows remote disks' kept blocks and clears them", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
