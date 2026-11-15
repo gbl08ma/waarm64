@@ -1428,6 +1428,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - Every offline ask reads the whole map again (~105 MB for an overlay with 100 GiB written; a legacy flat map is 4
     bytes per block), a Refresh and each settled records change too; a long-lived job worker could keep the per-range
     counts and answer another cell size, or a refresh at the same generation, without reading it again.
+- **A RAM usage view on the surface window's pieces** (the user's idea, 2026-11-15; `ui/BlockGrid`, `ui/FloatingWindow`
+  and the `inspect` route are made for it: a `ram-surface` query kind and a worker that scans the guest's shared
+  memories, nothing added to the interpreter or the JIT). No live reads and writes: compiled code touches RAM directly.
+  **Measured** (2026-11-15, Chromium 153 on x86_64 Linux in a cloud container, one run): a worker's scan of an untouched
+  4 GiB shared wasm memory doesn't make the host commit it (the browser's processes' resident memory 372 MiB before,
+  381 MiB after; writing 512 MiB of it then added 512 MiB), so a scan doesn't inflate the tab. A zero-or-not pass per
+  4 KiB page over the 4 GiB took 0.46–1.0 s there (zeros read whole; a page with data is left at its first word that
+  isn't zero: 512 MiB of data in 7.5 ms). Not measured: macOS and Windows hosts, the cost of a checksum per cell for
+  "changed since the last pass" (it reads every byte of the pages with data), the vCPUs' slowdown beside a scan.
   - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
     720 × 520, fits them).
   - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0
