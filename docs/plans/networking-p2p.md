@@ -4,15 +4,11 @@ Rooms are built (the P2P track, 2026-11-10 to 2026-11-12): how they work, the de
 and findings are [networking/rooms.md](../networking/rooms.md); their loose ends are [backlog.md](../backlog.md)
 "Rooms' loose ends". This page holds only the ideas past them, none of them scheduled.
 
-- **Human-readable names.** The direction discussed (2026-10-18): several TLDs per room, each held first-come by a
-  key, with names in a TLD signed by its holder in DNSSEC's formats; a did:plc-like signed log per TLD (rotations
-  signed by the old key, a recovery key with a window, two successors of one key proving a fork); one append-only
-  Merkle log on always-on relays with independent witnesses to settle which claim came first (optionally anchored
-  with OpenTimestamps); claims on real TLDs refused, or everything under one private-use suffix. Browsers don't
-  validate DNSSEC, so validation would be the page's (or a guest resolver's with per-TLD trust anchors). The names
-  that are keys (`<key>.<tag>.p2p.internal`) stay reserved for keys. Names stay full keys (rooms.md "Decisions"), so
-  shorter, nicer names belong here, and likely to a DNS system run within the guests' world (no directory in the
-  protocol) rather than to the room.
+- **Human-readable names**: specified, not built: [room-names.md](room-names.md) (2026-11-15: names registered first
+  come by a key for a term, each claim timestamped through OpenTimestamps, the registry copied between members with
+  nothing stored on a relay). The direction first discussed (2026-10-18: TLDs held by keys, DNSSEC's formats, a
+  Merkle log on always-on relays with witnesses) lost to it for needing servers nobody runs; the options weighed are
+  `reports/Decentralized DNS for P2P rooms.md`. Still open there: which suffixes names may use.
 - **Onion routing**, so that neither peers nor relays see who talks to whom from where: circuits through other
   members (or volunteer nodes), the address still the key's, as only the outer path changes. A track of its own if
   wanted; relay only covers hiding from peers until then.
