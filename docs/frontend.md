@@ -485,8 +485,8 @@ size now (as the guest sees it), the new size in MiB or GiB (the next 256 MiB or
 whole MiB, the alignment the guest's partition growth wants), and **[Grow the partition and filesystem at the next start](ui:disks:ResizeDisk.grow)**,
 on by default, its note saying it needs the guest agent (not shown for a ramdisk, empty at every start). As the size
 is typed, `resizeCosts` says what it does: the machines whose disk grows, the kept snapshots it orphans (by name and
-machine), or why it's refused (not larger, past `MAX_RESIZE`'s 256 GiB: an overlay's map is in memory for its whole
-size). A machine using it that runs names itself and keeps [Resize](ui:disks:ResizeDisk.ok) off; the one running on this page has a
+machine), or why it's refused (not larger, past `MAX_RESIZE`'s 8 TiB: the largest qcow2 export QEMU opens,
+docs/machines.md §4.5). A machine using it that runs names itself and keeps [Resize](ui:disks:ResizeDisk.ok) off; the one running on this page has a
 Power off button (`ResizeDisk.powerOff`) (the page's `offFirst`: it asks, a soft shutdown where the agent can), one in another tab is powered off there.
 Resize runs `resize(store, target, size, { grow })` (the box's word sets or clears the grow mark).
 

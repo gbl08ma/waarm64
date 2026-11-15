@@ -7,7 +7,7 @@
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
 import type { Source } from './devices.ts';
 import { MsgError } from './msg.ts';
-import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, storageFullError, withRoom, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
+import { mapEntry, openOverlay, overlay, overlayMeta, readMap, readMeta, removeOverlay, storageFullError, withRoom, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
 import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 
 const BLOCK = 4096;
@@ -19,10 +19,9 @@ export const zeroDisk = (size: number): Disk => ({ size, format: 'raw', read: as
 
 /** A block store's bytes as a synchronous source (the base under an overlay, or an export's), from its open files. */
 export function blockSource(data: SyncFile, mapFile: SyncFile, size: number): Source {
-  const blocks = Math.ceil(size / BLOCK);
-  const map = new Uint32Array(blocks);
-  mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 });
-  const held = (b: number) => map[b] !== 0 && map[b] !== ZERO;
+  const m = readMap(mapFile, Math.ceil(size / BLOCK)); // either format, as its leaves (a flat map isn't converted: read-only)
+  const ent = (b: number) => mapEntry(m, b);
+  const held = (b: number) => ent(b) !== 0 && ent(b) !== ZERO;
   return {
     size,
     read(off, len) {
@@ -33,8 +32,8 @@ export function blockSource(data: SyncFile, mapFile: SyncFile, size: number): So
         let end = Math.min((b + 1) * BLOCK, off + len);
         if (held(b)) {
           // Blocks in consecutive slots are one read.
-          for (let c = b; end < off + len && held(c + 1) && map[c + 1] === map[c] + 1; c++) end = Math.min(end + BLOCK, off + len);
-          if (data.read(out.subarray(pos - off, end - off), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return undefined;
+          for (let c = b; end < off + len && held(c + 1) && ent(c + 1) === ent(c) + 1; c++) end = Math.min(end + BLOCK, off + len);
+          if (data.read(out.subarray(pos - off, end - off), { at: (ent(b) - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return undefined;
         }
         pos = end;
       }

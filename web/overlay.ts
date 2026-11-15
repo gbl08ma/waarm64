@@ -1,13 +1,18 @@
 // Copy-on-write overlay over a read-only disk (M4 step 5), in 4 KiB blocks. The
 // browser keeps it on OPFS (web/devices.ts opens the files in the device
 // worker, with synchronous access handles): `data` holds the written blocks in
-// the order they were first written, `map` one little-endian u32 per disk block
-// (0: not written; n: slot n - 1 of `data`; 0xffffffff: zeros, without a slot:
-// a block the guest discarded or zeroed). A block is written to its slot
-// before its map entry, so a crash can leak a slot but never map a block to
-// garbage. Slots that no block maps (a discarded block's, a leaked one) are
-// found when the overlay is opened and taken by the next first writes; free
-// slots at the end of `data` are cut off, and once half of it is free the rest
+// the order they were first written, `map` a u32 entry per disk block (0: not
+// written; n: slot n - 1 of `data`; 0xffffffff: zeros, without a slot: a block
+// the guest discarded or zeroed) in two levels: leaves of 1,024 entries (4 MiB of
+// disk), made at the first write into their range and appended to the file, each
+// its entries then its range (its top entry), so the map grows with what is
+// written, not with the disk's size; the top table (range -> leaf) is rebuilt in
+// memory at opening (`readMap`). A flat map (one entry per block, from before
+// leaves) is read as it is and converted at the first change (`convert`). A block
+// is written to its slot before its map entry, so a crash can leak a slot but never
+// map a block to garbage. Slots that no block maps (a discarded block's, a leaked
+// one) are found when the overlay is opened and taken by the next first writes;
+// free slots at the end of `data` are cut off, and once half of it is free the rest
 // is moved down (`compact`). `meta` holds the overlay's generation (docs/machines.md §3.3):
 // bumped, durably, before the first change of each opening, so "the overlay is as it was at
 // generation g" is a comparison of two integers. core/tests/common's `Overlay` is the native
@@ -29,6 +34,18 @@ const BLOCK = 4096;
 const ZERO = 0xffffffff;
 /** The fewest free slots worth compacting `data` for. */
 const COMPACT_MIN = 64;
+/** Map entries in a leaf: a leaf covers 4 MiB of disk (a range). */
+const LEAF = 1024;
+/** A leaf's record in the map file, in u32s: its entries, its range + 1 (its top entry), 0. */
+const REC = LEAF + 2;
+const REC_BYTES = REC * 4;
+/** A two-level map file's header: `MAGIC`, `VERSION` (u32s), where its records start (u64). */
+const HEAD = 16;
+/** As a flat map's first entry, slot 0xfffffffd: a data file of 16 TiB, which no overlay has (`MAX_RESIZE`). */
+const MAGIC = 0xfffffffe;
+const VERSION = 2;
+/** A flat map whose conversion was interrupted ends with `TRAILER`, 0 (u32s) and its length (u64). */
+const TRAILER = 0xfffffffd;
 
 export type WritableDisk = Disk & {
   /** Writes `bytes` at `off` (inside the disk); false on a failed write. */
@@ -181,31 +198,233 @@ const bytesFile = (bytes: Uint8Array): SyncFile => ({
 });
 
 /**
+ * A map read from its file, in either format, as its leaves: what the overlay and a stored disk's reader
+ * (web/stored.ts `blockSource`) keep in memory.
+ */
+export type MapLeaves = {
+  /** By range (`LEAF` blocks, 4 MiB of disk, up to the disk's end): its leaf's record + 1, or 0 (none: nothing there is written). */
+  top: Uint32Array;
+  /** The leaves' records, `REC` u32s each (as the map file has them: entries, range + 1, 0), `n` of them. */
+  recs: Uint32Array;
+  n: number;
+  /** Where the records start in the map file; undefined: a flat map, `flat` bytes long, not converted yet. */
+  at?: number;
+  flat: number;
+};
+
+/** `recs` with room for `count` u32s (doubling). */
+function room(recs: Uint32Array, used: number, count: number): Uint32Array {
+  if (count <= recs.length) return recs;
+  const g = new Uint32Array(Math.max(count, 2 * recs.length, 16 * REC));
+  g.set(recs.subarray(0, used));
+  return g;
+}
+
+/**
+ * Reads map file `f` for a disk of `blocks` blocks. A two-level map (its header) is its records, read whole; a flat
+ * one (from before leaves) becomes leaves in memory for the ranges where an entry isn't 0 (read 1 MiB at a time),
+ * the file untouched: an opening that only reads (a stored disk under its machines' overlays) never converts it. A
+ * flat map with an interrupted conversion's records after it (the trailer says the flat map's length) is that length.
+ * Leaves for ranges past `blocks` (an opening at a smaller size) are kept, outside `top`.
+ */
+export function readMap(f: SyncFile, blocks: number): MapLeaves {
+  const ranges = Math.ceil(blocks / LEAF);
+  const top = new Uint32Array(ranges);
+  const size = f.getSize();
+  const head = new DataView(new ArrayBuffer(HEAD));
+  if (size >= HEAD && f.read(new Uint8Array(head.buffer), { at: 0 }) === HEAD && head.getUint32(0, true) === MAGIC && head.getUint32(4, true) === VERSION) {
+    const at = Number(head.getBigUint64(8, true));
+    const n = Math.max(0, Math.floor((size - at) / REC_BYTES)); // a record the file doesn't hold whole was never added
+    const recs = new Uint32Array(n * REC);
+    if (n && f.read(new Uint8Array(recs.buffer), { at }) !== n * REC_BYTES) recs.fill(0);
+    for (let k = 0; k < n; k++) {
+      const r = recs[k * REC + LEAF] - 1;
+      if (r >= 0 && r < ranges && !top[r]) top[r] = k + 1;
+    }
+    return { top, recs, n, at, flat: 0 };
+  }
+  let flat = size;
+  if (size >= 2 * HEAD) {
+    const t = new DataView(new ArrayBuffer(HEAD));
+    f.read(new Uint8Array(t.buffer), { at: size - HEAD });
+    const len = Number(t.getBigUint64(8, true));
+    if (t.getUint32(0, true) === TRAILER && t.getUint32(4, true) === 0 && len + HEAD <= size) flat = len;
+  }
+  let recs: Uint32Array = new Uint32Array(0);
+  let n = 0;
+  const chunk = new Uint32Array(256 * LEAF);
+  for (let e = 0; e * 4 < flat; e += chunk.length) {
+    chunk.fill(0);
+    f.read(new Uint8Array(chunk.buffer, 0, Math.min(chunk.length * 4, flat - e * 4)), { at: e * 4 });
+    for (let i = 0; i < chunk.length; i += LEAF) {
+      const leaf = chunk.subarray(i, i + LEAF);
+      if (leaf.every((x) => x === 0)) continue;
+      const r = (e + i) / LEAF;
+      recs = room(recs, n * REC, (n + 1) * REC);
+      recs.set(leaf, n * REC);
+      recs[n * REC + LEAF] = r + 1;
+      if (r < ranges) top[r] = n + 1;
+      n++;
+    }
+  }
+  return { top, recs, n, flat };
+}
+
+/** Block `b`'s map entry in `m` (0: not written; n: slot n - 1; `ZERO`). */
+export const mapEntry = (m: MapLeaves, b: number) => {
+  const t = m.top[Math.floor(b / LEAF)];
+  return t ? m.recs[(t - 1) * REC + (b % LEAF)] : 0;
+};
+
+/**
  * The overlay over `base` in `data` and `mapFile`. With `meta`, its generation is bumped before the first change
  * (a write, a discard or a zeroing) this opening makes; `generation()` says it. `epoch()` makes the next change bump it
  * again: a snapshot pins the generation it saw, so a change after it must move it (web/snapshot.ts). Its size is the
  * largest of `base`'s, its meta's own (a grown overlay's, docs/machines.md §4.5) and `size` (the guest's, as the page
- * gave it): past `base`'s end it reads as zeros until written, and its map grows as blocks there are.
+ * gave it): past `base`'s end it reads as zeros until written, and its map grows as blocks there are. A flat map
+ * (from before leaves) is converted at the first change (`convert`); until then it is read as it is.
  */
 export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile, size = 0): WritableDisk & { generation(): number; epoch(): void } {
   [data, mapFile, meta] = [shortOnFull(data), shortOnFull(mapFile), meta && shortOnFull(meta)];
   base = grown(base, Math.max(size, meta ? readMeta(meta).size : 0));
   const blocks = Math.ceil(base.size / BLOCK);
-  const map = new Uint32Array(blocks);
-  mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 }); // the host is little-endian, as the file
+  const loaded = readMap(mapFile, blocks);
+  const { top } = loaded;
+  let { recs, n, at } = loaded;
   let slots = Math.floor(data.getSize() / BLOCK);
   const blockLen = (b: number) => Math.min(BLOCK, base.size - b * BLOCK);
+  /** Block `b`'s map entry (0: not written; n: slot n - 1; `ZERO`). */
+  const ent = (b: number) => {
+    const t = top[Math.floor(b / LEAF)];
+    return t ? recs[(t - 1) * REC + (b % LEAF)] : 0;
+  };
+
   /**
-   * Writes map entries [first, end) to the map file (`map` has them already); `old` is what they were. A write the
-   * storage refused (it grows the file, which needs room) may have landed in part, a torn entry too: `old` is written
-   * back (what landed is inside the file now, and an overwrite there needs no room; the rest reads as zeros, as `old`
-   * has it past the file's end) and `map` takes it again, so the file and `map` still agree. False then.
+   * Writes the leaves' entries recs[p, p + count) to the map file (`recs` has them already; they're inside one leaf
+   * the file holds, so the write needs no room); `old` is what they were. A write refused all the same may have landed
+   * in part, a torn entry too: `old` is written back and `recs` takes it again, so the file and memory still agree.
+   * False then.
    */
-  const putMap = (first: number, end: number, old: Uint32Array) => {
-    if (mapFile.write(new Uint8Array(map.buffer, first * 4, (end - first) * 4), { at: first * 4 }) === (end - first) * 4) return true;
-    map.set(old, first);
-    mapFile.write(new Uint8Array(old.buffer, old.byteOffset, old.byteLength), { at: first * 4 });
+  const putMap = (p: number, count: number, old: Uint32Array) => {
+    const off = at! + p * 4;
+    if (mapFile.write(new Uint8Array(recs.buffer, p * 4, count * 4), { at: off }) === count * 4) return true;
+    recs.set(old, p);
+    mapFile.write(new Uint8Array(old.buffer, old.byteOffset, old.byteLength), { at: off });
     return false;
+  };
+  /**
+   * New leaves for ranges `rs` (ascending or not), entries `fill(k)` of the k-th, appended to the map file in one write.
+   * A record is its entries, then its top entry (range + 1) after them, so a write that lands in part holds no
+   * leaf whole: the opening counts only whole records. A leaf's entries map only blocks whose slots are written
+   * already, or `ZERO`. Refused: the file is cut back to where it ended, and there are no new leaves.
+   */
+  const addLeaves = (rs: number[], fill: (k: number, entries: Uint32Array) => void) => {
+    const end = at! + n * REC_BYTES;
+    recs = room(recs, n * REC, (n + rs.length) * REC);
+    const p = n * REC;
+    rs.forEach((r, k) => {
+      const q = p + k * REC;
+      recs.fill(0, q, q + REC);
+      fill(k, recs.subarray(q, q + LEAF));
+      recs[q + LEAF] = r + 1;
+    });
+    if (mapFile.write(new Uint8Array(recs.buffer, p * 4, rs.length * REC_BYTES), { at: end }) !== rs.length * REC_BYTES) {
+      recs.fill(0, p, p + rs.length * REC);
+      mapFile.truncate(end);
+      return false;
+    }
+    rs.forEach((r) => { top[r] = ++n; });
+    return true;
+  };
+  /**
+   * Sets the map entries of blocks [b, e) (one leaf's) to `value(k, old)` (block b + k's), in memory and in the
+   * file: an existing leaf's are written over (`putMap`; nothing when none changes), a range without a leaf gets
+   * one (`addLeaves`; none when every entry stays 0). False when the storage refused it: memory and file as they were.
+   */
+  const setMap = (b: number, e: number, value: (k: number, old: number) => number) => {
+    const r = Math.floor(b / LEAF);
+    const i = b % LEAF;
+    if (!top[r]) {
+      const want = Uint32Array.from({ length: e - b }, (_, k) => value(k, 0));
+      return want.every((x) => x === 0) || addLeaves([r], (_, entries) => entries.set(want, i));
+    }
+    const p = (top[r] - 1) * REC + i;
+    const old = recs.slice(p, p + e - b);
+    let changed = false;
+    for (let k = 0; k < e - b; k++) {
+      recs[p + k] = value(k, old[k]);
+      changed ||= recs[p + k] !== old[k];
+    }
+    return !changed || putMap(p, e - b, old);
+  };
+  /** `setMap` for a write: blocks [b, e) (one leaf's) in consecutive slots, the first `slot1 - 1`. */
+  const setRun = (b: number, e: number, slot1: number) => {
+    const r = Math.floor(b / LEAF);
+    const i = b % LEAF;
+    if (!top[r]) return addLeaves([r], (_, entries) => { for (let k = 0; k < e - b; k++) entries[i + k] = slot1 + k; });
+    const p = (top[r] - 1) * REC + i;
+    const old = recs.slice(p, p + e - b);
+    for (let k = 0; k < e - b; k++) recs[p + k] = slot1 + k;
+    return putMap(p, e - b, old);
+  };
+  /** Writes the map file's header (its records at `to`); refused, the 16 bytes that were there are put back. */
+  const writeHead = (to: number) => {
+    const h = new DataView(new ArrayBuffer(HEAD));
+    h.setUint32(0, MAGIC, true);
+    h.setUint32(4, VERSION, true);
+    h.setBigUint64(8, BigInt(to), true);
+    const old = new Uint8Array(HEAD);
+    mapFile.read(old, { at: 0 });
+    if (mapFile.write(new Uint8Array(h.buffer), { at: 0 }) === HEAD) return true;
+    mapFile.write(old, { at: 0 });
+    return false;
+  };
+  /**
+   * Before the first change: a flat map (from before leaves) becomes a two-level one, in its own file. A new map is
+   * its header alone. Otherwise: a trailer goes after where the records will end (from then on, and until the
+   * header, the file reads as the flat map of its old length: `readMap`), the records into the room before it, and
+   * the header over the flat map's first entries is the switch (inside the file: it needs no room). Then, where the
+   * records fit in the flat map's room, they're copied down and the header moved to them, and the file is cut after
+   * them. Refused: the file is the flat map again (cut back), and the change that asked fails.
+   */
+  const convert = () => {
+    if (at !== undefined) return true;
+    const flat = loaded.flat;
+    const undo = () => { mapFile.truncate(flat); return false; };
+    if (mapFile.getSize() > flat) mapFile.truncate(flat); // what an interrupted conversion left
+    if (n === 0) {
+      // Nothing written (an empty file, or entries all 0): the header alone.
+      mapFile.truncate(0);
+      if (!writeHead(HEAD)) { mapFile.truncate(0); return false; }
+      mapFile.flush();
+      at = HEAD;
+      return true;
+    }
+    const from = Math.max(HEAD, Math.ceil(flat / 8) * 8);
+    const end = from + n * REC_BYTES;
+    const t = new DataView(new ArrayBuffer(HEAD));
+    t.setUint32(0, TRAILER, true);
+    t.setBigUint64(8, BigInt(flat), true);
+    if (mapFile.write(new Uint8Array(t.buffer), { at: end }) !== HEAD) return undo();
+    const CHUNK = 256 * REC;
+    for (let p = 0; p < n * REC; p += CHUNK) {
+      const len = Math.min(CHUNK, n * REC - p) * 4;
+      if (mapFile.write(new Uint8Array(recs.buffer, p * 4, len), { at: from + p * 4 }) !== len) return undo();
+    }
+    mapFile.flush();
+    if (!writeHead(from)) return undo();
+    mapFile.flush();
+    at = from;
+    mapFile.truncate(end);
+    if (from > HEAD && n * REC_BYTES <= from - HEAD && mapFile.write(new Uint8Array(recs.buffer, 0, n * REC_BYTES), { at: HEAD }) === n * REC_BYTES) {
+      mapFile.flush();
+      if (writeHead(HEAD)) {
+        mapFile.flush();
+        at = HEAD;
+        mapFile.truncate(HEAD + n * REC_BYTES);
+      }
+    }
+    return true;
   };
 
   // The slots no block maps. `free` may also hold slots that were cut off or taken since: `isFree` decides.
@@ -232,20 +451,26 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   const compact = (force = false) => {
     shrink();
     if (!force && (isFree.size < COMPACT_MIN || isFree.size * 2 < slots)) return true;
+    if (!isFree.size) return true;
+    if (!convert()) return false;
+    // Each slot's entry, as its place in `recs` + 1: the leaves' entries, every leaf's.
     const owner = new Uint32Array(slots);
-    for (let b = 0; b < blocks; b++) if (map[b] && map[b] !== ZERO) owner[map[b] - 1] = b;
+    for (let q = 0; q < n * REC; q += REC) {
+      for (let i = q; i < q + LEAF; i++) if (recs[i] && recs[i] !== ZERO && recs[i] <= slots) owner[recs[i] - 1] = i + 1;
+    }
     const buf = new Uint8Array(BLOCK);
-    let top = slots - 1;
+    let hi = slots - 1;
     for (const hole of [...isFree].sort((x, y) => x - y)) {
-      while (top > hole && isFree.has(top)) top--;
-      if (top <= hole) break;
-      const b = owner[top];
-      if (data.read(buf, { at: top * BLOCK }) !== BLOCK || data.write(buf, { at: hole * BLOCK }) !== BLOCK) return false;
-      const old = map.slice(b, b + 1);
-      map[b] = hole + 1;
-      if (!putMap(b, b + 1, old)) return false;
+      while (hi > hole && isFree.has(hi)) hi--;
+      if (hi <= hole) break;
+      const p = owner[hi] - 1;
+      if (p < 0) return false; // a slot neither free nor a block's: none is
+      if (data.read(buf, { at: hi * BLOCK }) !== BLOCK || data.write(buf, { at: hole * BLOCK }) !== BLOCK) return false;
+      const old = recs.slice(p, p + 1);
+      recs[p] = hole + 1;
+      if (!putMap(p, 1, old)) return false;
       isFree.delete(hole);
-      isFree.add(top--);
+      isFree.add(hi--);
     }
     shrink();
     free.length = 0;
@@ -254,16 +479,19 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   };
   {
     const used = new Uint8Array(slots);
-    for (let b = 0; b < blocks; b++) if (map[b] && map[b] !== ZERO && map[b] <= slots) used[map[b] - 1] = 1;
+    for (let q = 0; q < n * REC; q += REC) {
+      for (let i = q; i < q + LEAF; i++) if (recs[i] && recs[i] !== ZERO && recs[i] <= slots) used[recs[i] - 1] = 1;
+    }
     for (let s = slots - 1; s >= 0; s--) if (!used[s]) release(s); // the lowest are taken first
   }
 
-  const held = (b: number) => map[b] !== 0 && map[b] !== ZERO;
+  const held = (b: number) => { const e = ent(b); return e !== 0 && e !== ZERO; };
 
   let gen = meta ? readMeta(meta) : { generation: 0, merging: '', size: 0 };
   let bumped = false;
-  /** Before the first change: the generation moves on, on disk, so a snapshot pinning the old one knows. */
+  /** Before the first change: the map converted (`convert`), and the generation moves on, on disk, so a snapshot pinning the old one knows. */
   const bump = () => {
+    if (!convert()) return false;
     if (bumped || !meta) return true;
     const next = { ...readMeta(meta), generation: gen.generation + 1 };
     if (!writeMeta(meta, next)) return false;
@@ -278,15 +506,16 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     for (let pos = off; pos < stop;) {
       const b = Math.floor(pos / BLOCK);
       let end = Math.min((b + 1) * BLOCK, stop);
-      if (map[b] === ZERO) {
+      const e = ent(b);
+      if (e === ZERO) {
         // `out` is zeros there already.
-      } else if (map[b]) {
+      } else if (e) {
         // Blocks in consecutive slots are one read (an OPFS call costs the same whatever its size).
-        for (let c = b; end < stop && held(c + 1) && map[c + 1] === map[c] + 1; c++) end = Math.min(end + BLOCK, stop);
-        if (data.read(out.subarray(pos - off, end - off), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return undefined;
+        for (let c = b, x = e; end < stop && held(c + 1) && ent(c + 1) === x + 1; c++, x++) end = Math.min(end + BLOCK, stop);
+        if (data.read(out.subarray(pos - off, end - off), { at: (e - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return undefined;
       } else {
         // Runs of blocks that aren't in the overlay go to the base in one read.
-        while (end < stop && !map[end / BLOCK]) end = Math.min(end + BLOCK, stop);
+        while (end < stop && !ent(end / BLOCK)) end = Math.min(end + BLOCK, stop);
         const bytes = await base.read(pos, end - pos);
         if (!bytes) return undefined;
         out.set(bytes, pos - off);
@@ -299,8 +528,9 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   /**
    * Writes in as few OPFS calls as it can (each costs ~0.3 ms whatever its size): blocks the overlay holds in
    * consecutive slots are one write, and whole blocks it doesn't hold get consecutive slots where `take` has
-   * them and are written from `bytes` as they are, their map entries in one write after their data. Only the
-   * (at most two) blocks a write covers in part are read-modify-write.
+   * them and are written from `bytes` as they are, their map entries in one write after their data (one per leaf
+   * the run crosses; a range's first is its leaf's making). Only the (at most two) blocks a write covers in part are
+   * read-modify-write.
    */
   const write = async (off: number, bytes: Uint8Array) => {
     if (off < 0 || off + bytes.length > base.size) return false;
@@ -313,14 +543,14 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
       const pos = Math.max(off, b * BLOCK);
       if (held(b)) {
         let c = b;
-        while (c < last && held(c + 1) && map[c + 1] === map[c] + 1) c++;
+        while (c < last && held(c + 1) && ent(c + 1) === ent(c) + 1) c++;
         const end = Math.min(stop, (c + 1) * BLOCK);
-        if (data.write(bytes.subarray(pos - off, end - off), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return false;
+        if (data.write(bytes.subarray(pos - off, end - off), { at: (ent(b) - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return false;
         b = c + 1;
       } else if (!full(b)) {
         // First write to a block it covers in part: its slot starts as the base's contents (or as the zeros it was).
         const block = new Uint8Array(BLOCK);
-        if (!map[b]) {
+        if (!ent(b)) {
           const old = await base.read(b * BLOCK, blockLen(b));
           if (!old) return false;
           block.set(old);
@@ -329,9 +559,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
         block.set(bytes.subarray(pos - off, end - off), pos - b * BLOCK);
         const slot = take();
         if (data.write(block, { at: slot * BLOCK }) !== BLOCK) { release(slot); shrink(); return false; }
-        const old = map.slice(b, b + 1);
-        map[b] = slot + 1;
-        if (!putMap(b, b + 1, old)) { release(slot); shrink(); return false; }
+        if (!setRun(b, b + 1, slot + 1)) { release(slot); shrink(); return false; }
         b++;
       } else {
         // A run of whole blocks the overlay doesn't hold.
@@ -348,12 +576,15 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
             shrink();
             return false;
           }
-          const old = map.slice(b + i, b + j + 1);
-          for (let k = i; k <= j; k++) map[b + k] = taken[k] + 1;
-          if (!putMap(b + i, b + j + 1, old)) {
-            for (const s of taken.slice(i)) release(s);
-            shrink();
-            return false;
+          // Their map entries (consecutive slots), a leaf at a time.
+          for (let s = i; s <= j;) {
+            const e = Math.min(j + 1, (Math.floor((b + s) / LEAF) + 1) * LEAF - b);
+            if (!setRun(b + s, b + e, taken[s] + 1)) {
+              for (const x of taken.slice(s)) release(x);
+              shrink();
+              return false;
+            }
+            s = e;
           }
           i = j + 1;
         }
@@ -365,18 +596,33 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
 
   /** The whole blocks of [off, off + len) (the disk's last block is whole when the range ends with the disk). */
   const whole = (off: number, len: number) => [Math.ceil(off / BLOCK), off + len === base.size ? blocks : Math.floor((off + len) / BLOCK)];
-  /** Blocks [first, end) become zeros without slots (`held`: only those the overlay holds); the map goes to its file first. */
-  const unmap = (first: number, end: number, held: boolean) => {
-    if (end <= first) return true;
-    const slotsBack: number[] = [];
-    const old = map.slice(first, end);
-    for (let b = first; b < end; b++) {
-      if (held && !map[b]) continue;
-      if (map[b] && map[b] !== ZERO) slotsBack.push(map[b] - 1);
-      map[b] = ZERO;
+  /**
+   * Blocks [first, end) become zeros without slots (`heldOnly`: only those the overlay holds), a leaf at a time, each
+   * leaf's entries to its file before its slots are free; whole ranges without a leaf get theirs in one write (up to
+   * 256: 1 MiB). Refused, what landed before stays (its slots free) and the rest is as it was.
+   */
+  const unmap = (first: number, end: number, heldOnly: boolean) => {
+    for (let s = first; s < end;) {
+      const r = Math.floor(s / LEAF);
+      const e = Math.min(end, (r + 1) * LEAF);
+      if (!top[r] && heldOnly) { s = e; continue; }
+      if (!top[r] && s === r * LEAF && e === (r + 1) * LEAF) {
+        const rs = [r];
+        while (rs.length < 256 && (r + rs.length + 1) * LEAF <= end && !top[r + rs.length]) rs.push(r + rs.length);
+        if (!addLeaves(rs, (_, entries) => entries.fill(ZERO))) return false;
+        s = (r + rs.length) * LEAF;
+        continue;
+      }
+      const back: number[] = [];
+      const ok = setMap(s, e, (_, old) => {
+        if (heldOnly && !old) return 0;
+        if (old && old !== ZERO) back.push(old - 1);
+        return ZERO;
+      });
+      if (!ok) return false; // the blocks keep their slots
+      for (const x of back) release(x);
+      s = e;
     }
-    if (!putMap(first, end, old)) return false; // the blocks keep their slots
-    for (const s of slotsBack) release(s);
     return compact();
   };
   const inside = (off: number, len: number) => off >= 0 && len >= 0 && off + len <= base.size;
@@ -393,20 +639,31 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return (await write(off, new Uint8Array(first * BLOCK - off))) && unmap(first, end, false) && (tail <= 0 || (await write(end * BLOCK, new Uint8Array(tail))));
   };
 
+  /** The blocks written, ascending: the leaves' entries, the leaves in their ranges' order. */
   const written = () => {
     const out: number[] = [];
-    for (let b = 0; b < blocks; b++) if (map[b]) out.push(b);
+    const leaves: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const r = recs[k * REC + LEAF] - 1;
+      if (r >= 0 && r < top.length && top[r] === k + 1) leaves.push(k);
+    }
+    leaves.sort((x, y) => recs[x * REC + LEAF] - recs[y * REC + LEAF]);
+    for (const k of leaves) {
+      const first = (recs[k * REC + LEAF] - 1) * LEAF;
+      for (let i = 0; i < LEAF && first + i < blocks; i++) if (recs[k * REC + i]) out.push(first + i);
+    }
     return out;
   };
 
   const block = (b: number) => {
-    if (!map[b]) return undefined;
+    const e = ent(b);
+    if (!e) return undefined;
     const out = new Uint8Array(BLOCK);
-    if (map[b] === ZERO) return out;
-    return data.read(out, { at: (map[b] - 1) * BLOCK }) === BLOCK ? out : undefined;
+    if (e === ZERO) return out;
+    return data.read(out, { at: (e - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation, epoch: () => { bumped = false; } };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation, epoch: () => { bumped = false; } };
 }
 
 /**

@@ -784,20 +784,53 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   converting the image. A request's clusters are read from the file in merged host reads (ranges within 64 KiB of each other, up to 8 MiB: an image's clusters mostly follow each other, so a 1 MiB read of Debian's image is one or two HTTP requests, not sixteen; a merged read that fails leaves its ranges to their own reads; one read per cluster natively), all L2 tables kept, the 16 most recent
   compressed clusters cached (1 natively).
 - **Writable disks: a copy-on-write overlay** (`web/overlay.ts`) in an OPFS directory, 4 KiB
-  blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,
-  n = slot n − 1, 0xffffffff = zeros without a slot), `meta` its **generation** (a u64, bumped and flushed before
+  blocks: `data` holds written blocks in slots, `map` a u32 entry per disk block (0 = base,
+  n = slot n − 1, 0xffffffff = zeros without a slot) in **two levels** (below), `meta` its **generation** (a u64, bumped and flushed before
   the first change of each opening: a write, a discard or a zeroing; an opening that only reads leaves it, so "the
   overlay is as it was at generation g" is two integers compared: docs/machines.md §3.3), for a stored
   disk the overlay being merged into it, and the overlay's **own size** (a u64 at 32: a grown overlay's,
   docs/machines.md §4.5; a 32-byte `meta` from before sizes has none), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
-  slot is written before its map entry, so a crash leaks a slot but never maps garbage. **Few OPFS calls:** a sync-handle
+  slot is written before its map entry, so a crash leaks a slot but never maps garbage.
+  **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
+  disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
+  past it), as an unwritten block does. So the map file and the memory grow with what's written, not with the disk's
+  size (a flat map was 4 bytes per block: 1 GiB per TiB in memory, and a write at the end, as GPT's backup header,
+  made the file that long). The `map` file: a 16-byte header (u32 `0xfffffffe`, u32 version 2, u64 where the records
+  start), then the leaves' **records** in the order they were made, 4,104 bytes each: the 1,024 entries, then the
+  range + 1 (the leaf's top entry), then 0. **The top table** (range → record, 4 bytes per 4 MiB: 1 MiB per TiB) is
+  rebuilt in memory at opening from the records, which are read whole (`readMap`); the leaves are kept in memory as
+  the file has them. **Crash and refusal:** a leaf is one appending write, its entries before its top entry, and an
+  opening counts only records the file holds whole, so a write that lands in part (refused, or cut by a crash) leaves
+  no leaf; refused, the file is cut back and the change fails (its slots free). A new leaf's entries map only blocks
+  whose data is written already (a run's data, then its leaves). Entries in a leaf that exists are written over in
+  place (`putMap`: inside the file, so they need no room; one that falls short anyway is written back as it was). A
+  zeroing of whole ranges without leaves makes up to 256 leaves (1 MiB) in one write (a restore with the whole disk).
+  Everything that walks the map walks the leaves only: the opening's free slots, compaction (a slot's owner is its
+  entry's place in the leaves), `written` (the leaves in their ranges' order) for exports, snapshots and merges, and
+  a stored disk's reader (web/stored.ts `blockSource`).
+  **A flat map** (from before leaves: no header) is read as it is (its leaves built in memory, the file untouched):
+  an opening that only reads (a stored disk under its machines' overlays, read-only handles in several workers)
+  never changes it. The first change of a writable opening converts it (`convert`) before anything else: a trailer
+  (u32 `0xfffffffd`, 0, u64 the flat map's length) at where the records will end, the records into the room before
+  it (after the flat map), then the header over the flat map's first entries (inside the file) is the switch; then,
+  where the records fit in the flat map's room, they're copied down to 16 and the header moved to them, and the file
+  cut after them (a dense flat map keeps its room: ~2× the records). Interrupted anywhere, the file reads as the flat
+  map (the trailer bounds it) or as the converted one, and the next change converts it again; refused, it is cut back
+  to the flat map and the change fails. (A version in `meta` was the brief's suggestion; the header keeps the map
+  file self-describing, since several readers open it without its `meta`: a stored disk's reader, a merge's copy, a
+  restore's writes. Leaves in a file of their own would have needed every opener to open a fourth file.)
+  Debian's boot on the page leaves its overlay a map of 74 KB (18 leaves) where the flat one was 1.7 MB; imported as a
+  stored disk, 1.32 MB (322 leaves) where it was 3.0 MiB (GPT's backup header at the end); a disk grown to 1 TiB with
+  GPT's headers written: 8 KiB of map file and 1 MiB kept at opening, where the flat one would be 1 GiB of each
+  (bench/io/REPORT.md "The two-level map").
+  **Few OPFS calls:** a sync-handle
   call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
   consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
-  from the request's bytes in one write with their map entries in one more; only a block a write covers in part is
-  read-modify-write.
+  from the request's bytes in one write with their map entries in one more per leaf the run crosses (a range's first
+  write makes its leaf in that write); only a block a write covers in part is read-modify-write.
   **Its size** is the largest of the base's, its own (`meta`) and the spec's `size` (the guest's, from the page):
   past the base's end it reads as zeros until written (`grown`), and its map grows as blocks there are written
-  (the capacity the guest sees is the spec's `size`).
+  (the capacity the guest sees is the spec's `size`), a leaf where a range is first written.
   **What the guest discards leaves the overlay:** the whole blocks of a discard that the overlay
   holds become zeros without slots (never the base's bytes again: QEMU's qcow2 does the same over
   a backing file; blocks it doesn't hold stay the base's), a `WRITE_ZEROES`'s whole blocks too,

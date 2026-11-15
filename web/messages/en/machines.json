@@ -1593,6 +1593,6 @@
   },
   "resize.tooLarge": {
     "message": "{{size, bytes}} is past the largest size a disk can be resized to here, {{max, bytes}}.",
-    "note": "Error details: the cause under the headline machines:resize.failed, also shown under the Resize dialog's size field as the size is typed. {{size}}: the size asked for; {{max}}: the largest size allowed (256 GiB); both as KiB, MiB or GiB."
+    "note": "Error details: the cause under the headline machines:resize.failed, also shown under the Resize dialog's size field as the size is typed. {{size}}: the size asked for; {{max}}: the largest size allowed (8 TiB, written as 8192 GiB); both as KiB, MiB or GiB."
   }
 }

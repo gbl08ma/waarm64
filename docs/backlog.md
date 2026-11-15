@@ -334,6 +334,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`prefetch` in its manifest) doesn't fit a resumed guest, so the demo's manifest carries a trace recorded from the
   resume instead (or none: the paced prefetch then costs nothing).
 - Overlay: the base identified by path and size only. (A full storage: machines.md "Storage".)
+- Overlay's two-level map (devices.md "blk"): a zeroing of whole ranges still makes a leaf per range (all `ZERO`),
+  as costly as the flat map was (a restore with the whole disk of a stored disk grown to 1 TiB: 1 GiB of leaves); a
+  top entry meaning "the whole range zeros" would make it free, if large whole-disk zeroings turn up. A dense flat map
+  converted keeps its old room before the records (~2× the records) when they don't fit in it; nothing reclaims it
+  later. The top table is flat in memory (4 bytes per 4 MiB: 8 MiB at `MAX_RESIZE`), allocated at each opening.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the
   tests' guests moves every writable guest's step count (the driver reads the longer config) and
   needs the native twin (`core/tests/common` `Overlay`) to take the requests. One segment per

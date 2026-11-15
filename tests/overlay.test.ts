@@ -219,9 +219,9 @@ test('a request is a few OPFS calls: consecutive blocks are one read or write, m
   const d = overlay(base, logged('data', log, calls), logged('map', log, calls));
   const mib = Uint8Array.from({ length: 1 << 20 }, (_, i) => (i * 13 + 5) & 255);
   assert.ok(await d.write(1 << 20, mib));
-  assert.deepEqual([calls['data.write'], calls['map.write']], [1, 1], 'a fresh 1 MiB write');
+  assert.deepEqual([calls['data.write'], calls['map.write']], [1, 2], "a fresh 1 MiB write: the map's header, then its leaf with the entries");
   assert.ok(await d.write(1 << 20, mib));
-  assert.deepEqual([calls['data.write'], calls['map.write']], [2, 1], 'overwriting it: no map write');
+  assert.deepEqual([calls['data.write'], calls['map.write']], [2, 2], 'overwriting it: no map write');
   assert.equal(Buffer.compare(await d.read(1 << 20, 1 << 20) as Uint8Array, mib), 0);
   assert.equal(calls['data.read'], 1, 'held blocks in consecutive slots: one read');
   // Unaligned: partial first and last blocks are read-modify-write, the whole ones between one run.
@@ -231,6 +231,10 @@ test('a request is a few OPFS calls: consecutive blocks are one read or write, m
   const got = (await d.read(3 * (1 << 20) + 512, odd.length)) as Uint8Array;
   assert.equal(Buffer.compare(got, odd), 0);
   assert.equal(Buffer.compare((await d.read(3 * (1 << 20), 512)) as Uint8Array, baseBytes.subarray(3 << 20, (3 << 20) + 512)), 0, 'the bytes before the write are the base');
+  const [dw, mw] = [calls['data.write'], calls['map.write']];
+  assert.ok(await d.write(2 << 20, new Uint8Array(4096).fill(1)));
+  assert.ok(await d.write(5 << 20, new Uint8Array(4096).fill(2)));
+  assert.deepEqual([calls['data.write'] - dw, calls['map.write'] - mw], [2, 2], "a fresh block in a leaf there is (its entry), and one in a new leaf (its making, with the entry): one map write each");
 });
 
 test('random writes, discards and reads of every shape match a model, across reopens', async () => {
@@ -317,11 +321,14 @@ test('writes the storage refuses at random (growing data or map, short or thrown
   for (let seed = 1n; seed <= 16n; seed++) await refusedAtRandom(seed);
 });
 
+test("the same across leaves (4 MiB each): a leaf's making refused too", async () => {
+  for (let seed = 101n; seed <= 104n; seed++) await refusedAtRandom(seed, 2148 * 4096, 120);
+});
+
 /** Random writes, zeroings and discards, some refused, each checked against the files reopened and a model. */
-async function refusedAtRandom(seed: bigint) {
+async function refusedAtRandom(seed: bigint, size = 500 * 4096, steps = 300) {
   const g = splitmix64(seed);
   const rand = (n: number) => Number(g.next().value as bigint % BigInt(n));
-  const size = 500 * 4096; // a map file that keeps growing: new blocks far past its end
   const baseBytes = Uint8Array.from({ length: size }, (_, k) => (k * 2654435761) >>> 24);
   const base = openDisk((off, len) => baseBytes.slice(off, off + len), size);
   let refusing = 0; // out of 8: how often a write that grows a file is refused
@@ -344,7 +351,7 @@ async function refusedAtRandom(seed: bigint) {
   const d = overlay(base, data, map);
   const model = baseBytes.slice();
   const same = (a: Uint8Array, b: Uint8Array) => Buffer.compare(a, b) === 0;
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < steps; i++) {
     refusing = i % 100 < 40 ? 0 : 3; // stretches with room, and stretches nearly full
     const off = rand(size / 512) * 512;
     const len = Math.min(size - off, (rand(rand(3) ? 16 : 200) + 1) * 512);

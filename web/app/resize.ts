@@ -26,10 +26,12 @@ export type ResizeCosts = {
 };
 
 /**
- * The largest size a resize grows to: an overlay keeps its map in memory, 4 bytes per 4 KiB block of its whole size
- * (1 GiB per TiB), so the size is capped where that stays modest.
+ * The largest size a resize grows to, 8 TiB: what a changes-only or whole qcow2 export of the disk can be (its 4 KiB
+ * clusters and QEMU's 32 MiB L1 table: `qemu-img` refuses 8 TiB + 1 GiB). An overlay's map grows with what's written
+ * (web/overlay.ts), and the top table it keeps in memory is 4 bytes per 4 MiB (8 MiB here); its u32 slots would hold
+ * 16 TiB of written blocks, and the blk device and JS numbers go far past it.
  */
-export const MAX_RESIZE = 256 * 1024 ** 3;
+export const MAX_RESIZE = 8 * 1024 ** 4;
 
 /** How long a resize waits for an overlay's or a stored disk's lock (a machine stopping, an export) before it is refused. */
 const RESIZE_WAIT_MS = 2_000;

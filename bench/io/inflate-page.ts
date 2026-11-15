@@ -1,6 +1,8 @@
 // The inflate pool's A/B on the page (bench/io/REPORT.md): Debian's published qcow2 booted on the
 // page (`?machine=debian`, served over HTTP) to its login prompt, imported as a stored disk, and exported whole
-// (qcow2, uncompressed, into OPFS), timed; one JSON line. The A/B set inflatePool's default size by hand between runs.
+// (qcow2, uncompressed, into OPFS), timed; one JSON line, with the sizes of the overlays' and stored disks' `map` and
+// `data` files at the end. The A/B set inflatePool's default size by hand between runs (the two-level map's swapped
+// web/overlay.ts and web/stored.ts).
 //   node bench/io/inflate-page.ts <label> [boot,import,export]
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -56,6 +58,18 @@ try {
       return performance.now() - t0;
     });
   }
+  // What the overlays' and stored disks' files take (the two-level map's A/B, bench/io/REPORT.md): every `map` and `data` in OPFS.
+  out.files = await page.evaluate(async () => {
+    const found: Record<string, number> = {};
+    const walk = async (d: FileSystemDirectoryHandle, path: string) => {
+      for await (const [name, h] of (d as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) {
+        if (h.kind === 'directory') await walk(h as FileSystemDirectoryHandle, `${path}${name}/`);
+        else if (name === 'map' || name === 'data') found[`${path}${name}`] = (await (h as FileSystemFileHandle).getFile()).size;
+      }
+    };
+    await walk(await navigator.storage.getDirectory(), '');
+    return found;
+  });
   out.errors = errors;
 } finally {
   await context.close();

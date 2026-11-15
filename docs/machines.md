@@ -119,7 +119,7 @@ Since decided (the user, 2026-10-17):
   refused write returns 4294967288, an error code as its count); the overlay, the block cache and the snapshot writer
   take each as a refused write (`shortOnFull`, a count that isn't the request's): a thrown one used to leave the overlay's
   taken slots neither mapped nor free, and a compaction after a trim then moved one as block 0's (the guest's first block
-  read as zeros). A guest's zeroing or discard (the overlay's map grows) goes the same way as its write. The overlay's map
+  read as zeros). A guest's zeroing (it may make a leaf of the overlay's map) goes the same way as its write; a discard writes only into the map's leaves there are (in place), so it needs no room. The overlay's map
   entries that fall short are written back as they were and taken back in memory (`putMap`), so the overlay reads what
   its files say (once its map was written in part, a reopened overlay read another block's bytes); an overlay whose
   making was refused throws the same full storage, and its next opening makes it (a part of its base's identity used to
@@ -264,8 +264,10 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 
 ### 4.4 Stored disks: their format, merging, writing in place
 
-- **The format is the overlay's** (`data` and `map`, 4 KiB blocks, zeros without a slot: devices.md "blk") over
-  nothing: a stored disk is a sparse, writable block store (`web/stored.ts`). An imported qcow2 is converted on the
+- **The format is the overlay's** (`data` and `map`, 4 KiB blocks, zeros without a slot, the map in leaves of 4 MiB
+  made as ranges are written: devices.md "blk") over nothing: a stored disk is a sparse, writable block store
+  (`web/stored.ts`). A stored disk from before leaves (a flat map) is read as it is under its overlays and converted
+  by its first writable opening's first change (writing in place, a merge into it). An imported qcow2 is converted on the
   way in (compressed clusters inflated, zero and unallocated ones left out), a raw image too (zero blocks left out).
   So a stored disk takes no more than its data, and the same code reads, writes and exports it. Debian's published
   image (a ~400 MB compressed qcow2) stores as 1,043 MB, estimated beforehand at 1,212 MB from the qcow2's
@@ -323,8 +325,12 @@ ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
   running, and the overlay's or stored disk's lock held (a machine the records don't show running, an export, a merge:
   the lock Merge into the disk takes); it then writes an overlay's `meta` (`writeOwnSize`, a writable stream: from the
   page) and its record, or the disk's record, under that lock.
-- **An upper bound:** `MAX_RESIZE` (256 GiB) refuses a larger size (`resize.tooLarge`): an overlay keeps its map in
-  memory, 4 bytes per 4 KiB block of its whole size (1 GiB per TiB).
+- **An upper bound:** `MAX_RESIZE` (8 TiB) refuses a larger size (`resize.tooLarge`). It is the qcow2 export's: our
+  4 KiB clusters and QEMU's largest L1 table (32 MiB) make 8 TiB the largest qcow2 `qemu-img` opens (8 TiB + 1 GiB
+  is refused). The overlay's map no longer bounds it (it grows with what's written: devices.md "blk"); what an
+  opening keeps for the size alone is the top table, 4 bytes per 4 MiB (8 MiB at 8 TiB). The slots (u32: 16 TiB of
+  written blocks), the blk device's capacity (u64 sectors) and JS numbers (2^53) go past it. (256 GiB before the
+  two-level map: the flat map was 4 bytes per 4 KiB block in memory, 1 GiB per TiB.)
 - **The grow mark** (`GrowMark`, `{ from, to }`, on the overlay's or stored disk's record, not an attachment's:
   whichever machine boots it next does it): `grow` sets it (`from` stays the size before the first resize the guest
   hasn't followed), a resize without it clears it, `growMark`/`clearGrowMark` read and clear it. A ramdisk gets none

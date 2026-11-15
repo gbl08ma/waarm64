@@ -541,9 +541,9 @@ test('virtio-blk: a write that finds the storage full gets the remote disks\' ke
   store.close();
 });
 
-test('virtio-blk: a discard or a write of zeroes that finds the storage full gets the kept blocks out of the way and lands, or is told', async () => {
+test('virtio-blk: a write of zeroes that finds the storage full (its leaf made) gets the kept blocks out of the way and lands, or is told; a discard needs no room', async () => {
   const { blockStore } = await import('../web/diskcache.ts');
-  const size = 64 * 4096;
+  const size = 3 * 1024 * 4096; // three leaves of the overlay's map (4 MiB each)
   const ram = new Uint8Array(1 << 16);
   const ctx = { ram: () => [ram] } as unknown as Ctx;
   const src = { size, read: (off: number, len: number) => new Uint8Array(len).fill(7) };
@@ -573,9 +573,10 @@ test('virtio-blk: a discard or a write of zeroes that finds the storage full get
   assert.deepEqual([await ask(13, 4, 4), store.stats().gaveUp, told], [OK, true, 0], 'zeroes: the store gave its room up, and they landed');
   const again = blockStore(kept, memFile(), size, 4096, 8);
   again.put(0, new Uint8Array(4096).fill(1));
-  assert.deepEqual([await ask(11, 20, 4), again.stats().gaveUp, told], [OK, true, 0], 'a discard: the same');
+  // A discard changes only blocks the overlay holds, in a leaf there is: written over in place, the file doesn't grow.
+  assert.deepEqual([await ask(11, 2, 4), await ask(11, 2000, 4), again.stats().gaveUp, told], [OK, OK, false, 0], 'a discard: no room needed');
   never = true;
-  assert.deepEqual([await ask(11, 40, 4), await ask(13, 50, 4), told], [IOERR, IOERR, 1], 'still full: failed, and told once');
+  assert.deepEqual([await ask(13, 1024 + 50, 4), await ask(13, 2048 + 50, 4), await ask(11, 4, 4), told], [IOERR, IOERR, OK, 1], 'still full: zeroes failed (new leaves), told once; a discard lands');
   store.close();
   again.close();
 });

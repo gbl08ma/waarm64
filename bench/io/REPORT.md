@@ -143,3 +143,45 @@ The boot doesn't move with the pool at any size: inflating is ~1.6% of it (above
 one or two clusters. Four workers beside four vCPUs cost the boot nothing, so the device worker keeps its pool. The
 import gains 7% and the export 11%: their time is mostly the HTTP or file reads and the block store's writes. Shipped
 with the default size (cores − 1, at most 4).
+
+## The two-level map (2026-11-15, RESIZE loop 2b): the same speed, maps that grow with what's written
+
+The overlay's map in leaves of 4 MiB made at a first write (docs/devices.md "blk"). A/B in one session on the dev VM
+(Lima vz, 8 vCPUs, arm64, 18 GiB), Chromium 155.0.8059.84 headless, at `d950eb54`: A is its `web/overlay.ts` and
+`web/stored.ts`, B the two-level map, swapped in the checkout between runs (`results/2026-11-15-two-level-map/`, with
+`summary.py`). Rounds 1–3 ran A then B, rounds 4–5 B then A; B in rounds 4–5 also has the write path's `setRun` (below).
+bench/io's suite (`--only io`, 5 boots a run: medians of each run below, KiB/s or MiB/s as the JSON has them):
+
+| job | A (5 rounds) | B (5 rounds) | B/A, medians |
+|---|---|---|---|
+| random 4 KiB read (base) | 5784–5919 | 5840–5898 | +0.2% |
+| sequential 1 MiB read | 282000–290525 | 281753–290377 | +0.6% |
+| sequential 1 MiB write, first writes | 222155–222911 | 219183–225209 | −0.7% |
+| the same with `fsync` | 195047–197397 | 190511–199804 | 0.0% |
+| random 4 KiB write / with `fsync` | 4242–4336 / 3020–3121 | 4284–4325 / 3056–3103 | −0.2% / +0.6% |
+| held 1 MiB / 4 KiB reads | 395341–407074 / 8126–8330 | 399226–404345 / 8190–8330 | +0.9% / 0.0% |
+| `dd` read / write `conv=fsync` (MiB/s) | 56.0–57.0 / 21.6–22.1 | 56.4–56.9 / 21.5–22.0 | −0.2% / 0.0% |
+
+Every job's rounds overlap. The first writes were 1.3% slower in rounds 1–3 (apart: 219.2–220.7 against
+222.2–222.9 MB/s); in Node the leaves cost ~10 µs more JS per fresh 1 MiB write (callbacks per entry in `setMap`),
+so the write path got `setRun` (a run's consecutive slots, no callback: ~8 µs left, 0.2% of the 4.2 ms request), and
+with it and B first, rounds 4–5 were 225.2 and 223.7 against 222.2 and 222.2. The stage timers (`io_stats`, one boot
+each, `stats-*.json`) of the first writes: 64 data writes 129 / 131 ms, map writes 64 in 21.9 ms / 65 (the header
+once) in 22.8 ms: a map write costs the same whether it extends the flat file or writes into a leaf.
+
+**The page** (`node bench/io/inflate-page.ts`: Debian's qcow2 booted to its login, imported as a stored disk,
+exported whole; `page.jsonl`), ms, rounds 1–3: boot A 29717 (the session's first, cold) / 26198 / 26250, B 25987 /
+26177 / 26125; import A 13086 / 13003 / 12403, B 12914 / 12658 / 12720; export A 8334 / 7795 / 7673, B 8212 / 7874 /
+7772. No difference.
+
+**Map files and memory** (`map-sizes.ts` in Node, `sizes.jsonl`; and the page's OPFS after the boot and the import):
+
+| disk | A: map file / kept at opening | B: map file / kept at opening |
+|---|---|---|
+| Debian's boot overlay (page) | 1,693,708 B | 73,888 B (18 leaves) |
+| Debian imported, stored (3 GiB, 1.04 GB of data) | 3,145,728 / 3,145,728 B | 1,321,504 / 1,324,560 B (322 leaves) |
+| grown to 256 GiB, GPT's two headers | 256 MiB / 256 MiB | 8,224 B / 264 KiB |
+| grown to 1 TiB | (past A's cap; would be 1 GiB / 1 GiB) | 8,224 B / 1.0 MiB |
+| grown to 8 TiB (`MAX_RESIZE` now) | (8 GiB / 8 GiB) | 8,224 B / 8.0 MiB |
+
+What an opening keeps past the leaves is the top table, 4 bytes per 4 MiB of disk.

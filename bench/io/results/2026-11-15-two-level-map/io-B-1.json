@@ -1,0 +1,637 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-15T00:59:19.640Z",
+ "commit": "d950eb541c5b",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "io_raw_randread4k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    5870,
+    5882,
+    5854,
+    5871,
+    5909
+   ],
+   "median": 5871,
+   "iqr": 12,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randread4k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1467.51083,
+    1470.50983,
+    1463.666667,
+    1467.844052,
+    1477.333333
+   ],
+   "median": 1467.844052,
+   "iqr": 2.9990000000000236,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randread4k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    639.528781108,
+    638.395667346,
+    642.121200638,
+    639.784546652,
+    635.784079422
+   ],
+   "median": 639.528781108,
+   "iqr": 1.3888793060000353,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqread128k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    112474,
+    114393,
+    113706,
+    115417,
+    114730
+   ],
+   "median": 114393,
+   "iqr": 1024,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqread128k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    878.707098,
+    893.702099,
+    888.333333,
+    901.699434,
+    896.333333
+   ],
+   "median": 893.702099,
+   "iqr": 8,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqread128k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1101.738223739,
+    1082.4427143920002,
+    1089.679333583,
+    1072.381404287,
+    1079.389947192
+   ],
+   "median": 1082.4427143920002,
+   "iqr": 10.289386391000107,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqread1M_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    208074,
+    288724,
+    287648,
+    287456,
+    287648
+   ],
+   "median": 287648,
+   "iqr": 192,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqread1M_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    203.197868,
+    281.95739,
+    280.906365,
+    280.719281,
+    280.906365
+   ],
+   "median": 280.906365,
+   "iqr": 0.18708399999997027,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqread1M_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4878.244590164,
+    3506.3363778039998,
+    3519.9448825619997,
+    3520.398728351,
+    3520.632819692
+   ],
+   "median": 3520.398728351,
+   "iqr": 0.6879371300001367,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqwrite1M_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    219183,
+    220659,
+    219183,
+    220659,
+    224438
+   ],
+   "median": 220659,
+   "iqr": 1476,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqwrite1M_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    214.046823,
+    215.488215,
+    214.046823,
+    215.488215,
+    219.178082
+   ],
+   "median": 215.488215,
+   "iqr": 1.4413920000000076,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqwrite1M_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4275.62225,
+    4253.5125,
+    4289.8155,
+    4241.96325,
+    4186.16525
+   ],
+   "median": 4253.5125,
+   "iqr": 33.65900000000056,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqwrite1M_fsync_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    188321,
+    190511,
+    195047,
+    195047,
+    184089
+   ],
+   "median": 190511,
+   "iqr": 6726,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqwrite1M_fsync_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    183.908046,
+    186.046512,
+    190.47619,
+    190.47619,
+    179.775281
+   ],
+   "median": 186.046512,
+   "iqr": 6.5681439999999895,
+   "n": 5
+  },
+  {
+   "name": "io_raw_seqwrite1M_fsync_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4629.38,
+    4614.4556875,
+    4473.129,
+    4474.7,
+    4784.378
+   ],
+   "median": 4614.4556875,
+   "iqr": 154.6800000000003,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randwrite4k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4357,
+    4325,
+    4325,
+    4311,
+    4325
+   ],
+   "median": 4325,
+   "iqr": 0,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randwrite4k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1089.361702,
+    1081.309398,
+    1081.309398,
+    1077.894737,
+    1081.309398
+   ],
+   "median": 1081.309398,
+   "iqr": 0,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randwrite4k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    873.361289063,
+    880.650015625,
+    880.153625,
+    882.566320313,
+    880.515351562
+   ],
+   "median": 880.515351562,
+   "iqr": 0.49639062500000364,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randwrite4k_fsync_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    3093,
+    3103,
+    3190,
+    3065,
+    3103
+   ],
+   "median": 3103,
+   "iqr": 10,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randwrite4k_fsync_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    773.413897,
+    775.757576,
+    797.507788,
+    766.467066,
+    775.757576
+   ],
+   "median": 775.757576,
+   "iqr": 2.343678999999952,
+   "n": 5
+  },
+  {
+   "name": "io_raw_randwrite4k_fsync_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    925.537375,
+    925.0541875,
+    903.078875,
+    936.402375,
+    924.0265625
+   ],
+   "median": 925.0541875,
+   "iqr": 1.5108125000000427,
+   "n": 5
+  },
+  {
+   "name": "io_raw_heldseqread1M_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    402711,
+    401956,
+    404003,
+    404345,
+    405233
+   ],
+   "median": 404003,
+   "iqr": 1634,
+   "n": 5
+  },
+  {
+   "name": "io_raw_heldseqread1M_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    393.273393,
+    392.535821,
+    394.535155,
+    394.868377,
+    395.736176
+   ],
+   "median": 394.535155,
+   "iqr": 1.5949840000000108,
+   "n": 5
+  },
+  {
+   "name": "io_raw_heldseqread1M_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    2502.858946655,
+    2507.500767402,
+    2495.4555270270002,
+    2493.266511392,
+    2486.3738989900003
+   ],
+   "median": 2495.4555270270002,
+   "iqr": 9.59243526299997,
+   "n": 5
+  },
+  {
+   "name": "io_raw_heldrandread4k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    8350,
+    8279,
+    8249,
+    8342,
+    8330
+   ],
+   "median": 8330,
+   "iqr": 63,
+   "n": 5
+  },
+  {
+   "name": "io_raw_heldrandread4k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    2087.637454,
+    2069.976674,
+    2062.333333,
+    2085.666667,
+    2082.63912
+   ],
+   "median": 2082.63912,
+   "iqr": 15.689992999999959,
+   "n": 5
+  },
+  {
+   "name": "io_raw_heldrandread4k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    437.923299601,
+    441.655047972,
+    443.654917731,
+    438.47798242,
+    439.09250048
+   ],
+   "median": 439.09250048,
+   "iqr": 3.1770655519999877,
+   "n": 5
+  },
+  {
+   "name": "io_raw_dd_read",
+   "unit": "MiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image",
+    "bs": "1M",
+    "bytes": 134217728
+   },
+   "samples": [
+    56.665626320944185,
+    56.90026894086825,
+    56.92658694003713,
+    56.83445410944222,
+    56.91481674924934
+   ],
+   "median": 56.90026894086825,
+   "iqr": 0.08036263980712022,
+   "n": 5
+  },
+  {
+   "name": "io_raw_dd_write_fsync",
+   "unit": "MiB/s",
+   "params": {
+    "disk": "raw",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image",
+    "bs": "1M",
+    "bytes": 16777216
+   },
+   "samples": [
+    21.997360316329363,
+    21.974852527562454,
+    21.887974609806676,
+    21.971683991104005,
+    22.06790017135255
+   ],
+   "median": 21.974852527562454,
+   "iqr": 0.025676325225358454,
+   "n": 5
+  }
+ ]
+}
