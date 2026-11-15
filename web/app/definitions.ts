@@ -8,7 +8,10 @@
 // so (`machine.usb`; a relative mouse, a touchscreen and the clock device, `mouse`, `touch` and `clock`, likewise; shared folders, `shares` with `sharesMount` and `sharesPath`, never the folders themselves), and its remembered USB devices go as identities (`usbDevices`): no grant travels, so on another
 // browser the first start offers one click each (docs/usb.md "The page"). All are left out when there's nothing to say.
 // The network adapters go as their MACs (`machine.macs`, left out for one at the default), without their connections.
+// A grown overlay goes as its size (`overlaySize`, docs/machines.md §4.5): the import gives the attachment an empty
+// overlay of that size, marked to grow (its base's partition doesn't fill it), so the machine sees the same disk.
 import { MsgError } from '../msg.ts';
+import { grownSize, validGrownSize, withGrownOverlay } from './resize.ts';
 import { sharesPathError } from './shares-mount.ts';
 import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
 import { validKeyboard } from './keyboard.ts';
@@ -28,7 +31,7 @@ import {
   type Display,
   type MachineRecord,
 } from './shape.ts';
-import type { Store } from './store.ts';
+import type { OverlayRecord, Store } from './store.ts';
 import { ramSplitError } from './machine.ts';
 
 export const DEFINITION_TYPE = 'waarm64-machine';
@@ -45,6 +48,8 @@ export type DefinitionDisk = {
   inPlace?: boolean;
   swap?: boolean;
   serial: string;
+  /** Its overlay's own size where it was grown past the disk's (§4.5): what the guest sees. */
+  overlaySize?: number;
 };
 export type Definition = {
   type: typeof DEFINITION_TYPE;
@@ -87,8 +92,8 @@ const onOf = <K extends string>(m: Partial<Record<K, boolean>>, keys: readonly K
 /** The fields of `o` that are set (not empty, zero or false), in its order. */
 const setOf = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v)) as Partial<T>;
 
-/** An attachment's disk as a definition says it. */
-function diskOf(d: DiskRecord, a: Attachment): DefinitionDisk {
+/** An attachment's disk as a definition says it (`o`: its overlay's record, if it has one). */
+function diskOf(d: DiskRecord, a: Attachment, o?: OverlayRecord): DefinitionDisk {
   return {
     kind: d.kind,
     name: d.name,
@@ -98,6 +103,7 @@ function diskOf(d: DiskRecord, a: Attachment): DefinitionDisk {
     readOnly: a.readOnly,
     ...onOf(a, ['inPlace', 'swap']),
     serial: a.id,
+    ...setOf({ overlaySize: grownSize(d, a, o) }),
   };
 }
 
@@ -136,7 +142,7 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
       throw new MsgError('machines:definitions.diskMissing', undefined, {
         cause: new MsgError('machines:definitions.diskMissing.cause', { name: m.name }),
       });
-    disks.push(diskOf(d, a));
+    disks.push(diskOf(d, a, a.overlay ? await store.get('overlays', a.overlay) : undefined));
   }
   const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
   return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: settingsOf(m), disks, ...usb };
@@ -205,7 +211,8 @@ function validDisk(x: unknown) {
     typeof x.serial === 'string' &&
     /^[0-9a-f]{12}$/.test(x.serial) &&
     optional(x.inPlace, isBool) &&
-    optional(x.swap, isBool)
+    optional(x.swap, isBool) &&
+    optional(x.overlaySize, (v) => validGrownSize(v, size as number))
   );
 }
 
@@ -328,7 +335,7 @@ export async function importDefinition(
       await store.put('disks', d);
       have.push(d);
     }
-    attachments.push(attachmentOf(x, d, attachments));
+    attachments.push(await withGrownOverlay(store, d, attachmentOf(x, d, attachments), x.overlaySize));
   }
   const names = (await store.all('machines')).map((m) => m.name);
   const machine = machineFrom(def, uniqueName(def.machine.name, names), attachments, now);

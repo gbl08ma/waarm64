@@ -488,7 +488,13 @@ is typed, `resizeCosts` says what it does: the machines whose disk grows, the ke
 machine), or why it's refused (not larger, past `MAX_RESIZE`'s 8 TiB: the largest qcow2 export QEMU opens,
 docs/machines.md §4.5). A machine using it that runs names itself and keeps [Resize](ui:disks:ResizeDisk.ok) off; the one running on this page has a
 Power off button (`ResizeDisk.powerOff`) (the page's `offFirst`: it asks, a soft shutdown where the agent can), one in another tab is powered off there.
-Resize runs `resize(store, target, size, { grow })` (the box's word sets or clears the grow mark).
+Resize runs `resize(store, target, size, { grow })` (the box's word sets or clears the grow mark). At the machine's
+next start with the agent, the guest's answer is a notice on the message bar, once (`web/app/areas/grow-actions.ts`;
+devices.md "A disk grown", "The page's side"): what grew ([The guest grew {{disk}}: its partition and filesystem now
+take {{size}}.](ui:machine:grow-actions.grown), `grownWhole` for a disk without a table, `already` when nothing was
+left), or a headline (`partOnly`: the partition but not its filesystem; `notGrown`) with why as its cause and what the
+user can do in the guest (`notMounted`, `unsupported`, `stacked`, `notLast`, `badTable`; `failed`: tried again at the
+next start, `failedAgain`: not again).
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:PagePane.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The

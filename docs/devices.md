@@ -476,6 +476,36 @@ filesystem's grow faked (found or not, not yet, grown then nothing, one answer p
 a whole disk's btrfs, LVM's holders, xfs failing, vfat, BLKPG failing then completed, a corrupt table untouched); the
 real ioctls on a loop device: `grow.rs`'s ignored `a_real_disk`, run by hand as root (no CI script has it).
 
+**The page's side** (`web/app/areas/grow-actions.ts` `GrowActions`, a follower of each run's link: agent-actions.ts
+`LinkFollower`; the marks through web/app/resize.ts): at each HELLO of an agent that says `CAP.GROW` (a boot, the agent
+started again, a restored guest's agent), the page reads the stored machine's records then (`growsOf`: a restore may
+have attached a fork) and sends GROW for each writable attachment whose overlay or stored disk carries a grow mark
+(machines.md §4.5), with its serial and the size the guest sees (`sizeSeen`); a transient machine has no records, a
+read-only attachment or a ramdisk no mark. A stored disk's mark is the disk's, sent through whichever machine boots it
+first with the agent (written in place, or through its overlay, which then holds the grown table: the disk itself and
+other machines' overlays over it don't), and the next one finds it cleared. Each GROWN (the link's `onGrown`, whichever
+connection it comes on) is matched to the run's disks by serial against the marks then, one at a time: a GROWN whose
+mark is gone (a duplicate, one another answer cleared) says nothing. **What clears the mark** (`answer`):
+- a final answer: grown (the partition and filesystem, or the filesystem of a disk without a table), nothing left to
+  grow, or what the user must do themselves (the filesystem not mounted, not ext2/3/4, btrfs or xfs, on LVM, LUKS or md;
+  BAD_TABLE, NOT_LAST): cleared, and said once on the message bar;
+- NOT_FOUND and NOT_YET (the guest has no disk with the serial, or not at its new size yet): kept, silently, for the next
+  start;
+- FAILED (either step, or the filesystem's step not reached, or a status the page doesn't know): kept once, with
+  `failed` on the mark, and said with "tries again at the next start" (a failure may pass: a busy disk, the 5 s lock;
+  a table written but not told to the kernel is completed by the next GROW); a second FAILED clears it and says to grow
+  it by hand. A failure that lasts is said twice, not at every start.
+A run that ends before its GROWN keeps the mark: the next start asks again, and a grow done already answers NOTHING
+(cleared then, "already fills"). A restored guest is asked again for what still stands (the GROW is idempotent); a mark
+cleared before a snapshot isn't (a resize orphans the snapshots from before it, so a restorable guest saw the new size).
+A machine whose agent is off, or whose agent lacks `CAP.GROW`, keeps the mark and the page says nothing at the start:
+the dialog's box says it needs the agent (`ResizeDisk.grow.note`), and a notice at every start would be noise. Tests:
+tests/agent.test.ts (the link's GROW only to an agent with `CAP.GROW`, GROWN on a later connection; the actions: GROW
+for several marked disks at each HELLO, each answer's effect and words, a duplicate, a restore's HELLO, a late GROWN,
+the run ending first, a transient machine; `answer` for every status), tests/resize.test.ts (`growsOf`, `growFailed`),
+and on Debian tests/page-stored.test.ts (a stored disk grown by 1 GiB before its in-place boot: GROWN, the notice, the
+mark cleared, `lsblk` and `df` seeing the size).
+
 **The keyboard layout in the running session** (KEYMAP; `agent/src/keymap.rs`, `web/app/areas/keyboard-follow.ts`;
 the user's decisions, 2026-11-13): the machine's layout setting reaches the guest's disk at every boot without the agent
 (frontend.md "The keyboard layout"); the agent sets it in the running session too. The page says KEYMAP (XKB's layout,

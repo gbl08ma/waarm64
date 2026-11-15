@@ -1,6 +1,6 @@
 // Resize… on the Machines page (web/app/ResizeDisk.svelte, docs/machines.md §4.5) in Chromium, without a guest but for
 // the last case's (a URL disk that runs the firmware): from the browser's Disks pane (a stored disk's card, an overlay's
-// row in Overlays…, a ramdisk's card) and from a machine's Disks tab (its overlay, its ramdisk; none on a read-only
+// row in Overlays…, a ramdisk's card) and from a machine's Disks tab (its overlay, its stored disk written in place, its ramdisk; none on a read-only
 // disk). The size now, the box on by default (none for a ramdisk), the refusals as the size is typed (not larger, past
 // `MAX_RESIZE`, a machine running), the machines and the orphaned snapshots in the confirmation, the machine on this page
 // powered off from the dialog, and the records' sizes and grow marks after. The resize itself is tests/resize.test.ts's.
@@ -163,7 +163,7 @@ test("Resize… in the browser's Disks pane: a stored disk, an overlay's row, a 
   await context.close();
 });
 
-test("Resize… on a machine's Disks tab: its overlay and its ramdisk, none on a read-only disk; the machine on this page powered off from the dialog", async () => {
+test("Resize… on a machine's Disks tab: its overlay, its stored disk written in place, its ramdisk, none on a read-only disk; the machine on this page powered off from the dialog", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -175,10 +175,15 @@ test("Resize… on a machine's Disks tab: its overlay and its ramdisk, none on a
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
-    const { createOverlay, switchOverlay } = await import('/web/app/disks.ts' as string);
+    const { createOverlay, importStored, switchOverlay } = await import('/web/app/disks.ts' as string);
     const { makeDisk } = await import('/web/app/add-disk.ts' as string);
     const store = await Store.open();
     const m = await createMachine(store, { name: 'Machine M' });
+    // N: a stored disk written in place (its Resize… grows the disk itself).
+    const n = await createMachine(store, { name: 'Machine N' });
+    const s = await importStored(store, new File([await (await fetch('/tests/qcow2/data.raw')).arrayBuffer()], 'data.raw'), () => {});
+    const sa = await attach(store, n, s);
+    await store.put('machines', { ...n, attachments: [{ ...sa, inPlace: true }] });
     const url = (path: string) => makeDisk(store, m, { source: 'url', url: path, sizeMiB: 0 }, () => {}, () => {});
     const u = await url('/tests/qcow2/deflate.qcow2');
     const ro = await url('/tests/qcow2/data.raw');
@@ -189,7 +194,7 @@ test("Resize… on a machine's Disks tab: its overlay and its ramdisk, none on a
     const roa = await attach(store, m, ro, { readOnly: true });
     const ra = await attach(store, m, r);
     store.close();
-    return { m: m.id as string, w: w.id as string, r: r.id as string, ua: ua.id as string, roa: roa.id as string, ra: ra.id as string, size: u.size as number };
+    return { m: m.id as string, w: w.id as string, r: r.id as string, ua: ua.id as string, roa: roa.id as string, ra: ra.id as string, size: u.size as number, n: n.id as string, s: s.id as string, sa: sa.id as string, sSize: s.size as number };
   });
   await page.click('#machines-open');
   await modal(page).locator(`nav [data-machine="${ids.m}"]`).click();
@@ -214,6 +219,23 @@ test("Resize… on a machine's Disks tab: its overlay and its ramdisk, none on a
   assert.deepEqual((await records(page))[ids.w], { size: GiB, grow: { from: ids.size, to: GiB } });
   await page.waitForFunction(([sel, s]) => (document.querySelector(sel)?.textContent ?? '').includes(s), [`[data-attachment="${ids.ua}"] .meta`, bytesText(GiB)] as const);
   assert.match((await att(ids.ua).locator('.meta').textContent())!, words('disks:Disks.meta', { size: bytesText(GiB) }));
+
+  // N's stored disk written in place: the shortcut grows the disk itself (its record and mark), as the Disks pane's card does.
+  await modal(page).locator(`nav [data-machine="${ids.n}"]`).click();
+  const n = modal(page).locator(`section.machine[data-selected="${ids.n}"]`);
+  await n.locator('[data-tab=disks]').click();
+  await n.locator(`[data-attachment="${ids.sa}"] [data-action=resize-attachment]`).click();
+  await d.locator('[data-new]').waitFor();
+  assert.equal(await d.locator('h2').textContent(), t('disks:ResizeDisk.title', { name: 'data.raw' }));
+  assert.equal(await d.locator('[data-now]').textContent(), t('disks:ResizeDisk.now', { size: ids.sSize }));
+  assert.equal(await d.locator('[data-field=resize-grow]').isChecked(), true);
+  assert.equal(await d.locator('[data-machines]').textContent(), t('disks:ResizeDisk.machines', { machines: ['Machine N'] }));
+  await typeSize(page, '512', 'MiB', 'new');
+  await d.locator('[data-action=resize-ok]:not([disabled])').click();
+  await d.waitFor({ state: 'detached' });
+  assert.deepEqual((await records(page))[ids.s], { size: 512 * MiB, grow: { from: ids.sSize, to: 512 * MiB } });
+  await modal(page).locator(`nav [data-machine="${ids.m}"]`).click();
+  await m.locator('[data-tab=disks]').click();
 
   // M runs on this page: the ramdisk's Resize says so and offers to power it off (asking first), then resizes.
   await m.locator('[data-action=open]').click();

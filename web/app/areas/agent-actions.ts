@@ -21,6 +21,8 @@ type Size = { width: number; height: number };
  */
 export type AgentShown = { os(os: GuestOs | undefined): void; canPower(can: boolean): void; ended(): void };
 const NOT_SHOWN: AgentShown = { os: () => undefined, canPower: () => undefined, ended: () => undefined };
+/** What follows each run's link from its start to its end (web/app/areas/grow-actions.ts: the disks grown in the guest). */
+export type LinkFollower = { follow(link: AgentLink): void; end(): void };
 
 /** What a run asks of its agent (web/app/run/runner.ts): its link begun and ended; a restore's renewals (`template`: its identity too). */
 export type RunAgent = {
@@ -55,11 +57,18 @@ export class AgentActions {
   readonly #layout: () => KeyboardLayout | undefined;
 
   readonly #shown: AgentShown;
+  readonly #follower: LinkFollower | undefined;
 
-  constructor(size: () => Size | undefined, layout: () => KeyboardLayout | undefined, shown = NOT_SHOWN) {
+  constructor(
+    size: () => Size | undefined,
+    layout: () => KeyboardLayout | undefined,
+    shown = NOT_SHOWN,
+    follower?: LinkFollower,
+  ) {
     this.#size = size;
     this.#layout = layout;
     this.#shown = shown;
+    this.#follower = follower;
   }
 
   /**
@@ -89,6 +98,7 @@ export class AgentActions {
       () => this.keymap(this.#layout()),
       (h) => this.#shown.canPower((h.caps & CAP.POWER) !== 0),
     );
+    this.#follower?.follow(link);
     let offset = Date.now() - performance.now();
     this.#timer = setInterval(() => {
       const now = Date.now() - performance.now();
@@ -108,6 +118,7 @@ export class AgentActions {
     delete document.body.dataset.desktop;
     this.#shown.os(undefined);
     this.#shown.ended();
+    this.#follower?.end();
   }
 
   /** The screen's size the guest is asked for now (a new window size, settled): the agent's session takes it too. */

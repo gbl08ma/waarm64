@@ -147,6 +147,54 @@
     "message": "To make room, the guest freed its unused disk space: its disks' changes went from {{before, bytes}} to {{after, bytes}} in this browser's storage.",
     "note": "Notice in the message bar (under the toolbar) after the page found the browser's storage full (disks:devices.storageFull) and had the guest trim its filesystems, when that made the disks' changes smaller. {{before}} and {{after}}: what they took before and after."
   },
+  "grow-actions.grown": {
+    "message": "The guest grew {{disk}}: its partition and filesystem now take {{size, bytes}}.",
+    "note": "Notice in the message bar (under the toolbar) when the guest agent answered the page's ask to grow a disk the Machines page resized with \"Grow the partition and filesystem at the next start\" (disks:ResizeDisk.grow) on, when it grew the disk's last partition and its filesystem. {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the partition's size now."
+  },
+  "grow-actions.grownWhole": {
+    "message": "The guest grew {{disk}}'s filesystem to {{size, bytes}}.",
+    "note": "Notice in the message bar (under the toolbar) when the guest agent answered the page's ask to grow a disk the Machines page resized with \"Grow the partition and filesystem at the next start\" (disks:ResizeDisk.grow) on, when the disk has no partition table and the guest grew the filesystem that fills it. {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the disk's size."
+  },
+  "grow-actions.already": {
+    "message": "{{disk}} already fills its {{size, bytes}} in the guest: nothing was left to grow.",
+    "note": "Notice in the message bar (under the toolbar) when the guest agent answered the page's ask to grow a disk the Machines page resized with \"Grow the partition and filesystem at the next start\" (disks:ResizeDisk.grow) on, when the disk's last partition and its filesystem reached the disk's end already (a grow done before). {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the partition's (or disk's) size."
+  },
+  "grow-actions.partOnly": {
+    "message": "The guest grew {{disk}}'s last partition to {{size, bytes}}, but not its filesystem",
+    "note": "Headline of a notice in the message bar (under the toolbar) when the guest agent grew the last partition of a disk the Machines page resized (disks:ResizeDisk.grow) but not the filesystem on it; why, and what the user can do, is the cause under it (machine:grow-actions.notMounted, .unsupported, .stacked, .failed, .failedAgain). {{disk}}: the disk's name (as the machine's Disks tab names it). {{size}}: the partition's size now."
+  },
+  "grow-actions.notGrown": {
+    "message": "The guest didn't grow {{disk}}",
+    "note": "Headline of a notice in the message bar (under the toolbar) when the guest agent grew neither the last partition nor the filesystem of a disk the Machines page resized (disks:ResizeDisk.grow); why, and what the user can do, is the cause under it (machine:grow-actions.badTable, .notLast, .notMounted, .unsupported, .stacked, .failed, .failedAgain). {{disk}}: the disk's name (as the machine's Disks tab names it)."
+  },
+  "grow-actions.notMounted": {
+    "message": "Its filesystem isn't mounted, and only mounted filesystems are grown. Grow it yourself in the guest (resize2fs, btrfs filesystem resize or xfs_growfs).",
+    "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar): the filesystem on the grown disk's last partition isn't mounted in the guest, so the agent left it alone."
+  },
+  "grow-actions.unsupported": {
+    "message": "Its filesystem isn't ext4, btrfs or xfs, the ones the guest agent grows. Grow it yourself in the guest.",
+    "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar): the filesystem on the grown disk's last partition is of another type than the agent grows."
+  },
+  "grow-actions.stacked": {
+    "message": "The partition holds LVM, encryption or RAID, which are left alone. Grow what's on it yourself in the guest (pvresize, cryptsetup resize, mdadm --grow).",
+    "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar): the grown disk's last partition holds another block device (LVM, LUKS, md), which the agent doesn't grow."
+  },
+  "grow-actions.notLast": {
+    "message": "The new space doesn't follow a partition the guest agent grows (an extended partition ends last, or there's none). Partition the new space yourself in the guest.",
+    "note": "Cause under machine:grow-actions.notGrown (message bar): the disk's partition that ends last isn't one the agent grows (an MBR extended partition, or a table without partitions)."
+  },
+  "grow-actions.badTable": {
+    "message": "Its partition table doesn't add up, so it was left as it was. Check it in the guest (gdisk or fdisk), then grow the partition and filesystem yourself.",
+    "note": "Cause under machine:grow-actions.notGrown (message bar): the disk's GPT or MBR partition table didn't pass the agent's checks (a CRC, a header, a partition outside the disk), and nothing was written."
+  },
+  "grow-actions.failed": {
+    "message": "It failed (error {{errno}}). The guest tries again at the machine's next start.",
+    "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar), the first time a grow failed in the guest: the page asks again at the next start. {{errno}}: the guest's error number (Linux errno)."
+  },
+  "grow-actions.failedAgain": {
+    "message": "It failed again (error {{errno}}), and won't be tried again. Grow the partition and filesystem yourself in the guest (growpart, then resize2fs, btrfs filesystem resize or xfs_growfs).",
+    "note": "Cause under machine:grow-actions.partOnly or .notGrown (message bar), the second time a grow failed in the guest: the page stops asking. {{errno}}: the guest's error number (Linux errno)."
+  },
   "runner.workerFailed": {
     "message": "The emulator stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that runs the machine failed (the machine has crashed; Show serial log and the like follow); the browser's error is the detail under it."

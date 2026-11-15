@@ -1,6 +1,7 @@
 // The page's hooks for tests, benchmarks and tools (docs/testing.md): what they read and call on `window`,
 // typed in one place (docs/frontend-code.md §5.4). Most are set only with `?displaystats` or `?snd=` (`benchHooks`).
 import type { PageAudio } from '../audio.ts';
+import type { Grown } from '../agent-frame.ts';
 import type { AgentLink } from './agent-link.ts';
 import type { ClipboardShare } from './clipboard.ts';
 import type { PageFolders } from './folders-live.ts';
@@ -48,6 +49,8 @@ declare global {
     __clipboard?: ClipboardShare;
     /** What the last trim the page asked of the guest did (web/app/areas/trim-actions.ts; the agent's test). */
     __trimmed?: { status?: number; before?: number; after?: number };
+    /** The GROWNs the page took for the run's marked disks, and what each did to the marks (web/app/areas/grow-actions.ts; tests/page-stored.test.ts). */
+    __grown?: (Grown & { action: 'keep' | 'failed' | 'clear' })[];
     /** `?snd=`: the page's sound (tests and measurements). */
     __audio?: PageAudio;
     /** The page's live folders (tools/screens.ts). */

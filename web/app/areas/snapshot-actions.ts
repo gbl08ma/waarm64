@@ -12,6 +12,8 @@ import { snapshotPath } from '../store.ts';
 import type { Core } from '../run/core.ts';
 import { progressText, withNote } from '../run/messages.ts';
 import type { Run } from '../run/run.ts';
+import type { Replies } from '../run/replies.ts';
+import { fromWire } from '../../msg.ts';
 import { download, savePicker } from './disk-export.ts';
 import { messageBar } from './message-bar.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
@@ -35,6 +37,18 @@ export type SnapshotDeps = Core & {
    */
   agent: { syncClock(): void; dropCaches(): Promise<void> };
 };
+
+/**
+ * `refusal` through the run's worker (`snapshot-check`): its device's reason as an error, or none; unanswered in time,
+ * nothing is refused (the save decides).
+ */
+export const workerRefusal =
+  (replies: Replies<FromWorker>): SnapshotDeps['refusal'] =>
+  async (r, what) => {
+    const post = (id: number) => r.worker.postMessage({ type: 'snapshot-check', id, what } satisfies ToWorker);
+    const m = await replies.ask(post, { ms: 3000, fallback: { type: 'snapshot-check', id: 0 } });
+    return m.type === 'snapshot-check' && m.refused ? fromWire(m.refused) : undefined;
+  };
 
 export const SNAPSHOT_SUFFIX = '.waarm64snap';
 /** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/graphics.md "Snapshots with 3D in use"). */

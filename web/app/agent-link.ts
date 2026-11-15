@@ -6,7 +6,7 @@
 // What it says: HELLO each time the agent connects (the agent answers with its own: `agent`), with the capabilities the
 // page uses (`caps`: the clock's TIME always, the clipboard's frames only on a machine that shares it, DISPLAY on one
 // with a screen of virtio-gpu's; RENEW needs only the agent's), TIME (`time`), the screen's size (`display`, again at each agent's HELLO),
-// RENEW once after a template's restore (`renew`), LEASE after a restore (`lease`), TRIM (`trim`), DROP (`dropCaches`), COPY (`copy`), POWER (`power`), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the guest's OS as it names it (`os`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
+// RENEW once after a template's restore (`renew`), LEASE after a restore (`lease`), TRIM (`trim`), DROP (`dropCaches`), COPY (`copy`), POWER (`power`), GROW (`grow`: its GROWN to `onGrown`, on whichever connection it comes), TYPE (`type`), the guest's desktop as the agent says it (`desktop`), the guest's OS as it names it (`os`), the toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent
 // connects, and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's
 // clipboard menu (web/app/ClipboardMenu.svelte) drives it through `ClipboardShare`; the tests through `window.__agent`
 // and `window.__clipboard`.
@@ -20,11 +20,13 @@ import {
   CAP,
   DESKTOP,
   decodeCopied,
+  decodeGrown,
   decodeHello,
   decodeOs,
   decodeRenewed,
   encodeDisplay,
   encodeFrame,
+  encodeGrow,
   encodeHello,
   encodeKeymap,
   encodeLease,
@@ -35,6 +37,7 @@ import {
   typePayloads,
   VERSION,
   type Frame,
+  type Grown,
   type GuestOs,
   type Hello,
 } from '../agent-frame.ts';
@@ -86,6 +89,8 @@ export class AgentLink {
   readonly onHello: ((h: Hello) => void)[] = [];
   /** Called when the agent's connection ends (what the page shows of what it can goes). */
   readonly onClose: (() => void)[] = [];
+  /** Called with each GROWN (web/app/areas/grow-actions.ts): an answer that may come on a later connection than its GROW. */
+  readonly onGrown: ((g: Grown) => void)[] = [];
   private reader = new FrameReader();
   /** Frames to send, and TIME's, made as it goes (its time then, not when queued). */
   private queue: (Uint8Array | (() => Uint8Array))[] = [];
@@ -264,6 +269,15 @@ export class AgentLink {
     return !!this.agent && (this.agent.caps & CAP.KEYMAP) !== 0 && this.send(FRAME.KEYMAP, encodeKeymap(k));
   }
 
+  /**
+   * The guest grows disk `serial`'s last partition and mounted filesystem into the disk's new space (GROW; `size`: the
+   * disk's size as the guest should see it); false (nothing sent) before the agent said it can (`CAP.GROW`). Its GROWN
+   * goes to `onGrown`, not to an ask: the agent answers once a GROW ran, which may be after the connection that sent it.
+   */
+  grow(serial: string, size: number): boolean {
+    return !!this.agent && (this.agent.caps & CAP.GROW) !== 0 && this.send(FRAME.GROW, encodeGrow(serial, size));
+  }
+
   /** Sends `type` (with `payload`) to an agent with `cap`, and waits up to `ms` for its answer (`answer`'s payload; `gone`: the connection ended first). */
   private ask(
     type: number,
@@ -401,6 +415,8 @@ export class AgentLink {
       if (f.type === FRAME.DESKTOP && f.payload.length === 1) this.setDesktop(f.payload[0]);
       const os = f.type === FRAME.OS ? decodeOs(f.payload) : undefined;
       if (os) this.onOs?.((this.os = os));
+      const grown = f.type === FRAME.GROWN ? decodeGrown(f.payload) : undefined;
+      if (grown) for (const g of [...this.onGrown]) g(grown);
       if (f.type === FRAME.RENEWED) {
         this.renewed = decodeRenewed(f.payload);
         this.renewing = false;

@@ -336,15 +336,18 @@ ramdisks and overlays, a machine's Disks tab) opens one dialog over these.
   two-level map: the flat map was 4 bytes per 4 KiB block in memory, 1 GiB per TiB.)
 - **The grow mark** (`GrowMark`, `{ from, to }`, on the overlay's or stored disk's record, not an attachment's:
   whichever machine boots it next does it): `grow` sets it (`from` stays the size before the first resize the guest
-  hasn't followed), a resize without it clears it, `growMark`/`clearGrowMark` read and clear it. A ramdisk gets none
-  (empty at every start). Nothing consumes it yet: the guest agent's GROW is the track's next loops.
+  hasn't followed), a resize without it clears it, `growMark`/`clearGrowMark` read and clear it, `growFailed` notes a
+  failure on it (`failed`: the next one clears it). A ramdisk gets none (empty at every start). The run's agent follows
+  it (`growsOf`: the stored machine's marked disks, their serials and sizes): GROW at each agent's HELLO, the mark
+  cleared by a final GROWN and the answer said once (devices.md "A disk grown", "The page's side").
 - **What follows the size:** a restore's fork takes the size the snapshot had (its record's `size`, the plan's, which
   the worker writes into the fork's `meta`); exports open the overlay with its `meta`, so a whole disk's qcow2 or raw
   is the grown size and a changes-only qcow2 may be larger than its backing file; Import changes takes a changes file
   larger than its base (the base's hash still decides) into an overlay of that size; Merge into the disk of a grown
   overlay grows the stored disk first (its mark with it), so a merge resumed at the next opening copies at that size.
-- **Not yet:** a definition carries each attachment's disk size, not its overlay's (a machine made from it has the
-  disk's size).
+- **A definition** (§6) carries a grown overlay's size (`overlaySize`, `grownSize`): the imported machine's attachment
+  gets an empty overlay at that size, marked to grow (`withGrownOverlay`), so its guest sees the same disk and grows its
+  base's last partition into it at its first start with the agent.
 
 ## 5. Snapshots
 
@@ -423,9 +426,11 @@ copy stale.
 - **[Export the definition](ui:machines:MachinePane.exportDefinition):** `<name>.waarm64-machine.json` (`waarm64-machine`, a version): the machine's settings (shared
   folders as `shares`, `sharesMount` and `sharesPath`, never the folders), the adapters' MACs (no connections), the
   remembered USB devices as identities (no grant travels), and per attachment the disk's kind, name, size, identity, URL, hash where the
-  record has one, read-only, in place and serial. No handles, overlays, snapshots or file contents.
+  record has one, read-only, in place and serial, and its overlay's own size where it was grown past the disk's
+  (`overlaySize`, §4.5). No handles, overlays' contents, snapshots or file contents.
 - **Import a definition:** a new machine (the name made unique, the same shape). A disk the browser has by identity is
-  attached again; URL, blank and ramdisk disks come back as they were; file disks, and stored disks the browser
+  attached again; URL, blank and ramdisk disks come back as they were; an `overlaySize` gives the attachment an empty
+  overlay at that size, marked to grow (its base's partition doesn't fill it: the guest grows it at its first start); file disks, and stored disks the browser
   doesn't have, are picked at the machine's first start (the same flow as a handle without permission, §3.2): a
   picked file with the same name, size and date is taken; one that differs is hashed against the definition's hash
   when it has one; otherwise the user is asked, and taking it anyway makes it another disk's identity (its overlays

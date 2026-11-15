@@ -6,9 +6,10 @@ import type { Attachment, DiskRecord } from './shape.ts';
 /**
  * A resize the guest has yet to follow: the disk's size before and after, so that the next start with the guest agent
  * grows its last partition and filesystem into the new space. Kept on the overlay or stored disk that was resized, not
- * on an attachment: whichever machine boots it next does it.
+ * on an attachment: whichever machine boots it next does it. `failed`: the guest's grow failed once (GROWN's FAILED),
+ * and the next failure clears the mark (web/app/areas/grow-actions.ts: a failure is tried again once, not at every start).
  */
-export type GrowMark = { from: number; to: number };
+export type GrowMark = { from: number; to: number; failed?: true };
 
 /** Sizes are multiples of this (virtio-blk's sector; a qcow2's virtual size, for QEMU): a resize's new size too. */
 export const SECTOR = 512;

@@ -1,5 +1,6 @@
 // A disk stored in the browser (docs/machines.md §3), on Debian: imported into the block store, its
-// overlays as variants, merged into it, written in place, under an overlay again; each a boot of the stored
+// overlays as variants, merged into it, grown (the guest's agent grows its root at the next boot: GROW, GROWN, the
+// notice, df), written in place, under an overlay again; each a boot of the stored
 // machine on the page. Its own file so that scripts/ci-machines.sh runs it beside tests/page-machines.test.ts
 // (whose helpers these are). Opt-in with WAARM64_DISTROS=debian; a Debian page boot is ~40 s in the dev VM,
 // ~2.5 min in a cloud session.
@@ -108,7 +109,9 @@ const inStore = <T, A>(page: Page, f: (s: { store: never; disks: never; a: A }) 
  * off-the-record context's storage is in memory, with a quota, ~1 GB here, that Debian stored, ~1 GB, doesn't fit).
  * Each step stays under 10 minutes in a cloud session.
  */
-let storedRun: { profile: string; context: BrowserContext; page: Page; id: string; errors: string[] } | undefined;
+let storedRun: { profile: string; context: BrowserContext; page: Page; id: string; errors: string[]; rootBefore?: number } | undefined;
+/** The guest's root filesystem's size, bytes (df). */
+const rootSize = async (page: Page) => Number(await ok(page, "df -B1 --output=size / | tail -n 1"));
 after(async () => {
   await storedRun?.context.close();
   if (storedRun) rmSync(storedRun.profile, { recursive: true, force: true });
@@ -166,11 +169,12 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
   await boot(page, id, 'over the loaded changes');
   assert.equal(await ok(page, 'cat /root/one'), 'one');
   await ok(page, 'echo two > /root/two && sync');
+  storedRun.rootBefore = await rootSize(page); // step (2) grows it
   await powerOff(page);
   assert.deepEqual(errors, []);
 }));
 
-test('a disk stored in the browser (2): an overlay merged into it, then written in place, then under an overlay again', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
+test('a disk stored in the browser (2): an overlay merged into it, grown, then written in place (the guest grows its root), then under an overlay again', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   if (!storedRun?.id) throw new Error('step 1 failed: nothing to merge');
   const { page, id, errors } = storedRun;
   // 3. Merged into the disk: the other overlays are deleted, the disk's generation moves; then written in place.
@@ -189,7 +193,33 @@ test('a disk stored in the browser (2): an overlay merged into it, then written 
   assert.ok(merged.blocks > 0 && merged.after === merged.before + 1, JSON.stringify(merged));
   assert.equal(merged.overlays, 0);
   assert.deepEqual(merged.files, []);
+  // Grown by 1 GiB with the box on (docs/machines.md §4.5): the guest's agent grows its root partition and filesystem
+  // at this boot (GROW at its HELLO, GROWN said once, the mark cleared).
+  const GROWN_BY = 2 ** 30;
+  const grownTo = await inStore(page, async ({ store, a }: any) => {
+    const { resize } = await import('/web/app/resize.ts' as string);
+    const m = await store.get('machines', a.id);
+    const d = await store.get('disks', m.attachments[0].disk);
+    await resize(store, { disk: d.id }, d.size + a.by, { grow: true });
+    const after = await store.get('disks', d.id);
+    return { size: after.size as number, name: after.name as string, grow: after.grow };
+  }, { id, by: GROWN_BY });
+  assert.deepEqual(grownTo.grow, { from: grownTo.size - GROWN_BY, to: grownTo.size });
   await boot(page, id, 'in place');
+  const tGrow = Date.now();
+  const grown = (await page.waitForFunction(() => window.__grown?.at(-1), null, { timeout: 120_000, polling: 100 }).then((h) => h.jsonValue()))!;
+  console.log(`# the guest's GROWN ${((Date.now() - tGrow) / 1000).toFixed(1)} s after the login: ${JSON.stringify(grown)}`);
+  assert.deepEqual([grown.part, grown.fs, grown.action], [0, 0, 'clear'], 'the partition and filesystem grown, the mark cleared');
+  const notice = t('machine:grow-actions.grown', { disk: grownTo.name, size: grown.size });
+  await page.waitForFunction((n) => document.getElementById('message-text')?.textContent === n, notice, { timeout: 5_000 })
+    .catch(async (e) => { throw new Error(`${e}; the message bar says ${await page.locator('#message-text').textContent()}`); });
+  const mark = await inStore(page, async ({ store, a }: any) => (await store.get('disks', (await store.get('machines', a)).attachments[0].disk)).grow ?? null, id);
+  assert.equal(mark, null, 'the mark cleared');
+  const disk = Number(await ok(page, 'lsblk -bdno SIZE /dev/vda'));
+  const root = await rootSize(page);
+  console.log(`# the guest's disk ${disk} bytes (the record's ${grownTo.size}); its root filesystem ${storedRun.rootBefore} -> ${root} bytes`);
+  assert.equal(disk, grownTo.size);
+  assert.ok(storedRun.rootBefore && root - storedRun.rootBefore > GROWN_BY - (64 << 20), `root ${storedRun.rootBefore} -> ${root}`);
   assert.equal(await ok(page, 'cat /root/one /root/two'), 'one two');
   await ok(page, 'echo three > /root/three && sync');
   await powerOff(page);

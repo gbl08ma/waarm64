@@ -17,7 +17,8 @@ import { changedClusters, nonZeroClusters, writeQcow2, type Sink } from '../web/
 import { machineLock } from '../web/app/machines.ts';
 import { sizeSeen } from '../web/app/disk-size.ts';
 import { serialOf, shapeOf, slots, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
-import { attachmentTarget, clearGrowMark, growMark, MAX_RESIZE, resize, resizeCosts } from '../web/app/resize.ts';
+import { attachmentTarget, clearGrowMark, growFailed, growMark, growsOf, MAX_RESIZE, resize, resizeCosts } from '../web/app/resize.ts';
+import { exportDefinition, importDefinition, parseDefinition } from '../web/app/definitions.ts';
 import { planRestore } from '../web/app/snapshots.ts';
 import { overlayDir, Store, type OverlayRecord, type SnapshotRecord } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
@@ -221,6 +222,61 @@ test('a stored disk grown reads zeros past its old end, takes writes there in pl
   assert.equal((await d.read(size - 4096, 4096))!.every((x) => x === 9), true);
   o.close();
   src.close();
+});
+
+test("the run's grows (growsOf): a marked overlay, a stored disk's mark under an overlay and in place (the first machine to boot it clears it for both), a failure noted; none read-only or for a ramdisk", async () => {
+  const w = await world();
+  const { store } = w;
+  assert.deepEqual(await growsOf(store, w.A.id), [], 'no marks');
+  await resize(store, { overlay: w.oa.id }, 16 * MiB, { grow: true });
+  await resize(store, { disk: w.stored.id }, 6 * MiB, { grow: true });
+  await resize(store, { disk: w.ram.id }, 3 * MiB, { grow: true });
+  const [a1, a2] = w.A.attachments;
+  assert.deepEqual(await growsOf(store, w.A.id), [
+    { serial: serialOf(a1.id), name: 'disk.qcow2', size: 16 * MiB, marks: [{ target: { overlay: w.oa.id }, mark: { from: 8 * MiB, to: 16 * MiB } }] },
+    { serial: serialOf(a2.id), name: 'stored.img', size: 6 * MiB, marks: [{ target: { disk: w.stored.id }, mark: { from: 4 * MiB, to: 6 * MiB } }] },
+  ], "A: its overlay's mark; the stored disk's through its overlay over it; not the ramdisk");
+  const b2 = w.B.attachments[1];
+  assert.deepEqual(await growsOf(store, w.B.id), [
+    { serial: serialOf(b2.id), name: 'stored.img', size: 6 * MiB, marks: [{ target: { disk: w.stored.id }, mark: { from: 4 * MiB, to: 6 * MiB } }] },
+  ], 'B: the stored disk written in place (its overlay of the URL disk has no mark)');
+  // A failure noted on the mark; a new resize starts afresh.
+  await growFailed(store, { disk: w.stored.id });
+  assert.deepEqual(await growMark(store, { disk: w.stored.id }), { from: 4 * MiB, to: 6 * MiB, failed: true });
+  // The mark is the disk's: cleared by A's guest, B has none to send.
+  await clearGrowMark(store, { disk: w.stored.id });
+  assert.deepEqual((await growsOf(store, w.B.id)), []);
+  assert.deepEqual((await growsOf(store, w.A.id)).map((g) => g.serial), [serialOf(a1.id)]);
+  await resize(store, { disk: w.stored.id }, 7 * MiB, { grow: true });
+  await growFailed(store, { disk: w.stored.id });
+  await resize(store, { disk: w.stored.id }, 8 * MiB, { grow: true });
+  assert.deepEqual(await growMark(store, { disk: w.stored.id }), { from: 6 * MiB, to: 8 * MiB }, "a resize's mark has no failure");
+  // Read-only: none.
+  await store.put('machines', { ...w.A, attachments: w.A.attachments.map((a) => ({ ...a, readOnly: true })) });
+  assert.deepEqual(await growsOf(store, w.A.id), []);
+  assert.deepEqual(await growsOf(store, 'ffffffffffff'), [], 'a machine gone');
+});
+
+test("a definition carries a grown overlay's size (overlaySize): the imported machine's overlay has it and its grow mark, so its guest sees the same disk", async () => {
+  const w = await world();
+  const { store } = w;
+  await resize(store, { overlay: w.oa.id }, 16 * MiB);
+  const def = await exportDefinition(store, w.A.id);
+  assert.deepEqual(def.disks.map((d) => [d.size, d.overlaySize]), [[8 * MiB, 16 * MiB], [4 * MiB, undefined], [2 * MiB, undefined]], 'only the grown overlay, past its disk');
+  const { machine } = await importDefinition(store, parseDefinition(JSON.stringify(def)));
+  const [a] = machine.attachments;
+  assert.equal(a.disk, w.url.id, 'the same disk, by identity');
+  assert.ok(a.overlay && a.overlay !== w.oa.id, 'an overlay of its own');
+  const o = (await store.get('overlays', a.overlay))!;
+  assert.deepEqual([o.size, o.grow, o.bytes], [16 * MiB, { from: 8 * MiB, to: 16 * MiB }, 0]);
+  assert.equal((await overlayMeta(overlayDir(o.id))).size, 16 * MiB, 'in its meta, which the device worker reads');
+  assert.equal((await w.shapeNow(machine)).disks[0].size, (await w.shapeNow(w.A)).disks[0].size, 'the same size in the shape');
+  assert.equal(machine.attachments[1].overlay, undefined, 'the others get theirs at the first start, as before');
+  // A size that isn't past the disk's, or not in sectors: damaged.
+  for (const overlaySize of [8 * MiB, 16 * MiB + 1, -1]) {
+    const bad = { ...def, disks: [{ ...def.disks[0], overlaySize }, ...def.disks.slice(1)] };
+    assert.throws(() => parseDefinition(JSON.stringify(bad)), /damaged/, String(overlaySize));
+  }
 });
 
 test("a restore's fork of a grown overlay keeps its size: the fork's record and the worker's plan", async () => {

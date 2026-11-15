@@ -17,6 +17,9 @@ import { ACK, CAP, CHUNK, COPIED, decodeCopied, CREDIT, DATA_END, DATA_FAIL, dec
 import { AgentLink, pageCaps, RENEW_BYTES, WINDOW } from '../web/app/agent-link.ts';
 import { LeaseActions } from '../web/app/areas/lease-actions.ts';
 import { TrimActions } from '../web/app/areas/trim-actions.ts';
+import { answer, GrowActions, type Marks } from '../web/app/areas/grow-actions.ts';
+import type { GrowDisk, ResizeTarget } from '../web/app/resize.ts';
+import { msgOf } from '../web/msg.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
@@ -1365,6 +1368,197 @@ test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, th
   await m.a.asked();
   assert.deepEqual([old.trims.length, m.compactions.length, m.said], [0, 0, ['machine:trim-actions.noAnswer']]);
   old.close();
+});
+
+/** GROWN's payload (agent/src/frame.rs `grown`). */
+function grownBytes(serial: string, part: number, fs: number, errno = 0, size = 0) {
+  const s = new TextEncoder().encode(serial);
+  const b = new Uint8Array(1 + s.length + 2 + 4 + 8);
+  b[0] = s.length;
+  b.set(s, 1);
+  const v = new DataView(b.buffer);
+  b[1 + s.length] = part;
+  b[2 + s.length] = fs;
+  v.setUint32(3 + s.length, errno, true);
+  v.setBigUint64(7 + s.length, BigInt(size), true);
+  return b;
+}
+
+/** A link and the agent's end: the GROWs it gets, its HELLO with `caps` at each `connect`, GROWNs posted on the connection now. */
+function growAgent() {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1, pageCaps(false));
+  const grows: { serial: string; size: number; conn: number }[] = [];
+  const reader = new FrameReader();
+  let conn = 0;
+  port2.onmessage = (e) => {
+    if (e.data.type !== 'data') return;
+    for (const f of reader.push(e.data.bytes))
+      if (f.type === FRAME.GROW) {
+        const n = f.payload[0];
+        grows.push({ serial: new TextDecoder().decode(f.payload.subarray(1, 1 + n)), size: Number(new DataView(f.payload.buffer, f.payload.byteOffset).getBigUint64(1 + n, true)), conn: e.data.conn });
+      }
+    port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
+  };
+  return {
+    link, grows,
+    connect(caps: number) {
+      if (conn) port2.postMessage({ type: 'open', open: false, conn });
+      conn++;
+      reader.reset();
+      port2.postMessage({ type: 'open', open: true, conn });
+      port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+    },
+    disconnect() { port2.postMessage({ type: 'open', open: false, conn }); },
+    grown(serial: string, part: number, fs: number, errno = 0, size = 0) {
+      port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.GROWN, grownBytes(serial, part, fs, errno, size)) });
+    },
+    close() { link.close(); port2.close(); },
+  };
+}
+
+test("the link's GROW: sent only to an agent that says CAP.GROW; each GROWN to `onGrown`, on whichever connection it comes", async () => {
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const a = growAgent();
+  const got: string[] = [];
+  a.link.onGrown.push((g) => got.push(`${g.serial} ${g.part} ${g.fs} ${g.size}`));
+  assert.equal(a.link.grow('waarm64-aaaaaaaaaaaa', 1 << 30), false, 'not connected');
+  a.connect(CAP.TIME);
+  await settle();
+  assert.equal(a.link.grow('waarm64-aaaaaaaaaaaa', 1 << 30), false, 'no CAP.GROW');
+  a.connect(CAP.TIME | CAP.GROW);
+  await settle();
+  assert.equal(a.link.grow('waarm64-aaaaaaaaaaaa', 2 ** 33), true);
+  await settle();
+  assert.deepEqual(a.grows, [{ serial: 'waarm64-aaaaaaaaaaaa', size: 2 ** 33, conn: 2 }]);
+  // The connection ends before the answer; the next one brings it.
+  a.connect(CAP.TIME | CAP.GROW);
+  a.grown('waarm64-aaaaaaaaaaaa', GROWN_PART.GROWN, GROWN_FS.GROWN, 0, 2 ** 33 - (1 << 20));
+  await settle();
+  assert.deepEqual(got, [`waarm64-aaaaaaaaaaaa 0 0 ${2 ** 33 - (1 << 20)}`]);
+  a.close();
+});
+
+test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HELLO with CAP.GROW for the marks standing; each answer clears, keeps or notes a failure, and is said once; a late GROWN; the run ending first", async () => {
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const [S1, S2, S3] = ['waarm64-aaaaaaaaaaaa', 'waarm64-bbbbbbbbbbbb', 'waarm64-cccccccccccc'];
+  /** Marks in memory: S1 an overlay's, S2 a stored disk's under an overlay (both marked), S3 a stored disk's in place. */
+  const world = () => {
+    const marks = new Map<string, { from: number; to: number; failed?: true }>([['o1', { from: 1, to: 2 }], ['o2', { from: 1, to: 2 }], ['d2', { from: 1, to: 2 }], ['d3', { from: 1, to: 2 }]]);
+    const disks: { serial: string; name: string; size: number; targets: ResizeTarget[] }[] = [
+      { serial: S1, name: 'one', size: 2 * 2 ** 30, targets: [{ overlay: 'o1' }] },
+      { serial: S2, name: 'two', size: 3 * 2 ** 30, targets: [{ overlay: 'o2' }, { disk: 'd2' }] },
+      { serial: S3, name: 'three', size: 4 * 2 ** 30, targets: [{ disk: 'd3' }] },
+    ];
+    const id = (t: ResizeTarget) => ('overlay' in t ? t.overlay : t.disk);
+    const m: Marks = {
+      grows: async () => disks.flatMap((d): GrowDisk[] => {
+        const ms = d.targets.flatMap((target) => { const mark = marks.get(id(target)); return mark ? [{ target, mark }] : []; });
+        return ms.length ? [{ serial: d.serial, name: d.name, size: d.size, marks: ms }] : [];
+      }),
+      clear: async (t) => { marks.delete(id(t)); },
+      failed: async (t) => { const x = marks.get(id(t)); if (x) marks.set(id(t), { ...x, failed: true }); },
+    };
+    return { marks, m };
+  };
+  const said: { key?: string; cause?: string }[] = [];
+  const notify = { notify: (x: unknown) => said.push({ key: msgOf(x)?.key ?? (x as { key: string }).key, cause: msgOf((x as Error).cause)?.key }) };
+
+  // Several marked disks: a GROW each at the HELLO, with the size the guest sees; none to an agent without CAP.GROW.
+  let w = world();
+  let a = growAgent();
+  let marks: Marks | undefined = w.m;
+  const g = new GrowActions(notify, () => marks);
+  g.follow(a.link);
+  a.connect(CAP.TIME);
+  await settle();
+  assert.equal(a.grows.length, 0, 'no CAP.GROW: the marks wait');
+  a.connect(CAP.TIME | CAP.GROW);
+  await settle();
+  assert.deepEqual(a.grows.map((x) => [x.serial, x.size]), [[S1, 2 * 2 ** 30], [S2, 3 * 2 ** 30], [S3, 4 * 2 ** 30]]);
+  // Grown: both of S2's marks cleared, said once; a second GROWN for it (a duplicate) says nothing.
+  a.grown(S2, GROWN_PART.GROWN, GROWN_FS.GROWN, 0, 3 * 2 ** 30);
+  a.grown(S2, GROWN_PART.NOTHING, GROWN_FS.NOTHING, 0, 3 * 2 ** 30);
+  // Not yet (the guest's disk is smaller), not found: kept, nothing said.
+  a.grown(S1, GROWN_PART.NOT_YET, GROWN_FS.SKIPPED);
+  a.grown(S3, GROWN_PART.NOT_FOUND, GROWN_FS.SKIPPED);
+  await settle();
+  assert.deepEqual([...w.marks.keys()], ['o1', 'd3']);
+  assert.deepEqual(said, [{ key: 'machine:grow-actions.grown', cause: undefined }]);
+  // A restore (its agent connects again): GROW again for what still stands; its late GROWN for S1 on a third connection.
+  a.connect(CAP.TIME | CAP.GROW);
+  await settle();
+  assert.deepEqual(a.grows.slice(3).map((x) => x.serial), [S1, S3]);
+  a.connect(CAP.TIME | CAP.GROW);
+  a.grown(S1, GROWN_PART.GROWN, GROWN_FS.NOT_MOUNTED, 0, 2 * 2 ** 30);
+  await settle();
+  assert.deepEqual([...w.marks.keys()], ['d3']);
+  assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.partOnly', cause: 'machine:grow-actions.notMounted' });
+  // FAILED: kept once with the failure noted, said with "tries again"; the next start's FAILED clears it.
+  a.grown(S3, GROWN_PART.GROWN, GROWN_FS.FAILED, 28, 4 * 2 ** 30);
+  await settle();
+  assert.deepEqual(w.marks.get('d3'), { from: 1, to: 2, failed: true });
+  assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.partOnly', cause: 'machine:grow-actions.failed' });
+  a.grown(S3, GROWN_PART.FAILED, GROWN_FS.SKIPPED, 5, 4 * 2 ** 30);
+  await settle();
+  assert.equal(w.marks.size, 0);
+  assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.notGrown', cause: 'machine:grow-actions.failedAgain' });
+  assert.equal(said.length, 4);
+  g.end();
+  a.close();
+
+  // The run ends before its GROWN: the marks stay; nothing more is sent for it.
+  w = world();
+  a = growAgent();
+  marks = w.m;
+  g.follow(a.link);
+  a.connect(CAP.TIME | CAP.GROW);
+  await settle();
+  assert.equal(a.grows.length, 3);
+  g.end();
+  a.link.close();
+  await settle();
+  assert.equal(w.marks.size, 4, 'kept for the next start');
+  // A transient machine (no marks): nothing.
+  const b = growAgent();
+  marks = undefined;
+  g.follow(b.link);
+  b.connect(CAP.TIME | CAP.GROW);
+  await settle();
+  assert.deepEqual(b.grows, []);
+  b.close();
+  a.close();
+});
+
+test("a GROWN's answer (web/app/areas/grow-actions.ts `answer`): what clears the mark, what keeps it, and the words", () => {
+  const P = GROWN_PART, F = GROWN_FS;
+  const one = (part: number, fs: number, failedBefore = false) => {
+    const r = answer({ serial: 's', part, fs, errno: 28, size: 5 * 2 ** 30 }, 'disk-x', failedBefore);
+    return [r.action, msgOf(r.notice)?.key ?? (r.notice as { key?: string } | undefined)?.key, msgOf((r.notice as Error | undefined)?.cause)?.key];
+  };
+  const k = (s: string) => s && `machine:grow-actions.${s}`;
+  const cases: [number, number, boolean, string, string, string][] = [
+    [P.GROWN, F.GROWN, false, 'clear', 'grown', ''],
+    [P.GROWN, F.NOTHING, false, 'clear', 'grown', ''],
+    [P.NOTHING, F.GROWN, false, 'clear', 'grown', ''],
+    [P.NO_TABLE, F.GROWN, false, 'clear', 'grownWhole', ''],
+    [P.NOTHING, F.NOTHING, false, 'clear', 'already', ''],
+    [P.NO_TABLE, F.NOTHING, false, 'clear', 'already', ''],
+    [P.GROWN, F.NOT_MOUNTED, false, 'clear', 'partOnly', 'notMounted'],
+    [P.NOTHING, F.NOT_MOUNTED, false, 'clear', 'notGrown', 'notMounted'],
+    [P.GROWN, F.UNSUPPORTED, false, 'clear', 'partOnly', 'unsupported'],
+    [P.GROWN, F.STACKED, false, 'clear', 'partOnly', 'stacked'],
+    [P.BAD_TABLE, F.SKIPPED, false, 'clear', 'notGrown', 'badTable'],
+    [P.NOT_LAST, F.SKIPPED, false, 'clear', 'notGrown', 'notLast'],
+    [P.FAILED, F.SKIPPED, false, 'failed', 'notGrown', 'failed'],
+    [P.GROWN, F.FAILED, false, 'failed', 'partOnly', 'failed'],
+    [P.FAILED, F.SKIPPED, true, 'clear', 'notGrown', 'failedAgain'],
+    [P.NOT_YET, F.SKIPPED, false, 'keep', '', ''],
+    [P.NOT_FOUND, F.SKIPPED, true, 'keep', '', ''],
+    [99, F.GROWN, false, 'failed', 'notGrown', 'failed'],
+  ];
+  for (const [part, fs, before, action, key, cause] of cases)
+    assert.deepEqual(one(part, fs, before), [action, k(key) || undefined, k(cause) || undefined], `${part} ${fs} ${before}`);
 });
 
 test("the link: RENEW once after a template's restore, at the first HELLO of an agent that renews (random bytes each time); RENEWED kept", async () => {

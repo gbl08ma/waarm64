@@ -19,6 +19,7 @@ import { agentShown } from './areas/agent-shown.ts';
 import { status } from './areas/status.svelte.ts';
 import { LeaseActions } from './areas/lease-actions.ts';
 import { compactor, TrimActions } from './areas/trim-actions.ts';
+import { GrowActions } from './areas/grow-actions.ts';
 import { keyboardFollow, runLayout } from './areas/keyboard-follow.ts';
 import { ClipboardActions } from './areas/clipboard-actions.ts';
 import { DiskActions } from './areas/disk-actions.ts';
@@ -30,7 +31,7 @@ import { NetworkActions } from './areas/network-actions.ts';
 import { PageWindow } from './areas/page-window.ts';
 import { ScreenView } from './areas/screen-view.ts';
 import { SerialTerminal } from './areas/serial-terminal.ts';
-import { SnapshotActions } from './areas/snapshot-actions.ts';
+import { SnapshotActions, workerRefusal } from './areas/snapshot-actions.ts';
 import { isSnapshot, SnapshotRestore } from './areas/snapshot-restore.ts';
 import { UsbActions } from './areas/usb-actions.ts';
 import { UsbRun } from './areas/usb-attach.ts';
@@ -52,13 +53,12 @@ import { lastMachine, loadStored, PageMachine } from './run/page-machine.svelte.
 import { PowerActions } from './run/power-actions.ts';
 import { Problems } from './run/problems.ts';
 import { Replies } from './run/replies.ts';
-import type { FromWorker, ToWorker } from './protocol.ts';
+import type { FromWorker } from './protocol.ts';
 import { Runner } from './run/runner.ts';
 import { SizeActions, sizeOf } from './run/size-actions.ts';
 import { remember } from './settings.ts';
 import { Store } from './store.ts';
 import { describe, text } from '../i18n.ts';
-import { fromWire } from '../msg.ts';
 
 // The commit the page was built from (tools/stamp.ts `buildStamp`), for reports of what a user ran.
 const build = document.querySelector('meta[name="waarm64-build"]')?.getAttribute('content');
@@ -144,7 +144,8 @@ const messages = new Messages(machine, () => {
   if (screen.cursor) screen.setCursor(undefined);
 });
 const clipboardActions = new ClipboardActions(machine, replies, () => screen.canvas);
-const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(power, status));
+const growActions = new GrowActions(messages, store, () => machine.stored?.record.id);
+const agentActions = new AgentActions(() => screen.sent, runLayout, agentShown(power, status), growActions);
 const leaseActions = new LeaseActions({
   whenConnected: (grace, cancelled) => netSettled.when(grace, cancelled),
   link: () => agentActions.link,
@@ -246,12 +247,7 @@ const snapshots = new SnapshotActions({
     const gpu = r.gpu;
     return gpu ? replies.bytes.ask((id) => post(gpu, id), { ms: 1000, fallback: 0 }) : Promise.resolve(0);
   },
-  // Unanswered in time: nothing refused, the save decides.
-  refusal: async (r, what) => {
-    const post = (id: number) => r.worker.postMessage({ type: 'snapshot-check', id, what } satisfies ToWorker);
-    const m = await replies.worker.ask(post, { ms: 3000, fallback: { type: 'snapshot-check', id: 0 } });
-    return m.type === 'snapshot-check' && m.refused ? fromWire(m.refused) : undefined;
-  },
+  refusal: workerRefusal(replies.worker),
 });
 const sizes = new SizeActions({ machine, power: powerActions, runner, messages, terminal });
 const folderActions: FolderActions = new FolderActions(machine, folders);

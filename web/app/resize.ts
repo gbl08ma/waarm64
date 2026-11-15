@@ -1,14 +1,17 @@
 // Growing a disk (docs/machines.md §4.5): an overlay's own size, a stored disk's or a ramdisk's, grow only and with the
 // machines that use it off; what the confirmation says (the machines whose disk grows, those running, the snapshots it
-// orphans), and the grow mark the guest follows at its next start. Records go through web/app/store.ts, an overlay's
-// size into its meta file first (web/overlay.ts `writeOwnSize`: the device worker reads it there). Nothing here asks the
-// user: the Machines page confirms first. DOM-free but for Web Locks (Node's tests have them).
+// orphans), and the grow mark the guest follows at its next start (`growsOf`, `growFailed`, `clearGrowMark`: the run's
+// agent, web/app/areas/grow-actions.ts); a definition's grown overlay (`grownSize`, `withGrownOverlay`). Records go
+// through web/app/store.ts, an overlay's size into its meta file first (web/overlay.ts `writeOwnSize`: the device worker
+// reads it there). Nothing here asks the user: the Machines page confirms first. DOM-free but for Web Locks (Node's
+// tests have them).
+import { t } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
 import { lockOverlay, overlayLock, writeOwnSize } from '../overlay.ts';
 import { machineLock } from './machines.ts';
 import { SECTOR, sizeSeen, type GrowMark } from './disk-size.ts';
-import { serialOf, type Attachment, type DiskRecord, type MachineRecord } from './shape.ts';
-import { diskDir, overlayDir, type SnapshotRecord, type Store } from './store.ts';
+import { newId, serialOf, type Attachment, type DiskRecord, type MachineRecord } from './shape.ts';
+import { diskDir, overlayDir, type OverlayRecord, type SnapshotRecord, type Store } from './store.ts';
 
 /** What a resize acts on: an overlay (over any base), or a disk (stored in the browser, or a ramdisk). */
 export type ResizeTarget = { overlay: string } | { disk: string };
@@ -157,9 +160,91 @@ export async function resize(store: Store, t: ResizeTarget, size: number, opts: 
   return costs;
 }
 
+/** What a definition carries of attachment `a` of disk `d` through overlay `o` (§6): its own size, where past the disk's. */
+export const grownSize = (d: DiskRecord, a: Attachment, o?: { size?: number }) =>
+  !a.readOnly && !a.inPlace && d.kind !== 'ramdisk' && (o?.size ?? 0) > d.size ? o?.size : undefined;
+
+/** Whether `v` is a size a definition's disk of `size` bytes may carry (`grownSize`): larger, in whole sectors. */
+export const validGrownSize = (v: unknown, size: number) =>
+  Number.isSafeInteger(v) && (v as number) > size && (v as number) % SECTOR === 0;
+
+/**
+ * Attachment `a` of disk `d`, made from a definition that carries its overlay's `size` (`grownSize`): given an empty
+ * overlay at that size (its meta first: the device worker reads the size there; then its record), marked to grow (the
+ * base's last partition and filesystem don't fill the new space). As it is without a size past the disk's.
+ */
+export async function withGrownOverlay(store: Store, d: DiskRecord, a: Attachment, size: number | undefined) {
+  if (!size || grownSize(d, a, { size }) === undefined) return a;
+  const now = Date.now();
+  const o: OverlayRecord = {
+    id: newId(),
+    name: t('disks:page-disks.overlayName'),
+    disk: d.id,
+    identity: d.identity,
+    generation: 0,
+    bytes: 0,
+    created: now,
+    modified: now,
+    size,
+    grow: { from: d.size, to: size },
+  };
+  await writeOwnSize(overlayDir(o.id), size);
+  await store.put('overlays', o);
+  return { ...a, overlay: o.id };
+}
+
 /** The grow `t` has pending in its guest, if any. */
 export async function growMark(store: Store, t: ResizeTarget): Promise<GrowMark | undefined> {
   return 'overlay' in t ? (await store.get('overlays', t.overlay))?.grow : (await store.get('disks', t.disk))?.grow;
+}
+
+/** Notes on `t`'s grow mark that the guest's grow failed once (`GrowMark.failed`): kept for the next start. */
+export async function growFailed(store: Store, t: ResizeTarget) {
+  if ('overlay' in t) {
+    const o = await store.get('overlays', t.overlay);
+    if (o?.grow) await store.put('overlays', { ...o, grow: { ...o.grow, failed: true } });
+  } else {
+    const d = await store.get('disks', t.disk);
+    if (d?.grow) await store.put('disks', { ...d, grow: { ...d.grow, failed: true } });
+  }
+}
+
+/** A disk of a machine whose guest is to grow it (GROW): its serial, its name, the size the guest sees, the marks it clears. */
+export type GrowDisk = {
+  serial: string;
+  name: string;
+  size: number;
+  /** The marked records under the attachment: its overlay, its stored disk (written in place, or under the overlay), or both. */
+  marks: { target: ResizeTarget; mark: GrowMark }[];
+};
+
+/**
+ * Machine `id`'s writable disks whose overlay or stored disk carries a grow mark, read from the records now (a restore
+ * may have attached a fork since the start). A stored disk's mark is the disk's: through the overlay of whichever
+ * machine boots it first with the agent (that overlay takes the grown table; the disk itself, and other machines'
+ * overlays over it, don't). None for a read-only attachment, a ramdisk, an overlay not made yet.
+ */
+export async function growsOf(store: Store, id: string): Promise<GrowDisk[]> {
+  const m = await store.get('machines', id);
+  const out: GrowDisk[] = [];
+  for (const a of m?.attachments ?? []) {
+    const g = await growOf(store, a);
+    if (g) out.push(g);
+  }
+  return out;
+}
+
+/** Attachment `a`'s marks, if it has any (`growsOf`). */
+async function growOf(store: Store, a: Attachment): Promise<GrowDisk | undefined> {
+  const d = await store.get('disks', a.disk);
+  if (!d || a.readOnly || d.kind === 'ramdisk') return undefined;
+  const inPlace = d.kind === 'stored' && !!a.inPlace;
+  const o = !inPlace && a.overlay ? await store.get('overlays', a.overlay) : undefined;
+  if (!inPlace && !o) return undefined;
+  const marks: GrowDisk['marks'] = [];
+  if (o?.grow) marks.push({ target: { overlay: o.id }, mark: o.grow });
+  if (d.kind === 'stored' && d.grow) marks.push({ target: { disk: d.id }, mark: d.grow });
+  return marks.length ? { serial: serialOf(a.id), name: d.name, size: sizeSeen(d, a, o), marks } : undefined;
 }
 
 /** Clears `t`'s grow mark (the guest did it, or said why not). */
