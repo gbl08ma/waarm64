@@ -23,6 +23,8 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - tones: words `--ok-fg`, `--warn-fg`, `--error-fg`; the bars that carry one `--warn-bar-fg`, `--warn-bg`,
      `--warn-border`, `--error-bar-fg`, `--error-bg`, `--error-border`; a state's light `--status-ok`, `--status-busy`,
      `--status-bad`, `--status-off`;
+   - a block map's looks `--map-*` (`--map-empty`, `--map-absent`, `--map-opaque`, `--map-rim-1..4`, `--map-core-1..4`,
+     `--map-hollow`, `--map-read`, `--map-write`, `--map-end`, `--map-pin`: BlockGrid's canvas reads them);
    - shadows `--shadow-menu`, `--shadow-dialog`, `--shadow-rule` (a hairline under tabs), `--shadow-focus`,
      `--shadow-frame`;
    - fonts `--font`, `--font-mono`, `--line-height`; weights `--weight-normal`, `--weight-bold`;
@@ -60,6 +62,11 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
    - `ValueField`: a value to copy or a secret to show, its Copy and Show icons inside the field (an address, a key, a
      link, a command; a pasted secret).
+   - `BlockGrid`: a block map on a canvas (a defragmenter's squares: per cell a rim, a core inset in it and a flash;
+     its room reported, hover and pick, a keyboard's cursor); `BlockSwatch`: a legend's cell drawn the same way, its
+     words beside it (`block-grid.ts` the looks and the layout, `block-draw.ts` the drawing).
+   - `FloatingWindow`: a window over the page, moved by its title bar, resized by its corner, kept in the window and
+     remembered under a settings key (`floating-frame.svelte.ts`); a click on it leaves the focus where it was.
    - `Modal` (a dialog's shell), `Pane` (a pane of the Machines page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.

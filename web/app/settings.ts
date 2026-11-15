@@ -34,8 +34,12 @@ export type Settings = {
   statusFullscreen?: boolean;
   osk?: { x: number; y: number; w: number; wc?: number; layout?: Layout };
   oskModifiers?: ModifierMode;
+  /** Floating windows' places and sizes (web/app/ui/floating-frame.svelte.ts), CSS pixels, by the key each is given. */
+  windows?: Record<string, Place>;
   /** Preferences: the budget of Vulkan's shader store (web/venus-cache.ts; MiB, its default `CACHE_BUDGET` when unset). */ shaderMiB?: number;
 };
+/** Where a floating window is and how big, CSS pixels. */
+export type Place = { x: number; y: number; w: number; h: number };
 /** Preferences: ask before the page is left while a machine runs (on unless turned off). */
 export const leaveWarning = () => settings().leaveWarning !== false;
 /**

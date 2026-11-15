@@ -51,6 +51,29 @@
   --status-bad: #e5484d;
   --status-off: #6b7280;
 
+  /* A block map (web/app/ui/BlockGrid.svelte, a defragmenter's squares; read by its canvas): a cell's rim (the layer
+     under: an empty one, one that isn't there, one not examined, and four steps of how full, dark to light blue) and
+     its core (the layer over it: four steps of amber, or hollow), the guest's read and write flashing on it, the end
+     of the layer under, the pinned cell. Blue against amber and light against dark, so the layers part without hue;
+     the flashes differ in shape too (a ring, a fill). */
+  --map-empty: #232830;
+  --map-absent: #3a414c;
+  --map-opaque: #4a4f58;
+  --map-opaque-line: #6d7480;
+  --map-rim-1: #1f4f8a;
+  --map-rim-2: #2c6cbf;
+  --map-rim-3: #4a8fe6;
+  --map-rim-4: #8cbcff;
+  --map-core-1: #a8641c;
+  --map-core-2: #d0841f;
+  --map-core-3: #f0a431;
+  --map-core-4: #ffd27a;
+  --map-hollow: #ffb347;
+  --map-read: #6ff0e0;
+  --map-write: #ff4f9a;
+  --map-end: #e8ecf2;
+  --map-pin: #fff;
+
   --shadow-menu: 0 8px 24px #000a;
   --shadow-dialog: 0 12px 40px #000a;
   /* A hairline under a strip of tabs. */

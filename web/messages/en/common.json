@@ -70,5 +70,13 @@
   "ValueField.hide": {
     "message": "Hide",
     "note": "A field with a value in it (an address, a key, a link, a command: the toolbar's Network menu, an adapter's details, the Network wizard), a secret shown in clear: the tooltip and spoken name of the crossed-out eye icon inside the field that hides its text again."
+  },
+  "FloatingWindow.close": {
+    "message": "Close",
+    "note": "A window floating over the page (a disk's surface map): the tooltip and spoken name of the X button at the end of its title bar, which closes the window."
+  },
+  "FloatingWindow.resize": {
+    "message": "Resize",
+    "note": "A window floating over the page (a disk's surface map): the tooltip of the grip in its bottom right corner, dragged to change the window's width and height."
   }
 }
