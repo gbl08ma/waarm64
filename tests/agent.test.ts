@@ -1149,7 +1149,7 @@ test('frames: TIME and SESSION (the bytes agent/src/frame.rs pins)', () => {
   const grownBytes = new Uint8Array([11, ...new TextEncoder().encode('waarm64-abc'), 0, 5, 28, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0]);
   assert.deepEqual(decodeGrown(grownBytes), { serial: 'waarm64-abc', part: GROWN_PART.GROWN, fs: GROWN_FS.FAILED, errno: 28, size: 0x1_0000_0200 });
   assert.equal(decodeGrown(grownBytes.subarray(0, grownBytes.length - 1)), undefined);
-  assert.deepEqual(Object.values(GROWN_PART), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(Object.values(GROWN_PART), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual(Object.values(GROWN_FS), [0, 1, 2, 3, 4, 5, 6]);
   // KEYMAP (agent/src/keymap.rs pins the same bytes): four strings, a u8 length each; the model pc105 by default.
   assert.deepEqual([FRAME.KEYMAP, CAP.KEYMAP], [22, 4096]);

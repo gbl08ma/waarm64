@@ -183,6 +183,8 @@ export const GROWN_PART = {
   BAD_TABLE: 6,
   /** A step failed: `errno` says how. */
   FAILED: 7,
+  /** The GROW didn't read (a short payload; the serial what of it reads): nothing done. */
+  BAD_REQUEST: 8,
 } as const;
 
 /** GROWN's filesystem statuses (agent/src/grow.rs `fs`). */

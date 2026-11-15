@@ -62,9 +62,12 @@ fn unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// A mount in the table: its mount point, filesystem type and source (escapes read back), and whether its
-/// superblock is read-only.
+/// A mount in the table: its device number, mount point, filesystem type and source (escapes read back), and whether
+/// its superblock is read-only.
 pub struct Mount {
+    /// The mount's device number (mountinfo's `major:minor`: for ext2/3/4 and xfs the block device's, for btrfs the
+    /// filesystem's own); 0 if it doesn't read.
+    pub dev: u64,
     pub point: String,
     pub kind: String,
     pub source: String,
@@ -83,7 +86,12 @@ pub fn mounts(mountinfo: &str) -> Vec<Mount> {
         if dash < 6 || fields.len() < dash + 4 {
             continue;
         }
+        let dev = fields[2]
+            .split_once(':')
+            .and_then(|(a, b)| Some(rustix::fs::makedev(a.parse().ok()?, b.parse().ok()?)))
+            .unwrap_or(0);
         out.push(Mount {
+            dev,
             point: unescape(fields[4]),
             kind: unescape(fields[dash + 1]),
             source: unescape(fields[dash + 2]),

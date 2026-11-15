@@ -71,29 +71,35 @@ fn fake_resize(
 }
 
 /// The tests' filesystem grow: a mount point with `fails` fails (ENOSPC); else its `size` file is the filesystem's
-/// size, which grows to `bytes` if smaller, with a line in its `grown`.
-fn fake_grow_fs(kind: &str, point: &str, dev: &str, bytes: u64) -> io::Result<bool> {
-    let p = std::path::Path::new(point);
-    if !p.is_dir() {
-        return Err(io::Errno::NOENT);
-    }
-    if p.join("fails").exists() {
+/// size, which grows to `bytes` if smaller, with a line in its `grown` (through the mount's directory, as the real
+/// one: the open directory may be a detached clone of the mount).
+fn fake_grow_fs(
+    kind: &str,
+    dir: rustix::fd::BorrowedFd<'_>,
+    dev: &str,
+    bytes: u64,
+) -> io::Result<bool> {
+    use rustix::fs::{Mode, OFlags, openat};
+    let at =
+        |name: &str, flags: OFlags| openat(dir, name, flags | OFlags::CLOEXEC, Mode::from(0o644));
+    if at("fails", OFlags::RDONLY).is_ok() {
         return Err(io::Errno::NOSPC);
     }
-    let had: u64 = std::fs::read_to_string(p.join("size"))
+    let had: u64 = at("size", OFlags::RDONLY)
         .ok()
-        .and_then(|s| s.trim().parse().ok())
+        .and_then(|f| {
+            let mut b = [0u8; 32];
+            let n = read(&f, &mut b).ok()?;
+            std::str::from_utf8(&b[..n]).ok()?.trim().parse().ok()
+        })
         .unwrap_or(0);
     if bytes <= had {
         return Ok(false);
     }
-    std::fs::write(p.join("size"), bytes.to_string()).unwrap();
-    let mut f = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(p.join("grown"))
-        .unwrap();
-    std::io::Write::write_all(&mut f, format!("{kind} {dev} {bytes}\n").as_bytes()).unwrap();
+    let f = at("size", OFlags::WRONLY | OFlags::CREATE | OFlags::TRUNC).unwrap();
+    write(&f, bytes.to_string().as_bytes()).unwrap();
+    let f = at("grown", OFlags::WRONLY | OFlags::CREATE | OFlags::APPEND).unwrap();
+    write(&f, format!("{kind} {dev} {bytes}\n").as_bytes()).unwrap();
     Ok(true)
 }
 
@@ -1335,6 +1341,11 @@ fn grows_a_disks_last_partition_and_its_mounted_filesystem() {
         32 * MIB,
     );
     image::debian(&vda, 32 * MIB);
+    // The partitions' device numbers in sysfs: the test's own directories' (an ext4's or xfs's mount directory is on
+    // its partition: the grow checks it).
+    let here = std::os::unix::fs::MetadataExt::dev(&std::fs::metadata(&root).unwrap());
+    let here = format!("{}:{}", rustix::fs::major(here), rustix::fs::minor(here));
+    w("sys/block/vda/vda1/dev", &format!("{here}\n"));
     std::fs::create_dir(r("root")).unwrap();
     let mounts = |extra: &str| {
         format!(
@@ -1424,6 +1435,7 @@ fn grows_a_disks_last_partition_and_its_mounted_filesystem() {
     let vde = disk("vde", "waarm64-e", &[("vde1", 1, 2048, 30687)], 16 * MIB);
     image::gpt(&vde, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
     vde.set_len(32 * MIB).unwrap();
+    w("sys/block/vde/vde1/dev", &format!("{here}\n"));
     std::fs::create_dir(r("data")).unwrap();
     std::fs::write(r("data/fails"), "").unwrap();
     let vdf = disk("vdf", "waarm64-f", &[("vdf1", 1, 2048, 30687)], 16 * MIB);
@@ -1526,5 +1538,64 @@ fn grows_a_disks_last_partition_and_its_mounted_filesystem() {
     assert!(
         std::fs::read(r("dev/vdh")).unwrap() == before,
         "a bad table: nothing written"
+    );
+    // Another filesystem mounted over the partition's mount point (the directory isn't on the partition): not grown.
+    let vdi = disk("vdi", "waarm64-i", &[("vdi1", 1, 2048, 30687)], 16 * MIB);
+    image::gpt(&vdi, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    vdi.set_len(32 * MIB).unwrap();
+    w("sys/block/vdi/vdi1/dev", "254:129\n");
+    std::fs::create_dir(r("over")).unwrap();
+    // A root the kernel mounted (no initramfs): the table's source `/dev/root`, its device number the partition's.
+    let vdj = disk("vdj", "waarm64-j", &[("vdj1", 1, 2048, 30687)], 16 * MIB);
+    image::gpt(&vdj, 16 * MIB, 512, &[(0, image::LINUX, 2048, 32734)]);
+    vdj.set_len(32 * MIB).unwrap();
+    w("sys/block/vdj/vdj1/dev", &format!("{here}\n"));
+    std::fs::create_dir(r("kroot")).unwrap();
+    w(
+        "mountinfo",
+        &format!(
+            "8 1 254:129 / {over} rw - ext4 /dev/vdi1 rw\n9 0 {here} / {kroot} rw - ext4 /dev/root rw\n",
+            over = r("over").display(),
+            kroot = r("kroot").display(),
+        ),
+    );
+    assert_eq!(
+        ask(&mut h, "waarm64-i", 32 * MIB),
+        (
+            "waarm64-i".into(),
+            part::GROWN,
+            fs::FAILED,
+            18,
+            gpt16to32 * 512
+        ),
+        "EXDEV: the mount point's directory is another filesystem's"
+    );
+    assert!(!r("over/grown").exists(), "the other filesystem not grown");
+    assert_eq!(
+        ask(&mut h, "waarm64-j", 32 * MIB),
+        (
+            "waarm64-j".into(),
+            part::GROWN,
+            fs::GROWN,
+            0,
+            gpt16to32 * 512
+        )
+    );
+    assert_eq!(
+        std::fs::read_to_string(r("kroot/grown")).unwrap(),
+        format!("ext4 /dev/vdj1 {}\n", gpt16to32 * 512)
+    );
+    // A GROW that doesn't read (its size cut short; nothing at all) is answered too.
+    let mut cut = grow_frame("waarm64-d1", 64 * MIB);
+    cut.truncate(cut.len() - 3);
+    h.page.send(frame::GROW, &cut);
+    assert_eq!(
+        grown(&h.page.next(frame::GROWN, 5000).expect("a GROWN")),
+        ("waarm64-d1".into(), part::BAD_REQUEST, fs::SKIPPED, 22, 0)
+    );
+    h.page.send(frame::GROW, &[]);
+    assert_eq!(
+        grown(&h.page.next(frame::GROWN, 5000).expect("a GROWN")),
+        ("".into(), part::BAD_REQUEST, fs::SKIPPED, 22, 0)
     );
 }

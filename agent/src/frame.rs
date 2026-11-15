@@ -350,6 +350,11 @@ pub fn decode_grow(p: &[u8]) -> Option<(&str, u64)> {
     Some((serial, u64::from_le_bytes(r.take(8)?.try_into().ok()?)))
 }
 
+/// The serial of a GROW whose payload is short: as much as reads (None if not even that).
+pub fn decode_grow_serial(p: &[u8]) -> Option<&str> {
+    Fields(p).str()
+}
+
 /// GROWN's payload: a u8 length and the serial (GROW's), u8 the partition's status (`grow::part`), u8 the
 /// filesystem's (`grow::fs`), u32 the failed step's errno (0 for none), u64 the partition's (or the whole disk's) size
 /// in bytes now.

@@ -41,6 +41,8 @@ pub mod part {
     pub const BAD_TABLE: u8 = 6;
     /// A step failed (GROWN's errno says how).
     pub const FAILED: u8 = 7;
+    /// The GROW didn't read (a payload too short, its serial what of it reads): nothing done.
+    pub const BAD_REQUEST: u8 = 8;
 }
 
 /// GROWN's filesystem statuses.
@@ -83,8 +85,8 @@ impl Default for Paths {
 /// directory for the tests', which plays the kernel): its number, first byte and length in bytes.
 pub type ResizePart =
     fn(sys: &str, disk: BorrowedFd<'_>, pno: u32, start: u64, len: u64) -> Result<(), Errno>;
-/// A mounted filesystem (its type, a mount point, its device's node) grown to `bytes`: whether it grew.
-pub type GrowFs = fn(kind: &str, point: &str, dev: &str, bytes: u64) -> Result<bool, Errno>;
+/// A mounted filesystem (its type, its mount's directory open, its device's node) grown to `bytes`: whether it grew.
+pub type GrowFs = fn(kind: &str, dir: BorrowedFd<'_>, dev: &str, bytes: u64) -> Result<bool, Errno>;
 
 #[derive(Clone, Copy)]
 pub struct Ops {
@@ -331,18 +333,22 @@ fn filesystem(p: &Paths, ops: Ops, sys: &str, name: &str, bytes: u64) -> (u8, u3
             let (a, b) = d.trim().split_once(':')?;
             Some(rustix::fs::makedev(a.parse().ok()?, b.parse().ok()?))
         });
+    // Its mounts: by the table's device number (ext2/3/4's and xfs's are the partition's own: a root the kernel
+    // mounted shows its source as `/dev/root`), by the source's name, or by a source node with the device's number
+    // (btrfs's device number is the filesystem's own, not the partition's).
     let table = crate::rt::read_text(&p.mountinfo).unwrap_or_default();
     let mounts: Vec<_> = crate::trim::mounts(&table)
         .into_iter()
         .filter(|m| {
             m.source == node
                 || rdev.is_some_and(|r| {
-                    m.source.starts_with("/dev/")
-                        && rustix::fs::stat(m.source.as_str()).is_ok_and(|s| {
-                            rustix::fs::FileType::from_raw_mode(s.st_mode)
-                                == rustix::fs::FileType::BlockDevice
-                                && s.st_rdev == r
-                        })
+                    m.dev == r
+                        || (m.source.starts_with("/dev/")
+                            && rustix::fs::stat(m.source.as_str()).is_ok_and(|s| {
+                                rustix::fs::FileType::from_raw_mode(s.st_mode)
+                                    == rustix::fs::FileType::BlockDevice
+                                    && s.st_rdev == r
+                            }))
                 })
         })
         .collect();
@@ -357,11 +363,23 @@ fn filesystem(p: &Paths, ops: Ops, sys: &str, name: &str, bytes: u64) -> (u8, u3
         crate::log(&format!("grow: {name}'s {kind} isn't one it grows"), None);
         return (fs::UNSUPPORTED, 0);
     }
-    // The first mount point that opens (others may be hidden from the unit, or another's binds).
+    // The first mount point that opens (others may be hidden from the unit, or another's binds) on this filesystem:
+    // another mounted over the point (EXDEV) isn't grown. ext2/3/4's and xfs's directory is on the partition itself;
+    // btrfs's filesystem is checked by its id (`btrfs_devid`).
     let mut r = Err(Errno::NOENT);
     for m in &mounts {
-        r = (ops.grow_fs)(&kind, &m.point, &node, bytes);
-        if !matches!(r, Err(Errno::NOENT | Errno::ACCESS | Errno::NOTDIR)) {
+        r = writable(&m.point).and_then(|dir| {
+            if kind != "btrfs"
+                && rdev.is_none_or(|d| rustix::fs::fstat(&dir).map(|s| s.st_dev) != Ok(d))
+            {
+                return Err(Errno::XDEV);
+            }
+            (ops.grow_fs)(&kind, dir.as_fd(), &node, bytes)
+        });
+        if !matches!(
+            r,
+            Err(Errno::NOENT | Errno::ACCESS | Errno::NOTDIR | Errno::XDEV)
+        ) {
             break;
         }
     }
@@ -572,9 +590,9 @@ struct XfsGrow {
     pad: u32,
 }
 
-/// The btrfs devid of the device `dev` in the filesystem open at `dir` (by its path, or the same device node); the
-/// one device's when the filesystem has one.
-fn btrfs_devid(dir: &OwnedFd, dev: &str) -> Result<u64, Errno> {
+/// The btrfs devid of the device `dev` (its node) in the filesystem open at `dir`: its superblock's, if the
+/// superblock's filesystem id is that filesystem's (else EXDEV: another filesystem is at the mount point).
+fn btrfs_devid(dir: BorrowedFd<'_>, dev: &str) -> Result<u64, Errno> {
     let mut info = Box::new(FsInfo {
         max_id: 0,
         num_devices: 0,
@@ -587,59 +605,50 @@ fn btrfs_devid(dir: &OwnedFd, dev: &str) -> Result<u64, Errno> {
             rustix::ioctl::Updater::<BTRFS_IOC_FS_INFO, FsInfo>::new(&mut info),
         )
     }?;
-    let want = rustix::fs::stat(dev).ok().map(|s| s.st_rdev);
-    let mut only = None;
-    for id in 1..=info.max_id.min(4096) {
-        let mut d = Box::new(DevInfo {
-            devid: id,
-            rest: [0; 4088],
-        });
-        // SAFETY: BTRFS_IOC_DEV_INFO reads and writes a `struct btrfs_ioctl_dev_info_args` (4 KiB, which DevInfo
-        // is: its devid in, a zero uuid to match by devid only), alive for the call.
-        match unsafe {
-            rustix::ioctl::ioctl(
-                dir,
-                rustix::ioctl::Updater::<BTRFS_IOC_DEV_INFO, DevInfo>::new(&mut d),
-            )
-        } {
-            Ok(()) => {}
-            Err(Errno::NODEV) => continue,
-            Err(e) => return Err(e),
-        }
-        let path = &d.rest[3072 - 8..];
-        let path = &path[..path.iter().position(|&b| b == 0).unwrap_or(path.len())];
-        let same = core::str::from_utf8(path).is_ok_and(|p| {
-            p == dev || want.is_some_and(|w| rustix::fs::stat(p).is_ok_and(|s| s.st_rdev == w))
-        });
-        if same {
-            return Ok(id);
-        }
-        only = Some(id);
+    // The superblock (64 KiB in): its fsid at 0x20, its magic at 0x40, its dev_item (devid first) at 0xc9.
+    let node = rustix::fs::open(dev, OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())?;
+    let mut sb = [0u8; 0xd1];
+    let d = table::Fd {
+        fd: node.as_fd(),
+        size: 0,
+    };
+    table::Disk::read(&d, 64 << 10, &mut sb)?;
+    if &sb[0x40..0x48] != b"_BHRfS_M" || sb[0x20..0x30] != info.rest[..16] {
+        return Err(Errno::XDEV);
     }
-    match only {
-        Some(id) if info.num_devices == 1 => Ok(id),
-        _ => Err(Errno::NODEV),
-    }
+    let id = u64::from_le_bytes(sb[0xc9..0xd1].try_into().unwrap());
+    let mut d = Box::new(DevInfo {
+        devid: id,
+        rest: [0; 4088],
+    });
+    // SAFETY: BTRFS_IOC_DEV_INFO reads and writes a `struct btrfs_ioctl_dev_info_args` (4 KiB, which DevInfo is:
+    // its devid in, a zero uuid to match by devid only), alive for the call.
+    unsafe {
+        rustix::ioctl::ioctl(
+            dir,
+            rustix::ioctl::Updater::<BTRFS_IOC_DEV_INFO, DevInfo>::new(&mut d),
+        )
+    }?;
+    Ok(id)
 }
 
-/// Grows the filesystem of type `kind` mounted at `point` (on `dev`) to `bytes`: whether its size grew.
-pub fn grow_fs(kind: &str, point: &str, dev: &str, bytes: u64) -> Result<bool, Errno> {
-    let dir = writable(point)?;
-    let before = rustix::fs::fstatfs(&dir)?.f_blocks;
+/// Grows the filesystem of type `kind` whose mount `dir` is (on `dev`) to `bytes`: whether its size grew.
+pub fn grow_fs(kind: &str, dir: BorrowedFd<'_>, dev: &str, bytes: u64) -> Result<bool, Errno> {
+    let before = rustix::fs::fstatfs(dir)?.f_blocks;
     match kind {
         "ext2" | "ext3" | "ext4" => {
-            let bsize = rustix::fs::fstatfs(&dir)?.f_bsize as u64;
+            let bsize = rustix::fs::fstatfs(dir)?.f_bsize as u64;
             let mut n = bytes / bsize.max(1024);
             // SAFETY: EXT4_IOC_RESIZE_FS reads a u64, alive for the call.
             unsafe {
                 rustix::ioctl::ioctl(
-                    &dir,
+                    dir,
                     rustix::ioctl::Updater::<EXT4_IOC_RESIZE_FS, u64>::new(&mut n),
                 )
             }?;
         }
         "btrfs" => {
-            let id = btrfs_devid(&dir, dev)?;
+            let id = btrfs_devid(dir, dev)?;
             let mut a = Box::new(VolArgs {
                 fd: 0,
                 name: [0; 4088],
@@ -650,7 +659,7 @@ pub fn grow_fs(kind: &str, point: &str, dev: &str, bytes: u64) -> Result<bool, E
             // alive for the call.
             unsafe {
                 rustix::ioctl::ioctl(
-                    &dir,
+                    dir,
                     rustix::ioctl::Updater::<BTRFS_IOC_RESIZE, VolArgs>::new(&mut a),
                 )
             }?;
@@ -671,7 +680,7 @@ pub fn grow_fs(kind: &str, point: &str, dev: &str, bytes: u64) -> Result<bool, E
             // SAFETY: XFS_IOC_FSGEOMETRY writes a `struct xfs_fsop_geom` (256 bytes, which XfsGeom is), alive for the call.
             unsafe {
                 rustix::ioctl::ioctl(
-                    &dir,
+                    dir,
                     rustix::ioctl::Updater::<XFS_IOC_FSGEOMETRY, XfsGeom>::new(&mut g),
                 )
             }?;
@@ -687,14 +696,14 @@ pub fn grow_fs(kind: &str, point: &str, dev: &str, bytes: u64) -> Result<bool, E
             // SAFETY: XFS_IOC_FSGROWFSDATA reads a `struct xfs_growfs_data` (XfsGrow), alive for the call.
             unsafe {
                 rustix::ioctl::ioctl(
-                    &dir,
+                    dir,
                     rustix::ioctl::Updater::<XFS_IOC_FSGROWFSDATA, XfsGrow>::new(&mut a),
                 )
             }?;
         }
         _ => return Err(Errno::OPNOTSUPP),
     }
-    Ok(rustix::fs::fstatfs(&dir)?.f_blocks > before)
+    Ok(rustix::fs::fstatfs(dir)?.f_blocks > before)
 }
 
 /// GROWN's payload for `serial` (frame.rs `grown`).

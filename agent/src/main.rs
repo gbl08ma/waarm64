@@ -913,6 +913,18 @@ impl Session<'_> {
             // a disk already running or waiting is answered by that one's GROWN.
             frame::GROW => {
                 let Some((serial, size)) = frame::decode_grow(payload) else {
+                    // Answered all the same, with what of its serial reads.
+                    let serial = frame::decode_grow_serial(payload).unwrap_or("");
+                    log("grow: a GROW that doesn't read", None);
+                    self.agent.grown.push(grow::payload(
+                        serial,
+                        grow::Answer {
+                            part: grow::part::BAD_REQUEST,
+                            fs: grow::fs::SKIPPED,
+                            errno: Errno::INVAL.raw_os_error() as u32,
+                            size: 0,
+                        },
+                    ));
                     return;
                 };
                 let a = &mut *self.agent;

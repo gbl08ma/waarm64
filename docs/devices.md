@@ -139,7 +139,7 @@ COPY's stale screen); a connection's end and the run's (the link's `close`) sett
 take down what the page shows the agent can do (the storage bar's trim, Power off's clean shutdown).
 
 `waarm64-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 201,168 bytes, its gzip 118,555, 2026-11-15).
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 203,552 bytes, its gzip 120,101, 2026-11-15).
 A `firmware` machine with the agent on fetches it at a boot (not at a restore, whose guest has its own: `web/app/guest-agent.ts` `agentBinary`: the build's gzip (an ELF file a server decoded is gzipped), or
 nothing) and hands it to the guest as the fw_cfg files **`opt/waarm64/agent.000`**, `.001`, … (its gzip in pieces of
 4 KiB: `agentFiles`), with a unit as SMBIOS credentials
@@ -429,7 +429,8 @@ it: GROW with the disk's serial (`waarm64-<attachment id>`; the agent compares t
 for the partition's step and one for the filesystem's, the failed step's errno, the partition's (or whole disk's) size.
 One disk at a time (the others wait), each in a forked child polled by its pidfd that writes GROWN's payload into a pipe
 (a child that ends without one: FAILED, errno 0); a GROW for a disk already waiting or running is answered by that
-one's GROWN. By syscalls and ioctls only, no guest program:
+one's GROWN; a GROW whose payload doesn't read is answered at once, BAD_REQUEST (8) with EINVAL and what of its serial
+reads (the page takes it as a failure). By syscalls and ioctls only, no guest program:
 1. **The disk**: the `/sys/block/*` entry whose `serial` matches (none: NOT_FOUND); its node opened read-write, its
    size by `lseek` (smaller than GROW's size: NOT_YET, nothing written), its `LOCK_EX` taken (as partitioning tools do:
    udev doesn't probe it meanwhile; 5 s at most), its logical sector size from `queue/logical_block_size`.
@@ -439,23 +440,42 @@ one's GROWN. By syscalls and ioctls only, no guest program:
    inside the usable space, the backup inside the disk; anything else is BAD_TABLE and nothing is written. The partition
    whose last LBA is highest grows (Debian's root, p1, ends after p14 and p15; whatever its entry index), its end aligned
    down to 1 MiB within the new last usable LBA; the backup's entries and header move to the disk's last sectors.
-   Written backup first (its entries, its header, fsync), then the primary (its entries before its header, fsync): a
-   crash between them leaves the old primary naming the old backup, still whole, or the new backup with a primary
-   whose CRC fails over to it. Then the old backup header is zeroed (a stale table's inside the grown partition) and a
-   pure protective MBR's 0xEE entry covers the disk again (a hybrid MBR is left alone). A disk grown by less than the
-   next whole MiB moves only the backup (NOTHING). **MBR**: the last-ending primary, its end within 2^32 sectors (the
+   Written backup first (its entries, its header, fsync), then the primary: its entries, the old backup header zeroed
+   (a stale table's inside the grown partition), its header, fsync; then a pure protective MBR's 0xEE entry covers the
+   disk again (a hybrid MBR is left alone; a GROW finding it short covers it whatever else it does). **A cut run**
+   (the child killed, the guest crashed, a write's EIO): until the backup's header is written the old table stands,
+   both copies, except where the disk grew by at most the entry array's sectors (16 KiB: 32 of 512 bytes, 4 of 4 KiB),
+   whose new backup's entries are written over the old backup's header, so the primary alone (Linux reads the primary
+   and warns of the backup); from then the new backup is whole. The next GROW completes any cut, by two precise
+   exceptions to "nothing written to a bad table": (a) **a primary whose header holds but not its entries' CRC** is
+   repaired from the backup when the disk's last LBA has a whole backup (its CRCs, MY the last LBA, ALT 1) of the same
+   disk (GUID, first usable LBA, the entry array's shape), whose last usable LBA is at least the primary's and whose
+   entries are byte for byte the primary's: only the primary's header is rewritten (from the backup's, at LBA 1, its
+   entries where they are), then the old backup header its old self named is zeroed if it is still a backup header of
+   this disk outside the new backup, and the run goes on (UEFI firmware repairs it the same way at a boot; Linux uses
+   a backup only with `gpt` on its command line); (b) **a backup the primary names that doesn't hold**, where the disk
+   grew by at most the entry array's sectors, is taken as this run's own when its sector holds byte for byte what this
+   GROW writes there (the new backup's entries over it), and the run goes on. Any other mismatch (a corrupt primary
+   whose entries differ from the backup's, a backup not at the disk's end, a corrupt backup header) is BAD_TABLE with
+   nothing written; so is a cut run whose disk was grown again before the next GROW (its new backup then isn't at the
+   end). A disk grown by less than the next whole MiB moves only the backup (NOTHING). **MBR**: the last-ending primary, its end within 2^32 sectors (the
    format's 32-bit LBAs) aligned down to 1 MiB, its end CHS rewritten (1023/254/63 past CHS's reach); an extended
    partition that ends last isn't grown, nor its logical ones (NOT_LAST, as a GPT without partitions).
 3. **The kernel**: the partition of that number in sysfs (its start must be the table's: else FAILED, EINVAL), told its
    new length by `BLKPG_RESIZE_PARTITION` on the disk (online, mounted or not) when its size there is smaller: so a GROW
    after one that wrote the table but failed here completes it. GROWN when the kernel's partition grew, else NOTHING.
 4. **The filesystem**, only if mounted: a partition with `holders` (LVM, LUKS, md) is STACKED; its mount
-   (`/proc/self/mountinfo`, trim.rs `mounts`: the source `/dev/<name>`, or a node with its device number) else
+   (`/proc/self/mountinfo`, trim.rs `mounts`: the line's `major:minor` the partition's (ext2/3/4's and xfs's are: a
+   root the kernel mounted without an initramfs shows `/dev/root`), the source `/dev/<name>`, or a node with its device
+   number; btrfs's `major:minor` is the filesystem's own, so a btrfs root shown as `/dev/root` isn't found) else
    NOT_MOUNTED (the user's choice: only mounted filesystems are grown); ext2/3/4, btrfs and xfs grow, any other is
-   UNSUPPORTED. On the first of its mount points that opens: ext4 `EXT4_IOC_RESIZE_FS` (the size in its blocks),
-   btrfs `BTRFS_IOC_RESIZE` "`<devid>:max`" (the devid by `BTRFS_IOC_FS_INFO` and `BTRFS_IOC_DEV_INFO`, the device's
-   path or node; the one device's if it has one), xfs `XFS_IOC_FSGROWFSDATA` (its blocks past `XFS_IOC_FSGEOMETRY`'s
-   data blocks, its imaxpct kept). GROWN if `statfs`'s block count grew, else NOTHING (a second GROW finds nothing);
+   UNSUPPORTED. On the first of its mount points that opens **on this filesystem** (another mounted over the point is
+   EXDEV, and the next point is tried; the last error is the answer's): ext2/3/4's and xfs's opened directory's
+   `st_dev` must be the partition's (sysfs `dev`), btrfs's filesystem id (`BTRFS_IOC_FS_INFO`) the one in the
+   partition's own superblock (64 KiB in). ext4 `EXT4_IOC_RESIZE_FS` (the size in its blocks), btrfs
+   `BTRFS_IOC_RESIZE` "`<devid>:max`" (the devid the partition's superblock's `dev_item` names, which
+   `BTRFS_IOC_DEV_INFO` must know), xfs `XFS_IOC_FSGROWFSDATA` (its blocks past `XFS_IOC_FSGEOMETRY`'s data blocks,
+   its imaxpct kept). GROWN if `statfs`'s block count grew, else NOTHING (a second GROW finds nothing);
    an ioctl's error is FAILED with its errno.
 
 Grow only: nothing shrinks (the new ends are past the old or nothing is written), no write reaches past the device's
@@ -467,13 +487,22 @@ through a detached clone of its mount with the read-only flag cleared (`open_tre
 the agent's alone, gone when closed; a kernel without them, before 5.12, gets the mount point itself). Measured on loop
 devices under the unit's properties (`systemd-run`, 2026-11-15): resize2fs fails EROFS through the read-only bind,
 the agent without CAP_SYS_RESOURCE grows the partition and gets EPERM for ext4, with it ext4, btrfs and xfs grow
-(df's sizes), the kernel's partition is the table's and `sgdisk -v` finds no problems. Tests: `table.rs` on image files
+(df's sizes), the kernel's partition is the table's and `sgdisk -v` finds no problems; another btrfs or xfs mounted
+over the point is refused (EXDEV) and left as it was. **Memory**: the unit's `MemoryMax=32M` holds what the resize
+dirties (the new groups' bitmaps and descriptors in the page cache, charged to the agent's cgroup): measured
+2026-11-15 on the dev VM (Linux 7.2) with the tests' binary (13 MiB of its own, more than the agent) under the unit's
+properties and `MemorySwapMax=0`, ext4 from 1 GiB to 1 TiB grew in 0.9 s (81 MiB peak without the cap, 32 MiB and 270
+`max` events with it, no OOM) and to 8 TiB (the page's most) in 13.5 s capped against 13.3 s at a 1 GiB cap whose
+peak was 562 MiB: the cgroup's reclaim writes the dirty pages back, without an OOM kill or a slower grow; btrfs (0.3 s)
+and xfs (3.2 s) to 8 TiB stayed at the binary's 13-14 MiB. Tests: `table.rs` on image files
 made in the test (Debian's layout, a plain GPT, 4 KiB sectors, a partition after free space, a growth smaller than a
-MiB, each CRC corrupted, a table past the disk, MBR within 32 bits, an extended partition last, a FAT boot sector), each
+MiB, growths within the entry array's sectors, a run cut after each of its writes then completed, each CRC
+corrupted at the old size and grown, a table past the disk, MBR within 32 bits, an extended partition last, a FAT boot sector), each
 grown table re-parsed and, where the dev VM has them, `sfdisk --verify` and `sgdisk -v` on tables they wrote;
 `serve_test.rs` through the root loop with sysfs, the nodes and the mount table the test's and BLKPG and the
 filesystem's grow faked (found or not, not yet, grown then nothing, one answer per disk, MBR unmounted, a cut serial,
-a whole disk's btrfs, LVM's holders, xfs failing, vfat, BLKPG failing then completed, a corrupt table untouched); the
+a whole disk's btrfs, LVM's holders, xfs failing, vfat, BLKPG failing then completed, a corrupt table untouched, a
+directory not on the partition (EXDEV), a root shown as `/dev/root`, a GROW that doesn't read); the
 real ioctls on a loop device: `grow.rs`'s ignored `a_real_disk`, run by hand as root (no CI script has it).
 
 **The page's side** (`web/app/areas/grow-actions.ts` `GrowActions`, a follower of each run's link: agent-actions.ts

@@ -2,10 +2,10 @@
 //! MBR's, read and written through `Disk` (the device's descriptor; the tests' image files). Only the partition that
 //! ends last grows, only when the new space follows it, never past the device's end and never smaller; its end is
 //! aligned down to 1 MiB. GPT: both headers' and both entry arrays' CRCs checked first (anything that doesn't add up is
-//! left alone), the backup's entries and header moved to the disk's last sectors and written before the primary's, so
-//! that a crash between them leaves one valid table (the old primary still names the old backup, which is still
-//! there). MBR: the last-ending primary partition, within the 32-bit LBAs; an extended partition that ends last isn't
-//! grown (nor its logical ones).
+//! left alone, but for what a cut run of this leaves: `repair`, and a backup header under the new backup's entries),
+//! the backup's entries and header moved to the disk's last sectors and written before the primary's. MBR: the
+//! last-ending primary partition, within the 32-bit LBAs; an extended partition that ends last isn't grown (nor its
+//! logical ones).
 
 use crate::prelude::*;
 use rustix::fd::BorrowedFd;
@@ -202,12 +202,26 @@ fn seal(s: &mut [u8]) {
     put32(s, h::CRC, c);
 }
 
+/// Grows a GPT whose primary header (`pri`, LBA 1) has the signature; `mbr` is LBA 0.
 fn grow_gpt(
+    d: &impl Disk,
+    size: u64,
+    lbs: u64,
+    mbr: Vec<u8>,
+    pri: Vec<u8>,
+) -> Result<Outcome, Fail> {
+    grow_gpt_at(d, size, lbs, mbr, pri, None)
+}
+
+/// `repaired`: the primary's header was just rewritten from the backup (`repair`), and this is the LBA its old
+/// header named as the backup's.
+fn grow_gpt_at(
     d: &impl Disk,
     size: u64,
     lbs: u64,
     mut mbr: Vec<u8>,
     pri: Vec<u8>,
+    repaired: Option<u64>,
 ) -> Result<Outcome, Fail> {
     let lbas = size / lbs;
     check_header(&pri, lbs)?;
@@ -237,32 +251,14 @@ fn grow_gpt(
     let mut entries = vec![0u8; (count * esize) as usize];
     d.read(ent_lba * lbs, &mut entries)?;
     if crc32(&entries) != u32_at(&pri, h::ENTRIES_CRC) {
+        // A run cut between the primary's entries and its header (below) leaves this; the backup at the disk's
+        // end, already whole with these very entries, repairs the header. Anything else is left alone.
+        if repaired.is_none()
+            && let Some(np) = repair(d, lbas, lbs, &pri, &entries)?
+        {
+            return grow_gpt_at(d, size, lbs, mbr, np, Some(alt));
+        }
         return Err(Fail::Bad("the GPT's entries' CRC"));
-    }
-    // The backup, where the primary says it is: the same table.
-    let mut bak = vec![0u8; lbs as usize];
-    d.read(alt * lbs, &mut bak)?;
-    check_header(&bak, lbs)?;
-    let bak_ent = u64_at(&bak, h::ENTRIES);
-    if u64_at(&bak, h::MY) != alt
-        || u64_at(&bak, h::ALT) != 1
-        || u64_at(&bak, h::FIRST) != first
-        || u64_at(&bak, h::LAST) != last
-        || bak[h::GUID..h::GUID + 16] != pri[h::GUID..h::GUID + 16]
-        || u32_at(&bak, h::COUNT) as u64 != count
-        || u32_at(&bak, h::ENTRY_SIZE) as u64 != esize
-        || u32_at(&bak, h::ENTRIES_CRC) != u32_at(&pri, h::ENTRIES_CRC)
-        || bak_ent <= last
-        || bak_ent + esec > alt
-    {
-        return Err(Fail::Bad("the backup GPT header doesn't match the primary"));
-    }
-    let mut bak_entries = vec![0u8; entries.len()];
-    d.read(bak_ent * lbs, &mut bak_entries)?;
-    if bak_entries != entries {
-        return Err(Fail::Bad(
-            "the backup GPT's entries differ from the primary's",
-        ));
     }
     // The partition that ends last.
     let mut best: Option<(usize, u64, u64)> = None;
@@ -279,7 +275,9 @@ fn grow_gpt(
             best = Some((i, s, l));
         }
     }
+    let checked = backup(d, lbs, &pri, &entries);
     let Some((i, start, end)) = best else {
+        checked?;
         return Ok(Outcome::NotLast);
     };
     // The new geometry: the backup's entries and header in the last sectors.
@@ -289,7 +287,8 @@ fn grow_gpt(
         let e = new_alt - esec;
         (new_alt, e, e - 1)
     } else {
-        (alt, bak_ent, last)
+        // Where the backup's entries are (checked below: a backup that doesn't hold is never used).
+        (alt, *checked.as_ref().unwrap_or(&0), last)
     };
     if new_last < last {
         return Err(Fail::Bad("the grown GPT would have less usable space"));
@@ -297,59 +296,169 @@ fn grow_gpt(
     let align = (ALIGN / lbs).max(1);
     let new_end = ((new_last + 1) / align * align).wrapping_sub(1);
     let grows = (new_last + 1) / align > 0 && new_end > end;
-    if !moved && !grows {
-        return Ok(Outcome::Last {
-            pno: i as u32 + 1,
-            start,
-            len: end - start + 1,
-            written: false,
-        });
-    }
     let end = if grows { new_end } else { end };
-    put64(&mut entries[i * esize as usize..], 40, end);
-    let ecrc = crc32(&entries);
-    let mut nb = pri.clone();
-    put64(&mut nb, h::MY, b_lba);
-    put64(&mut nb, h::ALT, 1);
-    put64(&mut nb, h::LAST, new_last);
-    put64(&mut nb, h::ENTRIES, b_ent);
-    put32(&mut nb, h::ENTRIES_CRC, ecrc);
-    seal(&mut nb);
-    let mut np = pri;
-    put64(&mut np, h::ALT, b_lba);
-    put64(&mut np, h::LAST, new_last);
-    put32(&mut np, h::ENTRIES_CRC, ecrc);
-    seal(&mut np);
-    // The backup first, then the primary (its entries before its header: a header that doesn't match its entries
-    // leaves the backup, already whole, as the table).
-    d.write(b_ent * lbs, &entries)?;
-    d.write(b_lba * lbs, &nb)?;
-    d.sync()?;
-    d.write(ent_lba * lbs, &entries)?;
-    d.write(lbs, &np)?;
-    d.sync()?;
-    if moved {
-        // The old backup header, now inside the free space or the grown partition, would be a stale table's.
-        d.write(alt * lbs, &vec![0u8; lbs as usize])?;
-        // A protective MBR (its one 0xEE entry from LBA 1) covers the disk again; a hybrid one is left as it is.
-        if let Some(p) = parse_mbr(&mbr)
-            && p.iter().filter(|e| e.kind != 0).count() == 1
-            && p[0].kind == 0xee
-            && p[0].start == 1
-        {
-            let n = (lbas - 1).min(u32::MAX as u64) as u32;
-            put32(&mut mbr, 446 + 12, n);
-            mbr[446 + 5..446 + 8].copy_from_slice(&chs(lbas - 1));
-            d.write(0, &mbr)?;
+    let mut grown = entries.clone();
+    put64(&mut grown[i * esize as usize..], 40, end);
+    // The backup, where the primary says it is: the same table. A disk grown by at most the entry array's sectors
+    // puts the new backup's entries over the old backup's header: a run cut after writing them leaves the primary
+    // naming a backup that is gone, its sector holding what this run writes there; that one goes on.
+    if let Err(e) = checked {
+        let mut s = vec![0u8; lbs as usize];
+        let ours = moved
+            && alt >= b_ent
+            && d.read(alt * lbs, &mut s).is_ok()
+            && grown
+                .get(((alt - b_ent) * lbs) as usize..)
+                .is_some_and(|g| g.len() >= s.len() && g[..s.len()] == s[..]);
+        if !ours {
+            return Err(e);
         }
+    }
+    let mut written = repaired.is_some();
+    let guid = pri[h::GUID..h::GUID + 16].to_vec();
+    if moved || grows {
+        let ecrc = crc32(&grown);
+        let mut nb = pri.clone();
+        put64(&mut nb, h::MY, b_lba);
+        put64(&mut nb, h::ALT, 1);
+        put64(&mut nb, h::LAST, new_last);
+        put64(&mut nb, h::ENTRIES, b_ent);
+        put32(&mut nb, h::ENTRIES_CRC, ecrc);
+        seal(&mut nb);
+        let mut np = pri;
+        put64(&mut np, h::ALT, b_lba);
+        put64(&mut np, h::LAST, new_last);
+        put32(&mut np, h::ENTRIES_CRC, ecrc);
+        seal(&mut np);
+        // The backup first, then the primary: its entries, the old backup's header (a stale table's, now in the
+        // free space or the grown partition; not when the new backup's entries are over it), its header. Until the
+        // backup's header is written the old table stands (the old backup too, unless the new entries are over its
+        // header); from then the new backup is whole and the primary's header is repaired from it (above).
+        d.write(b_ent * lbs, &grown)?;
+        d.write(b_lba * lbs, &nb)?;
         d.sync()?;
+        d.write(ent_lba * lbs, &grown)?;
+        if moved && alt < b_ent {
+            d.write(alt * lbs, &vec![0u8; lbs as usize])?;
+        }
+        d.write(lbs, &np)?;
+        d.sync()?;
+        written = true;
+    }
+    // A repaired header's old backup, if the cut run left it: zeroed as above.
+    if let Some(old) = repaired
+        && old < b_ent
+    {
+        let mut s = vec![0u8; lbs as usize];
+        d.read(old * lbs, &mut s)?;
+        if check_header(&s, lbs).is_ok()
+            && u64_at(&s, h::MY) == old
+            && u64_at(&s, h::ALT) == 1
+            && s[h::GUID..h::GUID + 16] == guid
+        {
+            d.write(old * lbs, &vec![0u8; lbs as usize])?;
+            d.sync()?;
+        }
+    }
+    // A protective MBR (its one 0xEE entry from LBA 1) covers the disk again; a hybrid one is left as it is.
+    let n = (lbas - 1).min(u32::MAX as u64) as u32;
+    if let Some(p) = parse_mbr(&mbr)
+        && p.iter().filter(|e| e.kind != 0).count() == 1
+        && p[0].kind == 0xee
+        && p[0].start == 1
+        && p[0].size < n as u64
+    {
+        put32(&mut mbr, 446 + 12, n);
+        mbr[446 + 5..446 + 8].copy_from_slice(&chs(lbas - 1));
+        d.write(0, &mbr)?;
+        d.sync()?;
+        written = true;
     }
     Ok(Outcome::Last {
         pno: i as u32 + 1,
         start,
         len: end - start + 1,
-        written: true,
+        written,
     })
+}
+
+/// The backup that the primary `pri` (whose entries are `entries`) names: the same table (its entries' LBA), or why
+/// not.
+fn backup(d: &impl Disk, lbs: u64, pri: &[u8], entries: &[u8]) -> Result<u64, Fail> {
+    let alt = u64_at(pri, h::ALT);
+    let esec = (entries.len() as u64).div_ceil(lbs);
+    let mut bak = vec![0u8; lbs as usize];
+    d.read(alt * lbs, &mut bak)?;
+    check_header(&bak, lbs)?;
+    let bak_ent = u64_at(&bak, h::ENTRIES);
+    if u64_at(&bak, h::MY) != alt
+        || u64_at(&bak, h::ALT) != 1
+        || u64_at(&bak, h::FIRST) != u64_at(pri, h::FIRST)
+        || u64_at(&bak, h::LAST) != u64_at(pri, h::LAST)
+        || bak[h::GUID..h::GUID + 16] != pri[h::GUID..h::GUID + 16]
+        || u32_at(&bak, h::COUNT) != u32_at(pri, h::COUNT)
+        || u32_at(&bak, h::ENTRY_SIZE) != u32_at(pri, h::ENTRY_SIZE)
+        || u32_at(&bak, h::ENTRIES_CRC) != u32_at(pri, h::ENTRIES_CRC)
+        || bak_ent <= u64_at(pri, h::LAST)
+        || bak_ent + esec > alt
+    {
+        return Err(Fail::Bad("the backup GPT header doesn't match the primary"));
+    }
+    let mut bak_entries = vec![0u8; entries.len()];
+    d.read(bak_ent * lbs, &mut bak_entries)?;
+    if bak_entries != entries {
+        return Err(Fail::Bad(
+            "the backup GPT's entries differ from the primary's",
+        ));
+    }
+    Ok(bak_ent)
+}
+
+/// The primary's header rebuilt from the backup, written, when the primary's header `pri` holds (its CRC, its
+/// place) but not its entries' CRC, and the disk's last LBA has a whole backup of the same disk (its GUID, first
+/// usable LBA, entry array's shape) at least as large, whose entries are byte for byte the primary's `entries`: only
+/// the primary's header is stale (a run cut between the primary's entries and its header). None for anything else.
+fn repair(
+    d: &impl Disk,
+    lbas: u64,
+    lbs: u64,
+    pri: &[u8],
+    entries: &[u8],
+) -> Result<Option<Vec<u8>>, Fail> {
+    let at = lbas - 1;
+    let esec = (entries.len() as u64).div_ceil(lbs);
+    let mut bak = vec![0u8; lbs as usize];
+    d.read(at * lbs, &mut bak)?;
+    if check_header(&bak, lbs).is_err() {
+        return Ok(None);
+    }
+    let (b_ent, b_last) = (u64_at(&bak, h::ENTRIES), u64_at(&bak, h::LAST));
+    if u64_at(&bak, h::MY) != at
+        || u64_at(&bak, h::ALT) != 1
+        || bak[h::GUID..h::GUID + 16] != pri[h::GUID..h::GUID + 16]
+        || u64_at(&bak, h::FIRST) != u64_at(pri, h::FIRST)
+        || u32_at(&bak, h::COUNT) != u32_at(pri, h::COUNT)
+        || u32_at(&bak, h::ENTRY_SIZE) != u32_at(pri, h::ENTRY_SIZE)
+        || b_last < u64_at(pri, h::LAST)
+        || b_ent <= b_last
+        || b_ent + esec > at
+        || u32_at(&bak, h::ENTRIES_CRC) != crc32(entries)
+    {
+        return Ok(None);
+    }
+    let mut bak_entries = vec![0u8; entries.len()];
+    d.read(b_ent * lbs, &mut bak_entries)?;
+    if bak_entries != entries {
+        return Ok(None);
+    }
+    let mut np = pri.to_vec();
+    put64(&mut np, h::ALT, at);
+    put64(&mut np, h::LAST, b_last);
+    put32(&mut np, h::ENTRIES_CRC, crc32(entries));
+    seal(&mut np);
+    d.write(lbs, &np)?;
+    d.sync()?;
+    Ok(Some(np))
 }
 
 /// An MBR's entry.
@@ -774,6 +883,120 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// A disk whose writes stop after `n` of them (the rest fail EIO): a run cut there, as a SIGKILL or a crash would.
+    struct Cut<'a> {
+        d: Fd<'a>,
+        left: std::cell::Cell<usize>,
+    }
+
+    impl Disk for Cut<'_> {
+        fn read(&self, at: u64, buf: &mut [u8]) -> Result<(), Errno> {
+            self.d.read(at, buf)
+        }
+        fn write(&self, at: u64, buf: &[u8]) -> Result<(), Errno> {
+            if self.left.get() == 0 {
+                return Err(Errno::IO);
+            }
+            self.left.set(self.left.get() - 1);
+            self.d.write(at, buf)
+        }
+        fn sync(&self) -> Result<(), Errno> {
+            self.d.sync()
+        }
+    }
+
+    fn run_cut(f: &std::fs::File, lbs: u64, n: usize) -> Outcome {
+        let size = f.metadata().unwrap().len();
+        let c = Cut {
+            d: Fd { fd: fd(f), size },
+            left: std::cell::Cell::new(n),
+        };
+        grow(&c, size, lbs)
+    }
+
+    /// Growths of at most the entry array's sectors: the new backup's entries cover the old backup header, which
+    /// isn't zeroed after them; a run cut after any of its writes is completed by the next.
+    #[test]
+    fn a_growth_within_the_entry_arrays_sectors() {
+        let d = dir("tiny");
+        for (lbs, base, grown) in [
+            (512, 16 * MIB, 16 * 1024),
+            (512, 16 * MIB, 512),
+            (512, 16 * MIB, 15 * 1024),
+            (4096, 64 * MIB, 16 * 1024),
+            (4096, 64 * MIB, 4096),
+        ] {
+            for cut in [None, Some(0), Some(1), Some(2), Some(3), Some(4)] {
+                let what = format!("{lbs}-byte sectors, +{grown} bytes, cut after {cut:?} writes");
+                let f = file(&d.join("disk"), base);
+                if lbs == 512 {
+                    debian(&f, base);
+                } else {
+                    gpt(&f, base, lbs, &[(0, LINUX, 256, base / lbs - 6)]);
+                }
+                let want = gpt_parts(&f, lbs).unwrap();
+                f.set_len(base + grown).unwrap();
+                if let Some(n) = cut {
+                    assert_eq!(run_cut(&f, lbs, n), Outcome::Failed(Errno::IO), "{what}");
+                }
+                assert!(
+                    matches!(run(&f, lbs), Outcome::Last { pno: 1, .. }),
+                    "{what}"
+                );
+                assert_eq!(gpt_parts(&f, lbs), Ok(want.clone()), "{what}");
+                assert!(
+                    matches!(run(&f, lbs), Outcome::Last { written: false, .. }),
+                    "{what}: again, nothing"
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A run cut after any write (the backup's entries and header, the primary's entries and header, the old
+    /// backup's header, the protective MBR) is completed by the next one, which leaves the table whole.
+    #[test]
+    fn a_run_cut_anywhere_is_completed_by_the_next() {
+        let d = dir("cut");
+        for n in 0..6 {
+            let f = file(&d.join("disk"), 32 * MIB);
+            debian(&f, 32 * MIB);
+            f.set_len(64 * MIB).unwrap();
+            assert_eq!(
+                run_cut(&f, 512, n),
+                Outcome::Failed(Errno::IO),
+                "cut after {n}"
+            );
+            let last = (64 * MIB / 512 - 34) / 2048 * 2048 - 1;
+            assert_eq!(
+                run(&f, 512),
+                Outcome::Last {
+                    pno: 1,
+                    start: 16384,
+                    len: last - 16384 + 1,
+                    written: true
+                },
+                "cut after {n}"
+            );
+            assert_eq!(
+                gpt_parts(&f, 512).unwrap(),
+                vec![(0, 16384, last), (13, 2048, 8191), (14, 8192, 16383)],
+                "cut after {n}"
+            );
+            let mut s = [0u8; 8];
+            f.read_exact_at(&mut s, 32 * MIB - 512).unwrap();
+            assert_eq!(s, [0; 8], "cut after {n}: the old backup header zeroed");
+            let mut m = [0u8; 4];
+            f.read_exact_at(&mut m, 446 + 12).unwrap();
+            assert_eq!(
+                u32::from_le_bytes(m) as u64,
+                64 * MIB / 512 - 1,
+                "cut after {n}: the protective MBR covers the disk"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn sectors_of_4_kib() {
         let d = dir("4k");
@@ -818,6 +1041,32 @@ mod tests {
                 std::fs::read(d.join("disk")).unwrap() == before,
                 "{what}: nothing written"
             );
+        }
+        // The same at the size they were made for (the backup at the disk's end, which repairs only a primary whose
+        // entries are its own), and grown by less than the entry array (whose new entries would cover the backup's
+        // header: only this run's own entries there are taken as a cut run's).
+        for (what, at, why) in [
+            ("primary header", 512 + 60, "a GPT header's CRC"),
+            ("entries", 1024 + 100, "the GPT's entries' CRC"),
+            ("backup header", 16 * MIB - 512 + 60, "a GPT header's CRC"),
+            (
+                "backup header's signature",
+                16 * MIB - 512,
+                "a GPT header without its signature",
+            ),
+        ] {
+            for grown in [0, 4096] {
+                let f = file(&d.join("disk"), 16 * MIB);
+                gpt(&f, 16 * MIB, 512, &[(0, LINUX, 2048, 30719)]);
+                f.write_all_at(&[0x77], at).unwrap();
+                f.set_len(16 * MIB + grown).unwrap();
+                let before = std::fs::read(d.join("disk")).unwrap();
+                assert_eq!(run(&f, 512), Outcome::Bad(why), "{what}, +{grown}");
+                assert!(
+                    std::fs::read(d.join("disk")).unwrap() == before,
+                    "{what}, +{grown}: nothing written"
+                );
+            }
         }
         // A backup header the primary names past the disk's end (a disk smaller than its table).
         let f = file(&d.join("disk"), 32 * MIB);
