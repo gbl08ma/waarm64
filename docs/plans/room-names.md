@@ -239,9 +239,13 @@ its region, the time, a nonce) and one byte more, `spread`. Servers subscribe to
 - **The choice.** The asker waits 0.3 s from the first answer, then keeps the two servers with the lowest
   `BLAKE2s(nonce, server's key)`: not the two fastest, which an attacker could always be. It holds them while it asks
   and for 3 minutes after, and one of the two is replaced at each new question round.
-- **Nobody answered** (all three rounds): remembered for 10 minutes, during which names that aren't keys get NXDOMAIN
-  at once and no question goes out. A room with no names costs a member one question every 10 minutes at most, and
-  only if its guest asks for such names.
+- **Nobody answered** within 1.5 s of the third round (2.5 s from the first): the queries that waited get NXDOMAIN
+  then, and the fact is remembered, for 30 s the first time and twice as long each time after, to 10 minutes; during
+  it, names that aren't keys get NXDOMAIN at once and no question goes out. The next query after it asks again, so a
+  member finds a server that appeared, or the room's first name, with no reconnection: within 30 s when its guest
+  rarely met the silence, within 10 minutes at worst. An answer resets the doubling. A room with no names costs a
+  member one question (three events) every 10 minutes at most, and only while its guest asks for such names. Names
+  the member already holds answer throughout: they don't need a server.
 - Questions have a rate of their own (1 a second), not the guest's lookups'.
 
 ### A member resolving a name
@@ -313,8 +317,8 @@ owners, so the user's call); fewer renewals a term. None is in v1; the first is 
   (and asks again in the background when what it holds is older than 5 minutes);
 - otherwise the query waits while the names client asks: answered when the answer comes; SERVFAIL after 4 s (a first
   query that must also find servers takes 1 to 3 s on public relays, *estimate*; a guest's resolver retries);
-- NXDOMAIN at once for a reserved or ill-formed name, a name both servers don't have, and any such name in the 10
-  minutes after nobody answered "who serves?".
+- NXDOMAIN at once for a reserved or ill-formed name, a name both servers don't have, and any name not held while
+  the member remembers that nobody answered "who serves?" ("Finding a server": 30 s to 10 minutes).
 
 Guest-visible, in that names that were NXDOMAIN now answer, and some answers take seconds.
 

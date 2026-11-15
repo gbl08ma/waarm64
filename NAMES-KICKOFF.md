@@ -134,7 +134,7 @@ each with its confirming test failing first.
    calendar and explorer (`tests/net/ots-calendar.ts`, no dependency, as `tests/net/nostr-relay.ts` is). *Done:* its
    own Node test; tests/page-room.test.ts grown by a name (titles made by the test's own tool until N4): by full name
    and by the short one through the search domain, a label under it, a zone change, a reserved name, a room with no
-   server, and what Debian asks the search domain unprompted. Then **the mid-track review and the full scripts**.
+   server and one whose first server appears while a member's guest keeps asking, and what Debian asks the search domain unprompted. Then **the mid-track review and the full scripts**.
 4. **The review's findings fixed**, then **the names agent**: owners' secrets, titles, the worker and its `ts_names_*`
    exports, stamping, collecting, renewing on load, publishing through a names client with no machine running.
    *Done:* Node and Chromium tests with the pretend calendar: a claim held back until anchored, a renewal with the
