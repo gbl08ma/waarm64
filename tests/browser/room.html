@@ -7,10 +7,15 @@
   // plays the guest on the gateway's side of its IP port. `?peer=` (a node key): known by hand, so lookups to it are
   // sealed to it; `?relayOnly`: no WebRTC; `?incoming=0`: no incoming connections. Every member echoes the UDP that
   // comes to its port 7 back to the sender; `echoes` sends to `to`'s port 7 and counts what comes back; `resolve`
-  // asks the room's resolver for a name's address.
+  // asks the room's resolver for a name's address. `?noUdp`: this browser gathers no candidate (as one with no UDP for
+  // WebRTC: every connection's policy is relay, with no TURN server) until `noUdp(false)`, a setting changed live;
+  // `?probeMs`: how often a blocked member probes again.
   import { startRoom } from '../../web/room.ts';
   import { packetsOf } from '../../web/net.ts';
   const q = new URLSearchParams(location.search);
+  let noUdp = q.has('noUdp');
+  const Real = RTCPeerConnection;
+  window.RTCPeerConnection = function (cfg) { return new Real(noUdp ? { ...cfg, iceTransportPolicy: 'relay' } : cfg); };
   const events = [];
   const t0 = performance.now();
   const room = startRoom({
@@ -19,6 +24,7 @@
       known: q.has('peer') ? [q.get('peer')] : [], relayOnly: q.has('relayOnly'), incoming: q.get('incoming') !== '0',
     },
     iceServers: [],
+    ...(q.has('probeMs') ? { probeMs: Number(q.get('probeMs')) } : {}),
   }, (e) => events.push({ ms: performance.now() - t0, ...e }));
   const waiting = new Map();
   const answers = [];
@@ -96,5 +102,6 @@
     events: () => events,
     echoes, first,
     dropDirect: () => room.dropDirect(),
+    noUdp: (on) => { noUdp = on; },
   };
 </script>

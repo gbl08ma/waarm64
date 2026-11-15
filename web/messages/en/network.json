@@ -543,6 +543,10 @@
     "message": "The room's link",
     "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (hidden by default, with Show and Copy icons in it) with the room's link (waarm64-room:…), which others need to join the room."
   },
+  "NetAdapter.room.warn": {
+    "message": "Why some members aren't reached directly",
+    "note": "The toolbar's Network menu, for a room connection: the tooltip and accessible name of the small warning icon after the count of active connections (network-view.room.connectionsDirect), shown when members go through the room's relay where a direct (WebRTC) connection was wanted. Clicking it opens the adapter's details, which say why (NetDetails.room.directBlocked, NetDetails.room.peersBlocked, NetDetails.room.directFailed)."
+  },
   "NetAdapter.connect": {
     "message": "Connect",
     "note": "The toolbar's Network menu: the button that connects an adapter's attached connection, while the machine runs and it isn't connected."
@@ -634,6 +638,26 @@
   "NetDetails.room.offline": {
     "message": "The machine's name in the room will show here once it's connected.",
     "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu), for a room connection that isn't connected: the text in place of the machine's name in the room."
+  },
+  "NetDetails.room.directBlocked": {
+    "message": "This browser doesn't allow direct connections, so all traffic to the room's members goes through the relay, which is slower. In ungoogled-chromium, set <code>{{flag}}</code> to Default in <code>{{page}}</code> and restart the browser; elsewhere, an extension that limits WebRTC may be the cause. Direct connections start again once the browser allows them.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown while the browser gathers no address for a direct (WebRTC) connection: it uses no UDP for WebRTC, so every member is reached through the room's DERP relays. ungoogled-chromium does this by default. {{flag}} (#webrtc-ip-handling-policy) and {{page}} (chrome://flags) are the flag's and the page's names, shown as code."
+  },
+  "NetDetails.room.peersBlocked_one": {
+    "message": "A member's browser doesn't allow direct connections, so traffic with them goes through the relay, which is slower. They can change that in their browser: in ungoogled-chromium, by setting <code>{{flag}}</code> to Default.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when members this machine exchanges traffic with ({{count}}) said their browser makes no direct (WebRTC) connections, so they're reached through the room's relay. Connections to them go direct again once they allow it. {{flag}} is ungoogled-chromium's flag (#webrtc-ip-handling-policy), shown as code."
+  },
+  "NetDetails.room.peersBlocked_other": {
+    "message": "{{count}} members' browsers don't allow direct connections, so traffic with them goes through the relay, which is slower. They can change that in their browsers: in ungoogled-chromium, by setting <code>{{flag}}</code> to Default.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when members this machine exchanges traffic with ({{count}}) said their browser makes no direct (WebRTC) connections, so they're reached through the room's relay. Connections to them go direct again once they allow it. {{flag}} is ungoogled-chromium's flag (#webrtc-ip-handling-policy), shown as code."
+  },
+  "NetDetails.room.directFailed_one": {
+    "message": "A direct connection to a member was tried and failed, so traffic with them goes through the relay, which is slower. Something between the two machines stops it: a firewall that blocks UDP, a router that doesn't connect two machines behind it to each other, or a network that keeps its machines apart (as guest Wi-Fi often does). Connecting one of the machines through another network, a phone's hotspot say, may help. It's tried again every few minutes.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when attempts at direct (WebRTC) connections to members ({{count}}) failed though this browser allows them, so those members are reached through the room's relay. The page tries again with a growing wait, up to 5 minutes."
+  },
+  "NetDetails.room.directFailed_other": {
+    "message": "Direct connections to {{count}} members were tried and failed, so traffic with them goes through the relay, which is slower. Something between the machines stops them: a firewall that blocks UDP, a router that doesn't connect two machines behind it to each other, or a network that keeps its machines apart (as guest Wi-Fi often does). Connecting through another network, a phone's hotspot say, may help. They're tried again every few minutes.",
+    "note": "An adapter's details (a dialog opened by “Details…” in the toolbar's Network menu, or by the warning after a room's count of active connections there), for a room connection: shown when attempts at direct (WebRTC) connections to members ({{count}}) failed though this browser allows them, so those members are reached through the room's relay. The page tries again with a growing wait, up to 5 minutes."
   },
   "NetDetails.edit": {
     "message": "Edit connection…",
@@ -778,10 +802,6 @@
   "network-view.room.connectionsDirect_other": {
     "message": "{{count}} active connections ({{direct}} direct)",
     "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip), when there is at least one: how many members of the room this machine exchanges traffic with now ({{count}}), and how many of those its packets reach directly, over WebRTC ({{direct}}), rather than through the room's relay. The room may have many more members: nobody can count them, by design. With none, network.room.connections is shown."
-  },
-  "network-view.room.directBlocked": {
-    "message": "This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.",
-    "note": "In the Network menu, under “Connected to the room” and its count of active connections (also the Machines page's Network tab and the status bar's network item's tooltip), shown when the browser gathered no address for a direct (WebRTC) connection to a member: it uses no UDP for WebRTC, so every member is reached through the room's DERP relays, slower. ungoogled-chromium does this by default; #webrtc-ip-handling-policy and chrome://flags are the flag's and the page's names, kept as they are."
   },
   "network-view.fetchingMap": {
     "message": "Looking up the relay…",

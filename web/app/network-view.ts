@@ -52,9 +52,17 @@ export type NetworkView = {
   internet6?: boolean;
   /** The local helper's: its lease always routes everything through it, so it is the primary first (`primaryOf`). */
   local?: boolean;
-  /** A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect. */
-  room?: { name: string; link: string; incoming: boolean };
+  /**
+   * A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect;
+   * and why members go through the relay where a direct path was wanted (the menu's warning, the details' words):
+   * `blocked`, this browser makes none; `peersBlocked`, how many members' browsers make none; `failed`, how many
+   * members' attempts failed though this browser gathers. Relay only, by choice, has none of these.
+   */
+  room?: { name: string; link: string; incoming: boolean; blocked?: boolean; peersBlocked?: number; failed?: number };
 };
+
+/** Whether a room's members go through the relay for a reason worth a warning (`NetworkView.room`). */
+export const roomWarned = (r: NetworkView['room']) => !!r && (!!r.blocked || !!r.peersBlocked || !!r.failed);
 
 /**
  * Which of a machine's adapters is the guest's default way out (docs/networking/adapters.md §4): the first connected
@@ -142,7 +150,19 @@ function roomView(c: ClientReport): NetworkView {
       address,
       exitNodes: [],
       internet: false,
-      room: { name: r.name, link: r.link, incoming: r.incoming },
+      room: {
+        name: r.name,
+        link: r.link,
+        incoming: r.incoming,
+        // Why members aren't reached directly (web/room.ts): the menu shows a warning, the details say why and what to do.
+        ...(r.relayOnly
+          ? {}
+          : {
+              blocked: !!r.directBlocked,
+              peersBlocked: r.peersBlocked ?? 0,
+              failed: r.directBlocked ? 0 : (r.directFailed ?? 0),
+            }),
+      },
       text: t('network:network-view.room'),
       details: [
         c.netmap.peers.length
@@ -151,8 +171,6 @@ function roomView(c: ClientReport): NetworkView {
               direct: c.netmap.peers.filter((p) => p.direct).length,
             })
           : t('network:network-view.room.connections', { count: 0 }),
-        // The browser uses no UDP for WebRTC (web/room.ts `RoomEvent`): say why it's all relayed, and the usual fix.
-        ...(r.directBlocked && !r.relayOnly ? [t('network:network-view.room.directBlocked')] : []),
       ],
     };
   }

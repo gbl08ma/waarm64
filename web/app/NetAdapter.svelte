@@ -3,8 +3,9 @@
   line, its state, and what can be done with it (Log in…, the exit node, the peers' subnet routes, the machine's
   tailcat address and key, its name in a room and the room's link to copy, Connect, Retry, Disconnect, Log out, Change
   connection…). What they're for and how to use them is in its details (Details…: NetDetails.svelte), so the menu stays
-  short. Adapter 1's elements keep the ids they always had; adapter n's end in `-<n-1>`. `heading`: the machine has more
-  than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…; both close the menu. Logic is
+  short: a room whose members go through the relay where a direct path was wanted has a small warning after its count
+  of connections, which opens the details, where the reason is. Adapter 1's elements keep the ids they always had;
+  adapter n's end in `-<n-1>`. `heading`: the machine has more than one adapter. `onwizard`: Change connection… (or Set up…), `ondetails`: Details…; both close the menu. Logic is
   web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
@@ -18,7 +19,7 @@
   import { t } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
   import { ask } from './ask.svelte.ts';
-  import { defaultsOf, phaseTone } from './network-view.ts';
+  import { defaultsOf, phaseTone, roomWarned } from './network-view.ts';
   import type { AdapterView } from './network-view.ts';
   import { page } from './page.ts';
 
@@ -95,7 +96,19 @@
     <Note id={`net-conn${s}`}>{connection}</Note>
   </div>
   <p id={`net-status${s}`} class="net-status">
-    {v.text}{#each v.details ?? [] as d, k (k)}<br /><span class="net-detail">{d}</span>{/each}
+    {v.text}{#each v.details ?? [] as d, k (k)}<br /><span class="net-detail">{d}</span
+      >{#if k === 0 && roomWarned(v.room)}<span class="net-warn"
+          ><Button
+            variant="inline"
+            icon="alert-triangle"
+            iconSize={14}
+            tone="warn"
+            id={`net-room-warn${s}`}
+            title={t('network:NetAdapter.room.warn')}
+            aria-label={t('network:NetAdapter.room.warn')}
+            onclick={ondetails}
+          /></span
+        >{/if}{/each}
   </p>
   <a id={`net-login${s}`} class="net-login" target="_blank" rel="noopener" href={v.loginURL} hidden={!v.loginURL}>
     {t('network:NetAdapter.login')}
@@ -236,6 +249,12 @@
   .net-status {
     margin: 0;
     font-weight: var(--weight-bold);
+  }
+  /* The room's warning, in the line after its count. */
+  .net-warn {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-inline-start: var(--space-1);
   }
   .net-detail {
     font-weight: var(--weight-normal);

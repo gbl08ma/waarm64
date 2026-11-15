@@ -1105,6 +1105,106 @@ fn relay_only_never_opens_a_channel() {
 }
 
 #[test]
+fn a_browser_without_direct_paths_stops_both_sides_offering_until_it_has_them_again() {
+    for side in [0, 1] {
+        let mut n = Net::new(configs(&[1, 2]));
+        let other = 1 - side;
+        let now = n.now;
+        n.nodes[side].c.rtc_blocked(true, now);
+        n.reach(0, 1, b"a");
+        let made = |n: &Net, i: usize| n.nodes[i].c.next_rtc;
+        let before = [made(&n, 0), made(&n, 1)];
+        for _ in 0..12 {
+            n.advance(Duration::from_secs(30));
+            n.send(0, 1, 9, b"b");
+            n.send(1, 0, 9, b"c");
+        }
+        assert_eq!(n.got(1).len(), 13, "side {side}: the relay carries");
+        assert_eq!(n.got(0).len(), 12);
+        assert_eq!(
+            made(&n, side),
+            before[side],
+            "side {side}: the blocked side made no connection"
+        );
+        assert!(
+            made(&n, other) <= before[other] + 1,
+            "side {side}: the other stopped offering once told ({} made)",
+            made(&n, other) - before[other]
+        );
+        assert_eq!(n.rtc_state(0), [Rtc::Off], "side {side}");
+        assert_eq!(n.rtc_state(1), [Rtc::Off]);
+        let told = n.nodes[other]
+            .events
+            .iter()
+            .any(|e| e["type"] == "no-direct" && e["why"] == "blocked");
+        assert!(told, "side {side}: the other side's page hears why");
+        // The browser can again (a setting changed, another network): offered again at once.
+        let now = n.now;
+        n.nodes[side].c.rtc_blocked(false, now);
+        n.run();
+        n.advance(Duration::from_secs(1));
+        assert_eq!(
+            n.paths(0),
+            ["direct"],
+            "side {side}: {:?}",
+            n.nodes[0].events
+        );
+        assert_eq!(n.paths(1), ["direct"]);
+        for i in [0, 1] {
+            n.nodes[i].c.check_rtcs();
+        }
+    }
+}
+
+#[test]
+fn a_browser_that_loses_direct_paths_closes_its_channels_and_gets_them_back() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.reach(0, 1, b"a");
+    assert_eq!(n.paths(0), ["direct"]);
+    let now = n.now;
+    n.nodes[1].c.rtc_blocked(true, now);
+    n.run();
+    n.advance(Duration::from_millis(100));
+    assert_eq!(n.paths(0), ["direct", "relay"]);
+    assert_eq!(n.paths(1), ["direct", "relay"]);
+    assert!(n.ends.is_empty(), "both ends closed");
+    n.send(0, 1, 9, b"b");
+    assert_eq!(n.got(1), [b"a".to_vec(), b"b".to_vec()]);
+    for _ in 0..10 {
+        n.advance(Duration::from_secs(60));
+        n.send(0, 1, 9, b"x");
+        n.send(1, 0, 9, b"y");
+    }
+    assert!(n.ends.is_empty(), "no offers while blocked");
+    assert_eq!(n.rtc_state(0), [Rtc::Off]);
+    // Unblocked: the peer, still in a session, is offered at once (no backoff behind it).
+    n.send(0, 1, 9, b"c");
+    let now = n.now;
+    n.nodes[1].c.rtc_blocked(false, now);
+    n.run();
+    n.advance(Duration::from_secs(1));
+    assert_eq!(n.paths(0), ["direct", "relay", "direct"]);
+    for i in [0, 1] {
+        n.nodes[i].c.check_rtcs();
+    }
+}
+
+#[test]
+fn a_failed_attempt_says_why_to_the_page() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.block_rtc = true;
+    n.reach(0, 1, b"a");
+    n.advance(Duration::from_secs(11));
+    // The offerer's attempt ran out (the answerer never saw it).
+    let i = if public(1) < public(2) { 0 } else { 1 };
+    let failed = n.nodes[i]
+        .events
+        .iter()
+        .any(|e| e["type"] == "no-direct" && e["why"] == "failed");
+    assert!(failed, "node {i}: {:?}", n.nodes[i].events);
+}
+
+#[test]
 fn a_channel_that_never_opens_leaves_the_relay_carrying_and_is_tried_again_later() {
     let mut n = Net::new(configs(&[1, 2]));
     n.faults.block_rtc = true;

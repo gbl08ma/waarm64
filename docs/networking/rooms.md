@@ -236,7 +236,8 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 ## The direct path
 
 - **Signalling inside the tunnel:** UDP between the two members' addresses, port 1 both ends (`SIGNAL_PORT`; the
-  guest's packets to or from it are dropped), JSON: `hello` (the home region, relay only), `sig` (the page's
+  guest's packets to or from it are dropped), JSON: `hello` (the home region, relay only, `b`: the browser makes no
+  direct paths now; sent again whenever that changes, and one older than the last taken is ignored), `sig` (the page's
   description or ICE candidate for attempt `o`, opaque to the module), `bye` (attempt `o` closed, or refused by an
   answerer with too many), `refuse` (relay only), `ping` (the probe above). Each message carries the sender's
   epoch with us (random per peer it makes, so a restart, or a peer forgotten and made again on one side, resets what
@@ -261,6 +262,8 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   answerer ignores a newer attempt sooner, so a member's signalling can't make the page set up connections as fast as
   it sends; an offerer, after a restart's epoch, waits), and our own offers, all peers', at most 4 a second. Relay only
   (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take;
+  `no-direct` why a peer has none (`failed`: an attempt failed, `blocked`: its browser makes none, `relay-only`; `none`
+  when one may be made again);
   `peer` says a session is confirmed, and `peer-gone` that such a peer was forgotten, after the `path` of its channel's
   close (the page's list of members reached follows them).
 - **A browser without direct paths:** a browser that uses no UDP for WebRTC gathers no candidate at all, not even a
@@ -270,9 +273,24 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   answers but trickles no candidate, the offer times out, and the backoff repeats (found 2026-11-11 between two of the
   user's machines; first taken for mDNS between two windows of one desktop, which worked only because the other side's
   candidates were enough there). web/room.ts watches each connection's gathering: completed without a candidate, it
-  emits `direct` `blocked` (the next that gathers one clears it), the network map's `room.directBlocked`, and the
-  status line says so with the flag to change ([This browser doesn't allow direct connections, so all traffic goes through the relay. In ungoogled-chromium, set #webrtc-ip-handling-policy to Default in chrome://flags.](ui:network:network-view.room.directBlocked)).
-  `tests/room-browser.test.ts` seeds the preference in a profile (upstream has no switch for it).
+  emits `direct` `blocked` (the network map's `room.directBlocked`) and tells the module (`ts_rtc_blocked`), which
+  closes what it has, makes and answers no connection, and sends each confirmed peer a new `hello` with `b`, so the
+  peers stop offering too (an older peer that doesn't know `b` keeps offering; its offers go unanswered). **Not for
+  good:** the policy can change live (an extension sets `webrtc.ip_handling_policy`), and a browser with no network
+  gathers nothing either, so while blocked the page probes: a connection of its own, with no peer and nothing sent,
+  gathers every 30 s (`PROBE_EVERY`), and at once on `online` and on the Network Information API's `change`. The
+  first that gathers a candidate unblocks: a `hello` without `b` goes to every peer, and both sides offer again at
+  once with no backoff behind them (`direct_changed`). A probe costs nothing on the wire while blocked (nothing is
+  gathered, so nothing is sent).
+- **Why the menu says nothing is direct:** the Network menu puts a small warning after a room's count of connections
+  when members go through the relay where a direct path was wanted (never for relay only, which chose it); it opens
+  the adapter's details ([Why some members aren't reached directly](ui:network:NetAdapter.room.warn)), which say why
+  and what may fix it (NetDetails.svelte): this browser blocks (the flag to change in ungoogled-chromium), members' browsers do (`no-direct` `blocked`, `room.peersBlocked`), or attempts failed though this browser gathers
+  (`no-direct` `failed`, `room.directFailed`: a firewall that drops UDP, a router that doesn't hairpin, a network that
+  isolates its clients, mDNS dropped between two machines of one LAN). Which of those it is between two browsers that
+  both gather can't be told apart from here.
+  `tests/room-browser.test.ts` seeds the preference in a profile (upstream has no switch for it), and turns gathering
+  off and on live in one (`iceTransportPolicy: 'relay'` with no TURN server: no candidate, as with no UDP).
 
 ## DERP
 

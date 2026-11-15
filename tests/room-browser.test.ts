@@ -146,6 +146,30 @@ test('a browser that uses no UDP for WebRTC says so, and the relay carries every
   }
 });
 
+test('a browser that stops making direct paths tells its peers, which stop offering, and both go direct once it can again', { skip, timeout: 120_000 }, async () => {
+  const room = `test ${Math.random()}`;
+  const b = await member(room);
+  const bs = (await of(b)).self!;
+  const a = await member(room, { peer: bs.key, noUdp: '1', probeMs: '1000' });
+  const aKey = (await of(a)).self!.key;
+  assert.ok(await a.evaluate(`window.harness.first(${JSON.stringify(bs.address6)})`) as number >= 0, 'an echo came back');
+  await a.waitForFunction('window.harness.events().some((e) => e.type === "direct" && e.blocked)', null, { timeout: 15_000, polling: 50 });
+  await b.waitForFunction(`window.harness.events().some((e) => e.type === "no-direct" && e.why === "blocked" && e.key === ${JSON.stringify(aKey)})`, null, { timeout: 5_000, polling: 50 });
+  // Probing every second changes nothing while it's blocked.
+  await a.waitForTimeout(3000);
+  assert.equal(await pathTo(a, bs.key), 'relay');
+  // The setting changes: the next probe gathers, both sides hear it, and the direct path opens at once.
+  await a.evaluate('window.harness.noUdp(false)');
+  await a.waitForFunction('window.harness.events().some((e) => e.type === "direct" && !e.blocked)', null, { timeout: 5_000, polling: 50 });
+  const since = Date.now();
+  await a.waitForFunction(`window.harness.room().peers.some((p) => p.key === ${JSON.stringify(bs.key)} && p.path === 'direct')`, null, { timeout: 15_000, polling: 50 });
+  console.log(`# direct ${Date.now() - since} ms after the probe found candidates`);
+  assert.equal(await pathTo(b, aKey), 'direct');
+  const small = await a.evaluate(`window.harness.echoes(${JSON.stringify(bs.address6)}, 50, 32, 4)`) as Echoes;
+  assert.equal(small.back, 50);
+  await close(a, b);
+});
+
 test('a member reached by its name, and one with incoming connections off not at all', { skip, timeout: 120_000 }, async () => {
   const room = `test ${Math.random()}`;
   const b = await member(room);

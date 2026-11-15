@@ -3,7 +3,8 @@
   (Details…, web/app/areas/network.ts `openDetails`), with what the menu leaves out to stay short. Its connection's
   settings and the values it gives out (the guest's address, a tailcat address or key, a room's name and link), each
   to copy, with what they let in and how to use them: tailcat's commands, the line that lets only this machine through
-  a tailcat server, the local helper's install lines. Edit connection… opens the Network wizard on the connection.
+  a tailcat server, the local helper's install lines; why a room's members go through the relay, when a direct path was
+  wanted (the menu's warning opens it), and what may fix it. Edit connection… opens the Network wizard on the connection.
   It follows the adapter live (`net.views()`); always mounted, as the wizard is.
 -->
 <script lang="ts">
@@ -167,6 +168,29 @@
         {c.room.incoming ? t('network:NetDetails.room.note') : t('network:NetDetails.room.note.off')}
       </Note>
       {#if !v.room}<Note size="md">{t('network:NetDetails.room.offline')}</Note>{/if}
+      {#if v.room?.blocked}
+        <Note size="md" tone="warn" id="net-details-room-blocked">
+          <T
+            k="network:NetDetails.room.directBlocked"
+            params={{ flag: '#webrtc-ip-handling-policy', page: 'chrome://flags' }}
+            {code}
+          />
+        </Note>
+      {/if}
+      {#if v.room?.peersBlocked}
+        <Note size="md" tone="warn" id="net-details-room-peers-blocked">
+          <T
+            k="network:NetDetails.room.peersBlocked"
+            params={{ count: v.room.peersBlocked, flag: '#webrtc-ip-handling-policy' }}
+            {code}
+          />
+        </Note>
+      {/if}
+      {#if v.room?.failed}
+        <Note size="md" tone="warn" id="net-details-room-failed"
+          >{t('network:NetDetails.room.directFailed', { count: v.room.failed })}</Note
+        >
+      {/if}
     {/if}
   {/if}
   {#snippet buttons()}

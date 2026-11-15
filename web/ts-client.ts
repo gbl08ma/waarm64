@@ -31,6 +31,7 @@ type Exports = {
   ts_rtc_open(h: number, rtc: number): void;
   ts_rtc_message(h: number, rtc: number, ptr: number, len: number): void;
   ts_rtc_closed(h: number, rtc: number): void;
+  ts_rtc_blocked(h: number, blocked: number): void;
 };
 
 /** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
@@ -98,6 +99,9 @@ export type TsEvent =
   /** A peer confirmed earlier is forgotten (idle, lost, or a trial that ran out). */
   | { type: 'peer-gone'; key: string; address6: number[]; name?: string }
   | { type: 'path'; key: string; address6: number[]; path: 'direct' | 'relay' }
+  /** A room: why a peer has no direct path (`failed`: an attempt failed; `blocked`: its browser makes none; `relay-only`:
+   * it chose so); `none`: one may be made again. Its `path` `direct` clears it too. */
+  | { type: 'no-direct'; key: string; address6: number[]; why: 'failed' | 'blocked' | 'relay-only' | 'none' }
   | { type: 'log'; msg: string }
   /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */
   | ({ type: 'state'; state: 'Starting' | 'NeedsLogin' | 'Running' } & TsFailure)
@@ -299,6 +303,13 @@ export class TsClient {
     if (this.closed || (dc && this.channels.get(rtc) !== dc)) return;
     this.channels.delete(rtc);
     this.m.x.ts_rtc_closed(this.h, rtc);
+    this.pump();
+  }
+
+  /** A room: whether this browser makes no direct paths now (web/room.ts), or does again. */
+  rtcBlocked(blocked: boolean) {
+    if (this.closed) return;
+    this.m.x.ts_rtc_blocked(this.h, blocked ? 1 : 0);
     this.pump();
   }
 

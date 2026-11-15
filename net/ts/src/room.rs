@@ -376,7 +376,8 @@ enum Rtc {
         attempt: u32,
         unanswered: Option<Instant>,
     },
-    /// Never: one side is relay only.
+    /// Never: one side is relay only; or, until it says otherwise, one side's browser makes no
+    /// direct paths.
     Off,
 }
 
@@ -414,6 +415,12 @@ struct Peer {
     via: usize,
     /// Its home region, from its hello.
     region: Option<usize>,
+    /// It's relay only (its hello, or a `refuse`).
+    relay_only: bool,
+    /// Its browser makes no direct paths, as its last hello said.
+    blocked: bool,
+    /// The sequence number of its last hello taken (an older one resent late is ignored).
+    hello_seq: u32,
     /// A lookup came from its key: its session is probed until then, and called back in that
     /// region if nothing decrypts.
     probe: Option<(Instant, usize)>,
@@ -454,11 +461,14 @@ struct Msg {
     o: u32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     d: String,
-    /// hello: the home region (an index into the link's), and whether the sender is relay only.
+    /// hello: the home region (an index into the link's), whether the sender is relay only, and
+    /// whether its browser makes no direct paths now (`b`; a later hello says when it does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     g: Option<i64>,
     #[serde(default, skip_serializing_if = "is_false")]
     r: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    b: bool,
 }
 
 fn is_zero(x: &u32) -> bool {
@@ -603,6 +613,8 @@ pub struct Client {
     opened: BTreeSet<[u8; 16]>,
     opened_order: VecDeque<([u8; 16], Instant)>,
     rtc_new: VecDeque<Instant>,
+    /// The page's word that this browser makes no direct paths now ([`Client::rtc_blocked`]).
+    blocked: bool,
     published: VecDeque<Instant>,
     /// The DERP map is awaited.
     map_pending: bool,
@@ -699,6 +711,7 @@ impl Client {
             opened: BTreeSet::new(),
             opened_order: VecDeque::new(),
             rtc_new: VecDeque::new(),
+            blocked: false,
             published: VecDeque::new(),
             map_pending: false,
             flows: BTreeMap::new(),
@@ -1508,6 +1521,9 @@ impl Client {
                 hello_sent: false,
                 via,
                 region: None,
+                relay_only: false,
+                blocked: false,
+                hello_seq: 0,
                 probe: None,
                 epoch: random_u32(),
                 init: None,
@@ -1516,7 +1532,7 @@ impl Client {
                 next_seq: 1,
                 outbox: VecDeque::new(),
                 // The offerer offers at the guests' first packet (`touch`).
-                rtc: match self.cfg.relay_only {
+                rtc: match self.cfg.relay_only || self.blocked {
                     true => Rtc::Off,
                     false => Rtc::Idle { next: None },
                 },
@@ -1547,6 +1563,18 @@ impl Client {
         let v = json!({
             "type": kind, "key": format!("nodekey:{}", hex(&p.key)), "address6": p.addr,
             "name": self.room.name(&p.key),
+        });
+        self.event(v);
+    }
+
+    /// Why peer `id` has no direct path, for the page to say (`failed`: an attempt failed, with
+    /// gathering in this browser working; `blocked`: its browser makes none; `relay-only`: it
+    /// chose so; `none`: a path may be made again). A `path` `direct` clears it too.
+    fn no_direct_event(&mut self, id: PeerId, why: &str) {
+        let Some(p) = self.peers.get(&id) else { return };
+        let v = json!({
+            "type": "no-direct", "key": format!("nodekey:{}", hex(&p.key)), "address6": p.addr,
+            "why": why,
         });
         self.event(v);
     }
@@ -1674,7 +1702,11 @@ impl Client {
     }
 
     fn hello(&mut self, id: PeerId, now: Instant) {
-        let (region, relay_only) = (self.wire_region(self.home) as i64, self.cfg.relay_only);
+        let (region, relay_only, blocked) = (
+            self.wire_region(self.home) as i64,
+            self.cfg.relay_only,
+            self.blocked,
+        );
         let Some(p) = self.peers.get_mut(&id) else {
             return;
         };
@@ -1688,6 +1720,7 @@ impl Client {
                 t: "hello".into(),
                 g: Some(region),
                 r: relay_only,
+                b: blocked,
                 ..Msg::default()
             },
             now,
@@ -1833,10 +1866,13 @@ impl Client {
                 self.close_rtc(id, None);
                 // A new instance has no failed attempts behind it (and may no longer be relay only):
                 // offer again at once, if the guests spoke.
-                let (public, relay_only) = (self.public, self.cfg.relay_only);
+                let (public, off) = (self.public, self.cfg.relay_only || self.blocked);
                 let p = self.peers.get_mut(&id).unwrap();
                 p.backoff = RTC_BACKOFF;
-                p.rtc = match relay_only {
+                p.relay_only = false;
+                p.blocked = false;
+                p.hello_seq = 0;
+                p.rtc = match off {
                     true => Rtc::Off,
                     false => Rtc::Idle {
                         next: (public < p.key && p.spoke).then_some(now),
@@ -1872,15 +1908,18 @@ impl Client {
                     m.g.and_then(|g| u16::try_from(g).ok())
                         .and_then(|g| self.local_region(g));
                 let p = self.peers.get_mut(&id).unwrap();
-                p.region = region;
-                if m.r {
-                    self.close_rtc(id, None);
-                    self.peers.get_mut(&id).unwrap().rtc = Rtc::Off;
+                if m.s < p.hello_seq {
+                    return; // an older hello, resent after a newer one came
                 }
+                p.hello_seq = m.s;
+                p.region = region;
+                p.relay_only |= m.r;
+                p.blocked = m.b;
+                self.direct_changed(id, now);
             }
             "refuse" => {
-                self.close_rtc(id, None);
-                self.peers.get_mut(&id).unwrap().rtc = Rtc::Off;
+                self.peers.get_mut(&id).unwrap().relay_only = true;
+                self.direct_changed(id, now);
             }
             "bye" => {
                 if self.rtc_attempt(id) == Some(m.o) {
@@ -1901,6 +1940,69 @@ impl Client {
             }
             "sig" => self.on_sig(id, m.o, m.d, now),
             _ => {}
+        }
+    }
+
+    /// Whether a direct path to peer `id` may be made: neither side is relay only, and neither's
+    /// browser said it makes none.
+    fn direct_allowed(&self, id: PeerId) -> bool {
+        self.peers
+            .get(&id)
+            .is_some_and(|p| !(self.cfg.relay_only || self.blocked || p.relay_only || p.blocked))
+    }
+
+    /// What may reach peer `id` directly changed: a path no longer allowed closes (telling the
+    /// peer, which may not know yet), and one allowed again is offered at once if the guests
+    /// spoke, with no failures behind it.
+    fn direct_changed(&mut self, id: PeerId, now: Instant) {
+        let public = self.public;
+        if !self.direct_allowed(id) {
+            let had = self.rtc_attempt(id).is_some();
+            self.close_rtc(id, had.then_some(now));
+            let Some(p) = self.peers.get_mut(&id) else {
+                return;
+            };
+            p.rtc = Rtc::Off;
+            let why = match (p.blocked, p.relay_only) {
+                (true, _) => Some("blocked"),
+                (_, true) => Some("relay-only"),
+                _ => None, // ours: the page knows
+            };
+            if let Some(why) = why {
+                self.no_direct_event(id, why);
+            }
+            return;
+        }
+        let Some(p) = self.peers.get_mut(&id) else {
+            return;
+        };
+        if p.rtc == Rtc::Off {
+            p.backoff = RTC_BACKOFF;
+            p.rtc = Rtc::Idle {
+                next: (public < p.key && p.spoke).then_some(now),
+            };
+            self.no_direct_event(id, "none");
+        }
+    }
+
+    /// The page's word on whether this browser makes direct paths (web/room.ts watches each
+    /// connection's ICE gathering, and while none is made, a probe's): blocked, no offers are made
+    /// or answered, and every confirmed peer is told in a new hello so it stops offering; again
+    /// able, each is told so and paths are offered again at once (a setting changed, or the
+    /// browser moved to a network it can use).
+    pub fn rtc_blocked(&mut self, blocked: bool, now: Instant) {
+        if self.blocked == blocked || self.cfg.relay_only {
+            return;
+        }
+        self.blocked = blocked;
+        let ids: Vec<PeerId> = self.peers.keys().copied().collect();
+        for id in ids {
+            self.direct_changed(id, now);
+            let p = self.peers.get_mut(&id).unwrap();
+            if p.confirmed {
+                p.hello_sent = false;
+                self.hello(id, now);
+            }
         }
     }
 
@@ -2012,7 +2114,7 @@ impl Client {
         let Some(p) = self.peers.get_mut(&id) else {
             return;
         };
-        if p.rtc == Rtc::Off || self.cfg.relay_only {
+        if p.rtc == Rtc::Off || self.cfg.relay_only || self.blocked || p.relay_only || p.blocked {
             p.rtc = Rtc::Off;
             return;
         }
@@ -2021,6 +2123,9 @@ impl Client {
             p.backoff = (p.backoff * 2).min(RTC_BACKOFF_MAX);
         }
         p.rtc = Rtc::Idle { next };
+        if grow {
+            self.no_direct_event(id, "failed");
+        }
     }
 
     /// When a new WebRTC connection for peer `id` may be made, if not now ([`RTC_GAP`],

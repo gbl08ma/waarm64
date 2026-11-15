@@ -473,3 +473,9 @@ pub unsafe extern "C" fn ts_rtc_message(h: u32, rtc: u32, ptr: *mut u8, len: usi
 pub extern "C" fn ts_rtc_closed(h: u32, rtc: u32) {
     with_room(h, |r, now| r.rtc_closed(rtc, now));
 }
+
+/// Whether this browser makes no direct paths now (1) or does again (0): `room::Client::rtc_blocked`.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rtc_blocked(h: u32, blocked: u32) {
+    with_room(h, |r, now| r.rtc_blocked(blocked != 0, now));
+}

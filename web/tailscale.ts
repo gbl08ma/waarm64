@@ -33,8 +33,10 @@ export type NetMap = {
   /** tailcat: the machine's node key (`nodekey:…`), the same at each connect for a kept connection, so a server can `--allow` it. */
   tailcatKey?: string;
   /** A room: the member's name to give out (`<key>.<tag>.p2p.internal`), the room's link, and its switches;
-   * `directBlocked`: this browser makes no direct paths (web/room.ts `RoomEvent`), so every member goes through the relay. */
-  room?: { name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean };
+   * `directBlocked`: this browser makes no direct paths (web/room.ts `RoomEvent`), so every member goes through the relay;
+   * `directFailed`: how many members reached through the relay have a failed attempt behind them (gathering worked here:
+   * something between the two is in the way); `peersBlocked`: how many said their browser makes none. */
+  room?: { name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean; directFailed?: number; peersBlocked?: number };
 };
 
 export type TailscaleConfig = {

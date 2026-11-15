@@ -73,9 +73,6 @@
   .button:hover {
     background: var(--hover-bg);
   }
-  .tone-warn {
-    color: var(--warn-fg);
-  }
   .button:disabled {
     opacity: 0.45;
     cursor: default;
@@ -157,6 +154,11 @@
   }
   .center {
     justify-content: center;
+  }
+  /* After the variants, so it wins over theirs (an `inline` icon's dim). */
+  .tone-warn,
+  .tone-warn:hover {
+    color: var(--warn-fg);
   }
   /* An icon alone in a frame: a square of a control's height. */
   .square:is(.plain, .bordered, .primary, .danger) {

@@ -20,6 +20,8 @@ export type StartRoom = RoomConfig & {
   identity?: RoomIdentity;
   /** The ICE servers (default STUN_SERVERS). */
   iceServers?: RTCIceServer[];
+  /** While blocked, how often a probe's gathering is watched (default PROBE_EVERY; the tests' is shorter). */
+  probeMs?: number;
   /** Where target/net/ts.wasm is served from (default: this checkout's target/net). */
   wasm?: string;
   /** The gateway's end of the IP port (transferred); default: a new channel, whose device end is `ip`. */
@@ -33,7 +35,8 @@ export type ToRoom =
   | { type: 'detach' }
   | { type: 'rtc-channel'; rtc: number; channel: RTCDataChannel }
   | { type: 'rtc-signal'; rtc: number; json: string }
-  | { type: 'rtc-closed'; rtc: number };
+  | { type: 'rtc-closed'; rtc: number }
+  | { type: 'rtc-blocked'; blocked: boolean };
 
 export type FromRoom =
   | { type: 'loaded'; ms: number }
@@ -66,6 +69,15 @@ export type Room = {
   close(): void;
 };
 
+/**
+ * While this browser makes no direct paths, how often a probe connection (no peer, never sent anything) gathers again to
+ * see if it does now: a setting changed (an extension's `webrtc.ip_handling_policy`), or the browser came back online
+ * or moved to another network. Also at once on `online` and on the Network Information API's `change`.
+ */
+export const PROBE_EVERY = 30_000;
+/** A probe that gathers nothing in this long counts as blocked still. */
+const PROBE_TIMEOUT = 10_000;
+
 /** A connection the worker asked for. */
 type Conn = { pc: RTCPeerConnection; pending: RTCIceCandidateInit[] | null };
 
@@ -73,7 +85,9 @@ type Conn = { pc: RTCPeerConnection; pending: RTCIceCandidateInit[] | null };
  * A room's events: the client's, and the page's own `direct`: whether this browser can make direct paths at all. A
  * connection whose ICE gathering completes without one candidate can't (`blocked`): the browser uses no UDP for WebRTC,
  * as with Chromium's `webrtc.ip_handling_policy` `disable_non_proxied_udp` (ungoogled-chromium's default, its
- * `#webrtc-ip-handling-policy` flag), so every peer goes through the relay. The next connection that gathers one says so.
+ * `#webrtc-ip-handling-policy` flag), so every peer goes through the relay. The module is told (it stops offering and
+ * answering, and tells its peers, so they stop too: `ts_rtc_blocked`), and while blocked a probe gathers every
+ * PROBE_EVERY; the first that gathers a candidate unblocks, and the module offers again at once.
  */
 export type RoomEvent = TsEvent | { type: 'direct'; blocked: boolean };
 
@@ -89,11 +103,50 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
   let lease: Lease | null = null;
   let detached: ((ip?: MessagePort) => void) | undefined;
   let blocked = false;
+  let closed = false;
+  let probeTimer: ReturnType<typeof setTimeout> | undefined;
+  let probing = false;
+  const iceServers = config.iceServers ?? STUN_SERVERS;
   const gathered = (n: number) => {
-    if (blocked === (n === 0)) return;
+    if (closed || blocked === (n === 0)) return;
     blocked = n === 0;
+    post({ type: 'rtc-blocked', blocked });
     onEvent({ type: 'direct', blocked });
+    clearTimeout(probeTimer);
+    if (blocked) probeTimer = setTimeout(probe, config.probeMs ?? PROBE_EVERY);
   };
+  /** Gathers on a connection of its own (no peer, nothing sent): a candidate means direct paths work again. */
+  async function probe() {
+    if (closed || !blocked || probing) return;
+    probing = true;
+    clearTimeout(probeTimer);
+    let n = 0;
+    const pc = new RTCPeerConnection({ iceServers });
+    try {
+      pc.createDataChannel('probe');
+      const done = new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, PROBE_TIMEOUT);
+        pc.onicecandidate = (e) => {
+          if (e.candidate?.candidate) n++;
+          if (n || !e.candidate) { clearTimeout(t); resolve(); } // one is enough; null: gathering completed
+        };
+      });
+      await pc.setLocalDescription();
+      await done;
+    } catch (err) {
+      console.log('room: the probe failed:', err);
+    } finally {
+      pc.close();
+      probing = false;
+    }
+    if (closed || !blocked) return;
+    if (n) gathered(n);
+    else probeTimer = setTimeout(probe, config.probeMs ?? PROBE_EVERY);
+  }
+  const reprobe = () => void probe();
+  const netInfo = (navigator as Navigator & { connection?: EventTarget }).connection;
+  globalThis.addEventListener?.('online', reprobe);
+  netInfo?.addEventListener('change', reprobe);
   const t0 = performance.now();
   const timings: { loadMs?: number; runningMs?: number } = {};
   const post = (m: ToRoom, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
@@ -106,7 +159,7 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
   };
 
   async function open(rtc: number, offer: boolean) {
-    const pc = new RTCPeerConnection({ iceServers: config.iceServers ?? STUN_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers });
     const c: Conn = { pc, pending: [] };
     conns.set(rtc, c);
     const channel = pc.createDataChannel('wg', { negotiated: true, id: 0, ordered: false, maxRetransmits: 0 });
@@ -204,6 +257,10 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
     }),
     dropDirect: () => { for (const rtc of [...conns.keys()]) fail(rtc); },
     close: () => {
+      closed = true;
+      clearTimeout(probeTimer);
+      globalThis.removeEventListener?.('online', reprobe);
+      netInfo?.removeEventListener('change', reprobe);
       for (const { pc } of conns.values()) pc.close();
       conns.clear();
       worker.terminate();
@@ -412,6 +469,9 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   const peers = new Map<string, { name: string; address6: number[] }>();
   /** The peers whose packets take a direct path (a `path` event may come before the peer's `peer`). */
   const direct = new Set<string>();
+  /** Why a peer has no direct path, as the module last said (`no-direct`); a direct path clears it. */
+  const why = new Map<string, 'failed' | 'blocked' | 'relay-only'>();
+  const relayedFor = (w: string) => [...why].filter(([k, v]) => v === w && peers.has(k) && !direct.has(k)).length;
   let resolveRunning: (n: NetMap) => void = () => {};
   const map = (): NetMap | undefined => {
     if (!lease || !me) return undefined;
@@ -420,7 +480,10 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       addresses: lease.address6 ? [`${v6text(lease.address6)}/128`] : [],
       dns: (lease.dns6 ?? []).map(v6text),
       peers: [...peers.entries()].map(([key, p]) => ({ id: key, name: p.name, addresses: [`${v6text(p.address6)}/128`], exitNodeOption: false, direct: direct.has(key) })),
-      room: { name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked },
+      room: {
+        name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked,
+        directFailed: relayedFor('failed'), peersBlocked: relayedFor('blocked'),
+      },
     };
   };
   const changed = () => {
@@ -444,11 +507,17 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       else if (ev.type === 'lease') lease = ev.lease;
       else if (ev.type === 'peer') peers.set(ev.key, { name: ev.name ?? '', address6: ev.address6 });
       else if (ev.type === 'path') {
-        if (ev.path === 'direct') direct.add(ev.key);
-        else direct.delete(ev.key);
+        if (ev.path === 'direct') {
+          direct.add(ev.key);
+          why.delete(ev.key);
+        } else direct.delete(ev.key);
+      } else if (ev.type === 'no-direct') {
+        if (ev.why === 'none') why.delete(ev.key);
+        else why.set(ev.key, ev.why);
       } else if (ev.type === 'peer-gone') {
         peers.delete(ev.key);
         direct.delete(ev.key);
+        why.delete(ev.key);
       } else if (ev.type === 'direct') directBlocked = ev.blocked;
       else return;
       changed();

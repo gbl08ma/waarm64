@@ -43,6 +43,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     case 'rtc-channel': return client?.rtcChannel(m.rtc, m.channel);
     case 'rtc-signal': return client?.rtcSignal(m.rtc, m.json);
     case 'rtc-closed': return client?.rtcClosed(m.rtc);
+    case 'rtc-blocked': return client?.rtcBlocked(m.blocked);
     case 'detach':
       lease = null;
       ip?.postMessage({ type: 'lease', lease: null });
