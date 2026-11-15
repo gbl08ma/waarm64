@@ -60,6 +60,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | More jobs for the guest agent (BETTERAGENT) | Done 2026-11-14 | [devices.md](docs/devices.md) "The guest's agent" |
 | Growing a disk (RESIZE) | Done 2026-11-15 | [machines.md](docs/machines.md) §4.5, [devices.md](docs/devices.md) "A disk grown" |
 | Faster snapshots (SNAPZ) | In progress since 2026-11-15 | [SNAPZ-KICKOFF.md](SNAPZ-KICKOFF.md), [SNAPZ-HANDOVER.md](SNAPZ-HANDOVER.md) |
+| Registered names in rooms (NAMES) | Opened 2026-11-15, no loop run yet | [NAMES-KICKOFF.md](NAMES-KICKOFF.md), [plans/room-names.md](docs/plans/room-names.md) |
 
 ## Proposed, not started
 

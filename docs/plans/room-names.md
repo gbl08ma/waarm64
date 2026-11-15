@@ -299,10 +299,10 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 4. **Anchor sizes**, raw and with shared tails, over a few hundred real stamps: replaces the size estimates.
 5. **Sync through public DERP**: 1, 5 and 20 MB between two members on tailcat's relays.
 
-## The track (proposed: `NAMES`)
+## The track (`NAMES`)
 
-Loops, one slice and one commit each; `scripts/ci.sh` every loop, `scripts/ci-net.sh` from N3, `scripts/ci-debian.sh`
-and `scripts/ci-machines.sh` from N5.
+Opened 2026-11-15: [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md) is its brief (how it runs, which tests each loop runs,
+each loop's done). The loops, as designed here:
 
 - **N0** The measurements above, with their JSON under `bench/net/results/` and a section in bench/net/REPORT.md.
 - **N1** Records and rules, pure Rust in `net/ts/src/room/names/` (`entry.rs`, `anchor.rs`, `bitcoin.rs`, `chain.rs`,
