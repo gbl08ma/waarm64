@@ -357,7 +357,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
-- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test::follows_the_session_and_passes_the_child_its_frames` fail, which stops `scripts/ci.sh` there. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
+- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) six fail (2026-11-15), which stops `scripts/ci.sh` there: `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test`'s `follows_the_session_and_passes_the_child_its_frames`, `a_child_for_the_screens_size_hears_the_hello_and_the_size_first`, `applies_the_pages_layout_where_the_session_hasnt_it`, `no_session_child_without_the_clipboard` and `says_the_childs_desktop_to_a_page_that_asks`. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
 - **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
@@ -1405,24 +1405,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
 - **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
-  - A remote qcow2's blocks kept in this browser aren't shown: its rims are its clusters (counted), and kept would need
-    a third rim treatment (or a mark) in `ui/BlockGrid`, and each cluster's host offset mapped to the cache's 1 MiB
-    blocks. A remote raw image shows them (shades over the hatch).
   - A URL disk offline isn't examined: its kept blocks are named by its identity (a chunked image's manifest id, or
     the server's validator), which needs a request to the server; its store is locked by a machine reading it, and
     opening the cache's bucket pushes on its expiry. The page could keep the identity in the disk's record.
-  - A remote qcow2 stays not examined until the guest has read every L2 table (a 3 GiB Debian's 6 are read by its
-    boot); a counted layer with "not examined" cells where a table is missing would show what's known sooner.
   - Storing a record with an OPFS file's handle (granted without a prompt) in IndexedDB closes Chromium's headless page
     under Playwright (seen 2026-11-15, not traced), so the page test of a file disk examined offline is Node's
     (`tests/surface-image.test.ts`). Worth checking a real file handle's record isn't affected.
   - A transient machine's disk (a test's `?machine=`, `?disk=`) has no "visualize": its disk has no record; its
     pane would need one made from the run's disks.
   - A ramdisk viewed while its machine runs in another tab says it has nothing (only this tab's run answers live).
-  - Changing the overlay keeps the last picture until the new one comes (~one job: a flicker avoided, a moment of the
-    other view shown); a source's answers aren't told apart in the window's state.
-  - Live, an ask a newer one replaced (a resize, a Refresh) drops its answer, and with it the activity it carried
-    (flashes missed for one poll).
+  - The carrying of a dropped live answer's activity into the next picture (`SurfacePoll`, `carryActivity`) is tested
+    only as the pure function: `SurfacePoll` is a `.svelte.ts` (runes), which Node's tests don't compile.
+  - A remote qcow2's kept count passes over every cluster with data at each answer (2.5–4.9 ms at 20 GiB of 64 KiB
+    clusters, all allocated; Node, a cloud container): past ~100 GiB it would want counts kept per cell, recounted only
+    where the cache's blocks changed (the cache would have to say which).
   - Every offline ask reads the whole map again (~105 MB for an overlay with 100 GiB written; a legacy flat map is 4
     bytes per block), a Refresh and each settled records change too; a long-lived job worker could keep the per-range
     counts and answer another cell size, or a refresh at the same generation, without reading it again.

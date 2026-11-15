@@ -6,7 +6,7 @@
   import BlockGrid from '../../web/app/ui/BlockGrid.svelte';
   import BlockSwatch from '../../web/app/ui/BlockSwatch.svelte';
   import FloatingWindow from '../../web/app/ui/FloatingWindow.svelte';
-  import { CORE, FLASH, RIM } from '../../web/app/ui/block-grid.ts';
+  import { CORE, FLASH, RIM, TICK } from '../../web/app/ui/block-grid.ts';
   import { fakeSurface, flashOf } from './grid-demo.ts';
 
   const query = new URLSearchParams(location.search);
@@ -25,11 +25,12 @@
     picks: [],
     rim: new Uint8Array(),
     core: new Uint8Array(),
+    tick: new Uint8Array(),
     mark: 0,
     flash: (read, write) => (flash = flashOf(cells, read, write)),
   };
   $effect(() => {
-    Object.assign(window.__grid, { rim: surface.rim, core: surface.core, mark: surface.mark });
+    Object.assign(window.__grid, { rim: surface.rim, core: surface.core, tick: surface.tick, mark: surface.mark });
     if (query.get('flash') !== '0') {
       const at = (f: number) => Math.floor(cells * f);
       flash = flashOf(cells, [at(0.05), at(0.15), at(0.4)], [at(0.12), at(0.4), at(0.86)]);
@@ -51,6 +52,7 @@
         {cells}
         rim={surface.rim}
         core={surface.core}
+        tick={surface.tick}
         {flash}
         mark={surface.mark}
         {pinned}
@@ -79,6 +81,8 @@
       <BlockSwatch rim={RIM.step(2)} core={CORE.hollow}>zeroed</BlockSwatch>
       <BlockSwatch rim={RIM.step(2)} flash={FLASH.read}>read</BlockSwatch>
       <BlockSwatch rim={RIM.step(2)} flash={FLASH.write}>written</BlockSwatch>
+      <BlockSwatch rim={RIM.opaque} tick={TICK.part}>partly kept</BlockSwatch>
+      <BlockSwatch rim={RIM.step(2)} tick={TICK.all}>kept</BlockSwatch>
     </div>
     <div class="line" data-field="hover">{hover ?? '–'} · {cells} cells · pinned {pinned ?? '–'}</div>
   </FloatingWindow>

@@ -1,6 +1,7 @@
 // BlockGridDemo.svelte's made-up surface: a disk four fifths of the grid, held in patches of every step, a stretch not
-// examined; an overlay on it with changed and zeroed stretches, and past the disk's end (an overlay larger than it).
-import { CORE, FLASH, RIM } from '../../web/app/ui/block-grid.ts';
+// examined; an overlay on it with changed and zeroed stretches, and past the disk's end (an overlay larger than it);
+// ticks (part and all) scattered over the disk's cells, whatever their rim and core.
+import { CORE, FLASH, RIM, TICK } from '../../web/app/ui/block-grid.ts';
 
 /** What the test reads back: the grid's reports. */
 export type GridHooks = {
@@ -10,6 +11,7 @@ export type GridHooks = {
   /** The made-up looks shown now. */
   rim: Uint8Array;
   core: Uint8Array;
+  tick: Uint8Array;
   mark: number;
   /** Sends a flash array: these cells read, these written. */
   flash: (read: number[], write: number[]) => void;
@@ -25,6 +27,7 @@ const hash = (i: number) => (Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) >>> 0) / 2 **
 export function fakeSurface(n: number) {
   const rim = new Uint8Array(n);
   const core = new Uint8Array(n);
+  const tick = new Uint8Array(n);
   const mark = Math.max(0, Math.floor(n * 0.8) - 1);
   const at = (f: number) => Math.floor(n * f);
   for (let i = 0; i < n; i++) {
@@ -38,8 +41,10 @@ export function fakeSurface(n: number) {
     else if (i >= at(0.3) && i < at(0.34)) core[i] = CORE.hollow;
     else if (i >= at(0.62) && i < at(0.64)) core[i] = CORE.step(4);
     else if (i >= at(0.84) && i < at(0.9)) core[i] = CORE.step(2);
+    const k = hash(i * 5 + 11);
+    if (i <= mark) tick[i] = k < 0.16 ? TICK.part : k < 0.32 ? TICK.all : TICK.none;
   }
-  return { rim, core, mark };
+  return { rim, core, tick, mark };
 }
 
 /** A flash array of `n` cells: `read` read, `write` written. */

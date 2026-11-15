@@ -57,13 +57,15 @@ declare global {
     __audio?: PageAudio;
     /**
      * The disk surface window's view (web/app/SurfaceWindow.svelte; tests/page-surface.test.ts): its disk and overlay,
-     * where its numbers come from, the last surface and its looks, the square pinned, the answers taken so far.
+     * where its numbers come from, the last surface and its looks (`stale`: the source before's, until the new one
+     * answers), the square pinned, the answers taken so far.
      */
     __surface?: {
       disk: string;
       overlay?: string;
       source: 'live' | 'offline' | 'unavailable';
       live: boolean;
+      stale: boolean;
       surface?: Surface;
       look?: SurfaceLook;
       pinned?: number;

@@ -1,15 +1,15 @@
 <!--
   A block map's legend entry: one cell drawn as BlockGrid.svelte draws it (block-draw.ts, the same code and tokens, so
-  the legend and the grid never disagree), the words beside it (`children`). `rim`, `core`, `flash`: the cell's looks
-  (block-grid.ts `RIM`, `CORE`, `FLASH`); `size`: the cell's size, CSS pixels.
+  the legend and the grid never disagree), the words beside it (`children`). `rim`, `core`, `flash`, `tick`: the cell's
+  looks (block-grid.ts `RIM`, `CORE`, `FLASH`, `TICK`); `size`: the cell's size, CSS pixels.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { drawCell, drawFlash, readPalette } from './block-draw.ts';
   import { CELL_SIZES } from './block-grid.ts';
 
-  type Props = { rim?: number; core?: number; flash?: number; size?: number; children: Snippet };
-  let { rim = 0, core = 0, flash = 0, size = CELL_SIZES.max, children }: Props = $props();
+  type Props = { rim?: number; core?: number; flash?: number; tick?: number; size?: number; children: Snippet };
+  let { rim = 0, core = 0, flash = 0, tick = 0, size = CELL_SIZES.max, children }: Props = $props();
 
   const px = (n: number) => `${String(n)}px`;
   let canvas = $state<HTMLCanvasElement>();
@@ -20,7 +20,7 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const p = readPalette(canvas);
-    drawCell(ctx, 0, 0, s, rim, core, p);
+    drawCell(ctx, 0, 0, s, rim, core, p, tick);
     drawFlash(ctx, 0, 0, s, flash, 1, p);
   });
 </script>

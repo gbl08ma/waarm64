@@ -110,7 +110,7 @@ test('a range block by block: whose each block is, and the runs of slots', async
   assert.deepEqual([end.blocks[9], end.blocks[10], end.blocks[1023]], [0, 4, 4], 'past the end');
   assert.deepEqual(end.runs, {});
   const img = rangeDetail(1, size, { kind: 'opaque', id: 'disk', size: RANGE + 3 * BLOCK });
-  assert.deepEqual([img.blocks[0], img.blocks[2], img.blocks[3]], [1, 1, 0], 'an image\'s blocks are the disk\'s up to its end');
+  assert.deepEqual([img.blocks[0], img.blocks[2], img.blocks[3]], [5, 5, 0], 'an image\'s blocks are the disk\'s, not examined, up to its end');
 });
 
 test('a ramdisk: its chunks in memory', async () => {
@@ -254,7 +254,7 @@ test('blk inspect: counts kept while watching match a whole walk after random ch
     const r = await fill.b.inspect!({ kind: 'disk-range', disk: 0, range: 0, content: true });
     assert.equal(r.kind, 'disk-range');
     const d = (r as Extract<InspectAnswer, { kind: 'disk-range' }>).detail;
-    assert.deepEqual([d.blocks[0], d.blocks[3], d.blocks[4]], [2, 2, 1]);
+    assert.deepEqual([d.blocks[0], d.blocks[3], d.blocks[4]], [2, 2, 5], "the overlay's, and the raw image's not examined");
     assert.deepEqual(d.runs, { overlay: 1 });
     assert.deepEqual(d.content, { read: 4, zeros: 1 }, 'an image\'s blocks are not read');
     assert.equal((await fill.b.inspect!({ kind: 'disk-range', disk: 0, range: 2 })).kind, 'none', 'past the end');

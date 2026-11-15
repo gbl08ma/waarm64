@@ -23,6 +23,11 @@ export const CORE = {
 } as const;
 /** A cell's flash bits. */
 export const FLASH = { read: 1, write: 2 } as const;
+/**
+ * A cell's tick (a thin bar along its bottom edge, inside the rim, whatever the rim's and the core's looks: a mark of
+ * its own, such as "kept here"): none, part (half the width, from the left) or all (the whole width).
+ */
+export const TICK = { none: 0, part: 1, all: 2 } as const;
 
 /** Cell sizes the grid may take, CSS pixels: the smallest (what its room is counted at), the largest, the gap. */
 export type CellSizes = { min: number; max: number; gap: number };

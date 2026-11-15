@@ -178,9 +178,21 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   v = await view(page, (x) => x.overlay === undefined && x.size === 32 * MiB);
   assert.deepEqual([v.size, v.layers.length, v.mark], [32 * MiB, 1, undefined]);
   assert.equal(v.pinned, undefined, 'another view: the pin goes');
+  // Until the other overlay's first answer, the disk alone's picture is dimmed and the line says it's reading.
+  await page.evaluate(() => {
+    const w = window as unknown as { __stale: string[] };
+    w.__stale = [];
+    const map = document.querySelector('#surface-window .map')!;
+    new MutationObserver(() => {
+      if (map.hasAttribute('data-stale')) w.__stale.push(document.querySelector('#surface-window [data-field=surface-line]')?.textContent ?? '');
+    }).observe(map, { attributes: true, attributeFilter: ['data-stale'] });
+  });
   await win(page).locator('[data-field=surface-overlay]').selectOption(ids.other);
   v = await view(page, (x) => x.overlay === ids.other && x.layers.length === 2 && x.size === 32 * MiB);
   assert.deepEqual(v.core, [0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(await page.evaluate(() => (window as unknown as { __stale: string[] }).__stale.slice(0, 1)), [t('disks:SurfaceWindow.reading')], 'the picture before, dimmed while the new one is read');
+  assert.equal(await win(page).locator('.map[data-stale]').count(), 0, 'not once it came');
+  assert.equal(await page.evaluate(() => window.__surface?.stale), false);
   await win(page).locator('[data-field=surface-overlay]').selectOption(ids.w);
   await view(page, (x) => x.overlay === ids.w && x.size === 48 * MiB);
 
@@ -422,7 +434,7 @@ test("the pointed square's words: spoken when the square changes, not when its n
   await page.waitForFunction(() => document.querySelector('[data-field=surface-line]')?.textContent?.includes('4 MiB'));
   await win(page).locator('[data-field=surface-overlay]').focus();
   await page.waitForFunction(() => !document.querySelector('[data-field=surface-line]')?.textContent?.includes('4 MiB'));
-  assert.equal(await shown(), t('disks:SurfaceWindow.hint'), 'the hint again, once the map lost the focus');
+  assert.equal(await shown(), t('disks:surface-look.hint'), 'the hint again, once the map lost the focus');
   assert.deepEqual(errors, []);
   await context.close();
 });

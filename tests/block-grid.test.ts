@@ -1,14 +1,15 @@
 // The block map and the floating window (web/app/ui/BlockGrid.svelte, FloatingWindow.svelte; docs/plans/surface.md
 // §3) in Chromium with made-up data, no guest (tests/browser/block-grid.html): the looks drawn where they should be in
-// the tokens' colours, flashes fading and then no frame drawn, the room counted and changed by the grip, hover and
+// the tokens' colours, ticks (part and all) along the bottom edge on every rim look and under a core, flashes fading
+// and then no frame drawn, the room counted and changed by the grip, hover and
 // pick on the right cell (the last row's too), the keyboard's cursor; the window moved, kept in the browser's window,
 // remembered across a reload, and the focus left where it was. ~15 s.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContextOptions, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { insetOf, lineOf } from '../web/app/ui/block-draw.ts';
-import { cellAt, CORE, gridLayout, RIM, stepCursor } from '../web/app/ui/block-grid.ts';
+import { insetOf, lineOf, tickOf } from '../web/app/ui/block-draw.ts';
+import { cellAt, CORE, gridLayout, RIM, stepCursor, TICK } from '../web/app/ui/block-grid.ts';
 import { t } from '../web/i18n.ts';
 
 let browser: Browser;
@@ -159,6 +160,66 @@ test('the looks: rims, cores and the outline in the tokens\' colours, the end of
   const lum = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
   assert.ok(Math.abs(lum(tok['map-read']) - lum(tok['map-write'])) > 40, 'read and write flashes differ in lightness');
   assert.ok(lum(tok['map-rim-1']) < lum(tok['map-rim-4']) && lum(tok['map-core-1']) < lum(tok['map-core-4']), 'steps go light as full');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('ticks: a bar along the bottom edge in the tick token, the whole width or the left half, over every rim look and under a core', async () => {
+  const { context, page, errors } = await open('cells=300&flash=0', { deviceScaleFactor: 2 });
+  const { rim, core, tick } = await page.evaluate(() => ({ rim: Array.from(window.__grid.rim), core: Array.from(window.__grid.core), tick: Array.from(window.__grid.tick) }));
+  const s = await shape(page);
+  const dpr = await page.evaluate(() => devicePixelRatio);
+  const size = Math.round(s.size * dpr);
+  const [h, line] = [tickOf(size), lineOf(size)];
+  assert.ok(h / dpr >= 1.5 && h / dpr <= 3, `about 2 CSS pixels: ${h / dpr}`);
+  const got = await page.locator(GRID).evaluate((g: HTMLElement, { s, dpr, size, h, line }) => {
+    const canvas = g.querySelector('canvas')!;
+    const img = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+    const px = (x: number, y: number) => Array.from(img.data.subarray((y * img.width + x) * 4, (y * img.width + x) * 4 + 4));
+    const [pitch, pad] = [Math.round(s.pitch * dpr), Math.round(s.pad * dpr)];
+    const cells = [];
+    for (let i = 0; i < s.cells; i++) {
+      const [x, y] = [pad + (i % s.cols) * pitch, pad + Math.floor(i / s.cols) * pitch];
+      // A pixel up from the bottom: the disk's end, drawn in the gap under its row, takes the last.
+      const bottom = y + size - 2;
+      cells.push({ left: px(x + 1, bottom), right: px(x + size - 2, bottom), top: px(x + 1, y + size - h), over: px(x + 1, y + size - h - line) });
+    }
+    const one = new OffscreenCanvas(1, 1).getContext('2d')!;
+    const style = getComputedStyle(g);
+    const colour = (name: string) => {
+      one.clearRect(0, 0, 1, 1);
+      one.fillStyle = style.getPropertyValue(`--${name}`).trim();
+      one.fillRect(0, 0, 1, 1);
+      return Array.from(one.getImageData(0, 0, 1, 1).data);
+    };
+    const names = ['map-tick', 'map-empty', 'map-opaque', 'map-opaque-line', 'map-read', 'map-write', 'map-pin', 'map-hollow', 'map-rim-1', 'map-rim-2', 'map-rim-3', 'map-rim-4', 'map-core-1', 'map-core-2', 'map-core-3', 'map-core-4'];
+    return { cells, tokens: Object.fromEntries(names.map((n) => [n, colour(n)])) };
+  }, { s, dpr, size, h, line });
+  const tok = got.tokens;
+  const bad: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < got.cells.length; i++) {
+    const c = got.cells[i];
+    if (rim[i] === RIM.absent) continue;
+    if (tick[i] === TICK.none) {
+      if (near(c.left, tok['map-tick'])) bad.push(`${i}: a tick drawn where there is none`);
+      continue;
+    }
+    seen.add(`${rim[i]}:${tick[i]}`);
+    if (core[i] !== CORE.none) seen.add(`core:${tick[i]}`);
+    if (!near(c.left, tok['map-tick']) || !near(c.top, tok['map-tick'])) bad.push(`${i}: no tick at its bottom left: ${c.left} ${c.top}`);
+    if (!near(c.over, tok['map-empty'])) bad.push(`${i}: no dark line over the tick: ${c.over}`);
+    const right = near(c.right, tok['map-tick']);
+    if (tick[i] === TICK.all ? !right : right) bad.push(`${i}: tick ${tick[i]}, its bottom right ${c.right}`);
+  }
+  assert.deepEqual(bad.slice(0, 10), []);
+  for (const r of [RIM.empty, RIM.opaque, RIM.step(1), RIM.step(2), RIM.step(3), RIM.step(4)])
+    for (const k of [TICK.part, TICK.all]) assert.ok(seen.has(`${r}:${k}`), `the made-up surface ticks rim ${r} with ${k}`);
+  assert.ok(seen.has(`core:${TICK.part}`) && seen.has(`core:${TICK.all}`), 'ticks under a core');
+  // The tick parts from what it sits on and from the marks that move over it.
+  const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  for (const n of Object.keys(tok).filter((n) => n !== 'map-tick')) assert.ok(dist(tok['map-tick'], tok[n]) > 70, `the tick against ${n}: ${dist(tok['map-tick'], tok[n]).toFixed(0)}`);
+  if (process.env.SURFACE_SHOTS) await page.screenshot({ path: `${process.env.SURFACE_SHOTS}/grid-ticks.png` });
   assert.deepEqual(errors, []);
   await context.close();
 });

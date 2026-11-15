@@ -24,7 +24,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      `--warn-border`, `--error-bar-fg`, `--error-bg`, `--error-border`; a state's light `--status-ok`, `--status-busy`,
      `--status-bad`, `--status-off`;
    - a block map's looks `--map-*` (`--map-empty`, `--map-absent`, `--map-opaque`, `--map-rim-1..4`, `--map-core-1..4`,
-     `--map-hollow`, `--map-read`, `--map-write`, `--map-end`, `--map-pin`: BlockGrid's canvas reads them);
+     `--map-hollow`, `--map-tick`, `--map-read`, `--map-write`, `--map-end`, `--map-pin`: BlockGrid's canvas reads them);
    - shadows `--shadow-menu`, `--shadow-dialog`, `--shadow-rule` (a hairline under tabs), `--shadow-focus`,
      `--shadow-frame`;
    - fonts `--font`, `--font-mono`, `--line-height`; weights `--weight-normal`, `--weight-bold`;
@@ -62,9 +62,10 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
    - `ValueField`: a value to copy or a secret to show, its Copy and Show icons inside the field (an address, a key, a
      link, a command; a pasted secret).
-   - `BlockGrid`: a block map on a canvas (a defragmenter's squares: per cell a rim, a core inset in it and a flash;
-     its room reported, hover and pick, a keyboard's cursor); `BlockSwatch`: a legend's cell drawn the same way, its
-     words beside it (`block-grid.ts` the looks and the layout, `block-draw.ts` the drawing).
+   - `BlockGrid`: a block map on a canvas (a defragmenter's squares: per cell a rim, a core inset in it, a flash, and
+     a `tick`, a static mark of its own along its bottom edge, half or whole width (`TICK`: the disk surface's "kept
+     in this browser"); its room reported, hover and pick, a keyboard's cursor); `BlockSwatch` (a `tick` too): a
+     legend's cell drawn the same way, its words beside it (`block-grid.ts` the looks and the layout, `block-draw.ts` the drawing).
    - `FloatingWindow`: a window over the page (the disk's surface, the on-screen keyboard), moved by its title bar,
      resized by its corner, or with `aspect` (its height for a width) by its width alone from a ↔ in the bar; kept in
      the window and remembered under a settings key, a size per shape (`sizeKey`: the keyboard's layouts;

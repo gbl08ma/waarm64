@@ -12,7 +12,9 @@
 </script>
 
 <div class="legend" data-legend={entries.map((e) => e.key.slice(e.key.lastIndexOf('.') + 1)).join(' ')}>
-  {#each entries as e (e.key)}<BlockSwatch rim={e.rim} core={e.core} flash={e.flash}>{t(e.key)}</BlockSwatch>{/each}
+  {#each entries as e (e.key)}<BlockSwatch rim={e.rim} core={e.core} flash={e.flash} tick={e.tick}
+      >{t(e.key)}</BlockSwatch
+    >{/each}
 </div>
 
 <style>

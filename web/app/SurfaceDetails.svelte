@@ -1,6 +1,7 @@
 <!--
   A disk surface window's pinned square (SurfaceWindow.svelte): one 4 MiB range of it block by block (its 1,024 blocks of
-  4 KiB as a 32 × 32 map: the disk's, the overlay's, zeroed, past the end), a stepper through the ranges when the square
+  4 KiB as a 32 × 32 map: the disk's, not examined, the overlay's, zeroed, past the end, a remote image's blocks kept in
+  this browser ticked), a stepper through the ranges when the square
   covers several, what they hold and in how many runs their store keeps them (its fragmentation), and Check contents,
   which reads the range's held blocks (up to 4 MiB) and counts those that are all zeros. Asked of the window's source
   when the range changes (`poll.range`), not polled.
@@ -41,7 +42,7 @@
     detail = undefined;
     void ask(range, false);
   });
-  const look = $derived(detail && detailLook(detail, kind.disk === 'opaque'));
+  const look = $derived(detail && detailLook(detail));
   const lines = $derived(detail ? detailWords(detail, kind, diskLayer(surface)?.size).map(text) : []);
   const held = $derived(detail ? detail.blocks.some((b) => b === 1 || b === 2 || b === 5) : false);
   const canCheck = $derived(detail ? checkable(detail, kind) : false);
@@ -94,6 +95,7 @@
         cells={look.cells}
         rim={look.rim}
         core={look.core}
+        tick={look.tick}
         sizes={SIZES}
         label={t('disks:SurfaceDetails.blocks')}
       />

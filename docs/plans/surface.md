@@ -23,8 +23,10 @@ docs/devices.md and docs/machines.md, and this page keeps only what was decided 
   past the disk's end have no rim (an outline only); the disk's end is marked.
 - **A layer's states** per cell, from counts of its blocks:
   - rim (disk): nothing held (reads as zeros); data held, in four steps of how full (any block at all shows as the
-    first step); *not examined* for an image whose contents can't be known cheaply (a raw file, a URL): one flat look;
-    for a ramdisk, its chunks in memory.
+    first step; over the blocks examined); *not examined* for an image whose contents can't be known cheaply (a raw
+    file, a URL; a qcow2's squares under an L2 table not read yet): one flat look; for a ramdisk, its chunks in memory.
+  - a remote image's blocks kept in this browser: a *tick* along the cell's bottom edge (half or whole width),
+    independent of the rim.
   - core (overlay): no changes (no core drawn); changed blocks in four steps; only zeroed or discarded blocks (a
     hollow core: the overlay hides the disk's data there).
 - **Activity** (live only): a cell the guest read flashes one colour, one it wrote another, fading in well under a
@@ -88,12 +90,18 @@ export type SurfaceLayer = {
   /** Per cell: units held with data; units held as zeros without data (an overlay's zeroed and discarded blocks). */
   held: Uint32Array;
   zero: Uint32Array;
+  /** Per cell: units not examined yet (a qcow2's under a table not read), and units kept here (a remote image's). */
+  unknown?: Uint32Array;
+  kept?: Uint32Array;
+  why?: OpaqueWhy;
 };
 /** One 4 MiB range, block by block. */
 export type RangeDetail = {
   range: number;
-  /** Per 4 KiB block: 0 nothing, 1 the disk's, 2 the overlay's, 3 zeroed by the overlay, 4 past the end. */
+  /** Per 4 KiB block: 0 nothing, 1 the disk's, 2 the overlay's, 3 zeroed by the overlay, 4 past the end, 5 not examined. */
   blocks: Uint8Array;
+  /** Per block, 1 where a remote image's bytes are kept here. */
+  kept?: Uint8Array;
   /** Runs of consecutive slots the layer's held blocks take in its `data` file, per layer id. */
   runs: Record<string, number>;
   /** With `content`: held blocks read, and how many were all zeros. */
@@ -123,7 +131,7 @@ paths (`{ stored?, overlay?, size, … }`) instead of a device.
 
 **The page:**
 - `web/app/ui/BlockGrid.svelte`: the reusable grid, a `<canvas>`. Props: the number of cells, per cell a rim look, a
-  core look and a flash (bytes, indices into a small palette of looks whose colours are tokens), the pinned cell;
+  core look, a flash and a tick (bytes, indices into a small palette of looks whose colours are tokens), the pinned cell;
   events for hover and pick; it reports how many cells it has room for. It knows nothing of disks. Keyboard: the
   arrows move a cursor cell, Enter pins.
 - `web/app/ui/FloatingWindow.svelte` (+ `floating-frame.svelte.ts`): a movable, resizable window over the page that

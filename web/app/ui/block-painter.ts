@@ -9,7 +9,7 @@ import { CELL_SIZES, gridLayout, type CellSizes, type GridLayout } from './block
 export const FADE_MS = 600;
 
 /** What the grid shows. Arrays are taken as they are: a new picture is new arrays (their insides aren't watched). */
-export type GridData = { cells: number; rim: Uint8Array; core: Uint8Array };
+export type GridData = { cells: number; rim: Uint8Array; core: Uint8Array; tick?: Uint8Array };
 /** The cells marked over the picture. */
 export type GridMarks = { mark?: number; pinned?: number; hover?: number; cursor?: number };
 
@@ -86,11 +86,11 @@ export class GridPainter {
     const ctx = this.#base.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, width, height);
-    const { cells, rim, core } = this.#data;
+    const { cells, rim, core, tick } = this.#data;
     const s = this.layout.size;
     for (let i = 0; i < cells; i++) {
       const [x, y] = this.at(i);
-      drawCell(ctx, x, y, s, rim[i] ?? 0, core[i] ?? 0, this.#palette);
+      drawCell(ctx, x, y, s, rim[i] ?? 0, core[i] ?? 0, this.#palette, tick?.[i] ?? 0);
     }
     this.#compose();
   }

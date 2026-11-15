@@ -1,7 +1,8 @@
 // How a block map's cell is drawn on a canvas (BlockGrid.svelte, and its legend's BlockSwatch.svelte, so the two never
-// disagree): the rim as the whole square, the core as a smaller square inset in it, a flash over both, and the rings
-// that mark a cell (hovered, pinned, the keyboard's). Colours are the theme's `--map-*` tokens, read from an element.
-import { CORE, FLASH, RIM, STEPS } from './block-grid.ts';
+// disagree): the rim as the whole square, the core as a smaller square inset in it, the tick along its bottom edge, a
+// flash over them, and the rings that mark a cell (hovered, pinned, the keyboard's). Colours are the theme's `--map-*`
+// tokens, read from an element.
+import { CORE, FLASH, RIM, STEPS, TICK } from './block-grid.ts';
 
 /** The tokens' colours, as CSS colour strings a canvas takes. */
 export type Palette = {
@@ -12,6 +13,7 @@ export type Palette = {
   rim: string[];
   core: string[];
   hollow: string;
+  tick: string;
   read: string;
   write: string;
   end: string;
@@ -33,6 +35,7 @@ export function readPalette(el: Element): Palette {
     rim: steps('rim'),
     core: steps('core'),
     hollow: v('map-hollow'),
+    tick: v('map-tick'),
     read: v('map-read'),
     write: v('map-write'),
     end: v('map-end'),
@@ -104,10 +107,32 @@ function drawCore(ctx: Ctx, x: number, y: number, s: number, core: number, p: Pa
   ctx.fillRect(cx, cy, cs, cs);
 }
 
-/** Cell (`x`, `y`), `s` across: its rim, then its core on it. */
-export function drawCell(ctx: Ctx, x: number, y: number, s: number, rim: number, core: number, p: Palette) {
+/** A tick's height at cell size `s` (device pixels): about a sixth of the cell (2 CSS pixels at the default sizes). */
+export const tickOf = (s: number) => Math.max(1, Math.round(s / 6));
+
+/**
+ * The tick of a cell `s` across: a bar along its bottom edge, the whole width (`TICK.all`) or the left half
+ * (`TICK.part`), with a dark line over it (on a cell of 8 device pixels or more) so it reads on every rim.
+ */
+function drawTick(ctx: Ctx, x: number, y: number, s: number, tick: number, p: Palette) {
+  if (tick !== TICK.part && tick !== TICK.all) return;
+  const h = tickOf(s);
+  const w = tick === TICK.all ? s : Math.max(1, Math.round(s / 2));
+  if (s >= 8) {
+    const line = lineOf(s);
+    ctx.fillStyle = p.empty;
+    ctx.fillRect(x, y + s - h - line, w + (tick === TICK.all ? 0 : line), line);
+    if (tick === TICK.part) ctx.fillRect(x + w, y + s - h, line, h);
+  }
+  ctx.fillStyle = p.tick;
+  ctx.fillRect(x, y + s - h, w, h);
+}
+
+/** Cell (`x`, `y`), `s` across: its rim, then its core on it, then its tick. */
+export function drawCell(ctx: Ctx, x: number, y: number, s: number, rim: number, core: number, p: Palette, tick = 0) {
   drawRim(ctx, x, y, s, rim, p);
   drawCore(ctx, x, y, s, core, p);
+  drawTick(ctx, x, y, s, tick, p);
 }
 
 /** A flash over the cell at `alpha` (1 when it starts): a write fills it, a read rings it. */

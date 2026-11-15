@@ -20,16 +20,7 @@
   import { runningHere, surfaceWindow, type SurfaceOpen } from './areas/surface.svelte.ts';
   import { choiceKey, chooseSource, sourceFor } from './surface-source.ts';
   import { SurfacePoll } from './surface-poll.svelte.ts';
-  import {
-    cellWords,
-    diskKindOf,
-    diskLayer,
-    lookOf,
-    opaqueWords,
-    overlayLayer,
-    sizeText,
-    type ViewKind,
-  } from './surface-look.ts';
+  import { cellWords, lookOf, overlayLayer, sizeText, viewOf, wholeWords } from './surface-look.ts';
   import { bytesText } from './bytes.ts';
   import { text, t } from '../i18n.ts';
 
@@ -92,13 +83,7 @@
   const EMPTY = new Uint8Array(0);
   /** The squares' sizes: the room is counted at 10 px (so the scale), and a small disk's few squares grow to 24 px. */
   const SIZES = { min: 10, max: 24, gap: 1 };
-  const kind = $derived<ViewKind>({
-    disk: diskKindOf(surface, disk?.kind),
-    overlay: !!chosen,
-    grown: look?.mark !== undefined,
-    live: poll.live,
-    kept: !!(surface && diskLayer(surface)?.kept),
-  });
+  const kind = $derived(viewOf(surface, disk?.kind, !!chosen, poll.live));
 
   let hover = $state<number>();
   /** The square pinned, by its first byte (so it stays where it was when the squares get larger or smaller). */
@@ -107,20 +92,18 @@
     surface && pinnedAt !== undefined && pinnedAt < surface.size ? Math.floor(pinnedAt / surface.cellBytes) : undefined,
   );
 
-  /** What the line under the map says: the square pointed at, else what the view holds as a whole. */
+  /**
+   * What the line under the map says: the square pointed at, else what the view holds as a whole; while the picture is
+   * the source before's (another overlay chosen, until the new one's first answer), that it's reading.
+   */
   const line = $derived.by(() => {
-    if (surface && hover !== undefined && hover < (look?.cells ?? 0))
-      return cellWords(surface, hover, kind.disk === 'ram')
-        .map(text)
-        .join(' ');
     if (!surface) return '';
-    const d = diskLayer(surface);
-    const o = overlayLayer(surface);
-    const nothing = (l: typeof d) => !l || l.held.every((x) => x === 0);
-    if (d?.known === 'opaque') return opaqueWords(d, !!chosen).map(text).join(' ');
-    if (nothing(d) && (!o || (nothing(o) && o.zero.every((x) => x === 0))))
-      return t(kind.disk === 'ram' ? 'disks:SurfaceWindow.ramEmpty' : 'disks:SurfaceWindow.empty');
-    return t('disks:SurfaceWindow.hint');
+    if (poll.stale) return t('disks:SurfaceWindow.reading');
+    const words =
+      hover !== undefined && hover < (look?.cells ?? 0)
+        ? cellWords(surface, hover, kind.disk === 'ram')
+        : wholeWords(surface, !!chosen, kind.disk === 'ram');
+    return words.map(text).join(' ');
   });
 
   /**
@@ -158,6 +141,7 @@
       overlay: target.overlay,
       source: choice.kind,
       live: poll.live,
+      stale: poll.stale,
       surface,
       look,
       pinned,
@@ -212,13 +196,14 @@
     {/if}
   </div>
   <div class="main">
-    <div class="map">
+    <div class="map" data-stale={poll.stale ? '' : undefined}>
       <BlockGrid
         cells={look?.cells ?? 0}
         sizes={SIZES}
         rim={look?.rim ?? EMPTY}
         core={look?.core ?? EMPTY}
         flash={look?.flash}
+        tick={look?.tick}
         mark={look?.mark}
         {pinned}
         label={t('disks:SurfaceWindow.map', { name: title })}
@@ -234,7 +219,7 @@
         </div>
       {/if}
     </div>
-    {#if surface && pinned !== undefined}
+    {#if surface && pinned !== undefined && !poll.stale}
       <!-- A new one for another square or another source: its first range, asked again. -->
       {#key `${String(pinned)} ${choiceKey(choice, disk)}`}
         <SurfaceDetails {surface} cell={pinned} {kind} {poll} onclose={() => (pinnedAt = undefined)} />
@@ -274,6 +259,10 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
+  }
+  /* The source before's picture, until the new one's first answer: dimmed, so it isn't read as this view. */
+  .map[data-stale] {
+    opacity: 0.35;
   }
   .why {
     position: absolute;

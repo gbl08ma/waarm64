@@ -54,8 +54,9 @@
   /* A block map (web/app/ui/BlockGrid.svelte, a defragmenter's squares; read by its canvas): a cell's rim (the layer
      under: an empty one, one that isn't there, one not examined, and four steps of how full, dark to light blue) and
      its core (the layer over it: four steps of amber, or hollow), the guest's read and write flashing on it, the end
-     of the layer under, the pinned cell. Blue against amber and light against dark, so the layers part without hue;
-     the flashes differ in shape too (a ring, a fill). */
+     of the layer under, the pinned cell, and a cell's tick (a bar along its bottom edge: a remote image's blocks kept
+     in this browser), green so it parts from the rims' blues, the cores' ambers and the flashes. Blue against amber
+     and light against dark, so the layers part without hue; the flashes differ in shape too (a ring, a fill). */
   --map-empty: #232830;
   --map-absent: #3a414c;
   --map-opaque: #4a4f58;
@@ -69,6 +70,7 @@
   --map-core-3: #f0a431;
   --map-core-4: #ffd27a;
   --map-hollow: #ffb347;
+  --map-tick: #7ee07a;
   --map-read: #6ff0e0;
   --map-write: #ff4f9a;
   --map-end: #e8ecf2;

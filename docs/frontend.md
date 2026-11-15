@@ -527,25 +527,36 @@ was (on the screen).
 - **The map** (`ui/BlockGrid.svelte`): a square is 4 MiB times the smallest power of two for which the whole view fits
   the squares the window has room for (counted at 10 px; a small disk's few squares grow to 24 px), said over it
   ([1 square = {{size}}](ui:disks:SurfaceWindow.scale)). The disk is each square's rim (no data, then four shades of
-  how full: any block at all is the first; a qcow2 image's clusters with data counted so too, where they can be
-  known; other images flat, hatched, not examined, a remote raw one's blocks kept in this browser in the same four
-  shades over the hatch: [Partly kept in this browser](ui:disks:surface-look.legend.keptSome)), the overlay a core inset in
-  it (four shades of what it changed; hollow where it only zeroed or discarded blocks); with an overlay larger than
+  how full over the blocks examined: any block at all is the first; a qcow2 image's clusters with data counted so too,
+  per L2 table as its tables are read, the squares under a table not read yet hatched like an image not examined, and
+  one with no data seen but part not examined hatched too, never "no data"; other images flat, hatched, not
+  examined), the overlay a core inset in it (four shades of what it changed; hollow where it only zeroed or discarded
+  blocks). A remote image viewed live has a **tick** on a square whose bytes this browser keeps (in memory or in its
+  storage), a thin green bar (`--map-tick`) along its bottom edge, its whole width when all the square has on the
+  server is kept (a raw image's every block, a qcow2's blocks with data), the left half when part is
+  ([Partly kept in this browser](ui:disks:surface-look.legend.keptSome)): independent of the rim, so the rim always
+  says what the disk holds and the tick only that the bytes are here; with an overlay larger than
   the disk (grown, [machines.md](machines.md) §4.5) the squares past the disk have no rim and the disk's end is
   marked. Live, a square the guest read or wrote flashes. The legend (`SurfaceLegend.svelte`) shows only the looks
   the view can show (`surface-look.ts` `legendOf`). The line under the map says the pointed square's numbers
-  (`cellWords`: where, the disk's blocks held of its blocks, the overlay's changed and zeroed, the activity; the
+  (`cellWords`: where, the disk's blocks held of its blocks examined, how many aren't examined yet, how many with data
+  this browser keeps, the overlay's changed and zeroed, the activity; the
   keyboard's cursor's square until the map loses the focus), else what the view holds as a whole; a screen reader is
   told the line (an `aria-live` copy) when the square pointed at or the view changes, not as a live poll changes its
-  numbers ([The disk holds no data yet. Every block reads as zeros.](ui:disks:SurfaceWindow.empty)
-  for an empty one; for an image not examined, why: raw, its tables not all read yet, too large, no permission to
-  read the file, a URL while its machine doesn't run here: `surface-look.ts` `opaqueWords`). **The overlay picker**
+  numbers (`wholeWords`: [The disk holds no data yet. Every block reads as zeros.](ui:disks:surface-look.empty)
+  for an empty one; for an image not examined, why: raw, its tables not read yet, too large, no permission to
+  read the file, a URL while its machine doesn't run here (`opaqueWords`); for a qcow2 partly examined, why the rest
+  isn't yet ([Some of the image's tables haven't been read yet, so the squares they cover aren't examined. They fill in as the guest reads them; the tables are never downloaded just for the map.](ui:disks:surface-look.why.tablesSome));
+  and for a remote image how much of it this browser keeps). Another overlay chosen (or the disk alone), the picture
+  before stays, dimmed, and the line says [Reading the map…](ui:disks:SurfaceWindow.reading) until the new one's first
+  answer (`SurfacePoll.stale`). **The overlay picker**
   says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
   the record keeps the numbers of the run before until the machine stops.
 - **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
   32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
   consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
-  fragmented it is there), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
+  fragmented it is there; blocks under a qcow2's table not read yet hatched, not examined, and a remote image's blocks
+  kept in this browser ticked), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
   data (up to 4 MiB) and counts those that hold only zeros; where they are only an image's it doesn't read (not
   examined, or a remote qcow2's), it isn't offered and the words say they can't be checked
   ([The image's blocks aren't read here, so their contents can't be checked.](ui:disks:surface-look.range.uncheckable)).
@@ -580,10 +591,11 @@ was (on the screen).
   making the answers stays under 2% of the time (the next ask ≥ 50 × the answer's `cost`), and the device worker's
   activity wrapper stays on only while it asks (devices.md "blk"); not live, once, again on
   **[Refresh](ui:disks:SurfaceWindow.refresh)** and when the records change (once they've settled for 300 ms: a disk
-  action writes several). A new source (the machine started or
-  stopped, another overlay, another run) drops what the old one had in flight; just after the machine on this page
-  stopped, a refusal that the files are in use is asked again for a few seconds (the device worker lets them go
-  late). The grid's room is asked for again once a resize settles (150 ms).
+  action writes several). A new source (the machine started or stopped, another overlay, another run) drops what the old
+  one had in flight (its picture dimmed until the new one answers); a live answer a newer ask of the same source
+  replaced (a resize, a Refresh) is dropped, but its reads and writes flash with the next one (`carryActivity`); just
+  after the machine on this page stopped, a refusal that the files are in use is asked again for a few seconds (the
+  device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms).
 - `window.__surface` is the tests' view of it (web/app/hooks.ts).
 
 ### About

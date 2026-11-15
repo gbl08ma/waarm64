@@ -1325,7 +1325,7 @@
   },
   "surface-look.legend.opaque": {
     "message": "Not examined",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of a disk whose image is a file or a URL: its contents aren't read to tell what it holds."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose contents aren't examined: of a disk whose image is a file or a URL that isn't read to tell what it holds, or of a qcow2 image under the parts of its tables (which say where its data is) not read yet."
   },
   "surface-look.legend.absent": {
     "message": "Past the disk's end",
@@ -1589,21 +1589,21 @@
   },
   "SurfaceWindow.reading": {
     "message": "Reading the map…",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). In place of the map while it is read the first time."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). In place of the map while it is read the first time; and the line under the map while another overlay's map (or the disk alone's) is read, the one shown before dimmed meanwhile."
   },
   "SurfaceWindow.untitled": {
     "message": "Disk",
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The window's title when its disk is no longer in this browser (its name is gone with it)."
   },
-  "SurfaceWindow.hint": {
+  "surface-look.hint": {
     "message": "Point at a square to see what it holds. Click it to see its blocks.",
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square."
   },
-  "SurfaceWindow.empty": {
+  "surface-look.empty": {
     "message": "The disk holds no data yet. Every block reads as zeros.",
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, when nothing at all is held (a new blank disk, an empty overlay over it)."
   },
-  "SurfaceWindow.ramEmpty": {
+  "surface-look.ramEmpty": {
     "message": "The ramdisk holds nothing in memory yet.",
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a ramdisk (its machine running) that holds nothing."
   },
@@ -1625,11 +1625,11 @@
   },
   "surface-look.why.tables": {
     "message": "The image's tables haven't all been read yet. The map shows what it holds once the guest has read them; they're never downloaded just for the map.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a qcow2 on a web server whose tables (which say where its data is) this browser hasn't all read or kept yet; reading them for the map would download them, which it never does."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is a qcow2 on a web server of which nothing is examined yet (its squares are drawn flat, hatched): its first sentence, why: this browser hasn't read or kept any of the image's tables (which say where its data is) yet; reading them for the map would download them, which it never does."
   },
   "surface-look.why.large": {
     "message": "The image's tables are too large to read for the map.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a qcow2 whose tables (which say where its data is) are larger than the map reads (32 MiB), or couldn't be read."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a qcow2 whose tables (which say where its data is) are larger than the map reads (32 MiB), or couldn't be read, and none of them has been read yet."
   },
   "surface-look.why.permission": {
     "message": "This browser may read the image's file only once you allow it again (when its machine starts): until then its contents aren't examined.",
@@ -1645,11 +1645,11 @@
   },
   "surface-look.keptAll": {
     "message": "This browser keeps {{size}} of it.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): a sentence after why, for an image on a web server: {{size}} is how much of the image this browser keeps (in memory or in its storage), so it needn't download that again; those squares are drawn in shades."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is on a web server: a sentence after the others: {{size}} is how much of the image this browser keeps (in memory or in its storage), so it needn't download that again (of a qcow2, of its blocks with data); those squares have a green bar along their bottom edge."
   },
   "surface-look.keptNone": {
     "message": "This browser keeps none of it yet.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): a sentence after why, for an image on a web server of which this browser keeps nothing yet (in memory or in its storage)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is on a web server: a sentence after the others, when this browser keeps nothing of it yet (in memory or in its storage)."
   },
   "surface-look.overOpaque": {
     "message": "The overlay's changes are shown over it.",
@@ -1657,11 +1657,11 @@
   },
   "surface-look.legend.keptSome": {
     "message": "Partly kept in this browser",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server (not examined) of which this browser keeps some blocks (in memory or in its storage), so it needn't download them again (the faintest of four shades)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server of which this browser keeps part of what it holds there (in memory or in its storage), so it needn't download that again: a short green bar along the square's bottom edge, half its width, over the square's own look (the image's contents not examined, or a qcow2's blocks with data in shades)."
   },
   "surface-look.legend.kept": {
     "message": "Kept in this browser",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server (not examined) all of whose blocks this browser keeps (in memory or in its storage; the strongest shade)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server of which this browser keeps all it holds there (in memory or in its storage): a green bar along the whole of the square's bottom edge, over the square's own look."
   },
   "surface-look.disk.kept": {
     "message": "Not examined: this browser keeps {{kept}} of its {{of}} blocks.",
@@ -1669,6 +1669,70 @@
   },
   "surface-look.range.kept": {
     "message": "This browser keeps {{blocks}} of them.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map, after the one that says the image isn't examined. Of the range's blocks, the {{blocks}} this browser keeps (in memory or in its storage) of an image on a web server."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the one that says the image isn't examined: of the range's blocks, the {{blocks}} this browser keeps (in memory or in its storage) of an image on a web server; they have a green bar along their bottom edge."
+  },
+  "surface-look.why.tablesSome": {
+    "message": "Some of the image's tables haven't been read yet, so the squares they cover aren't examined. They fill in as the guest reads them; the tables are never downloaded just for the map.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a qcow2 image on a web server of which part is examined: its first sentence, why some squares are drawn flat, hatched: the image's tables (which say where its data is) for them haven't been read or kept by this browser yet. The map shows them once the guest has read them; reading them for the map would download them, which it never does."
+  },
+  "surface-look.why.largeSome": {
+    "message": "The image's tables are too large to read whole for the map, so the squares under those the guest hasn't read yet aren't examined.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a qcow2 image in a file of which part is examined: its first sentence, why some squares are drawn flat, hatched: the image's tables (which say where its data is) are larger than the map reads (32 MiB), so only those the guest has read so far are used."
+  },
+  "surface-look.disk.unknownAll": {
+    "message": "The disk's blocks here aren't examined yet, because the image's table for them hasn't been read.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose table (which says where its data is) for this square this browser hasn't read yet: what the square holds isn't known."
+  },
+  "surface-look.disk.heldKnown_one": {
+    "message": "The disk holds data in {{held}} of the {{count}} block of 4 KiB examined here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: {{held}} blocks with data of the {{count}} blocks of 4 KiB examined (another sentence says how many aren't)."
+  },
+  "surface-look.disk.heldKnown_other": {
+    "message": "The disk holds data in {{held}} of the {{count}} blocks of 4 KiB examined here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: {{held}} blocks with data of the {{count}} blocks of 4 KiB examined (another sentence says how many aren't)."
+  },
+  "surface-look.disk.emptyKnown_one": {
+    "message": "The disk holds no data in the {{count}} block of 4 KiB examined here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: none of the {{count}} blocks of 4 KiB examined has data (another sentence says how many aren't examined)."
+  },
+  "surface-look.disk.emptyKnown_other": {
+    "message": "The disk holds no data in the {{count}} blocks of 4 KiB examined here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: none of the {{count}} blocks of 4 KiB examined has data (another sentence says how many aren't examined)."
+  },
+  "surface-look.disk.unknown_one": {
+    "message": "{{count}} more block isn't examined yet, because the image's table for it hasn't been read.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks examined: {{count}} blocks of the square under a qcow2 image's table (which says where its data is) this browser hasn't read yet."
+  },
+  "surface-look.disk.unknown_other": {
+    "message": "{{count}} more blocks aren't examined yet, because the image's table for them hasn't been read.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks examined: {{count}} blocks of the square under a qcow2 image's table (which says where its data is) this browser hasn't read yet."
+  },
+  "surface-look.disk.keptData": {
+    "message": "This browser keeps {{kept}} of those.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks with data, for a qcow2 image on a web server: of those blocks with data, the {{kept}} whose bytes this browser keeps (in memory or in its storage), so it needn't download them again."
+  },
+  "surface-look.disk.keptNone": {
+    "message": "This browser keeps none of those yet.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks with data, for a qcow2 image on a web server: this browser keeps none of those blocks' bytes (in memory or in its storage) yet."
+  },
+  "surface-look.range.unknownAll": {
+    "message": "The image's table for this range hasn't been read yet, so its blocks aren't examined.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A qcow2 image whose table (which says where its data is) for this range this browser hasn't read yet: what its blocks hold isn't known."
+  },
+  "surface-look.range.unknown_one": {
+    "message": "{{count}} more block isn't examined yet, because the image's table for it hasn't been read.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the sentence on the blocks with data: {{count}} blocks of the range under a qcow2 image's table this browser hasn't read yet."
+  },
+  "surface-look.range.unknown_other": {
+    "message": "{{count}} more blocks aren't examined yet, because the image's table for them hasn't been read.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the sentence on the blocks with data: {{count}} blocks of the range under a qcow2 image's table this browser hasn't read yet."
+  },
+  "surface-look.range.diskEmptyKnown": {
+    "message": "The disk holds no data in the blocks examined here.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A qcow2 image of which part of the range is under a table not read yet: none of the blocks examined has data (another sentence says how many aren't examined)."
+  },
+  "surface-look.range.keptData": {
+    "message": "This browser keeps {{count}} of the blocks with data.",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. For a qcow2 image on a web server, after the sentence on the blocks with data: of those, the {{count}} whose bytes this browser keeps (in memory or in its storage), so it needn't download them again; they have a green bar along their bottom edge."
   }
 }

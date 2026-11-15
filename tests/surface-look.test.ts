@@ -4,10 +4,10 @@
 // tests/page-surface.test.ts's (Chromium).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CORE, FLASH, RIM } from '../web/app/ui/block-grid.ts';
-import { cellWords, checkable, detailLook, detailWords, legendOf, lookOf, rangesOfCell, sizeText, stepOf } from '../web/app/surface-look.ts';
+import { CORE, FLASH, RIM, TICK } from '../web/app/ui/block-grid.ts';
+import { cellWords, checkable, detailLook, detailWords, legendOf, lookOf, rangesOfCell, sizeText, stepOf, viewOf, wholeWords } from '../web/app/surface-look.ts';
 import { asInPlace, choiceKey, chooseSource, holdsDisks, jobSource, pollDelay, type JobWorker } from '../web/app/surface-source.ts';
-import { RANGE, UNIT, type InspectAnswer, type RangeDetail, type Surface, type SurfaceLayer } from '../web/surface.ts';
+import { carryActivity, RANGE, UNIT, type InspectAnswer, type RangeDetail, type Surface, type SurfaceLayer } from '../web/surface.ts';
 import type { Attachment, DiskRecord } from '../web/app/shape.ts';
 import type { OverlayRecord } from '../web/app/store.ts';
 
@@ -77,10 +77,66 @@ test("words: a cell's offsets and counts, a range's blocks and runs, sizes as ex
     { key: 'disks:surface-look.range.zeroed', params: { count: 1 } },
     { key: 'disks:surface-look.range.content', params: { count: 5, zeros: 2 } },
   ]);
-  const look = detailLook(d, false);
+  const look = detailLook(d);
   assert.deepEqual([...look.rim.subarray(0, 9)], [RIM.step(4), RIM.step(4), RIM.empty, RIM.step(4), 0, 0, 0, 0, RIM.absent]);
   assert.deepEqual([...look.core.subarray(0, 8)], [0, 0, 0, 0, CORE.step(4), CORE.step(4), CORE.hollow, 0]);
-  assert.equal(detailLook(d, true).rim[0], RIM.opaque, "an image's blocks");
+  assert.equal(detailLook({ ...d, blocks: Uint8Array.from([5]) }).rim[0], RIM.opaque, 'a block not examined');
+  assert.equal(look.tick, undefined, 'nothing kept: no ticks');
+});
+
+test("looks: a qcow2's squares under tables not read yet, and a remote image's kept blocks as ticks over every rim", () => {
+  // Four cells a range: all not examined; a quarter held of the half known; known empty with a part not examined;
+  // all known and full.
+  const disk: SurfaceLayer = { ...layer('disk', 4 * RANGE, [0, per / 4, 0, per]), unknown: Uint32Array.from([per, per / 2, per / 2, 0]), why: 'tables' };
+  const s: Surface = { size: 4 * RANGE, cellBytes: RANGE, unitBytes: UNIT, layers: [disk] };
+  assert.deepEqual([...lookOf(s).rim], [RIM.opaque, RIM.step(2), RIM.opaque, RIM.step(4)], 'a step over the blocks known; known empty with some not examined: not examined');
+  assert.equal(lookOf(s).tick, undefined, 'a local image: no ticks');
+  assert.deepEqual(cellWords(s, 1).slice(1), [
+    { key: 'disks:surface-look.disk.heldKnown', params: { held: per / 4, count: per / 2 } },
+    { key: 'disks:surface-look.disk.unknown', params: { count: per / 2 } },
+  ]);
+  assert.deepEqual(wholeWords(s, false), [{ key: 'disks:surface-look.why.tablesSome' }]);
+  assert.deepEqual(wholeWords({ ...s, layers: [{ ...disk, why: 'large' }] }, false), [{ key: 'disks:surface-look.why.largeSome' }]);
+  assert.deepEqual(wholeWords({ ...s, layers: [{ ...disk, unknown: Uint32Array.from([per, per, per, per]) }] }, false), [{ key: 'disks:surface-look.why.tables' }], 'none known yet');
+  // Kept: of the units with data (a qcow2's), of every unit (a raw one's).
+  const kept: SurfaceLayer = { ...layer('disk', 4 * RANGE, [0, 10, 10, per]), kept: Uint32Array.from([0, 4, 10, per]) };
+  assert.deepEqual([...lookOf({ ...s, layers: [kept] }).tick!], [TICK.none, TICK.part, TICK.all, TICK.all]);
+  assert.deepEqual(cellWords({ ...s, layers: [kept] }, 1).slice(-1), [{ key: 'disks:surface-look.disk.keptData', params: { kept: 4 } }]);
+  assert.deepEqual(cellWords({ ...s, layers: [{ ...kept, kept: new Uint32Array(4) }] }, 1).slice(-1), [{ key: 'disks:surface-look.disk.keptNone' }]);
+  assert.deepEqual(wholeWords({ ...s, layers: [kept] }, false), [{ key: 'disks:surface-look.hint' }, { key: 'disks:surface-look.keptAll', params: { size: sizeText((per + 14) * UNIT) } }]);
+  const raw: SurfaceLayer = { ...layer('disk', 4 * RANGE, [per, per, per, per], undefined, 'opaque'), kept: Uint32Array.from([0, 1, per - 1, per]) };
+  const rawLook = lookOf({ ...s, layers: [raw] });
+  assert.deepEqual([...rawLook.rim], [RIM.opaque, RIM.opaque, RIM.opaque, RIM.opaque], 'the rim says what the disk holds, not what is kept');
+  assert.deepEqual([...rawLook.tick!], [TICK.none, TICK.part, TICK.part, TICK.all]);
+  // The legend: "not examined" with a counted disk that has some; the kept pair over each disk's look.
+  const keys = (v: Parameters<typeof legendOf>[0]) => legendOf(v).map((e) => `${e.key.slice(e.key.lastIndexOf('.') + 1)}${e.tick ? `:${e.tick}` : ''}`);
+  assert.deepEqual(keys(viewOf(s, 'file', false, false)), ['empty', 'some', 'full', 'opaque']);
+  assert.deepEqual(keys(viewOf({ ...s, layers: [kept] }, 'url', false, true)), ['empty', 'some', 'full', `keptSome:${TICK.part}`, `kept:${TICK.all}`, 'read', 'written']);
+  assert.deepEqual(legendOf(viewOf({ ...s, layers: [kept] }, 'url', false, true))[3].rim, RIM.step(2));
+  assert.deepEqual(legendOf(viewOf({ ...s, layers: [raw] }, 'url', false, true))[1].rim, RIM.opaque, 'ticks over the hatch');
+  // A range's kept blocks: ticked, and said.
+  const blocks = new Uint8Array(per);
+  blocks.set([1, 1, 0, 5]);
+  const keptBlocks = new Uint8Array(per);
+  keptBlocks[1] = 1;
+  const r: RangeDetail = { range: 0, blocks, runs: {}, kept: keptBlocks };
+  assert.deepEqual([...detailLook(r).tick!.subarray(0, 3)], [TICK.none, TICK.all, TICK.none]);
+  assert.deepEqual(detailWords(r, { disk: 'counted', overlay: false, kept: true }).slice(1), [
+    { key: 'disks:surface-look.range.disk', params: { count: 2 } },
+    { key: 'disks:surface-look.range.unknown', params: { count: 1 } },
+    { key: 'disks:surface-look.range.keptData', params: { count: 1 } },
+  ]);
+});
+
+test("live: an answer a newer ask replaced has its activity carried into the next picture, at the next one's cell size", () => {
+  const next: Surface = { size: 8 * RANGE, cellBytes: 2 * RANGE, unitBytes: UNIT, layers: [], activity: Uint8Array.from([0, 1, 0, 0]) };
+  // The dropped one at a range a cell: range 0 written, range 5 read; the next at two ranges a cell.
+  const carried = carryActivity({ cellBytes: RANGE, activity: Uint8Array.from([2, 0, 0, 0, 0, 1, 0, 0]) }, next);
+  assert.deepEqual([...carried!], [2, 1, 1, 0]);
+  // To smaller cells: a cell of the dropped one marks each it covers.
+  const finer = carryActivity({ cellBytes: 4 * RANGE, activity: Uint8Array.from([0, 2]) }, { ...next, cellBytes: RANGE, activity: undefined });
+  assert.deepEqual([...finer!], [0, 0, 0, 0, 2, 2, 2, 2]);
+  assert.equal(carryActivity({ cellBytes: RANGE }, next), next.activity, 'nothing to carry');
 });
 
 // ---------------------------------------------------------------------------------------------------------------------

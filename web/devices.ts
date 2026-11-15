@@ -1112,9 +1112,10 @@ function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, ba
 /**
  * A running image's disk layer (web/surface.ts `LiveImage`), examined at an inspect, never on a request's path: a
  * qcow2's clusters from its L2 tables, those not read yet read once from a local file (a bounded read: qcow2.ts
- * `ALLOCATION_MAX`) but from a remote image only where the block cache or OPFS holds them (nothing is fetched for the
- * map); a raw image not examined, a remote one with the blocks this browser keeps. The content check reads a local
- * qcow2's blocks of data (through the image), no raw image's and no remote one's.
+ * `ALLOCATION_MAX`; past it, the tables the guest has read) but from a remote image only where the block cache or OPFS
+ * holds them (nothing is fetched for the map): what's under the others isn't examined yet; a raw image not examined. A
+ * remote image's with the blocks this browser keeps. The content check reads a local qcow2's blocks of data (through
+ * the image), no raw image's and no remote one's.
  */
 function liveImage(src: Source, base: Disk): LiveDisk['disk'] {
   const kept = src.kept;
@@ -1125,10 +1126,9 @@ function liveImage(src: Source, base: Disk): LiveDisk['disk'] {
   };
   const size = base.size;
   const examine = (): ReturnType<LiveImage['examine']> => {
-    if (base.format === 'raw') return { kind: 'opaque', id: 'disk', size, why: 'raw', ...(kept ? { kept } : {}) };
-    const allocation = base.allocation?.((off, n) => (here(off, n) ? src.read(off, n) : undefined));
-    if (allocation) return { kind: 'clusters', id: 'disk', size, allocation };
-    return { kind: 'opaque', id: 'disk', size, why: kept ? 'tables' : 'large' };
+    if (base.format === 'raw' || !base.allocation) return { kind: 'opaque', id: 'disk', size, why: 'raw', ...(kept ? { kept } : {}) };
+    const allocation = base.allocation((off, n) => (here(off, n) ? src.read(off, n) : undefined));
+    return { kind: 'clusters', id: 'disk', size, allocation, why: kept ? 'tables' : 'large', ...(kept ? { kept } : {}) };
   };
   // A raw image's blocks aren't examined (nor read); a remote qcow2's would be fetched.
   const read = (b: number) => (base.format === 'raw' || kept ? undefined : base.read(b * 4096, Math.min(4096, size - b * 4096)));

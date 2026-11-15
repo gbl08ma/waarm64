@@ -4,8 +4,10 @@
   - `cells`: how many; `rim`, `core`: per cell a look (block-grid.ts `RIM`, `CORE`): the rim is the whole square (the
     layer under), the core a smaller square inset in it (the layer over), so the core sits on the rim and the rim shows
     round it. `flash`: per cell bits (`FLASH.read`, `FLASH.write`), which fade over ~600 ms (with
-    `prefers-reduced-motion`, a mark that the next `flash` array replaces). The arrays are taken as they are: a new
-    picture is new arrays (their insides aren't watched); a short array leaves the cells past it empty.
+    `prefers-reduced-motion`, a mark that the next `flash` array replaces). `tick`: per cell a mark of its own along
+    its bottom edge, independent of the rim and the core (block-grid.ts `TICK`: none, part, all; static). The arrays
+    are taken as they are: a new picture is new arrays (their insides aren't watched); a short array leaves the cells
+    past it empty.
   - `mark`: the cell after which a boundary is drawn (the end of the layer under); `pinned`: the cell ringed as chosen.
   - `sizes`: a cell's size range and the gap, CSS pixels (block-grid.ts `CELL_SIZES`: 10 to 14, a 1 px gap); the cells
     take the largest size with which they all fit and grow a little to fill the width (read when it mounts).
@@ -29,6 +31,7 @@
     rim: Uint8Array;
     core: Uint8Array;
     flash?: Uint8Array;
+    tick?: Uint8Array;
     mark?: number;
     pinned?: number;
     sizes?: CellSizes;
@@ -37,7 +40,20 @@
     onhover?: (i: number | undefined) => void;
     onpick?: (i: number) => void;
   };
-  let { cells, rim, core, flash, mark, pinned, sizes = CELL_SIZES, label, onroom, onhover, onpick }: Props = $props();
+  let {
+    cells,
+    rim,
+    core,
+    flash,
+    tick,
+    mark,
+    pinned,
+    sizes = CELL_SIZES,
+    label,
+    onroom,
+    onhover,
+    onpick,
+  }: Props = $props();
 
   let box = $state<HTMLDivElement>();
   let canvas = $state<HTMLCanvasElement>();
@@ -92,7 +108,7 @@
 
   $effect(() => {
     if (!painter) return;
-    painter.data({ cells, rim, core });
+    painter.data({ cells, rim, core, tick });
     laidOut(painter);
   });
   $effect(() => painter?.flash(flash));
