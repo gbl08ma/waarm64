@@ -3,7 +3,8 @@
 **The user's brief (2026-11-15), drafted by the session that researched and specified it; confirmed by the user
 handing it over.** Give a room human-chosen names (`test123` beside `<key>.<tag>.p2p.internal`): registered first come
 by a key, for a term, renewed by the page, with no server of ours, no room administrator and nothing stored on a
-relay. **The design is [docs/plans/room-names.md](docs/plans/room-names.md): read it first, whole.** How it was
+relay. **The design is [docs/plans/room-names.md](docs/plans/room-names.md): read it first, whole** (it was revised after an
+out-of-context review of its first draft; its last section says what that draft got wrong). How it was
 chosen: [docs/plans/room-names-options.md](docs/plans/room-names-options.md) (seven options weighed) and the notes
 under `docs/plans/room-names-research/`;
 neither needs reading to build it. What it extends: [docs/networking/rooms.md](docs/networking/rooms.md).
@@ -18,18 +19,21 @@ to brush against:
    engineer against them (no witnesses, no pinning of names a node has seen, no stored relay state).
 2. **Nothing about a name stays on a Nostr relay**; "who serves the registry?" is an ephemeral message, and nothing
    about a member goes in a room's link.
-3. **Name owners serve the registry and are discoverable; members who only use names reveal nothing new.** Registry
-   traffic never opens a WebRTC connection (it would show a member's IP address to a server it didn't choose).
-4. **Bitcoin is the clock, through OpenTimestamps**: no coin, fee or wallet, and no drand. The outside services are
-   the three calendars and two block explorers the spec names; another one is asked.
+3. **Name owners hold the whole registry and serve it; everyone else asks a server for the one name it wants.** A
+   node's registry traffic runs under a key made new each session, relay only: no server learns which node asked, and
+   registry traffic never opens a WebRTC connection. Members that only use names reveal nothing new to other members.
+4. **Bitcoin is the clock, through OpenTimestamps**: no coin, fee or wallet, and no drand. Times are block headers'
+   own timestamps; members ask no block explorer. The outside services are the three calendars and two explorers the
+   spec names, used only by a page that registers or renews (and calendars by servers finishing a renewal); another
+   service, or another user of these, is asked.
 5. **Names are never in the registry in words**: looked up by a keyed hash, where they point sealed under the name, an
    owner key per name. Which names are acceptable is the resolver's and the dialog's rule.
 6. **The two hot paths**: reaching someone's name takes no switch, notice or reading; naming a machine is one dialog
    with two notices (discoverable; visit every N days) and no key shown. A design that adds a step to either is asked.
 7. **Short terms** (~30 days, a week's grace, renewed past a third of the term); the exact numbers may move with N0's
    measurements, inside "a month or shorter".
-8. **A room connection may run without a guest** for the minute publishing takes; one that stays up without a machine
-   isn't in this track.
+8. **The page may reach a room without a guest** to publish names (through a names client, which needs no machine
+   and no key of the node's); a room connection of the guest's that stays up without a machine isn't in this track.
 9. **Dependencies**: none new, except `argon2` (RustCrypto) if N0's numbers pick it over BLAKE2s (the user's OK is
    given for that case; its `THIRD_PARTY.json` row with `about`). The OpenTimestamps libraries are LGPL: the verifier
    is written from the format, nothing copied (a reference row). Anything else is asked.
@@ -65,7 +69,8 @@ reveals or which outside service a page talks to. The user is often watching: a 
 - Correctness: tests at the cheapest layer, most of them Rust unit tests in `net/ts` against the pretend Bitcoin,
   calendar and explorer (no test touches a public service); **a planted bug for each new rule** a test must catch (an
   anchor past `REF_WINDOW` taken, a renewal by another key, a later claim beating an earlier one, a zone opened with
-  another name's key, a pending anchor counted, a worse chain replacing a better one), source restored afterwards and
+  another name's key, a pending anchor counted, a worse chain replacing a better one, a header under the floor taken,
+  a member's kept name replaced by a younger chain), source restored afterwards and
   the module rebuilt. Tests never `assert.deepEqual` large buffers.
 - **Public services** (the calendars, the explorers, public relays and DERP) are touched only by N0 and N6, a few
   hundred small requests at most each, never a load test; tailcat's relays for one transfer a size.
@@ -100,47 +105,49 @@ each with its confirming test failing first.
 
 ## The loops (in order; the supervisor may reorder by measurement, saying why in the handover)
 
-0. **Measure** (no product code; the spec's "Measure first"): the calendars' time to anchor over a week of stamps
-   (start it first; it runs beside the later loops, a script under `bench/net/` that keeps its state in
-   `bench/results/local/`); proof of work, BLAKE2s against Argon2id at a few memory sizes, in Chromium's wasm and
-   natively on one machine; BIP-340 and anchor verification rates in the module's wasm; anchor sizes, raw and with
-   shared tails; a sync-sized transfer through tailcat's public relays. *Done:* a "NAMES loop 0" entry in
-   bench/net/REPORT.md with its JSON under `bench/net/results/`; `TERM`, `GRACE`, `REF_WINDOW`, the function and
-   `POW_BITS` set in the spec from the numbers (the anchor's figure provisional until the week is in), the size
-   estimates replaced.
+0. **Measure** (no product code; the spec's "Measure first", six items): start the calendars' time to anchor first
+   (it runs for a week beside the later loops, a script under `bench/net/` that keeps its state in
+   `bench/results/local/`). *Done:* a "NAMES loop 0" entry in bench/net/REPORT.md with its JSON under
+   `bench/net/results/`; `REF_WINDOW`, the proof-of-work function and `POW_BITS` set in the spec from the numbers (the
+   anchor's figure provisional until the week is in), the size table replaced, and the spec's "where it stops" either
+   confirmed or corrected.
 1. **Records and rules**, pure Rust in `net/ts/src/room/names/`: entries, anchors and their verifier, headers and the
-   floor, zones and their sealing, name ids, chains, ownership. The chain's parameters are a struct, so tests run a
+   floor, zones and their sealing, name ids, the order of chains. The clock's parameters are a struct, so tests run a
    pretend Bitcoin of easy headers. *Done:* `cargo test` with vectors (one real anchored proof and its header,
-   committed) and a property test that any order of merging the same chains gives the same owner; the planted bugs.
-2. **The registry in the module**: the store, port 2's messages, range sync, `have`, "who serves the registry?" and
-   its answer rule, the limits. *Done:* in room/tests.rs's fake DERP and relay: two and twenty members converge; a
-   reset recovers from one member's copy; a server that leaves names out; a worse chain refused; forged anchors,
-   headers and signatures refused; registry traffic opens no WebRTC connection.
-3. **The resolver, persistence and headers**: `resolve()`'s new cases, the `store` event for the room client, headers
-   through `Fetch`, and the tests' pretend calendar and explorer (`tests/net/ots-calendar.ts`, no dependency, as
-   `tests/net/nostr-relay.ts` is). *Done:* its own Node test; tests/page-room.test.ts grown by a name (titles made by
-   the test's own tool until N4): by full name and by the short one through the search domain, a label under it, a
-   zone change, NXDOMAIN against SERVFAIL. Then **the mid-track review and the full scripts**.
+   committed) and property tests (any order of merging the same chains, with any subsets of their anchors, gives the
+   same owner; forks, releases and their stale copies); the planted bugs.
+2. **The names client and the servers' side**: a second room client under a session key, "who serves the registry?"
+   and its answer rule, `serve`, the store, range sync, `get`, `put`, `have`, the bound. *Done:* in room/tests.rs's
+   fake DERP and relay: two and twenty servers converge; a reset recovers from one owner's title; a server that leaves
+   names out; a worse chain refused; forged anchors, headers and signatures refused; the answer rule's counts at 1, 20
+   and 500 servers; a flood of questions leaving the node's own lookups and call backs alone; nothing on port 2 under
+   the node's key, and no WebRTC connection from it.
+3. **The member's side and the resolver**: `get`, `history`, what a member keeps, `resolve()`'s new cases with their
+   waits and negative answers, the reserved names, persistence for members and servers, and the tests' pretend
+   calendar and explorer (`tests/net/ots-calendar.ts`, no dependency, as `tests/net/nostr-relay.ts` is). *Done:* its
+   own Node test; tests/page-room.test.ts grown by a name (titles made by the test's own tool until N4): by full name
+   and by the short one through the search domain, a label under it, a zone change, a reserved name, a room with no
+   server, and what Debian asks the search domain unprompted. Then **the mid-track review and the full scripts**.
 4. **The review's findings fixed**, then **the names agent**: owners' secrets, titles, the worker and its `ts_names_*`
-   exports, stamping, collecting, renewing on load, handing titles to the module, publishing without a guest under the
-   key's lock. *Done:* Node and Chromium tests with the pretend calendar: a claim held back until anchored, a renewal
-   with the machine off that a second member then resolves, the lock against a machine starting meanwhile, a lost
-   name, a title surviving a connection's export and import (tests/connections.test.ts's neighbours).
+   exports, stamping, collecting, renewing on load, publishing through a names client with no machine running.
+   *Done:* Node and Chromium tests with the pretend calendar: a claim held back until anchored, a renewal with the
+   machine off that a second member then resolves, a title renewed in two browsers (a fork settled), a lost name, a
+   title surviving a connection's export and import (tests/connections.test.ts's neighbours).
 5. **The page**: Name this machine…, the adapter's states and details, the Machines page's dates, the catalog,
    docs/frontend.md. *Done:* a page test of the dialog through to a name another machine reaches
    (tests/page-room.test.ts or beside it), the wording cases, both hot paths as decision 6 says.
-6. **Scale and abuse**: bench/net/room-scale.ts with 1,000 members and 5,000 names (sync bytes, time to a first
-   answer, a server's load as members join; what the registry costs a member in memory); a few days on the public
-   calendars, explorers and default relays with real stamps, between two pages. *Done:* a "NAMES loop 6" REPORT entry;
-   what the numbers break is fixed or, if out of proportion, filed with them.
+6. **Scale and abuse**: bench/net/room-scale.ts with 1,000 members, 20 servers and 5,000 names (a server's load and
+   memory, a cold lookup, 500 members joining in a minute, junk registered in bulk against the bound); a few days on
+   the public calendars, explorers and default relays with real stamps, between two pages. *Done:* a "NAMES loop 6"
+   REPORT entry; what the numbers break is fixed or, if out of proportion, filed with them.
 
 ## The end
 
 The final review's findings fixed or filed; the full scripts green (above); the numbers in bench/net/REPORT.md;
 `docs/networking/names.md` written from the spec as what exists (and listed in docs/README.md); rooms.md's "Decisions"
 and "What a room needs from a Nostr relay" updated, and its opening lines, which say the only names are keys;
-docs/frontend.md and docs/testing.md saying what's new; loose ends in docs/backlog.md (the lighter member modes, old
-history in chains, transfer and recovery keys, a connection that stays up without a machine); PLAN.md's row set to
+docs/frontend.md and docs/testing.md saying what's new; loose ends in docs/backlog.md (servers that hold a share of the ids
+each, old history in chains, transfer and recovery keys); PLAN.md's row set to
 done with its links; docs/plans/room-names.md, plans/networking-p2p.md's bullet, this file and NAMES-HANDOVER.md
 deleted in that commit. docs/plans/room-names-options.md and `room-names-research/` go with them, what they found
 that explains the design (why first come needs an orderer, what each option cost, why a chain on Bitcoin's clock
