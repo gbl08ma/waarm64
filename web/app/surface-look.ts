@@ -19,10 +19,13 @@ const unitsIn = (size: number, cellBytes: number, c: number) =>
 export const diskLayer = (s: Surface) => s.layers.find((l) => l.id === 'disk');
 export const overlayLayer = (s: Surface) => s.layers.find((l) => l.id === 'overlay');
 
-/** A disk's rim in cell `c` (`units`: the disk's blocks there): past its end, not examined, nothing, or held in steps. */
+/**
+ * A disk's rim in cell `c` (`units`: the disk's blocks there): past its end, not examined (or, of an image not
+ * examined, its blocks kept in this browser in steps), nothing, or held in steps.
+ */
 function rimOf(disk: SurfaceLayer | undefined, units: number, c: number) {
   if (!disk || units === 0) return RIM.absent;
-  if (disk.known === 'opaque') return RIM.opaque;
+  if (disk.known === 'opaque') return disk.kept?.[c] ? RIM.step(stepOf(disk.kept[c], units)) : RIM.opaque;
   return disk.held[c] ? RIM.step(stepOf(disk.held[c], units)) : RIM.empty;
 }
 
@@ -58,8 +61,25 @@ function coreOf(over: SurfaceLayer, cellBytes: number, c: number) {
   return CORE.step(stepOf(held + zero, unitsIn(over.size, cellBytes, c)));
 }
 
-/** What a view is: its disk's kind as the map knows it, an overlay laid over it, the overlay larger, live. */
-export type ViewKind = { disk: 'counted' | 'opaque' | 'ram'; overlay: boolean; grown: boolean; live: boolean };
+/**
+ * What a view is: its disk's kind as the map knows it, an overlay laid over it, the overlay larger, live, and (an
+ * image not examined) whether it says which of its blocks this browser keeps.
+ */
+export type ViewKind = {
+  disk: 'counted' | 'opaque' | 'ram';
+  overlay: boolean;
+  grown: boolean;
+  live: boolean;
+  kept?: boolean;
+};
+
+/** A view's disk kind from its surface (what its disk layer says), else from the disk's record kind. */
+export function diskKindOf(s: Surface | undefined, record: string | undefined): ViewKind['disk'] {
+  if (record === 'ramdisk') return 'ram';
+  const d = s && diskLayer(s);
+  if (d) return d.known;
+  return record === 'file' || record === 'url' ? 'opaque' : 'counted';
+}
 
 /** A legend's entry: its look and its words' key. */
 export type LegendEntry = { rim: number; core: number; flash: number; key: string };
@@ -68,8 +88,13 @@ export type LegendEntry = { rim: number; core: number; flash: number; key: strin
 export function legendOf(v: ViewKind): LegendEntry[] {
   const out: LegendEntry[] = [];
   const add = (key: string, rim: number, core: number = CORE.none, flash = 0) => out.push({ key, rim, core, flash });
-  if (v.disk === 'opaque') add('disks:surface-look.legend.opaque', RIM.opaque);
-  else {
+  if (v.disk === 'opaque') {
+    add('disks:surface-look.legend.opaque', RIM.opaque);
+    if (v.kept) {
+      add('disks:surface-look.legend.keptSome', RIM.step(1));
+      add('disks:surface-look.legend.kept', RIM.step(STEPS));
+    }
+  } else {
     add('disks:surface-look.legend.empty', RIM.empty);
     add(v.disk === 'ram' ? 'disks:surface-look.legend.ram' : 'disks:surface-look.legend.some', RIM.step(1));
     add('disks:surface-look.legend.full', RIM.step(STEPS));
@@ -108,12 +133,40 @@ function diskWords(s: Surface, c: number, ram: boolean): Msg {
   const disk = diskLayer(s);
   const units = disk ? unitsIn(disk.size, s.cellBytes, c) : 0;
   if (!disk || units === 0) return msg('disks:surface-look.disk.past');
-  if (disk.known === 'opaque') return msg('disks:surface-look.disk.opaque');
+  if (disk.known === 'opaque')
+    return disk.kept?.[c]
+      ? msg('disks:surface-look.disk.kept', { kept: disk.kept[c], of: units })
+      : msg('disks:surface-look.disk.opaque');
   if (!disk.held[c]) return msg(ram ? 'disks:surface-look.ram.empty' : 'disks:surface-look.disk.empty');
   return msg(ram ? 'disks:surface-look.ram.held' : 'disks:surface-look.disk.held', {
     held: disk.held[c],
     count: units,
   });
+}
+
+/** Why an image isn't examined, in words (the line under the map while no square is pointed at). */
+const WHY_WORDS = {
+  raw: 'disks:surface-look.why.raw',
+  tables: 'disks:surface-look.why.tables',
+  large: 'disks:surface-look.why.large',
+  permission: 'disks:surface-look.why.permission',
+  remote: 'disks:surface-look.why.remote',
+} as const;
+
+/**
+ * What a view of an image not examined holds as a whole, in words: why it isn't, how much of it this browser keeps
+ * (a remote raw image's), and the overlay's changes over it.
+ */
+export function opaqueWords(disk: SurfaceLayer, overlay: boolean): Msg[] {
+  const out = [disk.why ? msg(WHY_WORDS[disk.why]) : msg('disks:surface-look.why.unknown')];
+  if (disk.kept) {
+    const kept = disk.kept.reduce((n, k) => n + k, 0);
+    out.push(
+      kept ? msg('disks:surface-look.keptAll', { size: sizeText(kept * UNIT) }) : msg('disks:surface-look.keptNone'),
+    );
+  }
+  if (overlay) out.push(msg('disks:surface-look.overOpaque'));
+  return out;
 }
 
 /** What the overlay changed in cell `c`, in words. */
@@ -145,7 +198,10 @@ export function rangesOfCell(s: Surface, c: number) {
   return { first, count: Math.max(0, Math.min(per, Math.ceil(s.size / RANGE) - first)) };
 }
 
-/** A range's blocks as the detail's grid draws them (32 × 32): the disk's, the overlay's, zeroed, past the end. */
+/**
+ * A range's blocks as the detail's grid draws them (32 × 32): the disk's (not examined, or kept in this browser), the
+ * overlay's, zeroed, past the end.
+ */
 export function detailLook(d: RangeDetail, opaque: boolean): SurfaceLook {
   const n = d.blocks.length;
   const rim = new Uint8Array(n);
@@ -154,6 +210,7 @@ export function detailLook(d: RangeDetail, opaque: boolean): SurfaceLook {
     const b = d.blocks[i];
     if (b === 4) rim[i] = RIM.absent;
     else if (b === 1) rim[i] = opaque ? RIM.opaque : RIM.step(STEPS);
+    else if (b === 5) rim[i] = RIM.step(STEPS);
     else if (b === 2) core[i] = CORE.step(STEPS);
     else if (b === 3) core[i] = CORE.hollow;
   }
@@ -162,9 +219,9 @@ export function detailLook(d: RangeDetail, opaque: boolean): SurfaceLook {
 
 /** A range's blocks counted by whose they are. */
 export function detailCounts(d: RangeDetail) {
-  const n = [0, 0, 0, 0, 0];
+  const n = [0, 0, 0, 0, 0, 0];
   for (const b of d.blocks) n[b]++;
-  return { disk: n[1], overlay: n[2], zeroed: n[3], past: n[4] };
+  return { disk: n[1] + n[5], overlay: n[2], zeroed: n[3], past: n[4], kept: n[5] };
 }
 
 /** A range's detail in words: where it is, what it holds and in how many runs (fragments) its store keeps it. */
@@ -174,8 +231,10 @@ export function detailWords(d: RangeDetail, v: Pick<ViewKind, 'disk' | 'overlay'
     msg('disks:surface-look.range', { from: sizeText(d.range * RANGE), to: sizeText((d.range + 1) * RANGE) }),
   ];
   if (d.range * RANGE >= diskSize) out.push(msg('disks:surface-look.range.past'));
-  else if (v.disk === 'opaque') out.push(msg('disks:surface-look.range.opaque'));
-  else if (!c.disk) out.push(msg('disks:surface-look.range.diskEmpty'));
+  else if (v.disk === 'opaque') {
+    out.push(msg('disks:surface-look.range.opaque'));
+    if (c.kept) out.push(msg('disks:surface-look.range.kept', { blocks: c.kept }));
+  } else if (!c.disk) out.push(msg('disks:surface-look.range.diskEmpty'));
   else if ('disk' in d.runs) out.push(msg('disks:surface-look.range.diskRuns', { blocks: c.disk, count: d.runs.disk }));
   else out.push(msg('disks:surface-look.range.disk', { count: c.disk }));
   if (v.overlay) {

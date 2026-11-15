@@ -526,14 +526,19 @@ was (on the screen).
 - **The map** (`ui/BlockGrid.svelte`): a square is 4 MiB times the smallest power of two for which the whole view fits
   the squares the window has room for (counted at 10 px; a small disk's few squares grow to 24 px), said over it
   ([1 square = {{size}}](ui:disks:SurfaceWindow.scale)). The disk is each square's rim (no data, then four shades of
-  how full: any block at all is the first; a file's or a URL's image flat, not examined), the overlay a core inset in
+  how full: any block at all is the first; a qcow2 image's clusters with data counted so too, where they can be
+  known; other images flat, hatched, not examined, a remote raw one's blocks kept in this browser in the same four
+  shades over the hatch: [Partly kept in this browser](ui:disks:surface-look.legend.keptSome)), the overlay a core inset in
   it (four shades of what it changed; hollow where it only zeroed or discarded blocks); with an overlay larger than
   the disk (grown, [machines.md](machines.md) §4.5) the squares past the disk have no rim and the disk's end is
   marked. Live, a square the guest read or wrote flashes. The legend (`SurfaceLegend.svelte`) shows only the looks
   the view can show (`surface-look.ts` `legendOf`). The line under the map says the pointed square's numbers
   (`cellWords`: where, the disk's blocks held of its blocks, the overlay's changed and zeroed, the activity; read
   aloud, `aria-live`), else what the view holds as a whole ([The disk holds no data yet. Every block reads as zeros.](ui:disks:SurfaceWindow.empty)
-  for an empty one).
+  for an empty one; for an image not examined, why: raw, its tables not all read yet, too large, no permission to
+  read the file, a URL while its machine doesn't run here: `surface-look.ts` `opaqueWords`). **The overlay picker**
+  says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
+  the record keeps the numbers of the run before until the machine stops.
 - **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
   32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
   consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
@@ -546,6 +551,10 @@ was (on the screen).
   written in place answers as a blank disk under an overlay that is its store, shown as the disk (`asInPlace`).
   Otherwise **from the files**: a job worker per ask (`surface-worker.ts`, `surface-job.ts`), read-only under the
   shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too). A
+  file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, never
+  `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
+  (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters; a URL's image isn't examined offline
+  (its identity, which names the blocks kept in this browser, needs the server's answer; nothing is fetched). A
   ramdisk not running has nothing to show ([A ramdisk holds data only while its machine runs. Its map can be seen
   here while the machine runs in this tab.](ui:disks:surface-source.ramdisk)), the files of a machine running in
   another tab are refused in words (`surface-job.inUse`), and every ask is bounded (5 s live, 20 s for a content

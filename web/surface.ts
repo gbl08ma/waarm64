@@ -1,10 +1,12 @@
 // A disk's surface (docs/plans/surface.md): what a disk and one of its overlays hold, counted per cell of a grid, and
 // one 4 MiB range of them block by block. The numbers come from the block maps' leaves (web/overlay.ts `MapLeaves`)
 // the device worker has in memory anyway (a running disk: `diskInspector`, built by web/devices.ts `blk`), or that a
-// job worker reads from the files (web/app/surface-job.ts). No DOM, no OPFS: workers, the page and Node's tests import
-// it. A cell is 4 MiB (one leaf's range) times a power of two; cells are counted in 4 KiB blocks.
+// job worker reads from the files (web/app/surface-job.ts), and from a qcow2 image's L2 tables (web/qcow2.ts
+// `Allocation`) where they can be had without asking or fetching. No DOM, no OPFS: workers, the page and Node's tests
+// import it. A cell is 4 MiB (one leaf's range) times a power of two; cells are counted in 4 KiB blocks.
 import type { MapLeaves } from './overlay.ts';
 import type { Msg } from './msg.ts';
+import type { Allocation } from './qcow2.ts';
 
 /** A surface: something made of equal units (a disk's 4 KiB blocks, later RAM's pages), seen as `cells` cells. */
 export type Surface = {
@@ -28,11 +30,24 @@ export type SurfaceLayer = {
   /** Per cell: units held with data; units held as zeros without data (an overlay's zeroed and discarded blocks). */
   held: Uint32Array;
   zero: Uint32Array;
+  /** An opaque layer's: per cell, units whose bytes this browser keeps (a remote raw image's, in memory or in OPFS). */
+  kept?: Uint32Array;
+  /** An opaque layer's: why it isn't examined (the page says it in words). */
+  why?: OpaqueWhy;
 };
+/**
+ * Why an image isn't examined: a raw one (nothing in it says what it holds), a qcow2 whose tables aren't all here (a
+ * remote image's not yet read, never fetched for this) or are too large to read, a file this browser may not read now
+ * (no permission without asking), an image on a web server while its machine doesn't run here.
+ */
+export type OpaqueWhy = 'raw' | 'tables' | 'large' | 'permission' | 'remote';
 /** One 4 MiB range, block by block. */
 export type RangeDetail = {
   range: number;
-  /** Per 4 KiB block: 0 nothing, 1 the disk's, 2 the overlay's, 3 zeroed by the overlay, 4 past the end. */
+  /**
+   * Per 4 KiB block: 0 nothing, 1 the disk's, 2 the overlay's, 3 zeroed by the overlay, 4 past the end, 5 the disk's,
+   * not examined but kept in this browser (a remote raw image's).
+   */
   blocks: Uint8Array;
   /** Runs of consecutive slots the layer's held blocks take in its `data` file, per layer id. */
   runs: Record<string, number>;
@@ -146,8 +161,61 @@ function unitsPerCell(size: number, cellBytes: number) {
 }
 
 /** A layer whose contents aren't examined (a file's or a URL's image): every unit counts as held. */
-export function opaqueLayer(id: string, size: number, cellBytes: number): SurfaceLayer {
-  return { id, size, known: 'opaque', held: unitsPerCell(size, cellBytes), zero: new Uint32Array(cellCount(size, cellBytes)) };
+export function opaqueLayer(id: string, size: number, cellBytes: number, why?: OpaqueWhy): SurfaceLayer {
+  return { id, size, known: 'opaque', held: unitsPerCell(size, cellBytes), zero: new Uint32Array(cellCount(size, cellBytes)), ...(why ? { why } : {}) };
+}
+
+/** Which of an image file's blocks this browser keeps (web/devices.ts `Source.kept`). */
+export type Kept = { block: number; has(k: number): boolean };
+
+/** Per cell, the units of a raw image of `size` bytes whose bytes are kept (`kept`: its file's blocks; the file is the disk). */
+export function keptUnits(size: number, kept: Kept, cellBytes: number) {
+  const out = new Uint32Array(cellCount(size, cellBytes));
+  const blocks = Math.ceil(size / kept.block);
+  for (let k = 0; k < blocks; k++) {
+    if (!kept.has(k)) continue;
+    // A block within one cell when it's at most a cell (both powers of two); a larger one spread over its cells.
+    for (let at = k * kept.block, end = Math.min(size, (k + 1) * kept.block); at < end;) {
+      const c = Math.floor(at / cellBytes);
+      const to = Math.min(end, (c + 1) * cellBytes);
+      out[c] += Math.ceil(to / UNIT) - Math.ceil(at / UNIT);
+      at = to;
+    }
+  }
+  return out;
+}
+
+/** Whether unit (block) `b` of a raw image is kept. */
+const keptUnit = (kept: Kept, b: number) => kept.has(Math.floor((b * UNIT) / kept.block));
+
+/**
+ * Every range's counts of a qcow2's allocation for a layer of `size` bytes: its units with data (a unit is the disk's
+ * if any cluster in it is: clusters of under 4 KiB share one). Clusters (at most 2 MiB) never cross a range.
+ */
+export function allocationCounts(a: Allocation, size: number): RangeCounts {
+  const ranges = rangesOf(size);
+  const out = { held: new Uint16Array(ranges), zero: new Uint16Array(ranges) };
+  const units = Math.ceil(size / UNIT);
+  for (let u = 0; u < units;) {
+    if (a.clusterBytes >= UNIT) {
+      const per = a.clusterBytes / UNIT;
+      const n = Math.min(per, units - u);
+      if (a.allocated(u / per)) out.held[Math.floor(u / LEAF)] += n;
+      u += n;
+    } else {
+      if (unitAllocated(a, u)) out.held[Math.floor(u / LEAF)]++;
+      u++;
+    }
+  }
+  return out;
+}
+
+/** Whether unit `u` (4 KiB) of a qcow2 has data: any of its clusters does. */
+function unitAllocated(a: Allocation, u: number) {
+  if (a.clusterBytes >= UNIT) return a.allocated(Math.floor((u * UNIT) / a.clusterBytes));
+  const per = UNIT / a.clusterBytes;
+  for (let c = u * per; c < (u + 1) * per; c++) if (a.allocated(c)) return true;
+  return false;
 }
 
 /** A ramdisk's layer from the 1 MiB chunks it has in memory (their indices): their blocks are held. */
@@ -177,13 +245,17 @@ const widen = (a: Uint32Array, cells: number) => {
 export function surfaceOf(cellBytes: number, layers: SurfaceLayer[]): Surface {
   const size = Math.max(0, ...layers.map((l) => l.size));
   const cells = cellCount(size, cellBytes);
-  return { size, cellBytes, unitBytes: UNIT, layers: layers.map((l) => ({ ...l, held: widen(l.held, cells), zero: widen(l.zero, cells) })) };
+  return { size, cellBytes, unitBytes: UNIT, layers: layers.map((l) => ({ ...l, held: widen(l.held, cells), zero: widen(l.zero, cells), ...(l.kept ? { kept: widen(l.kept, cells) } : {}) })) };
 }
 
 /** A layer of a range's detail: what its blocks are. */
 export type DetailLayer =
   | { kind: 'map'; id: string; size: number; leaves: Leaves }
-  | { kind: 'blank' | 'opaque'; id: string; size: number }
+  | { kind: 'blank'; id: string; size: number }
+  /** An image not examined (`kept`: which of its file's blocks are here, a raw remote image's). */
+  | { kind: 'opaque'; id: string; size: number; why?: OpaqueWhy; kept?: Kept }
+  /** A qcow2's clusters (web/qcow2.ts `Allocation`). */
+  | { kind: 'clusters'; id: string; size: number; allocation: Allocation }
   | { kind: 'ram'; id: string; size: number; chunks: Iterable<number> };
 
 /**
@@ -208,7 +280,8 @@ export function rangeDetail(range: number, size: number, disk: DetailLayer, over
     else if (o) blocks[i] = 2;
     else if (b * UNIT < disk.size) {
       if (disk.kind === 'map') { const e = entry(disk, b); blocks[i] = e && e !== 0xffffffff ? 1 : 0; }
-      else if (disk.kind === 'opaque') blocks[i] = 1;
+      else if (disk.kind === 'opaque') blocks[i] = disk.kept && keptUnit(disk.kept, b) ? 5 : 1;
+      else if (disk.kind === 'clusters') blocks[i] = unitAllocated(disk.allocation, b) ? 1 : 0;
       else if (ram) blocks[i] = ram.has(Math.floor((b * UNIT) / RAM_CHUNK)) ? 1 : 0;
     }
   }
@@ -229,13 +302,13 @@ export function rangeDetail(range: number, size: number, disk: DetailLayer, over
 }
 
 /**
- * The content check of a range's detail: its held blocks (the disk's, 1, and the overlay's, 2) read with `read`
+ * The content check of a range's detail: its held blocks (the disk's, 1 and 5, and the overlay's, 2) read with `read`
  * (block number, its state), and how many are all zeros. A block that can't be read isn't counted.
  */
 export async function contentOf(d: RangeDetail, read: (b: number, state: number) => Uint8Array | undefined | Promise<Uint8Array | undefined>) {
   let [n, zeros] = [0, 0];
   for (let i = 0; i < d.blocks.length; i++) {
-    const s = d.blocks[i];
+    const s = d.blocks[i] === 5 ? 1 : d.blocks[i];
     if (s !== 1 && s !== 2) continue;
     const bytes = await read(d.range * LEAF + i, s);
     if (!bytes) continue;
@@ -257,7 +330,7 @@ export function answerBuffers(a: InspectAnswer): ArrayBuffer[] {
   const add = (x: Uint8Array | Uint32Array | undefined) => { if (x && x.buffer instanceof ArrayBuffer && x.byteLength === x.buffer.byteLength) out.add(x.buffer); };
   if (a.kind === 'disk-surface') {
     add(a.surface.activity);
-    for (const l of a.surface.layers) [l.held, l.zero].forEach(add);
+    for (const l of a.surface.layers) [l.held, l.zero, l.kept].forEach(add);
   } else if (a.kind === 'disk-range') add(a.detail.blocks);
   return [...out];
 }
@@ -267,11 +340,25 @@ export function answerBuffers(a: InspectAnswer): ArrayBuffer[] {
 
 /** A live disk's layers as `diskInspector` reads them. */
 export type LiveDisk = {
-  /** The disk (the base): a stored disk's map (it doesn't change under its machines), a blank, an image, a ramdisk. */
-  disk: DetailLayer & { read?(b: number): Uint8Array | undefined | Promise<Uint8Array | undefined> };
+  /**
+   * The disk (the base): a stored disk's map (it doesn't change under its machines), a blank, a ramdisk, or an image
+   * (`examine`: its clusters where they can be known, else opaque, asked again at each query until they can).
+   */
+  disk: (DetailLayer | LiveImage) & { read?(b: number): Uint8Array | undefined | Promise<Uint8Array | undefined> };
   /** Its overlay: its map, read when asked (`leaves()` gives its current arrays), and a block's bytes. */
   overlay?: { id: string; size: number; leaves(): Leaves; read(b: number): Uint8Array | undefined };
 };
+
+/** A running disk's image: what can be known of it now (a qcow2's clusters once its tables are all here). */
+export type LiveImage = { kind: 'image'; id: string; size: number; examine(): Extract<DetailLayer, { kind: 'clusters' | 'opaque' }> };
+
+/** An image's layer at `cellBytes` a cell: its clusters counted (`counts`, made once by the caller), else opaque with what is kept. */
+export function imageLayer(d: Extract<DetailLayer, { kind: 'clusters' | 'opaque' }>, cellBytes: number, counts?: RangeCounts): SurfaceLayer {
+  if (d.kind === 'clusters') return layerOf(d.id, d.size, counts ?? allocationCounts(d.allocation, d.size), cellBytes);
+  const l = opaqueLayer(d.id, d.size, cellBytes, d.why);
+  if (d.kept) l.kept = keptUnits(d.size, d.kept, cellBytes);
+  return l;
+}
 
 /** How long the activity wrapper stays without a query that asks for it (ms). */
 export const ACTIVITY_IDLE_MS = 3000;
@@ -309,8 +396,19 @@ export function diskInspector(live: LiveDisk, hooks: {
 }) {
   const size = Math.max(live.disk.size, live.overlay?.size ?? 0);
   const ranges = rangesOf(size);
-  /** The disk's per-range counts (a map's: it doesn't change), made at the first query. */
+  /** The disk's per-range counts (a map's or an image's clusters: they don't change), made at the first query. */
   let diskCounts: RangeCounts | undefined;
+  /** An image's clusters, once known (they don't change while it's open). */
+  let clusters: Extract<DetailLayer, { kind: 'clusters' }> | undefined;
+  /** The disk as a range's detail and the layer read it now (an image examined). */
+  const base = (): DetailLayer => {
+    const d = live.disk;
+    if (d.kind !== 'image') return d;
+    if (clusters) return clusters;
+    const e = d.examine();
+    if (e.kind === 'clusters') clusters = e;
+    return e;
+  };
   /** Per range: `READ`, `WRITTEN`, `DIRTY`; undefined while the wrapper is off. */
   let marks: Uint8Array | undefined;
   /** The overlay's per-range counts while the wrapper is on; `warm`: taken with the wrapper on (and every request since marked). */
@@ -349,9 +447,10 @@ export function diskInspector(live: LiveDisk, hooks: {
   };
 
   const diskLayer = (cellBytes: number): SurfaceLayer => {
-    const d = live.disk;
+    const d = base();
     if (d.kind === 'map') return layerOf(d.id, d.size, (diskCounts ??= rangeCounts(d.leaves, d.size)), cellBytes);
-    if (d.kind === 'opaque') return opaqueLayer(d.id, d.size, cellBytes);
+    if (d.kind === 'clusters') return imageLayer(d, cellBytes, (diskCounts ??= allocationCounts(d.allocation, d.size)));
+    if (d.kind === 'opaque') return imageLayer(d, cellBytes);
     if (d.kind === 'ram') return ramLayer(d.id, d.size, d.chunks, cellBytes);
     return blankLayer(d.id, d.size, cellBytes);
   };
@@ -397,7 +496,7 @@ export function diskInspector(live: LiveDisk, hooks: {
 
   const range = async (q: Extract<InspectQuery, { kind: 'disk-range' }>): Promise<RangeDetail> => {
     const o = live.overlay;
-    const detail = rangeDetail(q.range, size, live.disk, o && { kind: 'map', id: o.id, size: o.size, leaves: o.leaves() });
+    const detail = rangeDetail(q.range, size, base(), o && { kind: 'map', id: o.id, size: o.size, leaves: o.leaves() });
     if (q.content) detail.content = await contentOf(detail, (b, s) => (s === 2 ? o?.read(b) : live.disk.read?.(b)));
     return detail;
   };

@@ -20,7 +20,16 @@
   import { runningHere, surfaceWindow, type SurfaceOpen } from './areas/surface.svelte.ts';
   import { choiceKey, chooseSource, sourceFor } from './surface-source.ts';
   import { SurfacePoll } from './surface-poll.svelte.ts';
-  import { cellWords, diskLayer, lookOf, overlayLayer, sizeText, type ViewKind } from './surface-look.ts';
+  import {
+    cellWords,
+    diskKindOf,
+    diskLayer,
+    lookOf,
+    opaqueWords,
+    overlayLayer,
+    sizeText,
+    type ViewKind,
+  } from './surface-look.ts';
   import { bytesText } from './bytes.ts';
   import { text, t } from '../i18n.ts';
 
@@ -77,10 +86,11 @@
   /** The squares' sizes: the room is counted at 10 px (so the scale), and a small disk's few squares grow to 24 px. */
   const SIZES = { min: 10, max: 24, gap: 1 };
   const kind = $derived<ViewKind>({
-    disk: disk?.kind === 'ramdisk' ? 'ram' : disk?.kind === 'file' || disk?.kind === 'url' ? 'opaque' : 'counted',
+    disk: diskKindOf(surface, disk?.kind),
     overlay: !!chosen,
     grown: look?.mark !== undefined,
     live: poll.live,
+    kept: !!(surface && diskLayer(surface)?.kept),
   });
 
   let hover = $state<number>();
@@ -100,17 +110,26 @@
     const d = diskLayer(surface);
     const o = overlayLayer(surface);
     const nothing = (l: typeof d) => !l || l.held.every((x) => x === 0);
-    if (kind.disk === 'opaque') return t(chosen ? 'disks:SurfaceWindow.opaqueOverlay' : 'disks:SurfaceWindow.opaque');
+    if (d?.known === 'opaque') return opaqueWords(d, !!chosen).map(text).join(' ');
     if (nothing(d) && (!o || (nothing(o) && o.zero.every((x) => x === 0))))
       return t(kind.disk === 'ram' ? 'disks:SurfaceWindow.ramEmpty' : 'disks:SurfaceWindow.empty');
     return t('disks:SurfaceWindow.hint');
   });
 
   const title = $derived(disk?.name ?? t('disks:SurfaceWindow.untitled'));
+  /**
+   * What the overlay the view shows live holds, from the answer (its blocks with data): its record keeps the numbers
+   * of the run before until the machine stops.
+   */
+  const liveHeld = $derived.by(() => {
+    if (!poll.live || !surface) return undefined;
+    const o = overlayLayer(surface);
+    return o ? o.held.reduce((n, k) => n + k, 0) * surface.unitBytes : undefined;
+  });
   const overlayLabel = (o: (typeof overlays)[number]) =>
     t('disks:SurfaceWindow.overlay', {
       name: o.name,
-      held: bytesText(o.bytes),
+      held: bytesText(o.id === overlay && liveHeld !== undefined ? liveHeld : o.bytes),
       size: bytesText(Math.max(disk?.size ?? 0, o.size ?? 0)),
     });
 

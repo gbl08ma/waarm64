@@ -23,7 +23,7 @@ import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
 import { blockList, openOverlay, overlay, storageNumbers, type MapLeaves, type OverlayFiles, type WritableDisk } from './overlay.ts';
-import { diskInspector, RANGE, type InspectAnswer, type InspectQuery, type LiveDisk } from './surface.ts';
+import { diskInspector, RANGE, type InspectAnswer, type InspectQuery, type LiveDisk, type LiveImage } from './surface.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { inflatePool } from './inflate-pool.ts';
@@ -743,6 +743,8 @@ export type Source = {
   held?(): Iterable<number>;
   /** Its block map, where it is one (a stored disk's: web/stored.ts `blockSource`; a blank disk's, empty), read-only (web/surface.ts). */
   leaves?(): Pick<MapLeaves, 'top' | 'recs' | 'n'>;
+  /** Which of its file's bytes are here without a fetch, in blocks of `block` bytes (a remote image's: in the block cache's memory or kept in OPFS; web/blockcache.ts), read-only (web/surface.ts). */
+  kept?: { block: number; has(k: number): boolean };
 };
 
 /**
@@ -1082,7 +1084,7 @@ function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, ba
   } else if (src.leaves) {
     const s = src;
     disk = { kind: 'map', id: 'disk', size: s.size, leaves: s.leaves!(), read: (b) => s.read(b * 4096, Math.min(4096, s.size - b * 4096)) };
-  } else disk = { kind: 'opaque', id: 'disk', size: base.size };
+  } else disk = liveImage(src, base);
   const o = ov?.leaves && ov;
   let inner: Backend['request'] | undefined;
   return diskInspector({ disk, overlay: o ? { id: 'overlay', size: o.size, leaves: () => o.leaves!(), read: (b) => o.block(b) } : undefined }, {
@@ -1102,6 +1104,32 @@ function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, ba
       inner = undefined;
     },
   });
+}
+
+/**
+ * A running image's disk layer (web/surface.ts `LiveImage`), examined at an inspect, never on a request's path: a
+ * qcow2's clusters from its L2 tables, those not read yet read once from a local file (a bounded read: qcow2.ts
+ * `ALLOCATION_MAX`) but from a remote image only where the block cache or OPFS holds them (nothing is fetched for the
+ * map); a raw image not examined, a remote one with the blocks this browser keeps. The content check reads a local
+ * qcow2's blocks of data (through the image), no raw image's and no remote one's.
+ */
+function liveImage(src: Source, base: Disk): LiveDisk['disk'] {
+  const kept = src.kept;
+  const here = (off: number, len: number) => {
+    if (!kept) return true;
+    for (let k = Math.floor(off / kept.block); k <= Math.floor((off + len - 1) / kept.block); k++) if (!kept.has(k)) return false;
+    return true;
+  };
+  const size = base.size;
+  const examine = (): ReturnType<LiveImage['examine']> => {
+    if (base.format === 'raw') return { kind: 'opaque', id: 'disk', size, why: 'raw', ...(kept ? { kept } : {}) };
+    const allocation = base.allocation?.((off, n) => (here(off, n) ? src.read(off, n) : undefined));
+    if (allocation) return { kind: 'clusters', id: 'disk', size, allocation };
+    return { kind: 'opaque', id: 'disk', size, why: kept ? 'tables' : 'large' };
+  };
+  // A raw image's blocks aren't examined (nor read); a remote qcow2's would be fetched.
+  const read = (b: number) => (base.format === 'raw' || kept ? undefined : base.read(b * 4096, Math.min(4096, size - b * 4096)));
+  return { kind: 'image', id: 'disk', size, examine, read };
 }
 
 /** Rings the doorbell; with `wait`, returns once the backends took everything up to this ring. */

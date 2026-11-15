@@ -4,7 +4,8 @@
 // the disk alone, in a machine's Disks tab its attachment's overlay; held squares where the data is; an overlay grown
 // past the disk (squares without the disk, its end marked, the overlay's changes and zeroings); the overlay picker; a
 // pinned square's blocks, runs and Check contents; the window over the machine once the Machines page is closed; a
-// ramdisk with nothing to show while its machine is off. The live map is tests/page-surface-debian.test.ts's.
+// ramdisk with nothing to show while its machine is off; a file disk without a handle to read, not examined, said why.
+// The live map is tests/page-surface-debian.test.ts's.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -206,6 +207,39 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   assert.equal((await win(page).locator('[data-field=surface-why]').textContent())!.trim(), t('disks:surface-source.ramdisk'));
   assert.equal(await win(page).locator('[data-action=surface-refresh]').count(), 0);
   assert.equal(await win(page).locator('[data-legend]').count(), 0);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the disk surface window over a file disk without a handle to read: not examined, said why', { timeout: 60_000 }, async () => {
+  // A handle whose read permission is granted (an OPFS file's) can't be kept in a record here: Chromium's headless
+  // page goes away as one is stored. The file's tables read for its clusters are tests/surface-image.test.ts's.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/?view=terminal`);
+  const size = 12 * MiB;
+  const id = await page.evaluate(async (size) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { newId } = await import('/web/app/shape.ts' as string);
+    const store = await Store.open();
+    const now = Date.now();
+    const name = 'gone.qcow2';
+    const d = { id: newId(), kind: 'file', name, size, format: 'qcow2', identity: { kind: 'file', name, bytes: size, modified: now }, created: now };
+    await store.put('disks', d);
+    store.close();
+    return d.id as string;
+  }, size);
+  await page.reload();
+  await page.click('#machines-open');
+  await modal(page).locator('nav [data-machine=disks]').click();
+  await modal(page).locator(`section[data-selected=disks] [data-disk="${id}"] [data-action=surface-open]`).click();
+  const o = await view(page, (x) => x.source === 'offline');
+  assert.deepEqual(o.rim, [RIM.opaque, RIM.opaque, RIM.opaque]);
+  assert.equal(await win(page).locator('[data-legend]').getAttribute('data-legend'), 'opaque');
+  assert.equal((await win(page).locator('[data-field=surface-line]').textContent())!.trim(), plain(t('disks:surface-look.why.permission')));
   assert.deepEqual(errors, []);
   await context.close();
 });

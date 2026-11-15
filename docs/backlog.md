@@ -1407,9 +1407,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
   - The on-screen keyboard keeps its own frame (`osk-frame.svelte.ts`); moving it onto `ui/FloatingWindow.svelte`
     (its sizes follow its layout, its grip is in its bar) would leave one window frame on the page.
-  - Images aren't examined: a qcow2's allocated clusters (from its tables, where the image is open or can be opened
-    without asking) and a URL disk's blocks kept in this browser could fill a file's and a URL's rims (the track's
-    loop 4, if cheap).
+  - A remote qcow2's blocks kept in this browser aren't shown: its rims are its clusters (counted), and kept would need
+    a third rim treatment (or a mark) in `ui/BlockGrid`, and each cluster's host offset mapped to the cache's 1 MiB
+    blocks. A remote raw image shows them (shades over the hatch).
+  - A URL disk offline isn't examined: its kept blocks are named by its identity (a chunked image's manifest id, or
+    the server's validator), which needs a request to the server; its store is locked by a machine reading it, and
+    opening the cache's bucket pushes on its expiry. The page could keep the identity in the disk's record.
+  - A remote qcow2 stays not examined until the guest has read every L2 table (a 3 GiB Debian's 6 are read by its
+    boot); a counted layer with "not examined" cells where a table is missing would show what's known sooner.
+  - The content check reads nothing of a raw image (not examined) nor of a remote qcow2 (its clusters would be
+    fetched): it says "0 of the 0 blocks", where it could say why.
+  - Storing a record with an OPFS file's handle (granted without a prompt) in IndexedDB closes Chromium's headless page
+    under Playwright (seen 2026-11-15, not traced), so the page test of a file disk examined offline is Node's
+    (`tests/surface-image.test.ts`). Worth checking a real file handle's record isn't affected.
   - A transient machine's disk (a test's `?machine=`, `?disk=`) has no "visualize": its disk has no record; its
     pane would need one made from the run's disks.
   - A ramdisk viewed while its machine runs in another tab says it has nothing (only this tab's run answers live).

@@ -21,9 +21,12 @@ export type RunningMachine = { attachments: readonly Attachment[] };
 export type SourceChoice =
   /** The running machine's `disk`-th disk (slot order); `inPlace`: a stored disk written in place (its store is the disk). */
   | { kind: 'live'; disk: number; inPlace: boolean }
-  /** The files, read by a job (`SurfaceJob` without its query). */
-  | { kind: 'offline'; job: Omit<SurfaceJob, 'query'> }
+  /** The files, read by a job (`SurfaceJob` without its query; `handle`: an image file's, whose file the job gets where it may be read without asking). */
+  | { kind: 'offline'; job: OfflineJob }
   | { kind: 'unavailable'; why: Msg };
+
+/** A job as the choice has it: an image file's by its handle (`jobSource` turns it into the file). */
+export type OfflineJob = Omit<SurfaceJob, 'query' | 'file'> & { handle?: FileSystemFileHandle };
 
 /** Whether attachment `a` of disk `d` shows the disk as `t` asks: through overlay `t.overlay`, or the disk itself. */
 function shows(t: SurfaceTarget, d: DiskRecord, a: Attachment) {
@@ -52,16 +55,23 @@ export function chooseSource(
   const i = list.findIndex((a) => shows(t, d, a));
   if (i >= 0) return { kind: 'live', disk: i, inPlace: d.kind === 'stored' && !!list[i].inPlace && !list[i].readOnly };
   if (d.kind === 'ramdisk') return { kind: 'unavailable', why: msg('disks:surface-source.ramdisk') };
-  const baseKind = d.kind === 'stored' ? 'stored' : d.kind === 'blank' ? 'blank' : 'opaque';
   return {
     kind: 'offline',
     job: {
-      ...(baseKind === 'stored' ? { stored: diskDir(d.id) } : {}),
+      ...offlineBase(d),
       ...(o ? { overlay: overlayDir(o.id), ...(o.size !== undefined ? { overlaySize: o.size } : {}) } : {}),
       size: d.size,
-      baseKind,
     },
   };
+}
+
+/** What a disk not running here is to a job: its store, nothing, or an image (a file's examined where its handle may be read without asking; a URL's only while its machine runs here). */
+function offlineBase(d: DiskRecord): Pick<OfflineJob, 'baseKind' | 'stored' | 'handle' | 'why'> {
+  if (d.kind === 'stored') return { baseKind: 'stored', stored: diskDir(d.id) };
+  if (d.kind === 'blank') return { baseKind: 'blank' };
+  if (d.kind === 'file')
+    return d.handle ? { baseKind: 'image', handle: d.handle } : { baseKind: 'opaque', why: 'permission' };
+  return { baseKind: 'opaque', why: 'remote' };
 }
 
 /** A key that changes with the choice (the window makes a new source when it does). */
@@ -143,17 +153,33 @@ export type JobWorker = Pick<Worker, 'postMessage' | 'terminate'> & {
 };
 const jobWorker = (): JobWorker => new Worker(new URL('./surface-worker.ts', import.meta.url), { type: 'module' });
 
+/**
+ * The job of `job` as the worker takes it: an image file's handle turned into its file where its read permission is
+ * granted (`queryPermission`: never `requestPermission`, which would ask the user), else an image not examined.
+ */
+export async function jobOf(job: OfflineJob): Promise<Omit<SurfaceJob, 'query'>> {
+  const { handle, ...rest } = job;
+  if (rest.baseKind !== 'image') return rest;
+  const denied = { ...rest, baseKind: 'opaque' as const, why: 'permission' as const };
+  try {
+    if (!handle || (handle.queryPermission && (await handle.queryPermission({ mode: 'read' })) !== 'granted'))
+      return denied;
+    return { ...rest, file: await handle.getFile() };
+  } catch {
+    return denied; // the file went away, or can't be read now
+  }
+}
+
 /** The disk's files, read by a job worker per ask (`make`: the worker; tests give their own). */
-export function jobSource(
-  job: Omit<SurfaceJob, 'query'>,
-  make: () => JobWorker = jobWorker,
-  ms = JOB_MS,
-): SurfaceSource {
+export function jobSource(job: OfflineJob, make: () => JobWorker = jobWorker, ms = JOB_MS): SurfaceSource {
   const running = new Set<() => void>();
   const ask = (query: InspectQuery) =>
     new Promise<InspectAnswer>((resolve) => {
       const w = make();
+      let done = false;
       const end = (a: InspectAnswer) => {
+        if (done) return;
+        done = true;
         clearTimeout(timer);
         running.delete(stop);
         w.terminate();
@@ -164,7 +190,8 @@ export function jobSource(
       running.add(stop);
       w.onmessage = (e) => end(e.data);
       w.onerror = () => end({ kind: 'none', why: msg('disks:surface-job.unreadable') });
-      w.postMessage({ ...job, query } satisfies SurfaceJob);
+      // An image file's handle checked first (it may have gone meanwhile: the ask ended, the worker with it).
+      void jobOf(job).then((prepared) => done || w.postMessage({ ...prepared, query } satisfies SurfaceJob));
     });
   return {
     live: false,

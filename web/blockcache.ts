@@ -42,7 +42,7 @@ export type BlockCacheStats = {
  * is looked for there before it is fetched, and what is fetched is kept there too. `stats` counts block hits and
  * misses, the requests made, the bytes fetched and the ms inside them, and the store's.
  */
-export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, store?: BlockStore): Source & { stats: BlockCacheStats; prefetch(blocks: number[]): Promise<void> } {
+export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, store?: BlockStore): Source & { stats: BlockCacheStats; prefetch(blocks: number[]): Promise<void>; kept: NonNullable<Source['kept']> } {
   const { block } = o;
   const max = Math.max(1, Math.floor(o.bytes / block));
   const blocks = new Map<number, Uint8Array>(); // insertion order: least recently used first
@@ -248,6 +248,8 @@ export function cachedSource(src: Source, o: BlockCacheOptions = BLOCK_CACHE, st
     size: src.size,
     stats,
     prefetch,
+    // What the disk surface asks (never a request's path): a block in memory, or kept in OPFS.
+    kept: { block, has: (k: number) => blocks.has(k) || !!store?.has(k) },
     close: () => {
       closed = true;
       moved();

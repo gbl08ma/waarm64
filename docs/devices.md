@@ -1004,8 +1004,18 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   bug).
 - **Its surface** (web/surface.ts, docs/plans/surface.md): `Backend.inspect` answers a disk's surface (per cell of
   4 MiB × a power of two, the blocks the disk and its overlay hold) and one 4 MiB range block by block, from the maps
-  the device has in memory (the overlay's `leaves()`, a stored disk's `blockSource`, a ramdisk's chunks; an image is
-  not examined). A stored disk under an overlay doesn't change, so its per-range counts are taken once. Activity: a
+  the device has in memory (the overlay's `leaves()`, a stored disk's `blockSource`, a ramdisk's chunks, an image's
+  `liveImage`). A stored disk under an overlay doesn't change, so its per-range counts are taken once.
+  **An image**: a qcow2's clusters from its L2 tables (web/qcow2.ts `Disk.allocation`: per cluster, data or compressed
+  against unallocated or zero; a 4 KiB block is the disk's if any cluster in it is), made once and kept (the image
+  doesn't change while open). `openDisk` reads L2 tables lazily, as requests need them, and keeps them; the first
+  inspect reads those not read yet from a local file (a bounded read: at most `ALLOCATION_MAX`, 32 MiB of tables, an
+  image of 256 GiB at 64 KiB clusters; past it, not examined), and from a remote image only those the block cache holds
+  in memory or in OPFS (`Source.kept`, web/blockcache.ts): nothing is fetched for the map, and until every table is
+  here the image is not examined (`why: 'tables'`), asked again at each answer. The tables it reads it keeps for the
+  guest's reads too. A raw image is not examined (`'raw'`), nor read by the content check; a remote raw one says which of
+  its 4 KiB blocks the cache holds (the file is the disk: `kept`). The content check reads a local qcow2's blocks
+  through the image, a remote one's not at all (they'd be fetched). Activity: a
   query that asks for it puts a wrapper around the backend's outermost `request` (over the stats', concurrent and
   compaction wrappers, which are made at the build), which reads the request's header and marks the ranges read
   and written; an answer carries the marks per cell and clears them, and once no query asked for 3 s (or at

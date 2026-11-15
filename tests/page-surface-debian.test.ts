@@ -1,7 +1,9 @@
 // The disk surface window live (web/app/SurfaceWindow.svelte, docs/frontend.md "A disk's surface"), on Debian: a stored
 // machine with Debian's image from a URL runs on the page; the window opened from its Disks tab is live (the device
-// worker's maps through the machine's worker), the overlay's changes show as cores, and a write in the guest flashes
-// "written" and adds to them; once the guest powers off, the same window reads the overlay from its files. The window
+// worker's maps through the machine's worker), the disk (a qcow2) is counted from its L2 tables once the boot read them
+// (nothing fetched for the map), the overlay's changes show as cores and the picker says what the overlay holds now, and
+// a write in the guest flashes "written" and adds to them; once the guest powers off, the same window reads the overlay
+// from its files (the URL's image not examined there). The window
 // without a guest is tests/page-surface.test.ts's. scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian); a Debian
 // page boot is ~40 s in the dev VM, ~2.5 min in a cloud session.
 import assert from 'node:assert/strict';
@@ -14,6 +16,7 @@ import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { FLASH } from '../web/app/ui/block-grid.ts';
+import { bytesText } from '../web/app/bytes.ts';
 
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -57,7 +60,9 @@ async function ok(page: Page, cmd: string, ms = 120_000) {
 const now = (page: Page) => page.evaluate((write) => {
   const s = window.__surface;
   const over = s?.surface?.layers.find((l) => l.id === 'overlay');
+  const disk = s?.surface?.layers.find((l) => l.id === 'disk');
   return {
+    disk: disk ? { known: disk.known, why: disk.why, held: disk.held.reduce((a, b) => a + b, 0) } : undefined,
     source: s?.source, live: s?.live, answers: s?.answers() ?? 0,
     held: over ? over.held.reduce((a, b) => a + b, 0) : -1,
     cores: s?.look ? s.look.core.filter((c) => c > 0).length : 0,
@@ -76,7 +81,7 @@ async function until(page: Page, what: string, f: (v: Awaited<ReturnType<typeof 
 }
 
 test('the disk surface window, live on Debian: the overlay\'s changes, a guest write flashing and counted; from the files after the power-off', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: process.env.SURFACE_SHOTS ? 2 : 1 });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -112,6 +117,19 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
   await page.locator('.machines [data-action=back]').click();
   const live = await until(page, 'live, with the overlay\'s changes', (v) => v.source === 'live' && v.live === true && v.held > 0 && v.cores > 0);
   assert.equal(await page.locator('#surface-window [data-action=surface-refresh]').count(), 0, 'no Refresh while live');
+  // The disk counted from its tables (the boot read every one: 2.6 GiB of 3 GiB is unallocated in Debian's image).
+  const counted = await until(page, 'the disk counted from its tables', (v) => v.disk?.known === 'counted');
+  assert.ok(counted.disk!.held > 0 && counted.disk!.held < size / 4096, JSON.stringify(counted.disk));
+  // The picker: what the overlay holds now, from the live answer (its record says what it held when the run began).
+  const pick = () => page.evaluate(() => {
+    const over = window.__surface?.surface?.layers.find((l) => l.id === 'overlay');
+    const text = document.querySelector<HTMLSelectElement>('#surface-window [data-field=surface-overlay]')?.selectedOptions[0]?.textContent;
+    return { text, held: over ? over.held.reduce((a, b) => a + b, 0) : -1 };
+  });
+  const says = (p: Awaited<ReturnType<typeof pick>>) => !!p.text?.includes(`(${bytesText(p.held * 4096)} of`);
+  let picked = await pick();
+  for (let i = 0; i < 20 && !says(picked); i++) (await page.waitForTimeout(50), (picked = await pick()));
+  assert.ok(says(picked), JSON.stringify(picked));
   const answered = live.answers;
   await page.waitForTimeout(2000);
   assert.ok((await now(page)).answers >= answered + 2, 'polled while live');
@@ -120,13 +138,14 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
   await ok(page, 'dd if=/dev/urandom of=/root/x bs=1M count=8 conv=fsync status=none');
   const written = await until(page, 'a write flashed and counted', (v) => v.written && v.held >= live.held + 2048);
   if (process.env.SURFACE_SHOTS) await page.screenshot({ path: `${process.env.SURFACE_SHOTS}/surface-live.png` });
-  console.log(`# overlay blocks ${live.held} -> ${written.held}, ${written.cores} squares with changes at ${written.cellBytes / 2 ** 20} MiB`);
+  console.log(`# disk blocks with data ${counted.disk!.held}; overlay blocks ${live.held} -> ${written.held}, ${written.cores} squares with changes at ${written.cellBytes / 2 ** 20} MiB`);
 
   // Powered off: the same window reads the overlay from its files (once the device worker let them go).
   await type(page, 'poweroff\n');
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 180_000 });
-  const off = await until(page, 'from the files after the power-off', (v) => v.source === 'offline' && v.held >= written.held, 30_000);
+  const off = await until(page, 'from the files after the power-off', (v) => v.source === 'offline' && v.disk?.known === 'opaque' && v.held >= written.held, 30_000);
   assert.equal(off.live, false);
+  assert.deepEqual([off.disk?.known, off.disk?.why], ['opaque', 'remote'], 'a URL\'s image is examined only while it runs here');
   await page.locator('#surface-window [data-action=surface-refresh]').waitFor();
   await page.locator('#surface-window [data-action=close]').click();
   assert.deepEqual(errors, []);
