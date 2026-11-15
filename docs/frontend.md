@@ -509,6 +509,57 @@ HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its 
 network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:StorageBar.storage.clearShaders)**
 (vk/README.md "The shader cache"; the store's size counts what IndexedDB holds, deflated).
 
+### A disk's surface
+
+A disk's line ends with a "visualize" link (`VisualizeLine.svelte`), in the
+browser's Disks pane (`DisksPane.svelte` gives `DiskInfo.svelte` its `onvisualize`; the Add a disk wizard's list
+doesn't) and in a machine's Disks tab (`Disks.svelte`: "… · vda · visualize"). It opens the disk's map, as a
+defragmenter draws one, in a window floating over the page (`SurfaceWindow.svelte`, a `ui/FloatingWindow.svelte`:
+moved by its title bar, resized by its corner, its place remembered under `windows.surface`). One is open at a time
+(`areas/surface.svelte.ts` `surfaceWindow`); `App.svelte` mounts it after the Machines page, so it stays over the
+machine and the Machines page as the user goes between them, and a click on it leaves the keyboard's focus where it
+was (on the screen).
+
+- **Its title bar**: the disk's name and the overlay laid over it: [The disk alone](ui:disks:SurfaceWindow.alone) or
+  one of the disk's overlays; from a machine's Disks tab it starts on the overlay that attachment writes to, from the
+  Disks pane on the disk alone.
+- **The map** (`ui/BlockGrid.svelte`): a square is 4 MiB times the smallest power of two for which the whole view fits
+  the squares the window has room for (counted at 10 px; a small disk's few squares grow to 24 px), said over it
+  ([1 square = {{size}}](ui:disks:SurfaceWindow.scale)). The disk is each square's rim (no data, then four shades of
+  how full: any block at all is the first; a file's or a URL's image flat, not examined), the overlay a core inset in
+  it (four shades of what it changed; hollow where it only zeroed or discarded blocks); with an overlay larger than
+  the disk (grown, [machines.md](machines.md) §4.5) the squares past the disk have no rim and the disk's end is
+  marked. Live, a square the guest read or wrote flashes. The legend (`SurfaceLegend.svelte`) shows only the looks
+  the view can show (`surface-look.ts` `legendOf`). The line under the map says the pointed square's numbers
+  (`cellWords`: where, the disk's blocks held of its blocks, the overlay's changed and zeroed, the activity; read
+  aloud, `aria-live`), else what the view holds as a whole ([The disk holds no data yet. Every block reads as zeros.](ui:disks:SurfaceWindow.empty)
+  for an empty one).
+- **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
+  32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
+  consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
+  fragmented it is there), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
+  data (up to 4 MiB) and counts those that hold only zeros.
+- **Where its numbers come from** (`surface-source.ts` `chooseSource`, Node-tested): **live** when the stored
+  machine running on this page has the disk attached as the view shows it (through that overlay; the disk alone
+  read-only, written in place, or a ramdisk): `inspect` to the run's worker (the run writes `current.inspect`: its
+  worker, the replies by id, the attachments it started with), the disk being its place in slot order; a stored disk
+  written in place answers as a blank disk under an overlay that is its store, shown as the disk (`asInPlace`).
+  Otherwise **from the files**: a job worker per ask (`surface-worker.ts`, `surface-job.ts`), read-only under the
+  shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too). A
+  ramdisk not running has nothing to show ([A ramdisk holds data only while its machine runs. Its map can be seen
+  here while the machine runs in this tab.](ui:disks:surface-source.ramdisk)), the files of a machine running in
+  another tab are refused in words (`surface-job.inUse`), and every ask is bounded (5 s live, 20 s for a content
+  check, 30 s for a job: a worker that went away never answers). Transient machines (a test's `?machine=`) have no
+  link: their disks have no records.
+- **When it asks** (`surface-poll.svelte.ts`): live, every 500 ms while the document is visible, stretched so that
+  making the answers stays under 2% of the time (the next ask ≥ 50 × the answer's `cost`), and the device worker's
+  activity wrapper stays on only while it asks (devices.md "blk"); not live, once, again on
+  **[Refresh](ui:disks:SurfaceWindow.refresh)** and when the records change. A new source (the machine started or
+  stopped, another overlay, another run) drops what the old one had in flight; just after the machine on this page
+  stopped, a refusal that the files are in use is asked again for a few seconds (the device worker lets them go
+  late). The grid's room is asked for again once a resize settles (150 ms).
+- `window.__surface` is the tests' view of it (web/app/hooks.ts).
+
 ### About
 
 **[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: a link to its

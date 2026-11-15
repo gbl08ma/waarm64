@@ -1012,7 +1012,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   `close`) the request it wrapped is put back as it was. While nobody looks, nothing is added to the request path.
   While the wrapper is on, the overlay's per-range counts are kept and only the ranges written since are counted
   again: a whole walk of 25,600 leaves (100 GiB written) took 30 to 55 ms in Node (a cloud container, 2026-11-15:
-  `tests/surface.test.ts` prints it), a range's ~1 µs.
+  `tests/surface.test.ts` prints it), a range's ~1 µs. One answer every 10 s (`FULL_WALK_MS`) walks the leaves whole all the
+  same: a request in flight when the wrapper went on isn't marked, and what it changed after the first two walks is
+  caught up then.
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in

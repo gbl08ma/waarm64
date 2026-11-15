@@ -497,7 +497,8 @@ delete, edit, attach, detach, reorder; refused while the machine runs), `web/app
 their overlays. Preferences (`PreferencesPane.svelte`, this browser's, `web/app/settings.ts`): leaving the page
 warns, the guest drops its caches before a snapshot (devices.md "The caches dropped before a snapshot"), the guest's
 clock is set after a restore (frontend.md "The guest's clock"), the on-screen keyboard's modifiers, Vulkan's shader
-budget, the status bar.
+budget, the status bar. A disk's map (its "visualize" link in the Disks pane and a machine's Disks tab): frontend.md
+"A disk's surface".
 
 ## 8. Where the code is
 
@@ -507,6 +508,10 @@ budget, the status bar.
   (a switch to an overlay of another size asked), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte` and its panes and tabs: [frontend.md](frontend.md) "The Machines page"; `Disks.svelte`, `AddDisk.svelte`,
   `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (the Export wizard: `ExportWizard.svelte`, `ExportSteps.svelte`), `Snapshots.svelte`).
+- A disk's map (frontend.md "A disk's surface"): `web/surface.ts` (the counts), `web/app/surface-job.ts` and
+  `surface-worker.ts` (from the files), `surface-source.ts` (live or the files), `surface-poll.svelte.ts`,
+  `surface-look.ts`, `SurfaceWindow.svelte`, `SurfaceLegend.svelte`, `SurfaceDetails.svelte`, `VisualizeLine.svelte`,
+  `areas/surface.svelte.ts`; the device's side is `blk`'s `inspect` (devices.md "blk").
 - `web/devices.ts`: the `zero` and `ram` sources, a stored disk under an overlay or written in place, the generation
   bump, the serial in `GET_ID`. `web/ramdisk.ts`, `web/stored.ts`, `web/overlay.ts` (overlays by path, `meta`, the
   generation, `overlayMeta`, `removeOverlay`, `overlayBytes`, the suspend writer).

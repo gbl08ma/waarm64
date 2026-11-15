@@ -1404,6 +1404,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`placeCursor`) are still set on the elements, as they follow the guest's cursor messages; through state they would
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
+- **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
+  - The on-screen keyboard keeps its own frame (`osk-frame.svelte.ts`); moving it onto `ui/FloatingWindow.svelte`
+    (its sizes follow its layout, its grip is in its bar) would leave one window frame on the page.
+  - Images aren't examined: a qcow2's allocated clusters (from its tables, where the image is open or can be opened
+    without asking) and a URL disk's blocks kept in this browser could fill a file's and a URL's rims (the track's
+    loop 4, if cheap).
+  - A transient machine's disk (a test's `?machine=`, `?disk=`) has no "visualize": its disk has no record; its
+    pane would need one made from the run's disks.
+  - A ramdisk viewed while its machine runs in another tab says it has nothing (only this tab's run answers live).
+  - Changing the overlay keeps the last picture until the new one comes (~one job: a flicker avoided, a moment of the
+    other view shown); a source's answers aren't told apart in the window's state.
+  - Live, an ask a newer one replaced (a resize, a Refresh) drops its answer, and with it the activity it carried
+    (flashes missed for one poll).
+  - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
+    720 × 520, fits them).
+  - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0
+    (`disks:stored.imageUnreadable`); 256 MiB worked (seen making screenshots, 2026-11-15, not traced: the import
+    worker's read of a large in-memory `File`?).
+
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
