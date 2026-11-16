@@ -1726,6 +1726,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- [B] **Three bare-metal tests fail on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, 2026-11-16, PERF loop 29's
+  run; their binaries unchanged by it): `debug` exits 2, `mmio` 11, `watch` prints no exit line, though testing.md says
+  every test passes on both oracles. Find whether hvf lacks what they check (self-hosted debug, a device detail) and
+  leave those checks out of the `-DHVF` builds, or whether ours differ from the hardware.
 - [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
   end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
   passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.
