@@ -44,7 +44,7 @@ server of anyone's; Bitcoin is used only as a clock (no coin, fee or wallet).
 - **Protection from impersonation of a name nobody present remembers.** Between a room's reset and the owner's return a
   stranger can hold the name. A member that resolved the name before refuses the stranger while the chain it saw is
   alive; a server that holds the owner's chain hands it to everyone.
-- **Instant registration.** A first claim stays private until its Bitcoin proof exists (hours: N0 measures it), or a
+- **Instant registration.** A first claim stays private until its Bitcoin proof exists (about an hour, a few at worst: N0), or a
   watcher could stamp a competing claim into the same block. Renewals and changes of where a name points are instant.
 - **Names in a room with nobody serving.** Where no owner is online, only key names resolve.
 - **A registry of any size.** Servers carry every chain with its history, through DERP: *estimated* comfortable to
@@ -128,16 +128,24 @@ means nothing in another, even one whose prefix was made to collide.
 
 - **Proof of work** is over the fields before the signature: the function's output has `POW_BITS` leading zero bits.
   It is bound to `ref`, so it can't be stockpiled or reused for the next term. The function must be cheap to check
-  (a server checks every entry of the room), which weighs against a memory-hard one: N0.
+  (a server checks every entry of the room), which bounds the memory a memory-hard one may use.
   **What it is for**: the price, every term, of a name held without being used: a dictionary stamped and held back
   ("What it does not give"), a back-order, a squat. Stamping is free and one stamp covers any number of claims, so
   without it a member could claim every word there is each term for a minute of signatures. It is not what keeps junk
   out of a registry (the servers' bound is). So the function is judged by what a million names cost an attacker a
-  term on a GPU, which favours a memory-hard one (*estimate*: a GPU's lead over a tab is ~1,000x at BLAKE2s, ~10x at
-  Argon2id).
+  term on a GPU, which favours a memory-hard one. **Chosen (N0, provisional until the dev VM re-times it): Argon2id,
+  1 MiB, one pass, one lane, 32-byte output**, salted with `ref`. A GPU's lead over a tab (bench/net/REPORT.md, NAMES
+  loop 0) is ~3,900x at BLAKE2s (hashcat's published RTX 5090 figure against a tab's measured rate) and at most
+  ~280x at Argon2id of 1 MiB (*estimate* from the card's memory bandwidth: no Argon2 figure at these sizes is
+  published, and scrypt's suggests the card does worse than that bound), not the ~10x the first draft assumed: a
+  memory-hard function narrows the gap only past what fits on the card's chips, and memory a server can afford to
+  check stays small. 1 MiB is the knee: 256 KiB leaves the card most of its lead, 4 MiB keeps the same ratio at four
+  times the check (2 minutes of a core for 60,000 entries). A million names (two entries each a term) cost an attacker at least
+  ~64 RTX 5090-hours a term (*estimate*, from the card's bound; ~9 at BLAKE2s, for the same minute in a tab), and a server checks 60,000 entries in ~30 s of one core in wasm (BLAKE2s:
+  20 ms).
   **Not a verifiable delay function** (weighed 2026-11-16): one is sequential an instance, but a dictionary is a
   million instances side by side, so it evens the field a core, as a memory-hard function does; and it costs
-  milliseconds to check in wasm where a hash costs microseconds (60,000 entries: minutes of a server's first sync),
+  milliseconds to check in wasm (60,000 entries: minutes of a server's first sync),
   ~256 bytes of proof on a 207-byte entry, a tab without a wide multiply against native squaring, and group
   arithmetic with no small vetted crate. Its one gain is a fixed time where hashcash is a draw (the mean under a
   minute, some several): the *Preparing* state's words allow for that.
@@ -191,9 +199,9 @@ once.
 |---|---|---|
 | `TERM` | 30 days | the user's "a month, or shorter" |
 | `GRACE` | 7 days | |
-| `REF_WINDOW` | 24 hours | must exceed the calendars' slowest time to anchor, not their usual: N0, from a year of their transactions. Not sensitive: all it costs is how far ahead proof of work can be made, and a day or three is the same against `TERM`; an entry that misses it is made again ("The names agent") |
+| `REF_WINDOW` | 48 hours | from `ref`'s block to the anchor's block, which must exceed the calendars' slowest, not their usual. N0 (bench/net/REPORT.md, NAMES loop 0): `ref` is ~1 hour old when an entry is made (p99 2.3), the slowest calendar alone (`finney`, when `alice` and `bob`, one operator, are both down) reached its block within 27 hours at worst in a year's samples, under the slow reading of the model (~16 under the fast one, which the batch's first proofs fit), and block times may run 2 hours ahead: 48 covers that with half again to spare for the days the samples missed. Provisional until N0b checks the model against the batch of real stamps. Not sensitive: all it costs is how far ahead proof of work can be made, and two days is the same against `TERM`; an entry that misses it is made again ("The names agent") |
 | renew when | the last entry is older than `TERM / 2` | two entries a month a name; the page says "every 2 weeks", and a name is lost only past 3 |
-| `POW_BITS`, function | N0 | target: under a minute of one core in a tab, in the background |
+| `POW_BITS`, function | 16, Argon2id (1 MiB, t = 1, p = 1) | target: under a minute of one core in a tab, in the background. N0 (cloud, provisional): 0.49 ms a try in Chromium's wasm, so a mean of 32 s; hashcash is a draw: half within 22 s, 90% within 74 s, 99% within 2.5 minutes. Checking one costs one evaluation |
 
 ## Bitcoin as the clock
 
@@ -208,7 +216,15 @@ once.
   on Bitcoin, so its whole history can be read from an explorer. On 2026-11-16: `alice` a transaction every 1.19 hours
   on the week's average (the latest ones 2 to 6 blocks apart), `bob` 1.63 hours (3 to 11 blocks), `finney` 6.0 hours
   (35 to 62 blocks, so up to ~11 hours to a proof); fees of 0.1 to 2.4 sat/vB, so the slow case is a busy mempool.
-  About 2 hours is what the dialog can say; the worst case is N0's, from a year of those transactions.
+  **N0 (2026-11-16)**: a calendar pays from several coins in turn, each transaction spending the change of an
+  earlier one on its own coin, so its history can't be listed by address and was sampled (bench/net/REPORT.md, NAMES
+  loop 0). From the calendars' complete record of their last days, a stamp's proof came in a median of 1.0 hours at
+  `alice`, 1.1 at `bob` and 4.2 at `finney`, at worst 4, 5 and 12; the first of the three in 0.9 (p99 2.4, worst
+  3.1). Through a year's samples, one coin of each calendar (so an upper bound): the first of the three within 1.9
+  hours for 90% of stamps and 4.8 at worst; `finney` alone up to 14 hours, or 26 if a stamp misses the transaction
+  being mined (the batch of real stamps says which: N0b). No day of the year had fees that would have stalled the
+  calendars for long (blocks' 10th-percentile fee rate at most 5 sat/vB). **About 2 hours** is what the dialog can
+  say; `REF_WINDOW` covers the worst.
 - **Headers prove themselves.** A verifier needs the 80-byte header of an anchor's block and of `ref`'s block; both
   travel with the entry. It checks the header's hash against the anchor and `ref`, its proof of work against its own
   target, that target against a floor compiled in (a fraction of the difficulty at a pinned date, so a forged header
@@ -298,7 +314,9 @@ its region, the time, a nonce) and one byte more, `spread`. Servers subscribe to
 - **Take from anyone**: `put` (an item, from an owner's agent or a member that holds a better chain than the server
   showed it), checked like anything else.
 - **Verify** signatures, proof of work and anchors before keeping or serving, a few milliseconds' worth each turn of
-  the module; what was verified is stored as verified and not checked again at load.
+  the module; what was verified is stored as verified and not checked again at load. In Chromium's wasm (N0, cloud):
+  an entry is ~0.66 ms whole (Argon2id 0.49, BIP-340 0.15, its anchor's 46 SHA-256s 0.015, a header 0.0005), so a
+  4 ms slice checks ~6 entries and a 5,000-name registry's 60,000 take ~40 s of one core.
 - **Bound**: `MAX_NAMES` (proposed 20,000) and a byte budget. Past either, a server drops names, never its own, the
   ones nobody has asked it for longest first. A dropped name isn't lost (its owner holds the title and puts it back),
   and junk registered in bulk is what nobody asks for (unless its registrant asks: askers can't be told apart, so an
@@ -425,6 +443,12 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 - **Reserved names** (since the review): the list in "Names".
 
 ## Measure first (loop N0, no product code)
+
+Done in the cloud session of 2026-11-16 (N0a, bench/net/REPORT.md "NAMES loop 0"): items 1 to 3, and item 4's
+batch of stamps (collected by N0b). What it found is in "How long an anchor takes", "Records" and the parameters'
+table; times are a shared x86_64 host's, good for the choices, re-timed in the dev VM. The year of transactions in
+item 1 couldn't be read whole within a few hundred requests (a calendar's transactions are one request each:
+"How long an anchor takes"), so it is a complete record of the calendars' last days and samples through the year.
 
 1. **Time to anchor** from each calendar, the slowest as well as the usual: sets `REF_WINDOW` and what the dialog
    promises. From a year of each calendar's transactions on Bitcoin, read through the two explorers ("How long an

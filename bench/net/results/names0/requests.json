@@ -1,0 +1,8 @@
+{
+ "note": "Every request NAMES loop 0 (N0a, 2026-11-16) made of a public service, counted by host. Calendars: status pages (GET /), stamps (POST /digest) and the first look at the earliest stamps' proofs (GET /timestamp/...). Explorers: transactions, outspends, address histories, block hashes and headers, and mempool.space's fee-rate series. Also 2 GETs of hashcat benchmark gists (gist.githubusercontent.com) for the GPU figures.",
+ "alice.btc.calendar.opentimestamps.org": { "pages": 3, "stamps": 80, "proofs": 17, "total": 100 },
+ "bob.btc.calendar.opentimestamps.org": { "pages": 3, "stamps": 80, "proofs": 17, "total": 100 },
+ "finney.calendar.eternitywall.com": { "pages": 2, "stamps": 80, "proofs": 17, "total": 99 },
+ "blockstream.info": { "total": 210 },
+ "mempool.space": { "total": 208 }
+}

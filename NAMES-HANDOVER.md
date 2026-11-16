@@ -10,15 +10,15 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   another branch merges this one into its own first and writes its branch's name here.
 - **Session kind:** cloud (x86_64, 4 vCPUs, 15 GiB; no `systemd-run`: `timeout` only, one heavy run at a time;
   docs/cloud.md). What only a dev VM session can run is marked *dev VM* in the queue.
-- Supervisor started 2026-11-16. No loop run yet.
+- Supervisor started 2026-11-16. N0a done (cloud); its stamps wait for N0b.
 
 ## The queue
 
 | Loop | What | State |
 |---|---|---|
-| N0a | Measure, cloud part: the batch of real stamps made and their commitments committed (first); a year of each calendar's transactions through the two explorers (time to anchor, `REF_WINDOW`); proof of work (BLAKE2s against Argon2id: make, check 10k/60k entries in wasm; the GPU side from published figures, marked as such); verification rate in wasm | next |
+| N0a | Measure, cloud part (2026-11-16, bench/net/REPORT.md "NAMES loop 0, cloud part"): 80 random digests stamped at the three calendars 2026-11-16 19:11–21:04 UTC (bursts and singles; receipts and commitments committed in `bench/net/results/names0/stamps.json`; the 17 earliest already anchored at alice and bob, in the first transaction mined after them); time to anchor from the calendars' complete last days and a year's samples (a calendar pays from several coins with fresh change addresses, so a whole year is ~16,000 requests: sampled, an upper bound): stamp to proof median ~1 h at alice/bob, ~4 h at finney, first of three p99 2.4 h; `REF_WINDOW` 48 h; proof of work Argon2id 1 MiB t=1, `POW_BITS` 16 (GPU lead ≤ ~280x against BLAKE2s's ~3,900x; 60k entries ~30 s in wasm); an entry's whole check ~0.66 ms in wasm. All provisional (cloud times; the model's "next/second" reading waits for N0b) | done |
 | N1 | Records and rules, pure Rust in `net/ts/src/room/names/` | queued (needs no N0 number; the real anchored vector from N0a's stamps once collected) |
-| N0b | Collect N0a's stamps' proofs: anchor sizes, the model's check, the size table | queued (hours after N0a) |
+| N0b | Collect N0a's stamps' proofs (`node bench/net/ots-stamps.ts collect`, then `sizes`): anchor sizes raw and shared, the size table, the model's check (did a stamp land in the next mined calendar transaction or the one after: `REF_WINDOW` and the dialog's words follow), N1's real vector | queued: **collect from 2026-11-18** (any session, `NODE_USE_ENV_PROXY=1` in a cloud one); ~70 GETs a calendar |
 | N2 | The names client and the servers' side | queued |
 | N3 | The member's side and the resolver; tests/page-room.test.ts | queued |
 | Review 1 | Out-of-context review of `net/ts/src/room/names/` → `NAMES-REVIEW-1.md` | after N3 |
