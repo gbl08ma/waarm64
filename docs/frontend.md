@@ -1613,30 +1613,26 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   was running starts again after. The page: `web/app/export.ts`; the format:
   `web/qcow2-write.ts` (4 KiB clusters = the overlay's blocks; data first, then the L2 tables, L1,
   refcount blocks and table, and the header written last with `sink(bytes, 0)`; qcow2 v3, 16-bit
-  refcounts). **Compressed clusters** (`compress`): each 4 KiB cluster goes through
-  `CompressionStream('deflate-raw')` and, when that shrinks it, is stored compressed, packed end to
+  refcounts). **Compressed clusters** (`compress`): each 4 KiB cluster is deflated by the core's miniz_oxide at
+  level 6 (`web/deflate.ts`, `deflate_raw`, as QEMU's zlib writes) and, when that shrinks it, is stored compressed, packed end to
   end with the others (the L2 entry has the byte offset and the sector count; a host cluster's
   refcount is the number of compressed clusters that touch it); one that doesn't shrink is stored
   as it is at the next cluster boundary. The data leaves in 1 MiB pieces. QEMU inflates with a
-  4 KiB window whatever the cluster size and `CompressionStream` has no window setting, so
-  compression is tied to 4 KiB clusters (a bigger cluster could reach further back than QEMU's
-  window; zstd isn't in `CompressionStream`). The clusters are compressed
+  4 KiB window whatever the cluster size, so compression is tied to 4 KiB clusters (a stream of one 4 KiB
+  cluster can't reach further back; a bigger cluster could). The clusters are compressed
   **on other threads**: `writeQcow2` hands batches of 256 clusters to a `Packer` and stores them in
   the order they came, and the disk-out worker's is a pool of up to four workers
-  (`web/app/deflate-pool.ts`, `deflate-worker.ts`; the machine has stopped, its cores are free); the
+  (`web/app/deflate-pool.ts`, `deflate-worker.ts`, each given the core; the machine has stopped, its cores are free); the
   file is byte for byte the one compressing in place writes (`compress: true`, the tests' and Node's).
-  Measured in Chromium 153 on the dev VM, the untouched 3 GiB Debian disk (the page's: a compressed
-  qcow2 over HTTP, 992 MiB of data) to a sink that drops the bytes: 5.9 s not compressed (995 MiB),
-  7.9 s compressed by four workers (428 MiB; 9.2 s by two, 15.8 s by one, 20.8 s in place); written
-  to a file through `FileSystemWritableFileStream` (OPFS), not compressed, 8.7 s. What it was
-  before, and why: 22.9 s not compressed and 38 s compressed, of which **reading the disk was
+  Measured in Chromium 155 on the dev VM (bench/boot/REPORT.md "SNAPZ loop 6"), the untouched 3 GiB Debian disk
+  (the page's: a compressed qcow2 over HTTP) into an OPFS file: 7.2 s not compressed, 8.2 s compressed (445 MB);
+  miniz_oxide deflates a 4 KiB cluster in 72 µs at 2.35x, where `CompressionStream('deflate-raw')`, which it
+  replaced, took 82 µs at 2.27x (the export 8.6 s, 448 MB). What it was
+  before the merged reads: 22.9 s not compressed and 38 s compressed, of which **reading the disk was
   21.7 s** (one synchronous HTTP request and one inflate per 64 KiB cluster: `openDisk` now reads a
-  request's clusters in a few merged host reads, [devices.md](devices.md) "blk": 5.6 s), and deflate
-  on one thread the rest (49 MiB/s of data, close to native zlib's 91 at 4 KiB clusters: the cost is
-  deflate, not the stream per cluster). Compressing 64 or 512 clusters at once *on one thread* was
-  slower than one at a time (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). zstd
-  (`compression_type=zstd`, QEMU 5.1 on) is not written: it needs a compressor compiled to wasm (a
-  dependency), and with deflate on four threads the export is within a third of not compressing. What the guest's filesystem has freed
+  request's clusters in a few merged host reads, [devices.md](devices.md) "blk"), and deflate on one thread the rest.
+  zstd (`compression_type=zstd`, QEMU 5.1 on) is not written: it needs a compressor compiled to wasm (a
+  dependency), and with deflate on four threads the export is within a seventh of not compressing. What the guest's filesystem has freed
   is still data to the export until the guest trims it (`fstrim -av`: the disk takes DISCARD,
   [devices.md](devices.md) "blk"; a running guest with the agent is trimmed first, before the machine stops for the
   export: devices.md "Disk space handed back"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user

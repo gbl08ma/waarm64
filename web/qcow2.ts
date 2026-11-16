@@ -2,10 +2,11 @@
 // v2/v3 read through its L1/L2 tables (M4 step 4). Written from the format
 // spec, QEMU's docs/interop/qcow2.txt (no QEMU code). Refcounts are ignored
 // (read-only); unallocated and zero-flag clusters read as zeros; compressed
-// clusters are raw deflate. Refused at open: encryption, backing files (a changes
+// clusters are raw deflate (inflated by the core's miniz_oxide: web/deflate.ts). Refused at open: encryption, backing files (a changes
 // file is read by `readChanges`, not booted), external data files, extended L2
 // entries, zstd, unknown incompatible features. core/tests/common/qcow2.rs is the
 // native twin.
+import { threadDeflate } from './deflate.ts';
 import { MsgError } from './msg.ts';
 
 /** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
@@ -21,13 +22,12 @@ export type ReadAtAsync = (off: number, len: number) => Promise<Uint8Array | und
 export type Inflater = (inputs: Uint8Array[], size: number) => Promise<(Uint8Array | undefined)[]>;
 
 /**
- * The clusters one after another on this thread: streams side by side on one thread don't run any
- * faster (deflate's, 64 or 512 at once, were slower than one at a time: docs/frontend.md "Your own disk").
+ * The clusters one after another on this thread, through its codec (web/deflate.ts: the core's miniz_oxide,
+ * synchronous, ~160 µs a 64 KiB cluster in Chromium).
  */
 export const inflateEach: Inflater = async (inputs, size) => {
-  const out: (Uint8Array | undefined)[] = [];
-  for (const input of inputs) out.push(await inflate(input, size));
-  return out;
+  const z = await threadDeflate();
+  return inputs.map((input) => z.inflate(input, size));
 };
 
 export type Disk = {
@@ -379,43 +379,11 @@ async function compressedCluster(readAt: ReadAt, fileSize: number, e: bigint, cl
 }
 
 /**
- * Raw deflate of one cluster: exactly `size` bytes out, or undefined. The input
- * runs to a sector boundary, so it usually ends with the next cluster's bytes,
- * which the stream reports as junk after its end. Chromium hands over the output
- * first; Firefox drops what the write holding the junk produced. So when one
- * write comes up short, the last sector (where the stream ends) goes in a byte a
- * write: the write that ends the stream then delivers before the junk arrives
- * (~3 ms a 64 KiB cluster instead of ~0.4: Firefox only).
+ * Raw deflate of one cluster: exactly `size` bytes out, or undefined. The input runs to a sector boundary, so it
+ * usually ends with the next cluster's bytes, which the inflater ignores after the stream's end.
  */
 export async function inflate(input: Uint8Array, size: number) {
-  const cut = Math.max(0, input.length - 512);
-  return await inflateParts([input], size)
-    ?? (input.length > 1 ? inflateParts([input.subarray(0, cut), ...Array.from({ length: input.length - cut }, (_, i) => input.subarray(cut + i, cut + i + 1))], size) : undefined);
-}
-
-/** `parts` written in turn to one raw-deflate stream, stopping at the first failed write: exactly `size` bytes out, or undefined. */
-async function inflateParts(parts: Uint8Array[], size: number) {
-  const ds = new DecompressionStream('deflate-raw');
-  const w = ds.writable.getWriter();
-  const r = ds.readable.getReader();
-  const out = new Uint8Array(size);
-  let n = 0;
-  const reading = (async () => {
-    for (;;) {
-      const { done, value } = await r.read();
-      if (done) return;
-      if (n + value.length > size) return void r.cancel().catch(() => {}); // fails the writes still to come
-      out.set(value, n);
-      n += value.length;
-    }
-  })().catch(() => {}); // junk after the end
-  try {
-    for (const p of parts) if (p.length) await w.write(p as Uint8Array<ArrayBuffer>);
-    await w.close();
-  } catch { /* junk after the end, or a cancelled read */ }
-  await reading;
-  r.cancel().catch(() => {});
-  return n === size ? out : undefined;
+  return (await threadDeflate()).inflate(input, size);
 }
 
 /** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and hash (web/changes.ts `hashSource`). */

@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 69;
+pub const ABI_VERSION: u32 = 70;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -1016,9 +1016,104 @@ pub unsafe extern "C" fn crc32(seed: u32, src: *const u8, len: usize) -> u32 {
     codec::crc32(seed, unsafe { core::slice::from_raw_parts(src, len) })
 }
 
+// qcow2's compressed clusters: raw deflate through miniz_oxide ([`codec`]; docs/abi.md "SNAPZ: qcow2's clusters
+// through miniz_oxide"). No VM: any instance on the memory, any bytes in it.
+
+/// Inflates the raw deflate stream at `src` (`len` bytes, the stream and anything after its end) into `cap` bytes at
+/// `dst`; the bytes produced, or `usize::MAX` if it is malformed, truncated or wants more than `cap`
+/// ([`codec::inflate_raw`]).
+///
+/// # Safety
+/// As [`lz_compress`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn inflate_raw(
+    src: *const u8,
+    len: usize,
+    dst: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: guaranteed by the caller.
+    let (s, d) = unsafe {
+        (
+            core::slice::from_raw_parts(src, len),
+            core::slice::from_raw_parts_mut(dst, cap),
+        )
+    };
+    codec::inflate_raw(s, d).unwrap_or(usize::MAX)
+}
+
+/// Deflates `len` bytes at `src` into `cap` bytes at `dst` as one raw stream at miniz's `level` (0-10); the stream's
+/// size, or 0 if it doesn't fit in `cap` ([`codec::deflate_raw`]). It allocates the compressor's tables and frees them.
+///
+/// # Safety
+/// As [`lz_compress`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deflate_raw(
+    src: *const u8,
+    len: usize,
+    dst: *mut u8,
+    cap: usize,
+    level: u32,
+) -> usize {
+    // SAFETY: guaranteed by the caller.
+    let (s, d) = unsafe {
+        (
+            core::slice::from_raw_parts(src, len),
+            core::slice::from_raw_parts_mut(dst, cap),
+        )
+    };
+    codec::deflate_raw(s, d, level).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deflate_exports_are_total() {
+        // The exports over garbage, every cap and level: a size within the cap, the failure value, never a panic.
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut dst = vec![0u8; 70_000];
+        for i in 0..3000 {
+            let len = (next() % 5000) as usize;
+            let src: Vec<u8> = (0..len)
+                .map(|k| {
+                    if i % 2 == 0 {
+                        next() as u8
+                    } else {
+                        (k / 64) as u8
+                    }
+                })
+                .collect();
+            let cap = (next() % dst.len() as u64) as usize;
+            let level = (next() % 12) as u32;
+            // SAFETY: both slices are live, of those lengths, and don't overlap.
+            let n = unsafe { deflate_raw(src.as_ptr(), len, dst.as_mut_ptr(), cap, level) };
+            assert!(n <= cap);
+            let packed = dst[..n].to_vec();
+            // SAFETY: as above.
+            let m = unsafe { inflate_raw(src.as_ptr(), len, dst.as_mut_ptr(), cap) };
+            assert!(m == usize::MAX || m <= cap);
+            if n > 0 {
+                // SAFETY: as above.
+                let back = unsafe { inflate_raw(packed.as_ptr(), n, dst.as_mut_ptr(), len) };
+                assert_eq!(back, len, "{len} bytes at level {level}");
+                assert!(dst[..len] == src[..]);
+                if len > 0 {
+                    // SAFETY: as above.
+                    let short =
+                        unsafe { inflate_raw(packed.as_ptr(), n, dst.as_mut_ptr(), len - 1) };
+                    assert_eq!(short, usize::MAX);
+                }
+            }
+        }
+    }
 
     #[test]
     fn sum_wraps() {

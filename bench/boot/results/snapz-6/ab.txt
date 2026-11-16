@@ -1,0 +1,19 @@
+arm base: a8deea545dc2
+04:03:58 round 1 base: flate_us":84.55062499642372,"deflate_ratio":2.270736075924411},"export_c_ms":{"ms":9011.240000009537,"bytes":448294912},"export_ms":7856.399999976158,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5402624,"disks/e1efaf52356e/map":1321504,"disks/e1efaf52356e/data":1040154624},"errors":[]}
+arm new: fe296404f417
+04:05:57 round 1 new: ed":0,"deflate_us":71.578125,"deflate_ratio":2.35143961450972},"export_c_ms":{"ms":8244.355000019073,"bytes":444571648},"export_ms":7406.939999938011,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5398528,"disks/310e14daa717/map":1321504,"disks/310e14daa717/data":1040154624},"errors":[]}
+arm nopool: fe296404f417
+04:07:59 round 1 nopool: eflate_us":70.74437499046326,"deflate_ratio":2.35143961450972},"export_c_ms":{"ms":9051.004999995232,"bytes":444571648},"export_ms":8480.774999976158,"files":{"waarm64-debian/map":69784,"waarm64-debian/data":5378048,"disks/be2293c6cb59/map":1321504,"disks/be2293c6cb59/data":1040154624},"errors":[]}
+arm nopool: fe296404f417
+04:10:01 round 2 nopool: deflate_us":71.2562500089407,"deflate_ratio":2.35143961450972},"export_c_ms":{"ms":8857.014999985695,"bytes":444571648},"export_ms":8447.494999885559,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5386240,"disks/7c41fb0b4f47/map":1321504,"disks/7c41fb0b4f47/data":1040154624},"errors":[]}
+arm new: fe296404f417
+04:12:00 round 2 new: deflate_us":71.6637500077486,"deflate_ratio":2.35143961450972},"export_c_ms":{"ms":8189.590000033379,"bytes":444571648},"export_ms":7220.544999957085,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5316608,"disks/3281a2fdaae1/map":1321504,"disks/3281a2fdaae1/data":1040154624},"errors":[]}
+arm base: a8deea545dc2
+04:13:59 round 2 base: flate_us":81.70000000298023,"deflate_ratio":2.270736075924411},"export_c_ms":{"ms":8638.825000047684,"bytes":448294912},"export_ms":7595.259999990463,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5427200,"disks/3f021b9d03d3/map":1321504,"disks/3f021b9d03d3/data":1040154624},"errors":[]}
+arm new: fe296404f417
+04:15:57 round 3 new: eflate_us":71.5324999988079,"deflate_ratio":2.35143961450972},"export_c_ms":{"ms":8087.8949999809265,"bytes":444571648},"export_ms":7207.224999904633,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5431296,"disks/971f3d0f2291/map":1321504,"disks/971f3d0f2291/data":1040154624},"errors":[]}
+arm base: a8deea545dc2
+04:17:56 round 3 base: flate_us":80.33187499642372,"deflate_ratio":2.270736075924411},"export_c_ms":{"ms":8513.205000042915,"bytes":448294912},"export_ms":7452.714999914169,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5369856,"disks/8c59fde47dbc/map":1321504,"disks/8c59fde47dbc/data":1040154624},"errors":[]}
+arm nopool: fe296404f417
+04:19:57 round 3 nopool: eflate_us":71.30000001192093,"deflate_ratio":2.35143961450972},"export_c_ms":{"ms":8481.100000023842,"bytes":444571648},"export_ms":8253.350000023842,"files":{"waarm64-debian/map":73888,"waarm64-debian/data":5431296,"disks/3abea35fb8c6/map":1321504,"disks/3abea35fb8c6/data":1040154624},"errors":[]}
+arm new: fe296404f417

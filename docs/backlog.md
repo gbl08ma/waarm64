@@ -1260,7 +1260,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     developers' (15 of them in the renderers, 2026-11-02), and copy ends with a period.
 - **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
   once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over
-  its output before the junk error (`web/qcow2.ts` `inflate`) and SpiderMonkey runs without the
+  its output before the junk error (since SNAPZ loop 6 the core inflates them: web/deflate.ts) and SpiderMonkey runs without the
   compile worker (`web/app/worker.ts`). Open: SpiderMonkey's process holds the code of ~16,350 live wasm modules
   (64 KiB each, it seems; then `new WebAssembly.Module` throws "out of memory"), every vCPU worker compiles its
   own copy of each module, and the code cache has no module cap: a long or code-heavy run (the user's Arch
@@ -1488,7 +1488,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the save's garbage recycled), 3 (the load's pool: its check, state and RAM 3.13 to 1.13 s) and 4 (a file save staged
   through OPFS: a picked file's pause 4.7 to 1.4 s, a kept one's), 5 (the disk's blocks in runs: the desktop's
   restore 1.97 to 0.10 s, 7.3 to 0.77 s off the record) and 7 (the machine's start: the dev server's HEADs, the
-  device worker beside the check pass; the desktop's load 5.6 to 1.4 s) are in. Left:
+  device worker beside the check pass; the desktop's load 5.6 to 1.4 s) and 6 (qcow2's clusters through miniz_oxide:
+  an import and an export 4-5% faster, the boot unchanged; one cluster on one thread 9% slower than the stream, which
+  only Node and threads without workers see) are in. Left:
   - **What is left of a load's compression share** (bench/boot/REPORT.md "SNAPZ loop 3", the desktop's 1.13 s): the
     check pass ~0.4 s, bound by reading the file (~0.3 s at four 4 MiB slices in flight; the file is read twice, once
     a pass); the state 0.08-0.10 s (109 MB of BLOB frames unpacked on the machine worker: a pool job that posts the

@@ -534,6 +534,26 @@ implemented by this step).
   host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
   saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
 
+## SNAPZ: qcow2's clusters through miniz_oxide (design note for ABI 70)
+
+The SNAPZ track's loop 6 (`SNAPZ-KICKOFF.md` decisions 1 and 4; measured in `bench/boot/REPORT.md` "SNAPZ:
+compression across the emulator, measured", its qcow2 table): a qcow2's compressed clusters are inflated, and a
+compressed export's clusters deflated, by miniz_oxide (a normal dependency of the core now; it was the native
+twin's dev-dependency) in place of the platform's `DecompressionStream` and `CompressionStream`. Two exports,
+shaped like the snapshot codec's (above): addresses only, no VM, no state between calls, usable from a codec-only
+instance (`codecCore`, web/lz.ts) on any thread; `core/src/codec.rs` holds them with the contract's tests.
+- **`inflate_raw(src, len, dst, cap) -> usize`**: the raw deflate stream (no zlib header) at `src` into `dst`; the
+  bytes it produced when the stream ended (its final block) within `cap`, else `usize::MAX`: malformed, truncated, or
+  more output than `cap` (an inflate past its bound is refused, not cut). Bytes after the stream's end are ignored (a
+  compressed cluster's stored bytes run to a sector's end). No allocation (the decompressor's tables are on the
+  stack, ~11 KiB). Total on any input: never a panic or an access outside the two slices.
+- **`deflate_raw(src, len, dst, cap, level) -> usize`**: the `len` bytes at `src` as one raw deflate stream at
+  miniz's `level` (0-10; above 10 is 10) into `dst`; its size, or 0 when it doesn't fit in `cap` (so `cap = len`
+  asks "does it shrink"). **Not allocation-free:** miniz_oxide's compressor boxes its hash tables and Huffman state
+  (~200 KiB from the core's heap), allocated and freed each call (a 4 KiB cluster's deflate measured at 66 µs that way).
+  The window is miniz's 32 KiB, but a stream of one 4 KiB cluster can't reach further back than its own start, so QEMU's
+  4 KiB inflate window reads it (docs/frontend.md "Your own disk").
+
 ## SNAPZ: older files refused (design note for ABI 69)
 
 The SNAPZ track's loop 2b (`SNAPZ-KICKOFF.md` decision 7: old snapshot files need not load; decision 4: the ABI).
@@ -630,6 +650,7 @@ tests.
 | 67 | `vm_clock_skip` gone: the guest's clock after a restore is the guest agent's (docs/frontend.md "The guest's clock"), not a suspended guest's skip |
 | 68 | the snapshot codec through lz4_flex (`lz_bound`'s value, `lz_compress` refusing a `cap` under it) and `crc32(seed, src, len)` through crc32fast ("SNAPZ: the snapshot codec and CRC") |
 | 69 | `snapshot_version_min` gone: a restore reads `snapshot::VERSION` only, older files are refused ("SNAPZ: older files refused") |
+| 70 | `inflate_raw(src, len, dst, cap)` and `deflate_raw(src, len, dst, cap, level)`: qcow2's clusters through miniz_oxide ("SNAPZ: qcow2's clusters through miniz_oxide") |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

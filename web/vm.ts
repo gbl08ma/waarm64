@@ -27,7 +27,7 @@ import { cpuMask, type CpuFeature } from './cpu-features.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 69;
+export const ABI = 70;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -1011,7 +1011,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   // The window is memory 1's bytes at `windowAt`; its write-watch's words are memory 0's.
   const venusWindow = windowBytes ? { at: windowAt, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
   const layout = ramLayout(o.ramSize, spillSizes, windowBytes, spillAt);
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice, o.warm);
+  const devices = await deviceHost({ memory, core: first, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice, o.warm);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();

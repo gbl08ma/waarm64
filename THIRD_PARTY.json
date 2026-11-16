@@ -1558,6 +1558,34 @@
             "license": "MIT OR Apache-2.0",
             "use": "the snapshot file's frames' CRC-32 (`core/src/codec.rs`)"
           }
+        },
+        {
+          "id": "crate-miniz_oxide",
+          "name": "miniz_oxide",
+          "about": "core",
+          "url": "https://crates.io/crates/miniz_oxide/0.9.1",
+          "version": "0.9.1",
+          "license": "MIT OR Zlib OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT.md",
+              "url": "https://docs.rs/crate/miniz_oxide/0.9.1/source/LICENSE-MIT.md"
+            },
+            {
+              "name": "LICENSE-ZLIB.md",
+              "url": "https://docs.rs/crate/miniz_oxide/0.9.1/source/LICENSE-ZLIB.md"
+            },
+            {
+              "name": "LICENSE-APACHE.md",
+              "url": "https://docs.rs/crate/miniz_oxide/0.9.1/source/LICENSE-APACHE.md"
+            }
+          ],
+          "md": {
+            "crate": "`miniz_oxide` (feature `with-alloc`; defaults off)",
+            "version": "0.9.1",
+            "license": "MIT OR Zlib OR Apache-2.0",
+            "use": "qcow2's compressed clusters, raw deflate: inflated for a disk's reads, deflated for a compressed export (`core/src/codec.rs`; docs/devices.md \"qcow2\"); the native test runners' qcow2 reader too (`core/tests/common/qcow2.rs`)"
+          }
         }
       ]
     },
@@ -2072,15 +2100,6 @@
             "package": "Emscripten's emsdk (measured against wasi-sdk in VK1 step 1, `bench/vulkan/nir/build.sh emscripten`; not the chosen toolchain)",
             "version": "6.0.13",
             "license": "emsdk: MIT (its `LICENSE`); Emscripten: MIT or NCSA (`upstream/emscripten/LICENSE`), with LLVM's and binaryen's (Apache-2.0)"
-          }
-        },
-        {
-          "id": "dev-miniz-oxide",
-          "name": "miniz_oxide",
-          "md": {
-            "package": "miniz_oxide (`core` dev-dependency: the native test runners' qcow2 reader, `core/tests/common/qcow2.rs`; default features off)",
-            "version": "0.9.1",
-            "license": "MIT OR Zlib OR Apache-2.0"
           }
         }
       ]

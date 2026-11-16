@@ -11,6 +11,6 @@ crate-type = ["cdylib", "rlib"]
 # The snapshot file's codec 2 (the LZ4 block format) and its frames' CRC-32 (docs/platform.md "The snapshot file").
 lz4_flex = { version = "0.14.2", default-features = false, features = ["safe-encode", "safe-decode"] }
 crc32fast = { version = "1.5", default-features = false }
-
-[dev-dependencies]
+# qcow2's compressed clusters: raw deflate, inflated for reads and deflated for exports (docs/devices.md "qcow2"). Its
+# deflate needs `with-alloc` (the compressor's tables are boxed); its inflate doesn't allocate.
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }

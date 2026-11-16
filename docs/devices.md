@@ -893,13 +893,19 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   so a machine's disk identity follows the content. Not checked against the hashes yet (reads are synchronous;
   `crypto.subtle` isn't).
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
-  unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate
-  (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). A request's compressed
+  unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate, inflated by the core's
+  miniz_oxide (`web/deflate.ts`: `inflate_raw` on a codec-only core instance of the thread's own, synchronous; the
+  device worker's runs on the machine's core, `DevicesInit.core`, other threads fetch `CORE`; natively the same
+  crate, `core/tests/common/qcow2.rs`). A cluster unpacks to exactly its size or the read fails (a stream that is
+  corrupt, truncated or longer than the cluster is refused); the bytes after a stream's end are ignored. A request's compressed
   clusters are inflated as one batch (an `Inflater`): where the thread can start workers (the device worker, the
   disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s
-  (`inflate-worker.ts`; started by the first request with two or more, each share one message; a single cluster
-  stays on the reading thread), otherwise one after another in place (Node): 1 MiB reads 25% faster, an import 7%
-  and an export 11%, a boot no different (bench/io/REPORT.md "The inflate pool"). Read-only
+  (`inflate-worker.ts`, each given the thread's core; started by the first request with two or more, each share one message; a single cluster
+  stays on the reading thread), otherwise one after another in place (Node). The pool still pays with the core's
+  inflate (bench/boot/REPORT.md "SNAPZ loop 6": without it fio's 1 MiB reads were 24% slower, an import 10%, an
+  export 17%). Against `DecompressionStream`, which it replaced there: one cluster is 9% slower on one thread
+  (171 µs a 64 KiB cluster against 158), but a request has no stream to set up per cluster, so fio's reads were 1-3%
+  faster, an import 4% and an export 5%, a boot no different, and the browser's peak ~150-200 MiB lower. Read-only
   (refcounts never read). **Refused at open:** encryption, backing files (a changes file is read by `readChanges`, docs/frontend.md "Your own disk"), external data files,
   extended L2, zstd, unknown incompatible features. Capacity is the virtual size. Debian's
   published image is 95% compressed clusters, which is why deflate is supported rather than

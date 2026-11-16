@@ -5468,3 +5468,74 @@ not terminating, a failed worker handed out, the coordinator not ending them, `b
 machine without vCPU workers not ending them.
 `scripts/ci.sh` (815 s), `ci-debian.sh` (344 s), `ci-machines.sh` (343 s) and `ci-graphics.sh` (266 s, the 3D state
 handed over differently) green over loop 5 and this loop, once each, alone.
+
+## SNAPZ loop 6: qcow2's clusters through miniz_oxide (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, nothing else running. Raw: `results/snapz-6/`
+(`rounds/page-<arm>-<n>.{json,log,rss}`, `rounds/io-<arm>-<n>.{json,log,rss}`; `run-ab.sh`, the driver; `ab.txt`, its
+log; `summary.py` → `summary.txt`, `summary.json`). **Built:** two core exports, `inflate_raw` and `deflate_raw`
+(miniz_oxide 0.9.1, now a normal dependency; ABI 70, docs/abi.md "SNAPZ: qcow2's clusters through miniz_oxide"), and
+`web/deflate.ts`: a codec-only core instance per thread (`codecCore`), synchronous. qcow2's reader inflates through
+it (on the reading thread and in each inflate-pool worker, which gets the thread's core first; the device worker's
+codec runs on the machine's core, `DevicesInit.core`; other threads fetch `CORE`), and a compressed export's
+clusters are deflated through it at level 6 (in place, and in each deflate-pool worker). `DecompressionStream` and
+`CompressionStream` are gone from qcow2's paths, and with them the byte-by-byte retry Firefox's stream needed.
+
+**The arms:** base = 8facaffa (the streams; its web files and core, ABI 69), new = this loop, nopool = this loop
+with `inflatePool`'s default size 0 (every cluster on the reading thread); each arm's files and wasm swapped into the
+checkout before its run. Rounds base new nopool, nopool new base, new base nopool. Per round and arm,
+`bench/io/inflate-page.ts` (extended here: `reads`, `export-c`; a fresh persistent profile per run) and bench/io's
+`io_reads` (fio in Buildroot over `target/bench/io-usr.qcow2`: 256 MiB of a tar of `/usr`, `qemu-img convert -c`,
+64 KiB clusters, 99 MB; 5 boots a run, the run's median). Median (range) of 3:
+
+| | base (streams) | new (miniz_oxide) | nopool |
+|---|---|---|---|
+| Debian's boot to its login (compressed qcow2 over HTTP), s | 25.65 (25.45-27.19) | 25.66 (25.59-25.95) | 25.76 (25.75-26.01) |
+| import as a stored disk, s | 14.43 (13.94-14.58) | **13.86 (13.57-13.88)** | 15.19 (15.07-15.31) |
+| export, qcow2, s | 7.60 (7.45-7.86) | **7.22 (7.21-7.41)** | 8.45 (8.25-8.48) |
+| export, compressed qcow2, s | 8.64 (8.51-9.01) | **8.19 (8.09-8.24)** | 8.86 (8.48-9.05) |
+| ... its size, MB | 448.3 | 444.6 | 444.6 |
+| fio sequential 1 MiB, MiB/s | 225.1 (220.7-225.3) | **230.8 (230.5-231.4)** | 174.3 (173.2-174.9) |
+| fio sequential 128 KiB, MiB/s | 88.8 (88.6-88.9) | **91.5 (91.3-91.6)** | 89.0 (88.5-89.1) |
+| fio random 4 KiB, MiB/s | 4.51 (4.51-4.54) | **4.57 (4.56-4.58)** | 4.57 (4.57-4.57) |
+| the reader alone (the page's thread), a 1 MiB read, one thread, ms | **2.77 (2.72-2.78)** | 2.95 (2.95-2.95) | 2.94 |
+| ... with a pool of four, ms | 1.61 (1.59-1.62) | **1.51 (1.48-1.52)** | 1.49 |
+| inflate a 64 KiB cluster, one after another, µs | **158 (158-163)** | 172 (171-172) | 171 |
+| deflate a 4 KiB cluster (`qcow2-write.ts` `deflate`), µs | 82 (80-85) at 2.27x | **72 (72-72) at 2.35x** | 71 |
+| the browser's RSS peak, a page run (the boot's), MiB | 2,881 (2,851-2,891) | **2,680 (2,673-2,699)** | 2,617 |
+| ... a fio run, MiB | 1,680 (1,648-1,687) | **1,538 (1,519-1,544)** | 1,332 |
+
+**Against the goal:** the kickoff's numbers (160 against ~400 µs a 64 KiB cluster, 66 against 307 a 4 KiB one) were
+the measuring session's harness, which piped each cluster through `Blob.stream().pipeThrough(...)` and collected the
+chunks: the page's own stream code (one writer, one reader, the output written in place) was much cheaper, 158 µs
+and 82 µs. So on one thread the core's inflate is **9% slower** a cluster (172 µs) and its deflate 12% faster at a
+3.5% better ratio. End to end the new arm is still ahead in every measure but the boot, each outside the other's
+range: the import 4% faster, the export 5%, the compressed export 5% (and 0.8% smaller), fio's reads 1-3%, the
+reader's pooled 1 MiB read 6%, the browser's peak 140-200 MiB lower (not broken down by process: the
+streams' buffers on four workers are the likely difference). The one-thread 1 MiB read is 7% slower; it is what Node and a thread
+without workers run, never the page's guests. **The boot doesn't move** (25.6-25.7 s in all three arms): its reads
+are mostly one or two clusters, and inflating is a small part of it. **The inflate pool still pays:** without it fio's 1
+MiB reads were 24% slower, the import 10% and the export 17%; it stays. **Memory:** a codec instance is a 2 MiB memory,
+2.6 MiB after a deflate (its compressor's ~200 KiB tables from the heap, allocated and freed per call: miniz_oxide
+boxes them, so `deflate_raw` isn't allocation-free; `inflate_raw` is): one per thread that reads a compressed qcow2
+(the device worker and its four inflate workers: ~13 MiB), and during an export the disk-out worker's and its four
+deflate workers' (~13 MiB more); the threads without the machine's core (the disk-in and disk-out workers) hold its
+9.6 MB wire bytes too. The measured peaks are lower than base's all the same. The core's wasm grew 155 KB (9.49 →
+9.64 MB).
+
+**Correctness:** natively (`cargo test`, `core/src/codec.rs`, `core/src/lib.rs`): round trips at every level with
+junk after the stream, the stream read by the native twin's inflater; `deflate_raw` refusing a `cap` it doesn't fit;
+`inflate_raw` refusing every truncation, a stream past its bound, a reserved block type, a stored block's bad length
+and a distance before the output's start, and 20,000 flipped-bit streams and 5,000 garbage inputs without a panic;
+the exports over 3,000 random inputs, caps and levels (a result within the cap, or the failure value). Planted, each
+caught: a corrupt stream taken (`inflate_raw` returning what it produced whatever its status: 3 tests fail), an
+inflate past its bound taken (`HasMoreOutput` as done: 2 fail). In Node (`tests/deflate.test.ts`): Node's zlib with
+QEMU's 4 KiB window (`windowBits: 12`) reads the core's 4 KiB clusters, the core reads zlib's 64 KiB ones and its own
+with a sector's junk after; corrupt, truncated, short and overlong streams refused; planted: a short cluster taken
+(caught). `tests/qcow2.test.ts`: a damaged compressed cluster fails its read, the clusters before it still read (the
+Firefox stream test is gone with the retry). The exports stay valid qcow2 for QEMU: `tests/qcow2-write.test.ts`
+(`qemu-img check` and `qemu-img compare` of compressed whole disks and changes files) and the page's
+`tests/page-save.test.ts` and `tests/page-disks.test.ts` (an image imported and exported compressed, compared by
+qemu-img) pass. A first version of the inflate pool started its workers twice when two requests came before the core
+was compiled; it starts them once now.
+`scripts/ci.sh` (788 s), `ci-debian.sh` (411 s) and `ci-machines.sh` (316 s) green on the finished tree, once each, alone.

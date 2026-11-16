@@ -2,7 +2,7 @@
 // the changes over a base image (a qcow2 with the base as its backing file, named in the header
 // with the base's hash in an extension of ours) or the whole disk (zero clusters left out),
 // streamed through a sink, with 4 KiB clusters (the overlay's block size, web/overlay.ts),
-// compressed (raw deflate, cluster by cluster) when asked.
+// compressed (raw deflate, cluster by cluster, through the core's miniz_oxide: web/deflate.ts) when asked.
 // Written from the format spec, QEMU's docs/interop/qcow2.txt (no QEMU code); `qemu-img check`
 // and `qemu-img compare` are the oracle (tests/qcow2-write.test.ts).
 //
@@ -11,6 +11,7 @@
 // there are, so the stream goes data first and the header (cluster 0) is written last, with
 // `sink(bytes, 0)`. Compressed clusters are packed end to end where they fall among the others;
 // one that isn't compressed starts at the next cluster boundary.
+import { threadDeflate } from './deflate.ts';
 import { MsgError } from './msg.ts';
 import type { WritableDisk } from './overlay.ts';
 import type { Disk } from './qcow2.ts';
@@ -203,37 +204,23 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
   return { clusters: n, bytes: total * CLUSTER };
 }
 
+/** The deflate level of a compressed export's clusters (miniz's; QEMU's zlib writes 6 too). */
+export const LEVEL = 6;
+
 /**
- * Raw deflate of one cluster through the platform's `CompressionStream`, or undefined when it doesn't
- * shrink (the cluster is stored as it is). QEMU inflates with a 4 KiB window whatever the cluster
- * size, and `CompressionStream` has no window setting: a 4 KiB cluster can't reach further back.
+ * Raw deflate of one cluster through the thread's codec (web/deflate.ts: the core's miniz_oxide, ~66 µs a 4 KiB
+ * cluster in Chromium), or undefined when it doesn't shrink (the cluster is stored as it is). QEMU inflates with a
+ * 4 KiB window whatever the cluster size: a stream of one 4 KiB cluster can't reach further back.
  */
 export async function deflate(data: Uint8Array) {
-  const cs = new CompressionStream('deflate-raw');
-  const w = cs.writable.getWriter();
-  w.write(data as Uint8Array<ArrayBuffer>).catch(() => {});
-  w.close().catch(() => {});
-  const r = cs.readable.getReader();
-  const parts: Uint8Array[] = [];
-  let n = 0;
-  for (;;) {
-    const { done, value } = await r.read();
-    if (done) break;
-    parts.push(value);
-    n += value.length;
-  }
-  if (n >= CLUSTER) return undefined;
-  if (parts.length === 1) return parts[0];
-  const out = new Uint8Array(n);
-  let at = 0;
-  for (const p of parts) { out.set(p, at); at += p.length; }
-  return out;
+  return (await threadDeflate()).deflate(data, LEVEL, CLUSTER - 1);
 }
 
-/** `Packer.pack` on this thread: one cluster at a time (several streams at once on one thread were slower, docs/frontend.md). */
+/** `Packer.pack` on this thread: one cluster after another. */
 export async function deflateEach(clusters: Uint8Array) {
+  const z = await threadDeflate();
   const out: (Uint8Array | undefined)[] = [];
-  for (let at = 0; at < clusters.length; at += CLUSTER) out.push(await deflate(clusters.subarray(at, at + CLUSTER)));
+  for (let at = 0; at < clusters.length; at += CLUSTER) out.push(z.deflate(clusters.subarray(at, at + CLUSTER), LEVEL, CLUSTER - 1));
   return out;
 }
 

@@ -1,7 +1,6 @@
 // The qcow2 reader (web/qcow2.ts) against qemu-img's fixtures (tests/qcow2/make.sh).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { constants, inflateRawSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -67,38 +66,6 @@ for (const name of ['v3.qcow2', 'deflate.qcow2'] as const) {
   });
 }
 
-/**
- * A raw-deflate DecompressionStream that behaves as Firefox's does: a write holding bytes past the
- * stream's end errors the stream and loses the output that write produced (Chromium's hands it over
- * first). Built on zlib, which says how much of its input the stream used.
- */
-class FirefoxDecompressionStream extends TransformStream<Uint8Array, Uint8Array> {
-  constructor() {
-    let input = Buffer.alloc(0);
-    let sent = 0;
-    super({
-      transform(chunk, c) {
-        input = Buffer.concat([input, chunk]);
-        const r = inflateRawSync(input, { finishFlush: constants.Z_SYNC_FLUSH, info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
-        if (r.engine.bytesWritten < input.length) throw new TypeError('Unexpected input after the end of stream');
-        c.enqueue(new Uint8Array(r.buffer.subarray(sent)));
-        sent = r.buffer.length;
-      },
-    });
-  }
-}
-
-test('deflate.qcow2 reads as data.raw where the stream drops the output of a write with junk (Firefox)', async () => {
-  const real = globalThis.DecompressionStream;
-  globalThis.DecompressionStream = FirefoxDecompressionStream as unknown as typeof DecompressionStream;
-  try {
-    const all = await open('deflate.qcow2').read(0, data.length);
-    assert.ok(all && Buffer.compare(all, data) === 0, 'deflate.qcow2 under Firefox\'s stream differs from data.raw');
-  } finally {
-    globalThis.DecompressionStream = real;
-  }
-});
-
 // A request's compressed clusters go to the inflater together, once (web/inflate-pool.ts spreads
 // them over threads), and one that doesn't unpack fails the request.
 test('deflate.qcow2: a request inflates its compressed clusters in one batch', async () => {
@@ -122,6 +89,18 @@ test('deflate.qcow2: a request inflates its compressed clusters in one batch', a
   spoil = true;
   const fresh = openDisk((off, len) => new Uint8Array(b.buffer, b.byteOffset + off, len), b.length, inflater);
   assert.equal(await fresh.read(0, data.length), undefined);
+});
+
+test('deflate.qcow2 with a compressed cluster damaged: a read through it is refused, the clusters around it still read', async () => {
+  const b = new Uint8Array(file('deflate.qcow2'));
+  const at = (off: number, len: number) => (off + len <= b.length ? b.subarray(off, off + len) : undefined);
+  const [off, len] = openDisk(at, b.length).allocation!(at).host(30)!; // one of clusters 24-39, the compressed ones
+  b.fill(0xff, off, off + len); // block type 3: no such block
+  const d = openDisk(at, b.length);
+  assert.equal(await d.read(30 * 4096, 4096), undefined);
+  assert.equal(await d.read(0, data.length), undefined);
+  const before = await d.read(24 * 4096, 6 * 4096);
+  assert.ok(before && Buffer.compare(before, data.subarray(24 * 4096, 30 * 4096)) === 0);
 });
 
 let browser: Browser | undefined;

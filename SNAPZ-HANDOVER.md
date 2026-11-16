@@ -7,7 +7,7 @@ at a time, one loop each, in the main checkout).
 
 ## State (2026-11-16)
 
-Loops 0-5 and 7 done. The page times its saves and loads by phase (`data-snapshot`, `data-load`; docs/frontend.md
+Loops 0-7 done. The page times its saves and loads by phase (`data-snapshot`, `data-load`; docs/frontend.md
 "Snapshots"), `bench/snapz/probe.ts` measures them (a load, a kept snapshot, the machine started from it, a download,
 a picked file standing in by an OPFS file, a suspend, the resume) and `bench/snapz/memwatch.ts` the browser's memory
 by process beside it (docs/benchmarking.md "The snapshot probe"). Codec 2 is lz4_flex in the core, the frames' CRC
@@ -28,6 +28,11 @@ persistent profile `target/snapz/profile`, a fresh browser per round):
   0.11, start 0.09; the probe's wall 1.58), kept snapshot's start 1.37, resume 1.19. Off the record (loop 5, before
   the HEAD fix): load 5.8 s (disk 0.76), kept pause 2.7 (2.2 of it the sink's OPFS writes).
 - Debian (`debian-go.waarm64snap`, 97 MB): pause 0.16 s kept, download and picked, 0.16 suspend; load 0.29 s.
+- qcow2's clusters (loop 6, REPORT "SNAPZ loop 6", `bench/boot/results/snapz-6/`): inflated and deflated by the core's
+  miniz_oxide (`web/deflate.ts`, ABI 70), the inflate pool kept (without it fio's 1 MiB reads were 24% slower). Against
+  the streams: an import 14.4 → 13.9 s, an export 7.6 → 7.2, a compressed one 8.6 → 8.2 (448 → 445 MB), fio's reads
+  1-3% faster, Debian's boot unchanged (25.7 s), the browser's peak ~140-200 MiB lower; one cluster on one thread 9%
+  slower (172 against 158 µs: the kickoff's ~400 was its harness's stream setup), a 4 KiB deflate 82 → 72 µs.
 - Memory while a save runs: desktop kept +141 MiB, download +163, picked +253, suspend +211 (loop 5); Debian +60-85.
   A desktop load peaks at 3.2 GiB for the browser, ~200 MiB under loop 5's.
 
@@ -45,7 +50,8 @@ persistent profile `target/snapz/profile`, a fresh browser per round):
 | 4 | The review's findings; a picked file staged through OPFS | done (REPORT "SNAPZ loop 4") |
 | 5 | The disk's blocks, batched | done (REPORT "SNAPZ loop 5") |
 | 7 | The load's machine start, broken down (before loop 6: one CI run covered loops 5 and 7) | done (REPORT "SNAPZ loop 7") |
-| 6 | qcow2's clusters through miniz_oxide | next |
+| 6 | qcow2's clusters through miniz_oxide | done (REPORT "SNAPZ loop 6") |
+| end | The final review and the track's end | next |
 
 ## Open questions
 

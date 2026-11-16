@@ -26,6 +26,7 @@ import { blockList, openOverlay, overlay, storageNumbers, type MapLeaves, type O
 import { diskInspector, RANGE, type InspectAnswer, type InspectQuery, type LiveDisk, type LiveImage } from './surface.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
+import { coreModule } from './deflate.ts';
 import { inflatePool } from './inflate-pool.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 import { Usb, type UsbAttach } from './usb.ts';
@@ -855,9 +856,9 @@ export async function fileSource(url: string): Promise<Source> {
 }
 
 /**
- * virtio-blk over a `Source` (HTTP ranges, or a file in Node). Only qcow2's
- * compressed clusters are asynchronous (DecompressionStream; a request's together,
- * on web/inflate-pool.ts's workers too where there are workers). Read-only, or
+ * virtio-blk over a `Source` (HTTP ranges, or a file in Node). qcow2's compressed
+ * clusters are inflated a request's together (web/deflate.ts; on web/inflate-pool.ts's
+ * workers too where there are workers). Read-only, or
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
@@ -1155,6 +1156,8 @@ export function ring(bell: Int32Array, wait: boolean) {
 
 export type DevicesInit = {
   memory: WebAssembly.Memory;
+  /** The core (the machine's, not its exact-memory copy): this thread's codec for qcow2's clusters runs on it (web/deflate.ts). */
+  core?: WebAssembly.Module;
   /**
    * The host-visible window (`BootOptions.window`): its address in memory 1 (`spill[0]`), its bytes, and its
    * write-watch's address in `memory` (web/window.ts).
@@ -1355,6 +1358,7 @@ export class Devices {
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory, the storage full). */
   static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (m: Msg) => void = () => {}) {
+    if (init.core) void coreModule(init.core);
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
     const sources = await Promise.all(init.specs.map(async (d) => {
