@@ -22,8 +22,15 @@ pub mod chain;
 pub mod entry;
 pub mod header;
 pub mod id;
+pub mod server;
+pub mod store;
+pub mod wire;
 pub mod zone;
 
+#[cfg(test)]
+mod server_tests;
+#[cfg(test)]
+pub(crate) mod testkit;
 #[cfg(test)]
 mod tests;
 

@@ -62,6 +62,11 @@ pub enum Action {
     RtcClose {
         rtc: u32,
     },
+    /// A room's registry (room/names/store.rs): store name `id`'s record, or delete it (None).
+    NamesStore {
+        id: [u8; 32],
+        record: Option<Vec<u8>>,
+    },
 }
 
 /// The most a relay message carries when frames are joined (see [`queue_frames`]): about three

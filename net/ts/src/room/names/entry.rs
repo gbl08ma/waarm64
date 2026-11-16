@@ -281,6 +281,25 @@ impl Stamped {
         })
     }
 
+    /// An entry as this node stored it, verified when it was first taken: not checked again (a
+    /// server's store, room-names.md "Servers").
+    pub fn trusted(
+        entry: Entry,
+        ref_header: Header,
+        anchor: Option<Anchored>,
+        pending: Option<Pending>,
+    ) -> Stamped {
+        let id = entry.id();
+        let pending = pending.filter(|_| anchor.is_none());
+        Stamped {
+            entry,
+            id,
+            ref_header,
+            anchor,
+            pending,
+        }
+    }
+
     pub fn id(&self) -> [u8; 32] {
         self.id
     }

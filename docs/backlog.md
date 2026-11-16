@@ -1569,9 +1569,26 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A zone's slots are sealed with a key from the name and `seq` and a zero nonce: two zones of one title with the
     same `seq` and different contents (a title forked between two browsers, both changing its zone) would reuse it.
     The agent (N4) must make that impossible (`seq` from the time and the branch), or a zone carries a random nonce.
-  - The owner is computed from every entry a node holds; a server that keeps only the best chain of a name (the spec's
-    "one chain a name") can disagree with one that keeps them all when copies arrive partial (a chain shown without
-    its last anchor looks dead). N2 decides: keep every alive chain, or take a `put` only as a whole run.
+  - Servers keep one chain a name, the owner's (N2, room-names.md "Servers"), so a back-order (a younger chain alive
+    beside the owner) isn't carried: when the holder lapses it owns the name by the rule, but servers have it only
+    once its owner's agent puts it again. The agent (N4) should put a title it holds whenever a server shows a chain
+    that no longer covers, not only at its renewals.
+  - A server's sync partners last one round (a new question every 5 minutes; idle sessions go after 3 minutes), where
+    the spec's members hold theirs across questions. Holding servers' partners would save a question a round.
+  - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
+    zone for up to 10 minutes (sync then asks for it every round).
+  - Headers are kept once an item, not once a registry: entries a calendar anchored in one block repeat its header
+    across names (80 bytes each). N6's sizes say whether it matters.
+  - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
+    round descends to them and lists them again (a request or two a range). N6 measures the bound's churn.
+  - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
+  - The module grew 92 KB Brotli (592 to 684, `net/ts/build.sh`, 2026-11-16) once the names code was linked (N1's
+    records and rules were dead code until N2 used them). Not looked into: what dominates (Argon2, the anchor
+    verifier, monomorphized collections), and whether it's worth trimming.
+  - The page's side of the registry's persistence (a store in `waarm64-room` written from action 11 and streamed back
+    through `ts_room_names_load`), titles as they change (an export beside the config's `names.titles`) and the
+    TypeScript config type for `names` are N3's and N4's; the module has no `params` override yet for page tests with
+    a pretend Bitcoin (N3 adds it if its page test needs one).
   - The header floor is 1/16 of block 976,177's difficulty: revisit if Bitcoin's difficulty ever falls far.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix

@@ -114,6 +114,11 @@ impl Name {
         }
     }
 
+    /// Keeps only the entries `keep` says (a server's one chain a name: store.rs).
+    pub fn retain(&mut self, mut keep: impl FnMut(&[u8; 32], &Stamped) -> bool) {
+        self.entries.retain(|id, s| keep(id, s));
+    }
+
     pub fn get(&self, id: &[u8; 32]) -> Option<&Stamped> {
         self.entries.get(id)
     }

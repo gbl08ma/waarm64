@@ -41,6 +41,14 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   event (`state`, `lease`, `self`, `serving`, `client`, `netmap`, `login`, `store`, `exitnode`,
   `loggedout`, `log`); a `Failed` state and a refused `exitnode` say why as a stable `code` the page words
   (`web/ts-client.ts` `failureOf`, docs/i18n.md), with any technical `detail` beside it. Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
+- **A room's registry** (docs/plans/room-names.md "The registry"): a room's config with `names` (`titles`: each a
+  name's owner key, 64 hex digits, and its item, hex: `room/names/wire.rs`; `maxNames`, `maxBytes`) makes the node a
+  server of the room's names. Its names client is a second room client inside the same handle: its WebSocket
+  connections are numbered from `0x40000000` (`room::NAMES_CONN`), so the worker opens, feeds and closes them as any
+  other, and of its events only its log comes out (marked `names client:`). Action 11 stores a name's record (the
+  name id, 32 bytes, then the record; the id alone: delete it); `ts_room_names_load(h, ptr, len)` takes one back, and
+  the worker streams them all in before the first `ts_tick`. The page doesn't write or read them yet (N3/N4): the
+  worker ignores action 11 as it ignores any action it doesn't know.
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and
