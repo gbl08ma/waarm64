@@ -129,6 +129,18 @@ means nothing in another, even one whose prefix was made to collide.
 - **Proof of work** is over the fields before the signature: the function's output has `POW_BITS` leading zero bits.
   It is bound to `ref`, so it can't be stockpiled or reused for the next term. The function must be cheap to check
   (a server checks every entry of the room), which weighs against a memory-hard one: N0.
+  **What it is for**: the price, every term, of a name held without being used: a dictionary stamped and held back
+  ("What it does not give"), a back-order, a squat. Stamping is free and one stamp covers any number of claims, so
+  without it a member could claim every word there is each term for a minute of signatures. It is not what keeps junk
+  out of a registry (the servers' bound is). So the function is judged by what a million names cost an attacker a
+  term on a GPU, which favours a memory-hard one (*estimate*: a GPU's lead over a tab is ~1,000x at BLAKE2s, ~10x at
+  Argon2id).
+  **Not a verifiable delay function** (weighed 2026-11-16): one is sequential an instance, but a dictionary is a
+  million instances side by side, so it evens the field a core, as a memory-hard function does; and it costs
+  milliseconds to check in wasm where a hash costs microseconds (60,000 entries: minutes of a server's first sync),
+  ~256 bytes of proof on a 207-byte entry, a tab without a wide multiply against native squaring, and group
+  arithmetic with no small vetted crate. Its one gain is a fixed time where hashcash is a draw (the mean under a
+  minute, some several): the *Preparing* state's words allow for that.
 - **An entry is valid** when its signature and proof of work hold and it has an anchor whose block's time `t` is
   within `ref`'s block's time minus 2 hours (block times aren't ordered to the minute) and plus `REF_WINDOW`.
 
@@ -179,7 +191,7 @@ once.
 |---|---|---|
 | `TERM` | 30 days | the user's "a month, or shorter" |
 | `GRACE` | 7 days | |
-| `REF_WINDOW` | 24 hours | must exceed the calendars' slowest time to anchor, not their usual: N0 |
+| `REF_WINDOW` | 24 hours | must exceed the calendars' slowest time to anchor, not their usual: N0, from a year of their transactions. Not sensitive: all it costs is how far ahead proof of work can be made, and a day or three is the same against `TERM`; an entry that misses it is made again ("The names agent") |
 | renew when | the last entry is older than `TERM / 2` | two entries a month a name; the page says "every 2 weeks", and a name is lost only past 3 |
 | `POW_BITS`, function | N0 | target: under a minute of one core in a tab, in the background |
 
@@ -191,6 +203,12 @@ once.
   served (699 bytes, `access-control-allow-origin: *`), so an owner can collect an anchor weeks later. While a proof is
   pending the calendar answers 404 **without** the CORS header, which a page sees as a failed fetch: any failure there
   means "ask again later", with a backoff. One anchor is enough; three calendars are for availability.
+- **How long an anchor takes** is the wait for the calendar's next transaction, its mining, and six blocks more (a
+  calendar serves a proof only once its block is 6 deep). Each calendar's page says its rate, and its transactions are
+  on Bitcoin, so its whole history can be read from an explorer. On 2026-11-16: `alice` a transaction every 1.19 hours
+  on the week's average (the latest ones 2 to 6 blocks apart), `bob` 1.63 hours (3 to 11 blocks), `finney` 6.0 hours
+  (35 to 62 blocks, so up to ~11 hours to a proof); fees of 0.1 to 2.4 sat/vB, so the slow case is a busy mempool.
+  About 2 hours is what the dialog can say; the worst case is N0's, from a year of those transactions.
 - **Headers prove themselves.** A verifier needs the 80-byte header of an anchor's block and of `ref`'s block; both
   travel with the entry. It checks the header's hash against the anchor and `ref`, its proof of work against its own
   target, that target against a floor compiled in (a fraction of the difficulty at a pinned date, so a forged header
@@ -283,7 +301,9 @@ its region, the time, a nonce) and one byte more, `spread`. Servers subscribe to
   the module; what was verified is stored as verified and not checked again at load.
 - **Bound**: `MAX_NAMES` (proposed 20,000) and a byte budget. Past either, a server drops names, never its own, the
   ones nobody has asked it for longest first. A dropped name isn't lost (its owner holds the title and puts it back),
-  and junk registered in bulk is what nobody asks for. Proof of work alone can't bound the registry: a GPU makes
+  and junk registered in bulk is what nobody asks for (unless its registrant asks: askers can't be told apart, so an
+  attacker can keep its junk asked for and have honest names that are rarely asked dropped first. Not handled: N6
+  measures it). Proof of work alone can't bound the registry: a GPU makes
   100,000 claims for the price of a few hours (*estimate*), and one stamp covers them all.
 - **Persist** per name, binary, one record each in a store of its own in `waarm64-room`, written as items change and
   streamed into the module at start (not the tailnet client's `store` pattern, which keeps everything as hex strings
@@ -333,7 +353,9 @@ dialog says to keep an export. It needs no running machine:
 
 - **On every page load**, and hourly while open, for each title (one Web Lock a title): fetch finished anchors for
   pending entries and the headers they need; renew when due (a `ref` from the explorers, mine, sign, stamp); mark a
-  claim public once anchored.
+  claim public once anchored. **An entry whose anchor came past `REF_WINDOW`**, or that has none once the window is
+  over, is invalid for good: the agent makes it again (a new `ref`, proof of work, stamp), with a backoff. Renewing
+  at half a term leaves more than two weeks for that; a claim just waits longer.
 - **Publishing** is a `put` to two servers through a names client, which needs no guest and no key of the node's, so
   the page does it whether or not a machine runs, under no lock: when a claim becomes public, when a renewal is made
   (with its pending anchor, which the servers finish, so one short visit is enough), when an anchor finishes, when a
@@ -404,18 +426,22 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 
 ## Measure first (loop N0, no product code)
 
-1. **Time to anchor** from each calendar, over a week of stamps, the slowest as well as the usual: sets `REF_WINDOW`
-   and what the dialog promises. (One stamp made 2026-11-15 20:46 UTC: at 76 minutes pending at all three, `alice` and `bob` each naming
+1. **Time to anchor** from each calendar, the slowest as well as the usual: sets `REF_WINDOW` and what the dialog
+   promises. From a year of each calendar's transactions on Bitcoin, read through the two explorers ("How long an
+   anchor takes"), not from a week of stamps, which would be a sample without the bad days; checked against a batch
+   of real stamps whose commitments are committed, so a later session collects them. (One stamp made 2026-11-15 20:46 UTC: at 76 minutes pending at all three, `alice` and `bob` each naming
    a Bitcoin transaction and "waiting for 6 confirmations", so a calendar serves a proof only once its block is 6
    deep; at 167 minutes anchored at `alice` and `bob`, still pending at `finney`. So between 1.3 and 2.8 hours at
    the two that finished, and the third slower. The finished part was 1,036 bytes at each, on a receipt of 170 to
    207: an anchor of about 1.2 KB before any sharing, more than the 0.9 this page first assumed.)
 2. **Proof of work**: BLAKE2s hashcash against Argon2id at a few memory sizes: time to make one in Chromium's wasm and
    natively, what a GPU does to each, **and the time to check the 10,000 and 60,000 entries** of a 1,000 and a
-   5,000-name registry in the module's wasm. Picks the function and `POW_BITS`.
+   5,000-name registry in the module's wasm. Picks the function and `POW_BITS`, by what a million names cost an
+   attacker a term on a GPU ("Records") against what checking a registry costs a server.
 3. **Verification rate** in the module's wasm (BIP-340, an anchor's hashes, a header's): sets the slice a turn may
    spend.
-4. **Anchor sizes**, raw and with shared tails and headers, over a few hundred real stamps: replaces the size table.
+4. **Anchor sizes**, raw and with shared tails and headers, over a few hundred real stamps (item 1's batch): replaces
+   the size table.
 5. **Through public DERP**: 5, 20 and 50 MB between two names clients, 8 in flight, a guest's ping running beside it;
    and what a second room client in the worker costs (memory, a DERP connection, idle CPU).
 6. **A cold first lookup** on the public relays: question, call back, `serve`, `get`, to the answer.
@@ -440,7 +466,7 @@ load, when one is inside its last week. All words go in `web/messages/en/network
   between two browsers, a lost name, export and import.
 - **N5** The page: the dialog, the adapter's states, the details, the Machines page's dates, the catalog.
 - **N6** Scale and abuse: 1,000 members, 20 servers and 5,000 names (a server's load, a cold lookup, a join storm of
-  500, junk in bulk against the bound); days on the public services with real stamps; the final review.
+  500, junk in bulk against the bound, also when its registrant asks for it); days on the public services with real stamps; the final review.
 
 ## Open, to settle in the loops
 

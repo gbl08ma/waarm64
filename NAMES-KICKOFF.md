@@ -1,7 +1,8 @@
 # NAMES: registered names in a room — kickoff
 
 **The user's brief (2026-11-15), drafted by the session that researched and specified it; confirmed by the user
-handing it over.** Give a room human-chosen names (`test123` beside `<key>.<tag>.p2p.internal`): registered first come
+handing it over; changed with them 2026-11-16: the anchors' times from the calendars' history instead of a week of
+stamps, the track's branch, which loops a cloud session can run, what the proof of work is chosen by.** Give a room human-chosen names (`test123` beside `<key>.<tag>.p2p.internal`): registered first come
 by a key, for a term, renewed by the page, with no server of ours, no room administrator and nothing stored on a
 relay. **The design is [docs/plans/room-names.md](docs/plans/room-names.md): read it first, whole** (it was revised after an
 out-of-context review of its first draft; its last section says what that draft got wrong). How it was
@@ -58,8 +59,12 @@ supervisor changes the spec inside these decisions and says why in the handover;
 ## How the track runs
 
 **The session is a supervisor**, as PERF-HANDOVER.md "How the track is worked" describes (read it; the same rules hold
-unless this file says otherwise). It starts by setting PLAN.md's row to "In progress since <date>" and writing
-`NAMES-HANDOVER.md` (lean: state, the queue, open questions; CLAUDE.md), committed and pushed. Then it runs **one
+unless this file says otherwise). **The track's branch is the one the supervisor's session is on** (`main` in the dev
+VM, a cloud session's own branch there): every loop commits and pushes to it and to no other, nothing is rebased onto
+`origin/main` on the way, and the user merges it into `main` once, at the end. The handover names the branch; a
+session that takes the track over on another branch first merges that one into its own (`git fetch origin <branch>`,
+`git merge --no-edit FETCH_HEAD`) and writes its own branch's name in the handover. It starts by setting
+PLAN.md's row to "In progress since <date>" and writing `NAMES-HANDOVER.md` (lean: state, the queue, open questions; CLAUDE.md), committed and pushed. Then it runs **one
 general-purpose subagent at a time, one loop each**, in the main checkout (no worktrees), waits for it to finish,
 checks its report against the repo (`git log`, the pushed commit, `git status` clean, `ps` for leftovers), updates the
 handover's queue, and starts the next. It works through to the end without check-ins: choices are settled by
@@ -68,7 +73,8 @@ reveals or which outside service a page talks to. The user is often watching: a 
 
 **A loop's brief** (the subagent knows only what's in it; written fresh, neutral, never the supervisor's theory):
 - Read CLAUDE.md and follow it exactly, **except for which tests it runs (below)**: bounded runs with `timeout`;
-  `systemd-run` memory caps on every node, cargo and Chromium run; no self-matching `pkill`. Then this file,
+  `systemd-run` memory caps on every node, cargo and Chromium run (in a cloud session, where `systemd-run` doesn't work:
+  `timeout` only, and one heavy run at a time: docs/cloud.md); no self-matching `pkill`. Then this file,
   NAMES-HANDOVER.md, docs/plans/room-names.md, docs/networking/rooms.md, and its area's pages:
   docs/networking/tailnet.md "The module" and adapters.md §2.1 from N2; docs/frontend.md "Network",
   docs/frontend-code.md and docs/i18n.md from N4.
@@ -79,11 +85,12 @@ reveals or which outside service a page talks to. The user is often watching: a 
   another name's key, a pending anchor counted, a worse chain replacing a better one, a header under the floor taken,
   a member's kept name replaced by a younger chain), source restored afterwards and
   the module rebuilt. Tests never `assert.deepEqual` large buffers.
-- **Public services** (the calendars, the explorers, public relays and DERP) are touched only by N0 and N6, a few
-  hundred small requests at most each, never a load test; tailcat's relays for one transfer a size.
+- **Public services** (the calendars, the explorers, public relays and DERP) are touched only by N0 (and whichever
+  later session collects N0's stamps) and N6, a few hundred small requests at most each, never a load test; tailcat's
+  relays for one transfer a size.
 - The finish: the spec's section brought in line with what was built; loose ends in docs/backlog.md; the handover's
-  queue row updated; the loop's checks green (below); `git fetch`, rebase onto origin/main, commit, push to origin
-  main. The reply: a short report with what was built or why not, the numbers where there are any, tests and planted
+  queue row updated; the loop's checks green (below); commit, push to the track's branch (above; named in the
+  brief). The reply: a short report with what was built or why not, the numbers where there are any, tests and planted
   bugs, which checks ran with their results, the commit hash.
 
 **Which tests a loop runs** (the user, 2026-11-15: the full CI has become slow; a loop runs the most targeted checks,
@@ -107,16 +114,31 @@ work is considered done" for this track's loops, and only for them):
 
 **Out-of-context reviews** (CLAUDE.md): after N3 (the registry and its rules: a new subsystem, and what an attacker
 aims at) and at the track's end, a fresh agent with only the area (`net/ts/src/room/names/`, later `web/names*.ts`)
-and "find real defects" reviews statically, findings on a `review/names-<n>` branch; the next loop fixes them first,
-each with its confirming test failing first.
+and "find real defects" reviews statically, findings on a `review/names-<n>` branch (in a session that may push only its own branch: in
+`NAMES-REVIEW-<n>.md` on the track's branch, deleted once every finding is fixed or filed); the next loop fixes them
+first, each with its confirming test failing first.
+
+**Which sessions can run what** (docs/cloud.md says what a cloud session lacks). N1 to N5 and N0's items 1 to 4 run in
+either kind of session; N1 and N2 need none of N0's numbers (the clock's parameters and the proof of work's are a
+struct) and don't wait for it. **Only in the dev VM**: N0's items 5 and 6 and its GPU figure, N6, and the full scripts
+of the mid-track review and of the end (a cloud session's `scripts/ci.sh` skips the image tests and
+`scripts/ci-debian.sh` stops there). A cloud supervisor that reaches one of those writes it in the handover's queue as
+waiting for a dev VM session and goes on with what doesn't depend on it; a loop that followed a review whose full
+scripts haven't run yet says so in the handover, and the dev VM session runs them first. Times measured in a cloud
+session (N0's items 2 and 3) are good for ratios and for a choice that a 20% error can't move (a function, a bit
+count); the REPORT's recorded times are the dev VM's.
 
 ## The loops (in order; the supervisor may reorder by measurement, saying why in the handover)
 
-0. **Measure** (no product code; the spec's "Measure first", six items): start the calendars' time to anchor first
-   (it runs for a week beside the later loops, a script under `bench/net/` that keeps its state in
-   `bench/results/local/`). *Done:* a "NAMES loop 0" entry in bench/net/REPORT.md with its JSON under
-   `bench/net/results/`; `REF_WINDOW`, the proof-of-work function and `POW_BITS` set in the spec from the numbers (the
-   anchor's figure provisional until the week is in), the size table replaced, and the spec's "where it stops" either
+0. **Measure** (no product code; the spec's "Measure first", six items; it may be split between sessions, above). The
+   calendars' time to anchor comes from **their own history, not from a week of waiting**: a year of each calendar's
+   transactions on Bitcoin, through the two explorers (the gaps between them, the worst as well as the usual, plus six
+   blocks), and a batch of real stamps, made first, whose commitments are **committed** under `bench/net/results/` so
+   that any later session collects their proofs (the model's check, the anchors' sizes, N1's vector). The proof of
+   work is chosen by **what a dictionary of a million names costs an attacker a term** on a GPU, beside the time to
+   check a registry; not by spam, which the servers' bound handles. *Done:* a "NAMES loop 0" entry in
+   bench/net/REPORT.md with its JSON under `bench/net/results/`; `REF_WINDOW`, the proof-of-work function and
+   `POW_BITS` set in the spec from the numbers, the size table replaced, and the spec's "where it stops" either
    confirmed or corrected.
 1. **Records and rules**, pure Rust in `net/ts/src/room/names/`: entries, anchors and their verifier, headers and the
    floor, zones and their sealing, name ids, the order of chains. The clock's parameters are a struct, so tests run a
@@ -138,13 +160,15 @@ each with its confirming test failing first.
 4. **The review's findings fixed**, then **the names agent**: owners' secrets, titles, the worker and its `ts_names_*`
    exports, stamping, collecting, renewing on load, publishing through a names client with no machine running.
    *Done:* Node and Chromium tests with the pretend calendar: a claim held back until anchored, a renewal with the
-   machine off that a second member then resolves, a title renewed in two browsers (a fork settled), a lost name, a
+   machine off that a second member then resolves, a title renewed in two browsers (a fork settled), an entry whose anchor came past `REF_WINDOW` made again, a lost
+   name, a
    title surviving a connection's export and import (tests/connections.test.ts's neighbours).
 5. **The page**: Name this machine…, the adapter's states and details, the Machines page's dates, the catalog,
    docs/frontend.md. *Done:* a page test of the dialog through to a name another machine reaches
    (tests/page-room.test.ts or beside it), the wording cases, both hot paths as decision 6 says.
 6. **Scale and abuse**: bench/net/room-scale.ts with 1,000 members, 20 servers and 5,000 names (a server's load and
-   memory, a cold lookup, 500 members joining in a minute, junk registered in bulk against the bound); a few days on
+   memory, a cold lookup, 500 members joining in a minute, junk registered in bulk against the bound, and the same junk asked for by its
+   registrant so that the bound drops honest names first); a few days on
    the public calendars, explorers and default relays with real stamps, between two pages. *Done:* a "NAMES loop 6"
    REPORT entry; what the numbers break is fixed or, if out of proportion, filed with them.
 

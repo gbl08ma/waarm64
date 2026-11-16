@@ -73,6 +73,10 @@ WebSocket upgrades (a 20-line Node script will do; there is no Caddy), a userspa
 `WAARM64_TAILNET_SCRIPT` at a script that prints `tailnet.sh`'s `up` output, and put a `podman` shim
 first on `PATH` that answers `exec waarm64-peer tailscale ...` with the native `tailscale`.
 
+The OpenTimestamps calendars (`alice` and `bob` at opentimestamps.org, `finney` at eternitywall.com) and the block
+explorers (blockstream.info, mempool.space) answer `curl` through the proxy (2026-11-16); WebSockets to public Nostr
+relays and DERP from here are untried.
+
 **The local helper** (`github.com/gbl08ma/waarm64-net`, docs/plans/networking-local.md) is a private repository for
 now: unless the session can fetch it, the tests that need it (tests/waarm64-net.ts) say SKIPPED. It built and tested here (Go fetches its
 pinned toolchain and the fork through the proxy), and `tests/net-local.test.ts` passed in Chromium (2026-11-01: DNS,
