@@ -553,8 +553,11 @@ was (on the screen).
   answer (`SurfacePoll.stale`). **The overlay picker**
   says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
   the record keeps the numbers of the run before until the machine stops.
-- **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
-  32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
+- **A click pins a square** (`SurfaceDetails.svelte`), in a small window of its own
+  ([Pinned square](ui:disks:SurfaceWindow.pinned), a `fit` `ui/FloatingWindow.svelte`: sized by its content, its place
+  not remembered), opened beside the map's (on its right if there's room, else on its left), so the map keeps its room
+  and its scale; a click on another square shows that one in it, on the same square or its Close unpins it. It shows
+  one 4 MiB range of the square block by block (its 1,024 blocks as a 32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
   consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
   fragmented it is there; blocks under a qcow2's table not read yet hatched, not examined, and a remote image's blocks
   kept in this browser ticked), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of

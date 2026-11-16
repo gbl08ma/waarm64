@@ -60,7 +60,9 @@ async function square(page: Page, i: number, grid = win(page).locator('.map [rol
 }
 const pointAt = async (page: Page, i: number) => { const p = await square(page, i); await page.mouse.move(p.x, p.y); };
 const clickAt = async (page: Page, i: number) => { const p = await square(page, i); await page.mouse.click(p.x, p.y); };
-const rangeWords = (page: Page) => win(page).locator('[data-field=surface-range-words]').textContent();
+/** The pinned square's window, beside the map's. */
+const pin = (page: Page) => page.locator('#surface-square');
+const rangeWords = (page: Page) => pin(page).locator('[data-field=surface-range-words]').textContent();
 
 /** A stored disk S (32 MiB: data in its first MiB and 64 KiB at 12 MiB), machine A with S through overlay W (grown to 48 MiB, with changes), a ramdisk R on A too. */
 async function setUp(page: Page) {
@@ -136,12 +138,30 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   assert.match(line, words('disks:surface-look.at', { from: '12 MiB', to: '16 MiB' }));
   assert.match(line, words('disks:surface-look.disk.held', { held: 16, count: 1024 }));
   // Pinned: the range's blocks, its runs, and the content check (the import left zero blocks out: none read is all zeros).
+  // In a window of its own beside the map's: the map keeps its room and its squares their size.
+  const layout = () => win(page).locator('.map [role=application]').evaluate((e) => {
+    const r = e.getBoundingClientRect();
+    return { ...(e as HTMLElement).dataset, w: r.width, h: r.height };
+  });
+  const mapBefore = await layout();
   await clickAt(page, 0);
-  await win(page).locator('section.details[data-range="0"][data-loaded]').waitFor();
+  await pin(page).locator('section.details[data-range="0"][data-loaded]').waitFor();
+  assert.deepEqual(await layout(), mapBefore, 'the map as it was');
+  const [mapBox, pinBox] = [(await win(page).boundingBox())!, (await pin(page).boundingBox())!];
+  assert.ok(pinBox.x >= mapBox.x + mapBox.width || pinBox.x + pinBox.width <= mapBox.x, 'beside the map');
+  assert.ok(await pin(page).evaluate((e) => [e, ...e.querySelectorAll('*')].every((x) => x.scrollWidth <= x.clientWidth && x.scrollHeight <= x.clientHeight)), 'nothing in it scrolls');
   assert.match((await rangeWords(page))!, words('disks:surface-look.range.diskRuns', { blocks: 256, count: 1 }));
-  await win(page).locator('[data-action=surface-check]').click();
+  await pin(page).locator('[data-action=surface-check]').click();
   await page.waitForFunction((re) => new RegExp(re).test(document.querySelector('[data-field=surface-range-words]')?.textContent ?? ''), words('disks:surface-look.range.content', { count: 256, zeros: 0 }).source);
   assert.equal((await view(page)).pinned, 0);
+  // Another square shows in the same window; its Close unpins it.
+  await clickAt(page, 3);
+  await pin(page).locator('section.details[data-range="3"][data-loaded]').waitFor();
+  assert.equal(await pin(page).count(), 1);
+  await pin(page).locator('[data-action=close]').click();
+  await pin(page).waitFor({ state: 'detached' });
+  assert.equal((await view(page)).pinned, undefined, 'its Close unpins it');
+  assert.equal(await win(page).count(), 1, 'the map stays');
 
   // A machine's Disks tab: the window (moved aside by its title bar) starts again, on the attachment's overlay, grown
   // past the disk.
@@ -163,13 +183,13 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   assert.deepEqual(v.core, [CORE.hollow, CORE.step(1), 0, 0, 0, 0, 0, 0, 0, 0, CORE.step(1), 0], 'changed, zeroed only (hollow), and past the disk');
   assert.equal(await win(page).locator('[data-legend]').getAttribute('data-legend'), 'empty some full absent changed zeroed');
   await clickAt(page, 1);
-  await win(page).locator('section.details[data-range="1"][data-loaded]').waitFor();
+  await pin(page).locator('section.details[data-range="1"][data-loaded]').waitFor();
   assert.match((await rangeWords(page))!, words('disks:surface-look.range.overlayRuns', { blocks: 3, count: 1 }));
   assert.match((await rangeWords(page))!, words('disks:surface-look.range.diskEmpty'));
-  await win(page).locator('[data-action=surface-check]').click();
+  await pin(page).locator('[data-action=surface-check]').click();
   await page.waitForFunction((re) => new RegExp(re).test(document.querySelector('[data-field=surface-range-words]')?.textContent ?? ''), words('disks:surface-look.range.content', { count: 3, zeros: 1 }).source);
   // The details' own map: the overlay's three blocks first.
-  const blockMap = win(page).locator('section.details [role=application]');
+  const blockMap = pin(page).locator('section.details [role=application]');
   assert.equal(await blockMap.getAttribute('data-cells'), '1024');
   assert.equal(await blockMap.getAttribute('data-cols'), '32');
 
@@ -256,9 +276,9 @@ test('the disk surface window over a file disk without a handle to read: not exa
   assert.equal((await win(page).locator('[data-field=surface-line]').textContent())!.trim(), plain(t('disks:surface-look.why.permission')));
   // A square's blocks: the image's, which no check reads: said so, no Check contents.
   await clickAt(page, 0);
-  await win(page).locator('section.details[data-range="0"][data-loaded]').waitFor();
-  assert.equal(await win(page).locator('[data-action=surface-check]').count(), 0);
-  assert.equal(await win(page).locator('[data-field=surface-uncheckable]').textContent(), t('disks:surface-look.range.uncheckable'));
+  await pin(page).locator('section.details[data-range="0"][data-loaded]').waitFor();
+  assert.equal(await pin(page).locator('[data-action=surface-check]').count(), 0);
+  assert.equal(await pin(page).locator('[data-field=surface-uncheckable]').textContent(), t('disks:surface-look.range.uncheckable'));
   assert.deepEqual(errors, []);
   await context.close();
 });

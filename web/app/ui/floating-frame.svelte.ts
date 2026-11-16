@@ -23,6 +23,8 @@ export type Shape = {
   sizeKey?: string;
   /** Where it opens the first time, for its size (read once; centred if not given). */
   at?: (s: Size) => Point;
+  /** Its size is its content's (`measured`): only its place is kept in the window, and `min` doesn't count. */
+  fit?: boolean;
 };
 
 type Drag = { id: number; kind: 'move' | 'size'; x0: number; y0: number; at: Place };
@@ -44,7 +46,7 @@ export class FloatingFrame {
   y = $state(0);
   /** Its sizes, by shape. */
   sizes = $state<Partial<Record<string, Size>>>({});
-  readonly #key: string;
+  readonly #key: string | undefined;
   readonly #shape: () => Shape;
   readonly shape = $derived.by(() => this.#shape());
   readonly sizeKey = $derived(this.shape.sizeKey ?? '');
@@ -53,11 +55,11 @@ export class FloatingFrame {
   readonly h = $derived(this.shape.aspect?.(this.w) ?? this.sizes[this.sizeKey]?.h ?? this.shape.size.h);
   #drag: Drag | undefined;
 
-  /** Where it was left, or where `shape.at` says (default: centred). */
-  constructor(key: string, shape: () => Shape) {
+  /** Where it was left (remembered under `key`; none: never), or where `shape.at` says (default: centred). */
+  constructor(key: string | undefined, shape: () => Shape) {
     this.#key = key;
     this.#shape = shape;
-    const saved = settings().windows?.[key];
+    const saved = key === undefined ? undefined : settings().windows?.[key];
     if (saved) this.sizes = saved.sizes ?? { [this.sizeKey]: { w: saved.w, h: saved.h } };
     const at = this.shape.at?.({ w: this.w, h: this.h }) ?? {
       x: (innerWidth - this.w) / 2,
@@ -70,8 +72,10 @@ export class FloatingFrame {
 
   /** Keeps it in the window: no smaller than its minimum unless the window is, no larger than the window. */
   clamp() {
-    const { min, aspect } = this.shape;
-    if (aspect) {
+    const { min, aspect, fit } = this.shape;
+    if (fit) {
+      // Its content's size: nothing to change but its place.
+    } else if (aspect) {
       const most = widest(aspect, { w: innerWidth, h: innerHeight });
       const w = Math.max(Math.min(min.w, most), Math.min(this.w, most));
       this.sizes[this.sizeKey] = { w, h: aspect(w) };
@@ -83,12 +87,24 @@ export class FloatingFrame {
     this.x = Math.max(0, Math.min(this.x, innerWidth - this.w));
     this.y = Math.max(0, Math.min(this.y, innerHeight - this.h));
   }
+  /** A `fit` window's content measured `s` (it moves to stay in the window). */
+  measured(s: Size) {
+    this.sizes[this.sizeKey] = s;
+    this.clamp();
+  }
   save() {
+    if (this.#key === undefined) return;
     const r = Math.round;
     const kept = Object.entries(this.sizes).flatMap(([k, s]) => (s ? [[k, { w: r(s.w), h: r(s.h) }] as const] : []));
     // One shape's window keeps its size in `w` and `h` alone.
     const sizes = kept.some(([k]) => k !== '') ? { sizes: Object.fromEntries(kept) } : {};
-    const place = { x: r(this.x), y: r(this.y), w: r(this.w), h: r(this.h), ...sizes };
+    const place = {
+      x: r(this.x),
+      y: r(this.y),
+      w: r(this.w),
+      h: r(this.h),
+      ...sizes,
+    };
     remember({ windows: { ...settings().windows, [this.#key]: place } });
   }
   /** The browser's window changed size. */

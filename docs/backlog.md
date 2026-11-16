@@ -1422,6 +1422,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - Every offline ask reads the whole map again (~105 MB for an overlay with 100 GiB written; a legacy flat map is 4
     bytes per block), a Refresh and each settled records change too; a long-lived job worker could keep the per-range
     counts and answer another cell size, or a refresh at the same generation, without reading it again.
+  - Several squares pinned at once (a window each, the map ringing each; the user's idea, 2026-11-16): the pinned
+    square has a window of its own now, but the offline source runs one range ask at a time (`jobSource`: a newer ask
+    of a kind ends the one before), so each window's first answer would end another's; it would key range asks by
+    range, and `BlockGrid`'s `pinned` would become a list.
 - **A RAM usage view on the surface window's pieces** (the user's idea, 2026-11-15; `ui/BlockGrid`, `ui/FloatingWindow`
   and the `inspect` route are made for it: a `ram-surface` query kind and a worker that scans the guest's shared
   memories, nothing added to the interpreter or the JIT). No live reads and writes: compiled code touches RAM directly.

@@ -1503,13 +1503,9 @@
     "message": "Reading the disk's map took too long.",
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The running machine, or the reading of the disk's files, didn't answer in time; a live map is asked for again."
   },
-  "SurfaceDetails.title": {
+  "SurfaceWindow.pinned": {
     "message": "Pinned square",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. Its heading."
-  },
-  "SurfaceDetails.close": {
-    "message": "Unpin",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The tooltip and spoken name of the X button at the end of its heading, which closes the details (the square is no longer pinned)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, in a small window of its own beside the map after a click on a square. The window's title."
   },
   "SurfaceDetails.prev": {
     "message": "Previous 4 MiB",
