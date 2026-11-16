@@ -1,14 +1,21 @@
 // The message bar (web/app/App.svelte): a problem or a note, its details and what can be done about it. web/app/run/
 // messages.ts writes it (`Messages.show`).
 
-export type MessageKind = 'error' | 'warn';
+/** `info`: something done (a snapshot saved), a notice that closes itself; `warn` and `error` stay until closed. */
+export type MessageKind = 'error' | 'warn' | 'info';
 export type Action = { label: string; run: (button: HTMLButtonElement) => void };
+/**
+ * A notice's time on screen: `ms`, counted by the bar's ring around its close button (paused while the pointer is on
+ * the bar or the tab is hidden), then `end`. `id` tells one notice's from the next's (the ring starts over).
+ */
+export type Countdown = { ms: number; id: number; end: () => void };
 
 export const messageBar = $state<{
   text: string;
   details: string[];
   kind: MessageKind;
   actions: Action[];
+  countdown: Countdown | undefined;
   snapshot: string;
   load: string;
 }>({
@@ -18,6 +25,8 @@ export const messageBar = $state<{
   details: [],
   kind: 'warn',
   actions: [],
+  /** A notice's countdown (none: the message stays until closed). */
+  countdown: undefined,
   /** The last snapshot written (its bytes, pause, id and phases), for tools: `#message[data-snapshot]`. */
   snapshot: '',
   /** The last start from a snapshot or a suspended copy (its phases: protocol.ts `LoadPhases`), for tools: `#message[data-load]`. */

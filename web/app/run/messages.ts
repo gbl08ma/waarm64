@@ -19,8 +19,8 @@ const STATE_WORDS: Record<PageState, string> = {
   crashed: 'machine:messages.state.crashed',
   failed: 'machine:messages.state.failed',
 };
-/** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
-const NOTICE_MS = 30_000;
+/** Something done, said while the machine stays as it is (a snapshot saved): the message bar closes it after 15 s. */
+export const NOTICE_MS = 15_000;
 
 /** A job's phase (words already rendered, or a message) and how far it is, for the state's words. */
 export const progressText = (phase: string | Msg, f: number) =>
@@ -54,7 +54,10 @@ export function standingNote(opfs: boolean): Said {
 export class Messages {
   /** A standing note (another browser), shown while there's no message. */
   note: Said = '';
-  #timer: ReturnType<typeof setTimeout> | undefined;
+  /** The last notice's id (`Countdown.id`). */
+  #notices = 0;
+  /** Whether the bar shows a notice (`notify`'s) rather than the state's message or the standing note. */
+  #notice = false;
   /** What the last state said with it (a stopped machine's error and its actions): a notice's end shows it again. */
   #standing: { message: Said; actions: Action[]; kind: MessageKind } = { message: '', actions: [], kind: 'warn' };
   readonly #machine: PageMachine;
@@ -68,7 +71,8 @@ export class Messages {
 
   /** Shows `message` in the message bar: its headline, and its details under it (an error's causes). */
   show(message: Said | undefined, actions: Action[], kind: MessageKind) {
-    clearTimeout(this.#timer);
+    this.#notice = false;
+    messageBar.countdown = undefined;
     const d = said(message);
     messageBar.text = d.headline;
     messageBar.details = d.details;
@@ -89,18 +93,29 @@ export class Messages {
   }
 
   /**
-   * A notice that clears itself after `NOTICE_MS`, the machine staying as it is: the bar then shows what the state said
-   * again (a stopped machine's error and its actions), else the standing note.
+   * A notice, the machine staying as it is: by default an error's is a warning and anything else's is `info`. An `info`
+   * notice closes itself after `NOTICE_MS`; a warning or an error stays until closed. Either way its end shows what the
+   * state said again (a stopped machine's error and its actions), else the standing note.
    */
-  notify(message: Said, kind: MessageKind = 'warn') {
+  notify(message: Said, kind: MessageKind = message instanceof Error ? 'warn' : 'info') {
     this.show(message, [], kind);
-    const shown = messageBar.text;
-    this.#timer = setTimeout(() => {
-      if (messageBar.text !== shown) return;
-      const s = this.#standing;
-      if (s.message) this.show(s.message, s.actions, s.kind);
-      else this.show(this.note, [], 'warn');
-    }, NOTICE_MS);
+    this.#notice = true;
+    if (kind !== 'info') return;
+    const id = ++this.#notices;
+    messageBar.countdown = {
+      ms: NOTICE_MS,
+      id,
+      end: () => {
+        if (this.#notice && messageBar.countdown?.id === id) this.#back();
+      },
+    };
+  }
+
+  /** The bar back to what the state said, else the standing note. */
+  #back() {
+    const s = this.#standing;
+    if (s.message) this.show(s.message, s.actions, s.kind);
+    else this.show(this.note, [], 'warn');
   }
 
   /** The state's words for a while (a phase, a progress), until the next state. */
@@ -108,9 +123,9 @@ export class Messages {
     power.stateText = text(m);
   }
 
-  /** Closes the message bar (the standing note too). */
+  /** Closes the message bar: a notice, back to what the state said; else the state's message and the standing note too. */
   dismiss() {
-    clearTimeout(this.#timer);
+    if (this.#notice && this.#standing.message) return this.#back();
     this.note = '';
     this.#standing = { message: '', actions: [], kind: 'warn' };
     this.show('', [], 'warn');

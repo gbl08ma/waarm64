@@ -254,7 +254,7 @@ from the working directory).
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
 overlays, kept snapshots, three connections, a folder), then captures each state that needs no guest as
 `bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
-machine can have shown through its areas' state), the message bar (warn, error), the Machines page's panes and a machine's tabs
+machine can have shown through its areas' state), the message bar (warn, error, info), the Machines page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
 page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
 page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
@@ -404,11 +404,16 @@ Svelte's proxy of it and never equals it (compared with it, a closed wait stayed
 Clicking OK is a user activation, so a file picker or a permission
 request after it still works. Tests answer them by clicking (`tests/page-ask.ts` `answerAsks`).
 
-**The message bar** (under the toolbar) says what stops a machine (below, "Errors") and what happened: it has a close
-button, and a notice or error that leaves the machine as it was (a snapshot kept or saved, or not; a disk saved or not
-from another machine; changes loaded into a machine that's off) clears itself after 30 s (`notify`). A problem that
-keeps the machine from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it
-gives way to it again, with its actions, when it clears.
+**The message bar** (at the top, under the toolbar) says what stops a machine (below, "Errors") and what happened. It
+floats over the machine rather than taking a row of the page: the screen keeps its size while it shows (a bar that
+pushed the screen down made a guest that follows its display's size resize twice, and one that doesn't scaled and
+blurred). It has a close button. A notice that leaves the machine as it was (`notify`) is `info` when something was
+done (a snapshot kept or saved; a disk saved from another machine; changes loaded into a machine that's off; a disk
+grown; the guest asleep): green, it closes itself after 15 s, which a ring around the close button runs down (paused
+while the pointer is on the bar, and in a hidden tab, CSS animations being). A notice that's a warning or an error (a
+save that failed, the guest that refused a soft power-off) stays until it's closed. A problem that keeps the machine
+from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it gives way to it
+again, with its actions, when it closes.
 
 ## The Machines page
 
@@ -746,7 +751,7 @@ prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3:
 
 ## Errors
 
-What stops a machine is said in the message bar under the toolbar: what happened, why, and what to do, with
+What stops a machine is said in the message bar at the top: what happened, why, and what to do, with
 buttons for the actions that apply. Checked on the page before a worker starts:
 
 - **No cross-origin isolation** (`crossOriginIsolated` false: served without COOP/COEP, or from

@@ -57,7 +57,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line).
    - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more
      of a form folded under a small line (Advanced).
-   - `ErrorBanner`: the dismissible error or warning bar (the message bar, the Machines page's error).
+   - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Machines page's error).
    - `StatusDot`: a state's light.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
    - `ValueField`: a value to copy or a secret to show, its Copy and Show icons inside the field (an address, a key, a

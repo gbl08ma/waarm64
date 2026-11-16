@@ -201,6 +201,19 @@ let seeded: Seed;
     await shot(page, 'message-error');
     await page.click('#message-close');
   });
+  await state('message-info', async () => {
+    await page.evaluate(async () => {
+      const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
+      const { t } = await import('/web/i18n.ts' as string);
+      messageBar.text = t('machine:trim-actions.full', { before: 3 << 30, after: 1 << 30 });
+      messageBar.details = [];
+      messageBar.kind = 'info';
+      messageBar.countdown = { ms: 15_000, id: 1, end: () => {} };
+    });
+    await page.waitForTimeout(5000); // a third of the ring run down
+    await shot(page, 'message-info');
+    await page.click('#message-close');
+  });
   // The folders' menu shows while the machine runs with them, the clipboard's while it has sharing: both faked.
   await setUi(page, `a.current.hasGpu = true; a.current.hasNetwork = true; a.current.hasMouse = true; a.usb.on = true;
     Object.defineProperty(folders, 'running', { get: () => true }); folders.changed();

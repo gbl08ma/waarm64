@@ -15,7 +15,8 @@ export type SoftKind = 'off' | 'reboot';
 type Agent = { readonly link: AgentLink | undefined };
 /** Where the page shows a request pending (web/app/areas/power.svelte.ts `soft`; the run's end clears it). */
 type Shown = { soft: SoftKind | undefined };
-type Notify = { notify(m: Msg): void };
+/** The message bar (web/app/run/messages.ts `Messages`). */
+type Notify = { notify(m: Msg, kind?: 'warn'): void };
 
 /** Why the guest didn't take it, as the message bar says it before the hard one's question. */
 function said(kind: SoftKind, r: number | undefined): Msg {
@@ -58,7 +59,7 @@ export class SoftPower {
     // Taken, or the connection ended under it (the shutdown stopped the agent; an agent that connects again clears it).
     if (r === POWERED.TAKEN || r === 'gone') return true;
     if (this.#shown.soft === kind) this.#shown.soft = undefined;
-    this.#messages.notify(said(kind, r));
+    this.#messages.notify(said(kind, r), 'warn');
     return false;
   }
 }

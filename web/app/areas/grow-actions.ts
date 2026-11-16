@@ -15,7 +15,8 @@ import type { AgentLink } from '../agent-link.ts';
 import { clearGrowMark, growFailed, growsOf, type GrowDisk, type ResizeTarget } from '../resize.ts';
 import type { Store } from '../store.ts';
 
-type Notify = { notify(m: Msg | MsgError): void };
+/** The message bar (web/app/run/messages.ts `Messages`: an error's notice is a warning, anything else's `info`). */
+type Notify = { notify(m: Msg | MsgError, kind?: 'warn'): void };
 
 /** The run's marks (web/app/resize.ts: `growsOf`, `clearGrowMark`, `growFailed` on the store, for the run's machine). */
 export type Marks = {
@@ -159,7 +160,7 @@ export class GrowActions {
     if (a.action === 'keep') {
       if (a.notice && !this.#said.has(disk.serial)) {
         this.#said.add(disk.serial);
-        this.#messages.notify(a.notice);
+        this.#messages.notify(a.notice, 'warn'); // nothing was done
       }
       return;
     }

@@ -34,7 +34,8 @@
   --danger-border: #a33a40;
   --danger-fg: #fff;
 
-  /* Words in a tone (a note, a row's line), and the bars that carry one (the message bar, the Machines page's error). */
+  /* Words in a tone (a note, a row's line), and the bars that carry one (the message bar, the Machines page's error):
+     a problem's, a warning's, something done's. */
   --ok-fg: #8fd18f;
   --warn-fg: #ffb36b;
   --warn-bar-fg: #f3d98b;
@@ -44,6 +45,9 @@
   --error-bar-fg: #ffb4b6;
   --error-bg: #2a1215;
   --error-border: #5c1d22;
+  --ok-bar-fg: #b6ebc4;
+  --ok-bg: #12261a;
+  --ok-border: #1f5232;
 
   /* A state's light (the status bar, the network menu, the keyboard's LEDs). */
   --status-ok: #4cc38a;

@@ -86,12 +86,15 @@
   onfullscreenchange={view.events.fullscreenChanged}
 />
 <Toolbar {audio} {net} {folders} />
-<!-- Its own wrapper: the page in full screen hides it. -->
+<!-- Its own wrapper, of no height: the bar floats over the machine (whose screen keeps its size), and the page in full
+     screen hides it. -->
 <div class="message">
   <ErrorBanner
     id="message"
-    role="alert"
-    tone={messageBar.kind === 'warn' ? 'warn' : 'error'}
+    role={messageBar.kind === 'info' ? 'status' : 'alert'}
+    tone={messageBar.kind}
+    floating
+    countdown={messageBar.countdown}
     hidden={!messageBar.text}
     data-kind={messageBar.kind}
     data-snapshot={messageBar.snapshot || undefined}
@@ -168,6 +171,19 @@
   }
   #message-details {
     opacity: 0.8;
+  }
+  .message {
+    position: relative;
+    z-index: 1;
+    height: 0;
+  }
+  .message > :global(#message) {
+    position: absolute;
+    top: var(--space-4);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100% - 2 * var(--space-5));
   }
 
   /* The machine: its screen, its serial terminal, or both (`body[data-view]`, which `setView` sets at once with
