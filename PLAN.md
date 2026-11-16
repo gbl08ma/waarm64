@@ -58,7 +58,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | Peer-to-peer rooms (P2P) | Done 2026-11-12 | [networking/rooms.md](docs/networking/rooms.md); left open: [plans/networking-p2p.md](docs/plans/networking-p2p.md) |
 | The guest agent (AGENT) | Done 2026-11-13 | [devices.md](docs/devices.md) "The guest's agent" |
 | More jobs for the guest agent (BETTERAGENT) | Done 2026-11-14 | [devices.md](docs/devices.md) "The guest's agent" |
-| The disk surface visualizer (SURFACE) | Built 2026-11-15 in a cloud session; the dev VM's CI with every image still to run | [frontend.md](docs/frontend.md) "A disk's surface", [plans/surface.md](docs/plans/surface.md) |
+| The disk surface visualizer (SURFACE) | Done 2026-11-16 | [frontend.md](docs/frontend.md) "A disk's surface", [plans/surface.md](docs/plans/surface.md) |
 | Growing a disk (RESIZE) | Done 2026-11-15 | [machines.md](docs/machines.md) §4.5, [devices.md](docs/devices.md) "A disk grown" |
 | Faster snapshots (SNAPZ) | In progress since 2026-11-15 | [SNAPZ-KICKOFF.md](SNAPZ-KICKOFF.md), [SNAPZ-HANDOVER.md](SNAPZ-HANDOVER.md) |
 
