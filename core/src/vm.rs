@@ -31,7 +31,7 @@
 
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 
 use crate::cpu::{Cpu, PSTATE_I, sctlr};
 use crate::flash::{FLASH, Flash};
@@ -804,6 +804,8 @@ impl Vm {
             // A table per vCPU in parallel SMP, one in round-robin.
             decoded: crate::interp::block::budget(if parallel { n } else { 1 }) as u32,
             fma: cfg.fma != 0,
+            // Parallel SMP's code polls a stop word instead of counting a budget.
+            polled: parallel,
             ..c
         });
         let mut vcpus: Vec<_> = (0..n)
@@ -855,6 +857,7 @@ impl Vm {
         if parallel {
             for (v, s) in vcpus.iter_mut().zip(&shared.cpus) {
                 v.tlb.published = s.par.asid_word();
+                s.par.set_stop(&v.jit.stop);
             }
         }
         Vm {

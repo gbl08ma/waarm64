@@ -396,12 +396,14 @@ test('virtio-input config answers', () => {
 });
 
 test('changeConfig: the generation goes odd around the write, even after it, and the signal word is set', () => {
-  // The layout (docs/abi.md): config_gen at 20, config at 24; the signal word and a vCPU's wake word elsewhere.
+  // The layout (docs/abi.md): config_gen at 20, config at 24; the signal word, a vCPU's wake word and its stop word
+  // (ABI 71, parallel SMP: compiled code stops at its next poll) elsewhere.
   const memory = { buffer: new SharedArrayBuffer(4096) };
-  const [shared, signal, wake] = [64, 1024, 1028];
+  const [shared, signal, wake, stop] = [64, 1024, 1028, 1032];
+  Atomics.store(new Int32Array(memory.buffer, stop, 1), 0, 32768);
   const gen = new Int32Array(memory.buffer, shared + 20, 1);
   const seen: number[] = [];
-  const self = { memory, shared: [shared], signal, wakes: [wake], kick: (Devices.prototype as unknown as { kick(): void }).kick };
+  const self = { memory, shared: [shared], signal, wakes: [wake], stops: [stop], kick: (Devices.prototype as unknown as { kick(): void }).kick };
   Atomics.add(gen, 0, 4); // earlier changes
   (Devices.prototype.changeConfig as (this: unknown, i: number, w: (c: Uint8Array) => void) => void).call(self, 0, (c) => {
     seen.push(gen[0]); // mid-update
@@ -412,6 +414,7 @@ test('changeConfig: the generation goes odd around the write, even after it, and
   assert.equal(new Uint8Array(memory.buffer)[shared + 24], 9);
   assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
   assert.equal(Atomics.load(new Int32Array(memory.buffer, wake, 1), 0), 1, 'the vCPU woken');
+  assert.equal(Atomics.load(new Int32Array(memory.buffer, stop, 1), 0), 0, 'its chunk stopped');
 });
 
 test('poll: records from before a reset are skipped, and the signal word set (a chain may wait for their room)', async () => {
@@ -425,7 +428,7 @@ test('poll: records from before a reset are skipped, and the signal word set (a 
   Atomics.store(u32, ring, 2);
   const seen: number[] = [];
   const backend = { reset() {}, request: (r: { w0: number }) => { seen.push(r.w0); return 0; } };
-  const self = { memory, shared: [shared], signal, wakes: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), kick: (Devices.prototype as unknown as { kick(): void }).kick };
+  const self = { memory, shared: [shared], signal, wakes: [], stops: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), kick: (Devices.prototype as unknown as { kick(): void }).kick };
   await (Devices.prototype.poll as (this: unknown) => Promise<void>).call(self);
   assert.deepEqual(seen, [], 'the stale record skipped');
   assert.equal(Atomics.load(u32, ring + 1), 2, 'and taken');

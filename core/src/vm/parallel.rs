@@ -113,6 +113,9 @@ pub(super) struct CpuPar {
     /// mid-chunk needs an ISB before the new ASID is promised to translate,
     /// and the ISB ends the chunk (and drains the queue).
     asid: AtomicU64,
+    /// Its stop word (`jit::State::stop`, in its `Vcpu`, which is boxed: the
+    /// address holds for the VM's life), which [`Vm::stop`] clears.
+    stop: AtomicPtr<AtomicU32>,
 }
 
 /// [`jit::Fast::f`] for a [`Vm`] in parallel mode ([`Vm::fast`]).
@@ -129,6 +132,10 @@ unsafe fn fast_exit(ctx: *const (), c: usize, v: &mut Vcpu, insn: u32, e: Exit) 
 /// (`publish_cpu`): ~0.1 ms of guest code at the JIT's speed.
 const JIT_PUBLISH: u64 = 1 << 16;
 
+/// The longest chunk `vm_set_chunk` gives polled code (a test's: its setters
+/// then show as latency; the polls compare it with an i32 `acc`).
+const POLL_MAX: u64 = 1 << 30;
+
 /// Steps between two checks of a running vCPU's timers against the clock
 /// (`run_loop`, between chunks), unless their registers change: a few µs of guest code.
 const TIMER_STEPS: u64 = 4096;
@@ -142,6 +149,17 @@ impl CpuPar {
     pub(super) fn asid_word(&self) -> *const AtomicU64 {
         &self.asid
     }
+
+    /// Its vCPU's stop word (`Vm::with_devices`, before any thread runs it).
+    pub(super) fn set_stop(&self, w: &AtomicU32) {
+        self.stop
+            .store(w as *const AtomicU32 as *mut AtomicU32, Ordering::SeqCst);
+    }
+
+    /// Its stop word's address (`vm_cpu_stop`), null before [`CpuPar::set_stop`].
+    pub(super) fn stop_word(&self) -> *const AtomicU32 {
+        self.stop.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for CpuPar {
@@ -154,6 +172,7 @@ impl Default for CpuPar {
             applied: AtomicU64::new(0),
             waiting: AtomicBool::new(false),
             asid: AtomicU64::new(ANY),
+            stop: AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 }
@@ -298,6 +317,14 @@ impl Vm {
         (0..self.vcpus.len()).for_each(|i| self.wake(i));
     }
 
+    /// vCPU `c`'s stop word (`vm_cpu_stop`): null past the last vCPU and in round-robin mode.
+    pub fn cpu_stop(&self, c: usize) -> *const AtomicU32 {
+        self.shared
+            .cpus
+            .get(c)
+            .map_or(core::ptr::null(), |s| s.par.stop_word())
+    }
+
     /// vCPU `c`'s last exit (parallel mode).
     pub fn exit_of(&self, c: usize) -> *const ExitInfo {
         // Only a pointer: its thread may be writing it.
@@ -312,7 +339,21 @@ impl Vm {
         if let Some(j) = &mut v.jit.cache {
             j.unpark();
         }
+        let polled = v.jit.cache.as_ref().is_some_and(|j| j.polled());
         loop {
+            // The chunk's steps: shorter while the PC sampler runs (`Shared::chunk`: the PC is published at each
+            // chunk's end); a test may make it longer under polled code (its setters then show).
+            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
+                0 => CHUNK,
+                k if polled => k.min(POLL_MAX),
+                k => k.min(CHUNK),
+            };
+            let n = chunk.min(budget.saturating_sub(own.steps - start)).max(1);
+            // Polled code's bound, stored before anything here looks for work: whatever makes work for this vCPU
+            // after these reads stores 0 there after making it ([`Vm::stop`]), and the chunk stops at its next poll.
+            if polled {
+                v.jit.stop.store(n as u32, Ordering::SeqCst);
+            }
             // Read before looking for work (see the module docs).
             let wake = sh.wake.load(Ordering::SeqCst);
             let sig = self.shared.signal.load(Ordering::Acquire);
@@ -443,12 +484,6 @@ impl Vm {
                 }
                 fence(Ordering::SeqCst);
             }
-            // Shorter while the PC sampler runs (`Shared::chunk`): the PC is published at each chunk's end.
-            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
-                0 => CHUNK,
-                k => k.min(CHUNK),
-            };
-            let n = chunk.min(budget - (own.steps - start));
             // The helpers' fast completions (`fast`): realtime only, as the counter they read is the host's clock.
             v.jit.fast = (self.realtime() && own.waits.is_empty()).then_some(jit::Fast {
                 f: fast_exit,
@@ -794,11 +829,24 @@ impl Vm {
         }
     }
 
-    /// Bumps and notifies vCPU `i`'s wake word (after the change it's for).
+    /// Bumps and notifies vCPU `i`'s wake word (after the change it's for),
+    /// and stops its chunk at its next poll.
     pub(super) fn wake(&self, i: usize) {
+        self.stop(i);
         let w = &self.shared.cpus[i].wake;
         w.fetch_add(1, Ordering::SeqCst);
         notify(w);
+    }
+
+    /// Stores 0 in vCPU `i`'s stop word (after the change it's for): its
+    /// compiled code stops at its next poll, and its run loop looks again.
+    pub(super) fn stop(&self, i: usize) {
+        let w = self.shared.cpus[i].par.stop.load(Ordering::Relaxed);
+        if !w.is_null() {
+            // SAFETY: the word is in vCPU `i`'s boxed `Vcpu`, which lives as long as the VM; it's only accessed
+            // atomically (its own thread's run loop and dispatcher, compiled code's atomic loads).
+            unsafe { &*w }.store(0, Ordering::SeqCst);
+        }
     }
 
     /// Queues `op` for every other vCPU; a TLB operation is waited for at
@@ -837,6 +885,8 @@ impl Vm {
                     Some(w) => w.1 = seq,
                     None => own.waits.push((t, seq)),
                 }
+                // Its chunk ends at its next poll, so the DSB doesn't wait for a looping vCPU's chunk.
+                self.stop(t);
             }
         }
     }

@@ -27,7 +27,7 @@ import { cpuMask, type CpuFeature } from './cpu-features.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 70;
+export const ABI = 71;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -51,6 +51,7 @@ type Exports = {
   vm_cpu_signal(vm: number, i: number): number;
   jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
+  vm_cpu_stop(vm: number, i: number): number;
   vm_set_chunk(vm: number, steps: bigint): void;
   vm_window_watch(vm: number): number;
   vm_device(vm: number, i: number): number;
@@ -160,7 +161,7 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * RAM puts the core's later allocations there, M8 loop 0).
  */
 /** The core's exports that return an address (every `-> *` export: tests/core-wasm.test.ts checks), past 2 GiB in a big memory. */
-export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'vm_jit_gauge', 'vm_window_watch', 'jit_helper_report', 'panic_message'];
+export const POINTERS = ['thread_alloc', 'vcpu_new', 'mem_new', 'jit_new', 'jit_stats', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_cpu_stop', 'vm_device', 'vm_xhci', 'vm_counters', 'vm_jit_gauge', 'vm_window_watch', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -1002,6 +1003,8 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   }
   const signal = ex.vm_signal(vm);
   const wakes = Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_signal(vm, i));
+  // Parallel SMP's stop words (ABI 71): 0 after a signal bit, so compiled code stops at its next poll.
+  const stops = parallel ? Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_stop(vm, i)) : [];
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
@@ -1011,7 +1014,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   // The window is memory 1's bytes at `windowAt`; its write-watch's words are memory 0's.
   const venusWindow = windowBytes ? { at: windowAt, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
   const layout = ramLayout(o.ramSize, spillSizes, windowBytes, spillAt);
-  const devices = await deviceHost({ memory, core: first, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice, o.warm);
+  const devices = await deviceHost({ memory, core: first, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, stops, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice, o.warm);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1020,6 +1023,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     const i32 = new Int32Array(memory.buffer);
     Atomics.or(i32, signal / 4, bits);
     Atomics.notify(i32, signal / 4);
+    for (const p of stops) Atomics.store(i32, p / 4, 0);
     for (const w of wakes) {
       Atomics.add(i32, w / 4, 1);
       Atomics.notify(i32, w / 4);

@@ -1176,6 +1176,8 @@ export type DevicesInit = {
   deterministic: boolean;
   /** Parallel SMP: each vCPU's wake word (`vm_cpu_signal`), bumped and notified after the signal word (docs/abi.md). */
   wakes?: number[];
+  /** Parallel SMP: each vCPU's stop word (`vm_cpu_stop`, ABI 71), set to 0 after the signal word, before the wake words. */
+  stops?: number[];
   /** A VM restored from a snapshot: each backend's saved state (`Devices.save`), null where it had none. */
   state?: unknown[];
   /** The xHCI (docs/usb.md): `vm_xhci`'s address, the page's port for the contract's messages, devices to plug in at start. */
@@ -1205,6 +1207,7 @@ export class Devices {
   private shared: number[];
   private signal: number;
   private wakes: number[];
+  private stops: number[];
   private backends: Backend[];
   /** The balloon's backend, if the machine has one (`hint`). */
   private balloon?: Balloon;
@@ -1223,8 +1226,8 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void, onFull?: () => void) {
-    [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
+  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, stops, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void, onFull?: () => void) {
+    [this.memory, this.shared, this.signal, this.wakes, this.stops, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], stops ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
     const layout = given ?? ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
@@ -1479,6 +1482,8 @@ export class Devices {
     const sig = new Int32Array(this.memory.buffer, this.signal, 1);
     Atomics.or(sig, 0, SIGNAL_DEVICE);
     Atomics.notify(sig, 0);
+    // Compiled code stops at its next poll (docs/abi.md "PERF: the stop word").
+    for (const p of this.stops ?? []) Atomics.store(new Int32Array(this.memory.buffer, p, 1), 0, 0);
     for (const w of this.wakes) {
       const word = new Int32Array(this.memory.buffer, w, 1);
       Atomics.add(word, 0, 1);

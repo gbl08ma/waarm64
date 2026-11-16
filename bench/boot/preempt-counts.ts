@@ -15,8 +15,8 @@ import { boot } from './suite.ts';
 import { compileCore, Counter, DISTROS } from '../../web/vm.ts';
 
 /** core/src/tally.rs's slots. */
-const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return'];
-const END = ['budget', 'early (no exit)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
+const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
+const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
 const N = 64, END_AT = 16, END_STEPS = 32, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60;
 
 type Tallies = number[];

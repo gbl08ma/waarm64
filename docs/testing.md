@@ -402,6 +402,29 @@ window). Under the load that broke it (both Debian page tests at once beside the
 see bench/boot/REPORT.md "M8 loop 8". Bare-metal tests have no entry in `tests/steps.txt` (the
 deterministic runners compare the JIT's steps with the interpreter's), so nothing moved there.
 
+**Spin tests (`spin.c`, `tests/spin.test.ts`; PERF loop 31):** parallel SMP's compiled code has no step budget and
+polls the vCPU's stop word where a cycle can close ([jit.md](jit.md) "Preemption"), so a vCPU that loops with no exit
+must still answer what happens around it. CPU 1 spins in five shapes copied to a code area (one block; 20 blocks, more
+than a region holds, entered mid-way; a BR to itself; two BRs 64 KiB apart that share a transfer cache slot, so every
+transfer goes through the miss function; a branch back to the page before), each at EL1 with the MMU off and on and
+at EL0 (text pages read-only at both ELs, the rest read-write at both: an EL0-writable page is privileged
+execute-never). CPU 0 times 8 IPI round trips (SGI 1 there, SGI 2 back) and 8 TLBI VMALLE1IS + DSB ISH a shape, then
+in a quiet second pass CPU 1 its own timer's lateness (with long chunks CPU 0 pings it after 50 ms: nothing but the
+chunk's steps ends a chunk for a timer); last, CPU 1 spins while the host pauses the machine 8 times (the host's words
+at 0x40a0_0000; with no host the guest moves on after 10 ms of the counter). The guest checks only completion (it
+runs on the oracles and the deterministic runners too); `tests/spin.test.ts` runs it in parallel under the JIT, and
+JIT-stress and JIT-check (`scripts/ci-jit.sh`), each with the default chunk and with 2^30-step chunks (`vm_set_chunk`), where only a
+setter ends a chunk early: the medians over the 15 shapes must be under 1 ms (the worst under 50 ms; typical: a few
+to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms).
+`WAARM64_SPIN_PRINT=1` prints the numbers. Planted (PERF loop 31), each caught: a poll left out of a region's
+back-edge, a direct chain backward, the transfer cache's probe, the miss function or the MMU-off jump cache's probe
+hangs its shape under every mode (the run fails at its bound); one left out of a static chain through the jump cache
+only under JIT-stress (JIT and JIT-check put that link in a region or a direct chain), of a by-VA link backward only
+under JIT-check (hence the by-VA shape's entry from a third page: the backward branch's block compiles first); a
+setter left out (`Vm::wake`, the TLBI IS push, the host's `raise`), or the dispatcher's own check, fails the
+2^30-step runs' bounds (the device backends' `kick`: tests/devices.test.ts "changeConfig") (milliseconds instead of microseconds); the run loop's chunk bound left out fails the timer's
+bound under the JIT.
+
 **A turn for the contender (`tlbi_spin.c`):** CPU 0 holds the lock through each TLBI IS + DSB,
 asleep in the DSB wait until CPUs 1–3 end their chunks, then frees it for ~50 loop iterations
 before taking it again, so CPU 2's LDAXR/STXR loop wins a round only when the host has its

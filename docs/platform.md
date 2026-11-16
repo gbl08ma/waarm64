@@ -83,7 +83,9 @@ NOPs, and every step count is what it was before M7.
 
 - `vm_run(vm, budget)` (and parallel mode's `vm_run_cpu`) runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
   plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
-  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`.
+  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`. Parallel SMP's
+  compiled code isn't counted: a chunk ends at the first poll past its steps, or sooner when the vCPU's stop word
+  drops ("Parallel SMP" below).
 - **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
   and IRQ entry (vector +0x80) when `PSTATE.I` is clear.
 - **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
@@ -124,6 +126,18 @@ indexes of their instance).
   an exit with nothing to do (~65 ns in Node on the dev VM, up to the ~240 ns of a desktop-guest exit), so the spins
   that end in one are ≤0.2% of the session's 263 busy vCPU-seconds, and with 4 vCPUs the host has cores to spare
   for the spinner.
+- **The stop word** (PERF loop 31; [jit.md](jit.md) "Preemption", [abi.md](abi.md) "PERF: the stop word"): the
+  JIT's code in parallel SMP has no step budget; where a cycle can close it compares its steps with the vCPU's stop
+  word (`jit::State::stop`, in its `Vcpu`), and so does the dispatcher before each block. The run loop stores the
+  chunk's steps there at the top of each pass, before it reads the signal word, the IRQ line, the queue and the
+  timers; whatever makes work for the vCPU stores 0 there after making it: `Vm::wake` (an interrupt line raised by
+  `Vm::refresh`, a CPU_ON, a drain that a waiter waits for, `Vm::signal`), `broadcast` for each vCPU whose drain the
+  issuer's DSB will wait for, and the host after setting a signal bit (`web/vm.ts` `raise`, the device backends'
+  `kick`). A store that lands before the run loop's is seen by its reads; one after stops the chunk at its next poll.
+  What has no event (the vCPU's own timer deadline, the xHCI's due time, the worker's event-loop visit, the periodic
+  publications, the PC sampler) stays paced by the chunk's steps as before: a vCPU that loops with no exit ends a
+  chunk within a poll of 32,768 steps. The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
+  looping vCPU answers.
 - **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
   never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a
   BUDGET or DEVICE exit waits a µs on a word nothing writes. The tasks V8 and Blink post to the thread run then
@@ -135,7 +149,8 @@ indexes of their instance).
   bare-metal `smp` test's check 4 caught it, 1 run in 30).
 - **DSB, ISB and ERET end the chunk** (`cpu::FEATURE_PARALLEL`: `Exit::Resync` in the interpreter;
   the JIT calls the helper for DSB, and ISB and ERET were helpers already): the run loop drains
-  the vCPU's queue there (context synchronization) and completes its TLBI IS broadcasts. With one
+  the vCPU's queue there (context synchronization) and completes its TLBI IS broadcasts. A vCPU that loops with no
+  exit reaches no chunk boundary of its own: the issuer's TLBI IS stores 0 in its stop word (above). With one
   vCPU, parallel mode booted Alpine as fast as round-robin realtime in Node (10.28 vs 10.21 s),
   though the boot runs 584K ISBs and 209K ERETs.
 
@@ -190,7 +205,8 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   into whole-cache flushes often enough to compile 6×, then 3×, the blocks of a one-vCPU Alpine
   boot on two vCPUs (1.7× with distinct pages, up to 1024: each vCPU compiled what it ran).
 - A vCPU applies its queue at every chunk boundary, and when it enters `vm_run_cpu`, before it
-  runs anything.
+  runs anything. A TLBI IS that its issuer's DSB will wait for also stores 0 in the target's stop word, so a target
+  looping in compiled code ends its chunk at its next poll instead of the chunk's end.
 - **The issuer's DSB after TLBI IS waits** until each target has applied the operations or isn't
   running guest code: a vCPU is `RUN` inside `vm_run_cpu` and `OUT` once it returns to the host
   (idle or anywhere else: it drains on re-entry, having set `RUN` first, sequentially consistent

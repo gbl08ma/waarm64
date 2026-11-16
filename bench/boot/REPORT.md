@@ -5781,3 +5781,92 @@ takes two samples a round and spread 2.6% across rounds: P1's A/B needs more rou
 Firefox's pages session wasn't run: its harness is broken (PERF-HANDOVER.md's queue) and P4 runs it.
 
 `scripts/ci.sh` (817 s) and `scripts/ci-jit.sh` (112 s) green, alone; `cargo clippy --features diag` clean.
+
+## PERF loop 31: parallel SMP's code without `left`, with a stop word (2026-11-16)
+
+P1 of "Preemption without the budget" (PERF-HANDOVER.md): in parallel SMP compiled code carries no step budget; it
+polls a per-vCPU stop word where a cycle can close. Data: `bench/boot/results/perf31/` (its README). docs/jit.md
+"Preemption (parallel SMP's polled code)", docs/platform.md "Parallel SMP", docs/abi.md "PERF: the stop word" (ABI 71).
+
+**As built.** `jit::Config::polled` (parallel SMP only; round-robin, deterministic or realtime, and user mode keep the
+counted code): no `left` checks, no `left -= len`, no `SUM`, `left` passed as 0; `acc` a plain local that edges bump.
+The poll is `acc < stop` (`i32.atomic.load` of `jit::State::stop` at a fixed `Vcpu` offset, ANDed into the transfer's
+condition, so a failed poll takes the path a failed budget check took). Points: static transfers (region edges,
+direct chains, chains through the jump cache, by-VA links) whose target VA is at or before their block's start, and
+every indirect transfer (the transfer cache's probe, the MMU-off jump cache's, the miss function). The run loop stores
+the chunk's steps in the word at the top of each pass, before it reads the signal word, the IRQ line, the queue and
+the timers; the dispatcher passes the steps done as `acc` and stops when the word is at or under them. Setters store 0
+after making their news: `Vm::wake` (a raised IRQ line through `Vm::refresh`, CPU_ON, drains, `Vm::signal`), the TLBI
+IS push for each target the issuer's DSB will wait for, and the host after a signal bit (`raise`, the backends' `kick`)
+through the new `vm_cpu_stop`.
+
+**The timer and the event loop without a ticker.** Decision 2 names a ticker thread for what has no event (the vCPU's
+own deadline, `yieldMs`, periodic work); the stop word's value is the chunk's steps instead of a flag, so a vCPU
+looping with no exit still ends a chunk at the first poll past them (Alpine's boot: 32,793 steps on average for the
+chunks that ran out, against 32,768), and every bound that was "within a chunk" stays one, at the same cost as a
+flag (one compare against a live `acc`). It also keeps `acc` far from `RETURNED` without a guard. A ticker that lets
+chunks run longer is P2's to measure against this. A test (`vm_set_chunk`, up to 2^30 in polled mode) makes chunks
+long so that only the setters end one early.
+
+**Counted code unchanged:** Alpine's deterministic boot dumped by both cores (`bench/jit/dump-modules.ts`): 319
+modules, the same steps (2,651,076,469), 317 byte-identical; the other two differ only in one `i32.load` offset, the
+address of the core's CRC tables, which moved with the core's data (`deterministic-modules.json`). The stop word sits
+in the padding after `jit::State::mem`, so no other `Vcpu` offset moved. tests/steps.txt didn't move.
+
+**Polls, chunks and latency** (the diagnostic core, `bench/boot/preempt-counts.ts`, Node on the dev VM; base 0ffa96ef
+against this; `counts-base.json`, `counts-new.json`):
+
+| | smp1 base / new | smp4 base / new | smp-user4 base / new |
+|---|---|---|---|
+| polls per 1000 steps | - / 56.4 | - / 55.9 | - / 65.1 (compress 46.7, Lua 74.7, churn 53.6, SQLite 73.3) |
+| chunks; ended by the steps | 352,302; 11.4% / 352,606; 11.4% | 761,324; 5.4% / 761,974; 5.2% | 3,051,006; 27.6% / 2,734,491; 30.7% |
+| ended early by the word | - / 0.61% | - / 0.71% | - / 0.32% |
+| own timer seen late, running (mean) | 80.9 / 83.0 µs | 91.3 / 93.8 µs | 42.9 / 39.3 µs |
+| IRQ line to IRQ, running (mean; <10 µs) | 3.3 / 2.9 µs; 98.9 / 98.9% | 12.6 / 10.0 µs; 93.1 / 93.1% | 5.3 / 4.1 µs; 95.3 / 96.6% |
+| wall time in Node | 6.4 / 6.5 s | 6.2 / 6.1 s | 15.2 / 13.7 s |
+
+The polls run at 56-65 per 1000 steps where loop 30 estimated 42-52 from its tallies of the points: the probes that
+miss poll twice (the probe's, then the miss function's), and region edges to a member at a lower VA poll too.
+Latency is no worse (one run each: within noise, the IRQ means a little lower).
+
+**Static counts** (`bench/jit/codestats.ts`, `codestats.json`) of a parallel SMP boot's modules (Alpine on 1 vCPU,
+`dump-modules.ts --parallel 1`, a set per core: not the same regions, so per-function means; base 313 modules, 7,134
+functions; new 312, 7,096): arm64 instructions −6.3%, code bytes −6.5%, stack slots −3.9%, frame memory operands
+−5.7%; x64 −9.8%, −8.9%, −4.0%, −13.8% (loop 30's `nobudget.patch`, no polls at all: arm64 −8.7%/−5.7%, x64
+−13.4%/−14.1%).
+
+**Spin tests** (`tests/baremetal/spin.c`, `tests/spin.test.ts`; docs/testing.md "Spin tests"): CPU 1 loops with no
+exit in five shapes (a one-block loop, a 20-block chain cycle, a BR to itself, two BRs sharing a transfer cache slot,
+a by-VA link back), at EL1 with the MMU off and on and at EL0; it takes CPU 0's IPIs (round trip timed: medians 2-21
+µs under the JIT, 37-296 under JIT-check), answers TLBI IS (DSB 30-110 µs), takes its timer (6-420 µs late under the
+JIT with the default chunk, one first-run outlier at 11 ms), and the machine pauses in ~0.1 ms (the first pause ~7
+ms); also with 2^30-step chunks, where only the setters end a chunk early. Planted, each caught: every poll kind
+(region edge, direct chain, chain through the jump cache under JIT-stress, transfer cache probe, miss function,
+MMU-off jump cache, by-VA link under JIT-check), every setter (`Vm::wake`, the TLBI IS push, the host's `raise`, the
+backends' `kick` by tests/devices.test.ts), the dispatcher's check and the chunk bound. The guest passes on QEMU TCG
+and hvf; QEMU faulted its first version's code writer, whose 8-byte store at a 4-byte boundary to Device memory (MMU
+off) waarm64 ran: in docs/backlog.md.
+
+Memory: none (4 bytes a vCPU, in padding).
+
+**The Mac A/B** (M4, Chrome for Testing 157.0.8103.78, 5 rounds, the first arm alternated, nothing else running on
+the dev VM or the Mac; medians a round; `mac-r*.json`; an earlier session beside `scripts/ci.sh` was discarded):
+
+| | base | new | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total (ms) | 2915-2947 / 5510-5539 | 2884-2940 / 5453-5535 | −1.0% / −0.8%, overlapping |
+| n2 script / total | 2531-2565 / 5149-5179 | 2483-2548 / 5086-5168 | −0.9% / −0.7%, overlapping |
+| n4 script / total | 2476-2530 / 5119-5180 | 2446-2503 / 5081-5139 | −2.1% / −0.8%, overlapping |
+| `smp_user_jit_4` total | 11275-11676 | 11225-11620 | −1.6%, overlapping |
+| compress / Lua / churn / SQLite | 1270-1398 / 2373-2780 / 816-835 / 1768-1995 | 1214-1389 / 2365-2870 / 799-827 / 1713-1815 | +5.5% / +0.3% / −0.9% / −0.7% |
+
+Every median is lower but compress's, and no difference resolves: compress is bimodal in both arms (base 1270-1288
+in four rounds and 1398 in one; new 1346-1389 in three and 1214-1216 in two), Lua spreads 400 ms in both. The
+parallel-realtime run nearest a loop-heavy small guest is `smp_alpine_jit` n1 (one vCPU worker) and the Lua phase:
+both even. jit_mips (round-robin's user mode, not this path) wasn't run: its code is unchanged. Loop 30's nobudget
+patch bounded the gain at +17% for a user-mode loop with no polls at all; with them, the boots and the userspace
+phases move ~1-2%, under the gates' resolution here. In `scripts/ci.sh` "alpine boots on 4 vCPUs in parallel" took
+66 s (49-60 s in earlier logs, under CI's load; 110 s in the contended run); alone it takes 14.6 s.
+
+CI, each alone: `scripts/ci.sh` (896 s), `scripts/ci-jit.sh` (134 s, the spin tests under JIT-stress and JIT-check with it), `scripts/ci-debian.sh` (332 s); the xHCI's tick path and sound are untouched (no `ci-usb.sh`, `ci-audio.sh`). The oracle runs (`oracle.sh`, `--hvf`) left a QEMU spinning on the Mac
+(`watch`, docs/backlog.md's known leak); the supervisor ended it.

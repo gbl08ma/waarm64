@@ -39,6 +39,8 @@ pub const BYVA_FWD: u32 = 10;
 pub const HOST_CALL: u32 = 11;
 /// A host call's return (`ret_up`).
 pub const HOST_RET: u32 = 12;
+/// Polled code (parallel SMP): a poll of the stop word (`jit::emit::poll`) run, whether or not it stopped.
+pub const POLL: u32 = 13;
 /// Slots below this are compiled code's (copied from the vCPU's table at each publication).
 pub const JIT_SLOTS: usize = 16;
 

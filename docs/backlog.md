@@ -11,6 +11,11 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
 
 ## CPU and ISA
 
+- **An unaligned access to Device memory with the MMU off doesn't fault** (found by `tests/baremetal/spin.c`, PERF loop
+  31): clang merged two 4-byte stores of its code writer into an 8-byte store at a 4-byte boundary, which QEMU TCG
+  faulted (alignment, DFSC 0x21: with `SCTLR_EL1.M` clear, data is Device-nGnRnE) and waarm64 ran. Check the
+  architecture's rule for every Device access (MMU on with a Device attribute too), then fault as it says, with a
+  bare-metal test against the oracles.
 - **DotProd and JSCVT on x86-64:** measured on the M4 only (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT,
   measured"). SDOT's order was picked there; `extmul_high` is several instructions on x86, so it may lose to
   widening with `i32x4.dot_i16x8_s`, by an estimate of 14 ops to 12, or to even and odd bytes at about 10. Run
@@ -1225,6 +1230,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
+- **The stop word's loose end** (PERF loop 31; [jit.md](jit.md) "Preemption"): the differential test
+  (`tests/jit-diff.test.ts`, `jit_parallel`) still runs counted code only, so polled code's semantics are covered by
+  the parallel boots, the bare-metal tests and the spin tests, not instruction by instruction. A user-mode
+  `jit_polled` (an export: ABI) would close it.
 - **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
   N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.waarm64snap` is the
   compile workload in use meanwhile.

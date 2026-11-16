@@ -66,7 +66,9 @@ Design notes for an ABI change go in this file before the code.
   the last vCPU); `vm_exit_cpu(vm, cpu)` its `ExitInfo`; `vm_cpu_signal(vm, i)` vCPU *i*'s wake word (below).
   `vm_set_chunk(vm, steps)` (ABI 34, any thread): the steps between two publications of a vCPU's PC in its counters,
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
-  at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
+  at most that many instructions old instead of naming the exit that ended a long chunk; under the JIT it may be
+  longer (ABI 71, a test's). Round-robin is unaffected. `vm_cpu_stop(vm, i)` (ABI 71): vCPU *i*'s stop word ("PERF:
+  the stop word", below).
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1168 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
@@ -149,8 +151,8 @@ told `i8mm: true`, `fcma: true`, `fp16: true`, `fhm: true`, `bf16: true` (`cpu::
 
 - `vm_signal(vm) -> *const AtomicU32`: bit 0 `SIGNAL_STOP`, bit 1 `SIGNAL_RX`, bit 2
   `SIGNAL_DEVICE`. Checked between chunks and on WFI. Whoever sets a bit `Atomics.notify`s it, and
-  in parallel mode also bumps and notifies every vCPU's wake word (`vm_cpu_signal`; `web/vm.ts`
-  `signal`, `Vm::signal` natively, the device backends' completions). Parallel mode leaves STOP
+  in parallel mode also stores 0 in every vCPU's stop word (`vm_cpu_stop`, ABI 71) and then bumps and notifies every
+  vCPU's wake word (`vm_cpu_signal`; `web/vm.ts` `raise`, `Vm::signal` natively, the device backends' completions). Parallel mode leaves STOP
   set; the host clears it.
 - `vm_console(vm)`: two SPSC byte rings (TX, RX), 4 KiB each, atomic head/tail (head, tail, then
   the bytes; RX follows TX). The PL011 writes TX; the host drains it after each `vm_run` and fills
@@ -534,6 +536,25 @@ implemented by this step).
   host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
   saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
 
+## PERF: the stop word (design note for ABI 71)
+
+PERF loop 31 (the user's decisions in PERF-HANDOVER.md "Preemption without the budget": parallel SMP only, the stop
+word and its setters, these exports approved): parallel SMP's compiled code has no step budget (`left`); it polls a
+per-vCPU **stop word** where a cycle can close ([jit.md](jit.md) "Preemption"), and stops there once its `acc`
+reaches the word. The run loop stores the chunk's steps in it before it looks for work, so a vCPU that loops with no
+exit still ends a chunk about where it did (its timers, the worker's event loop, the periodic work all stay paced by
+steps); whatever has news for the vCPU stores 0 in it after making the news, so the loop stops at its next poll
+instead of the chunk's end. Round-robin (deterministic and realtime) and user mode keep the counted code.
+- **`vm_cpu_stop(vm, i) -> *const AtomicU32`**, new: vCPU *i*'s stop word (u32, in its `Vcpu`: `jit::State::stop`),
+  null past the last vCPU and in round-robin mode. Like the wake words, asked once and kept (it never moves).
+- **Who stores 0 in it:** a host that sets a signal bit (`vm_signal`: STOP, RX, DEVICE) stores 0 in every vCPU's stop
+  word with `Atomics.store` after setting the bit and before bumping the wake words (`web/vm.ts` `raise`, the device
+  backends' `kick`); the core does it itself for its own events (`Vm::wake`: an interrupt line raised by another vCPU
+  or a device, a CPU_ON, a host signal set natively; a TLBI IS queued for a vCPU its DSB will wait for). A host that
+  forgets only delays the signal to the chunk's end, as before the word existed.
+- **`vm_set_chunk(vm, steps)`** takes chunks longer than 32768 in parallel mode under the JIT (up to 2^30), which
+  only polled code can end early: the spin tests run with long chunks so that a missing store shows.
+
 ## SNAPZ: qcow2's clusters through miniz_oxide (design note for ABI 70)
 
 The SNAPZ track's loop 6 (the user's decisions for the track: the codecs, docs/platform.md "The snapshot file", and these exports; measured in `bench/boot/REPORT.md` "SNAPZ:
@@ -651,6 +672,7 @@ tests.
 | 68 | the snapshot codec through lz4_flex (`lz_bound`'s value, `lz_compress` refusing a `cap` under it) and `crc32(seed, src, len)` through crc32fast ("SNAPZ: the snapshot codec and CRC") |
 | 69 | `snapshot_version_min` gone: a restore reads `snapshot::VERSION` only, older files are refused ("SNAPZ: older files refused") |
 | 70 | `inflate_raw(src, len, dst, cap)` and `deflate_raw(src, len, dst, cap, level)`: qcow2's clusters through miniz_oxide ("SNAPZ: qcow2's clusters through miniz_oxide") |
+| 71 | `vm_cpu_stop(vm, i)`: parallel SMP's stop words, which a host that sets a signal bit clears too; `vm_set_chunk` past 32768 in parallel mode under the JIT ("PERF: the stop word") |
 | 66 | FEAT_BF16: `VmConfig.features` bit 17; `ID_AA64ISAR1_EL1` BF16 = 1 |
 | 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |

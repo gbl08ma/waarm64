@@ -451,7 +451,10 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   --print-wasm-code` (on x64 under qemu-user: devenv.md "An x86_64 Node", the same V8) and sums the TurboFan functions'
   instructions, code bytes, stack slots and instructions with a frame-relative memory operand (spills, fills and
   V8's own frame set-up: compare arms, not absolutes), per function against the first set. Alpine's set takes ~20 s
-  on arm64 and ~2 min on x64. Numbers: bench/boot/REPORT.md "PERF loop 30".
+  on arm64 and ~2 min on x64. Numbers: bench/boot/REPORT.md "PERF loop 30". `--parallel N` dumps a parallel SMP
+  boot's modules instead (polled code, PERF loop 31): the workers compile them, so the tool reruns itself with every
+  thread's `WebAssembly.Module` wrapped (`--import`), each module saved once by its hash; such runs aren't
+  reproducible, so compare per-function means of two cores' sets, not the sets.
 - **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
   leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target
   directory, ~20 s from cold), then `node bench/boot/preempt-counts.ts [--json f] [boot user smp1 smp4 smp-user4]`
@@ -459,7 +462,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   realtime: `smp_alpine_jit`'s boot on 1 and 4 vCPUs, `smp_user_jit_4`; ~1 min for all) and prints per 1000 steps
   (by phase for the userspace runs) what compiled code took: region back-edges and forward edges, transfer cache hits
   and miss-function entries, static chains backward (target PA ≤ source PA) and forward (direct, through the jump
-  cache, by VA), host calls and returns; for parallel runs, how chunks ended (the budget or an exit, by kind, with
+  cache, by VA), host calls and returns, polled code's polls (PERF loop 31); for parallel runs, how chunks ended (the budget or an exit, by kind, with
   their mean steps) and two latencies: a vCPU's own timer line seen past its deadline, and an IRQ line's rise
   (`Vm::refresh`) to its IRQ taken or its WFI completed. The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
   the end of each vCPU's counters block, where the run loops publish them; a diagnostic core runs the same steps as

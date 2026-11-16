@@ -35,7 +35,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 70;
+pub const ABI_VERSION: u32 = 71;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -327,6 +327,7 @@ pub extern "C" fn jit_new(
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
         fma: false,
+        polled: false,
     }))));
     Box::into_raw(v)
 }
@@ -758,6 +759,19 @@ pub unsafe extern "C" fn vm_cpu_signal(vm: *const vm::Vm, i: u32) -> *const Atom
         .cpus
         .get(i as usize)
         .map_or(core::ptr::null(), |c| &c.wake)
+}
+
+/// vCPU `i`'s stop word in parallel mode (ABI 71; docs/abi.md "The stop
+/// word"): whoever sets a signal bit stores 0 in every vCPU's (after the bit,
+/// before bumping the wake words), so compiled code stops at its next poll.
+/// Null past the last vCPU and in round-robin mode.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_cpu_stop(vm: *const vm::Vm, i: u32) -> *const AtomicU32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }.cpu_stop(i as usize)
 }
 
 /// Virtio transport `i`'s shared block (`virtio::DevShared`: events, status,
