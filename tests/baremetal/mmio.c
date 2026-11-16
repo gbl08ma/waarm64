@@ -21,6 +21,11 @@ static u64 l2[512] __attribute__((aligned(4096)));
 static u64 l3[512] __attribute__((aligned(4096)));
 
 static volatile u64 n_exc, last_esr, n_irq;
+#ifdef HVF // QEMU under hvf makes unassigned PAs RAZ/WI rather than aborting (TCG aborts, as do we)
+#define HOLES 0
+#else
+#define HOLES 1
+#endif
 
 void on_exception(struct frame *f, u64 vec) {
   if (vec == VEC_EL1H_IRQ) {
@@ -76,13 +81,15 @@ int main(void) {
 
   // The page remapped to the UART's: its entry goes with the TLBI (PL011's PeriphID0 at 0xfe0 is 0x11).
   __asm__ volatile("ldr w2, [%0]" : : "r"(A_FWCFG + 0xfe0) : "x2", "memory"); // past fw_cfg's registers: nothing
-  check(n_exc == 1 && last_esr == DABT_EXTERNAL, 11);
+  check(n_exc == HOLES && (!HOLES || last_esr == DABT_EXTERNAL), 11);
   l3[0] = page(UART);
   __asm__ volatile("dsb ishst; tlbi vae1, %0; dsb ish; isb" : : "r"(A_FWCFG >> 12) : "memory");
   check(mmio32(A_FWCFG + 0xfe0) == 0x11 && mmio32(A_UART + 0xfe0) == 0x11, 12);
-  check(n_exc == 1, 13);
+  check(n_exc == HOLES, 13);
 
   // With the entries cached: a misaligned access to Device memory, and a page with nothing there, from compiled code too.
+  // Not under hvf: a hole is RAZ/WI there, and QEMU asserts on the misaligned access's abort (no syndrome to emulate).
+#ifndef HVF
   for (int k = 0; k < 3000; k++) {
     u64 n0 = n_exc;
     __asm__ volatile("ldr w2, [%0]" : : "r"(A_UART + 0x19) : "x2", "memory");
@@ -92,6 +99,7 @@ int main(void) {
     __asm__ volatile("str w2, [%0]" : : "r"(A_HOLE + 4) : "x2", "memory");
     check(n_exc == n0 + 3 && last_esr == (DABT_EXTERNAL | 1 << 6), 22);
   }
+#endif
 
   // An SPI made pending by a store, with IRQs unmasked: taken before the next instruction (ours; QEMU may take it later).
   gic_init();
@@ -112,7 +120,9 @@ int main(void) {
   }
   // The same store with a writeback, after a load from RAM while the base was already dirty in compiled code (the base
   // is then stored by the RAM load's failure segment too, which must not write the pre-store base over the post-index's
-  // once the access retired in the helper and left the IRQ for the run loop: PERF loop 22).
+  // once the access retired in the helper and left the IRQ for the run loop: PERF loop 22). Not under hvf: an MMIO
+  // access with a writeback has no syndrome for QEMU to emulate it by (it asserts).
+#ifndef HVF
   for (int k = 0; k < 20000; k++) {
     u64 base, seen;
     __asm__ volatile("mov x9, %2\nldr %1, [%3]\nstr %w4, [x9], #4\nmov %0, x9"
@@ -123,6 +133,7 @@ int main(void) {
     while (n_irq != (u64)k + 20001)
       ;
   }
+#endif
   __asm__ volatile("msr daifset, #2; isb");
   return 0;
 }

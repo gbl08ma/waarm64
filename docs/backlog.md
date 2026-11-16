@@ -1736,11 +1736,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- [B] **Three bare-metal tests fail on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, 2026-11-16, PERF loop 29's
-  run; their binaries unchanged by it): `debug` exits 2, `mmio` 11, `watch` prints no exit line, though testing.md says
-  every test passes on both oracles. Find whether hvf lacks what they check (self-hosted debug, a device detail) and
-  leave those checks out of the `-DHVF` builds, or whether ours differ from the hardware.
-  (`watch` hangs; `oracle.sh` kills its QEMU at 50 s.)
+- [B] **`debug` fails on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, exit 2; PERF loop 34): QEMU's hvf
+  backend traps the debug registers and models them itself, and its `OSLSR_EL1` reads 0 after `OSLAR_EL1` = 0 (OSLM
+  0b00, "no OS lock", though OSLAR's lock then reads back as OSLK); an ARMv8 PE reads 0x8 there, as we and TCG do. With
+  check 2 printed instead, the test fails later at exit 120 (the third logged debug exception's ELR or ESR). Find what
+  QEMU's hvf debug model lacks and leave those checks out of the `-DHVF` build (not ours to change: the hardware's own
+  debug registers aren't what runs there). (`mmio` and `watch`, which also failed there, were fixed in PERF loop 34: the
+  `-DHVF` build leaves out what QEMU can't emulate under hvf, and `oracle.sh` skips `// window` tests.)
 - [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
   end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
   passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.

@@ -5,7 +5,8 @@
 # Always a GICv3; a test's "// smp: N" line gives the CPU count, its
 # "// input: <text>" line what to type on the serial console (after a second),
 # and a "// flash" line attaches an erased flash bank 1 (the firmware
-# configuration's variable store, M8 phase B).
+# configuration's variable store, M8 phase B). A "// window" test (a
+# host-visible window whose phases the host drives: watch.c) is skipped.
 #   oracle.sh           local TCG, Cortex-A57 (ARMv8.0; a test's "// qemu-cpu: <model>"
 #                       line overrides it): the -DORACLE builds
 #   oracle.sh --hvf     hvf on the M4 Mac (real Apple hardware at EL1, Apple's
@@ -27,6 +28,7 @@ if [ -n "$hvf" ]; then
 fi
 for src in *.c; do
   t=${src%.c}
+  if grep -q '^// window' "$src"; then echo "$t: skipped (a window test: the host drives it)"; continue; fi
   smp=$(sed -n 's|^// smp: \([0-9]*\)$|\1|p' "$src"); smp=${smp:-1}
   cpu=$(sed -n 's|^// qemu-cpu: \(.*\)$|\1|p' "$src"); cpu=${cpu:-cortex-a57}
   input=$(sed -n 's|^// input: \(.*\)$|\1|p' "$src")

@@ -336,7 +336,10 @@ Realtime runs and the rw-overlay boots aren't step-exact.
 - **Findings:** QEMU TCG raises no SP alignment faults (hvf does, as do we); QEMU under hvf makes
   unassigned PAs RAZ/WI (TCG aborts, as do we); QEMU 11.1's TCG fails `xblock` (code reached through a pointer into
   a 2 MiB block, the block remapped and flushed by VA at its start: TCG runs the old code; hvf passes, as do we since
-  PERF loop 29); HVF can't emulate a GICv2 (moot since we dropped
+  PERF loop 29); QEMU 11.1's TCG fails `isb` (exit 10: CPU 1 runs the old code after CPU 0's DC CVAU, DSB, IC IVAU,
+DSB and a store-release CPU 1's ISB follows: 5-8 stale calls of 8 in each of 30 runs, 2026-11-16, with the MMU off;
+hvf passes 30 of 30, as do we); under hvf a hole is RAZ/WI and an MMIO access with a writeback or a misaligned one
+has no syndrome for QEMU, which asserts (`mmio` leaves those out of its `-DHVF` build); HVF can't emulate a GICv2 (moot since we dropped
   ours). **hvf does give a GICv3** (`-M
   virt,gic-version=3`): kvm-unit-tests' `gicv3-ipi`, `gicv3-active`, `selftest-smp`, `psci` and
   `timer` pass there at 4 CPUs. **It's Apple's in-kernel vGIC** (the default, and with
@@ -365,7 +368,10 @@ run in parallel SMP, and run in realtime round-robin under the JIT too, `unmask.
 `build.sh` into committed flat `.bin`s loaded at `0x4000_0000`. Pass = PSCI SYSTEM_OFF with
 x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` builds
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`
-builds on the Mac (`gic-version=3`: Apple's in-kernel vGIC); every test runs on both. Left out
+builds on the Mac (`gic-version=3`: Apple's in-kernel vGIC); every test runs on both but `watch` (a `// window`
+test, whose phases the host drives), and passes on both but three: on TCG `xblock` and `isb` (QEMU's, "System-level
+oracles"), on hvf `debug` (QEMU's model of the debug registers there: docs/backlog.md). Where TCG and the M4 disagree
+the M4 wins. Left out
 of the HVF build: two `gicv3` checks that are ours and QEMU's but not Apple's
 (`ID_AA64PFR0_EL1.GIC`, `GICR_ICFGR0`: [platform.md](platform.md) "The GIC"), and `smp`'s second
 CPU_ON (QEMU's PSCI races it against the target's start: another answer ~1 in 5 under hvf; TCG failed
