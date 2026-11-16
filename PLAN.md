@@ -61,7 +61,7 @@ here changes, and that row stays one line: a name, a state with a date, and link
 | The disk surface visualizer (SURFACE) | Done 2026-11-16 | [frontend.md](docs/frontend.md) "A disk's surface", [plans/surface.md](docs/plans/surface.md) |
 | Growing a disk (RESIZE) | Done 2026-11-15 | [machines.md](docs/machines.md) §4.5, [devices.md](docs/devices.md) "A disk grown" |
 | Faster snapshots (SNAPZ) | Done 2026-11-16 | [platform.md](docs/platform.md) "The snapshot file", [frontend.md](docs/frontend.md) "Snapshots", `bench/boot/REPORT.md` "SNAPZ: the track's end" |
-| Registered names in rooms (NAMES) | Opened 2026-11-15, no loop run yet | [NAMES-KICKOFF.md](NAMES-KICKOFF.md), [plans/room-names.md](docs/plans/room-names.md) |
+| Registered names in rooms (NAMES) | In progress since 2026-11-16 | [NAMES-KICKOFF.md](NAMES-KICKOFF.md), [NAMES-HANDOVER.md](NAMES-HANDOVER.md), [plans/room-names.md](docs/plans/room-names.md) |
 
 ## Proposed, not started
 
