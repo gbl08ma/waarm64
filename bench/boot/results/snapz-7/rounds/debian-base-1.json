@@ -1,0 +1,230 @@
+{
+ "meta": {
+  "guest": "debian",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load",
+   "kept",
+   "keptStart",
+   "file",
+   "picked",
+   "suspend"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/debian-go.waarm64snap",
+  "bytes": 96543163,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "ec293884",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-16T02:50:50.333Z",
+  "wallS": 111
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 1668,
+    "phases": {
+     "check": 78,
+     "checkRead": 57,
+     "checkCrc": 57,
+     "state": 9,
+     "ram": 96,
+     "disk": 43,
+     "pool": 6,
+     "read": 70,
+     "crc": 61,
+     "unpack": 114,
+     "apply": 158,
+     "prepare": 445,
+     "start": 831,
+     "total": 1501
+    }
+   },
+   "kept": {
+    "wallMs": 377,
+    "kind": "kept",
+    "bytes": 95250800,
+    "pausedMs": 159,
+    "stateMs": 11,
+    "blobBytes": 0,
+    "hintMs": 49,
+    "hinted": 717225984,
+    "id": "42ea8dbbe7bc",
+    "phases": {
+     "state": 11,
+     "blobs": 1,
+     "ram": 120,
+     "disk": 24,
+     "pool": 6,
+     "scan": 101,
+     "compress": 398,
+     "crc": 45,
+     "sink": 45,
+     "poolWait": 0,
+     "poolReady": 35,
+     "pause": 0,
+     "copy": 0,
+     "close": 19
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1723,
+      "pssMiB": 1086
+     },
+     "peak": {
+      "rssMiB": 1782,
+      "pssMiB": 1144
+     }
+    }
+   },
+   "keptStart": {
+    "wallMs": 1582,
+    "phases": {
+     "check": 54,
+     "checkRead": 34,
+     "checkCrc": 53,
+     "state": 12,
+     "ram": 61,
+     "disk": 37,
+     "pool": 6,
+     "read": 45,
+     "crc": 58,
+     "unpack": 103,
+     "apply": 49,
+     "prepare": 445,
+     "start": 681,
+     "total": 1291
+    }
+   },
+   "file": {
+    "wallMs": 475,
+    "kind": "file",
+    "bytes": 95525290,
+    "pausedMs": 159,
+    "stateMs": 12,
+    "blobBytes": 0,
+    "hintMs": 46,
+    "hinted": 717225984,
+    "phases": {
+     "state": 12,
+     "blobs": 4,
+     "ram": 123,
+     "disk": 18,
+     "pool": 6,
+     "scan": 112,
+     "compress": 400,
+     "crc": 41,
+     "sink": 37,
+     "poolWait": 0,
+     "poolReady": 36,
+     "pause": 0,
+     "copy": 0,
+     "close": 0
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 1722,
+      "pssMiB": 1081
+     },
+     "peak": {
+      "rssMiB": 1792,
+      "pssMiB": 1147
+     }
+    }
+   },
+   "picked": {
+    "wallMs": 490,
+    "kind": "file",
+    "bytes": 95566407,
+    "pausedMs": 157,
+    "stateMs": 12,
+    "blobBytes": 0,
+    "hintMs": 46,
+    "hinted": 717225984,
+    "phases": {
+     "state": 12,
+     "blobs": 1,
+     "ram": 118,
+     "disk": 24,
+     "pool": 6,
+     "scan": 100,
+     "compress": 386,
+     "crc": 41,
+     "sink": 33,
+     "poolWait": 0,
+     "poolReady": 38,
+     "pause": 0,
+     "copy": 101,
+     "close": 0
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 1739,
+      "pssMiB": 1097
+     },
+     "peak": {
+      "rssMiB": 1810,
+      "pssMiB": 1163
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 268,
+    "kind": "suspend",
+    "bytes": 94159071,
+    "pausedMs": 152,
+    "phases": {
+     "state": 9,
+     "blobs": 1,
+     "ram": 115,
+     "disk": 0,
+     "pool": 6,
+     "scan": 97,
+     "compress": 377,
+     "crc": 39,
+     "sink": 24,
+     "close": 22,
+     "poolWait": 0,
+     "poolReady": 30,
+     "pause": 1,
+     "copy": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1749,
+      "pssMiB": 1107
+     },
+     "peak": {
+      "rssMiB": 1692,
+      "pssMiB": 1050
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 1747,
+    "phases": {
+     "check": 51,
+     "checkRead": 33,
+     "checkCrc": 53,
+     "state": 9,
+     "ram": 59,
+     "disk": 0,
+     "pool": 6,
+     "read": 39,
+     "crc": 56,
+     "unpack": 96,
+     "apply": 47,
+     "prepare": 436,
+     "start": 727,
+     "total": 1283
+    }
+   }
+  }
+ ]
+}

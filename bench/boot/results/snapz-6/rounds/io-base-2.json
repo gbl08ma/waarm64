@@ -1,0 +1,213 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-16T04:13:59.384Z",
+ "commit": "8facaffaa8ff",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "io_qcow2_randread4k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4577,
+    4645,
+    4618,
+    4619,
+    4635
+   ],
+   "median": 4619,
+   "iqr": 17,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_randread4k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1144.333333,
+    1161.279573,
+    1154.615128,
+    1154.948351,
+    1158.947018
+   ],
+   "median": 1154.948351,
+   "iqr": 4.331890000000158,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_randread4k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    831.781905039,
+    819.416410904,
+    824.2738608950001,
+    824.1033193879999,
+    821.028880966
+   ],
+   "median": 824.1033193879999,
+   "iqr": 3.2449799290001238,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    90551,
+    90990,
+    89996,
+    91842,
+    93536
+   ],
+   "median": 90990,
+   "iqr": 1291,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    707.430856,
+    710.859427,
+    703.098967,
+    717.521652,
+    730.756415
+   ],
+   "median": 710.859427,
+   "iqr": 10.090796000000068,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1376.090385304,
+    1369.374380506,
+    1385.0407582940002,
+    1356.766083565,
+    1331.047675331
+   ],
+   "median": 1369.374380506,
+   "iqr": 19.32430173900002,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    231346,
+    229487,
+    230510,
+    231797,
+    229299
+   ],
+   "median": 230510,
+   "iqr": 1859,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    225.924692,
+    224.109224,
+    225.108225,
+    226.364847,
+    223.925358
+   ],
+   "median": 225.108225,
+   "iqr": 1.8154679999999814,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4377.884436578,
+    4415.098579494999,
+    4395.695550296,
+    4370.072823529001,
+    4420.832690476001
+   ],
+   "median": 4395.695550296,
+   "iqr": 37.21414291699966,
+   "n": 5
+  }
+ ]
+}

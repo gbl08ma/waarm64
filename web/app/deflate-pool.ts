@@ -1,12 +1,13 @@
 // The disk-out worker's compressors: a pool of web/app/deflate-worker.ts, as a `Packer` for `writeQcow2`.
+import { coreModule } from '../deflate.ts';
 import { fromWire } from '../msg.ts';
 import type { Packer } from '../qcow2-write.ts';
-import type { DeflateRequest, DeflateResult } from './deflate-worker.ts';
+import type { DeflateInit, DeflateRequest, DeflateResult } from './deflate-worker.ts';
 
 /**
- * Compression on other threads: deflate is what a compressed export spends its time in (one
- * thread: 49 MiB/s of data on the dev VM; four: ~125, where reading the disk is what's left), and
- * the machine has stopped, so its cores are free. Workers of the disk-out worker (web/app/export-worker.ts), each with a batch or two.
+ * Compression on other threads: deflate is what a compressed export spends its time in, and the machine has
+ * stopped, so its cores are free (bench/boot/REPORT.md "SNAPZ loop 6"). Workers of the disk-out worker
+ * (web/app/export-worker.ts), each with a batch or two, each given this thread's core first (web/deflate.ts).
  */
 export function deflatePool(
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: not every engine says
@@ -33,16 +34,22 @@ export function deflatePool(
     w.onerror = (e) => fail(new Error(`a compressor failed: ${e.message}`));
     return w;
   });
+  const ready = coreModule().then((module) => {
+    for (const w of workers) w.postMessage({ type: 'init', module } satisfies DeflateInit);
+  });
   let next = 0;
   return {
     atOnce: 2 * n,
     pack(clusters) {
       const id = next++;
       const copy = clusters.slice(); // the writer keeps its buffer (a cluster that doesn't shrink is stored from it)
-      return new Promise((resolve, reject) => {
-        waiting.set(id, { resolve, reject });
-        workers[id % n].postMessage({ id, clusters: copy } satisfies DeflateRequest, [copy.buffer]);
-      });
+      return ready.then(
+        () =>
+          new Promise((resolve, reject) => {
+            waiting.set(id, { resolve, reject });
+            workers[id % n].postMessage({ id, clusters: copy } satisfies DeflateRequest, [copy.buffer]);
+          }),
+      );
     },
     close() {
       for (const w of workers) w.terminate();

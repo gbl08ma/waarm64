@@ -7,14 +7,13 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import { BLOB_CHUNKS, CHUNK, corrupt, diskRuns, openSnapshot, readHeader, snapshotBound, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
 import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, withRoom, writeMeta, type WritableDisk } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
-import { isZero } from './qcow2-write.ts';
 import { zeroDisk } from './stored.ts';
 import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
@@ -61,10 +60,12 @@ export type SavePhases = { state: number; blobs: number; ram: number; disk: numb
 /**
  * Where a restore's time went, ms (`readSnapshot`; the machine worker adds its own: web/app/protocol.ts `LoadPhases`):
  * the whole file's check pass (`check`, its reads and CRCs in `checkRead`, `checkCrc`), the CORE, DEVS and BLOB frames
- * (`state`), RAM's frames read and placed (`ram`, the placing in `apply`), the disks' blocks into their overlays
- * (`disk`); and over the restore's pass (after the check), the reads, the CRCs and the codec (`ReadTimes`).
+ * (`state`), RAM's frames read and placed (`ram`), the disks' blocks into their overlays (`disk`); over the restore's
+ * pass (after the check), the reads, the CRCs, the codec and RAM's placing (`ReadTimes`); and the workers of the pool
+ * that took the CRCs and RAM's frames (`pool`, 0: this thread; then `checkCrc`, and RAM's share of `crc`, `unpack` and
+ * `apply`, are their sums: CPU time).
  */
-export type RestorePhases = { check: number; checkRead: number; checkCrc: number; state: number; ram: number; apply: number; disk: number } & ReadTimes;
+export type RestorePhases = { check: number; checkRead: number; checkCrc: number; state: number; ram: number; disk: number; pool: number } & ReadTimes;
 
 /** A DISK frame's index: the device slot times this, plus the first block. */
 const SLOT = 2 ** 40;
@@ -77,7 +78,7 @@ const BLOCK = 4096;
  * image's hash, if the caller has it. `pool`: workers that make RAM's frames (web/snapshot-pool.ts), else this thread
  * does; the file is the same.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean; pool?: RamPool } = {}) {
+export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean; pool?: RamPool; sized?: (bound: number) => void | Promise<void> } = {}) {
   const t0 = performance.now();
   const state = await vm.snapshot();
   // How long the devices' state took (a 3D machine's renderer read back is in it): tools split a snapshot's pause with it.
@@ -93,6 +94,9 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   // The state's Uint8Arrays go in BLOB frames; DEVS names each by its number and length.
   const blobs: Uint8Array[] = [];
   const devs = JSON.stringify(state.host, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v));
+  // The file's largest size, before its first byte goes to the sink (`sized`: a picked file's staging checks its room).
+  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
+  await opts.sized?.(snapshotBound({ core: state.core.length, devs: devs.length * 3, blobs: blobs.map((b) => b.length), ram: views.map((v) => v.length), blocks: disks.reduce((n, d) => n + d.blocks.length, 0) }));
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
@@ -107,7 +111,6 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const blobsMs = since();
   // Memory 0's RAM, then each spill memory's (node 1's after Venus's arena and window in memory 1), their chunks numbered
   // on (`ramStarts`); the progress is over all of it.
-  const views = [new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), ...vm.spillRam()];
   const total = views.reduce((n, v) => n + v.length, 0);
   const starts = ramStarts(views.map((v) => v.length));
   const ram = { pages: 0, frames: 0 };
@@ -131,9 +134,17 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
 }
 
 /**
+ * Why a snapshot of `header` can't be restored by a core whose state version is `coreVersion` (the running core's
+ * `snapshot_version`, which reads only its own: an older file is refused, not migrated), or none.
+ */
+export function otherVersion(header: SnapshotHeader, coreVersion: number): SnapshotError | undefined {
+  if (header.coreVersion === coreVersion) return undefined;
+  return new SnapshotError('snapshots:snapshot.otherVersion', { format: header.coreVersion, reads: coreVersion }, 'other-version');
+}
+
+/**
  * Opens a snapshot for a restore: its header, and what `bootVm` takes as `restore`. `coreVersion`
- * is the running core's `snapshot_version` (it reads that and older formats down to the codec's
- * `snapshotVersionMin`, when it is the codec's own); `devices` the device specs of the machine it will
+ * is the running core's `snapshot_version` (`otherVersion`, checked first); `devices` the device specs of the machine it will
  * start (the `BootOptions.devices`), whose writable disks must be the ones the snapshot pins:
  * the same identity, or the same SHA-256 (`sha256` hashes a slot's base image: seconds, so only
  * asked when the identity differs and the file has the hash). Everything that can be refused is
@@ -145,10 +156,13 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
  * `resume`: the file is a suspended machine's (`writeSnapshot`'s `suspend`: no disk blocks) and
  * the overlays are as that machine left them, which only the caller can know (web/overlay.ts
  * `suspended`): they are kept. Such a file is refused without `resume`, and any other with it.
+ *
+ * `pool`: workers that take both passes' CRCs and put RAM's frames into the new VM's RAM (docs/platform.md "A load's
+ * pool"; a Blob only, else this thread reads it all). The caller closes it once `fill` is done.
  */
 export async function readSnapshot(
-  source: ReadableStream<Uint8Array> | Blob, codec: Codec & { snapshotVersion?: number; snapshotVersionMin?: number }, coreVersion: number,
-  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
+  source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
+  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[]; pool?: LoadPool } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore; phases: RestorePhases }> {
   let at = performance.now();
   /** The ms since the last call (or `at`'s start). */
@@ -157,59 +171,84 @@ export async function readSnapshot(
     at = performance.now();
     return at - was;
   };
-  const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, apply: 0, disk: 0, read: 0, crc: 0, unpack: 0 };
-  if (source instanceof Blob) {
-    // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
-    // the file damaged halfway.
-    const check = await openSnapshot(source, { codecs: [codec], check: true });
-    for await (const _ of check.frames()) void _;
-    [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
-  }
-  const s = await openSnapshot(source, { codecs: [codec] });
-  /** The restore pass's reading times so far, into `phases`. */
-  const read = () => Object.assign(phases, s.times);
-  const { header } = s;
-  // The codec's core reads back to its `snapshotVersionMin` (a caller naming another version means another core).
-  const min = codec.snapshotVersion === coreVersion ? Math.min(codec.snapshotVersionMin ?? coreVersion, coreVersion) : coreVersion;
-  if (typeof header.coreVersion !== 'number' || header.coreVersion > coreVersion || header.coreVersion < min) {
-    throw min === coreVersion
-      ? new SnapshotError('snapshots:snapshot.otherVersion', { format: header.coreVersion, reads: coreVersion }, 'other-version')
-      : new SnapshotError('snapshots:snapshot.otherVersion.range', { format: header.coreVersion, min, max: coreVersion }, 'other-version');
-  }
-  if (!!header.suspend !== !!opts.resume) {
-    throw header.suspend
-      ? new SnapshotError('snapshots:snapshot.suspended', {}, 'other-disk')
-      : corrupt(msg('snapshots:snapshot.damage.notSuspended'));
-  }
-  const pinned = (header.disks ?? []) as SnapshotDisk[];
-  if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt(msg('snapshots:snapshot.damage.diskList'));
+  const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, disk: 0, pool: 0, read: 0, crc: 0, unpack: 0, apply: 0 };
   // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
   // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
   type Target = { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean } | { kind: 'skip' } | { kind: 'ram'; spec: BlkSpec; size: number };
   const targets = new Map<number, Target>();
-  for (const d of pinned) {
-    const spec = opts.devices?.[d.slot];
-    if (d.ram) {
-      if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
-      targets.set(d.slot, { kind: 'ram', spec, size: d.size });
-      continue;
+  /** The header's refusals (another version, a suspend's file or not, the disks it pins against `devices`), `targets` made. */
+  const aim = async (header: SnapshotHeader) => {
+    const other = otherVersion(header, coreVersion);
+    if (other) throw other;
+    if (!!header.suspend !== !!opts.resume) {
+      throw header.suspend
+        ? new SnapshotError('snapshots:snapshot.suspended', {}, 'other-disk')
+        : corrupt(msg('snapshots:snapshot.damage.notSuspended'));
     }
-    if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
-    const identity = diskIdentity(spec, d.size);
-    if (identity !== d.identity) {
-      const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
-      if (!same) {
-        throw new SnapshotError('snapshots:snapshot.otherDisk', { was: describe(d.identity), here: describe(identity) }, 'other-disk');
+    const pinned = (header.disks ?? []) as SnapshotDisk[];
+    if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt(msg('snapshots:snapshot.damage.diskList'));
+    for (const d of pinned) {
+      const spec = opts.devices?.[d.slot];
+      if (d.ram) {
+        if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
+        targets.set(d.slot, { kind: 'ram', spec, size: d.size });
+        continue;
+      }
+      if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
+      const identity = diskIdentity(spec, d.size);
+      if (identity !== d.identity) {
+        const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
+        if (!same) {
+          throw new SnapshotError('snapshots:snapshot.otherDisk', { was: describe(d.identity), here: describe(identity) }, 'other-disk');
+        }
+      }
+      const plan = opts.plan?.find((p) => p.slot === d.slot);
+      // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
+      // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
+      if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
+        throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
+      }
+      targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
+    }
+  };
+  /** DISK frame `index` of `rawLen` bytes refused if its slot isn't pinned or it goes past its disk's end. */
+  const diskFrame = (index: number, rawLen: number) => {
+    const t = targets.get(Math.floor(index / SLOT));
+    if (!t) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
+    if (t.kind !== 'skip' && (index % SLOT + rawLen / BLOCK - 1) * BLOCK >= t.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
+    return t;
+  };
+  /** The stages of a file's frames, in the order a restore reads them: a frame of an earlier stage after a later one is refused. */
+  const STAGE: Record<string, number> = { CORE: 0, DEVS: 0, BLOB: 1, 'RAM ': 2, DISK: 3 };
+  if (source instanceof Blob) {
+    // Another version's file is refused by its header, before its frames are read (an older file may have frames of a
+    // codec no longer read); then whatever else the header alone refuses.
+    await aim(await readHeader(source));
+    // A pass over the whole file first: a restore replaces the disk's changes, so it must not find the file damaged
+    // halfway. Its CRCs and structure, and what the restore's disk phase would refuse: the frames' order, and each DISK
+    // frame's slot, its place in its disk and its unpacking (docs/platform.md "The snapshot file").
+    const check = await openSnapshot(source, { codec, check: true, pool: opts.pool });
+    let stage = 0;
+    for await (const f of check.frames()) {
+      try {
+        if (STAGE[f.tag] < stage) throw corrupt(msg('snapshots:snapshot.damage.unexpected'));
+        stage = STAGE[f.tag];
+        if (f.tag === 'DISK') diskFrame(f.index, f.size!);
+      } catch (e) {
+        // An earlier frame's own refusal (a CRC the pool still has) comes first.
+        await check.placed();
+        throw e;
       }
     }
-    const plan = opts.plan?.find((p) => p.slot === d.slot);
-    // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
-    // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
-    if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
-      throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
-    }
-    targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
+    [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
   }
+  // With a pool, RAM's frames are checked, unpacked and placed by its workers (docs/platform.md "A load's pool").
+  const s = await openSnapshot(source, { codec, pool: opts.pool });
+  phases.pool = s.pooled;
+  /** The restore pass's reading times so far, into `phases`. */
+  const read = () => Object.assign(phases, s.times);
+  const { header } = s;
+  if (!(source instanceof Blob)) await aim(header);
   const frames = s.frames();
   // CORE and DEVS come first, each in index order.
   const parts: Record<string, Uint8Array[]> = { CORE: [], DEVS: [] };
@@ -268,13 +307,13 @@ export async function readSnapshot(
       const starts = ramStarts(views.map((v) => v.length));
       since();
       for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
-        const { index, data } = next.value;
+        const { index, place } = next.value;
         let k = views.length - 1;
         while (k > 0 && index < starts[k]) k--;
-        const t = performance.now();
-        applyRam(views[k], index - starts[k], data);
-        phases.apply += performance.now() - t;
+        place!(views[k], index - starts[k]);
       }
+      // Every RAM frame in (a pool's workers placing them): a refusal here comes before the disks are touched.
+      await s.placed();
       phases.ram = since();
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
@@ -302,21 +341,26 @@ export async function readSnapshot(
           if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size })))) throw await full();
           // Over zeros: the file's blocks are written whole, but the disk's last one may be shorter than 4 KiB, and its
           // write reads the rest of its block (none: zeros). No meta: its generation is set.
-          const disk = overlay(zeroDisk(t.size), files.data, files.map);
+          // Unordered (no flush between a run's data and its map entries): until the restore's end the overlay is half
+          // a snapshot's whatever its order, and the end flushes both (docs/devices.md "Crash and refusal").
+          const disk = overlay(zeroDisk(t.size), files.data, files.map, undefined, 0, { ordered: false });
           open.set(slot, { disk, close: files.close, size: t.size });
           if (t.whole && !(await lands(() => disk.zero(0, t.size)))) throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
         }
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;
           if (tag !== 'DISK') throw corrupt(msg('snapshots:snapshot.damage.unexpected'));
-          const o = open.get(Math.floor(index / SLOT));
-          if (!o) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
+          // An unlisted slot or a frame past the disk's end (for a stream: a Blob's check pass refused them) is refused
+          // before any of it is written. Its runs of data blocks and of zero blocks are a call each (an OPFS call costs
+          // ~0.3 ms off the record, a data flush per call ~0.15 ms on disk: bench/boot/REPORT.md "SNAPZ loop 5"); the
+          // disk's last block may be shorter than 4 KiB.
+          diskFrame(index, data.length);
+          const o = open.get(Math.floor(index / SLOT))!;
           if (o === 'skip') continue;
-          for (const { block, data: bytes } of diskBlocks(index % SLOT, data)) {
-            const at = block * BLOCK;
-            if (at >= o.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
-            const part = bytes.subarray(0, Math.min(BLOCK, o.size - at));
-            if (!(await lands(() => (isZero(part) ? o.disk.zero(at, part.length) : o.disk.write(at, part))))) throw await full();
+          for (const run of diskRuns(index % SLOT, data)) {
+            const at = run.block * BLOCK;
+            const len = Math.min(run.count * BLOCK, o.size - at);
+            if (!(await lands(() => (run.zero ? o.disk.zero(at, len) : o.disk.write(at, run.data.subarray(0, len)))))) throw await full();
           }
         }
         for (const o of open.values()) if (o !== 'skip') o.disk.flush();
@@ -374,7 +418,7 @@ export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Modul
       const parts: Uint8Array[] = [];
       const t = performance.now();
       if (!(await vm.pause())) throw new Error('the machine ended as it was paused');
-      const w = await writeSnapshot(vm, (b) => { parts.push(b); }, { machine: 'test' }, codec);
+      const w = await writeSnapshot(vm, (b) => { parts.push(b.slice()); }, { machine: 'test' }, codec);
       const saveMs = performance.now() - t;
       await vm.flush();
       hvc += vm.hvc();

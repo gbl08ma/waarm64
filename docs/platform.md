@@ -83,7 +83,9 @@ NOPs, and every step count is what it was before M7.
 
 - `vm_run(vm, budget)` (and parallel mode's `vm_run_cpu`) runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
   plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
-  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`.
+  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`. Parallel SMP's
+  compiled code isn't counted: a chunk ends at the first poll past its steps, or sooner when the vCPU's stop word
+  drops ("Parallel SMP" below).
 - **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
   and IRQ entry (vector +0x80) when `PSTATE.I` is clear.
 - **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
@@ -124,6 +126,19 @@ indexes of their instance).
   an exit with nothing to do (~65 ns in Node on the dev VM, up to the ~240 ns of a desktop-guest exit), so the spins
   that end in one are ≤0.2% of the session's 263 busy vCPU-seconds, and with 4 vCPUs the host has cores to spare
   for the spinner.
+- **The stop word** (PERF loop 31; [jit.md](jit.md) "Preemption", [abi.md](abi.md) "PERF: the stop word"): the
+  JIT's code in parallel SMP has no step budget; where a cycle can close it compares its steps with the vCPU's stop
+  word (`jit::State::stop`, in its `Vcpu`), and so does the dispatcher before each block. The run loop stores the
+  chunk's steps there at the top of each pass, before it reads the signal word, the IRQ line, the queue and the
+  timers; whatever makes work for the vCPU stores 0 there after making it: `Vm::wake` (an interrupt line raised by
+  `Vm::refresh`, a CPU_ON, a drain that a waiter waits for, `Vm::signal`), `broadcast` for each vCPU whose drain the
+  issuer's DSB will wait for, and the host after setting a signal bit (`web/vm.ts` `raise`, the device backends'
+  `kick`). A store that lands before the run loop's is seen by its reads; one after stops the chunk at its next poll.
+  What has no event (the vCPU's own timer deadline, the xHCI's due time, the worker's event-loop visit, the periodic
+  publications, the PC sampler) stays paced by the chunk's steps as before: a vCPU that loops with no exit ends a
+  chunk within a poll of 32,768 steps. A ticker that let chunks run longer didn't pay (PERF loop 32: a chunk end
+  costs ~0.2 µs, and it's where the vCPU sees its timer and installs compiled modules; [jit.md](jit.md) "No ticker"). The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
+  looping vCPU answers.
 - **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
   never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a
   BUDGET or DEVICE exit waits a µs on a word nothing writes. The tasks V8 and Blink post to the thread run then
@@ -135,7 +150,8 @@ indexes of their instance).
   bare-metal `smp` test's check 4 caught it, 1 run in 30).
 - **DSB, ISB and ERET end the chunk** (`cpu::FEATURE_PARALLEL`: `Exit::Resync` in the interpreter;
   the JIT calls the helper for DSB, and ISB and ERET were helpers already): the run loop drains
-  the vCPU's queue there (context synchronization) and completes its TLBI IS broadcasts. With one
+  the vCPU's queue there (context synchronization) and completes its TLBI IS broadcasts. A vCPU that loops with no
+  exit reaches no chunk boundary of its own: the issuer's TLBI IS stores 0 in its stop word (above). With one
   vCPU, parallel mode booted Alpine as fast as round-robin realtime in Node (10.28 vs 10.21 s),
   though the boot runs 584K ISBs and 209K ERETs.
 
@@ -190,7 +206,8 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   into whole-cache flushes often enough to compile 6×, then 3×, the blocks of a one-vCPU Alpine
   boot on two vCPUs (1.7× with distinct pages, up to 1024: each vCPU compiled what it ran).
 - A vCPU applies its queue at every chunk boundary, and when it enters `vm_run_cpu`, before it
-  runs anything.
+  runs anything. A TLBI IS that its issuer's DSB will wait for also stores 0 in the target's stop word, so a target
+  looping in compiled code ends its chunk at its next poll instead of the chunk's end.
 - **The issuer's DSB after TLBI IS waits** until each target has applied the operations or isn't
   running guest code: a vCPU is `RUN` inside `vm_run_cpu` and `OUT` once it returns to the host
   (idle or anywhere else: it drains on re-entry, having set `RUN` first, sequentially consistent
@@ -339,10 +356,16 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   state, so a snapshot is only valid on the disk as it was. The header lists each writable disk
   (its slot, the identity of the image its overlay is over, its size, the base's hash where the
   writer knew it) and DISK frames carry the blocks its overlay holds, read through the backends
-  (the device worker has the overlay's handles). A restore **replaces the overlay** with them
-  before the new VM's backends open it. Everything that can be refused is refused before that: a
+  (the device worker has the overlay's handles: those in consecutive slots one read). A restore **replaces the
+  overlay** with them before the new VM's backends open it: each frame's runs of data blocks and of zero blocks a
+  write each (zeros without slots), unordered, both files flushed at the end (docs/devices.md "Crash and refusal");
+  a frame past the disk's end is refused before any of it is written. The desktop's 11,952 blocks take ~0.1 s on disk
+  (2.0 s one block a write: a data flush each) and ~0.8 s off the record (7.3 s: bench/boot/REPORT.md "SNAPZ loop 5"). Everything that can be refused is refused before that: a
   `File` is read once for its checksums and its end first (a damaged file must not half-replace a
-  disk), and the disk on the machine must be the snapshot's: the same identity, or, when that
+  disk), a pass that also refuses what the disk phase would (a frame out of the restore's order, a DISK frame of a
+  slot the header doesn't pin or past its disk's end, one that doesn't unpack to its size: its DISK frames are unpacked
+  and dropped, by the pool's workers when there is one, which costs the desktop's load nothing measurable: bench/boot/REPORT.md
+  "SNAPZ: the track's end"; tests/snapshot.test.ts "impossible things"), and the disk on the machine must be the snapshot's: the same identity, or, when that
   differs and the file has a hash, the same hash (asked for only then: a restore that "resumes in seconds"
   shouldn't read the whole base every time).
 - **Run modes:** round-robin's `Sched` and parallel mode's per-vCPU state are saved in one form
@@ -357,6 +380,11 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
 The user owns snapshots as files (the user's call, 2026-09-29): the page saves one for download and resumes one
 given to it, in a fresh browser profile too. A kept snapshot is the same file ([machines.md](machines.md) §5). The
 container is streamed both ways (RAM is up to GiBs) and knows nothing of the core:
+- **Decisions** (the user's, 2026-11-15, the SNAPZ track): the frames' codec is the LZ4 block format through
+  **lz4_flex** (its safe encoder and decoder) and their CRC-32 **crc32fast**, both in the core, and qcow2's clusters
+  go through the core's **miniz_oxide** (docs/devices.md "qcow2"); no other codec dependency (zstd, C, was weighed and
+  not taken). **Older snapshot files need not load:** a file of an older state version is refused, never migrated
+  (below). **A save's pool may hold ~90-140 MiB while a save runs** (its six instances, released after).
 - `WAARMSNP`, a u32 format version, the JSON header with its CRC-32, then frames, little-endian. A frame is `{tag,
   codec, index, raw length, stored length, CRC-32, reserved}` (32 bytes; the CRC covers the frame header's first 24
   bytes, so a flipped index or length is caught, then the stored bytes) and the stored bytes.
@@ -377,43 +405,89 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
 - **The codec** is per frame (so frames could be made and read by several workers on the shared memory), and a
   frame that doesn't shrink is stored (codec 0). The page writes **codec 2, the LZ4 block format through lz4_flex**
   in the core (`core/src/codec.rs`, its safe encoder and decoder; through `web/lz.ts` on one worker), and the frames'
-  CRC-32 goes through the core's crc32fast in the writer and the reader (the header's, read before any core instance
-  exists, stays JS's: `crc32` in `web/snapshot-file.ts`); the reader also takes deflate-raw (codec 1,
-  `CompressionStream`). Settled by measurement: an LZ saves 6 times faster than deflate for a file 1.4 times larger
-  (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's own LZ (`core/src/lz.rs`, which wrote
-  the same format: its files load, `tests/fixtures/old-lz.waarm64snap`) for a desktop save paused 9% less, its RAM
-  frames unpacked 1.6x faster and a 2% smaller file ("SNAPZ loop 1").
+  CRC-32 goes through the core's crc32fast in the writer and the reader: both are given the codec (the header's CRC,
+  read before any core instance exists, stays JS's: `crc32` in `web/snapshot-file.ts`, and `readHeader` reads a
+  header alone). Codecs 0 and 2 are all the reader takes. Settled by measurement: an LZ saves 6 times faster than
+  deflate for a file 1.4 times larger (`bench/boot/REPORT.md` "M8 phase C loop 4"), and lz4_flex replaced the core's
+  own LZ (`core/src/lz.rs`, same format) for a desktop save paused 9% less, its RAM frames unpacked 1.6x faster and a
+  2% smaller file ("SNAPZ loop 1").
 - **A save's pool** (`web/snapshot-pool.ts`, `web/snapshot-pool-worker.ts`; the writer's `RamPool`): RAM's frames are
   made by `min(navigator.hardwareConcurrency − 1, 6)` workers (`poolSize`; the paused machine's vCPU threads are idle).
   Each has a core instance of its own on a small memory (`codecCore` in `web/lz.ts`: the core's imports stubbed, none
   of web/vm.ts loaded) and reads guest RAM where it lies: a job is a shared buffer (memory 0's, or a spill memory's:
   every RAM view is a `SharedArrayBuffer`), an offset, a length and the chunk's index. The worker scans the chunk for
   zero pages, gathers its pages into its instance's memory, compresses them there and takes the frame's CRC over the
-  header and the bytes where `lz_compress` left them (no copy), and posts the frame back whole (transferred). Chunk c
+  header and the bytes where `lz_compress` left them (no copy), and posts the frame back whole (transferred), in a
+  buffer of the largest frame's size that the writer gives back to that worker with a later job once the sink has
+  written it (`RamPool.recycle`; a sink's bytes are its only until it returns): a save's frames are a few buffers a
+  worker, not a file's worth of garbage waiting for a GC, which had added ~350 MiB to the desktop's suspend ("SNAPZ
+  loop 2b"). Chunk c
   goes to worker c mod n, three in flight a worker; the machine worker writes the frames in order. Each frame is
   compressed alone with the same codec and rule (stored when it doesn't shrink), so **the file's bytes don't depend on
   the pool's size**, nor on whether there is one (`tests/snapshot.test.ts` "a save's pool"). The pool covers RAM
-  only: CORE, DEVS, BLOB and DISK frames (the desktop's: 46 ms and ~110-180 ms of a 1.1 s pause, the disk's mostly
-  its reads) stay on the machine worker. It is started **per save, when the save is asked for** (Snapshot, a kept
+  only: CORE, DEVS, BLOB and DISK frames (the desktop's: 46 ms and ~110-180 ms of a 1.1 s pause; the disk's blocks
+  are read in runs of consecutive slots since SNAPZ loop 5) stay on the machine worker. It is started **per save, when the save is asked for** (Snapshot, a kept
   snapshot, Suspend: `web/app/worker-snapshot.ts`), beside the balloon's hint, and closed once the file is written:
   its start (~35-45 ms to six instances) is not paused time, and no worker stays between saves. **The fallback:**
   a pool that can't start (no worker, a failed instance, none ready in 10 s, one CPU) is none, and the save runs on
-  the machine worker as before; a worker that fails mid-save fails its chunks and every later one, which the writer
-  makes itself (RAM doesn't move while it is written): time lost, not the file. A view that isn't shared memory or
-  4-aligned, and a writer of another codec, take the one-thread path too. The desktop's pause went from 3.79 s to
+  the machine worker as before. A worker that fails mid-save (an error it didn't catch, which the pool handles and
+  cancels so that it goes no further up, or a reply that can't be read), or a pool with work out that answers nothing
+  for 10 s (`STALL_MS`), fails **the whole pool**: its workers are ended at once, and every chunk in flight on any of
+  them and every later one is made by the writer itself (RAM doesn't move while it is written): time lost, not the
+  file; once the write itself has failed (the sink), no chunk is made. A view that isn't shared memory or 4-aligned,
+  and a writer of a codec the workers don't write (only the core's codec is `pooled`: web/lz.ts), take the one-thread
+  path too (`tests/snapshot-pool.test.ts`). The desktop's pause went from 3.79 s to
   ~1.1 s ("SNAPZ loop 2").
+- **A load's pool** (the same workers, `startPool`; the reader's `LoadPool`; `openSnapshot`'s `pool`): started by the
+  machine worker when a start has a snapshot (a picked file, a kept snapshot, a suspended copy: `openRestore` in
+  `web/app/worker-start.ts`), beside the header's checks; it is that restore's, closed once `bootVm` has filled RAM (or
+  failed to), at a refusal, or when the start ends before `fill` (`bootVm` failed earlier: a resume then boots instead,
+  without it). A Blob is read in 4 MiB
+  slices, four ahead (Chromium reads a picked file's stream at ~1.1 GB/s in 64 KiB chunks, four slices in flight at
+  ~3.2 GB/s; the one-thread reader reads a Blob so too). Through the pool each piece goes **whole to a worker**
+  (transferred, the least busy one, two pieces a worker at most) with the jobs of the frames in it; a frame across two
+  pieces is copied out and given alone. The machine worker parses every frame header and checks the file's structure
+  in file order, as on one thread; the workers take each frame's CRC in their own core instance and, for the restore
+  pass's RAM frames, unpack them and put their pages straight into guest RAM and the spill memories (`applyRam` on
+  the shared memories), posting back only the jobs they failed and their times. CORE, DEVS, BLOB and DISK frames are
+  read on the machine worker in the restore pass (the check pass's DISK frames are unpacked by the workers too). **The check pass still comes first and ends only once every CRC is
+  in**: a damaged frame anywhere is refused before RAM or a disk is touched, and a refusal is the first failing
+  frame's (the frames of the piece in hand not yet given to a worker are checked before a later frame's structural
+  refusal) (`tests/snapshot.test.ts` "a load's pool"; the page's refusal in tests/page-snapshot.test.ts). `placed()`
+  waits for every RAM frame given so far (the piece in hand given as a copy), so the restore pass's own refusal also
+  comes before the disks. **The fallback:** a frame a worker fails, or a piece whose worker failed (a failed worker fails
+  the whole pool, as a save's does), is read again from the file and done on the machine worker (a damaged one refused
+  there, as on one thread); no pool (it can't start, one CPU), a stream or a codec the workers don't read is the
+  one-thread reader. RAM not on shared memory still goes through the pool's check pass; the restore pass places those
+  frames from copies on the machine worker. Copying frames into shared slots instead was
+  measured first: V8 copies into shared memory word by word, ~220 ms of the machine worker's time a pass for the
+  desktop's file, which whole pieces avoid. The desktop's load spends 1.13 s in the check pass, the state and RAM
+  against 3.13 s on one thread (wall 9.5 to 7.6 s), Debian's 0.13 s against 0.35 ("SNAPZ loop 3").
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
-  a truncated file.
-- **Out:** `showSaveFilePicker` (called on the click), else a Blob download, which holds the whole file in the page
-  until its URL is revoked 60 s later: a big snapshot taken every few seconds piles up in the browser's blob storage
-  (tools space them out: `bench/gpu/snapshot-3d.ts`). **In:** a `File` read as a stream.
+  a truncated file, frames that say impossible things (above). A `ReadableStream` (the tests' only) has no check pass:
+  its refusals come as its frames are read. **Older files are refused, not read** (the decisions above): the header's `coreVersion`
+  is checked first (`otherVersion`, in `readSnapshot` before the check pass and in the machine worker's restore before
+  the devices), so a file of an older state version, which may also hold deflate-raw frames (codec 1, no longer
+  read) or a device list from before the clock, the notify socket or the balloon, gets
+  the other version's refusal (`snapshots:snapshot.otherVersion`: made by another version of this web app), a kept
+  snapshot when restored and a suspended machine at its start (dropped, the machine booting, with the note
+  [Couldn't resume the suspended machine](ui:machine:worker.notResumed)).
+  A state of this version must name the machine's devices exactly (`slotsOf`) and its vCPU features (`cpu`).
+- **Out:** `showSaveFilePicker` (called on the click), else a Blob download: the machine worker posts the frames to
+  the page as they are written (`snapshot-chunk`, each copied into a buffer the page gave back, `snapshot-spare`), the
+  page copies each into a Blob at once and gives the buffer back. For the desktop's 679 MB file the
+  renderer holds ~600 MiB more until the save ends and the browser's blob storage the file (~685 MiB) until the URL
+  is revoked 60 s later (the SNAPZ track's loop 4, staging through OPFS, is to replace both: docs/backlog.md): a big
+  snapshot taken every few seconds piles up in the browser's blob storage (tools space them out:
+  `bench/gpu/snapshot-3d.ts`). **In:** a `File` (a Blob) read in 4 MiB slices, four ahead; a stream as it comes.
 - **Versions** (the user's call, 2026-10-01): the core's state has a format version of its own (`snapshot::VERSION`,
   [abi.md](abi.md) "M8 phase C"), bumped when a saved field changes and pinned by a unit test of a fixed machine's
   bytes, **not the wasm's input hash**: that would void every snapshot at every core change, the JIT's too, which
-  never changes what is saved. The header's `abi` is recorded, not checked. A state of a version the core doesn't
-  read is refused; there is no migration (backlog "Snapshots"). So a file loads into another build of the core with
+  never changes what is saved. The header's `abi` is recorded, not checked. A restore reads its own version only
+  (`snapshot_version`; ABI 69 removed `snapshot_version_min` and the older versions' readers): another is refused;
+  there is no migration (backlog "Snapshots"). So a file loads into another build of the core with
   the same state version, which is what benchmarks start from ([benchmarking.md](benchmarking.md) "Starting from a
   snapshot"; `tests/snapshot.test.ts` "a snapshot loads into another build of the core…").
 - **The base's identity** (on the disk pins above): a chosen file's name, size and modification time, a URL's path,

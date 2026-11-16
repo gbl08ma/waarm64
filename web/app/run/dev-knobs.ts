@@ -52,6 +52,11 @@ export type DevKnobs = {
    * on any machine, its device end kept on the page (`window.__agentStub`) instead of the worker's vsock.
    */
   agentStub: boolean;
+  /**
+   * The room a file save's staging file assumes, bytes, instead of the storage's estimate (`?stageroom=<MiB>`: the
+   * tests' "no room", docs/frontend.md "Snapshots").
+   */
+  stageRoom?: number;
 };
 
 /** The machine worker's knobs from the page's query. */
@@ -80,5 +85,6 @@ export function parseDevKnobs(q: URLSearchParams): DevKnobs {
     avProbe: q.has('avprobe'),
     guestReadyOnly: q.get('ready') === 'guest',
     agentStub: q.has('agentstub'),
+    stageRoom: q.has('stageroom') ? Number(q.get('stageroom')) * 2 ** 20 : undefined,
   };
 }

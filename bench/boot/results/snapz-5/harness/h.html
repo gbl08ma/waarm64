@@ -1,0 +1,5 @@
+<!doctype html><title>snapz5</title><script type="module">
+const w = new Worker(new URL('./w.ts', import.meta.url), { type: 'module' });
+globalThis.job = (m) => new Promise((res) => { w.onmessage = (e) => res(e.data); w.postMessage(m); });
+globalThis.ready = true;
+</script>

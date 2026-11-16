@@ -6,8 +6,8 @@ import { availableParallelism } from 'node:os';
 import type { LoadPhases, SaveTimes } from '../web/app/protocol.ts';
 
 // Every key of each (the compiler holds them complete).
-const SAVE: Record<keyof SaveTimes, true> = { state: true, blobs: true, ram: true, disk: true, scan: true, compress: true, crc: true, sink: true, pool: true, pause: true, close: true, poolWait: true, poolReady: true };
-const LOAD: Record<keyof LoadPhases, true> = { check: true, checkRead: true, checkCrc: true, state: true, ram: true, apply: true, disk: true, read: true, crc: true, unpack: true, prepare: true, start: true, total: true };
+const SAVE: Record<keyof SaveTimes, true> = { state: true, blobs: true, ram: true, disk: true, scan: true, compress: true, crc: true, sink: true, pool: true, pause: true, close: true, copy: true, poolWait: true, poolReady: true };
+const LOAD: Record<keyof LoadPhases, true> = { check: true, checkRead: true, checkCrc: true, state: true, ram: true, apply: true, disk: true, pool: true, read: true, crc: true, unpack: true, prepare: true, start: true, total: true };
 
 /** Every key of `keys` in `phases` and no other, each a number of ms. */
 function numbers(phases: unknown, keys: Record<string, true>, what: string) {
@@ -40,5 +40,10 @@ export function checkLoad(json: string | undefined) {
   assert.ok(json, 'a start from a snapshot says its phases');
   const p = numbers(JSON.parse(json), LOAD, 'a load');
   assert.ok(p.prepare + p.check + p.state + p.ram + p.disk + p.start <= p.total + SLACK, `a load's phases are within its total: ${JSON.stringify(p)}`);
-  assert.ok(p.checkRead + p.checkCrc <= p.check + SLACK && p.apply <= p.ram + SLACK, `a load's parts are within their phases: ${JSON.stringify(p)}`);
+  // The CRCs and RAM's placing are the load's pool's workers' sums when it has one (CPU time: up to `pool` times the
+  // phase's wall); the page's loads go through one where the host has a thread to spare, as its saves do.
+  const n = Math.max(1, p.pool);
+  assert.ok(Number.isInteger(p.pool), `a load's pool: ${JSON.stringify(p)}`);
+  if (availableParallelism() > 1) assert.ok(p.pool > 0, `a load went through no pool: ${JSON.stringify(p)}`);
+  assert.ok(p.checkRead <= p.check + SLACK && p.checkCrc <= p.check * n + SLACK && p.apply <= p.ram * n + SLACK, `a load's parts are within their phases: ${JSON.stringify(p)}`);
 }

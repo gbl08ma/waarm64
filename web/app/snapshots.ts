@@ -7,7 +7,7 @@
 // overlay, and one without is refused (§4.4). Nothing here asks the user; the page and the Machines page confirm first.
 import { opfsDir, overlayMeta, storageFullError } from '../overlay.ts';
 import { makeRoom } from '../diskcache.ts';
-import { openSnapshot } from '../snapshot-file.ts';
+import { readHeader } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
 import type { GrowMark, OverlaySizes } from './disk-size.ts';
@@ -271,7 +271,7 @@ export async function moveSnapshot(store: Store, id: string, to: string) {
 
 /** Imports a snapshot file into machine `machine`'s kept snapshots (its header read first; one of another shape is kept, orphaned). */
 export async function importSnapshot(store: Store, machine: string, file: File) {
-  const { header } = await openSnapshot(file);
+  const header = await readHeader(file);
   if (typeof header.shapeHash !== 'string' || !header.shape)
     throw new MsgError(
       'snapshots:snapshots.notKept',

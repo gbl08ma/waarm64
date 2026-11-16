@@ -1,0 +1,31 @@
+== desktop round 1: base at 85e2681e, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":9647
+round 0 keptStart {"wallMs":11040
+round 0 resume {"wallMs":8341
+== desktop round 2: new at fb3daf5d, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":7620
+round 0 keptStart {"wallMs":8376
+round 0 resume {"wallMs":6790
+== desktop round 3: new at fb3daf5d, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":7603
+round 0 keptStart {"wallMs":8939
+round 0 resume {"wallMs":6489
+== desktop round 4: base at 85e2681e, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":9437
+round 0 keptStart {"wallMs":10694
+round 0 resume {"wallMs":8068
+== desktop round 5: base at 85e2681e, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":9518
+round 0 keptStart {"wallMs":10408
+round 0 resume {"wallMs":8232
+== desktop round 6: new at fb3daf5d, core a8deea545dc27dff
+rc=0 
+round 0 load {"wallMs":8129
+round 0 keptStart {"wallMs":8302
+round 0 resume {"wallMs":6546
+ALLDONE

@@ -1,13 +1,23 @@
 // A machine's start in the machine worker (web/app/worker.ts `start`): what it fetches, the machine it makes (the
 // page's, or a snapshot's), the options `bootVm` takes, and the framebuffer's screen.
-import { FLASH_SIZE, splitError, splitRam, type BootOptions, type Restore, type Vm } from '../vm.ts';
+import {
+  FLASH_SIZE,
+  splitError,
+  splitRam,
+  warmWorkers,
+  type BootOptions,
+  type Restore,
+  type Vm,
+  type WarmWorkers,
+} from '../vm.ts';
 import { msg, MsgError } from '../msg.ts';
 import { VENUS_RESERVE } from '../ram.ts';
-import { loadFlash, overlayMeta } from '../overlay.ts';
+import { dropSuspend, loadFlash, overlayMeta, suspended } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import type { DisplayFromPage, DisplayToPage, ScreenPng } from '../gpu-present.ts';
-import { openSnapshot, type SnapshotHeader } from '../snapshot-file.ts';
-import { readSnapshot, type RestorePhases, type SnapshotDisk } from '../snapshot.ts';
+import { readHeader, type SnapshotHeader } from '../snapshot-file.ts';
+import { startPool, type SavePool } from '../snapshot-pool.ts';
+import { otherVersion, readSnapshot, type RestorePhases, type SnapshotDisk } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import type { lzCodec } from '../lz.ts';
 import { agentBinary } from './guest-agent.ts';
@@ -90,22 +100,80 @@ async function sameOverlays(header: SnapshotHeader, specs: DeviceSpec[]) {
 /**
  * The machine a snapshot (or a suspended machine, `resume`) says, and its restore: everything that can be refused is,
  * before anything is touched (the overlay is replaced inside `bootVm`; a resume keeps it: it is as the suspended
- * machine left it); its phases posted. `specs`: the devices the restore hands ramdisks their chunks through; `serial`,
- * the terminal's tail.
+ * machine left it); its phases posted. Its load's pool (docs/platform.md "A load's pool"; none: it can't start, the
+ * machine worker does it all) starts beside the header's checks and is awaited before the check pass; it is this
+ * restore's, closed once: when `fill` is done (or failed), at a refusal, or at `release` (the caller's, once `bootVm`
+ * has settled: a start that fails before `fill` closes it there). `pooled` is called once the pool is up (or
+ * isn't) and the restore not refused: what else starts beside the check pass waits for it (its workers' start slowed
+ * the pool's by ~60 ms).
+ * `specs`: the devices the restore hands ramdisks their chunks through; `serial`, the terminal's tail.
  */
-export async function openRestore(snapshot: Blob, m: StartMessage, machine: Machine, resume: boolean, lz: Lz) {
+export async function openRestore(
+  snapshot: Blob,
+  m: StartMessage,
+  machine: Machine,
+  resume: boolean,
+  lz: Lz,
+  pooled?: () => void,
+) {
+  const pool = startPool(lz.module).catch(() => undefined);
+  let open = true;
+  void pool.then(() => open && pooled?.()); // not for a restore refused meanwhile
+  const release = () => {
+    if (open) void pool.then((p) => p?.close());
+    open = false;
+  };
+  try {
+    const r = await restoreOf(snapshot, m, machine, resume, lz, pool);
+    const restore = r.restore;
+    const fill = restore.fill.bind(restore);
+    restore.fill = async (ram, spill) => {
+      try {
+        await fill(ram, spill);
+      } finally {
+        release();
+      }
+    };
+    return { ...r, release };
+  } catch (err) {
+    release();
+    throw err;
+  }
+}
+
+/** `f`, then the restore's load's pool released (`release`), whatever came of it. */
+export async function releasing<T>(release: (() => void) | undefined, f: () => Promise<T>): Promise<T> {
+  try {
+    return await f();
+  } finally {
+    release?.();
+  }
+}
+
+async function restoreOf(
+  snapshot: Blob,
+  m: StartMessage,
+  machine: Machine,
+  resume: boolean,
+  lz: Lz,
+  pool: Promise<SavePool | undefined>,
+) {
   post({
     type: 'phase',
     text: resume ? msg('machine:worker-start.phase.resuming') : msg('snapshots:worker-start.phase.checking'),
   });
   const name = m.snapshot?.name ?? msg('machine:worker-start.suspendedMachine');
-  const { header } = await openSnapshot(snapshot, { codecs: [lz] });
+  const header = await readHeader(snapshot);
+  // Another version's file (an older one: they aren't migrated) is refused as that, before its devices are looked at.
+  const other = otherVersion(header, lz.snapshotVersion);
+  if (other) throw other;
   const h = fromHeader(header, m, machine, name);
   if (resume) await sameOverlays(header, h.specs);
   const { restore, phases } = await readSnapshot(snapshot, lz, lz.snapshotVersion, {
     devices: h.specs,
     resume,
     plan: m.plan,
+    pool: await pool,
   });
   const plan: Plan = { ncpus: h.ncpus, ramMiB: h.ramMiB, here: h.slots, cpu: h.cpu, split: h.split };
   if (!resume) post({ type: 'phase', text: msg('snapshots:worker-start.phase.restoring') });
@@ -168,6 +236,37 @@ export const ioOf = (plan: Plan, m: StartMessage, machine: Machine, devices: Dev
  */
 const spiderMonkey = 'InternalError' in globalThis;
 
+/** The start's workers started ahead (`warming`). */
+let warm: WarmWorkers | undefined;
+/**
+ * A start's workers started ahead of its `bootVm` (web/vm.ts `warmWorkers`), which takes them: the device worker
+ * only, at once for a boot (`begin`), beside a snapshot's check pass (`pooled`: once the load's pool is up). The vCPU
+ * workers and the compile worker too took ~80-100 ms more of a desktop snapshot's check pass than they saved after it
+ * (bench/boot/REPORT.md "SNAPZ loop 7"): they start at the machine's first run, as they did. A start ends the last
+ * one's (a suspended machine that couldn't resume boots instead), a failed start its own (`end`).
+ */
+export const warming = {
+  begin(boot: boolean) {
+    warm?.end();
+    warm = boot ? warmWorkers(0, false) : undefined;
+  },
+  pooled: () => void (warm ??= warmWorkers(0, false)),
+  take: () => warm,
+  end: () => warm?.end(),
+};
+
+/**
+ * A suspended machine kept beside the disk (docs/frontend.md "Suspend") is resumed, unless the page says boot; either
+ * way it is dropped before a machine runs on the disk, which is what keeps a suspended machine and its disk together.
+ */
+export async function suspendedCopy(m: StartMessage, home: string | undefined): Promise<Blob | undefined> {
+  if (!home || m.snapshot) return undefined;
+  // A suspension that can't be dropped doesn't stop the boot the page asked for.
+  if (m.resume !== false) return suspended(home).catch(() => undefined);
+  await dropSuspend(home).catch(() => undefined);
+  return undefined;
+}
+
 /** What a start fetched for `bootVm`: the kernel and initrd, the firmware's files and variable store. */
 type Parts = { kernel: Uint8Array; initrd?: Uint8Array; firmware: BootOptions['firmware'] };
 
@@ -179,6 +278,7 @@ export function bootOptions(
   parts: Parts,
   devices: DeviceSpec[],
   restore: Restore | undefined,
+  warm?: WarmWorkers,
 ): BootOptions {
   const kinds = plan.here.map((s) => s.kind);
   const dev = m.config.dev;
@@ -195,6 +295,7 @@ export function bootOptions(
     parallel: true,
     realtime: true,
     compileWorker: dev.compileWorker && !spiderMonkey,
+    warm,
     fma: dev.fma,
     exactCore: dev.exactCore,
     vcpuYieldMs: dev.vcpuYieldMs,

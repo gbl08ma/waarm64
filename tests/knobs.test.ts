@@ -46,6 +46,7 @@ function oldWorker(query: URLSearchParams) {
     displayStats: query.has('displaystats'), ioStats: query.has('iostats'), noDiskCache: query.get('diskcache') === '0', avProbe: query.has('avprobe'),
     guestReadyOnly: query.get('ready') === 'guest', // added with the knob (docs/clipboard.md "The machine's state")
     agentStub: query.has('agentstub'), // added with the knob (docs/frontend.md "Query parameters")
+    stageRoom: query.has('stageroom') ? Number(query.get('stageroom')) * 2 ** 20 : undefined, // added with the knob (docs/frontend.md "Snapshots")
   };
 }
 

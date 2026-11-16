@@ -1,0 +1,37 @@
+== debian round 1: base at e62727ec, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":383,"kind":"kept","bytes":95242382,"pausedMs":163
+round 0 file {"wallMs":461,"kind":"file","bytes":95481681,"pausedMs":181
+round 0 picked {"wallMs":681,"kind":"file","bytes":95525760,"pausedMs":491
+round 0 suspend {"wallMs":322,"kind":"suspend","bytes":94094515,"pausedMs":157
+== debian round 2: new at 9d8b90ae, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":313,"kind":"kept","bytes":95262011,"pausedMs":163
+round 0 file {"wallMs":472,"kind":"file","bytes":95452921,"pausedMs":158
+round 0 picked {"wallMs":588,"kind":"file","bytes":95509431,"pausedMs":155
+round 0 suspend {"wallMs":269,"kind":"suspend","bytes":94097392,"pausedMs":146
+== debian round 3: new at 9d8b90ae, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":378,"kind":"kept","bytes":95271575,"pausedMs":162
+round 0 file {"wallMs":530,"kind":"file","bytes":95423729,"pausedMs":163
+round 0 picked {"wallMs":583,"kind":"file","bytes":95469540,"pausedMs":160
+round 0 suspend {"wallMs":271,"kind":"suspend","bytes":94055175,"pausedMs":146
+== debian round 4: base at e62727ec, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":381,"kind":"kept","bytes":95281856,"pausedMs":164
+round 0 file {"wallMs":476,"kind":"file","bytes":95485837,"pausedMs":169
+round 0 picked {"wallMs":685,"kind":"file","bytes":95492233,"pausedMs":478
+round 0 suspend {"wallMs":276,"kind":"suspend","bytes":94053675,"pausedMs":145
+== debian round 5: base at e62727ec, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":375,"kind":"kept","bytes":95222891,"pausedMs":174
+round 0 file {"wallMs":466,"kind":"file","bytes":95585060,"pausedMs":182
+round 0 picked {"wallMs":686,"kind":"file","bytes":95642387,"pausedMs":505
+round 0 suspend {"wallMs":271,"kind":"suspend","bytes":94221972,"pausedMs":145
+== debian round 6: new at 9d8b90ae, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":319,"kind":"kept","bytes":95246570,"pausedMs":157
+round 0 file {"wallMs":488,"kind":"file","bytes":95508983,"pausedMs":167
+round 0 picked {"wallMs":582,"kind":"file","bytes":95537138,"pausedMs":170
+round 0 suspend {"wallMs":282,"kind":"suspend","bytes":94100432,"pausedMs":149
+ALLDONE

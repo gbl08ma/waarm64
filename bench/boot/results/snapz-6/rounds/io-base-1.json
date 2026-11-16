@@ -1,0 +1,213 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-16T04:03:58.607Z",
+ "commit": "8facaffaa8ff",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "io_qcow2_randread4k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4545,
+    4558,
+    4631,
+    4628,
+    4614
+   ],
+   "median": 4614,
+   "iqr": 70,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_randread4k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1136.287904,
+    1139.620127,
+    1157.947351,
+    1157,
+    1153.615462
+   ],
+   "median": 1153.615462,
+   "iqr": 17.37987300000009,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_randread4k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    837.488937243,
+    834.6644210530001,
+    821.3121657549999,
+    822.775854797,
+    824.732630849
+   ],
+   "median": 824.732630849,
+   "iqr": 11.888566256000104,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    91404,
+    90819,
+    90508,
+    90892,
+    91190
+   ],
+   "median": 90892,
+   "iqr": 371,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    714.095302,
+    709.526982,
+    707.097634,
+    710.096634,
+    712.42919
+   ],
+   "median": 710.096634,
+   "iqr": 2.9022079999999733,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1363.2804181049999,
+    1371.886257277,
+    1376.821775683,
+    1370.884437353,
+    1367.088935454
+   ],
+   "median": 1370.884437353,
+   "iqr": 4.7973218229999475,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    230587,
+    230774,
+    232634,
+    228540,
+    230664
+   ],
+   "median": 230664,
+   "iqr": 187,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    225.183211,
+    225.366178,
+    227.181879,
+    223.184544,
+    225.258247
+   ],
+   "median": 225.258247,
+   "iqr": 0.18296699999999078,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4394.604260355,
+    4392.026847857999,
+    4356.794479472001,
+    4435.529958208999,
+    4395.146627219
+   ],
+   "median": 4394.604260355,
+   "iqr": 3.1197793610008375,
+   "n": 5
+  }
+ ]
+}

@@ -1,11 +1,12 @@
 // What the machine worker (web/app/worker.ts) fetches to start a machine: the core, the kernel and initrd whole (with
 // their progress posted), the disks' presence; a file that isn't there is a failure a user can act on.
+import { CORE } from '../deflate.ts';
 import { msg, MsgError } from '../msg.ts';
 import type { Machine } from './machine.ts';
 import { failure } from './worker-errors.ts';
 import { post } from './worker-post.ts';
 
-export const CORE = new URL('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url).href;
+export { CORE };
 /** A URL as the user knows it: a path in the repository. */
 const repoPath = (url: string) => new URL(url).pathname.replace(/^\//, '');
 

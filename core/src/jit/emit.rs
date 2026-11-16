@@ -342,6 +342,10 @@ pub struct Func {
     pub nzcv_used: bool,
     /// `acc` is `SUM - left` ([`SUM`]).
     pub sum: bool,
+    /// Parallel SMP's code (`jit::Config::polled`): no step budget. `left` is
+    /// neither checked nor kept (a transfer passes 0); what can close a cycle
+    /// ([`poll`]'s points) compares `acc` with the vCPU's stop word instead.
+    pub polled: bool,
     /// The instruction being emitted (its index in `words`).
     pub at: usize,
     /// The bytes a SIMD&FP load about to call [`access`] writes into each of
@@ -349,6 +353,47 @@ pub struct Func {
     /// what [`Func::chain_open`] needs of a register a segment stores from a
     /// shadow.
     vzx: u32,
+    /// The diagnostic build's tally (`crate::tally`) the next transfer cache or jump cache hit bumps, if not its
+    /// own ([`dslot`]).
+    #[cfg(feature = "diag")]
+    dslot: Option<u32>,
+}
+
+/// The diagnostic build only (`crate::tally`): code that bumps the vCPU's tally `i`. Nothing in a normal build.
+pub fn dbump(c: &mut Func, i: u32) {
+    #[cfg(feature = "diag")]
+    {
+        let o = (offset_of!(Vcpu, diag) + 8 * i as usize) as u32;
+        c.local_get(VCPU)
+            .local_get(VCPU)
+            .i64_load(o)
+            .i64_const(1)
+            .i64_add()
+            .i64_store(o);
+    }
+    #[cfg(not(feature = "diag"))]
+    let _ = (c, i);
+}
+
+/// The diagnostic build only: the tally the next cache hit ([`via_xc`], [`via_jc`]) bumps instead of its own.
+pub fn dslot(c: &mut Func, i: u32) {
+    #[cfg(feature = "diag")]
+    {
+        c.dslot = Some(i);
+    }
+    #[cfg(not(feature = "diag"))]
+    let _ = (c, i);
+}
+
+/// Bumps the tally [`dslot`] chose, or `own`.
+fn dhit(c: &mut Func, own: u32) {
+    #[cfg(feature = "diag")]
+    {
+        let i = c.dslot.take().unwrap_or(own);
+        dbump(c, i);
+    }
+    #[cfg(not(feature = "diag"))]
+    let _ = (c, own);
 }
 
 /// Load and store failure exits that share their write-backs (docs/jit.md
@@ -1797,7 +1842,9 @@ pub enum Bus {
 /// length, tail-calls it through the table (type `ty`), after `check` (the
 /// stale-code checker) if given. Otherwise falls through (to the block's
 /// return). The PC is the `Cpu`'s, or ADDR's when the branch left it there
-/// ([`Func::pc_in_addr`]).
+/// ([`Func::pc_in_addr`]). Polled code checks no `left`: it [`poll`]s if
+/// `poll` (a branch to a register, a by-VA link backward) instead.
+#[allow(clippy::too_many_arguments)]
 pub fn indirect(
     c: &mut Func,
     regime: u64,
@@ -1806,6 +1853,7 @@ pub fn indirect(
     ty: u32,
     check: Option<u32>,
     x: Xfer,
+    poll: bool,
 ) {
     const KEY: u32 = BASE; // i64 scratch
     if core::mem::take(&mut c.pc_in_addr) {
@@ -1815,7 +1863,7 @@ pub fn indirect(
     }
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
     if let Some(miss) = miss {
-        via_xc(c, regime, len, ty, check, x);
+        via_xc(c, regime, len, ty, check, x, poll);
         // A miss is a tail call even in a call (rare once the cache is warm).
         transfer(c, Xfer::Tail, len, ty, To::Func(miss, 0), 0);
         return;
@@ -1825,7 +1873,7 @@ pub fn indirect(
         c.i64_const(regime as i64).op(OR + W);
     }
     c.local_set(KEY);
-    via_jc(c, None, len, ty, check, x);
+    via_jc(c, None, len, ty, check, x, poll);
 }
 
 /// How a block leaves for another function: a tail call, or for a guest
@@ -1866,13 +1914,18 @@ impl To {
 }
 
 /// Pushes a transfer's arguments: the vCPU, `acc` and `left` with this
-/// block's `len` retired, and the depth plus `deeper` with the entry of `to`
-/// above [`ENTRY_BIT`]; then the table index for an indirect transfer.
+/// block's `len` retired (`left` 0 in polled code), and the depth plus
+/// `deeper` with the entry of `to` above [`ENTRY_BIT`]; then the table index
+/// for an indirect transfer.
 fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
     c.local_get(VCPU);
     c.acc();
     c.i32_const(len as i32).op(ADD);
-    c.local_get(LEFT).i32_const(len as i32).op(SUB);
+    if c.polled {
+        c.i32_const(0);
+    } else {
+        c.local_get(LEFT).i32_const(len as i32).op(SUB);
+    }
     c.local_get(DEPTH);
     if deeper {
         c.i32_const(1).op(ADD);
@@ -1903,6 +1956,7 @@ pub fn transfer(c: &mut Func, x: Xfer, len: u32, ty: u32, to: To, inner: u32) {
             .op(LT_U)
             .hint(true)
             .if_();
+        dbump(c, crate::tally::HOST_CALL);
         args(c, len, true, to);
         match to {
             To::Func(f, _) => c.call(f),
@@ -1926,6 +1980,7 @@ pub const ENTRY_BIT: u32 = 16;
 /// block's retired count with [`RETURNED`] (the PC is in the `Cpu`).
 pub fn ret_up(c: &mut Func, len: u32) {
     c.local_get(DEPTH).if_();
+    dbump(c, crate::tally::HOST_RET);
     c.acc();
     c.i32_const(len as i32).op(ADD);
     c.i32_const(RETURNED as i32).op(OR).return_();
@@ -1966,8 +2021,9 @@ pub fn unreturned(c: &mut Func) {
 }
 
 /// The transfer cache probe of [`indirect`], for the VA in `ADDR` and an i32
-/// condition on the stack: the entry's tag, its generation and its length.
-fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: Xfer) {
+/// condition on the stack: the entry's tag, its generation and its length
+/// (polled code: the [`poll`] if `poll`).
+fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: Xfer, poll: bool) {
     const TO: u32 = BASE; // i64 scratch
     // The entry, `vcpu + XC + ((va >> 2) & (XC_ENTRIES - 1)) * 16`.
     xc_entry(c);
@@ -1980,11 +2036,20 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
     c.local_get(TLBE).i64_load(XC_LO + 8).local_tee(TO);
     c.i64_const(48).op(SHR_U + W);
     c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).op(AND);
-    // left >= len + its length
-    c.local_get(LEFT);
-    c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
-    c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
-    c.op(GE_U).op(AND).hint(true).if_();
+    if c.polled {
+        if poll {
+            self::poll(c);
+            c.op(AND);
+        }
+    } else {
+        // left >= len + its length
+        c.local_get(LEFT);
+        c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
+        c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
+        c.op(GE_U).op(AND);
+    }
+    c.hint(true).if_();
+    dhit(c, crate::tally::XC_HIT);
     if let Some(chk) = check {
         c.local_get(VCPU).i64_const(-1).call(chk);
     }
@@ -1997,6 +2062,24 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
 /// every table it's installed in (docs/jit.md "Sharing").
 pub const JC_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, jc)) as u32;
 pub const HOT_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, hot)) as u32;
+/// The `Vcpu` offset of its stop word (`jit::State::stop`).
+pub const STOP: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, stop)) as u32;
+
+/// Polled code's check where a cycle can close (docs/jit.md "Preemption"):
+/// pushes an i32, non-zero while `acc` is under the vCPU's stop word (one
+/// atomic load: the run loop stores the chunk's steps there, and whatever has
+/// news for the vCPU stores 0, so the transfer isn't taken and the block
+/// returns to the dispatcher). Points: a region's edges and static chains to a
+/// VA at or before their block's start (every cycle of static transfers has
+/// one), branches to a register (the transfer cache's probe, the MMU-off jump
+/// cache's), by-VA links backward and the transfer cache's miss function.
+pub fn poll(c: &mut Func) {
+    const I32_ATOMIC_LOAD: u8 = 0x10;
+    dbump(c, crate::tally::POLL);
+    c.acc();
+    c.local_get(VCPU).atomic(I32_ATOMIC_LOAD, 2, STOP);
+    c.op(LT_U);
+}
 
 /// The transfer cache's offset in the `Vcpu`, split: [`xc_entry`] ORs the
 /// high part (a multiple of the cache's size) into the entry's index, and its
@@ -2025,13 +2108,18 @@ fn xc_entry(c: &mut Func) {
 /// tail-calls it, with the block retired): finds the PC's
 /// block as the dispatcher would, through the instruction TLB of the
 /// regime's EL (`tlb`: its array, and RAM's host base and guest PA) and the
-/// jump cache ([`JC_PTR`]), and if it's there and `left` covers it, fills the
-/// entry and tail-calls the block (after `check`). Otherwise returns `acc`.
-pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> Func {
+/// jump cache ([`JC_PTR`]), and if it's there and `left` covers it (`polled`:
+/// its [`poll`] passes), fills the entry and tail-calls the block (after
+/// `check`). Otherwise returns `acc`.
+pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>, polled: bool) -> Func {
     const KEY: u32 = BASE; // i64 scratch
     const JCE: u32 = HOST; // i32 scratch
-    let mut c = Func::default();
+    let mut c = Func {
+        polled,
+        ..Func::default()
+    };
     let (arr, base, phys) = tlb;
+    dbump(&mut c, crate::tally::XC_MISS);
     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
     c.local_get(ADDR);
@@ -2058,11 +2146,12 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
         .local_tee(JCE)
         .i64_load(0);
     c.local_get(KEY).op(EQ + WC).op(AND);
-    c.local_get(LEFT)
-        .local_get(JCE)
-        .i32_load(12)
-        .op(GE_U)
-        .op(AND);
+    if polled {
+        poll(&mut c);
+    } else {
+        c.local_get(LEFT).local_get(JCE).i32_load(12).op(GE_U);
+    }
+    c.op(AND);
     c.hint(true).if_();
     // The entry: tag, then idx | len << 32 | gen << 48.
     xc_entry(&mut c);
@@ -2091,8 +2180,17 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
 /// wasn't compiled when this block was (`key`: its key; else the key is in
 /// the i64 scratch local). With an i32 condition on the stack, tail-calls the
 /// block the entry holds if the condition holds, its key matches and `left`
-/// covers both blocks; otherwise falls through.
-pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u32>, x: Xfer) {
+/// covers both blocks (polled code: its [`poll`] passes if `poll`);
+/// otherwise falls through.
+pub fn via_jc(
+    c: &mut Func,
+    key: Option<u64>,
+    len: u32,
+    ty: u32,
+    check: Option<u32>,
+    x: Xfer,
+    poll: bool,
+) {
     const KEY: u32 = BASE; // i64 scratch
     const JCE: u32 = HOST; // i32 scratch
     match key {
@@ -2114,13 +2212,22 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
         }
     }
     c.op(EQ + WC).op(AND);
-    // left >= len + its length
-    c.local_get(LEFT)
-        .local_get(JCE)
-        .i32_load(12)
-        .i32_const(len as i32)
-        .op(ADD);
-    c.op(GE_U).op(AND).hint(true).if_();
+    if c.polled {
+        if poll {
+            self::poll(c);
+            c.op(AND);
+        }
+    } else {
+        // left >= len + its length
+        c.local_get(LEFT)
+            .local_get(JCE)
+            .i32_load(12)
+            .i32_const(len as i32)
+            .op(ADD);
+        c.op(GE_U).op(AND);
+    }
+    c.hint(true).if_();
+    dhit(c, crate::tally::JC_HIT);
     if let Some(chk) = check {
         c.local_get(VCPU);
         match key {
@@ -2154,10 +2261,13 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
     c.i32_load(off).local_tee(V);
     c.i32_const(0).op(LT_S).if_();
-    c.local_get(VCPU)
-        .local_get(ACC)
-        .local_get(LEFT)
-        .local_get(DEPTH);
+    c.local_get(VCPU).local_get(ACC);
+    if c.polled {
+        c.i32_const(0);
+    } else {
+        c.local_get(LEFT);
+    }
+    c.local_get(DEPTH);
     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
     c.return_call_indirect(ty).end();
     c.local_get(V).if_();
@@ -2200,7 +2310,7 @@ pub const fn tlb_array(el: u64, u: u64) -> u32 {
 const TLB_E: u32 = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, e)) as u32;
 // Every offset JIT code loads from the `Vcpu` at is one V8 folds into the load
 // (docs/jit.md "Functions").
-const _: () = assert!(TLB_E + 6 * 16 <= 0x800 && JC_PTR < 0x800 && HOT_PTR < 0x800);
+const _: () = assert!(TLB_E + 6 * 16 <= 0x800 && JC_PTR < 0x800 && HOT_PTR < 0x800 && STOP < 0x800);
 const _: () = assert!((offset_of!(Vcpu, tlb) + offset_of!(Tlb, xgen) + 16) <= 0x800);
 
 /// Turns the VA (i64) on the stack into the `Vcpu`-relative pointer to its TLB

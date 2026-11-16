@@ -1,7 +1,7 @@
 <!--
   The body of Disks on the Machines page (docs/machines.md §4): every disk this browser keeps, attached or not, ramdisks
   included. Each with what it is, its overlays and the machines that have it; Overlays… (the disk's overlays, Overlays.svelte, when it has some),
-  Attach to a machine… (AttachDisk.svelte), Resize… on a stored disk or a ramdisk (ResizeDisk.svelte) and, when no machine has it, Delete with its overlays (`Store.deleteDisk`).
+  a "visualize" link on its line (its surface window, SurfaceWindow.svelte), Attach to a machine… (AttachDisk.svelte), Resize… on a stored disk or a ramdisk (ResizeDisk.svelte) and, when no machine has it, Delete with its overlays (`Store.deleteDisk`).
 -->
 <script lang="ts">
   import type { Act } from './actions.svelte.ts';
@@ -17,6 +17,7 @@
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { bytesText } from './bytes.ts';
+  import { surfaceWindow } from './areas/surface.svelte.ts';
 
   type Props = {
     store: Store;
@@ -83,7 +84,9 @@
     {@const mine = overlaysOf(d.id)}
     {@const users = usersOf(d.id)}
     <Card data-disk={d.id} data-kind={d.kind}>
-      <div class="info"><DiskInfo disk={d} overlays={mine} {users} /></div>
+      <div class="info">
+        <DiskInfo disk={d} overlays={mine} {users} onvisualize={() => surfaceWindow.show(d.id, undefined, 'disks')} />
+      </div>
       {#snippet actions()}
         {#if mine.length}<Button
             onclick={() => (showing = { disk: d.id, what: 'overlays' })}

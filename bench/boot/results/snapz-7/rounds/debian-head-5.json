@@ -1,0 +1,230 @@
+{
+ "meta": {
+  "guest": "debian",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load",
+   "kept",
+   "keptStart",
+   "file",
+   "picked",
+   "suspend"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/debian-go.waarm64snap",
+  "bytes": 96543163,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "b7b2ad79",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-16T02:57:56.211Z",
+  "wallS": 106
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 460,
+    "phases": {
+     "check": 54,
+     "checkRead": 35,
+     "checkCrc": 53,
+     "state": 9,
+     "ram": 60,
+     "disk": 32,
+     "pool": 6,
+     "read": 44,
+     "crc": 58,
+     "unpack": 103,
+     "apply": 47,
+     "prepare": 19,
+     "start": 128,
+     "total": 303
+    }
+   },
+   "kept": {
+    "wallMs": 326,
+    "kind": "kept",
+    "bytes": 95308911,
+    "pausedMs": 154,
+    "stateMs": 12,
+    "blobBytes": 0,
+    "hintMs": 47,
+    "hinted": 717225984,
+    "id": "a64b3a7f9d74",
+    "phases": {
+     "state": 12,
+     "blobs": 1,
+     "ram": 120,
+     "disk": 18,
+     "pool": 6,
+     "scan": 102,
+     "compress": 402,
+     "crc": 43,
+     "sink": 38,
+     "poolWait": 0,
+     "poolReady": 33,
+     "pause": 0,
+     "copy": 0,
+     "close": 18
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1708,
+      "pssMiB": 1081
+     },
+     "peak": {
+      "rssMiB": 1766,
+      "pssMiB": 1136
+     }
+    }
+   },
+   "keptStart": {
+    "wallMs": 580,
+    "phases": {
+     "check": 50,
+     "checkRead": 33,
+     "checkCrc": 55,
+     "state": 8,
+     "ram": 59,
+     "disk": 34,
+     "pool": 6,
+     "read": 40,
+     "crc": 55,
+     "unpack": 104,
+     "apply": 48,
+     "prepare": 22,
+     "start": 127,
+     "total": 301
+    }
+   },
+   "file": {
+    "wallMs": 474,
+    "kind": "file",
+    "bytes": 95505632,
+    "pausedMs": 162,
+    "stateMs": 11,
+    "blobBytes": 0,
+    "hintMs": 52,
+    "hinted": 717225984,
+    "phases": {
+     "state": 11,
+     "blobs": 1,
+     "ram": 121,
+     "disk": 23,
+     "pool": 6,
+     "scan": 100,
+     "compress": 398,
+     "crc": 44,
+     "sink": 30,
+     "poolWait": 0,
+     "poolReady": 36,
+     "pause": 4,
+     "copy": 0,
+     "close": 0
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 2098,
+      "pssMiB": 1467
+     },
+     "peak": {
+      "rssMiB": 2159,
+      "pssMiB": 1525
+     }
+    }
+   },
+   "picked": {
+    "wallMs": 485,
+    "kind": "file",
+    "bytes": 95563655,
+    "pausedMs": 155,
+    "stateMs": 12,
+    "blobBytes": 0,
+    "hintMs": 48,
+    "hinted": 717225984,
+    "phases": {
+     "state": 12,
+     "blobs": 1,
+     "ram": 124,
+     "disk": 18,
+     "pool": 6,
+     "scan": 102,
+     "compress": 395,
+     "crc": 45,
+     "sink": 30,
+     "poolWait": 0,
+     "poolReady": 56,
+     "pause": 1,
+     "copy": 119,
+     "close": 0
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 2102,
+      "pssMiB": 1469
+     },
+     "peak": {
+      "rssMiB": 2164,
+      "pssMiB": 1531
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 279,
+    "kind": "suspend",
+    "bytes": 94141944,
+    "pausedMs": 152,
+    "phases": {
+     "state": 5,
+     "blobs": 1,
+     "ram": 120,
+     "disk": 0,
+     "pool": 6,
+     "scan": 102,
+     "compress": 378,
+     "crc": 41,
+     "sink": 30,
+     "close": 23,
+     "poolWait": 0,
+     "poolReady": 36,
+     "pause": 1,
+     "copy": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 2139,
+      "pssMiB": 1507
+     },
+     "peak": {
+      "rssMiB": 2131,
+      "pssMiB": 1499
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 839,
+    "phases": {
+     "check": 50,
+     "checkRead": 34,
+     "checkCrc": 53,
+     "state": 14,
+     "ram": 63,
+     "disk": 0,
+     "pool": 6,
+     "read": 42,
+     "crc": 55,
+     "unpack": 104,
+     "apply": 53,
+     "prepare": 32,
+     "start": 155,
+     "total": 314
+    }
+   }
+  }
+ ]
+}

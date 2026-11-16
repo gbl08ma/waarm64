@@ -331,11 +331,17 @@ fn block_counts_follow_their_block() {
         false,
     );
     assert_eq!((t.rblk[a], t.rblk[next]), (2, 0));
+    assert_eq!(t.xblkn, [[0, 0], [0, 1]]); // EL1's instruction TLB, high half
     t.flush_va(A + 0x20_0000);
     assert_eq!(t.rblk[a], 2);
     t.flush_va(A + 0x1f_f000);
     assert!(t.rblk.iter().all(|&n| n == 0));
     assert!(t.blk.iter().all(|&b| b == 0));
+    assert_eq!(t.xblkn, [[0; 2]; 2]);
+    // With none left, a bump clears the flag that sent flushes there to it.
+    assert!(t.xblk[1][1]);
+    t.bump();
+    assert!(!t.xblk[1][1]);
 }
 
 /// The TLB against a fresh walk, on tables remapped at random with the TLBIs
@@ -1217,4 +1223,48 @@ fn watchpoints_come_after_translation() {
         b.store_exclusive_pair(&c, 0x3000, [1, 0], [2, 2]).err(),
         w(FaultKind::Watch)
     );
+}
+
+/// A block's transfer cache entries die with a flush by any VA of the block,
+/// also when they were filled again from its instruction TLB entries (a hit,
+/// no walk) after the EL's entries were last dropped: by a bump (the JIT
+/// dropped blocks), a flush by VA of another page in the half, or the nG
+/// entries' drop; and when the page's own entry has since been evicted.
+#[test]
+fn a_block_flush_drops_transfer_cache_entries_filled_from_hits() {
+    const VA: u64 = 0x4000_0000;
+    let mut p = Pt::new();
+    p.map(VA, 2, 0x20_0000 | BLOCK);
+    p.map(0x7000, 3, 0x9000 | PAGE); // a data page in the same half
+    p.map(VA + 0x400_3000, 3, 0xb000 | PAGE); // P's TLB index
+    p.map(0x1000, 3, 0xa000 | PAGE | 1 << 11); // nG
+    let live = |t: &Tlb, va: u64, regime: u64| {
+        let e = t.xc[(va >> 2) as usize & (XC_ENTRIES - 1)];
+        e.tag == va | regime && e.to >> 48 == t.xgen[regime as usize & 1]
+    };
+    let fetch = |v: &mut Vcpu, va: u64| {
+        Mmu::new(&p.r.mem, Some(&mut v.tlb))
+            .fetch(&cpu(), va)
+            .unwrap();
+    };
+    let drops: [&dyn Fn(&mut Vcpu); 3] = [&|v| v.tlb.bump(), &|v| v.tlb.flush_va(0x7000), &|v| {
+        fetch(v, 0x1000);
+        v.tlb.flush_ng();
+    }];
+    for (n, drop) in drops.iter().enumerate() {
+        for evict in [false, true] {
+            let mut v = Vcpu::new(cpu());
+            fetch(&mut v, VA + 0x3000);
+            drop(&mut v);
+            fetch(&mut v, VA + 0x3000); // a TLB hit
+            v.tlb.xc_fill(VA + 0x3000, 3, 7, 4);
+            if evict {
+                // Its entry evicted by a page's: no block entries left, the
+                // transfer cache's stays.
+                fetch(&mut v, VA + 0x400_3000);
+            }
+            v.tlb.flush_va(VA); // Linux's one TLBI for the 2 MiB
+            assert!(!live(&v.tlb, VA + 0x3000, 3), "drop {n}, evicted {evict}");
+        }
+    }
 }

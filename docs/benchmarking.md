@@ -19,7 +19,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 |---|---|
 | `bench/interp/index.html` | `interp_mips`, `interp_fp_mips`, `vm_flat_mips`, `vm_mmu_mips` (interpreter: user-mode integer and FP/NEON guests, the integer guest at EL1 with the MMU off/on), `jit_mips`, `jit_fp_mips`, `jit_fz_mips` (the FP guest's FZ mode, `guest-fz.bin`: FPCR.FZ set, a shader-like NEON kernel), `vm_jit_flat_mips`, `vm_jit_mmu_mips`, `coremark_mips`, `jit_coremark_mips` (also reported as iterations/s); `dec_mips`, `dec_fp_mips`, `vm_dec_flat_mips`, `vm_dec_mmu_mips` (the block interpreter: the dispatcher never compiling, `VmConfig.jit` 4; `dec_fp_mips` the FP guest, whose SIMD and FP instructions take its slow path, `interp::exec_at_op`) |
 | `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `alpine_user_jit` (ms per phase), `alpine_user_spill_jit` (the same with 192 MiB in memory 0 and the rest in a spill memory: the JIT's spill arm's code, spill-memories.md), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime), `gl_llvmpipe_jit` / `_4`, `gl_virgl_jit` / `_4`, `gl_virgl_llvmpipe_jit` / `_4` (ms a frame); `boot_dec`, `boot_alpine_dec` (the Buildroot and Alpine boots as MIPS in the block interpreter alone, `VmConfig.jit` 4), `boot_mips_jit`, `boot_alpine_mips_jit` (the same under the JIT; with `--config liftoff-only` the interpreter's reference); I/O: `dd`, `fio`, `p9`, `net` (realtime) |
-| `bench/io/index.html` | `io` (fio and dd on a chosen `File` disk under a fresh OPFS overlay: reads, writes, `fsync`, reads of written data; realtime, a boot per sample; `node bench/run.ts --page bench/io/index.html --input target/bench/io-raw.img`, the input from `head -c 256M /dev/urandom`), `io_reads` (its base reads alone; a `.qcow2` input is read as one, e.g. `target/bench/io-usr.qcow2`, bench/io/REPORT.md "The inflate pool"), `io_stats` (per-stage timers of the blk device, one boot per workload); `node bench/io/inflate-page.ts` times Debian's boot, import and export on the page |
+| `bench/io/index.html` | `io` (fio and dd on a chosen `File` disk under a fresh OPFS overlay: reads, writes, `fsync`, reads of written data; realtime, a boot per sample; `node bench/run.ts --page bench/io/index.html --input target/bench/io-raw.img`, the input from `head -c 256M /dev/urandom`), `io_reads` (its base reads alone; a `.qcow2` input is read as one, e.g. `target/bench/io-usr.qcow2`, bench/io/REPORT.md "The inflate pool"), `io_stats` (per-stage timers of the blk device, one boot per workload); `node bench/io/inflate-page.ts <label> [boot,import,export,export-c,reads]` times Debian's boot, import, export and compressed export on the page, and the qcow2 reader's 1 MiB reads of `target/bench/io-usr.qcow2` (one thread, a pool of four) with the clusters' inflate and deflate alone (bench/boot/REPORT.md "SNAPZ loop 6") |
 | `bench/gpu/index.html` | `webgpu_adapter`, `writebuffer`, `present_canvas2d`, `present_canvas2d_rgba`, `present_webgl2`, `present_webgpu` (G0: ms per frame at 1080p/1440p/4K, full and damaged; needs `--chromium-args`, see `bench/gpu/REPORT.md`; `bench/gpu/run-mac.sh` for the Mac host's real GPU), `flush_cost` (the virtio-gpu backend itself: a transfer, a flush with its draw, on the canvas 2D screen and, `*_raw`/`*_webgl2`, the WebGL2 one; no flags needed). Beside the page: `node bench/gpu/page.ts` (Debian on the page, virtio-gpu against the simple framebuffer: first pixel, `running`, key to glyph on the screen and the terminal) and `node bench/gpu/draw-latency.ts`; `node bench/gpu/sway-load.ts` (a compositor's load: sway and foot on the Arch image, the guest's CPU, frames, the stream and, with `VIRGL_GPU=virgl`, the renderer's time; dev-only), `bench/gpu/sway-mac.sh` (the same on the Mac host's GPU; with `SCRIPT=firefox-load.ts`, `WASM=<core>` and
 `FROM_SNAPSHOT=<file>` Firefox's pages session there from a snapshot, a core per run: an A/B between cores, with
 `bench/gpu/mac-leftovers.sh --kill` after each run); `node bench/gpu/firefox-load.ts` and `node bench/gpu/gtk4-load.ts` (Firefox and gtk4-demo on the Arch image with Firefox, graphics.md "Applications on 3D"), `node bench/gpu/deqp-run.ts` (dEQP on the page; images.md) |
@@ -158,8 +158,11 @@ on). Dev-only, alone like any Chromium session:
 
 - **The guests:** `desktop` loads `target/snapbench/pages.waarm64snap` (Firefox on a still page, 689 MB; above,
   "Starting from a snapshot"), `debian` `target/snapbench/debian-go.waarm64snap` (logged in, ~100 MB); `SNAPSHOT=<file>`
-  another of the same machine. A round: the file loaded (Load snapshot), then, `SETTLE_S` (20) apart, a kept snapshot
-  (deleted after), a file (Save a snapshot to a file: a download, deleted after) and a Suspend, then the page opened
+  another of the same machine. A round: the file loaded (Load snapshot), then, `SETTLE_S` (20) apart, a kept snapshot,
+  the machine started from it (`keptStart`: the Snapshots tab's Restore, the overlay replaced; the snapshot deleted
+  after), a file (Save a snapshot to a file: a download, deleted after), a picked file (`picked`: the same with the picker
+returning an OPFS file, removed after; a staged save's copy after the resume is its `phases.copy`, in its wall time)
+and a Suspend, then the page opened
   again (the resume). Each operation's wall time and phases, and for a save the browser's RSS and PSS (its processes:
   the one with the profile and its descendants, from `/proc/<pid>/smaps_rollup`) before it and at its peak (sampled
   every 250 ms), go to the JSON (default `bench/results/local/snapz-probe/`); `probe-summary.ts` gives medians and
@@ -168,7 +171,11 @@ on). Dev-only, alone like any Chromium session:
   path (`bench/boot/results/snapz-1/run-ab.sh` and `merge.ts`, which joins the rounds into one file an arm; loop 2's
   `snapz-2/run-ab.sh` for arms that differ in JS only). Since loop 2 a save's `scan`, `compress` and `crc` are the
   pool's workers' sums (CPU time; `pool` says how many): compare its wall by `ram` and `pausedMs`. A pause of ~1 s
-  gets ~4 of the 250 ms memory samples: its peak is coarse.
+  gets ~4 of the 250 ms memory samples: its peak is coarse. **By process:** `bench/snapz/memwatch.ts <profile>
+  <out.jsonl> [<stop-file>]` beside it samples every 50 ms (`MS`) each of the browser's processes by type (browser,
+  renderer, gpu-process, utility by sub-type: RSS, anonymous, shmem), node's modules only, so one copy serves every
+  arm (loop 2b's `bench/boot/results/snapz-2b/run-ab.sh` and `summary.py`, which takes each save's peak against the
+  sample before it). The renderer holds the page and all its workers: a save's garbage shows there.
 - **A stored machine:** the warm files were saved by transient machines (opened by URL), which keep no snapshots, so
   the probe makes "SNAPZ desktop" (or debian) in the profile, of the files' shape (vCPUs, RAM, 3D, a network card, the
   clock; the disks by URL), and a copy of the file under that machine's header, `target/snapz/<guest>-<hash>.waarm64snap`
@@ -178,7 +185,16 @@ on). Dev-only, alone like any Chromium session:
   measured (its 9.8 s load and 4.15-4.25 s pause): loop 0's transient and stored loads were 9.9 and 9.8 s, their file saves' pauses
   4.34 and 4.31 s.
 - **A persistent profile, always** (`WAARM64_PROFILE`, a fixed port: `WAARM64_PORT`, default 8197): Playwright's
-  default context is off the record, where every OPFS call costs ~250 µs and a save's disk blocks alone took 2.3-2.6 s.
+  default context is off the record, where every OPFS call costs ~250 µs (a desktop save's disk blocks took 2.4 s
+  before SNAPZ loop 5's batching, 0.3 s since). To measure that case on purpose, `WAARM64_PROFILE=off`: a fresh
+  off-the-record context (the stored machine made again each run; its memory found by the browser's command-line
+  flag). `OPS` (comma-separated: `load`, `kept`, `keptStart`, `file`, `picked`, `suspend`, the last with the resume;
+  default all) picks a round's operations: off the record loop 5 ran `load,kept,keptStart,file`
+  (`bench/boot/results/snapz-5/run-ab.sh`).
+- **The disks are URLs on the dev server**, unlike a user's (stored disks, or a remote server): until SNAPZ loop 7 its
+  HEADs read the whole image (sirv's), ~1.9 s twice in every desktop load (`prepare` and `start`, 4.3 s of 5.5); loads
+  measured before then carry it. Finer than the phases: `bench/boot/results/snapz-7/marks.py` puts timestamps in the
+  page and its workers (`UNDO=1` takes them out), into `data-load`'s `marks` and the console.
 
 ## Screening an A/B
 
@@ -426,6 +442,33 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   modules:** dump them from `web/vm.ts`'s install temporarily (`if (process.env.X)
   fs.writeFileSync(…)`, and remove it before any Chromium run: `process` doesn't exist there),
   then `wasm-tools print` (shows branch hints) or `wasm-tools validate`.
+- **The JIT's machine code, x64 and arm64** (for a change to what the JIT emits; x64 has 16 GPRs where arm64 has 31,
+  so spills differ): `node bench/jit/dump-modules.ts <dir> [--wasm core.wasm] [--guest alpine|buildroot]` boots the
+  guest in Node deterministically with `WebAssembly.Module` wrapped and saves every module the JIT installs
+  (`m<n>.wasm`, the core not; `index.json`: the core's SHA256, steps, modules); Alpine's boot gives 319 modules (12 MB)
+  in ~5 s, the same set every run of one core. `node bench/jit/codestats.ts <dir> [<dir>…] [--arch arm64,x64]
+  [--json f]` compiles each set in a child Node with `--no-liftoff --no-wasm-lazy-compilation --single-threaded
+  --print-wasm-code` (on x64 under qemu-user: devenv.md "An x86_64 Node", the same V8) and sums the TurboFan functions'
+  instructions, code bytes, stack slots and instructions with a frame-relative memory operand (spills, fills and
+  V8's own frame set-up: compare arms, not absolutes), per function against the first set. Alpine's set takes ~20 s
+  on arm64 and ~2 min on x64. Numbers: bench/boot/REPORT.md "PERF loop 30". `--parallel N` dumps a parallel SMP
+  boot's modules instead (polled code, PERF loop 31): the workers compile them, so the tool reruns itself with every
+  thread's `WebAssembly.Module` wrapped (`--import`), each module saved once by its hash; such runs aren't
+  reproducible, so compare per-function means of two cores' sets, not the sets.
+- **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
+  leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target
+  directory, ~20 s from cold), then `node bench/boot/preempt-counts.ts [--json f] [boot user smp1 smp4 smp-user4]`
+  runs the gates' guests in Node (Alpine's boot and userspace as `boot_alpine_jit` and `alpine_user_jit`; parallel
+  realtime: `smp_alpine_jit`'s boot on 1 and 4 vCPUs, `smp_user_jit_4`; ~1 min for all) and prints per 1000 steps
+  (by phase for the userspace runs) what compiled code took: region back-edges and forward edges, transfer cache hits
+  and miss-function entries, static chains backward (target PA ≤ source PA) and forward (direct, through the jump
+  cache, by VA), host calls and returns, polled code's polls (PERF loop 31); for parallel runs, how chunks ended (the budget or an exit, by kind, with
+  their mean steps) and two latencies: a vCPU's own timer line seen past its deadline, and an IRQ line's rise
+  (`Vm::refresh`) to its IRQ taken or its WFI completed, and the run loop's time from a chunk that ended by its steps
+  to the next one's start (PERF loop 32). `--chunk N` runs the parallel guests with N-step chunks (`vm_set_chunk`), as
+  `smp_alpine_jit` and `smp_user_jit*` do with `?chunk=N` (`bench/run.ts --query=chunk=N`). The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
+  the end of each vCPU's counters block, where the run loops publish them; a diagnostic core runs the same steps as
+  the normal one (Alpine's boot: tests/steps.txt's count).
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`
   for the small guests; `runToPowerOff` (`web/vm.ts`) for boots. `bench/run.ts --out` resolves
   against the repo root.

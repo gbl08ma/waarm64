@@ -1,0 +1,159 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 689228158,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "7b7b4342",
+  "core": "0ffff6be4582386c",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-15T18:29:38.884Z",
+  "wallS": 90
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 9215,
+    "phases": {
+     "check": 728,
+     "checkRead": 436,
+     "checkCrc": 281,
+     "state": 72,
+     "ram": 2020,
+     "apply": 322,
+     "disk": 2263,
+     "read": 213,
+     "crc": 341,
+     "unpack": 1248,
+     "prepare": 1810,
+     "start": 2155,
+     "total": 9047
+    }
+   },
+   "kept": {
+    "wallMs": 1782,
+    "kind": "kept",
+    "bytes": 675454094,
+    "pausedMs": 1435,
+    "stateMs": 273,
+    "blobBytes": 109066428,
+    "hintMs": 18,
+    "hinted": 910163968,
+    "id": "741b8e72d200",
+    "phases": {
+     "state": 273,
+     "blobs": 71,
+     "ram": 868,
+     "disk": 208,
+     "pool": 6,
+     "scan": 339,
+     "compress": 3140,
+     "crc": 1211,
+     "sink": 313,
+     "poolWait": 0,
+     "poolReady": 48,
+     "pause": 1,
+     "close": 194
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 3782,
+      "pssMiB": 3137
+     },
+     "peak": {
+      "rssMiB": 3938,
+      "pssMiB": 3292
+     }
+    }
+   },
+   "file": {
+    "wallMs": 2542,
+    "kind": "file",
+    "bytes": 678847964,
+    "pausedMs": 1584,
+    "stateMs": 242,
+    "blobBytes": 109066428,
+    "hintMs": 6,
+    "hinted": 910163968,
+    "phases": {
+     "state": 242,
+     "blobs": 69,
+     "ram": 941,
+     "disk": 329,
+     "pool": 6,
+     "scan": 253,
+     "compress": 3198,
+     "crc": 1180,
+     "sink": 373,
+     "poolWait": 46,
+     "poolReady": 53,
+     "pause": 1,
+     "close": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 3473,
+      "pssMiB": 2827
+     },
+     "peak": {
+      "rssMiB": 4869,
+      "pssMiB": 4213
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 1298,
+    "kind": "suspend",
+    "bytes": 661404976,
+    "pausedMs": 1162,
+    "phases": {
+     "state": 228,
+     "blobs": 55,
+     "ram": 730,
+     "disk": 1,
+     "pool": 6,
+     "scan": 287,
+     "compress": 3065,
+     "crc": 423,
+     "sink": 241,
+     "close": 141,
+     "poolWait": 45,
+     "poolReady": 54,
+     "pause": 1
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 4183,
+      "pssMiB": 3534
+     },
+     "peak": {
+      "rssMiB": 4660,
+      "pssMiB": 4012
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 8494,
+    "phases": {
+     "check": 669,
+     "checkRead": 366,
+     "checkCrc": 298,
+     "state": 91,
+     "ram": 2392,
+     "apply": 300,
+     "disk": 0,
+     "read": 316,
+     "crc": 323,
+     "unpack": 1516,
+     "prepare": 2454,
+     "start": 2275,
+     "total": 7882
+    }
+   }
+  }
+ ]
+}

@@ -876,14 +876,14 @@ export class Snd {
     return { streams: this.streams.map((st) => ({ state: st.state, params: st.params ?? null })), log: [...this.log], ...(this.values.length ? { controls: [...this.values] } : {}) };
   }
 
-  /** A saved state; one from before the input stream (`state`, `params` of the output) still loads. */
+  /** A saved state (`save`'s). */
   restore(state: unknown) {
-    const old = state as { state?: State; params?: SndParams | null; streams?: { state: State; params: SndParams | null }[]; log: unknown[] };
-    const streams = old?.streams ?? (old?.state ? [{ state: old.state, params: old.params ?? null }] : undefined);
-    if (!streams || streams.length > STREAMS || !Array.isArray(old.log) || streams.some((st) => !STATES.includes(st.state) || (st.state !== 'none' && !st.params))) throw new Error('the snapshot has no state for the sound device');
-    this.streams = Array.from({ length: STREAMS }, (_, k) => ({ state: streams[k]?.state ?? 'none', params: streams[k]?.params ?? undefined }));
-    this.log = old.log.map(String);
-    // The controls' values, if it had them (a snapshot from before them keeps the page's).
+    const saved = state as { streams?: { state: State; params: SndParams | null }[]; log: unknown[] };
+    const streams = saved?.streams;
+    if (!Array.isArray(streams) || streams.length !== STREAMS || !Array.isArray(saved.log) || streams.some((st) => !STATES.includes(st?.state) || (st.state !== 'none' && !st.params))) throw new Error('the snapshot has no state for the sound device');
+    this.streams = streams.map((st) => ({ state: st.state, params: st.params ?? undefined }));
+    this.log = saved.log.map(String);
+    // The controls' values, if it has them (a device without `mixer` has none: the page's stay).
     const controls = (state as { controls?: unknown }).controls;
     if (Array.isArray(controls)) controls.forEach((v, id) => typeof v === 'number' && this.set(id, v));
   }

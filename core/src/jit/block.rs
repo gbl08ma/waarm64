@@ -12,6 +12,7 @@ use super::emit::Xfer;
 use super::wasm::{F64, I32, I64, Module};
 use crate::decode::{Op, decode};
 use crate::mem::Mem;
+use crate::tally;
 use std::collections::HashMap;
 
 /// Instructions per block, at most.
@@ -573,6 +574,8 @@ struct Env<'a> {
     plans: Vec<Vec<emit::Role>>,
     /// The module's NZCV helpers ([`emit::nzcv_helper`]).
     nzcv: Option<[u32; emit::NZCV_HELPERS]>,
+    /// `Config::polled`: no `left`, [`emit::poll`] where a cycle can close.
+    polled: bool,
 }
 
 impl Env<'_> {
@@ -795,6 +798,7 @@ pub fn module(
             phys,
             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
             nzcv,
+            polled: cfg.polled,
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -897,7 +901,7 @@ pub fn module(
 /// module, `f0` for EL0 and `f1` for EL1 (MMU on), and the stale-code
 /// checker with `check`. A table installs it once, so it gets hot and
 /// optimized (a copy in each module stayed in Liftoff).
-pub fn miss_module(mem: &Mem, check: bool, pages: u32) -> Vec<u8> {
+pub fn miss_module(mem: &Mem, check: bool, pages: u32, polled: bool) -> Vec<u8> {
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32, I32], &[I32]);
     let checker = check.then(|| {
@@ -909,7 +913,7 @@ pub fn miss_module(mem: &Mem, check: bool, pages: u32) -> Vec<u8> {
     let (base, phys) = mem.base();
     for el in 0..2 {
         let tlb = (emit::tlb_array(el, 2), base as usize as u64, phys);
-        let mut c = emit::xmiss(KEY_MMU | el, tlb, bt, checker);
+        let mut c = emit::xmiss(KEY_MMU | el, tlb, bt, checker, polled);
         let locals = c.locals();
         m.func(bt, &locals, &c.c, &format!("xmiss_el{el}"));
     }
@@ -961,6 +965,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     let mut c = emit::Func::default();
     c.plain = plain;
     c.nzcv = e.nzcv;
+    c.polled = e.polled;
     c.page = (head & 0xfff) as i64;
     // Each member's merged incoming state, over the edges seen so far
     // (`reached`): the head's starts with the function's entry, where
@@ -985,7 +990,8 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
     }
     let looped = r.looped();
-    if n > 1 || looped {
+    // Polled code keeps `acc` itself: it has no `left`.
+    if (n > 1 || looped) && !e.polled {
         c.local_get(emit::ACC).local_get(emit::LEFT).op(0x6a); // i32.add
         c.local_set(emit::SUM);
         c.sum = true;
@@ -1127,11 +1133,21 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         let mut edge = |c: &mut emit::Func, j: usize, depth: u32, when: bool| {
             let to = &r.blocks[j];
             let jlen = to.words.len() as u32;
-            c.local_get(emit::LEFT)
-                .i32_const((len + jlen) as i32)
-                .op(0x4f); // i32.ge_u
-            if when {
-                c.op(0x71); // i32.and
+            // Polled code polls an edge to a member at or before this block's VA
+            // (every cycle inside the region has one: the loop's back-edge, mostly).
+            let mut cond = when;
+            if !e.polled || to.va.wrapping_sub(b.va) as i64 <= 0 {
+                if e.polled {
+                    emit::poll(c);
+                } else {
+                    c.local_get(emit::LEFT)
+                        .i32_const((len + jlen) as i32)
+                        .op(0x4f); // i32.ge_u
+                }
+                if cond {
+                    c.op(0x71); // i32.and
+                }
+                cond = true;
             }
             if r.checked(i, j) {
                 // The check's VA goes through ADDR: a RET's target is no
@@ -1140,7 +1156,13 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                 let exec = emit::tlb_array(b.key & KEY_EL1, 2);
                 let host = e.base.wrapping_add((to.key & !3) - e.phys);
                 emit::maps_to(c, to.va.wrapping_sub(b.va) as i64, exec, host);
-                c.op(0x71); // i32.and
+                if cond {
+                    c.op(0x71); // i32.and
+                }
+                cond = true;
+            }
+            if !cond {
+                c.i32_const(1);
             }
             c.hint(true).if_();
             let (here, fl) = (c.regs, c.flags);
@@ -1161,8 +1183,18 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                 c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
                 c.local_set(emit::ACC);
             }
-            c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
-            c.local_set(emit::LEFT);
+            if !e.polled {
+                c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+                c.local_set(emit::LEFT);
+            }
+            emit::dbump(
+                c,
+                if j == 0 {
+                    tally::BACK_EDGE
+                } else {
+                    tally::FWD_EDGE
+                },
+            );
             // Around a loop, the stale-code checker runs as at a chained entry.
             if let (0, Some(chk)) = (j, e.checker) {
                 c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
@@ -1287,11 +1319,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                     let (regime, bt, chk) = (b.key & 3, e.bt, e.checker);
                     if op == Some(Op::BLR) {
                         let mut probe = |c: &mut emit::Func| {
-                            emit::indirect(c, regime, miss, len, bt, chk, Xfer::Call(0))
+                            emit::indirect(c, regime, miss, len, bt, chk, Xfer::Call(0), true)
                         };
                         call(e, &mut c, b, &mut probe, &mut cont);
                     } else {
-                        emit::indirect(&mut c, regime, miss, len, bt, chk, Xfer::Tail);
+                        emit::indirect(&mut c, regime, miss, len, bt, chk, Xfer::Tail, true);
                     }
                 }
             }
@@ -1331,9 +1363,18 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
     let guarded = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
     let exec = emit::tlb_array(b.key & KEY_EL1, 2);
     // The PC is in the `Cpu` by now: the successor's VA.
+    let back = k & !3 <= b.key & !3;
     let by_va = |c: &mut emit::Func| {
         let miss = Some(e.miss(b.key));
-        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
+        emit::dslot(
+            c,
+            if off <= 0 {
+                tally::BYVA_BACK
+            } else {
+                tally::BYVA_FWD
+            },
+        );
+        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x, off <= 0);
     };
     // Straight to the miss function (it reads the PC from the `Cpu`), the
     // way the chain transfers: a call's a host call, so its callee still
@@ -1347,17 +1388,42 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
             return by_va(c);
         }
         c.i32_const(1);
-        return emit::via_jc(c, Some(k), len, e.bt, e.checker, x);
+        emit::dslot(c, if back { tally::JC_BACK } else { tally::JC_FWD });
+        return emit::via_jc(c, Some(k), len, e.bt, e.checker, x, off <= 0);
     };
-    c.local_get(emit::LEFT)
-        .i32_const((len + tlen) as i32)
-        .op(0x4f); // i32.ge_u
+    // Polled code polls a chain to a VA at or before the block's start (every
+    // cycle of static transfers has one).
+    let mut cond = false;
+    if !e.polled || off <= 0 {
+        if e.polled {
+            emit::poll(c);
+        } else {
+            c.local_get(emit::LEFT)
+                .i32_const((len + tlen) as i32)
+                .op(0x4f); // i32.ge_u
+        }
+        cond = true;
+    }
     if guarded {
         let host = e.base.wrapping_add((k & !3) - e.phys);
         emit::maps_to(c, off, exec, host);
-        c.op(0x71); // i32.and
+        if cond {
+            c.op(0x71); // i32.and
+        }
+        cond = true;
+    }
+    if !cond {
+        c.i32_const(1);
     }
     c.hint(true).if_();
+    emit::dbump(
+        c,
+        if back {
+            tally::CHAIN_BACK
+        } else {
+            tally::CHAIN_FWD
+        },
+    );
     if let Some(chk) = e.checker {
         c.local_get(0).i64_const(k as i64).call(chk);
     }
@@ -1942,7 +2008,7 @@ mod tests {
                 None,
             );
             assert!(has(&region.bytes, &want), "region module, {pages} pages");
-            let miss = miss_module(&test_mem(), false, pages);
+            let miss = miss_module(&test_mem(), false, pages, false);
             assert!(has(&miss, &want), "miss module, {pages} pages");
         }
     }
@@ -1951,7 +2017,7 @@ mod tests {
     /// transfer cache.
     #[test]
     fn the_miss_functions_read_the_instruction_tlb_and_fill_the_transfer_cache() {
-        let bytes = miss_module(&test_mem(), false, 0);
+        let bytes = miss_module(&test_mem(), false, 0, false);
         let at = |op: u8, o: u64| {
             let mut l = vec![op, 3];
             crate::jit::wasm::uleb(&mut l, o);

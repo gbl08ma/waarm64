@@ -32,10 +32,20 @@ export type Settings = {
   dropCaches?: boolean;
   statusBar?: Item[];
   statusFullscreen?: boolean;
+  /** The on-screen keyboard's place before it was a floating window's (`windows.osk`): read once, moved, dropped. */
   osk?: { x: number; y: number; w: number; wc?: number; layout?: Layout };
+  /** The on-screen keyboard's layout, when its bar's button forced one (web/app/osk-shape.svelte.ts). */
+  oskLayout?: Layout;
   oskModifiers?: ModifierMode;
+  /** Floating windows' places and sizes (web/app/ui/floating-frame.svelte.ts), CSS pixels, by the key each is given. */
+  windows?: Record<string, Place>;
   /** Preferences: the budget of Vulkan's shader store (web/venus-cache.ts; MiB, its default `CACHE_BUDGET` when unset). */ shaderMiB?: number;
 };
+/**
+ * Where a floating window is and how big, CSS pixels; a window of several shapes (the on-screen keyboard's layouts)
+ * keeps each one's size in `sizes`, by shape, and `w`, `h` are the one it had last.
+ */
+export type Place = { x: number; y: number; w: number; h: number; sizes?: Record<string, { w: number; h: number }> };
 /** Preferences: ask before the page is left while a machine runs (on unless turned off). */
 export const leaveWarning = () => settings().leaveWarning !== false;
 /**

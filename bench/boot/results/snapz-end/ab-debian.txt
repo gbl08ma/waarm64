@@ -1,0 +1,73 @@
+== debian round 1: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":1167,"phases":{"check":102,"state":7,"ram":395,"disk":438,"prepare":17,"start":83,"total":1042
+round 0 keptStart {"wallMs":1289,"phases":{"check":103,"state":4,"ram":358,"disk":431,"prepare":22,"start":90,"total":1007
+round 0 resume {"wallMs":1114,"phases":{"check":100,"state":6,"ram":367,"disk":0,"prepare":42,"start":122,"total":638
+round 0 kept {"wallMs":783,"kind":"kept","bytes":96575033,"pausedMs":619
+round 0 file {"wallMs":906,"kind":"file","bytes":96916824,"pausedMs":665
+round 0 picked {"wallMs":1142,"kind":"file","bytes":96945099,"pausedMs":960
+round 0 suspend {"wallMs":744,"kind":"suspend","bytes":95516318,"pausedMs":604
+== debian round 2: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":454,"phases":{"check":74,"state":8,"ram":56,"disk":38,"prepare":19,"start":69,"total":265
+round 0 keptStart {"wallMs":633,"phases":{"check":71,"state":8,"ram":63,"disk":39,"prepare":24,"start":77,"total":282
+round 0 resume {"wallMs":852,"phases":{"check":73,"state":9,"ram":66,"disk":0,"prepare":26,"start":125,"total":300
+round 0 kept {"wallMs":384,"kind":"kept","bytes":95196031,"pausedMs":159
+round 0 file {"wallMs":466,"kind":"file","bytes":95486784,"pausedMs":158
+round 0 picked {"wallMs":547,"kind":"file","bytes":95559982,"pausedMs":166
+round 0 suspend {"wallMs":320,"kind":"suspend","bytes":94143365,"pausedMs":149
+== debian round 3: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":1063,"phases":{"check":96,"state":5,"ram":339,"disk":420,"prepare":21,"start":80,"total":961
+round 0 keptStart {"wallMs":1272,"phases":{"check":105,"state":4,"ram":341,"disk":410,"prepare":21,"start":87,"total":968
+round 0 resume {"wallMs":1108,"phases":{"check":96,"state":6,"ram":353,"disk":0,"prepare":35,"start":106,"total":597
+round 0 kept {"wallMs":796,"kind":"kept","bytes":96591572,"pausedMs":597
+round 0 file {"wallMs":885,"kind":"file","bytes":96842450,"pausedMs":636
+round 0 picked {"wallMs":1154,"kind":"file","bytes":96876157,"pausedMs":947
+round 0 suspend {"wallMs":725,"kind":"suspend","bytes":95432867,"pausedMs":588
+== debian round 4: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":459,"phases":{"check":84,"state":8,"ram":63,"disk":37,"prepare":19,"start":71,"total":283
+round 0 keptStart {"wallMs":585,"phases":{"check":74,"state":9,"ram":64,"disk":35,"prepare":23,"start":84,"total":288
+round 0 resume {"wallMs":724,"phases":{"check":84,"state":8,"ram":68,"disk":0,"prepare":32,"start":92,"total":284
+round 0 kept {"wallMs":368,"kind":"kept","bytes":95174449,"pausedMs":165
+round 0 file {"wallMs":478,"kind":"file","bytes":95447183,"pausedMs":167
+round 0 picked {"wallMs":490,"kind":"file","bytes":95454846,"pausedMs":156
+round 0 suspend {"wallMs":320,"kind":"suspend","bytes":94033335,"pausedMs":158
+== debian round 5: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":455,"phases":{"check":68,"state":8,"ram":59,"disk":36,"prepare":17,"start":72,"total":261
+round 0 keptStart {"wallMs":579,"phases":{"check":68,"state":13,"ram":62,"disk":37,"prepare":25,"start":78,"total":283
+round 0 resume {"wallMs":704,"phases":{"check":75,"state":8,"ram":59,"disk":0,"prepare":28,"start":103,"total":273
+round 0 kept {"wallMs":366,"kind":"kept","bytes":95259085,"pausedMs":156
+round 0 file {"wallMs":475,"kind":"file","bytes":95479113,"pausedMs":155
+round 0 picked {"wallMs":544,"kind":"file","bytes":95485090,"pausedMs":154
+round 0 suspend {"wallMs":316,"kind":"suspend","bytes":94060550,"pausedMs":145
+== debian round 6: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":1067,"phases":{"check":92,"state":5,"ram":329,"disk":402,"prepare":19,"start":82,"total":930
+round 0 keptStart {"wallMs":1299,"phases":{"check":97,"state":4,"ram":335,"disk":442,"prepare":29,"start":90,"total":997
+round 0 resume {"wallMs":1145,"phases":{"check":100,"state":4,"ram":350,"disk":0,"prepare":29,"start":132,"total":616
+round 0 kept {"wallMs":835,"kind":"kept","bytes":96563238,"pausedMs":606
+round 0 file {"wallMs":898,"kind":"file","bytes":96789291,"pausedMs":658
+round 0 picked {"wallMs":1137,"kind":"file","bytes":96885131,"pausedMs":960
+round 0 suspend {"wallMs":726,"kind":"suspend","bytes":95451098,"pausedMs":577
+== debian round 7: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":1162,"phases":{"check":92,"state":5,"ram":336,"disk":525,"prepare":17,"start":87,"total":1061
+round 0 keptStart {"wallMs":1303,"phases":{"check":94,"state":4,"ram":338,"disk":455,"prepare":21,"start":93,"total":1006
+round 0 resume {"wallMs":1046,"phases":{"check":97,"state":8,"ram":350,"disk":0,"prepare":28,"start":114,"total":597
+round 0 kept {"wallMs":788,"kind":"kept","bytes":96574031,"pausedMs":591
+round 0 file {"wallMs":897,"kind":"file","bytes":96850584,"pausedMs":630
+round 0 picked {"wallMs":1149,"kind":"file","bytes":96872500,"pausedMs":949
+round 0 suspend {"wallMs":726,"kind":"suspend","bytes":95441751,"pausedMs":585
+== debian round 8: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":458,"phases":{"check":72,"state":8,"ram":59,"disk":38,"prepare":20,"start":71,"total":268
+round 0 keptStart {"wallMs":580,"phases":{"check":87,"state":9,"ram":78,"disk":35,"prepare":17,"start":88,"total":314
+round 0 resume {"wallMs":731,"phases":{"check":73,"state":8,"ram":62,"disk":0,"prepare":26,"start":98,"total":268
+round 0 kept {"wallMs":377,"kind":"kept","bytes":95199690,"pausedMs":158
+round 0 file {"wallMs":464,"kind":"file","bytes":95430878,"pausedMs":162
+round 0 picked {"wallMs":492,"kind":"file","bytes":95503544,"pausedMs":160
+round 0 suspend {"wallMs":269,"kind":"suspend","bytes":94088415,"pausedMs":151
+ALLDONE

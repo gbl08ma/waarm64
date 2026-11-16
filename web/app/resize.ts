@@ -7,7 +7,7 @@
 // tests have them).
 import { t } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
-import { lockOverlay, overlayLock, writeOwnSize } from '../overlay.ts';
+import { lockOverlay, locksInUse, overlayLock, writeOwnSize } from '../overlay.ts';
 import { createOverlay, switchOverlay } from './disks.ts';
 import { machineLock } from './machines.ts';
 import { SECTOR, sizeSeen, type GrowMark } from './disk-size.ts';
@@ -54,13 +54,8 @@ const RESIZE_WAIT_MS = 2_000;
 /** A resize refused: the headline, and why (`cause`). */
 const refused = (cause: MsgError) => new MsgError('machines:resize.failed', undefined, { cause });
 
-/** The Web Locks held or asked for now, by name, in every tab (none where there are no Web Locks). */
-async function locksHeld() {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in some contexts
-  if (typeof navigator === 'undefined' || !navigator.locks) return new Set<string>();
-  const q = await navigator.locks.query();
-  return new Set([...(q.held ?? []), ...(q.pending ?? [])].flatMap((l) => (l.name ? [l.name] : [])));
-}
+/** The Web Locks held or asked for now, by name, in every tab, but a disk surface job's (web/overlay.ts `locksInUse`). */
+const locksHeld = locksInUse;
 
 /** An attachment with no overlay yet: the machine and the attachment the resize gives one. */
 type Fresh = { m: MachineRecord; a: Attachment };

@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { openAsBlob, readFileSync, statSync, writeFileSync } from 'node:fs';
 import type { Page } from 'playwright-core';
-import { openSnapshot } from '../web/snapshot-file.ts';
+import { readHeader } from '../web/snapshot-file.ts';
 
 /** The core the page loads (bench/snapshot-start.ts `routeCore` can serve another). */
 export const CORE_PATH = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url).pathname;
@@ -61,7 +61,7 @@ export async function saveSnapshotFile(page: Page, path: string, made: { scene: 
   await d.saveAs(path);
   await d.delete();
   const wallMs = Math.round(performance.now() - t0);
-  const header = (await openSnapshot(await openAsBlob(path))).header;
+  const header = await readHeader(await openAsBlob(path));
   const record: Made = { ...made, core: sha(made.core ?? CORE_PATH), commit: commit(), created: String(header.created), bytes: statSync(path).size, pausedMs: Math.round(numbers.pausedMs), wallMs, coreVersion: header.coreVersion, abi: header.abi };
   writeFileSync(`${path}.json`, JSON.stringify(record, null, 1) + '\n');
   return record;
@@ -75,7 +75,7 @@ export async function saveSnapshotFile(page: Page, path: string, made: { scene: 
  * file's header and sidecar say what made it (`from` in a session's results).
  */
 export async function loadSnapshotFile(page: Page, path: string, core = CORE_PATH) {
-  const header = (await openSnapshot(await openAsBlob(path))).header;
+  const header = await readHeader(await openAsBlob(path));
   let made: Partial<Made> = {};
   try { made = JSON.parse(readFileSync(`${path}.json`, 'utf8')) as Made; } catch { /* no sidecar */ }
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 100 });

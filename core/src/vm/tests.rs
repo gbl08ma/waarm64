@@ -656,6 +656,9 @@ fn a_state_is_refused_by_another_version_or_machine() {
     let mut other = state.clone();
     other[4] += 1;
     assert_eq!(restore(&other, cfg, &[DEV]), Err(Error::Format));
+    // The version before this one: older states are refused, not read (docs/platform.md "The snapshot file").
+    other[4] -= 2;
+    assert_eq!(restore(&other, cfg, &[DEV]), Err(Error::Format));
     // Another machine: its CPUs, its timer, its mode, its features, its devices.
     let config = Err(Error::Config);
     let c = |f: &dyn Fn(&mut VmConfig)| {
@@ -920,11 +923,7 @@ fn system_suspend_carries_a_live_devices_next_reset_also_through_a_snapshot() {
         }
         assert!(a.vm.suspended(), "smp {smp}");
         let state = a.save();
-        // The state as format 5 wrote it: no transport flags byte (before the suspended guest's 20 bytes).
-        let mut v5 = state.clone();
-        assert_eq!(v5[v5.len() - 21], 1, "marked at the suspend");
-        v5.remove(v5.len() - 21);
-        v5[4..8].copy_from_slice(&5u32.to_le_bytes());
+        assert_eq!(state[state.len() - 21], 1, "marked at the suspend");
         let check = |b: &mut T, what: &str| {
             assert!(b.vm.wake_suspended());
             b.dev(0x070, 0);
@@ -957,11 +956,9 @@ fn system_suspend_carries_a_live_devices_next_reset_also_through_a_snapshot() {
                 "{what}"
             );
         };
-        for (what, s) in [("restored", &state), ("format 5", &v5)] {
-            let (mut b, r) = a.restore(s, cfg, &[DEV]);
-            assert_eq!(r, Ok(()), "{what}");
-            check(&mut b, what);
-        }
+        let (mut b, r) = a.restore(&state, cfg, &[DEV]);
+        assert_eq!(r, Ok(()));
+        check(&mut b, "restored");
         check(&mut a, "live");
     }
 }

@@ -1,0 +1,88 @@
+--- a/web/jit-compile-worker.ts
++++ b/web/jit-compile-worker.ts
+@@ -8,7 +8,7 @@
+ // Runs in a browser worker or a Node worker thread.
+ 
+ /** What the coordinator sends: the core's memory and a port per vCPU worker. */
+-export type CompileInit = { memory: WebAssembly.Memory; ports: MessagePort[] };
++export type CompileInit = { memory: WebAssembly.Memory; ports: MessagePort[]; stops?: number[] };
+ /** A module from a vCPU (the core's numbers are u32s). */
+ export type CompileJob = { seq: number; epoch: number; ready: number; bytes: ArrayBuffer };
+ /** The compiled module, to every vCPU (no module: it didn't compile). */
+@@ -18,7 +18,7 @@
+ const KEEP_MS = 30_000;
+ 
+ /** The compile worker's state: in a function so a test can drive it without a worker. */
+-export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: CompiledJob): void }[] = []) {
++export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: CompiledJob): void }[] = [], stops: number[] = []) {
+   let next = 1; // the lowest number not compiled yet
+   const done = new Set<number>();
+   let epoch = 0;
+@@ -50,7 +50,11 @@
+         next = (next + 1) >>> 0 || 1;
+         moved = true;
+       }
+-      if (moved) Atomics.store(new Uint32Array(memory.buffer, j.ready, 1), 0, (next - 1) >>> 0 || 0xffff_ffff);
++      if (moved) {
++        const u32 = new Uint32Array(memory.buffer);
++        Atomics.store(u32, j.ready / 4, (next - 1) >>> 0 || 0xffff_ffff);
++        for (const s of stops) Atomics.store(u32, s / 4, 0);
++      }
+     },
+     stats: () => ({ compiled, failed, ms, kept: kept.length }),
+   };
+@@ -59,14 +63,14 @@
+ if ('WorkerGlobalScope' in globalThis) {
+   const self = globalThis as unknown as { onmessage: ((e: MessageEvent<CompileInit>) => void) | null };
+   self.onmessage = (e) => {
+-    const c = compiler(e.data.memory, e.data.ports);
++    const c = compiler(e.data.memory, e.data.ports, e.data.stops);
+     for (const p of e.data.ports) p.onmessage = (m: MessageEvent<CompileJob>) => c.job(m.data);
+   };
+ } else {
+   const { parentPort } = await import('node:worker_threads');
+   // (No parent port: imported by a test on Node's main thread.)
+   parentPort?.once('message', (init: CompileInit) => {
+-    const c = compiler(init.memory, init.ports as never);
++    const c = compiler(init.memory, init.ports as never, init.stops);
+     for (const p of init.ports) (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
+   });
+ }
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -620,6 +620,8 @@
+    * On unless false.
+    */
+   compileWorker?: boolean;
++  /** PERF loop 32's A/B: false keeps the compile worker from storing 0 in the stop words. */
++  compileStops?: boolean;
+   /**
+    * The browser's workers started ahead of `bootVm` ({@link warmWorkers}): taken where it would start its own, the
+    * rest ended once the machine's are all started (or `bootVm` fails).
+@@ -1088,7 +1090,7 @@
+   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
+   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
+   const fbPa = Number(ex.vm_framebuffer(vm));
+-  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS, warm: o.warm }) : undefined;
++  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, stops: o.compileStops === false ? [] : stops, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS, warm: o.warm }) : undefined;
+   if (!par) o.warm?.end();
+   const RING_HALF = RING / 2;
+   const txUsed = () => {
+@@ -1456,7 +1458,7 @@
+  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
+  * docs/abi.md).
+  */
+-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number; warm?: WarmWorkers }) {
++function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; stops: number[]; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number; warm?: WarmWorkers }) {
+   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
+   let workers: Promise<Handle>[] | undefined;
+   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
+@@ -1555,7 +1557,7 @@
+     if (channels.length) {
+       compiler = spawn('compile');
+       const ports = channels.map((ch) => ch.port2);
+-      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
++      void compiler.then((h) => h.post({ memory: c.memory, ports, stops: c.stops } satisfies CompileInit, ports));
+     }
+     const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
+       const h = await spawn();

@@ -14,14 +14,13 @@ pub const MAGIC: u32 = u32::from_le_bytes(*b"WA64");
 /// the xHCI's endpoints whose walk waits for room. 5: what the xHCI's Controller Save State kept
 /// (read from 5 on; a 4's controller has none). 6: a virtio transport's reset carried over a suspend
 /// (a 5's suspended guest has its live devices marked at the restore, as the suspend marks them).
+/// A restore reads this version only (older files are refused: docs/platform.md "The snapshot file").
 pub const VERSION: u32 = 6;
-/// The oldest version a restore still reads (4: the older ones lack fields in the devices').
-pub const VERSION_MIN: u32 = 4;
 
 /// Why a restore was refused (`vm_snapshot_restore`'s return value).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
-    /// Not a snapshot, or one of a version outside [`VERSION_MIN`]..=[`VERSION`].
+    /// Not a snapshot, or one of a version other than [`VERSION`].
     Format = 1,
     /// The VM's configuration isn't the one the snapshot was taken on.
     Config = 2,

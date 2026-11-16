@@ -27,6 +27,7 @@ pub mod pl031;
 pub mod rng;
 pub mod smbios;
 pub mod snapshot;
+pub mod tally;
 pub mod virtio;
 pub mod vm;
 pub mod xhci;
@@ -34,7 +35,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 68;
+pub const ABI_VERSION: u32 = 71;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -326,6 +327,7 @@ pub extern "C" fn jit_new(
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
         fma: false,
+        polled: false,
     }))));
     Box::into_raw(v)
 }
@@ -759,6 +761,19 @@ pub unsafe extern "C" fn vm_cpu_signal(vm: *const vm::Vm, i: u32) -> *const Atom
         .map_or(core::ptr::null(), |c| &c.wake)
 }
 
+/// vCPU `i`'s stop word in parallel mode (ABI 71; docs/abi.md "The stop
+/// word"): whoever sets a signal bit stores 0 in every vCPU's (after the bit,
+/// before bumping the wake words), so compiled code stops at its next poll.
+/// Null past the last vCPU and in round-robin mode.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_cpu_stop(vm: *const vm::Vm, i: u32) -> *const AtomicU32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }.cpu_stop(i as usize)
+}
+
 /// Virtio transport `i`'s shared block (`virtio::DevShared`: events, status,
 /// features, epoch, config space, request and completion rings), usable from
 /// any thread; null if there's no device `i`.
@@ -846,12 +861,6 @@ pub unsafe extern "C" fn vm_jit_gauge(vm: *const vm::Vm) -> *const u64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn snapshot_version() -> u32 {
     snapshot::VERSION
-}
-
-/// The oldest format version [`vm_snapshot_restore`] reads (`snapshot::VERSION_MIN`; ABI 54).
-#[unsafe(no_mangle)]
-pub extern "C" fn snapshot_version_min() -> u32 {
-    snapshot::VERSION_MIN
 }
 
 /// Gets the VM ready to be saved: takes the completions the backends left
@@ -1022,9 +1031,142 @@ pub unsafe extern "C" fn crc32(seed: u32, src: *const u8, len: usize) -> u32 {
     codec::crc32(seed, unsafe { core::slice::from_raw_parts(src, len) })
 }
 
+// qcow2's compressed clusters: raw deflate through miniz_oxide ([`codec`]; docs/abi.md "SNAPZ: qcow2's clusters
+// through miniz_oxide"). No VM: any instance on the memory, any bytes in it.
+
+/// Inflates the raw deflate stream at `src` (`len` bytes, the stream and anything after its end) into `cap` bytes at
+/// `dst`; the bytes produced, or `usize::MAX` if it is malformed, truncated or wants more than `cap`
+/// ([`codec::inflate_raw`]).
+///
+/// # Safety
+/// As [`lz_compress`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn inflate_raw(
+    src: *const u8,
+    len: usize,
+    dst: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: guaranteed by the caller (a pointer with length 0 is never read: it may be null).
+    let (s, d) = unsafe { (raw_slice(src, len), raw_slice_mut(dst, cap)) };
+    codec::inflate_raw(s, d).unwrap_or(usize::MAX)
+}
+
+/// Deflates `len` bytes at `src` into `cap` bytes at `dst` as one raw stream at miniz's `level` (0-10); the stream's
+/// size, or 0 if it doesn't fit in `cap` ([`codec::deflate_raw`]). It allocates the compressor's tables and frees them.
+///
+/// # Safety
+/// As [`lz_compress`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deflate_raw(
+    src: *const u8,
+    len: usize,
+    dst: *mut u8,
+    cap: usize,
+    level: u32,
+) -> usize {
+    // SAFETY: guaranteed by the caller (a pointer with length 0 is never read: it may be null).
+    let (s, d) = unsafe { (raw_slice(src, len), raw_slice_mut(dst, cap)) };
+    codec::deflate_raw(s, d, level).unwrap_or(0)
+}
+
+/// The `len` bytes at `p`, or none (`p` unread, null or not) for `len` 0: a slice may not be made of a null pointer,
+/// and a host's first call with nothing to pass has no buffer yet (web/deflate.ts).
+///
+/// # Safety
+/// For `len` > 0, `p` points to `len` readable bytes that live for `'a` and nothing writes meanwhile.
+unsafe fn raw_slice<'a>(p: *const u8, len: usize) -> &'a [u8] {
+    if len == 0 {
+        return &[];
+    }
+    // SAFETY: guaranteed by the caller.
+    unsafe { core::slice::from_raw_parts(p, len) }
+}
+
+/// [`raw_slice`]'s writable twin.
+///
+/// # Safety
+/// For `len` > 0, `p` points to `len` writable bytes that live for `'a` and nothing else reads or writes meanwhile.
+unsafe fn raw_slice_mut<'a>(p: *mut u8, len: usize) -> &'a mut [u8] {
+    if len == 0 {
+        return &mut [];
+    }
+    // SAFETY: guaranteed by the caller.
+    unsafe { core::slice::from_raw_parts_mut(p, len) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deflate_exports_are_total() {
+        // The exports over garbage, every cap and level: a size within the cap, the failure value, never a panic.
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut dst = vec![0u8; 70_000];
+        for i in 0..3000 {
+            let len = (next() % 5000) as usize;
+            let src: Vec<u8> = (0..len)
+                .map(|k| {
+                    if i % 2 == 0 {
+                        next() as u8
+                    } else {
+                        (k / 64) as u8
+                    }
+                })
+                .collect();
+            let cap = (next() % dst.len() as u64) as usize;
+            let level = (next() % 12) as u32;
+            // SAFETY: both slices are live, of those lengths, and don't overlap.
+            let n = unsafe { deflate_raw(src.as_ptr(), len, dst.as_mut_ptr(), cap, level) };
+            assert!(n <= cap);
+            let packed = dst[..n].to_vec();
+            // SAFETY: as above.
+            let m = unsafe { inflate_raw(src.as_ptr(), len, dst.as_mut_ptr(), cap) };
+            assert!(m == usize::MAX || m <= cap);
+            if n > 0 {
+                // SAFETY: as above.
+                let back = unsafe { inflate_raw(packed.as_ptr(), n, dst.as_mut_ptr(), len) };
+                assert_eq!(back, len, "{len} bytes at level {level}");
+                assert!(dst[..len] == src[..]);
+                if len > 0 {
+                    // SAFETY: as above.
+                    let short =
+                        unsafe { inflate_raw(packed.as_ptr(), n, dst.as_mut_ptr(), len - 1) };
+                    assert_eq!(short, usize::MAX);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn deflate_exports_take_no_buffer_for_no_bytes() {
+        // A thread's first call with nothing to read (or no room) may pass a null pointer (web/deflate.ts has no
+        // buffer yet): no slice is made of it.
+        let mut dst = vec![0u8; 16];
+        // SAFETY: the null pointers come with length 0; `dst` is live for its length.
+        unsafe {
+            assert_eq!(
+                inflate_raw(core::ptr::null(), 0, dst.as_mut_ptr(), 16),
+                usize::MAX
+            );
+            assert_eq!(
+                inflate_raw(core::ptr::null(), 0, core::ptr::null_mut(), 0),
+                usize::MAX
+            );
+            assert!(deflate_raw(core::ptr::null(), 0, dst.as_mut_ptr(), 16, 1) > 0);
+            assert_eq!(
+                deflate_raw(core::ptr::null(), 0, core::ptr::null_mut(), 0, 1),
+                0
+            );
+        }
+    }
 
     #[test]
     fn sum_wraps() {

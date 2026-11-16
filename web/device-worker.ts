@@ -9,13 +9,17 @@
 import { CLOSE_MS, Devices, stateBuffers, type DevicesInit } from './devices.ts';
 import { toWire, type Msg, type WireError } from './msg.ts';
 import type { Hinted } from './balloon.ts';
+import { answerBuffers, type InspectAnswer, type InspectQuery } from './surface.ts';
 import { registerUsbOpener } from './usb.ts';
 import { webHidOpener, type WebHidLike } from './webhid.ts';
 import { webUsbOpener, type WebUsbLike } from './webusb.ts';
 
 type Init = DevicesInit & { bell: number };
 
-/** Owner (web/vm.ts `deviceWorker`) → device worker. `written` and `blocks` (a disk's changes for a snapshot) are answered by `disk` with their id. */
+/**
+ * Owner (web/vm.ts `deviceWorker`) → device worker. `written` and `blocks` (a disk's changes for a snapshot), `compact`,
+ * `hint` and `inspect` (a disk's surface: web/surface.ts) are answered by `disk` with their id.
+ */
 export type ToDeviceWorker =
   | ({ type: 'init' } & Init)
   | { type: 'flush' }
@@ -26,6 +30,7 @@ export type ToDeviceWorker =
   | { type: 'blocks'; id: number; device: number; blocks: Uint32Array }
   | { type: 'compact'; id: number; measure?: boolean }
   | { type: 'hint'; id: number; ms: number }
+  | { type: 'inspect'; id: number; device: number; query: InspectQuery }
   | { type: 'release' }
   | { type: 'close' };
 /** Device worker → owner. */
@@ -38,7 +43,7 @@ export type FromDeviceWorker =
   | { type: 'drained' }
   | { type: 'saved'; state?: unknown[]; error?: string; wire?: WireError }
   | { type: 'refusal'; refused?: WireError }
-  | { type: 'disk'; id: number; written?: { blocks: Uint32Array; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; hinted?: Hinted; error?: string }
+  | { type: 'disk'; id: number; written?: { blocks: Uint32Array; generation?: number }; bytes?: Uint8Array; compacted?: { before: number; after: number }; hinted?: Hinted; inspected?: InspectAnswer; error?: string }
   | { type: 'closed'; stats?: unknown };
 
 // The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).
@@ -94,6 +99,14 @@ self.onmessage = (e: MessageEvent<ToDeviceWorker>) => {
     const id = e.data.id;
     devices!.hint(e.data.ms).then(
       (hinted) => self.postMessage({ type: 'disk', id, hinted } satisfies FromDeviceWorker),
+      (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
+    );
+  }
+  else if (e.data.type === 'inspect') {
+    // A disk's surface or one of its ranges (web/surface.ts), from the maps in memory; the arrays transferred.
+    const id = e.data.id;
+    devices!.inspect(e.data.device, e.data.query).then(
+      (inspected) => self.postMessage({ type: 'disk', id, inspected } satisfies FromDeviceWorker, answerBuffers(inspected)),
       (err) => self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) } satisfies FromDeviceWorker),
     );
   }

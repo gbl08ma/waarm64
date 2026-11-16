@@ -1,0 +1,19 @@
+== desktop round 1: new2 at dc131da3, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1648,"kind":"kept","bytes":675373162,"pausedMs":1353
+round 0 file {"wallMs":2973,"kind":"file","bytes":678866194,"pausedMs":1450
+round 0 picked {"wallMs":3237,"kind":"file","bytes":678933834,"pausedMs":1373
+round 0 suspend {"wallMs":1423,"kind":"suspend","bytes":662414951,"pausedMs":1297
+== desktop round 2: new2 at dc131da3, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":1906,"kind":"kept","bytes":675425514,"pausedMs":1467
+round 0 file {"wallMs":3051,"kind":"file","bytes":678717705,"pausedMs":1458
+round 0 picked {"wallMs":3130,"kind":"file","bytes":678902657,"pausedMs":1368
+round 0 suspend {"wallMs":1410,"kind":"suspend","bytes":663978913,"pausedMs":1265
+== desktop round 3: new2 at dc131da3, core a8deea545dc27dff
+rc=0 
+round 0 kept {"wallMs":2035,"kind":"kept","bytes":675468539,"pausedMs":1438
+round 0 file {"wallMs":2882,"kind":"file","bytes":678850187,"pausedMs":1444
+round 0 picked {"wallMs":3072,"kind":"file","bytes":678978867,"pausedMs":1363
+round 0 suspend {"wallMs":1402,"kind":"suspend","bytes":663386148,"pausedMs":1241
+ALLDONE

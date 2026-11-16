@@ -1,0 +1,3 @@
+1794807648092 stored machine 9b7720483e06 file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-509eb1a652c3.waarm64snap
+1794807649390 round 0 load {"wallMs":1277,"phases":{"check":333,"checkRead":238,"checkCrc":409,"state":66,"ram":484,"disk":103,"pool":6,"read":319,"crc":460,"unpack":730,"apply":307,"prepare":21,"start":88,"total":1095}}
+1794807649405 wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-end/desktop-new-3.json

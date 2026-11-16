@@ -14,7 +14,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Step`/`Steps`, `Disclosure`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
-| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
+| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-shape.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
@@ -47,7 +47,8 @@ line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credenti
 firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
 passes none), `?clipboard=1` (clipboard sharing through the guest agent, docs/devices.md "The guest's agent";
 `window.__agent` is the page's end of its connection; `?agentstub` gives the link a channel whose device end a test plays,
-`window.__agentStub`, on any machine), `?disk2=<url>` (a second,
+`window.__agentStub`, on any machine), `?stageroom=<MiB>` (the room a file save's staging file assumes instead of the
+storage's estimate: "Snapshots"), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
 test's `--disk2` gives it the Go toolchain image, docs/images.md "The Go compiler on a second disk"), `?snd=stats[,timer]`
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
@@ -509,6 +510,95 @@ HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its 
 network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:StorageBar.storage.clearShaders)**
 (vk/README.md "The shader cache"; the store's size counts what IndexedDB holds, deflated).
 
+### A disk's surface
+
+A disk's line ends with a "visualize" link (`VisualizeLine.svelte`), in the
+browser's Disks pane (`DisksPane.svelte` gives `DiskInfo.svelte` its `onvisualize`; the Add a disk wizard's list
+doesn't) and in a machine's Disks tab (`Disks.svelte`: "… · vda · visualize"). It opens the disk's map, as a
+defragmenter draws one, in a window floating over the page (`SurfaceWindow.svelte`, a `ui/FloatingWindow.svelte`, the
+on-screen keyboard's frame too: moved by its title bar, resized by its corner, its place remembered under
+`windows.surface`). One is open at a time
+(`areas/surface.svelte.ts` `surfaceWindow`); `App.svelte` mounts it after the Machines page, so it stays over the
+machine and the Machines page as the user goes between them, and a click on it leaves the keyboard's focus where it
+was (on the screen).
+
+- **Its title bar**: the disk's name and the overlay laid over it: [The disk alone](ui:disks:SurfaceWindow.alone) or
+  one of the disk's overlays; from a machine's Disks tab it starts on the overlay that attachment writes to, from the
+  Disks pane on the disk alone.
+- **The map** (`ui/BlockGrid.svelte`): a square is 4 MiB times the smallest power of two for which the whole view fits
+  the squares the window has room for (counted at 10 px; a small disk's few squares grow to 24 px), said over it
+  ([1 square = {{size}}](ui:disks:SurfaceWindow.scale)). The disk is each square's rim (no data, then four shades of
+  how full over the blocks examined: any block at all is the first; a qcow2 image's clusters with data counted so too,
+  per L2 table as its tables are read, the squares under a table not read yet hatched like an image not examined, and
+  one with no data seen but part not examined hatched too, never "no data"; other images flat, hatched, not
+  examined), the overlay a core inset in it (four shades of what it changed; hollow where it only zeroed or discarded
+  blocks). A remote image viewed live has a **tick** on a square whose bytes this browser keeps (in memory or in its
+  storage), a thin green bar (`--map-tick`) along its bottom edge, its whole width when all the square has on the
+  server is kept (a raw image's every block, a qcow2's blocks with data), the left half when part is
+  ([Partly kept in this browser](ui:disks:surface-look.legend.keptSome)): independent of the rim, so the rim always
+  says what the disk holds and the tick only that the bytes are here; with an overlay larger than
+  the disk (grown, [machines.md](machines.md) §4.5) the squares past the disk have no rim and the disk's end is
+  marked. Live, a square the guest read or wrote flashes. The legend (`SurfaceLegend.svelte`) shows only the looks
+  the view can show (`surface-look.ts` `legendOf`). The line under the map says the pointed square's numbers
+  (`cellWords`: where, the disk's blocks held of its blocks examined, how many aren't examined yet, how many with data
+  this browser keeps, the overlay's changed and zeroed, the activity; the
+  keyboard's cursor's square until the map loses the focus), else what the view holds as a whole; a screen reader is
+  told the line (an `aria-live` copy) when the square pointed at or the view changes, not as a live poll changes its
+  numbers (`wholeWords`: [The disk holds no data yet. Every block reads as zeros.](ui:disks:surface-look.empty)
+  for an empty one; for an image not examined, why: raw, its tables not read yet, too large, no permission to
+  read the file, a URL while its machine doesn't run here (`opaqueWords`); for a qcow2 partly examined, why the rest
+  isn't yet ([Some of the image's tables haven't been read yet, so the squares they cover aren't examined. They fill in as the guest reads them; the tables are never downloaded just for the map.](ui:disks:surface-look.why.tablesSome));
+  and for a remote image how much of it this browser keeps). Another overlay chosen (or the disk alone), the picture
+  before stays, dimmed, and the line says [Reading the map…](ui:disks:SurfaceWindow.reading) until the new one's first
+  answer (`SurfacePoll.stale`). **The overlay picker**
+  says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
+  the record keeps the numbers of the run before until the machine stops.
+- **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
+  32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
+  consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
+  fragmented it is there; blocks under a qcow2's table not read yet hatched, not examined, and a remote image's blocks
+  kept in this browser ticked), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
+  data (up to 4 MiB) and counts those that hold only zeros; where they are only an image's it doesn't read (not
+  examined, or a remote qcow2's), it isn't offered and the words say they can't be checked
+  ([The image's blocks aren't read here, so their contents can't be checked.](ui:disks:surface-look.range.uncheckable)).
+- **Where its numbers come from** (`surface-source.ts` `chooseSource`, Node-tested): **live** when the stored
+  machine on this page has the disk attached as the view shows it (through that overlay; the disk alone read-only,
+  written in place, or a ramdisk), from its loading to its stop (`holdsDisks`: its device worker has the files, or is
+  opening them; before its devices answer the window says it's reading): `inspect` to the run's worker (the run writes `current.inspect`: its
+  worker, the replies by id, the attachments it started with), the disk being its place in slot order; a stored disk
+  written in place answers as a blank disk under an overlay that is its store, shown as the disk (`asInPlace`).
+  Otherwise **from the files**: a job worker per ask (`surface-worker.ts`, `surface-job.ts`), read-only under the
+  shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too), one
+  of each kind (the map, a range) in flight: a newer ask ends the one before, its worker terminated. The job holds
+  the files' locks under `waarm64-surface-reader` (web/overlay.ts `SURFACE_READER_LOCK`), and the page's checks of
+  whether something has a disk's files open (web/overlay.ts `locksInUse`: `disks.ts` `inUse`, the resize's) leave out
+  the locks of a client that holds it, so a Delete, a Resize… or a Merge into the disk is never refused for the
+  window's reading (a machine's device worker never takes it). A merge holds `waarm64-merge:disks/<id>` from its
+  first check to its end (`mergeIntoDisk`), and a job of that disk waits for it before it starts; a stored disk whose
+  merge was interrupted is said so ([A merge into this disk was interrupted. It completes the next time the disk is used, and its map can be seen after that.](ui:disks:surface-job.merging)), not drawn
+  half merged. An overlay's view of a stored disk the machine here writes in place is said so too
+  ([The machine running in this tab writes this disk in place, so its overlays can't be read while it runs. The disk alone is shown live.](ui:disks:surface-source.inPlaceHere)): its store is the
+  machine's. A
+  file disk's image is examined where its kept handle's read permission is already granted (`queryPermission`, never
+  `requestPermission`: `surface-source.ts` `jobOf` hands the job the file): a qcow2's tables read whole
+  (web/qcow2.ts `readAllocation`, at most 32 MiB of them) for its clusters; a URL's image isn't examined offline
+  (its identity, which names the blocks kept in this browser, needs the server's answer; nothing is fetched). A
+  ramdisk not running has nothing to show ([A ramdisk holds data only while its machine runs. Its map can be seen
+  here while the machine runs in this tab.](ui:disks:surface-source.ramdisk)), the files of a machine running in
+  another tab are refused in words (`surface-job.inUse`), and every ask is bounded (5 s live, 20 s for a content
+  check, 30 s for a job: a worker that went away never answers). Transient machines (a test's `?machine=`) have no
+  link: their disks have no records.
+- **When it asks** (`surface-poll.svelte.ts`): live, every 500 ms while the document is visible, stretched so that
+  making the answers stays under 2% of the time (the next ask ≥ 50 × the answer's `cost`), and the device worker's
+  activity wrapper stays on only while it asks (devices.md "blk"); not live, once, again on
+  **[Refresh](ui:disks:SurfaceWindow.refresh)** and when the records change (once they've settled for 300 ms: a disk
+  action writes several). A new source (the machine started or stopped, another overlay, another run) drops what the old
+  one had in flight (its picture dimmed until the new one answers); a live answer a newer ask of the same source
+  replaced (a resize, a Refresh) is dropped, but its reads and writes flash with the next one (`carryActivity`); just
+  after the machine on this page stopped, a refusal that the files are in use is asked again for a few seconds (the
+  device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms).
+- `window.__surface` is the tests' view of it (web/app/hooks.ts).
+
 ### About
 
 **[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: a link to its
@@ -549,7 +639,7 @@ Page → worker:
   `?<feature>=0|1`, a snapshot's header, a shape and `bootVm`'s mask all go by its table); `config.dev` the machine
   worker's knobs (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`,
   `?growcore`, `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`, `?ready=guest`,
-  `?agentstub`), parsed by the
+  `?agentstub`, `?stageroom=`), parsed by the
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
   features, the kernel and the command line are then the file's.
@@ -559,6 +649,9 @@ Page → worker:
   stream, or, without one, back in `snapshot-chunk` messages, or with `keep` into that OPFS file (a kept snapshot,
   machines.md §5.2); `whole` puts a disk written in place in it whole. Answered by `snapshot-done` or
   `snapshot-error`.
+- `snapshot-spare {id, buffer}`: a `snapshot-chunk`'s buffer back (transferred) once the page has copied its bytes
+  into a Blob: the save's next chunks are copied into it, so no file's worth of chunks waits for a GC
+  (platform.md "The snapshot file", Out).
 - `snapshot-check {id, what}`: whether a device would refuse a snapshot or a suspend (`what`) now (Vulkan in use, a
   video decoding: web/vm.ts `refusal`, each backend's `refusal`, the GPU worker's `snapshotRefusal` behind the calls
   before it); answered by `snapshot-check {id, refused?}`, the error the save would end with. The page asks it first
@@ -571,6 +664,12 @@ Page → worker:
   and the heap are answered with their `id` (web/app/run/replies.ts `Replies`); the page keeps the answer in
   `window.__profile`, `__timeline`, `__heap`, which bench/ waits on. `start.resume` false
   boots even if a suspended machine is there (it is dropped); otherwise a start resumes one.
+- `inspect {id, query}`: a question about the running machine's surfaces (web/surface.ts `InspectQuery`; the disk
+  surface visualizer, docs/plans/surface.md). The worker sends it to whoever answers its kind: a `disk-*` query to the
+  disk's device in the device worker (`Vm.inspect`: `query.disk` is the disk's place among the machine's disks, slot
+  order), which answers from the maps it has in memory; any other kind, or no machine, is answered `{kind: 'none'}`.
+  Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
+  device's activity wrapper on for ~3 s (devices.md "blk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 4 s without
@@ -616,11 +715,12 @@ Worker → page:
 - `notice {message}`: what the devices say while the machine runs on (a ramdisk out of memory, the storage full), a
   message.
 - `snapshot-progress {id, phase, fraction}` (the phase a message), `snapshot-chunk {id, data}` (transferred; without a
-  handle), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins}` (the file is complete; the ms
+  handle; the page gives its buffer back: `snapshot-spare`), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins}` (the file is complete; the ms
   from the pause request to the resume, and of the devices' state in it; the bytes of their binary parts; the disks
   it pins, which a kept snapshot's record takes), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
   `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
 - `profile {id, samples}`, `timeline {id, timeline}`, `heap {id, heap}`: the benchmarks' answers.
+- `inspected {id, answer}`: `inspect`'s answer (web/surface.ts `InspectAnswer`).
 - `serial` also has `replay` for a restored terminal's saved tail.
 - `stopped`.
 
@@ -714,11 +814,36 @@ Preferences' switch (devices.md "The caches dropped before a snapshot"), then th
 (devices.md "balloon": tens of ms; `hintMs` and `hinted` in `data-snapshot`), and gives the memory back after the save.
 Meanwhile the save's pool of workers starts (platform.md "A save's pool": RAM's frames made on several threads; a pool
 that can't start leaves them to the worker). The worker pauses it (`vm.pause()`), writes the file with
-`writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
+`writeSnapshot` and resumes, also on an error.
+
+**A file save is staged through OPFS** (web/snapshot-stage.ts; SNAPZ's decision 3: the picked file's stream takes
+~430 MB/s, half what the save's pool makes, and a download's Blob parts held the file in the page's memory): the page
+names a staging file in `snapshot-staging/` and holds its Web Lock (`waarm64-staging:<name>`) until the file is gone,
+and during the pause the worker writes the snapshot there (a sync access handle, as a kept snapshot's). The machine
+resumes (`snapshot-resumed`: the guest's input, its USB devices and its clock come back then), and then a picked
+file gets the staging file copied into its stream, in 64 MiB slices written as Blobs (the browser copies them file to file), while the state line says
+[Copying the snapshot to the file](ui:snapshots:worker-stage.phase.copying) with a percentage; the staging file is
+removed after. A download is the staging file itself (`snapshot-done`'s `file`: the page holds none of its bytes),
+kept until the next file save starts or the page ends (`keepForDownload`; then removed at its next start): the
+browser reads it after the click for as long as it takes (a save dialog left open), and a `File` whose OPFS file is
+removed can't be read (tests/page-snapshot-stage.test.ts). The copy is still the save in
+progress (one at a time: Snapshot, Suspend, Restart and Power off stay disabled until it ends), though the machine
+runs. **The fallbacks write the file directly, as before staging:** when the storage hasn't room
+(`navigator.storage.estimate()`'s quota less usage, against the file's bound, `snapshotBound`, known once the devices'
+state and the disks' blocks are, plus a tenth and 64 MiB; `?stageroom=<MiB>` says the room instead, for tests), when
+a staging write is refused partway (the snapshot is written again directly, still paused: the pause is longer by
+the refused part), and where there is no OPFS or Web Locks. A copy that fails after the resume says
+[Couldn't save the snapshot](ui:snapshots:worker-snapshot.notSaved) with
+[The snapshot was taken, but copying it into {{name}} failed: the file has none of it, and nothing of it is left in the browser's storage.](ui:snapshots:worker-stage.notCopied) and the error, the picked file aborted (it holds none of it) and
+the staging file removed. A staging file whose lock no one holds (its page crashed or closed mid-save) is removed at
+the page's next start (`removeStale`). `data-snapshot`'s `staging` says what came of it: `staged`, `room`,
+`refused`, or none (not a file save, or no OPFS); `phases.copy` the copy's ms after the resume
+(tests/page-snapshot-stage.test.ts). Kept snapshots and Suspend write to OPFS directly and don't stage. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
 tools: below), and the machine runs as before. Only the writing is between pause and resume: the picked
-file's stream is opened before and closed (flushed) after, and nothing is hashed. One save at a
+file's stream is opened before and closed (flushed) after (a staged file's copy into it, below, comes after the
+resume too), and nothing is hashed. One save at a
 time: while it runs Restart, Power off, Suspend, Snapshot and Load snapshot are disabled, and a disk's Export, Open
 disk and Import changes say to wait. The run loop is not disturbed by the pause
 (`runAsync` keeps returning `BUDGET`), the status timer and the flash keeper only read.
@@ -734,16 +859,21 @@ encoding and CRC; with a pool, RAM's are its workers' sums: CPU time, up to `poo
 waits on the output); `pool` (the workers that made RAM's frames, 0: the machine worker did: platform.md "A save's
 pool"), `poolReady` (the pool's start to its last worker ready, 0 without one) and `poolWait` (what the save waited
 for it after the hint, before the pause); and `close` (the output closed: a file's or a kept snapshot's
-after the resume, a suspended copy's before the stop). A start from a snapshot or a suspended copy posts `loaded` once
+after the resume, a suspended copy's before the stop), `copy` (a staged file's copy into the picked file, after the
+resume; 0 for none). A start from a snapshot or a suspended copy posts `loaded` once
 it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
-touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames, `apply` their
-placing), `disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the machine's workers, the
-devices' state put back) and `total` (from the worker's start); over the restore's pass, `read`, `crc` and `unpack`.
+touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
+`disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the core instantiated, the
+devices' state put back in the device worker, which is started beside the check pass: web/vm.ts `warmWorkers`; the
+vCPU workers start after, at the first run) and `total` (from the worker's start); over the restore's pass, `read`, `crc`, `unpack` and
+`apply` (RAM's placing); `pool` (the load's workers, 0: the machine worker did it all: platform.md "A load's pool"),
+with which `checkCrc` and RAM's share of `crc`, `unpack` and `apply` are the workers' sums (CPU time, up to `pool` times
+their phase's wall).
 
 **Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
 file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WAARMSNP`). The page reads the
-header (`openSnapshot` without a codec) before it asks anything, and refuses at once, with the
+header (`readHeader`, web/snapshot-file.ts) before it asks anything, and refuses at once, with the
 machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another
 machine (`?machine=` differs), and one taken on another disk by name (the header's `disk`, for a
 disk opened with Open disk… or `?disk=`; the user opens that disk first). Then a confirmation says
@@ -753,7 +883,7 @@ as Reset disk says) is replaced by the snapshot's changes to the disk**. Then, t
 `exclusively`: `stop()`, a new worker with `start.snapshot` (the `File`).
 
 **The worker's start from a snapshot** downloads the core only (no kernel or initrd), compiles it
-once (the same module goes to `bootVm` and to the LZ codec, `lzCodec`), reads the header, and makes
+once (the same module goes to `bootVm`, to the LZ codec, `lzCodec`, and to the load's pool: platform.md "A load's pool"), reads the header, and makes
 the devices **as the header says** (`devices`, below) from what the page passed, with `ncpus` and the RAM size (`ramSize`) from
 the header (the status line shows them, not the page's `?ncpus=` or Machine menu). Then `readSnapshot` checks
 everything that can be refused before anything is touched (the whole file's checksums, the core's
@@ -887,15 +1017,16 @@ while it resumes (under a second on Debian) may be lost, as on a machine still w
 pointers and before the disks in `slots`), on transient machines unless `?clock=0` (`?clock=` turns it either way on any machine), on machines made from now on
 (their Settings' "Clock device"), and off on machines made before it, whose shape is as it was. A guest with a driver
 for it gets a PTP clock that reads the browser's time (chrony's `refclock PHC` keeps its clock there through
-anything) and a read-only RTC. A snapshot or a suspended machine from before the device restores without it (it holds
-no state: `fromHeader` takes the layout without `clock` when that's the file's).
+anything) and a read-only RTC. A snapshot's devices must be the machine's (`slotsOf`): one saved with the device off
+(`?clock=0`) is refused on a page with it on, and the other way.
 
 **Limits.** No hash of the base image is written (nothing computes or caches it off the save path
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
 (name, size, modification time) or URL. The network across a snapshot isn't handled: the guest
 keeps its DHCP lease and its connections are gone with the Tailscale client's. The guest's clock
 lags by the time the file sat around until something sets it (the RTC is current), unless the guest agent sets it
-(above). A snapshot is for the core versions that read its format (`snapshot_version_min` to `snapshot_version`).
+(above). A snapshot is for the core that reads its state version (`snapshot_version`); older files are refused
+(platform.md "The snapshot file", Refusals).
 
 ## The screen
 
@@ -1156,10 +1287,13 @@ page writes the context's output latency into the ring's header, and the guest g
 
 [Show the on-screen keyboard](ui:toolbar:KeysMenu.keys.osk) (the Keys menu) puts a PC keyboard over the machine, of 104
 keys, and ISO's, ABNT2's or JIS's extra keys when the machine's layout has them ("Layouts" below) (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
-guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its bar moves
-it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in a corner sat on the keypad's Enter);
-where it is and how wide is remembered (`settings().osk`), kept in the window, no wider than the window's width or
-height allow. The toolbar's menus open over it.
+guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its window is a
+`tool` `ui/FloatingWindow.svelte`, the frame the disk's surface has ("A disk's surface"): a slim bar that moves it,
+the ↔ grip in the bar resizing it by its width, its height following in its layout (`aspect`, `osk-shape.svelte.ts`:
+the keys scale with its width; a grip in a corner sat on the keypad's Enter); where it is and how wide is remembered
+(`settings().windows.osk`, a width per layout in its `sizes`; an older page's `settings().osk` is moved there once),
+kept in the window, no wider than the window's width or height allow; grown past the window's edge it is pushed back
+in. The toolbar's menus open over it.
 
 - **The compact layout** (`osk-layout.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
   600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,
@@ -1172,9 +1306,9 @@ height allow. The toolbar's menus open over it.
   modifier latched on one is used by a key on the next, and a pointer lets its key go wherever it lifts (a document
   listener), its key gone with the page another finger changed. The bar's button between the tabs and the grip
   ([Switch to the full keyboard](ui:osk:OskBar.toFull), [Switch to the compact keyboard](ui:osk:OskBar.toCompact)) forces the
-  other layout; the forced one is remembered (`settings().osk.layout`) until the window's width crosses the threshold
+  other layout; the forced one is remembered (`settings().oskLayout`) until the window's width crosses the threshold
   to where the automatic choice is the same (a phone turned to landscape and back is compact again). Each layout keeps
-  its own width (`w`, `wc`); the bar is a size container, and the title gives way to the tabs below 420 px. A
+  its own width (the frame's `sizeKey`), and the title gives way to the tabs in a bar narrower than 420 px. A
   layout's extra keys join the symbols' page (its two rows of punctuation share the width).
 - **The letters' page per layout** (`osk-layout.ts` `letterRows`): US's letter block (digits, Q–P, A–L with `;`, Z–M) and,
   in each row, the keys of the full keyboard's same row whose unshifted character is a letter with a capital on the
@@ -1222,8 +1356,8 @@ height allow. The toolbar's menus open over it.
   menu, Hold Esc). A key goes down with its first holder and up with its last, so the physical Shift pressed and let
   go doesn't release a Shift latched here, a menu's Ctrl+W doesn't release a latched Ctrl, and a second Hold Esc ends
   the first.
-- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it (its `pointerdown` and
-  `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
+- **Focus:** showing the keyboard gives the screen the focus; the keyboard never takes it, nor do its bar's buttons
+  (its keys' `pointerdown` and a tool window's `mousedown` are cancelled), so the screen keeps the physical keyboard. When the page releases the guest's keys (the
   screen or the window loses the focus, or the guest's keyboard driver comes or goes, which moves the keys between
   the virtio keyboard and the built-in USB one or the serial console), `Input`'s `onRelease` tells the keyboard
   (`keys.released`), which lets go of what it held and latched. Its keys, the menu's and Hold Esc wake a suspended
@@ -1481,30 +1615,26 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   was running starts again after. The page: `web/app/export.ts`; the format:
   `web/qcow2-write.ts` (4 KiB clusters = the overlay's blocks; data first, then the L2 tables, L1,
   refcount blocks and table, and the header written last with `sink(bytes, 0)`; qcow2 v3, 16-bit
-  refcounts). **Compressed clusters** (`compress`): each 4 KiB cluster goes through
-  `CompressionStream('deflate-raw')` and, when that shrinks it, is stored compressed, packed end to
+  refcounts). **Compressed clusters** (`compress`): each 4 KiB cluster is deflated by the core's miniz_oxide at
+  level 6 (`web/deflate.ts`, `deflate_raw`, as QEMU's zlib writes) and, when that shrinks it, is stored compressed, packed end to
   end with the others (the L2 entry has the byte offset and the sector count; a host cluster's
   refcount is the number of compressed clusters that touch it); one that doesn't shrink is stored
   as it is at the next cluster boundary. The data leaves in 1 MiB pieces. QEMU inflates with a
-  4 KiB window whatever the cluster size and `CompressionStream` has no window setting, so
-  compression is tied to 4 KiB clusters (a bigger cluster could reach further back than QEMU's
-  window; zstd isn't in `CompressionStream`). The clusters are compressed
+  4 KiB window whatever the cluster size, so compression is tied to 4 KiB clusters (a stream of one 4 KiB
+  cluster can't reach further back; a bigger cluster could). The clusters are compressed
   **on other threads**: `writeQcow2` hands batches of 256 clusters to a `Packer` and stores them in
   the order they came, and the disk-out worker's is a pool of up to four workers
-  (`web/app/deflate-pool.ts`, `deflate-worker.ts`; the machine has stopped, its cores are free); the
+  (`web/app/deflate-pool.ts`, `deflate-worker.ts`, each given the core; the machine has stopped, its cores are free); the
   file is byte for byte the one compressing in place writes (`compress: true`, the tests' and Node's).
-  Measured in Chromium 153 on the dev VM, the untouched 3 GiB Debian disk (the page's: a compressed
-  qcow2 over HTTP, 992 MiB of data) to a sink that drops the bytes: 5.9 s not compressed (995 MiB),
-  7.9 s compressed by four workers (428 MiB; 9.2 s by two, 15.8 s by one, 20.8 s in place); written
-  to a file through `FileSystemWritableFileStream` (OPFS), not compressed, 8.7 s. What it was
-  before, and why: 22.9 s not compressed and 38 s compressed, of which **reading the disk was
+  Measured in Chromium 155 on the dev VM (bench/boot/REPORT.md "SNAPZ loop 6"), the untouched 3 GiB Debian disk
+  (the page's: a compressed qcow2 over HTTP) into an OPFS file: 7.2 s not compressed, 8.2 s compressed (445 MB);
+  miniz_oxide deflates a 4 KiB cluster in 72 µs at 2.35x, where `CompressionStream('deflate-raw')`, which it
+  replaced, took 82 µs at 2.27x (the export 8.6 s, 448 MB). What it was
+  before the merged reads: 22.9 s not compressed and 38 s compressed, of which **reading the disk was
   21.7 s** (one synchronous HTTP request and one inflate per 64 KiB cluster: `openDisk` now reads a
-  request's clusters in a few merged host reads, [devices.md](devices.md) "blk": 5.6 s), and deflate
-  on one thread the rest (49 MiB/s of data, close to native zlib's 91 at 4 KiB clusters: the cost is
-  deflate, not the stream per cluster). Compressing 64 or 512 clusters at once *on one thread* was
-  slower than one at a time (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). zstd
-  (`compression_type=zstd`, QEMU 5.1 on) is not written: it needs a compressor compiled to wasm (a
-  dependency), and with deflate on four threads the export is within a third of not compressing. What the guest's filesystem has freed
+  request's clusters in a few merged host reads, [devices.md](devices.md) "blk"), and deflate on one thread the rest.
+  zstd (`compression_type=zstd`, QEMU 5.1 on) is not written: it needs a compressor compiled to wasm (a
+  dependency), and with deflate on four threads the export is within a seventh of not compressing. What the guest's filesystem has freed
   is still data to the export until the guest trims it (`fstrim -av`: the disk takes DISCARD,
   [devices.md](devices.md) "blk"; a running guest with the agent is trimmed first, before the machine stops for the
   export: devices.md "Disk space handed back"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user
@@ -1884,7 +2014,9 @@ Node never goes through it: tools, tests and `bench/` run `.ts` directly, as bef
   source: TypeScript and Svelte compiled per request, so the test pages under `tests/browser/`, `bench/*/index.html`
   and modules a test imports in a page (`import('/web/app/store.ts')`) work as they are. `/` redirects to the page at
   `/web/app/` (with the query). `target/` is served by sirv ahead of Vite (range requests and HEAD for the disks and
-  firmware; Vite would take an extensionless file, a kernel's `Image`, for a module). No dependency pre-bundling (the
+  firmware; Vite would take an extensionless file, a kernel's `Image`, for a module); a HEAD there is answered from
+  the file's `stat` (`headOnly`): sirv's reads the whole file, ~1.9 s for a 2.2 GB disk image, twice a start
+  (bench/boot/REPORT.md "SNAPZ loop 7"). No dependency pre-bundling (the
   packages are ES modules, and parallel test processes would race on its cache). The tests and benchmarks run it in
   mode `test`: no file watching or hot reloading, Svelte's production code and the packages' production builds.
   `npm run serve` runs it in development mode, hot reloading. Both send COOP, COEP and `Cache-Control: no-store`.

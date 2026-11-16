@@ -957,7 +957,7 @@ pub(super) fn snapshots_round_trip_with_empty_ports() {
     t.x.save(&mut w);
     let mut x2 = Xhci::new();
     let mut r = Reader(&w.0);
-    x2.restore(&mut r, snapshot::VERSION).unwrap();
+    x2.restore(&mut r).unwrap();
     r.end().unwrap();
     let mut w2 = Writer::default();
     x2.save(&mut w2);
@@ -965,11 +965,7 @@ pub(super) fn snapshots_round_trip_with_empty_ports() {
     assert_eq!((diff, w.0.len()), (None, w2.0.len()), "the states differ");
     // Truncated: an error, not a panic.
     for n in [0, 7, w.0.len() / 2, w.0.len() - 1] {
-        assert!(
-            Xhci::new()
-                .restore(&mut Reader(&w.0[..n]), snapshot::VERSION)
-                .is_err()
-        );
+        assert!(Xhci::new().restore(&mut Reader(&w.0[..n])).is_err());
     }
 }
 
@@ -1127,7 +1123,7 @@ pub(super) fn a_snapshot_keeps_a_walk_waiting_for_room() {
     let mut x = Xhci::new();
     x.latency = 0;
     let mut r = Reader(&w.0);
-    x.restore(&mut r, snapshot::VERSION).unwrap();
+    x.restore(&mut r).unwrap();
     r.end().unwrap();
     t.x = x;
     assert_eq!(t.x.due(), 0, "the restored walk waits too");
@@ -1184,7 +1180,7 @@ pub(super) fn a_suspend_and_resume_keeps_the_event_ring_where_the_guest_reads() 
 
 #[test]
 pub(super) fn a_snapshot_of_a_saved_controller_restores_its_ring_and_a_crs_without_one_is_sre() {
-    for version in [snapshot::VERSION, 4] {
+    for saved in [true, false] {
         let mut t = T::new();
         for _ in 0..EVT_TRBS + 5 {
             t.command([0, 0, 0, T_NOOP_CMD << 10]);
@@ -1192,21 +1188,22 @@ pub(super) fn a_snapshot_of_a_saved_controller_restores_its_ring_and_a_crs_witho
         suspend_and_resume(&mut t, |t| {
             let mut w = Writer::default();
             t.x.save(&mut w);
-            if version == 4 {
-                // A format 4 state: the same without the CSS state at the end (its flag, one
-                // segment, the producer).
+            if !saved {
+                // The same without the CSS state at the end (its flag cleared; one segment, the
+                // producer dropped): a controller that never saved one.
                 let tail = 1 + 4 + 12 + 4 + 4 + 1;
                 assert_eq!(w.0[w.0.len() - tail], 1, "a CSS state saved");
                 w.0.truncate(w.0.len() - tail);
+                w.0.push(0);
             }
             let mut x = Xhci::new();
             x.latency = 0;
             let mut r = Reader(&w.0);
-            x.restore(&mut r, version).unwrap();
+            x.restore(&mut r).unwrap();
             r.end().unwrap();
             t.x = x;
         });
-        if version == 4 {
+        if !saved {
             // No state to restore: the driver is told, and initializes the controller again.
             assert_ne!(t.rd(USBSTS) & STS_SRE, 0, "SRE");
             t.wr(USBSTS, STS_SRE);

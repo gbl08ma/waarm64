@@ -39,6 +39,14 @@ pub type Block = unsafe extern "C" fn(*mut Vcpu, u32, u32, u32) -> u32;
 pub struct State {
     /// Guest RAM; the run loop sets it before it enters a block.
     pub mem: *const Mem,
+    /// Parallel SMP's stop word (`Config::polled`; docs/jit.md "Preemption"):
+    /// polled code stops at a poll once `acc` (the steps since the dispatcher
+    /// called it) reaches it, and the dispatcher once its steps do. The run
+    /// loop stores the chunk's steps before it looks for work; whatever has
+    /// news for the vCPU (another thread: `vm::parallel`, the host through
+    /// `vm_cpu_stop`) stores 0 after making it. Only ever accessed atomically. After `mem`, in what was
+    /// padding: every other field keeps its offset, so counted code's bytes didn't change.
+    pub stop: AtomicU32,
     /// Why the last block stopped early (the instruction that didn't retire).
     pub exit: Option<Exit>,
     /// Instructions the helpers retired (so JIT steps minus these ran inline).
@@ -161,6 +169,11 @@ pub struct Config {
     pub warm: u32,
     /// The host's relaxed-SIMD `madd` fuses (`VmConfig.fma`): the FMA forms use it, not their emulation.
     pub fma: bool,
+    /// Parallel SMP: compiled code counts no step budget and polls the vCPU's
+    /// stop word where a cycle can close (`State::stop`, `emit::poll`); the
+    /// dispatcher stops when its steps reach the word. Round-robin's and
+    /// user mode's code is counted (`left`), its chunks exact.
+    pub polled: bool,
 }
 
 impl Config {
@@ -180,6 +193,7 @@ impl Config {
         decoded: interp::block::MAX_BUDGET as u32,
         warm: WARM,
         fma: false,
+        polled: false,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -196,6 +210,7 @@ impl Config {
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
         fma: false,
+        polled: false,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -1547,7 +1562,10 @@ impl Table {
         if self.xmiss || c.off {
             return;
         }
-        match install(&block::miss_module(mem, c.cfg.check, c.cfg.pages), 0) {
+        match install(
+            &block::miss_module(mem, c.cfg.check, c.cfg.pages, c.cfg.polled),
+            0,
+        ) {
             Some(i) => {
                 let first = *c.xmiss.get_or_insert(i);
                 assert_eq!(first, i, "slot 0 is the same table index in every table");
@@ -1856,6 +1874,11 @@ impl Jit {
     /// The cache's [`Gauge`]: its words, read without the lock.
     pub fn gauge(&self) -> *const u64 {
         self.gauge.0.as_ptr() as *const u64
+    }
+
+    /// `Config::polled`: its code polls the vCPU's stop word (parallel SMP).
+    pub fn polled(&self) -> bool {
+        self.table.cfg.polled
     }
 
     /// `Config::fma`, for what's compiled from now on.
@@ -2261,10 +2284,18 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
     let vr = unsafe { &mut *v };
     let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
+    // Polled code (parallel SMP) runs on past `n` to a poll, and stops early
+    // when the stop word drops under the steps done (docs/jit.md "Preemption").
+    let polled = jit.table.cfg.polled;
+    let stop: *const AtomicU32 = &raw const vr.jit.stop;
     let mut done = 0;
     // The next block's key when the interpreter found it compiled (`interpret`), else 0.
     let mut next = 0;
     while done < n {
+        // SAFETY: `stop` is in the vCPU, valid for the call; it's only accessed atomically.
+        if polled && unsafe { &*stop }.load(Ordering::Acquire) as u64 <= done {
+            return (done, None);
+        }
         let left = n - done;
         // SAFETY: guaranteed by the caller; the reference ends before a block runs.
         let vr = unsafe { &mut *v };
@@ -2311,7 +2342,14 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             // reference into `*v` is live: the block and its helpers use the
             // raw pointer. `mem` isn't in `*v`.
             let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
-            let k = unsafe { block(f)(v, 0, left.min(i32::MAX as u64) as u32, entry) } as u64;
+            // Polled code's `acc` starts at the steps done, which its polls
+            // compare with the stop word (the chunk's steps, or 0).
+            let (acc, left) = if polled {
+                (done as u32, 0)
+            } else {
+                (0, left.min(i32::MAX as u64) as u32)
+            };
+            let k = unsafe { block(f)(v, acc, left, entry) } as u64;
             // Not at depth 0 (`emit::DEPTH`): a depth that reached a function
             // with entry bits still set would count ~2^31 steps and end the
             // chunk, so it stops here instead, named.
@@ -2319,6 +2357,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
                 k < emit::RETURNED as u64,
                 "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}"
             );
+            let k = k - acc as u64;
             // SAFETY: the block has returned.
             let vr = unsafe { &mut *v };
             let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
@@ -2366,7 +2405,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             }
         }
     }
-    (n, None)
+    (if polled { done } else { n }, None)
 }
 
 /// The bus a run of decoded blocks goes through, and how it finds the key of
@@ -2797,6 +2836,7 @@ mod tests {
             decoded: 0,
             warm: 0,
             fma: false,
+            polled: false,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());

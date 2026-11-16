@@ -1,0 +1,3 @@
+1794807686406 stored machine 9b7720483e06 file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-509eb1a652c3.waarm64snap
+1794807687690 round 0 load {"wallMs":1266,"phases":{"check":331,"checkRead":238,"checkCrc":396,"state":75,"ram":467,"disk":91,"pool":6,"read":306,"crc":416,"unpack":707,"apply":291,"prepare":17,"start":80,"total":1060}}
+1794807687705 wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-end/desktop-prefix-1.json

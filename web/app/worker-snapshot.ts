@@ -4,6 +4,8 @@
 import type { Vm } from '../vm.ts';
 import { msg, MsgError, toWire } from '../msg.ts';
 import { fileWriter, suspendWriter } from '../overlay.ts';
+import { freeRoom } from '../snapshot-stage.ts';
+import { finishStaged, StageRefused, staging, type Staging } from './worker-stage.ts';
 import type { Codec, Sink } from '../snapshot-file.ts';
 import { writeSnapshot } from '../snapshot.ts';
 import { makeRoom } from '../diskcache.ts';
@@ -39,6 +41,8 @@ export type Running = {
   codec: () => ReturnType<typeof lzCodec>;
   /** Closes the suspended machine without running another step (its run loop ends without a word). */
   close: () => Promise<void>;
+  /** The room a staging file assumes instead of the storage's estimate (`?stageroom=`, bytes; docs/frontend.md "Query parameters"). */
+  stageRoom?: number;
 };
 
 let snapshotting = false;
@@ -72,10 +76,26 @@ function meta(r: Running) {
   return header(r.session, r.machine.label, serial.slice(cut));
 }
 
-type Out = { sink: Sink; close: () => Promise<void>; abort: () => Promise<void> };
+type Out = {
+  sink: Sink;
+  close: () => Promise<void>;
+  abort: () => Promise<void>;
+  writable?: FileSystemWritableFileStream;
+};
+/** The buffers the page gave back (`snapshot-spare`) for the save in progress (its id): its next chunks go in them. */
+let spare: { id: number; buffers: ArrayBuffer[] } | undefined;
+/** A chunk's buffer back from the page, for save `id`'s next chunks. */
+export function spareBuffer(id: number, buffer: ArrayBuffer) {
+  if (spare?.id === id) spare.buffers.push(buffer);
+}
+/** A frame's largest size (a RAM chunk's codec bound, and its header): a chunk buffer holds any. */
+const CHUNK_BUFFER = (1 << 20) + 4096;
+
 /**
- * Where a snapshot goes: the picked file's stream (`handle`), the store's file `keep`, or the page in chunks. Opened
- * before the machine is paused, closed (flushed) after it resumed; `abort` drops whatever is still open.
+ * Where a snapshot goes: the picked file's stream (`handle`), the store's file `keep`, or the page in chunks (each
+ * copied into a buffer the page gave back, else a new one, and transferred: the page copies it into a Blob and gives
+ * it back, so a file's worth of buffers never waits for a GC in this worker or the page). Opened before the machine is
+ * paused, closed (flushed) after it resumed; `abort` drops whatever is still open.
  */
 async function output(id: number, handle?: FileSystemFileHandle, keep?: string): Promise<Out> {
   let out = await handle?.createWritable();
@@ -86,22 +106,30 @@ async function output(id: number, handle?: FileSystemFileHandle, keep?: string):
     await out?.abort().catch(() => undefined);
     throw err;
   }
+  spare = out || kept ? undefined : { id, buffers: [] };
   const sink: Sink = async (chunk) => {
     if (kept) return kept.write(chunk);
     if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
-    const copy = chunk.slice(); // a transferred buffer must be ours alone
-    post({ type: 'snapshot-chunk', id, data: copy }, [copy.buffer]);
+    const have = spare?.buffers.pop();
+    const buffer =
+      have && have.byteLength >= chunk.length ? have : new ArrayBuffer(Math.max(chunk.length, CHUNK_BUFFER));
+    const copy = new Uint8Array(buffer, 0, chunk.length);
+    copy.set(chunk); // the sink's bytes are its only until it returns (web/snapshot-file.ts `Sink`)
+    post({ type: 'snapshot-chunk', id, data: copy }, [buffer]);
   };
   return {
     sink,
+    writable: out,
     close: async () => {
       await out?.close();
       out = undefined;
       kept?.close();
       kept = undefined;
+      spare = undefined;
     },
     // Left open only by a failure (the one reported); an abort that fails has nothing to add to it.
     abort: async () => {
+      if (spare?.id === id) spare = undefined;
       await out?.abort().catch(() => undefined);
       await kept?.abort().catch(() => undefined);
     },
@@ -121,21 +149,38 @@ async function hint(r: Running, id: number) {
 
 /**
  * Pauses the machine, writes its snapshot to `sink` (a stored disk written in place left out unless `whole`) and
- * resumes it, also on an error. The guest's clock stands still meanwhile: the page has the agent set it after.
+ * resumes it, also on an error. With `stage`, the snapshot goes to its staging file while it has room, and a staging
+ * write refused partway writes it again directly, still paused. The guest's clock stands still meanwhile: the page has
+ * the agent set it after.
  */
-async function pausedWrite(r: Running, id: number, sink: Sink, lz: Codec, o: { whole: boolean; pool?: SavePool }) {
+async function pausedWrite(
+  r: Running,
+  id: number,
+  sink: Sink,
+  lz: Codec,
+  o: { whole: boolean; pool?: SavePool; stage?: Staging },
+) {
   const v = r.vm;
   progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
   const t0 = performance.now();
   if (!(await v.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
   const pause = performance.now() - t0;
-  try {
-    const w = await writeSnapshot(v, sink, meta(r), lz, {
+  const stage = o.stage;
+  const write = () =>
+    writeSnapshot(v, stage?.sink ?? sink, meta(r), lz, {
       omit: (slot) => !o.whole && r.inPlace(slot),
       pool: o.pool,
+      sized: stage && ((bound) => stage.sized(bound)),
       progress: throttled(id, msg('snapshots:worker-snapshot.phase.writing')),
     });
-    return { ...w, pause };
+  try {
+    try {
+      return { ...(await write()), pause };
+    } catch (e) {
+      if (!(e instanceof StageRefused) || !stage) throw e;
+      await stage.refused();
+      return { ...(await write()), pause };
+    }
   } finally {
     v.resume();
   }
@@ -162,10 +207,12 @@ function poolFor(r: Running) {
 }
 
 /**
- * Saves a snapshot of the running machine `r` (docs/frontend.md "Snapshots"): the VM is paused, written
- * to the picked file's stream or sent back in chunks, and resumed, also on an error. Only the
- * writing is between pause and resume: the file's stream is opened before, and closed (flushed)
- * after.
+ * Saves a snapshot of the running machine `r` (docs/frontend.md "Snapshots"): the VM is paused, written to the picked
+ * file's stream, sent back in chunks, or kept (`keep`), and resumed, also on an error; `snapshot-resumed` says the
+ * machine runs again. Only the writing is between pause and resume: the file's stream is opened before, and closed
+ * (flushed) after. A file save with `stage` (the page's name for its staging file) writes to that file in OPFS while it
+ * has room, and after the resume copies it into the picked file and removes it, or, for a download, hands the page the
+ * file (which the page removes). One save at a time, the copy included.
  */
 export async function saveSnapshot(
   r: Running | undefined,
@@ -173,27 +220,22 @@ export async function saveSnapshot(
   handle?: FileSystemFileHandle,
   keep?: string,
   whole = false,
+  stage?: string,
 ) {
   const fail = (error: unknown) => post({ type: 'snapshot-error', id, error: toWire(error) });
-  if (!r)
-    return fail(
-      new MsgError('snapshots:worker-snapshot.notRunning', undefined, {
-        cause: new MsgError('snapshots:worker-snapshot.notRunning.cause'),
-      }),
-    );
-  if (snapshotting)
-    return fail(
-      new MsgError('snapshots:worker-snapshot.saving', undefined, {
-        cause: new MsgError('snapshots:worker-snapshot.saving.cause'),
-      }),
-    );
+  const refused = cantSave(r);
+  if (refused || !r) return fail(refused);
   snapshotting = true;
   let out: Out | undefined;
   let pool: ReturnType<typeof poolFor> | undefined;
+  let staged: Staging | undefined;
+  /** The staging file is the page's now (a download's): not removed here. */
+  let handed = false;
   try {
     const lz = await r.codec();
     pool = poolFor(r);
     out = await output(id, handle, keep);
+    staged = stage && !keep ? await stagingFor(r, stage, out.sink) : undefined;
     let hinted;
     let w;
     let pausedMs;
@@ -202,25 +244,62 @@ export async function saveSnapshot(
       hinted = await hint(r, id);
       started = await pool.ready();
       const t0 = performance.now();
-      w = await pausedWrite(r, id, out.sink, lz, { whole, pool: started.pool });
+      w = await pausedWrite(r, id, out.sink, lz, { whole, pool: started.pool, stage: staged });
       pausedMs = performance.now() - t0;
     } finally {
       r.vm.release(); // the guest's free memory back to it, the save done or not
       pool.close();
     }
+    post({ type: 'snapshot-resumed', id });
+    const after = await finishStaged(staged, id, out.writable, handle?.name);
+    handed = !!after.file;
     progress(id, msg('snapshots:worker-snapshot.phase.finishing'), 1);
     const t1 = performance.now();
     await out.close();
     const { bytes, stateMs, blobBytes, pins, pause } = w;
-    const phases: SaveTimes = { ...w.phases, ...started.times, pause, close: performance.now() - t1 };
-    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, ...hinted, phases });
+    const phases: SaveTimes = { ...w.phases, ...started.times, pause, copy: after.copy, close: performance.now() - t1 };
+    const { file } = after;
+    post({
+      type: 'snapshot-done',
+      id,
+      bytes,
+      pausedMs,
+      stateMs,
+      blobBytes,
+      pins,
+      ...hinted,
+      phases,
+      staging: staged?.how,
+      file,
+    });
   } catch (err) {
     fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
   } finally {
     pool?.close();
     await out?.abort();
+    if (!handed) await staged?.discard();
     snapshotting = false;
   }
+}
+
+/**
+ * A file save's staging file (none: it can't be opened, the save writes directly), the storage's room asked before
+ * the pause (it is checked against the file's bound in it).
+ */
+const stagingFor = (r: Running, stage: string, direct: Sink) =>
+  staging(stage, freeRoom(r.stageRoom), direct).catch(() => undefined);
+
+/** Why a snapshot of `r` can't be saved now, or none. */
+function cantSave(r: Running | undefined) {
+  if (!r)
+    return new MsgError('snapshots:worker-snapshot.notRunning', undefined, {
+      cause: new MsgError('snapshots:worker-snapshot.notRunning.cause'),
+    });
+  if (snapshotting)
+    return new MsgError('snapshots:worker-snapshot.saving', undefined, {
+      cause: new MsgError('snapshots:worker-snapshot.saving.cause'),
+    });
+  return undefined;
 }
 
 /** Writes the suspended copy beside the overlay in `home`; its size and where the time went (but the pause's). */
@@ -289,7 +368,7 @@ export async function suspend(r: Running | undefined, id: number) {
     // From here the machine must not run: the file is only good for the disk as it is now.
     closing = true;
     await r.close();
-    post({ type: 'suspend-done', id, bytes, pausedMs, phases: { ...phases, ...started.times, pause } });
+    post({ type: 'suspend-done', id, bytes, pausedMs, phases: { ...phases, ...started.times, pause, copy: 0 } });
     state('suspended', { note: msg('machine:worker-snapshot.suspended', { size: bytes }) });
   } catch (err) {
     if (paused && !closing) r.vm.resume();

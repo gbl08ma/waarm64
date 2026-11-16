@@ -31,7 +31,7 @@
 
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 
 use crate::cpu::{Cpu, PSTATE_I, sctlr};
 use crate::flash::{FLASH, Flash};
@@ -383,6 +383,9 @@ pub struct Counters {
     /// Then (ABI 48) the misses that found the lock held and didn't wait;
     /// (ABI 50) the ns the block map's prunes took.
     pub jx: [AtomicU64; 13],
+    /// The diagnostic build's tallies (`crate::tally`), past the words the host knows.
+    #[cfg(feature = "diag")]
+    pub diag: [AtomicU64; crate::tally::N],
 }
 
 /// Indexes into [`Counters::par`].
@@ -414,6 +417,8 @@ impl Default for Counters {
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
             jx: [const { AtomicU64::new(0) }; 13],
+            #[cfg(feature = "diag")]
+            diag: [const { AtomicU64::new(0) }; crate::tally::N],
         }
     }
 }
@@ -799,6 +804,8 @@ impl Vm {
             // A table per vCPU in parallel SMP, one in round-robin.
             decoded: crate::interp::block::budget(if parallel { n } else { 1 }) as u32,
             fma: cfg.fma != 0,
+            // Parallel SMP's code polls a stop word instead of counting a budget.
+            polled: parallel,
             ..c
         });
         let mut vcpus: Vec<_> = (0..n)
@@ -850,6 +857,7 @@ impl Vm {
         if parallel {
             for (v, s) in vcpus.iter_mut().zip(&shared.cpus) {
                 v.tlb.published = s.par.asid_word();
+                s.par.set_stop(&v.jit.stop);
             }
         }
         Vm {
@@ -1264,6 +1272,13 @@ impl Vm {
         c.tlb_flushes.store(flushes, Ordering::Relaxed);
         if let Some(j) = &self.vcpus[0].jit.cache {
             publish_jit(c, &j.table.stats());
+        }
+        #[cfg(feature = "diag")]
+        for (i, a) in c.diag[..crate::tally::JIT_SLOTS].iter().enumerate() {
+            a.store(
+                self.vcpus.iter().map(|v| v.diag[i]).sum(),
+                Ordering::Relaxed,
+            );
         }
     }
 

@@ -15,6 +15,7 @@ import type { Run } from '../run/run.ts';
 import type { Replies } from '../run/replies.ts';
 import { fromWire } from '../../msg.ts';
 import { download, savePicker } from './disk-export.ts';
+import { dropDownload, holdStaging, keepForDownload, removeStale } from '../../snapshot-stage.ts';
 import { messageBar } from './message-bar.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
 
@@ -65,8 +66,10 @@ function fileName(machine: string, d: Date) {
 
 export class SnapshotActions {
   readonly #d: SnapshotDeps;
+  /** Made once, at the page's start: a crashed save's staging files (no page holds them) are removed then. */
   constructor(d: SnapshotDeps) {
     this.#d = d;
+    void removeStale().catch((e: unknown) => console.warn('waarm64: stale snapshot staging files:', e));
   }
 
   /** The run `r`, still the page's, running and not busy: a snapshot can be taken of it. */
@@ -114,22 +117,40 @@ export class SnapshotActions {
     );
   }
 
-  /** The snapshot written by the worker: its messages (`chunk`: the file's bytes, without a handle or a keep) until it's done. */
+  /**
+   * The snapshot written by the worker: its messages (`chunk`: the file's bytes, without a handle or a keep, which it
+   * copies) until it's done.
+   */
   #write(
     r: Run,
     send: Omit<Extract<ToWorker, { type: 'snapshot' }>, 'id'>,
-    chunk: (data: Uint8Array) => void = () => undefined,
+    o: { chunk?: (data: Uint8Array) => void; resumed?: () => void } = {},
   ) {
     return new Promise<Done>((resolve, reject) => {
-      r.save(send, { progress: this.#progress, chunk, done: (m) => resolve(m as Done), error: reject });
+      r.save(send, {
+        progress: this.#progress,
+        chunk: o.chunk ?? (() => undefined),
+        resumed: o.resumed,
+        done: (m) => resolve(m as Done),
+        error: reject,
+      });
     });
   }
-  /** The save is over (it worked or not): the devices go back on, and the guest's clock, held during the pause, is set. */
-  #over(r: Run, unplugged: Unplugged) {
-    power.saving = false;
+  /**
+   * The machine runs again (the pause is over; a staged file's copy may go on, still the save in progress): the guest's
+   * input and devices go back on, and its clock, held during the pause, is set. Once a save.
+   */
+  #resumed(r: Run, unplugged: Unplugged, once: { done: boolean }) {
+    if (once.done) return;
+    once.done = true;
     r.input.hold(false);
     if (r.live()) this.#d.agent.syncClock();
     void this.#d.plugBack(r, unplugged);
+  }
+  /** The save is over (it worked or not): it was resumed (`#resumed`, if not yet), and another save may start. */
+  #over(r: Run, unplugged: Unplugged, once = { done: false }) {
+    power.saving = false;
+    this.#resumed(r, unplugged, once);
   }
   /** Says a snapshot was saved, if the machine runs on. */
   #saved(r: Run, how: 'file' | 'kept', name: string, done: Done) {
@@ -189,17 +210,33 @@ export class SnapshotActions {
     const o = { whole };
     power.saving = true;
     const parts: Blob[] = [];
+    const once = { done: false };
+    // The last download's staging file goes first (its room is this save's); then this save's name, its lock held until
+    // the file is gone (web/snapshot-stage.ts; none: written directly).
+    await dropDownload();
+    const stage = await holdStaging().catch(() => undefined);
+    let downloaded = false;
     try {
       this.#holdInput(r);
       await this.#dropCaches();
-      const done = await this.#write(r, { type: 'snapshot', handle, whole: o.whole }, (data) => {
-        parts.push(new Blob([data as Uint8Array<ArrayBuffer>]));
-      });
-      if (!handle) download(new Blob(parts), suggestedName);
+      // Without a staging file, each chunk copied into a Blob at once (its buffer goes back to the worker:
+      // web/app/run/worker-messages.ts).
+      const done = await this.#write(
+        r,
+        { type: 'snapshot', handle, whole: o.whole, stage: stage?.name },
+        {
+          chunk: (data) => parts.push(new Blob([data as Uint8Array<ArrayBuffer>])),
+          resumed: () => this.#resumed(r, unplugged, once),
+        },
+      );
+      if (!handle) {
+        download(done.file ?? new Blob(parts), suggestedName);
+        downloaded = !!done.file;
+      }
       parts.length = 0;
-      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, phases } = done;
+      const { bytes, pausedMs, stateMs, blobBytes, hintMs, hinted, phases, staging } = done;
       // For tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes, the balloon's
-      // hint, where the time went (protocol.ts `SaveTimes`).
+      // hint, where the time went (protocol.ts `SaveTimes`), and whether it went through a staging file.
       messageBar.snapshot = JSON.stringify({
         kind: 'file',
         bytes,
@@ -209,12 +246,16 @@ export class SnapshotActions {
         hintMs,
         hinted,
         phases,
+        staging,
       });
       this.#saved(r, 'file', handle?.name ?? suggestedName, done);
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.noFile'));
     } finally {
-      this.#over(r, unplugged);
+      // A download's staged file is read by the browser after the click: kept until the next file save.
+      if (stage && downloaded) keepForDownload(stage);
+      else void stage?.release();
+      this.#over(r, unplugged, once);
     }
   }
 

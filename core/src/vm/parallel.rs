@@ -113,6 +113,9 @@ pub(super) struct CpuPar {
     /// mid-chunk needs an ISB before the new ASID is promised to translate,
     /// and the ISB ends the chunk (and drains the queue).
     asid: AtomicU64,
+    /// Its stop word (`jit::State::stop`, in its `Vcpu`, which is boxed: the
+    /// address holds for the VM's life), which [`Vm::stop`] clears.
+    stop: AtomicPtr<AtomicU32>,
 }
 
 /// [`jit::Fast::f`] for a [`Vm`] in parallel mode ([`Vm::fast`]).
@@ -129,6 +132,10 @@ unsafe fn fast_exit(ctx: *const (), c: usize, v: &mut Vcpu, insn: u32, e: Exit) 
 /// (`publish_cpu`): ~0.1 ms of guest code at the JIT's speed.
 const JIT_PUBLISH: u64 = 1 << 16;
 
+/// The longest chunk `vm_set_chunk` gives polled code (a test's: its setters
+/// then show as latency; the polls compare it with an i32 `acc`).
+const POLL_MAX: u64 = 1 << 30;
+
 /// Steps between two checks of a running vCPU's timers against the clock
 /// (`run_loop`, between chunks), unless their registers change: a few µs of guest code.
 const TIMER_STEPS: u64 = 4096;
@@ -142,6 +149,17 @@ impl CpuPar {
     pub(super) fn asid_word(&self) -> *const AtomicU64 {
         &self.asid
     }
+
+    /// Its vCPU's stop word (`Vm::with_devices`, before any thread runs it).
+    pub(super) fn set_stop(&self, w: &AtomicU32) {
+        self.stop
+            .store(w as *const AtomicU32 as *mut AtomicU32, Ordering::SeqCst);
+    }
+
+    /// Its stop word's address (`vm_cpu_stop`), null before [`CpuPar::set_stop`].
+    pub(super) fn stop_word(&self) -> *const AtomicU32 {
+        self.stop.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for CpuPar {
@@ -154,6 +172,7 @@ impl Default for CpuPar {
             applied: AtomicU64::new(0),
             waiting: AtomicBool::new(false),
             asid: AtomicU64::new(ANY),
+            stop: AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 }
@@ -298,6 +317,14 @@ impl Vm {
         (0..self.vcpus.len()).for_each(|i| self.wake(i));
     }
 
+    /// vCPU `c`'s stop word (`vm_cpu_stop`): null past the last vCPU and in round-robin mode.
+    pub fn cpu_stop(&self, c: usize) -> *const AtomicU32 {
+        self.shared
+            .cpus
+            .get(c)
+            .map_or(core::ptr::null(), |s| s.par.stop_word())
+    }
+
     /// vCPU `c`'s last exit (parallel mode).
     pub fn exit_of(&self, c: usize) -> *const ExitInfo {
         // Only a pointer: its thread may be writing it.
@@ -312,7 +339,24 @@ impl Vm {
         if let Some(j) = &mut v.jit.cache {
             j.unpark();
         }
+        let polled = v.jit.cache.as_ref().is_some_and(|j| j.polled());
+        // The diagnostic build: when the last chunk ended by its steps (the time to the next one's start).
+        #[cfg(feature = "diag")]
+        let mut between: Option<u64> = None;
         loop {
+            // The chunk's steps: shorter while the PC sampler runs (`Shared::chunk`: the PC is published at each
+            // chunk's end); a test may make it longer under polled code (its setters then show).
+            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
+                0 => CHUNK,
+                k if polled => k.min(POLL_MAX),
+                k => k.min(CHUNK),
+            };
+            let n = chunk.min(budget.saturating_sub(own.steps - start)).max(1);
+            // Polled code's bound, stored before anything here looks for work: whatever makes work for this vCPU
+            // after these reads stores 0 there after making it ([`Vm::stop`]), and the chunk stops at its next poll.
+            if polled {
+                v.jit.stop.store(n as u32, Ordering::SeqCst);
+            }
             // Read before looking for work (see the module docs).
             let wake = sh.wake.load(Ordering::SeqCst);
             let sig = self.shared.signal.load(Ordering::Acquire);
@@ -405,6 +449,8 @@ impl Vm {
             if own.wfi {
                 // WFI completes when an interrupt is signaled, masked or not.
                 if irq {
+                    #[cfg(feature = "diag")]
+                    self.irq_late(c, crate::tally::IRQ_LATE + 3);
                     own.wfi = false;
                     v.cpu.pc = v.cpu.pc.wrapping_add(4);
                     own.steps += 1;
@@ -421,6 +467,8 @@ impl Vm {
                 return exit::IDLE;
             }
             if irq && v.cpu.pstate & PSTATE_I == 0 {
+                #[cfg(feature = "diag")]
+                self.irq_late(c, crate::tally::IRQ_LATE);
                 take_irq(&mut v.cpu);
                 own.steps += 1;
                 bump(&sh.counters.irqs);
@@ -439,12 +487,6 @@ impl Vm {
                 }
                 fence(Ordering::SeqCst);
             }
-            // Shorter while the PC sampler runs (`Shared::chunk`): the PC is published at each chunk's end.
-            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
-                0 => CHUNK,
-                k => k.min(CHUNK),
-            };
-            let n = chunk.min(budget - (own.steps - start));
             // The helpers' fast completions (`fast`): realtime only, as the counter they read is the host's clock.
             v.jit.fast = (self.realtime() && own.waits.is_empty()).then_some(jit::Fast {
                 f: fast_exit,
@@ -464,6 +506,12 @@ impl Vm {
                 v.jit.counter = self.counter();
             }
             debug_assert!(v.jit.io.is_none(), "a device access's outcome left over");
+            #[cfg(feature = "diag")]
+            if let Some(t) = between.take() {
+                let d = &sh.counters.diag;
+                crate::tally::add(d, crate::tally::BETWEEN, 1);
+                crate::tally::add(d, crate::tally::BETWEEN_NS, self.clock.ns() - t);
+            }
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }
@@ -474,6 +522,16 @@ impl Vm {
             };
             v.jit.fast = None;
             v.jit.unmask = jit::Unmask::default();
+            #[cfg(feature = "diag")]
+            {
+                let d = &sh.counters.diag;
+                let kind = crate::tally::end_kind(e.as_ref(), k >= n);
+                crate::tally::add(d, crate::tally::END + kind, 1);
+                crate::tally::add(d, crate::tally::END_STEPS + kind, k);
+                if kind == crate::tally::BUDGET {
+                    between = Some(self.clock.ns());
+                }
+            }
             own.steps += k;
             self.publish_cpu(c, v, own, false);
             if let Some(e) = e
@@ -583,6 +641,18 @@ impl Vm {
             v.cpu.cntp_cval_el0,
         ]);
         let ppi = timers(&v.cpu, now);
+        #[cfg(feature = "diag")]
+        {
+            use crate::tally::{TIMER_LATE, late};
+            let d = &self.shared.cpus[c].counters.diag;
+            let at = TIMER_LATE + if own.wfi { 3 } else { 0 };
+            if ppi.0 && !own.ppi.0 {
+                late(d, at, now.saturating_sub(v.cpu.cntv_cval_el0));
+            }
+            if ppi.1 && !own.ppi.1 {
+                late(d, at, now.saturating_sub(v.cpu.cntp_cval_el0));
+            }
+        }
         if ppi != own.ppi {
             let mut pl = self.plat_of(c);
             pl.gic.set_level(c, IRQ_VTIMER, ppi.0);
@@ -738,17 +808,57 @@ impl Vm {
         spis(pl, &self.shared);
         for (i, s) in self.shared.cpus.iter().enumerate() {
             let on = pl.gic.irq(i);
-            if s.par.irq.swap(on, Ordering::SeqCst) != on && on {
+            let was = s.par.irq.swap(on, Ordering::SeqCst);
+            #[cfg(feature = "diag")]
+            if was != on {
+                let t = if on { self.ns().max(1) } else { 0 };
+                s.counters.diag[crate::tally::IRQ_STAMP].store(t, Ordering::Relaxed);
+            }
+            if was != on && on {
                 self.wake(i);
             }
         }
     }
 
-    /// Bumps and notifies vCPU `i`'s wake word (after the change it's for).
+    /// The diagnostic build: the latency from vCPU `c`'s interrupt line's rise to now, into the triple at `at`.
+    #[cfg(feature = "diag")]
+    fn irq_late(&self, c: usize, at: usize) {
+        use crate::tally::{IRQ_HIST, IRQ_LATE, IRQ_STAMP, add, late};
+        let d = &self.shared.cpus[c].counters.diag;
+        let t = d[IRQ_STAMP].swap(0, Ordering::Relaxed);
+        if t == 0 {
+            return;
+        }
+        let ns = self.ns().saturating_sub(t);
+        late(d, at, ns);
+        if at == IRQ_LATE {
+            match ns {
+                0..10_000 => add(d, IRQ_HIST, 1),
+                10_000..100_000 => add(d, IRQ_HIST + 1, 1),
+                100_000..1_000_000 => add(d, IRQ_HIST + 2, 1),
+                _ => {}
+            }
+        }
+    }
+
+    /// Bumps and notifies vCPU `i`'s wake word (after the change it's for),
+    /// and stops its chunk at its next poll.
     pub(super) fn wake(&self, i: usize) {
+        self.stop(i);
         let w = &self.shared.cpus[i].wake;
         w.fetch_add(1, Ordering::SeqCst);
         notify(w);
+    }
+
+    /// Stores 0 in vCPU `i`'s stop word (after the change it's for): its
+    /// compiled code stops at its next poll, and its run loop looks again.
+    pub(super) fn stop(&self, i: usize) {
+        let w = self.shared.cpus[i].par.stop.load(Ordering::Relaxed);
+        if !w.is_null() {
+            // SAFETY: the word is in vCPU `i`'s boxed `Vcpu`, which lives as long as the VM; it's only accessed
+            // atomically (its own thread's run loop and dispatcher, compiled code's atomic loads).
+            unsafe { &*w }.store(0, Ordering::SeqCst);
+        }
     }
 
     /// Queues `op` for every other vCPU; a TLB operation is waited for at
@@ -787,6 +897,8 @@ impl Vm {
                     Some(w) => w.1 = seq,
                     None => own.waits.push((t, seq)),
                 }
+                // Its chunk ends at its next poll, so the DSB doesn't wait for a looping vCPU's chunk.
+                self.stop(t);
             }
         }
     }
@@ -1058,6 +1170,10 @@ impl Vm {
         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
         if let Some(j) = &v.jit.cache {
             publish_jit(k, &j.table.stats());
+        }
+        #[cfg(feature = "diag")]
+        for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+            a.store(x, Ordering::Relaxed);
         }
     }
 }

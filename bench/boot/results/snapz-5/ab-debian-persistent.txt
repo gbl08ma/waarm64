@@ -1,0 +1,55 @@
+== debian persistent round 1: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":2271,disk:456
+round 0 keptStart {"wallMs":1976,disk:424
+round 0 resume {"wallMs":1879,disk:0
+round 0 kept {"wallMs":376,"kind":"kept","bytes":95247168,"pausedMs":166
+round 0 file {"wallMs":479,"kind":"file","bytes":95544328,"pausedMs":165
+round 0 picked {"wallMs":593,"kind":"file","bytes":95575061,"pausedMs":150
+round 0 suspend {"wallMs":323,"kind":"suspend","bytes":94156329,"pausedMs":150
+== debian persistent round 2: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1565,disk:43
+round 0 keptStart {"wallMs":1604,disk:33
+round 0 resume {"wallMs":1742,disk:0
+round 0 kept {"wallMs":328,"kind":"kept","bytes":95257528,"pausedMs":161
+round 0 file {"wallMs":456,"kind":"file","bytes":95544447,"pausedMs":152
+round 0 picked {"wallMs":489,"kind":"file","bytes":95609291,"pausedMs":164
+round 0 suspend {"wallMs":312,"kind":"suspend","bytes":94189930,"pausedMs":160
+== debian persistent round 3: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1568,disk:34
+round 0 keptStart {"wallMs":1612,disk:35
+round 0 resume {"wallMs":1845,disk:0
+round 0 kept {"wallMs":375,"kind":"kept","bytes":95237267,"pausedMs":156
+round 0 file {"wallMs":467,"kind":"file","bytes":95510858,"pausedMs":157
+round 0 picked {"wallMs":483,"kind":"file","bytes":95563097,"pausedMs":161
+round 0 suspend {"wallMs":269,"kind":"suspend","bytes":94143098,"pausedMs":153
+== debian persistent round 4: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1970,disk:456
+round 0 keptStart {"wallMs":2004,disk:413
+round 0 resume {"wallMs":1867,disk:0
+round 0 kept {"wallMs":376,"kind":"kept","bytes":95273477,"pausedMs":162
+round 0 file {"wallMs":456,"kind":"file","bytes":95629967,"pausedMs":161
+round 0 picked {"wallMs":534,"kind":"file","bytes":95650082,"pausedMs":166
+round 0 suspend {"wallMs":268,"kind":"suspend","bytes":94219454,"pausedMs":150
+== debian persistent round 5: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1873,disk:411
+round 0 keptStart {"wallMs":2001,disk:398
+round 0 resume {"wallMs":1764,disk:0
+round 0 kept {"wallMs":366,"kind":"kept","bytes":95275022,"pausedMs":163
+round 0 file {"wallMs":486,"kind":"file","bytes":95536531,"pausedMs":191
+round 0 picked {"wallMs":486,"kind":"file","bytes":95548581,"pausedMs":151
+round 0 suspend {"wallMs":279,"kind":"suspend","bytes":94099468,"pausedMs":145
+== debian persistent round 6: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1463,disk:34
+round 0 keptStart {"wallMs":1595,disk:33
+round 0 resume {"wallMs":1742,disk:0
+round 0 kept {"wallMs":319,"kind":"kept","bytes":95320142,"pausedMs":157
+round 0 file {"wallMs":498,"kind":"file","bytes":95495074,"pausedMs":160
+round 0 picked {"wallMs":486,"kind":"file","bytes":95547541,"pausedMs":154
+round 0 suspend {"wallMs":272,"kind":"suspend","bytes":94118584,"pausedMs":152
+ALLDONE

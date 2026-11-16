@@ -1,0 +1,226 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 689228158,
+  "rounds": 1,
+  "settleS": 5,
+  "commit": "ec293884-dirty",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-16T01:58:57.312Z",
+  "wallS": 4
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 1359,
+    "phases": {
+     "check": 377,
+     "checkRead": 302,
+     "checkCrc": 397,
+     "state": 81,
+     "ram": 435,
+     "disk": 82,
+     "pool": 6,
+     "read": 239,
+     "crc": 450,
+     "unpack": 740,
+     "apply": 408,
+     "prepare": 20,
+     "start": 169,
+     "total": 1164,
+     "t0": 1794794336003,
+     "marks": [
+      [
+       "start",
+       1794794336003
+      ],
+      [
+       "prepare0",
+       1794794336003
+      ],
+      [
+       "responses",
+       1794794336005
+      ],
+      [
+       "bodies",
+       1794794336019
+      ],
+      [
+       "disksHead",
+       1794794336019
+      ],
+      [
+       "fetched",
+       1794794336019
+      ],
+      [
+       "compiled",
+       1794794336023
+      ],
+      [
+       "firmwareFiles",
+       1794794336023
+      ],
+      [
+       "codec",
+       1794794336024
+      ],
+      [
+       "header",
+       1794794336028
+      ],
+      [
+       "poolReady",
+       1794794336045
+      ],
+      [
+       "readSnapshot",
+       1794794336503
+      ],
+      [
+       "restoreOpened",
+       1794794336504
+      ],
+      [
+       "bootVm0",
+       1794794336504
+      ],
+      [
+       "vm.instantiate0",
+       1794794336510
+      ],
+      [
+       "vm.instantiated",
+       1794794336512
+      ],
+      [
+       "vm.specs",
+       1794794336519
+      ],
+      [
+       "vm.exact0",
+       1794794336519
+      ],
+      [
+       "vm.exact1",
+       1794794336519
+      ],
+      [
+       "vm.fill0",
+       1794794336526
+      ],
+      [
+       "vm.filled",
+       1794794337044
+      ],
+      [
+       "vm.coreRestored",
+       1794794337045
+      ],
+      [
+       "vm.deviceHost0",
+       1794794337045
+      ],
+      [
+       "vm.dwSpawn",
+       1794794337045
+      ],
+      [
+       "dw.loaded",
+       1794794337121
+      ],
+      [
+       "dw.open0",
+       1794794337140
+      ],
+      [
+       "dw.opened",
+       1794794337160
+      ],
+      [
+       "dw.restore0:rng",
+       1794794337157,
+       1794794337157
+      ],
+      [
+       "dw.restore1:input",
+       1794794337157,
+       1794794337157
+      ],
+      [
+       "dw.restore2:input",
+       1794794337157,
+       1794794337157
+      ],
+      [
+       "dw.restore3:net",
+       1794794337157,
+       1794794337157
+      ],
+      [
+       "dw.restore4:gpu",
+       1794794337157,
+       1794794337160
+      ],
+      [
+       "dw.restore5:snd",
+       1794794337160,
+       1794794337160
+      ],
+      [
+       "dw.restore6:clock",
+       1794794337160,
+       1794794337160
+      ],
+      [
+       "dw.restore7:blk",
+       1794794337160,
+       1794794337160
+      ],
+      [
+       "dw.restore8:blk",
+       1794794337160,
+       1794794337160
+      ],
+      [
+       "dw.restore9:vsock",
+       1794794337160,
+       1794794337160
+      ],
+      [
+       "dw.restore10:balloon",
+       1794794337160,
+       1794794337160
+      ],
+      [
+       "vm.deviceHost1",
+       1794794337160
+      ],
+      [
+       "vm.quiesced",
+       1794794337162
+      ],
+      [
+       "bootVm1",
+       1794794337163
+      ],
+      [
+       "booted",
+       1794794337167
+      ]
+     ]
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,221 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 689228158,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "dc131da3",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-15T23:12:05.181Z",
+  "wallS": 139
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 7310,
+    "phases": {
+     "check": 396,
+     "checkRead": 311,
+     "checkCrc": 399,
+     "state": 116,
+     "ram": 592,
+     "disk": 2044,
+     "pool": 6,
+     "read": 426,
+     "crc": 446,
+     "unpack": 779,
+     "apply": 599,
+     "prepare": 1794,
+     "start": 2197,
+     "total": 7139
+    }
+   },
+   "kept": {
+    "wallMs": 2035,
+    "kind": "kept",
+    "bytes": 675468539,
+    "pausedMs": 1438,
+    "stateMs": 278,
+    "blobBytes": 109066428,
+    "hintMs": 25,
+    "hinted": 910163968,
+    "id": "949f16869b8e",
+    "phases": {
+     "state": 278,
+     "blobs": 65,
+     "ram": 870,
+     "disk": 221,
+     "pool": 6,
+     "scan": 380,
+     "compress": 3175,
+     "crc": 345,
+     "sink": 468,
+     "poolWait": 1,
+     "poolReady": 79,
+     "pause": 1,
+     "copy": 0,
+     "close": 398
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 3511,
+      "pssMiB": 2866
+     },
+     "peak": {
+      "rssMiB": 3678,
+      "pssMiB": 3032
+     }
+    }
+   },
+   "keptStart": {
+    "wallMs": 8188,
+    "phases": {
+     "check": 359,
+     "checkRead": 238,
+     "checkCrc": 385,
+     "state": 96,
+     "ram": 621,
+     "disk": 2193,
+     "pool": 6,
+     "read": 401,
+     "crc": 396,
+     "unpack": 765,
+     "apply": 454,
+     "prepare": 2196,
+     "start": 2325,
+     "total": 7790
+    }
+   },
+   "file": {
+    "wallMs": 2882,
+    "kind": "file",
+    "bytes": 678850187,
+    "pausedMs": 1444,
+    "stateMs": 278,
+    "blobBytes": 109066428,
+    "hintMs": 18,
+    "hinted": 910163968,
+    "phases": {
+     "state": 278,
+     "blobs": 97,
+     "ram": 792,
+     "disk": 266,
+     "pool": 6,
+     "scan": 585,
+     "compress": 3075,
+     "crc": 316,
+     "sink": 280,
+     "poolWait": 0,
+     "poolReady": 50,
+     "pause": 8,
+     "copy": 35,
+     "close": 0
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 5178,
+      "pssMiB": 4532
+     },
+     "peak": {
+      "rssMiB": 5411,
+      "pssMiB": 4759
+     }
+    }
+   },
+   "picked": {
+    "wallMs": 3072,
+    "kind": "file",
+    "bytes": 678978867,
+    "pausedMs": 1363,
+    "stateMs": 265,
+    "blobBytes": 109066428,
+    "hintMs": 15,
+    "hinted": 910163968,
+    "phases": {
+     "state": 265,
+     "blobs": 57,
+     "ram": 728,
+     "disk": 309,
+     "pool": 6,
+     "scan": 334,
+     "compress": 3012,
+     "crc": 366,
+     "sink": 281,
+     "poolWait": 29,
+     "poolReady": 70,
+     "pause": 1,
+     "copy": 1379,
+     "close": 12
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 4996,
+      "pssMiB": 4348
+     },
+     "peak": {
+      "rssMiB": 5294,
+      "pssMiB": 4645
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 1402,
+    "kind": "suspend",
+    "bytes": 663386148,
+    "pausedMs": 1241,
+    "phases": {
+     "state": 244,
+     "blobs": 59,
+     "ram": 818,
+     "disk": 0,
+     "pool": 6,
+     "scan": 411,
+     "compress": 3014,
+     "crc": 330,
+     "sink": 263,
+     "close": 107,
+     "poolWait": 52,
+     "poolReady": 58,
+     "pause": 6,
+     "copy": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 5253,
+      "pssMiB": 4606
+     },
+     "peak": {
+      "rssMiB": 5457,
+      "pssMiB": 4810
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 6391,
+    "phases": {
+     "check": 384,
+     "checkRead": 292,
+     "checkCrc": 383,
+     "state": 104,
+     "ram": 606,
+     "disk": 0,
+     "pool": 6,
+     "read": 386,
+     "crc": 403,
+     "unpack": 704,
+     "apply": 384,
+     "prepare": 2424,
+     "start": 2158,
+     "total": 5677
+    }
+   }
+  }
+ ]
+}

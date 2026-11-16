@@ -238,10 +238,11 @@ export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' |
 /** The vCPUs' optional features: web/cpu-features.ts's table (`CPU_DEFAULT` the ones a machine has unless turned off). */
 export { CPU_DEFAULT, CPU_FEATURES, type CpuFeature };
 /**
- * The features and devices the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and
- * suspended machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's
- * `cpu`) and devices (the notify socket, `vsock`, on every `firmware` machine since, and the balloon, on every machine
- * since: a snapshot from before restores without them, web/app/worker-header.ts `slotsOf`), whatever the machine's are now, so the hash needn't tell them apart.
+ * The features and devices the shape's hash leaves out: the ones that came after shapes did, so that the hash of the
+ * machines made before them didn't move (it is what their snapshots and suspended machines are checked by). A restore
+ * runs with the snapshot's own features (its header's `cpu`), whatever the machine's are now, and its devices are the
+ * machine's (the notify socket, `vsock`, on every `firmware` machine, and the balloon, on every machine: a snapshot
+ * without them is refused, web/app/worker-header.ts `slotsOf`), so the hash needn't tell them apart.
  */
 const UNHASHED_CPU: CpuFeature[] = ['sha3'];
 export const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));

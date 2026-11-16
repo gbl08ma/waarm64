@@ -21,6 +21,7 @@ import { answer, GrowActions, type Marks } from '../web/app/areas/grow-actions.t
 import type { GrowDisk, ResizeTarget } from '../web/app/resize.ts';
 import { msgOf } from '../web/msg.ts';
 import { asTemplate, openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
+import { storedCodec } from './snapshot-codecs.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, type ClipLink } from '../web/app/clipboard.ts';
 import { PASTE_WAIT } from '../web/app/clipboard-chord.ts';
 import { contentHash, HTML, IMAGE_CAP, imageHash, isPasteChord, onMac, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard-host.ts';
@@ -29,9 +30,18 @@ import { AGENT_FILE, AGENT_PIECE, agentBinary, agentCredentials, agentFiles, age
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
 import { words } from './words.ts';
+import { eventually, until } from './until.ts';
 
 const open: MessagePort[] = [];
 after(() => open.forEach((p) => p.close()));
+/** The link's next HELLO from the agent, registered now: take it before the HELLO is posted. */
+function nextHello(link: AgentLink) {
+  return new Promise<void>((r) => {
+    const on = () => (link.onHello.splice(link.onHello.indexOf(on), 1), r());
+    link.onHello.push(on);
+  });
+}
+
 /** A MessageChannel whose ports are closed when the tests end, whatever happened. */
 function channel() {
   const c = new MessageChannel();
@@ -81,31 +91,31 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   const opens: boolean[] = [];
   link.onOpen = (o) => opens.push(o);
   port2.postMessage({ type: 'open', open: true, conn: 1 });
-  await settle();
-  assert.deepEqual(opens, [true]);
-  // The page's HELLO first, at each opening, and the switch: taken by the guest at once here.
-  assert.deepEqual(sent.map((b) => b[4]), [FRAME.HELLO, FRAME.RESUME]);
+  await eventually(() => {
+    assert.deepEqual(opens, [true]);
+    // The page's HELLO first, at each opening, and the switch: taken by the guest at once here.
+    assert.deepEqual(sent.map((b) => b[4]), [FRAME.HELLO, FRAME.RESUME]);
+  });
   port2.postMessage({ type: 'taken', n: dev.bytes, conn: 1 });
   sent.length = 0;
   dev.bytes = 0;
   // Six frames of 64 KiB (and 5 bytes of header each): sent until the bytes in flight reach WINDOW, the fourth past it.
   const payload = new Uint8Array(65536);
   for (let i = 0; i < 6; i++) assert.equal(link.send(FRAME.DATA, payload), true);
+  await eventually(() => assert.equal(sent.length, Math.ceil(WINDOW / (65536 + 5))));
   await settle();
-  assert.equal(sent.length, Math.ceil(WINDOW / (65536 + 5)));
+  assert.equal(sent.length, Math.ceil(WINDOW / (65536 + 5)), 'no more past the window');
   assert.ok(link.backlog >= 6 * (65536 + 5) - 1);
   // The guest takes them: the rest go.
   port2.postMessage({ type: 'taken', n: dev.bytes, conn: 1 });
-  await settle();
-  assert.equal(sent.length, 6);
+  await eventually(() => assert.equal(sent.length, 6));
   // Frames in, cut anywhere.
   const frames: number[] = [];
   link.onFrame = (f) => frames.push(f.type);
   const both = new Uint8Array([...encodeFrame(FRAME.OFFER, new Uint8Array(3)), ...encodeFrame(FRAME.REQUEST)]);
   port2.postMessage({ type: 'data', conn: 1, bytes: both.subarray(0, 6) });
   port2.postMessage({ type: 'data', conn: 1, bytes: both.subarray(6) });
-  await settle();
-  assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST]);
+  await eventually(() => assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST]));
   // A half frame, then the agent closes and reopens: the half is forgotten, and so is the queue.
   port2.postMessage({ type: 'data', conn: 1, bytes: both.subarray(0, 3) });
   link.send(FRAME.DATA, payload);
@@ -113,11 +123,12 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   port2.postMessage({ type: 'open', open: true, conn: 2 });
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.OFFER) });
   port2.postMessage({ type: 'data', conn: 2, bytes: encodeFrame(FRAME.HELLO) });
-  await settle();
-  assert.deepEqual(opens, [true, false, true]);
-  assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST, FRAME.HELLO]); // the old connection's OFFER after the new one opened: dropped
+  await eventually(() => {
+    assert.deepEqual(opens, [true, false, true]);
+    assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST, FRAME.HELLO]); // the old connection's OFFER after the new one opened: dropped
+    assert.deepEqual([...new Set(conns)], [1, 2], 'each frame for its connection');
+  });
   assert.equal(link.backlog, encodeFrame(FRAME.HELLO, encodeHello({ version: VERSION, caps: pageCaps(true) })).length + encodeFrame(FRAME.RESUME).length, 'only the new opening\'s HELLO and RESUME');
-  assert.deepEqual([...new Set(conns)], [1, 2], 'each frame for its connection');
   link.close();
   port2.close();
 });
@@ -128,10 +139,9 @@ test("the link: TIME goes ahead of the frames queued, and takes the time as it g
   const sent: Frame[] = [];
   const reader = new FrameReader();
   port2.onmessage = (e) => { if (e.data.type === 'data') sent.push(...reader.push(e.data.bytes)); };
-  const settle = () => new Promise((r) => setTimeout(r, 30));
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.TEXT })) });
-  await settle();
+  assert.ok(await link.hello(10_000), 'the HELLO');
   port2.postMessage({ type: 'taken', n: 1 << 20, conn: 1 });
   // A backlog past the window, then TIME: it goes before the queued frames, stamped when it goes.
   const payload = new Uint8Array(65536);
@@ -143,7 +153,7 @@ test("the link: TIME goes ahead of the frames queued, and takes the time as it g
     assert.equal(link.time(), true);
     clock = 2_000_000; // the backlog drains later
     port2.postMessage({ type: 'taken', n: WINDOW, conn: 1 });
-    await settle();
+    await until(() => { const t = sent.findIndex((f) => f.type === FRAME.TIME); return t >= 0 && sent.slice(t + 1).filter((f) => f.type === FRAME.DATA).length >= 3; }, 'TIME and the frames after it');
   } finally {
     Date.now = now;
   }
@@ -193,36 +203,31 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   const settle = () => new Promise((r) => setTimeout(r, 30));
   assert.equal(link.type('ls\n'), false, 'closed');
   port2.postMessage({ type: 'open', open: true, conn: 1 });
-  await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
-  assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
+  await eventually(() => assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]));
   assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE | CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS | CAP.COPY });
   sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
   link.onHello.push((h) => hellos.push(h));
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | 0x100 })) });
-  await settle();
+  await until(() => hellos.length > 0, 'the HELLO');
   assert.deepEqual(hellos, [{ version: 1, caps: CAP.TYPE | 0x100 }]);
   assert.equal(link.canType, true);
   assert.equal(link.type('héllo\n'), true);
-  await settle();
   // Its frames, then an empty one: the paste's end (the agent drops the rest of a paste it had no room for).
-  assert.deepEqual(sent.slice(1).map((f) => [f.type, new TextDecoder().decode(f.payload)]), [[FRAME.TYPE, 'héllo\n'], [FRAME.TYPE, '']]);
+  await eventually(() => assert.deepEqual(sent.slice(1).map((f) => [f.type, new TextDecoder().decode(f.payload)]), [[FRAME.TYPE, 'héllo\n'], [FRAME.TYPE, '']]));
   sent.splice(2, 1);
   // Paused: nothing typed; the agent hears it, and again when it reopens its end (a restarted agent starts unpaused).
   link.pause();
   assert.equal(link.type('no'), false);
-  await settle();
-  assert.deepEqual(sent.slice(2).map((f) => f.type), [FRAME.PAUSE]);
+  await eventually(() => assert.deepEqual(sent.slice(2).map((f) => f.type), [FRAME.PAUSE]));
   port2.postMessage({ type: 'open', open: false, conn: 1 });
   port2.postMessage({ type: 'open', open: true, conn: 2 });
-  await settle();
+  await eventually(() => assert.deepEqual(sent.slice(3).map((f) => f.type), [FRAME.HELLO, FRAME.PAUSE]));
   assert.equal(link.agent, undefined, "a new opening: the agent's HELLO is to come");
-  assert.deepEqual(sent.slice(3).map((f) => f.type), [FRAME.HELLO, FRAME.PAUSE]);
   link.resume();
-  await settle();
-  assert.deepEqual(sent.slice(5).map((f) => f.type), [FRAME.RESUME]);
+  await eventually(() => assert.deepEqual(sent.slice(5).map((f) => f.type), [FRAME.RESUME]));
   link.close();
   port2.close();
 });
@@ -1096,26 +1101,27 @@ test("the link: TIME once the agent said it can; a machine without the clipboard
   };
   const settle = () => new Promise((r) => setTimeout(r, 30));
   port2.postMessage({ type: 'open', open: true, conn: 1 });
+  await until(() => sent.length > 0, 'the HELLO');
   await settle();
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO], 'no clipboard: no switch');
   assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TIME | CAP.DESKTOP | CAP.KEYMAP | CAP.OS });
   assert.equal(link.time(1000), false, "before the agent's HELLO");
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE })) });
-  await settle();
+  assert.ok(await link.hello(10_000), 'the HELLO');
   assert.equal(link.time(1000), false, 'an agent without CAP.TIME');
   port2.postMessage({ type: 'open', open: false, conn: 1 });
   port2.postMessage({ type: 'open', open: true, conn: 2 });
   port2.postMessage({ type: 'data', conn: 2, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
-  await settle();
+  await until(() => link.agent?.caps === CAP.TIME, 'the second HELLO');
   assert.equal(link.time(1_763_000_000_123.5), true);
+  await until(() => sent.some((f) => f.type === FRAME.TIME), 'TIME');
   await settle();
   const t = sent.filter((f) => f.type === FRAME.TIME);
   assert.equal(t.length, 1);
   assert.equal(new DataView(t[0].payload.buffer, t[0].payload.byteOffset).getBigUint64(0, true), 1_763_000_000_123_500_000n);
   // Out of step (a length that can't be): the page resets the connection; the agent connects again.
   port2.postMessage({ type: 'data', conn: 2, bytes: new Uint8Array([0, 0, 0, 0, 1, 2, 3]) });
-  await settle();
-  assert.deepEqual(toDevice.at(-1), { type: 'reset', conn: 2 });
+  await eventually(() => assert.deepEqual(toDevice.at(-1), { type: 'reset', conn: 2 }));
   // Its reader stays broken until the connection ends: one reset, not one a message (a later one could end the next connection).
   port2.postMessage({ type: 'data', conn: 2, bytes: new Uint8Array([9, 9, 9, 9]) });
   await settle();
@@ -1183,13 +1189,12 @@ test("the link's COPY: none to an agent that doesn't copy; COPIED's status and t
   assert.equal(await link.copy(100), undefined, 'no agent');
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   hello(1, CAP.TYPE | CAP.TEXT);
-  await settle();
+  assert.ok(await link.hello(10_000), 'the HELLO');
   assert.equal(link.canCopy, false);
   assert.equal(await link.copy(100), undefined, "an agent that doesn't copy");
   assert.equal(got.includes(FRAME.COPY), false, 'not asked');
   hello(1, CAP.TYPE | CAP.TEXT | CAP.COPY);
-  await settle();
-  assert.equal(link.canCopy, true);
+  await until(() => link.canCopy, 'the HELLO with COPY');
   answer = new Uint8Array([COPIED.OK, ...new TextEncoder().encode('root@deb:~# ☃')]);
   assert.deepEqual(await link.copy(1000), { status: COPIED.OK, text: 'root@deb:~# ☃' });
   answer = new Uint8Array([COPIED.GRAPHICS]);
@@ -1217,24 +1222,23 @@ test("the link: the guest's desktop as the agent says it (DESKTOP), none again w
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.DESKTOP })) });
   say(1, [DESKTOP.WAYLAND]);
-  await settle();
-  assert.equal(link.desktop, DESKTOP.WAYLAND);
+  await until(() => link.desktop === DESKTOP.WAYLAND, 'WAYLAND');
   say(1, [DESKTOP.WAYLAND]);
   say(1, []); // not a state: ignored
   say(1, [DESKTOP.X11]);
-  await settle();
+  await until(() => link.desktop === DESKTOP.X11, 'X11');
   assert.deepEqual(seen, [DESKTOP.WAYLAND, DESKTOP.X11], 'each change, once');
   // The connection ends (a restore): none until the agent says it again.
   port2.postMessage({ type: 'open', open: false, conn: 1 });
-  await settle();
-  assert.equal(link.desktop, DESKTOP.NONE);
+  await until(() => link.desktop === DESKTOP.NONE, 'NONE');
   port2.postMessage({ type: 'open', open: true, conn: 2 });
   say(1, [DESKTOP.WAYLAND]); // an earlier connection's
-  await settle();
-  assert.equal(link.desktop, DESKTOP.NONE, "an earlier connection's state dropped");
+  say(2, [DESKTOP.X11]);
+  await until(() => link.desktop !== DESKTOP.NONE, "the new connection's state");
+  assert.equal(link.desktop, DESKTOP.X11, "an earlier connection's state dropped");
   say(2, [DESKTOP.WAYLAND]);
-  await settle();
-  assert.deepEqual(seen, [DESKTOP.WAYLAND, DESKTOP.X11, DESKTOP.NONE, DESKTOP.WAYLAND]);
+  await until(() => link.desktop === DESKTOP.WAYLAND, 'WAYLAND again');
+  assert.deepEqual(seen, [DESKTOP.WAYLAND, DESKTOP.X11, DESKTOP.NONE, DESKTOP.X11, DESKTOP.WAYLAND]);
   link.close();
   port2.close();
 });
@@ -1269,6 +1273,7 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   };
   // The agent renews: no flap.
   const ok = agentWith(CAP.TIME | CAP.LEASE, LEASED.RENEWED);
+  assert.ok(await ok.link.hello(10_000), 'the HELLO'); // the actions wait 100 ms for it, too little under load
   let r = await run(ok.link, Promise.resolve([0, 2]));
   assert.equal(await r.done, 'agent');
   assert.deepEqual(r.flaps, []);
@@ -1276,7 +1281,7 @@ test("a restore's leases (web/app/areas/lease-actions.ts): once the network sett
   ok.close();
   // An agent with no network manager it knows, one without CAP.LEASE, one that never connects, none: the cards flap.
   for (const [what, x] of [['NO_CLIENT', agentWith(CAP.TIME | CAP.LEASE, LEASED.NO_CLIENT)], ['no CAP.LEASE', agentWith(CAP.TIME)], ['silent', agentWith(undefined)]] as const) {
-    await settle();
+    if (what !== 'silent') assert.ok(await x.link.hello(10_000), 'the HELLO');
     r = await run(x.link, Promise.resolve([1]));
     assert.equal(await r.done, 'flap', what);
     assert.deepEqual(r.flaps, [1], what);
@@ -1326,22 +1331,22 @@ test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, th
   // An agent that trims: two asks, one TRIM; the overlays compacted once; the storage bar's ask says the sizes.
   const ok = agentWith(CAP.TIME | CAP.TRIM, TRIMMED.TRIMMED);
   let m = make(ok.link);
-  await settle();
-  assert.equal(m.shown.canTrim, true, 'its HELLO shows the button');
+  await until(() => m.shown.canTrim, 'its HELLO shows the button');
   const asked = m.a.asked();
   const before = m.a.beforeExport();
+  await until(() => ok.trims.length === 1, 'the TRIM');
   await settle();
   ok.go();
   await Promise.all([asked, before]);
   assert.deepEqual([ok.trims.length, m.compactions.length], [1, 1], 'joined');
   assert.deepEqual(m.said, ['machine:trim-actions.trimmed']);
   const direct = m.a.trim();
-  await settle();
+  await until(() => ok.trims.length === 2, 'the second TRIM');
   ok.go();
   assert.deepEqual(await direct, { status: TRIMMED.TRIMMED, before: 6 << 20, after: 3 << 20 }, 'before: measured ahead of the trim (its discards may compact already)');
   // The storage full: trimmed again, and said because the overlays shrank.
   const full = m.a.full();
-  await settle();
+  await until(() => ok.trims.length === 3, 'the third TRIM');
   ok.go();
   await full;
   assert.deepEqual([ok.trims.length, m.said.at(-1)], [3, 'machine:trim-actions.full']);
@@ -1351,9 +1356,9 @@ test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, th
   // Nothing to trim: no compaction, said so.
   const none = agentWith(CAP.TIME | CAP.TRIM, TRIMMED.NONE);
   m = make(none.link);
-  await settle();
+  await until(() => m.shown.canTrim, 'the HELLO');
   const p = m.a.asked();
-  await settle();
+  await until(() => none.trims.length === 1, 'the TRIM');
   none.go();
   await p;
   assert.deepEqual([m.compactions.length, m.said], [0, ['machine:trim-actions.none']]);
@@ -1361,7 +1366,7 @@ test("the guest's trim (web/app/areas/trim-actions.ts): asks joined into one, th
   // An agent without CAP.TRIM: no button, nothing sent before an export or when full; the bar's ask says no answer.
   const old = agentWith(CAP.TIME);
   m = make(old.link);
-  await settle();
+  assert.ok(await old.link.hello(10_000), 'the HELLO');
   assert.equal(m.shown.canTrim, false);
   await m.a.beforeExport();
   await m.a.full();
@@ -1402,12 +1407,15 @@ function growAgent() {
   };
   return {
     link, grows,
+    /** A new connection and its HELLO: resolves once the link heard it. */
     connect(caps: number) {
+      const heard = nextHello(link);
       if (conn) port2.postMessage({ type: 'open', open: false, conn });
       conn++;
       reader.reset();
       port2.postMessage({ type: 'open', open: true, conn });
       port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
+      return heard;
     },
     disconnect() { port2.postMessage({ type: 'open', open: false, conn }); },
     grown(serial: string, part: number, fs: number, errno = 0, size = 0) {
@@ -1423,18 +1431,16 @@ test("the link's GROW: sent only to an agent that says CAP.GROW; each GROWN to `
   const got: string[] = [];
   a.link.onGrown.push((g) => got.push(`${g.serial} ${g.part} ${g.fs} ${g.size}`));
   assert.equal(a.link.grow('waarm64-aaaaaaaaaaaa', 1 << 30), false, 'not connected');
-  a.connect(CAP.TIME);
-  await settle();
+  await a.connect(CAP.TIME);
   assert.equal(a.link.grow('waarm64-aaaaaaaaaaaa', 1 << 30), false, 'no CAP.GROW');
-  a.connect(CAP.TIME | CAP.GROW);
-  await settle();
+  await a.connect(CAP.TIME | CAP.GROW);
   assert.equal(a.link.grow('waarm64-aaaaaaaaaaaa', 2 ** 33), true);
-  await settle();
+  await until(() => a.grows.length > 0, 'the GROW');
   assert.deepEqual(a.grows, [{ serial: 'waarm64-aaaaaaaaaaaa', size: 2 ** 33, conn: 2 }]);
   // The connection ends before the answer; the next one brings it.
   a.connect(CAP.TIME | CAP.GROW);
   a.grown('waarm64-aaaaaaaaaaaa', GROWN_PART.GROWN, GROWN_FS.GROWN, 0, 2 ** 33 - (1 << 20));
-  await settle();
+  await until(() => got.length > 0, 'the GROWN');
   assert.deepEqual(got, [`waarm64-aaaaaaaaaaaa 0 0 ${2 ** 33 - (1 << 20)}`]);
   a.close();
 });
@@ -1470,12 +1476,11 @@ test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HE
   let marks: Marks | undefined = w.m;
   const g = new GrowActions(notify, () => marks);
   g.follow(a.link);
-  a.connect(CAP.TIME);
+  await a.connect(CAP.TIME);
   await settle();
   assert.equal(a.grows.length, 0, 'no CAP.GROW: the marks wait');
-  a.connect(CAP.TIME | CAP.GROW);
-  await settle();
-  assert.deepEqual(a.grows.map((x) => [x.serial, x.size]), [[S1, 2 * 2 ** 30], [S2, 3 * 2 ** 30], [S3, 4 * 2 ** 30]]);
+  await a.connect(CAP.TIME | CAP.GROW);
+  await eventually(() => assert.deepEqual(a.grows.map((x) => [x.serial, x.size]), [[S1, 2 * 2 ** 30], [S2, 3 * 2 ** 30], [S3, 4 * 2 ** 30]]));
   // Grown: both of S2's marks cleared, said once; a second GROWN for it (a duplicate) says nothing.
   a.grown(S2, GROWN_PART.GROWN, GROWN_FS.GROWN, 0, 3 * 2 ** 30);
   a.grown(S2, GROWN_PART.NOTHING, GROWN_FS.NOTHING, 0, 3 * 2 ** 30);
@@ -1485,27 +1490,27 @@ test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HE
   // BAD_REQUEST (an agent of another version didn't read the GROW): kept, said once however often it comes.
   a.grown(S1, GROWN_PART.BAD_REQUEST, GROWN_FS.SKIPPED, 22);
   a.grown(S1, GROWN_PART.BAD_REQUEST, GROWN_FS.SKIPPED, 22);
+  await eventually(() => assert.deepEqual([...w.marks.keys()], ['o1', 'd3']));
+  await eventually(() => assert.equal(said.length, 2));
   await settle();
-  assert.deepEqual([...w.marks.keys()], ['o1', 'd3']);
   assert.deepEqual(w.marks.get('o1'), { from: 1, to: 2 }, 'no failure noted');
   assert.deepEqual(said, [{ key: 'machine:grow-actions.grown', cause: undefined }, { key: 'machine:grow-actions.badRequest', cause: undefined }]);
   // A restore (its agent connects again): GROW again for what still stands; its late GROWN for S1 on a third connection.
-  a.connect(CAP.TIME | CAP.GROW);
-  await settle();
-  assert.deepEqual(a.grows.slice(3).map((x) => x.serial), [S1, S3]);
-  a.connect(CAP.TIME | CAP.GROW);
+  await a.connect(CAP.TIME | CAP.GROW);
+  await eventually(() => assert.deepEqual(a.grows.slice(3).map((x) => x.serial), [S1, S3]));
+  void a.connect(CAP.TIME | CAP.GROW);
   a.grown(S1, GROWN_PART.GROWN, GROWN_FS.NOT_MOUNTED, 0, 2 * 2 ** 30);
-  await settle();
-  assert.deepEqual([...w.marks.keys()], ['d3']);
+  await eventually(() => assert.deepEqual([...w.marks.keys()], ['d3']));
+  await eventually(() => assert.equal(said.length, 3));
   assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.partOnly', cause: 'machine:grow-actions.notMounted' });
   // FAILED: kept once with the failure noted, said with "tries again"; the next start's FAILED clears it.
   a.grown(S3, GROWN_PART.GROWN, GROWN_FS.FAILED, 28, 4 * 2 ** 30);
-  await settle();
-  assert.deepEqual(w.marks.get('d3'), { from: 1, to: 2, failed: true });
+  await eventually(() => assert.deepEqual(w.marks.get('d3'), { from: 1, to: 2, failed: true }));
+  await eventually(() => assert.equal(said.length, 4));
   assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.partOnly', cause: 'machine:grow-actions.failed' });
   a.grown(S3, GROWN_PART.FAILED, GROWN_FS.SKIPPED, 5, 4 * 2 ** 30);
+  await until(() => w.marks.size === 0 && said.length === 5, 'the second FAILED');
   await settle();
-  assert.equal(w.marks.size, 0);
   assert.deepEqual(said.at(-1), { key: 'machine:grow-actions.notGrown', cause: 'machine:grow-actions.failedAgain' });
   assert.equal(said.length, 5);
   g.end();
@@ -1516,9 +1521,8 @@ test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HE
   a = growAgent();
   marks = w.m;
   g.follow(a.link);
-  a.connect(CAP.TIME | CAP.GROW);
-  await settle();
-  assert.equal(a.grows.length, 3);
+  await a.connect(CAP.TIME | CAP.GROW);
+  await until(() => a.grows.length === 3, 'the GROWs');
   g.end();
   a.link.close();
   await settle();
@@ -1527,7 +1531,7 @@ test("a disk grown in the guest (web/app/areas/grow-actions.ts): GROW at each HE
   const b = growAgent();
   marks = undefined;
   g.follow(b.link);
-  b.connect(CAP.TIME | CAP.GROW);
+  await b.connect(CAP.TIME | CAP.GROW);
   await settle();
   assert.deepEqual(b.grows, []);
   b.close();
@@ -1583,29 +1587,32 @@ test("the link: RENEW once after a template's restore, at the first HELLO of an 
     port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
   };
   link.renew(); // the worker's `template`, before the agent connects
+  const first = nextHello(link);
   hello(1, CAP.TIME); // an agent that doesn't renew: kept owed
+  await first;
   await settle();
   assert.equal(renews.length, 0);
   port2.postMessage({ type: 'open', open: false, conn: 1 });
   hello(2, CAP.TIME | CAP.RENEW);
+  await until(() => renews.length > 0, 'RENEW at the HELLO of one that does');
   await settle();
   assert.equal(renews.length, 1, 'at the HELLO of one that does');
   assert.equal(renews[0].length, RENEW_BYTES);
   // The connection ends before RENEWED (the agent restarted, a reset; review 4): owed still, sent at the next HELLO.
   port2.postMessage({ type: 'open', open: false, conn: 2 });
   hello(4, CAP.TIME | CAP.RENEW);
-  await settle();
-  assert.equal(renews.length, 2, 'again: no RENEWED came');
+  await until(() => renews.length === 2, 'again: no RENEWED came');
   renews.shift();
   port2.postMessage({ type: 'data', conn: 4, bytes: encodeFrame(FRAME.RENEWED, new Uint8Array([RENEWED.ENTROPY | RENEWED.MACHINE_ID, RENEWED.SSH])) });
   port2.postMessage({ type: 'open', open: false, conn: 4 });
+  const fifth = nextHello(link);
   hello(5, CAP.TIME | CAP.RENEW);
+  await fifth;
   await settle();
   assert.equal(renews.length, 1, 'once RENEWED came: not at the next HELLO');
   assert.deepEqual(link.renewed, { done: RENEWED.ENTROPY | RENEWED.MACHINE_ID, failed: RENEWED.SSH });
   link.renew(); // another template's restore in the same run: now, with other bytes
-  await settle();
-  assert.equal(renews.length, 2);
+  await until(() => renews.length === 2, 'RENEW at once');
   assert.notDeepEqual([...renews[1]], [...renews[0]]);
   link.close();
   port2.close();
@@ -1613,12 +1620,12 @@ test("the link: RENEW once after a template's restore, at the first HELLO of an 
 
 test("a template (tools/snapshot-template.ts, web/snapshot-file.ts `asTemplate`): the header's flag set and dropped, the frames untouched", async () => {
   const parts: Uint8Array[] = [];
-  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: '2026-11-13T00:00:00Z', name: 'demo ☃' });
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: '2026-11-13T00:00:00Z', name: 'demo ☃' }, { codec: storedCodec });
   await w.bytes('CORE', new Uint8Array(3000).map((_, i) => i * 7));
   await w.end();
   const file = new Blob(parts as BlobPart[]);
   const read = async (b: Blob) => {
-    const s = await openSnapshot(b, { check: true });
+    const s = await openSnapshot(b, { codec: storedCodec, check: true });
     const frames: string[] = [];
     for await (const f of s.frames()) frames.push(`${f.tag}:${f.index}:${f.data.length}:${f.data[100]}`);
     return { header: s.header, frames };
@@ -1656,19 +1663,25 @@ test("the link: the screen's size (DISPLAY) at each agent's HELLO that says it c
       port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: agentCaps })) });
     };
     assert.equal(link.display({ width: 1024, height: 768 }), false, 'no agent yet');
+    const on = caps & CAP.DISPLAY;
+    const heard = (n: number, what: string) => (on ? until(() => sizes.length >= n, what) : settle());
     hello(1, CAP.TIME | CAP.DISPLAY);
+    await heard(1, 'the size at the HELLO');
     await settle();
     const atHello = [...sizes];
     link.display({ width: 800, height: 600 });
-    await settle();
+    await heard(2, 'the change');
     // The agent connects again (a restore): the size again.
     port2.postMessage({ type: 'open', open: false, conn: 1 });
     hello(2, CAP.TIME | CAP.DISPLAY);
+    await heard(3, 'the size at the next HELLO');
     await settle();
     const again = sizes.slice(atHello.length + 1);
     // An agent without it (an older one): nothing.
     port2.postMessage({ type: 'open', open: false, conn: 2 });
+    const third = nextHello(link);
     hello(3, CAP.TIME);
+    await third;
     await settle();
     const before = sizes.length;
     assert.equal(link.display({ width: 640, height: 480 }), false);
@@ -1696,15 +1709,9 @@ const BMP_BYTES = new Uint8Array([0x42, 0x4d, 0x3a, 0, 0, 0, 0, 0, 0, 0, 0x36]);
 const picture = (n: number, seed = 1) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + seed * 7 + (i >> 9)) & 0xff);
 const bytesOf = async (b: Blob) => new Uint8Array(await b.arrayBuffer());
 const same = (a: Uint8Array, b: Uint8Array) => Buffer.compare(a, b) === 0;
-/** Waits (bounded) until `f` holds: the image paths await the browser's promises and hashes. */
-async function until(f: () => boolean, what: string) {
-  for (let i = 0; i < 500; i++) {
-    if (f()) return;
-    await new Promise((r) => setTimeout(r, 2));
-  }
-  assert.fail(`never: ${what}`);
-}
 const quiet = () => new Promise((r) => setTimeout(r, 50));
+/** The image written to the host's clipboard read back (its hash taken: crypto's, on the thread pool): focus reads wait for it. */
+const readBack = (share: ClipboardShare) => until(() => !(share as unknown as { guest: { writing: boolean } }).guest.writing, 'the read-back');
 
 /**
  * The browser with images: `clip` is the host's clipboard as one item (its types' Blobs), which `write` replaces after
@@ -1774,6 +1781,7 @@ test("images, guest to host: requested at the write as a ClipboardItem's promise
   assert.deepEqual({ serial: r1.serial, type: r1.type }, { serial: 1, type: PNG });
   answerAll(deliver, take, r1.id, big);
   await until(() => writes.length === 1, 'the PNG written');
+  await readBack(share);
   assert.deepEqual(Object.keys(writes[0]), [PNG]);
   assert.ok(same(await bytesOf(writes[0][PNG]), big), 'the PNG as it came');
   assert.deepEqual(converted, [], 'a PNG: not converted');
@@ -1784,6 +1792,7 @@ test("images, guest to host: requested at the write as a ClipboardItem's promise
   assert.equal(r2.type, 'image/jpeg', 'the text inline: only the image requested');
   answerAll(deliver, take, r2.id, JPEG_BYTES);
   await until(() => writes.length === 2, 'the JPEG written');
+  await readBack(share);
   assert.deepEqual(Object.keys(writes[1]).sort(), [PNG, 'text/plain']);
   assert.equal(await writes[1]['text/plain'].text(), 'alt');
   assert.deepEqual(converted, ['image/jpeg']);
@@ -1797,6 +1806,7 @@ test("images, guest to host: requested at the write as a ClipboardItem's promise
   answerAll(deliver, take, rs.find((r) => r.type === TEXT)!.id, utf8(long));
   answerAll(deliver, take, rs.find((r) => r.type === 'image/bmp')!.id, BMP_BYTES);
   await until(() => writes.length === 3, 'the BMP written');
+  await readBack(share);
   assert.equal(await writes[2]['text/plain'].text(), long);
   assert.deepEqual(converted, ['image/jpeg', 'image/bmp']);
   // Past the cap by its size: not requested; an answer running past it stops (MORE 0), nothing written.
@@ -1857,6 +1867,7 @@ test("images, guest to host: kept pending without focus (the newest only, a newe
   const pic = picture(70000, 3);
   answerAll(deliver, take, r3.id, pic);
   await until(() => writes.length === 1, 'written');
+  await readBack(share);
   assert.equal((await bytesOf(host.clip[PNG])).length, pic.length + 1, 'the host re-encoded it');
   await quiet();
   // Focus reads of what the host has now (the guest's own image, re-encoded): not offered back.
@@ -1950,6 +1961,7 @@ test("HTML, guest to host: written with its text as one ClipboardItem, the HTML 
   assert.deepEqual({ serial: r.serial, type: r.type }, { serial: 1, type: HTML }, 'the text inline: only the HTML requested');
   answerAll(deliver, take, r.id, utf8('<b>bold</b>'));
   await until(() => writes.length === 1, 'the item written');
+  await readBack(share);
   assert.deepEqual(Object.keys(writes[0]).sort(), ['text/html', 'text/plain']);
   assert.equal(await writes[0]['text/html'].text(), '<b>bold</b>');
   assert.equal(await writes[0]['text/plain'].text(), 'bold');
@@ -1967,6 +1979,7 @@ test("HTML, guest to host: written with its text as one ClipboardItem, the HTML 
   answerAll(deliver, take, rs.find((x) => x.type === TEXT)!.id, utf8('a < b'));
   deliver(FRAME.DATA, encodeData(rs.find((x) => x.type === HTML)!.id, DATA_FAIL));
   await until(() => writes.length === 2, 'the item written without the HTML');
+  await readBack(share);
   assert.equal(await writes[1]['text/html'].text(), 'a &lt; b', 'the text, escaped');
   // HTML past the cap by its size: the text alone (writeText).
   deliver(FRAME.OFFER, encodeOffer({ serial: 3, types: [{ type: TEXT, size: 2 }, { type: HTML, size: TEXT_CAP + 1 }], inline: utf8('hi') }));
@@ -2024,7 +2037,10 @@ test("a guest image whose bytes never come: its request stops after REQUEST_WAIT
   const { link, deliver, take } = fakeLink(IMAGES);
   const { host, writes } = imageHost();
   const share = new ClipboardShare(link, host);
-  share.requestWait = 100;
+  // The wait against the clock: long enough that a stalled process (CI's load) still delivers the DATA within it and
+  // checks before its restarted end; the check comes past the first wait's end, where a wait not restarted has stopped.
+  const W = 1000;
+  share.requestWait = W;
   share.setPermission('granted');
   await quiet();
   take(FRAME.OFFER);
@@ -2033,12 +2049,13 @@ test("a guest image whose bytes never come: its request stops after REQUEST_WAIT
   const [r] = requests(take(FRAME.REQUEST));
   assert.equal(r.type, PNG);
   // A DATA before the wait ends keeps it going.
-  await new Promise((done) => setTimeout(done, 60));
+  await new Promise((done) => setTimeout(done, W / 2));
   deliver(FRAME.DATA, encodeData(r.id, 0, picture(1000)));
-  await new Promise((done) => setTimeout(done, 60));
+  await new Promise((done) => setTimeout(done, W * 0.75));
   assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: r.id, n: 1 }], 'a DATA restarts the wait');
-  await new Promise((done) => setTimeout(done, 150));
-  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: r.id, n: 0 }], 'stopped once nothing came');
+  const more: unknown[] = [];
+  await until(() => (more.push(...take(FRAME.MORE).map((f) => decodeMore(f.payload))), more.length > 0), 'the stop');
+  assert.deepEqual(more, [{ id: r.id, n: 0 }], 'stopped once nothing came');
   assert.equal(writes.length, 0);
   // The host's own copy: the next focus offers it.
   host.clip = { 'text/plain': new Blob(["the host's"], { type: 'text/plain' }) };
@@ -2105,11 +2122,11 @@ test("the caches dropped before a snapshot (web/app/areas/agent-actions.ts `drop
     port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
   };
   const actions = new AgentActions(() => undefined, () => undefined);
-  actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => undefined);
+  const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => undefined)!;
   await actions.dropCaches(); // no agent yet: nothing to ask
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME | CAP.DROP })) });
-  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(await link.hello(10_000), 'the HELLO');
   await actions.dropCaches();
   assert.equal(drops, 1, 'DROP sent, DROPPED awaited');
   search = '?dropcaches=0';
@@ -2152,23 +2169,19 @@ test("the guest's clock (web/app/areas/agent-actions.ts): TIME at the agent's HE
   assert.equal(actions.syncClock(), false, 'no agent yet');
   port2.postMessage({ type: 'open', open: true, conn: 1 });
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TIME })) });
-  await settle();
-  assert.equal(ups, 1, 'the HELLO: the guest is up');
+  await until(() => ups === 1, 'the HELLO: the guest is up');
   port2.postMessage({ type: 'data', conn: 1, bytes: encodeFrame(FRAME.DESKTOP, new Uint8Array([DESKTOP.X11])) });
-  await settle();
-  assert.equal(body.dataset.desktop, 'x11', 'DESKTOP as body[data-desktop]');
-  assert.equal(times.length, 1, 'TIME at the HELLO');
+  await until(() => body.dataset.desktop === 'x11', 'DESKTOP as body[data-desktop]');
+  await until(() => times.length === 1, 'TIME at the HELLO');
   assert.equal(actions.syncClock(), true);
-  await settle();
-  assert.equal(times.length, 2, 'TIME after a pause');
+  await until(() => times.length === 2, 'TIME after a pause');
   // The wall clock steady: nothing; then it jumps past the gap between two checks: TIME.
   t.mock.timers.tick(SLEEP_CHECK_MS);
   await settle();
   assert.equal(times.length, 2);
   jump = SLEEP_GAP_MS + 1000;
   t.mock.timers.tick(SLEEP_CHECK_MS);
-  await settle();
-  assert.equal(times.length, 3, "the host's sleep");
+  await until(() => times.length === 3, "the host's sleep");
   // Off (`?clocksync=0`): nothing sent.
   search = '?clocksync=0';
   assert.equal(actions.syncClock(), false);
@@ -2211,34 +2224,37 @@ test("the keyboard layout (web/app/areas/agent-actions.ts): KEYMAP at each HELLO
       port2.postMessage({ type: 'taken', n: e.data.bytes.length, conn: e.data.conn });
     };
     const actions = new AgentActions(() => undefined, () => layout);
-    actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => {});
+    const link = actions.begin({ agent: { port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => {})!;
     const hello = (conn: number) => {
       port2.postMessage({ type: 'open', open: true, conn });
       port2.postMessage({ type: 'data', conn, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps })) });
     };
-    return { actions, got, hello, close: () => { actions.end(); port2.close(); } };
+    return { actions, link, got, hello, close: () => { actions.end(); port2.close(); } };
   };
   const de = [...encodeKeymap(keyboardLayout('de')!)];
   const a = run(CAP.TIME | CAP.KEYMAP);
   assert.equal(a.actions.keymap(layout), false, 'no agent yet');
   a.hello(1);
-  await settle();
+  await until(() => a.got.length > 0, 'KEYMAP at the HELLO');
   assert.deepEqual(a.got.map((p) => [...p]), [de], 'at the HELLO');
   a.hello(2); // the agent connects again (a restore): said again
-  await settle();
-  assert.equal(a.got.length, 2);
+  await until(() => a.got.length === 2, 'KEYMAP again');
   assert.equal(a.actions.keymap(keyboardLayout('pt')), true, 'the setting saved');
-  await settle();
+  await until(() => a.got.length === 3, 'KEYMAP when asked');
   assert.deepEqual([...a.got[2]], [...encodeKeymap(keyboardLayout('pt')!)]);
   layout = undefined; // a setting of none: nothing
+  const third = nextHello(a.link);
   a.hello(3);
+  await third;
   await settle();
   assert.equal(a.got.length, 3);
   assert.equal(a.actions.keymap(undefined), false);
   a.close();
   layout = keyboardLayout('de');
   const old = run(CAP.TIME); // an agent without CAP.KEYMAP
+  const oldHello = nextHello(old.link);
   old.hello(1);
+  await oldHello;
   await settle();
   assert.equal(old.actions.keymap(layout), false);
   assert.deepEqual(old.got, []);

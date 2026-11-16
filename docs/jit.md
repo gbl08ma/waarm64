@@ -27,7 +27,7 @@ the interpreter's own code.
   of a busy vCPU in every workload counted, so CNTVCT stays an exit (bench/boot/REPORT.md "counter reads, inline or not").
 - **Functions:** `f(vcpu, acc, left, depth) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
   `Cpu` at 0, the crypto constants, `State`, the TLB's scalars, then its arrays and the transfer
-  cache), `left` is the step budget, `depth` the host calls under it with an entry number above (below,
+  cache), `left` is the step budget (counted code; parallel SMP's polled code passes 0 and reads none: [Preemption](#preemption-parallel-smps-polled-code)), `depth` the host calls under it with an entry number above (below,
   "Calls"). Whatever JIT code loads at a fixed offset sits within the
   first 0x800 bytes, where V8 folds the offset into the load (past ~32 KiB it builds it with a
   `mov`+`movk` every time): the TLB arrays are interleaved (below, "Loads and stores"), and the
@@ -52,10 +52,12 @@ the interpreter's own code.
   taken once per 16 dispatches of a block that isn't compiled, not at every one; a jump-cache
   miss for a block the table already has compiled, or for a key with no instructions, takes it
   not at all ([Sharing](#sharing) "What the lock costs").
-- **Exact step accounting:** a block knows its instruction count *n* and is entered only if the
-  chunk has ≥ *n* steps left; chained successors and region edges are taken only when `left`
-  covers them. So the JIT never outruns a chunk, IRQs, the signal word and deadlines are checked
-  between chunks as for the interpreter, and lockstep comparison works at every chunk boundary.
+- **Exact step accounting** (counted code: round-robin, deterministic or realtime, and user mode): a block knows its
+  instruction count *n* and is entered only if the chunk has ≥ *n* steps left; chained successors and region edges
+  are taken only when `left` covers them. So the JIT never outruns a chunk, IRQs, the signal word and deadlines are
+  checked between chunks as for the interpreter, and lockstep comparison works at every chunk boundary. **Parallel
+  SMP's polled code** has no `left`: it runs on to its next poll past the chunk's steps, and stops early when the
+  vCPU's stop word says so ([Preemption](#preemption-parallel-smps-polled-code)).
 - Blocks never run with `SCTLR_EL1.A` set (the dispatcher interprets then; Linux never sets it),
   so inline accesses need no alignment check.
 
@@ -235,7 +237,8 @@ the interpreter's own code.
 
 - **Chaining:** a block whose successor is static (a direct branch, both sides of a conditional
   one, the fall-through after a cap, page end or a chaining system instruction) and compiled
-  **tail-calls** it (`return_call`) with `acc + len` and `left − len` when `left` covers both.
+  **tail-calls** it (`return_call`) with `acc + len` and `left − len` when `left` covers both (polled code: with
+  `acc + len` and 0, a chain backward when its poll passes, forward always: [Preemption](#preemption-parallel-smps-polled-code)).
   Successors in the same batch are direct calls; already-compiled ones are imports of module `t`
   by table index.
 - **A successor in another page (MMU on) is wherever its VA maps.** The block's PA plus the branch
@@ -279,13 +282,22 @@ the interpreter's own code.
     churn 7% slower (bench/boot/REPORT.md "M8: a VA-keyed cache for indirect transfers").
   - **A flush by VA scans those 1024 slots (16 KiB) only for a page that instruction fetches
     translated** (`Tlb::xpages`, PERF loop 28): eight 4096-bit maps (by EL, global or nG, VA half) of
-    the pages `Mmu::miss` translated for a fetch, cached or not, a page number folded to 12 bits.
+    the pages `Mmu::miss` translated for a fetch, cached or not, a page number folded to 12 bits (distinct within an
+    aligned 16 MiB; a collision costs a scan).
     Every entry is filled for a fetch the instruction TLB translated (the dispatcher's key, the miss
     function's TLB probe), and a TLB entry came from such a miss, so the maps hold every page the
     live entries are for. The nG maps of an EL are cleared with its nG entries when its transfer
     cache's go too (`flush_ng`, the EL's `xng`), every map by a flush of everything; a bump alone
     (blocks dropped, a flush by VA in a half with block entries) clears none, as the TLB's entries
-    stay and fill the cache again without a walk. Of the 60,054 flushes by VA in Alpine's boot and
+    stay and fill the cache again without a walk.
+  - **Pages of blocks:** a flush by VA of one page of a block drops the TLB's entries for all of its pages
+    (docs/cpu.md "Blocks"), and so must drop the transfer cache's for them, which the page's 1024 slots don't
+    hold: it bumps the EL's generation when the EL's cache may hold entries for pages of blocks in that half
+    (`Tlb::xblk`). That is the case while the EL's instruction TLB holds entries from blocks there (counted,
+    `Tlb::xblkn`), and stays so after a bump that left some (the cache refills from them without a walk, and an
+    entry outlives the TLB entry it came from), until a bump finds none. Linux's kernel text is in 2 MiB blocks,
+    so every flush by VA in the kernel's half bumps EL1's; before PERF loop 29 a bump cleared the flag outright,
+    and a refill from a hit after it left a block's entries live through the block's TLBI (`tests/baremetal/xblock.c`). Of the 60,054 flushes by VA in Alpine's boot and
     userspace benchmark 99.95% cleared nothing (they're for data pages); with the maps 1.8% scan
     (a scan ~0.4 µs in Node: ~10 ms of the boot's 3.6 s, 0.27%, and ~0.5% of the churn and shutdown
     phases before; under the gates' floor on the Mac: bench/boot/REPORT.md "PERF loop 28"). 4 KiB a vCPU.
@@ -304,7 +316,8 @@ the interpreter's own code.
   `acc + left` at its entry in an i32 local (`emit::SUM`; edges and host calls keep the sum) and
   pushes `acc` as `SUM − left` where it leaves (`Func::acc`). Its exits grow by more than its
   edges shrink (+0.7% wasm), but a loop's lap has one add less: Alpine's Lua phase 1.7% faster
-  on the Mac (`bench/boot/REPORT.md` "PERF loop 13").
+  on the Mac (`bench/boot/REPORT.md` "PERF loop 13"). Polled code has no `SUM`: an edge adds its block's length to
+  `acc`, and only an edge to a member at or before its block's VA (the loop's back-edge) polls.
 - **A tagged PC** (TBI: BR, BLR, RET or ERET through a pointer whose top byte isn't bit 55's
   sign extension): `AArch64.BranchAddr` drops the tag, so ADR, BL's X30 and ELR never see it.
   Compiled BR/BLR/RET and the block interpreter's don't strip it, which keeps their hot paths
@@ -358,6 +371,47 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   (~17 KB at depth 64, ~4%); a function with every local spilled would be ~1.6 KB, ~100 KB at 64, a quarter. A
   tier-up compiled at that depth added nothing measurable (`bench/boot/REPORT.md` "The host stack that host calls
   take").
+
+## Preemption (parallel SMP's polled code)
+
+In parallel SMP (what the page runs) compiled code carries **no step budget** (PERF loop 31; the user's decisions in
+PERF-HANDOVER.md "Preemption without the budget"): `Config::polled` (set for a VM with `VmConfig.smp` = 1) emits no
+`left` checks, no `left -= len`, no `SUM`; a transfer passes `left` as 0. Round-robin (deterministic and realtime) and
+user mode keep the counted code above, byte for byte (Alpine's boot dumped by both cores: the same 319 modules, two
+differing only in the address of a core table they embed, the CRC tables).
+- **`acc` stays** (steps and MIPS still count) and is a plain local: an edge adds its block's length to it.
+- **The poll** (`emit::poll`): `acc < stop`, `stop` the vCPU's stop word (`jit::State::stop`, an `i32.atomic.load` at
+  a fixed `Vcpu` offset: `emit::STOP`), ANDed into the transfer's condition (hinted likely, as the budget check was),
+  so a failed poll falls to the path a failed budget check took: the block returns to the dispatcher with its PC
+  stored. No register is live across it.
+- **Where:** what can close a cycle. A static transfer (a region's edge, a chain to a compiled block, one through the
+  jump cache, a by-VA link) polls when its target's VA is at or before its block's start (the loop's back-edge,
+  mostly): around any cycle of static transfers the offsets sum to 0, so one is ≤ 0. Indirect transfers poll always:
+  BR, BLR and RET at depth 0 in the transfer cache's probe (with the MMU off, the jump cache's), and the miss
+  function. A host call needs none (its return lands past its call; one that lands elsewhere goes through the miss
+  function; a recursion past `MAX_DEPTH` is a tail call, a static transfer). A forward edge or chain checks nothing:
+  in loop 30's counts those were 55-63% of the budget checks.
+- **The word:** the parallel run loop stores the chunk's steps (`n`) there at the top of each pass, before it looks
+  for work; the dispatcher passes the steps done as `acc` (so a block's polls compare the chunk's count) and stops
+  when the word is at or under them. Whatever has news for the vCPU stores 0 after making it (platform.md "Parallel
+  SMP"): the chunk then ends at the next poll instead of its steps. A chunk ends about where it did otherwise (at the
+  first poll past `n`: 25 steps past it on average in Alpine's boot), so what has no event of its own (the vCPU's
+  timer deadline, the worker's event-loop visit, the periodic publications, the PC sampler) keeps its bounds without
+  a ticker thread, and `acc` stays far from `RETURNED`. `vm_set_chunk` may set chunks of up to 2^30 steps here (the
+  spin tests'), past which only the setters end one.
+- **No ticker** (PERF loop 32, bench/boot/REPORT.md): a chunk end costs ~0.2 µs of run loop (Node on the dev VM), at
+  most ~0.5% of the gates' vCPU time, and 4× as many (8,192-step chunks) didn't move the Mac's gates. Longer chunks
+  lose instead: 2^20 steps with nothing to end them slowed Alpine's boots 3.5-4.1%, because a chunk end is also where
+  the vCPU sees its own timer and where the dispatcher installs the modules the compile worker finished (`Jit::fresh`:
+  until then the block interpreter runs, +15M steps in the boot). A ticker in the run loop (chunks paced to the
+  vCPU's next deadline by its measured rate, up to 2^20 steps, the compile worker storing 0 when `ready` moved) cut
+  the chunk ends by steps 52-71% and kept the timer as prompt, and still didn't beat the steps bound on the Mac
+  (every gate within ±0.7%, overlapping); a ticker thread can save no more chunk ends than that, so none was built.
+- **Counted:** (bench/boot/REPORT.md "PERF loop 31", the diagnostic core's `poll` tally) 56 polls per 1000 steps in
+  Alpine's parallel boot, 47-75 in the userspace phases on 4 vCPUs (loop 30 estimated 42-52 from its tallies of the
+  points); chunks ended early by the word 0.3-0.7%. A parallel boot's modules: per function arm64 −6.3% instructions
+  and −5.7% frame memory operands, x64 −9.8% and −13.8%; the Mac's gates moved ~1-2%, within their spread
+  (bench/boot/REPORT.md "PERF loop 31").
 
 ## Sharing
 
@@ -1466,8 +1520,9 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   25–40%; **regions at the first threshold** (no tier-up) cost the boots 10–14% (~930 lukewarm
   loops compiled in Buildroot); **regions from any block in reach** under JIT-stress made it 42×
   slower. Hence: loops only, from seen blocks, after 1000 entries.
-- **An atomic load of the signal word on back-edges** (as first planned): adds nothing the run
-  loop would act on sooner, since `left` bounds a region to the chunk.
+- **An atomic load of the signal word on back-edges** (as first planned, beside `left`): added nothing the run
+  loop would act on sooner, since `left` bounded a region to the chunk. Parallel SMP's polled code now polls a
+  per-vCPU word there *instead of* `left` ([Preemption](#preemption-parallel-smps-polled-code)).
 - **Parallel SMP ending a chunk at the next dispatch** when the signal word is set, another vCPU
   queued maintenance or an unmasked IRQ is pending (2026-10-15, `bench/boot/REPORT.md` "M8: the
   device round trip"): a ping to a busy vCPU 17% faster (it waited up to a chunk for its IRQ), the

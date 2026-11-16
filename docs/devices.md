@@ -753,8 +753,8 @@ login prompt; no host side can connect (the device takes no host connections), s
 command line only, which a UEFI boot's loader owns).
 
 It is the last slot, after the disks (machines.md §4.1), so it moved no machine's disks, and it is left out of the
-shape's hash (`shape.ts` `hashed`): a snapshot or suspended machine from before it restores without it
-(`worker-header.ts` `slotsOf`), as one from before the clock does. Linux's driver is `vmw_vsock_virtio_transport`
+shape's hash (`shape.ts` `hashed`); a snapshot without it (one from before it, of an older state version) is refused
+(`worker-header.ts` `slotsOf`). Linux's driver is `vmw_vsock_virtio_transport`
 (`CONFIG_VIRTIO_VSOCKETS`, a module in Debian's and Arch's kernels, loaded by its modalias). Tests: `tests/vsock.test.ts`
 (the device through hand-built queues, both closes, the refusals, the credit, a restore, the page's end, the
 credential; the agent's connection: both ways, the guest's credit and the device's, one at a time, the page's reset,
@@ -780,8 +780,8 @@ a device kind of their own (docs/frontend.md "The guest's clock").
 ### balloon (ID 5): free memory left out of snapshots
 
 `{type: 'balloon'}` (`web/balloon.ts`; Linux's `virtio_balloon`, a module Debian's udev loads), on every machine of the
-page (after the notify socket: web/app/shape.ts `slots`, out of the shape's hash, and a snapshot from before restores
-without it: web/app/worker-header.ts `slotsOf`). It never inflates (`num_pages` stays 0): it is there for what the guest
+page (after the notify socket: web/app/shape.ts `slots`, out of the shape's hash; a snapshot without it is refused:
+web/app/worker-header.ts `slotsOf`). It never inflates (`num_pages` stays 0): it is there for what the guest
 says of its free memory, so that a snapshot, which leaves zero pages out (platform.md "The snapshot file"), leaves that
 memory out too. Features FREE_PAGE_HINT (3) and REPORTING (5), not PAGE_POISON (without it Linux turns reporting off only
 in a guest that poisons or zeroes what it frees, whose free pages are what they are already); four queues of 128,
@@ -837,7 +837,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
 - **Over HTTP** in the browser: one **synchronous XHR range request** per request (needs a worker:
   no binary sync XHR on a page's main thread, no XHR in Node, where `file:` URLs read with
   `node:fs`). The dev server answers `Range: bytes=` requests on `target/` (206/416, `Accept-Ranges`,
-  HEAD: sirv, `vite.config.ts`). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
+  HEAD from the file's `stat`: sirv, `vite.config.ts`). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
   the 256 MiB most recently used kept in memory, a read's missing blocks fetched in one request per run of adjacent
   ones; a read larger than the cache goes past it. A remote desktop boot's 2160 reads became 422 requests, and its
   time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). The import, export and disk-job
@@ -893,13 +893,22 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   so a machine's disk identity follows the content. Not checked against the hashes yet (reads are synchronous;
   `crypto.subtle` isn't).
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
-  unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate
-  (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). A request's compressed
+  unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate, inflated by the core's
+  miniz_oxide (`web/deflate.ts`: `inflate_raw` on a codec-only core instance of the thread's own, synchronous; the
+  device worker's runs on the machine's core, `DevicesInit.core`, other threads fetch `CORE`; natively the same
+  crate, `core/tests/common/qcow2.rs`). A cluster unpacks to exactly its size or the read fails (a stream that is
+  corrupt, truncated or longer than the cluster is refused); the bytes after a stream's end are ignored. A request's compressed
   clusters are inflated as one batch (an `Inflater`): where the thread can start workers (the device worker, the
   disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s
-  (`inflate-worker.ts`; started by the first request with two or more, each share one message; a single cluster
-  stays on the reading thread), otherwise one after another in place (Node): 1 MiB reads 25% faster, an import 7%
-  and an export 11%, a boot no different (bench/io/REPORT.md "The inflate pool"). Read-only
+  (`inflate-worker.ts`, each given the thread's core; started by the first request with two or more, each share one message; a single cluster
+  stays on the reading thread), otherwise one after another in place (Node). A worker that fails (an error, a
+  request it answers it couldn't do: its codec didn't start; or no answer in 10 s, `INFLATE_STALL_MS`) leaves its
+  share, and every later request, to the reading thread (tests/qcow2.test.ts "the inflate pool"); a thread's codec
+  that failed to start (the core's fetch, its memory) is tried again at the next call. The pool still pays with the core's
+  inflate (bench/boot/REPORT.md "SNAPZ loop 6": without it fio's 1 MiB reads were 24% slower, an import 10%, an
+  export 17%). Against `DecompressionStream`, which it replaced there: one cluster is 9% slower on one thread
+  (171 µs a 64 KiB cluster against 158), but a request has no stream to set up per cluster, so fio's reads were 1-3%
+  faster, an import 4% and an export 5%, a boot no different, and the browser's peak ~150-200 MiB lower. Read-only
   (refcounts never read). **Refused at open:** encryption, backing files (a changes file is read by `readChanges`, docs/frontend.md "Your own disk"), external data files,
   extended L2, zstd, unknown incompatible features. Capacity is the virtual size. Debian's
   published image is 95% compressed clusters, which is why deflate is supported rather than
@@ -919,7 +928,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   per request that maps new slots), a slot freed by a discard or a move is reused only once the map that freed it is
   flushed, a compaction's copies are flushed before their entries move, and `data` is cut only once the map entries
   that left its end are flushed. They cost nothing bench/io's suite can see (bench/io/REPORT.md "Ordered flushes");
-  `tests/overlay.test.ts` replays every crash point with either file as of its last flush.
+  `tests/overlay.test.ts` replays every crash point with either file as of its last flush. **A snapshot's restore**
+  writes its overlay unordered (`overlay`'s `ordered: false`) and flushes both files at its end: until then the overlay
+  is part of a snapshot's blocks over an emptied one whatever its order, and a data flush per run was most of the
+  restore's disk phase (bench/boot/REPORT.md "SNAPZ loop 5").
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
   past it), as an unwritten block does. So the map file and the memory grow with what's written, not with the disk's
@@ -967,7 +979,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
   consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
   from the request's bytes in one write with their map entries in one more per leaf the run crosses (a range's first
-  write makes its leaf in that write); only a block a write covers in part is read-modify-write.
+  write makes its leaf in that write); only a block a write covers in part is read-modify-write. A snapshot's restore
+  writes each DISK frame's runs of data blocks and of zero blocks with a call each, and a save reads the blocks it
+  carries with `blocks(list)` (those in consecutive slots one read): bench/boot/REPORT.md "SNAPZ loop 5".
   **Its size** is the largest of the base's, its own (`meta`) and the spec's `size` (the guest's, from the page):
   past the base's end it reads as zeros until written (`grown`), and its map grows as blocks there are written
   (the capacity the guest sees is the spec's `size`), a leaf where a range is first written.
@@ -1002,6 +1016,41 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   generation bumped and its `meta` naming the overlay first, so an interrupted merge is finished at the store's next
   opening (`resumeMerge`), before anything reads it (`tests/stored.test.ts`, with the resume left out as the planted
   bug).
+- **Its surface** (web/surface.ts, docs/plans/surface.md): `Backend.inspect` answers a disk's surface (per cell of
+  4 MiB × a power of two, the blocks the disk and its overlay hold) and one 4 MiB range block by block, from the maps
+  the device has in memory (the overlay's `leaves()`, a stored disk's `blockSource`, a ramdisk's chunks, an image's
+  `liveImage`). A stored disk under an overlay doesn't change, so its per-range counts are taken once. Under a grown
+  overlay a stored or blank disk is opened at the guest's size; the spec's `diskSize` (web/app/worker-devices.ts
+  `blkSpec`) is its own, which the surface's disk layer takes (nothing else reads it).
+  **An image**: a qcow2's clusters from its L2 tables (web/qcow2.ts `Disk.allocation`: one object over the tables read
+  so far, per cluster data or compressed against unallocated or zero, its bytes' place in the file, and per table
+  whether it is known; a 4 KiB block is the disk's if any cluster in it is). `openDisk` reads L2 tables lazily, as
+  requests need them, and keeps them; each inspect reads those not read yet from a local file (a bounded read: at most
+  `ALLOCATION_MAX`, 32 MiB of tables, an image of 256 GiB at 64 KiB clusters; past it, only those the guest's requests
+  read), and from a remote image only those the block cache holds in memory or in OPFS (`Source.kept`,
+  web/blockcache.ts): nothing is fetched for the map. The layer is counted per table as tables are known
+  (`allocationCounts`, each table once: the image doesn't change while open), the blocks under a table not known yet
+  in its `unknown` (not examined: `why` `'tables'` remote, `'large'` local). The tables it reads it keeps for the
+  guest's reads too. A raw image is not examined (`'raw'`), nor read by the content check. **Kept**: a remote image
+  says per cell how many of its blocks this browser keeps (`kept`): a raw one's of all its blocks (the file is the
+  disk), a qcow2's of its blocks with data, a block kept when every cache block its clusters' bytes take is (a data
+  cluster's, a compressed one's packed bytes; unallocated and zero clusters need nothing from the server). The
+  qcow2's clusters are indexed once per table (`keptIndex`: a cluster's units and its first and last cache block),
+  and each answer looks each cache block up once and passes over the index (`keptCounts`): 2.5 to 4.9 ms for a
+  20 GiB image at 64 KiB clusters with every cluster allocated (327,680; the index 10 to 23 ms once, the tables'
+  counts 2 to 4 ms once; Node in a cloud container, 2026-11-15: `tests/surface-image.test.ts` prints it). A range's
+  detail marks a block under an unknown table not examined (5) and a kept one in `kept`. The content check reads a
+  local qcow2's blocks
+  through the image, a remote one's not at all (they'd be fetched). Activity: a
+  query that asks for it puts a wrapper around the backend's outermost `request` (over the stats', concurrent and
+  compaction wrappers, which are made at the build), which reads the request's header and marks the ranges read
+  and written; an answer carries the marks per cell and clears them, and once no query asked for 3 s (or at
+  `close`) the request it wrapped is put back as it was. While nobody looks, nothing is added to the request path.
+  While the wrapper is on, the overlay's per-range counts are kept and only the ranges written since are counted
+  again: a whole walk of 25,600 leaves (100 GiB written) took 30 to 55 ms in Node (a cloud container, 2026-11-15:
+  `tests/surface.test.ts` prints it), a range's ~1 µs. One answer every 10 s (`FULL_WALK_MS`) walks the leaves whole all the
+  same: a request in flight when the wrapper went on isn't marked, and what it changed after the first two walks is
+  caught up then.
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in
@@ -1443,10 +1492,9 @@ guest share without copies (Venus's ring, its command streams, its reply buffers
   `round(4 × (60 log10 level + 100))`: the guest's mixer shows the page's percentage. A guest's write that changes a
   value is said on `port` (`mixer`: the page's menu follows); the page's changes there (`SndFromPage`) set the values
   and, if the driver took the feature, notify it with `VIRTIO_SND_EVT_CTL_NOTIFY` (mask VALUE) on an event buffer,
-  held until one comes. The values survive a virtio reset and are in the snapshot (`controls`; one from before them
-  keeps the page's), and a restore says them on `port`.
-- **An output stream (0) and an input stream (1)** (the input since audio S4: older snapshots, with one, still
-  load): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
+  held until one comes. The values survive a virtio reset and are in the snapshot (`controls`; a device without
+  `mixer` has none, and keeps the page's), and a restore says them on `port`.
+- **An output stream (0) and an input stream (1)** (the input since audio S4; a saved state has both): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
   8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels, and the direction. Each stream has its own
   state machine and parameters; the control log names stream 1 (`PCM_START#1`). Linux derives its limits from that: periods
   2–16 of 160–122,880 bytes, a buffer of up to 245,760. `SET_PARAMS` takes those; unoffered features, formats,

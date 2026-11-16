@@ -4792,6 +4792,57 @@ global maps; a bump clearing them; global fetches not marked. Skipping the IS by
 the bare-metal test too. `isb.bin` came out of `build.sh` different (the clang here), rebuilt with the others. No step
 count moved. CI: `scripts/ci.sh` (794 s) and `scripts/ci-jit.sh` pass.
 
+## PERF loop 29: the review of loop 28 (2026-11-16)
+
+The out-of-context review of loop 28 (`review/perf-l28`) found:
+
+1. **(High, from 53c603b6) A block's transfer cache entries outlived the block's TLBI.** `Tlb::xblk[el][half]` (a
+   flush by VA in the half bumps the EL's transfer cache, since the block's other pages may have entries there) was
+   set only by a fill of an instruction TLB entry from a block, and cleared by every bump. A bump drops only the
+   transfer cache: the TLB's block entries stay, and the dispatcher and the miss function fill the cache again from
+   them on a hit, with no fill to set the flag. A TLBI later for another page of the block (Linux's one TLBI per
+   2 MiB: munmap, mremap, migration of an exec THP) then dropped the TLB's entries but left the refilled transfer
+   cache entry, and compiled code kept branching to the old block. Any bump cleared the flag: the JIT's dropping
+   blocks (frequent), a flush by VA of any page of the half, the nG entries' drop.
+2. **(Low)** `xpage_bit`'s comment: the 12-bit fold keeps the pages of an *aligned* 16 MiB apart, not any 16 MiB.
+   Comment and docs/jit.md fixed. A collision only costs a scan.
+
+The review's latent case (a RAM region not in whole pages, whose block page would hand out a translation without a
+TLB fill) can't arise in a VM: `Mem::at`, `with_spill` and `with_window` assert whole pages (docs/cpu.md); only the
+bare `mem_new` export (the interpreter benchmarks, MMU off) skips `at`. Nothing added.
+
+**The fix:** `Tlb::xblkn[el][half]` counts the EL's live instruction TLB entries from blocks (`fill` adds,
+`drop_slot` removes; `drop_slot` forced inline, which keeps `fill`, `flush_va` and `flush_ng` as before), and a bump
+sets `xblk` from it instead of clearing it: after a bump the cache can hold an entry for a page of a block only if
+an entry from a block was live then or was filled since. Checking the count at flush time alone would be wrong: an
+entry for a page whose TLB entry was since evicted would survive (a case of the new unit test). Setting the flag
+at the transfer cache's fills from a hit, the review's other direction, would add a load to the miss function; this
+adds nothing to compiled code or the dispatcher, only an add or subtract on a TLB fill or drop of a block's entry.
+What it does cost: while Linux's kernel text (2 MiB blocks, global) is in EL1's instruction TLB, every flush by VA in
+the kernel's half bumps EL1's transfer cache (3,408 of the boot's 24,316 flushes by VA, loop 28's counts), as was
+the intent.
+
+**Measured** (`bench/interp/ab-mac.sh`, the Mac M4, Chrome for Testing 157.0.8103.78, base 818a9422, base first in
+rounds 1 and 3, fix first in round 2; `results/perf29/`), ms:
+
+| | base r1 · r2 · r3; median | fix r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 4,013.9 · 4,034.8 · 4,027.6; **4,027.6** | 4,016.9 · 4,021.6 · 4,050.8; **4,021.6** (−0.1%) |
+| `alpine_user_jit_total` | 10,806.3 · 10,823.6 · 10,814.2; **10,814.2** | 10,803.2 · 10,805.3 · 10,892.9; **10,805.3** (−0.1%) |
+
+The rounds overlap: no cost the gates see. Memory: 16 bytes a vCPU.
+
+**Tests**, each failing on 818a9422 first: `mmu::tests` "a block flush drops transfer cache entries filled from
+hits" (the review's two cases and the nG drop's, each with and without the page's TLB entry evicted by a page's:
+all six failed); `tests/baremetal/xblock.c`: a BLR into a page of a 2 MiB block, the transfer cache dropped with the
+TLB's entry kept (IC IALLU; a TLBI of a data page in the half; an nG page run, then ASIDE1), the calls going on, then
+the block remapped and flushed by VA at its start: under the JIT in Node, each of the three failed on the unfixed
+core (exits 132, 138, 144: the new block's first call ran the old code). It passes on hvf (the M4, `oracle.sh
+--hvf`); QEMU 11.1's TCG fails it as we did (exit 132; docs/testing.md). Planted: the count not decremented (fails
+`block_counts_follow_their_block`, which now checks the counts); the flag replaced by the count at flush time (fails
+the new unit test's evicted cases). The other bare-metal binaries came out of `build.sh` unchanged. No step count
+moved. CI: `scripts/ci.sh` (838 s) and `scripts/ci-jit.sh` (112 s) pass.
+
 ## SNAPZ: compression across the emulator, measured (2026-11-15)
 
 The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, commit 40751074; nothing else ran. Tools:
@@ -4890,7 +4941,7 @@ overlay's per-block writes (2.25 s) and the machine's start (~4.3 s), neither of
 
 **Decided (the user, 2026-11-15):** lz4_flex replaces the core's LZ (codec 2), crc32fast takes the CRC into wasm, and
 the save and the load go through a pool; a picked file is staged through OPFS when there's room, else written
-directly. zstd (C: clang for wasm32 in every build) was not taken. The work: the SNAPZ track (`SNAPZ-KICKOFF.md`).
+directly. zstd (C: clang for wasm32 in every build) was not taken. The work: the SNAPZ track (its kickoff in git history; the outcome: "SNAPZ: the track's end").
 
 ## SNAPZ loop 0: the probe and the baseline (2026-11-15)
 
@@ -5057,3 +5108,841 @@ same file (the writer makes those chunks itself); a view not on shared memory is
 caught by it: frames written as they finish rather than in order; a worker's frame dropped; the pool's replies matched
 to the wrong job; the worker's CRC over the stored bytes only; a failed chunk not made by the writer. The page tests'
 `checkSave` (tests/snapshot-phases.ts) now has every save on a host with a thread to spare go through a pool.
+
+## SNAPZ loop 2b: older files refused; the save's unexplained memory found and cut (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the persistent profile
+`target/snapz/profile`, nothing else running. Raw: `results/snapz-2b/` (`rounds/<guest>-<arm>-<n>.{json,log}` and
+`.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
+driver; `ab.txt`, its log; `rounds/diag-*`, the first diagnosis on 7b7b4342 and one with the recycling alone).
+
+**Part 1, older files refused** (the kickoff's decision 7, now docs/platform.md "The snapshot file"; ABI 69, docs/abi.md "SNAPZ: older files refused"):
+gone are codec 1 (deflate-raw) in the reader and as the writer's default (the writer and the reader are given their
+codec, whose CRC-32 takes the frames'; `readHeader` reads a header alone with the JS CRC), the old-LZ fixture and its
+tests, the core's readers of state versions 4 and 5 (`snapshot_version_min`, the xHCI's state without its CSS state,
+a transport's without its carried reset, a format 5 suspended guest's devices), and the page's fallbacks for files of
+those versions (a device list without the clock, the notify socket or the balloon, a header without `cpu`, the sound
+device's one-stream state). Version 1 files (no BLOB frames) are still what most saves write. An older file is refused
+by its header's `coreVersion` before its frames are read (`otherVersion`, also first in the machine worker's restore),
+so it gets "made by another version of this web app", not "damaged": tests/snapshot.test.ts (an older header over a
+codec 1 frame) and tests/page-snapshot.test.ts (a suspended machine in OPFS rewritten to the older version: the page
+boots instead with [Couldn't resume the suspended machine](ui:machine:worker.notResumed) and the refusal as its
+detail). Planted: no version check (both fail), the check after the check pass (the Node test fails: "damaged").
+bench/snapz's copy of the old LZ stays (compat.mjs and run.ts run as before; README).
+
+**Part 2, where the memory went.** `bench/snapz/memwatch.ts` sampled each of the browser's processes every 50 ms
+beside the probe. On 7b7b4342 every save's extra was the **renderer's** (the page and all its workers), and it grew
+with the bytes written, falling back at a GC: a desktop suspend climbed steadily by ~540 MiB through its 1.1 s pause, a
+kept snapshot in a sawtooth of ~300-400 MiB (its GCs fell inside the pause: +120 at the peak), the file +1,120 MiB
+in the renderer and +685 in the browser process (the download's blob storage). The garbage: each RAM frame a pool
+worker made was a new ~1 MiB ArrayBuffer, transferred to the machine worker and dropped after the sink wrote it (a
+file's worth, 660 MB, waiting for a GC), and on the download path each chunk again (copied for the page, kept by it
+as a Blob, its buffer dropped). **Built:** the frames' buffers are recycled (`RamPool.recycle`: after the sink wrote a
+frame its buffer goes back to its worker with that worker's next job; a sink's bytes are its only until it returns),
+and the page gives each download chunk's buffer back once it has copied it into a Blob (`snapshot-spare`). A pool
+now makes a few buffers a worker (tests: a pool of 1 or 2 made at most 5 a worker for 24 frames; planted, no
+recycling and a buffer given back before the sink wrote it, both caught).
+
+Base = 7b7b4342 (core `0ffff6be`, ABI 68), new = this loop (core `a8deea54`, ABI 69), wblob = new with the download's
+Blob made in the machine worker instead (an arm only; the JSON's commits 6535bb0d and be434c73 are local commits of
+this tree and of that arm, squashed into this loop's); each round a browser of its own, the desktop in a Latin
+square, Debian base new new base base new. Median (range) of 3; memory = the peak over the sample before the save,
+MiB, the whole browser (memwatch's 50 ms) and its renderer:
+
+| desktop | pause base | new | wblob | memory base | new | wblob | renderer base | new |
+|---|---|---|---|---|---|---|---|---|
+| kept | 1,341 (1,337-1,435) | 1,184 (1,173-1,184) | 1,188 | +125 (124-155) | +89 (71-90) | +90 | +122 | +85 |
+| file | 1,587 (1,584-1,619) | 1,359 (1,354-1,397) | 1,796 (1,697-1,844) | +1,560 (1,472-1,570) | +1,238 (1,223-1,257) | +1,012 | +1,120 | +615 |
+| suspend | 1,162 (1,104-1,175) | 1,169 (1,162-1,175) | 1,227 | +535 (533-538) | +206 (205-210) | +169 | +535 | +205 |
+
+| Debian | pause base | new | memory base | new |
+|---|---|---|---|---|
+| kept | 174 (172-198) | 164 (163-168) | +150 (139-156) | +66 (63-70) |
+| file | 186 (172-187) | 167 (166-172) | +331 (329-343) | +207 (206-208) |
+| suspend | 151 (148-172) | 145 (144-145) | +139 (130-397) | +54 (53-308) |
+
+The desktop's suspend added 535 → 206 MiB, its kept snapshot 125 → 89, its file 1,560 → 1,238; Debian's saves
+84-124 MiB less. The pauses got shorter too, without overlap but for the suspend's (the same): the desktop's kept
+−12%, file −14% (fewer GCs in the pause; the probe's own 250 ms RSS agrees: kept −2 against +129, suspend +180
+against +494). Loads and resumes don't change (desktop load 9.3 s against 9.6, resume 8.5 / 8.5; Debian 2.2 / 2.0,
+1.8 / 2.0: noise, nothing on that path changed). **What is left**, by the timelines: a suspend's +205 is the pool's six
+instances (~90-140, decision 8) and the desktop's 3D state read back (109 MB of BLOB contents held through the save);
+a kept snapshot's the same, part of it hidden by a GC early in the save. The file's +1,238 is the browser's blob
+storage holding the file (~685) and ~600 more in the renderer that falls back as the save ends: the page's Blobs'
+bytes, held until the browser has taken them. Making the Blobs in the machine worker held only ~336 MiB there but
+paused the save 0.44 s longer (1.80 against 1.36 s): not taken; loop 4's staging through OPFS is to replace the
+download's memory (docs/backlog.md SNAPZ).
+
+## SNAPZ loop 3: the load's pool (2026-11-15)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the persistent profile
+`target/snapz/profile`, nothing else running. Raw: `results/snapz-3/` (`rounds/<guest>-<arm>-<n>.{json,log}` and
+`.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
+driver; `ab-*.txt`, its logs; `readbench.ts` and `readbench.txt`, the read measurement below). **Built:** the load's
+pool (docs/platform.md "A load's pool"): the save's workers (`startPool`) take the check pass's CRCs and the restore
+pass's RAM frames (CRC, unpack, pages straight into guest RAM and the spill memories), for a picked file, a kept
+snapshot's start and a resume; a Blob is read in 4 MiB slices, four ahead, and each piece goes whole to a worker. The
+probe now also starts the machine from its kept snapshot (`keptStart`). No core or ABI change (core `a8deea54` in both
+arms).
+
+**Measured first** (this tree's probe on 85e2681e, one desktop round): a load 8.56 s = prepare 1.77, check 0.79 (read
+0.52, CRC 0.27), state 0.07, ram 1.77 (read 0.18, CRC 0.32, unpack 1.02, apply 0.32), disk 2.15, start 2.01. A first
+pool (frames copied into shared slots for the workers) took ram to ~0.95 s and left the check pass at ~0.74: both
+passes were then bound by reading. **The file's reads** (`readbench.ts`, the desktop's 689 MB File, three runs): its
+stream 593-1,057 ms in 64-69 KiB chunks; one slice at a time 1 MiB 976-1,054, 16 MiB 624-637; **4 MiB slices four in
+flight 213-228 ms** (3.2 GB/s), 16 MiB four in flight 180-229; 1 MiB slices read by 6 workers 278-283. With slices
+the check pass was ~0.45 s, of which ~0.22 s the machine worker's copies into the shared slots (V8 copies into
+shared memory word by word): pieces handed whole to the workers (transferred) took that away, the check pass to
+~0.28-0.36 s.
+
+**The A/B:** base = 85e2681e (loop 2b), new = this loop (the JSON's commit fb3daf5d is a local commit of this tree,
+squashed into this loop's); each round a browser of its own, base new new base base new for each guest. Median
+(range) of 3, ms; "share" = check + state + ram, the load's compression share:
+
+| desktop (689 MB file) | base | new | |
+|---|---|---|---|
+| load: wall | 9,518 (9,437-9,647) | 7,620 (7,603-8,129) | −20% |
+| ... share | 3,126 (3,019-3,160) | 1,133 (1,079-1,144) | 2.8x |
+| ... check (read / CRC) | 786 (509 / 271) | 434 (341 / 395 summed) | |
+| ... state | 75 | 82 | |
+| ... ram (CRC / unpack / apply, summed) | 2,268 (337 / 1,325 / 419) | 619 (454 / 794 / 741) | 3.7x |
+| ... prepare / disk / start | 1,896 / 2,155 / 2,269 | 1,954 / 2,155 / 2,216 | same |
+| kept snapshot's start: wall | 10,694 (10,408-11,040) | 8,376 (8,302-8,939) | −22% |
+| ... share | 3,214 (3,077-3,319) | 1,124 (1,116-1,230) | |
+| resume: wall | 8,232 (8,068-8,341) | 6,546 (6,489-6,790) | −20% |
+| ... share | 2,932 (2,887-3,026) | 1,122 (1,057-1,187) | |
+| saves' pauses: kept / file / suspend | 1,220 / 1,666 / 1,309 | 1,281 / 1,671 / 1,271 | ranges overlap |
+
+| Debian (97 MB file) | base | new | |
+|---|---|---|---|
+| load: wall | 2,069 (1,981-2,273) | 1,977 (1,965-2,067) | −4%, ranges overlap |
+| ... share | 354 (348-395) | 134 (130-135) | 2.6x |
+| kept snapshot's start: wall | 2,309 (2,123-2,396) | 2,074 (1,887-2,100) | −10% |
+| resume: wall | 2,026 (1,966-2,186) | 1,837 (1,827-1,896) | −9% |
+| saves' pauses: kept / file / suspend | 166 / 183 / 153 | 165 / 179 / 152 | same |
+
+No load's range overlaps but Debian's picked file's (its `start` was 70 ms longer in the new arm's rounds, 756 against
+829, the pool's six workers starting beside the machine's). **Against the projection** ("SNAPZ: compression…": the
+share from ~3.3 s to ~0.8 s): 3.13 to 1.13 s. What is left of it: the check pass ~0.4 s, read-bound (the file is read
+once a pass at ~3.2 GB/s at best); the state 0.08 s (the BLOB frames, on the machine worker); RAM ~0.6 s wall for ~2 s
+of the workers' CPU, `apply` up to 0.75 of it (pages copied from the instance into guest RAM, shared memory both, and
+fresh RAM's first touches). Not taken further here (docs/backlog.md SNAPZ). The rest of a load: the disk's blocks
+(2.2 s, loop 5) and the machine's start (prepare ~2 s, start ~2.2 s, loop 7).
+
+**Memory** (the whole browser, memwatch's 50 ms samples; before = the last sample before the operation, peak = during
+it): the desktop's load 1,546 → peak 3,427 MiB (base) against 1,555 → 3,255 (new), its kept start 3,316 → 5,309 against
+3,323 → 5,066: the new arm's peak 170-240 MiB lower (the one-thread reader's per-frame copies and 64 KiB chunks no
+longer pile up; the pool's six instances, ~90-140 MiB, are within it). Debian's load 1,439 → 1,778 against 1,447 →
+1,836 (+58 MiB at the peak: the pool), its kept start 1,733 → 2,139 against 1,737 → 1,847. The pool's own buffers: at
+most 12 pieces with the workers and 4 being read (64 MiB), each piece freed by its worker once done; the pool ends
+with the load.
+
+**Correctness:** `tests/snapshot.test.ts` "a load's pool": RAM in two views (the spill memory's at an offset of its
+buffer) restored by `readSnapshot` through pools of 1, 2, 3 and 6 and on one thread, byte-identical; RAM not on shared
+memory placed on the machine worker; a worker failing every third piece, one reporting each piece's first frame failed,
+a pool closed halfway: the same RAM; pieces of 4,099 B, 64 KiB + 7, 1 MiB + 17, 3 MiB and the default (frames and their
+headers across pieces), with a DISK frame after RAM's (`placed()` has every RAM frame in when it comes); a byte flipped
+in a RAM frame refused as "a checksum fails" by the check pass with and without a pool, the fresh RAM all zeros, and
+by the pooled restore pass on its own; for every piece size, a damaged frame refused. `tests/page-snapshot.test.ts`:
+a byte flipped in a RAM frame of a real snapshot refused on the page as not loaded, the disk untouched. Planted, each
+caught: the check pass returning before its CRCs are in (writes before the check finishes: the Node test, and the page
+test, whose refusal becomes "not restored"), a frame placed at the wrong address (the view's offset ignored), a
+worker's frame dropped, the frames a worker failed not redone, a failed worker's piece not redone, a frame across
+pieces not checked, one not placed, `placed()` without the piece in hand.
+
+## SNAPZ loop 4: the review's findings; a file save staged through OPFS (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the persistent profile
+`target/snapz/profile`, nothing else running. Raw: `results/snapz-4/` (`rounds/<guest>-<arm>-<n>.{json,log}` and
+`.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
+driver; `ab-*.txt`, its logs; `copybench.ts` and `copybench.txt`, the copy's measurement below; `nested-error.ts`
+and `.txt`, R1's check).
+
+**Part 1, the review of loop 3** (`review/snapz-3`, a static review of 5104f64b; each real finding's test written
+first and seen failing): R1 (a pool worker's uncaught error not cancelled, so it went on to the machine worker's
+parent and the page took it for the machine's crash) real, confirmed in Chromium 155 (`nested-error.ts`: the page's
+`Worker.onerror` fires unless the parent cancels it); fixed (`preventDefault`, and `messageerror` handled).
+R3 (a lost reply hung the save, paused) real: a pool with work out and no reply for 10 s (`STALL_MS`) fails. R4 (one
+worker's failure left the others running their given-up jobs) real: a failure ends every worker at once; a writer
+whose sink failed no longer makes chunks itself. R5 (workers spawned before a failed spawn leaked) real:
+`Promise.allSettled`, the made ones ended. R6 (a refusal could name a later frame) real: a job's refusal is thrown
+before the later jobs are looked at. R10 (the writer gave RAM to the pool on the codec's id alone) real: a codec says
+`pooled` (only `lzCodec`); the reader is gated the same way. Their tests: `tests/snapshot-pool.test.ts` (fake workers
+through `startPool`'s `spawn`, and real ones). R2 (the load's pool leaked when a resume's `bootVm` failed before
+`fill`) and R7 (`fill` closed whatever pool was current) real by the code: the pool is now its restore's (a local of
+`openRestore`, with `release`), and `start` releases it once `bootVm` settles, whatever the outcome; no test reaches
+that path (it needs `bootVm` to fail before `fill`). R8 not a defect: the page test tells the passes apart by the
+headline (the check pass's refusal is "Couldn't load the snapshot", the restore pass's "Couldn't restore"); planted,
+the check pass ignoring its workers' failures fails it, and every load on that page is checked to go through the
+pool. R9 (docs) fixed.
+
+**Part 2, built:** a file save (a picked file, a download) goes to a staging file in OPFS during the pause
+(`web/snapshot-stage.ts`; docs/frontend.md "Snapshots"), the machine resumes (`snapshot-resumed`: input, USB and the
+clock back), then the picked file gets the staging file copied in and it's removed, and a download is the staging
+file itself (removed with its address, 60 s on). The fallbacks write directly: no room (the estimate against
+`snapshotBound` plus a tenth and 64 MiB), a staging write refused partway (written again directly, still paused), no
+OPFS. "A picked file" on this page is `showSaveFilePicker`'s writable in Chromium and a download elsewhere (and where
+the picker throws); both were bound by their path (the writable at ~140-150 MB/s here, the download's Blob parts in
+the page), so both stage. **The copy** first read the staging file in 4 MiB pieces into the worker (arm "new"): 3.9 s
+for the desktop's 680 MB beside the running guest, +594 MiB of the renderer's garbage. Writing it as 64 MiB Blob
+slices instead (the browser copies file to file) took 0.69-0.89 s against 1.27-1.40 s on an idle browser
+(`copybench.txt`) and is what was taken ("new2").
+
+**The A/B:** base = e62727ec (loop 3), new = this loop with the copy read in pieces (9d8b90ae, a local commit), each
+round a browser of its own, base new new base base new per guest; then new2 = this loop (the Blob copy) three rounds
+a guest in the same session after them (not alternated: the pause's code is new's; its kept pauses ran ~10% higher
+than new's, the session's drift). The probe's new `picked` save stands an OPFS file in for the pick (a writable as
+a real pick's). Median (range) of 3, ms; memory = the whole browser's peak over the sample before the save, MiB
+(memwatch's 50 ms):
+
+| desktop (689 MB file) | base | new | new2 |
+|---|---|---|---|
+| kept: paused | 1,261 (1,193-1,341) | 1,294 (1,175-1,325) | 1,438 (1,353-1,467) |
+| download: paused | 1,811 (1,747-1,893) | 1,366 (1,363-1,426) | 1,450 (1,444-1,458) |
+| ... memory added (browser process / renderer) | +1,144 (684 / 530) | +229 (7 / 218) | +239 (7 / 227) |
+| picked: paused | 4,679 (4,571-4,817) | 1,399 (1,316-1,410) | 1,368 (1,363-1,373) |
+| ... the copy after the resume | | 3,884 (3,866-4,031) | 1,379 (1,330-1,379) |
+| ... wall (click to done) | 4,903 (4,818-5,049) | 5,756 (5,723-5,861) | 3,130 (3,072-3,237) |
+| ... memory added | +282 | +594 | +313 |
+| suspend: paused | 1,288 (1,251-1,487) | 1,215 (1,214-1,269) | 1,265 (1,241-1,297) |
+
+| Debian (97 MB file) | base | new | new2 |
+|---|---|---|---|
+| kept: paused | 164 (163-174) | 162 (157-163) | 163 (162-179) |
+| download: paused | 181 (169-182) | 163 (158-167) | 166 (165-167) |
+| ... memory added | +209 | +95 | +82 |
+| picked: paused | 491 (478-505) | 160 (155-170) | 160 (156-166) |
+| ... the copy after the resume | | 210 (194-214) | 114 (106-114) |
+| suspend: paused | 145 (145-157) | 146 (146-149) | 148 (144-150) |
+
+**Against the goal** (the picked file's pause equal to a kept snapshot's within the noise): the desktop's picked
+pause 4.68 → 1.37-1.40 s, a kept one's 1.29 (new) and 1.44 (new2) in the same sessions, the ranges overlapping in
+each; the download's 1.81 → 1.37-1.45 s. Within a round the file saves' pauses run 70-100 ms over the kept one's in
+`disk` (the disks' blocks read: 250-310 ms against 160-200; the base's file saves the same against its kept), not in
+the sink (264-316 ms against 330-418): the overlay is the kept snapshot's restore's by then, later in the round.
+Debian's picked pause 0.49 → 0.16 s, the kept one's. **Memory:** the download's +1,144 MiB is +229-239 (the pool's
+instances and the 3D read-back, as a kept snapshot's +187-200); the browser process's 684 MiB of blob storage is
+gone, and nothing of the file is in the page. The picked file's +282 → +313 MiB (the Blob copy; +594 when read in).
+Loads, resumes and kept starts don't change (nothing on their path did; desktop load 8.2 / 7.4 s, Debian 1.67 /
+1.72).
+
+**Correctness:** `tests/page-snapshot-stage.test.ts` (Buildroot, an on-disk profile): a download and a picked file
+staged (the picked file's bytes the file's, its staging file gone, the download's kept for its address), a staging
+write refused partway (the origin's quota at half a file over its usage, `Storage.overrideQuotaForOrigin`: a whole
+file written directly, `staging: refused`), a copy that fails after the resume (the quota at 1.5 files: the message
+and its cause, the picked file empty, no staging file left, the machine running), a staging file no page holds and
+the download's (its page gone) removed at the next start, and no room (`?stageroom=0`: written directly,
+`staging: room`). Planted, each caught: the stale files kept (no `removeStale` at the start), a failed copy's staging
+file kept (neither the worker nor the page's release removing it), the room never checked, and a refusal partway not
+written again. `tests/snapshot-file.test.ts`: `snapshotBound` over the worst case (incompressible RAM, blobs,
+scattered blocks) is never under the file and is told before its first byte.
+
+## SNAPZ loop 5: the disk's blocks in runs (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, nothing else running. Raw: `results/snapz-5/`
+(`rounds/<guest>-<profile>-<arm>-<n>.{json,log}` and the persistent rounds' `.mem.jsonl.gz`; `summary.py` →
+`summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab-*.txt`, its logs; `harness/`, the breakdown below).
+
+**Where the time went** (`harness/`: the restore's disk phase alone in a worker, over OPFS, every sync-handle call
+timed; `extract.ts` keeps a snapshot's DISK frames in a file of their own; `h.ts <arms> <file>`, `PROFILE=<dir>` for
+a persistent profile; `summary.txt`, 3 rounds each). The desktop's 11,952 blocks are 211 DISK frames, 177 runs of
+consecutive blocks, 2,234 zero blocks; as runs of one kind (data or zeros) within a frame, 1,117 overlay calls
+(`runs.txt`; Debian's 2,103 blocks: 300). One overlay write a block, as the restore did (arm `block`), ms:
+
+| desktop | persistent | off the record |
+|---|---|---|
+| the disk phase (block) | 1,913 (1,727-2,111) | 7,104 (7,082-7,145) |
+| ... `data` flushes (9,719) | 1,664 | 5 |
+| ... `data` writes (9,718) / map writes (11,953) | 57 / 113 | 3,025 / 3,606 |
+| ... `getSize` (a zeroing's `shrink`) | 2 | 382 |
+| ... frames read and unpacked / `isZero` | 37 / 8 | 35 / 11 |
+| a run a call (`run`: 1,117 calls) | 198 (174-200) | 739 (732-744) |
+| a run a call, unordered (`runu`: no flush between a run's data and its map) | 62 (62-73) | 742 (738-747) |
+| the save's reads: a block a read / in runs of consecutive slots | 26-30 / 8-12 | 2,134-2,153 / 166-170 |
+
+On disk each first write's `data` flush (`ORDERED`) was the cost: ~0.17 ms each, 87% of the phase. Off the record a
+flush is free and every call ~0.3 ms. **Built** (`runu` and the reads in runs): the restore writes each DISK frame's
+runs of data blocks and of zero blocks with one call each (`diskRuns`, web/snapshot-file.ts), the overlay's map
+updated once a run (a leaf at a time: the write path as it was), and opens its overlay unordered, flushing both files
+at its end (docs/devices.md "Crash and refusal": until then the overlay is part of a snapshot over an emptied one
+whatever its order); a frame past the disk's end is refused before any of it is written. A save reads a batch of
+blocks with the overlay's `blocks(list)` (those in consecutive slots one read; a ramdisk's as before). Not built: a
+restore-only bulk write (a frame's data, then each leaf's entries once), which would take the off-the-record map
+writes from ~1,100 to one per leaf touched (~0.3 s off the record, ~5 ms on disk: docs/backlog.md SNAPZ).
+
+**The A/B on the page** (`bench/snapz/probe.ts`, which now has `WAARM64_PROFILE=off` and `OPS`: docs/benchmarking.md
+"The snapshot probe"): base = a34c9c85 (loop 4 and the SURFACE merge), new = this loop; both run this loop's probe;
+each round a browser of its own, base new new base base new per guest and profile. Persistent: the profile
+`target/snapz/profile`, every operation, `SETTLE_S=20`, memwatch beside it. Off the record: a fresh context per
+round, the load, a kept snapshot, the start from it and a download. Median (range) of 3, ms; `disk` the phase:
+
+| desktop (689 MB file) | persistent base | persistent new | off base | off new |
+|---|---|---|---|---|
+| load: total | 7,332 (6,962-7,720) | 5,310 (5,107-5,873) | 12,345 (12,308-12,399) | 5,846 (5,766-5,936) |
+| ... disk | 1,972 (1,917-2,056) | 100 (99-116) | 7,252 (7,225-7,295) | 764 (763-797) |
+| kept snapshot's start: total | 7,647 (7,199-7,840) | 5,224 (5,181-5,661) | 12,811 (12,476-12,854) | 6,101 (5,964-6,518) |
+| ... disk | 2,033 (2,000-2,115) | 111 (109-121) | 7,287 (7,266-7,360) | 774 (761-819) |
+| kept: paused (disk) | 1,164 (150) | 1,116 (109) | 5,036 (2,440) | 2,721 (325) |
+| download: paused (disk) | 1,312 (200) | 1,263 (178) | 5,260 (2,760) | 2,698 (360) |
+| picked: paused (disk) | 1,269 (241) | 1,207 (176) | | |
+| suspend: paused / resume: total | 1,296 / 5,745 | 1,282 / 5,610 | | |
+
+| Debian (97 MB file) | persistent base | persistent new | off base | off new |
+|---|---|---|---|---|
+| load: total (disk) | 1,814 (456) | 1,359 (34) | 2,578 (1,336) | 1,405 (220) |
+| kept snapshot's start: total (disk) | 1,695 (413) | 1,322 (33) | 2,464 (1,338) | 1,397 (218) |
+| kept: paused (disk) | 163 (25) | 157 (23) | 874 (542) | 450 (116) |
+| download: paused (disk) | 165 (29) | 157 (18) | 877 (536) | 447 (107) |
+
+(The pauses' ranges are in `summary.txt`; a pause's `disk` medians, ranges there too: desktop kept 138-151 against
+103-138.) **Against the goal:** the desktop's restore of its blocks 1.97-2.03 s → 0.10-0.11 s with a persistent
+profile (the load 7.3 → 5.3 s, a kept snapshot's start 7.6 → 5.2 s), 7.3 s → 0.77 s off the record (the load 12.3 →
+5.8 s). The save's disk blocks: 150-200 → 109-178 ms with a persistent profile (their reads were ~30 ms of it; the
+rest is the frames' copies, compression and the device worker's messages), 2.4-2.8 s → 0.33-0.36 s off the record (a
+desktop save's pause 5.0-5.3 → 2.7 s there; 2.2 s of what's left is the sink, the file's OPFS writes). Debian: its
+load's disk 456 → 34 ms, off the record 1,336 → 220. Nothing else moved past its ranges (the RAM, check and start
+phases, suspends and resumes).
+
+**Memory** (memwatch, the whole browser's peak over the sample before the save, MiB): less, not more: desktop kept
++184 (171-197) → +141 (122-148), download +217 → +163, picked +317 → +253, suspend +214 → +211 (no blocks); Debian
+kept +69 → +60. The save no longer makes a 4 KiB array per block in the device worker; a batch is one array, as
+before.
+
+**Correctness:** `tests/snapshot.test.ts` "a restore writes a disk's blocks in runs" (a made file: data and zero runs,
+one across the 1,024-block leaf boundary, a frame of 256, lone blocks, the disk's last block of 1,000 bytes, over an
+overlay that had other blocks; read back by a new opening: the blocks it holds, each one's bytes and whether it's a
+zero without a slot, the data file a slot per data block, the whole disk; a frame past the disk's end refused as
+corrupt), `tests/snapshot-file.test.ts` (`diskRuns`: runs split where data turns to zeros and back, a block whose
+last byte isn't zero is data, views of the frame, bad sizes refused) and `tests/overlay.test.ts` "blocks() reads a
+list of held blocks" (slots out of the blocks' order, across leaves, zeroed blocks, a list in any order: the bytes
+`block()` reads, one read per run of consecutive slots; a block not held and a failed read give undefined). Planted,
+each caught: a run's map entries not written to the file (`setRun` without its `putMap`), runs not split where data
+turns to zeros (both the restore's test and the file's), `blocks()` reading across a slot gap, and no past-the-end
+check (the write refused, said as the storage full instead of a damaged file).
+
+## SNAPZ loop 7: the load's machine start (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, the persistent profile `target/snapz/profile`,
+nothing else running. Raw: `results/snapz-7/` (`breakdown/`, the instrumented loads below; `variants/`, which
+workers to start ahead; `rounds/<guest>-<arm>-<n>.{json,log,mem.jsonl.gz}`, the A/B's probe and memwatch per round,
+`s1-…` its first session; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab-*.txt`, its logs;
+`marks.py`, the timing marks: `python3 marks.py` puts them in the tree, `UNDO=1` takes them out).
+
+**Where the time went.** `marks.py` timestamps the machine worker's start (`performance.timeOrigin + now()`, so the
+workers' clocks agree), its device worker (module loaded, `init` received, `Devices.open` done, each backend's
+`restore`), the vCPU workers (module loaded, job, instantiated, running), the GPU worker (the 3D state's `load`, its
+first present) and the page (`Runner.start`, the start message posted); `data-load` carries the machine worker's
+marks. One load each on ec293884 (`breakdown/i1-*.json`), ms from the machine worker's start:
+
+| | desktop | Debian |
+|---|---|---|
+| `prepare`: the core fetched (cached) / compiled (V8 compiles lazily) | 19 / 7 | 65 / 8 |
+| ... **the disks' HEAD** (web/app/worker-fetch.ts `checkDisks`, beside the fetch, awaited after it) | **1,851** | **382** |
+| check pass and state (with the pool's start, 14-17) | 963 | 83 |
+| `bootVm` to `fill` (instantiate, the memories grown, the disks' specs) / `fill` (RAM, the disks' blocks) | 34 / 794 | 19 / 116 |
+| the device worker: its module loaded / `init` in (the state's structured copy) | 105 / 34 | 47 / 0 |
+| ... **`Devices.open`** (the URL disks' sync HEADs, web/devices.ts `httpSource`; the backends' `restore` 5) | **2,416** | **604** |
+| quiesce, the screen, `running` | 9 | 6 |
+| total | 6,245 | 1,342 |
+
+**4.3 s of the desktop's 5.5 s load were the dev server's HEADs.** sirv (vite.config.ts serves `target/` with it)
+answers a HEAD as a GET: it pipes the whole file into a response Node then drops, ~1.2 GB/s from the page cache, so
+the desktop's 2.26 GB qcow2 took ~1.9 s per HEAD (Debian's 403 MB ~0.35 s), and a load makes two: the machine worker's
+check that the disk is there and the device worker's size. This is the dev server's (the tests, the probe, `npm run
+serve`), not the page's: `npm start` and the deployed page serve no disk images, and stored disks make no request.
+Every load the SNAPZ probe measured since loop 0 had it in `prepare` and `start` ("the machine's start ~4.3 s"). What
+the rest was (after the HEAD's fix, `breakdown/i2-*.json`; desktop / Debian): `prepare` 20 / 22; the device worker's
+module 76 / 57 ms and `init` 19 / 1; `Devices.open` 20 / 26 (the overlays' OPFS handles); the other parts as above.
+After `running`, outside `total`: the vCPU workers run ~120 ms later (spawned at the first run: their modules ~100-115
+ms, the clock's queries 3, instantiating 1; platform.md "Snapshots"), and on the desktop the GPU worker's 3D state
+`load` takes 51-108 ms, its first present 4 ms after it. Before the worker's start, on the page: the GPU worker's
+WebGL start, 53-100 ms, comes before the start message (the caps are in it), and the file's handling ~45-75 ms.
+The core: compiled once a load (4-7 ms: V8 compiles lazily, so its cost is in the first calls), the copy with exact
+memory limits compiled while the first instance lays the memory out (awaited 0 ms); no code cache applies
+(`WebAssembly.compile` of bytes, and the exact copy's bytes are rewritten), and how the core's code tiers up is the
+JIT's compile policy (not touched).
+
+**Built:** (1) **the dev server answers a HEAD under `target/` from the file's `stat`** (vite.config.ts `headOnly`:
+sirv's headers for the file in dev mode, Content-Length, Last-Modified, the server's; anything else goes on to sirv).
+(2) **The device worker is started beside the check pass** (web/vm.ts `warmWorkers`, `BootOptions.warm`: the machine
+worker starts it once the load's pool is up, at once for a boot; `bootVm` takes it, ends what it doesn't take), and
+**a restore's state moves to it** (the 3D contents transferred, not copied: with the worker started early the copy was
+what was left of its start, 79 ms). Starting the vCPU workers (and the compile worker) ahead too was measured and lost
+(`variants/`, desktop loads, 3 each): all started ahead 1,045-1,329 ms (the check pass 409-525), the device worker
+only 973-1,024 (check 332-343), all after the check pass 1,080-1,152 (RAM's phase 498-559 against 390-425): six
+workers' modules loading beside the pool's six cost the check pass (or RAM) 80-100 ms, more than the device worker's
+start saves; the vCPU workers still start at the first run. (The first session's arm `s1-allwarm` is that variant.)
+
+**The A/B:** base = ec293884 (loop 5), head = + the HEAD fix, new = + the device worker ahead and the state moved
+(this loop); each round a browser of its own, base head new new head base base new head per guest, every operation,
+`SETTLE_S=20`, memwatch beside it. Median (range) of 3, ms; memory = the whole browser at the operation's peak, MiB:
+
+| desktop (689 MB file) | base | head | new |
+|---|---|---|---|
+| load: total | 5,575 (5,358-5,951) | 1,563 (1,540-1,620) | 1,436 (1,416-1,437) |
+| ... wall (the probe's: the file chosen to `running`) | 5,721 (5,505-6,105) | 1,762 (1,675-1,762) | 1,577 (1,571-1,578) |
+| ... prepare / check / ram / start | 1,993 / 413 / 623 / 2,472 | 28 / 506 / 624 / 229 | 27 / 495 / 617 / 89 |
+| ... memory peak | 3,389 | 3,414 | 3,202 |
+| kept snapshot's start: total | 6,117 (5,888-6,166) | 1,516 (1,435-1,558) | 1,371 (1,344-1,523) |
+| ... start / memory peak | 2,678 / 5,106 | 284 / 5,128 | 110 / 4,821 |
+| resume: total | 5,594 (5,566-5,879) | 1,378 (1,356-1,379) | 1,192 (1,191-1,197) |
+| ... start | 2,267 | 287 | 125 |
+| saves' pauses: kept / file / picked / suspend | 1,173 / 1,273 / 1,222 / 1,240 | 1,126 / 1,275 / 1,216 / 1,210 | 1,111 / 1,257 / 1,183 / 1,279 |
+
+| Debian (97 MB file) | base | head | new |
+|---|---|---|---|
+| load: total | 1,437 (1,376-1,501) | 316 (303-317) | 288 (279-295) |
+| ... wall | 1,577 (1,567-1,668) | 457 (456-460) | 456 (455-456) |
+| ... prepare / check / start | 485 / 55 / 777 | 25 / 54 / 128 | 22 / 70 / 84 |
+| kept snapshot's start: total | 1,291 (1,284-1,352) | 301 (295-312) | 288 (271-293) |
+| resume: total | 1,283 (1,201-1,315) | 314 (309-329) | 288 (276-298) |
+| saves' pauses: kept / file / picked / suspend | 159 / 158 / 156 / 151 | 154 / 161 / 156 / 152 | 162 / 156 / 156 / 156 |
+
+**Against the goal:** the desktop's load 5.6 → 1.4 s (its `prepare` + `start` 4.5 s → 0.12 s), a kept snapshot's
+start 6.1 → 1.4, the resume 5.6 → 1.2; Debian's load 1.44 → 0.29 s. The HEAD fix is nearly all of it; the device worker
+ahead is 130-190 ms more on the desktop (`start` 229-287 → 89-125: load and resume past the ranges, the kept start's
+overlapping), 13-28 on Debian (load past the ranges), net of what the device worker's start costs the check pass
+beside it (Debian's 54 → 70 ms; the desktop's within its noise). The saves don't move. What a load is now
+(desktop): the check pass ~0.4-0.5 s (read-bound), the state 0.09, RAM ~0.6, the disk 0.1, the rest 0.12; the probe's
+wall is ~0.14-0.2 s more (the page's side, the GPU worker's start). **Memory:** less: the desktop's load peaks ~190-210
+MiB lower (3,202 against 3,389-3,414), a kept start's ~285-305 lower, and the browser holds ~170-310 MiB less before
+each later save of the round (the state's 109 MB copy and its source no longer both kept); Debian's within its ranges.
+
+**Correctness:** `tests/serve.test.ts` "a HEAD under target/ is answered from the file's stat" (the headers a GET has;
+a file that can't be read still answers 200 with its size; a missing one 404); `tests/warm-workers.test.ts` (fake
+browser workers: each kind made ahead and taken in turn, then new ones; a worker that failed to load replaced and its
+error kept from the page; `end` ends only those not taken; none outside a browser worker; and a real `bootVm` in
+Node: the warm workers ended once the vCPU workers start, not before, when `bootVm` fails, and at the boot of a machine
+that isn't parallel). The page's own snapshot, 3D and machines tests run the new start (`scripts/ci-debian.sh`,
+`ci-machines.sh`). Planted, each caught: the HEAD handler left out (the unreadable file's HEAD never answers), `end`
+not terminating, a failed worker handed out, the coordinator not ending them, `bootVm`'s failure not ending them, a
+machine without vCPU workers not ending them.
+`scripts/ci.sh` (815 s), `ci-debian.sh` (344 s), `ci-machines.sh` (343 s) and `ci-graphics.sh` (266 s, the 3D state
+handed over differently) green over loop 5 and this loop, once each, alone.
+
+## SNAPZ loop 6: qcow2's clusters through miniz_oxide (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, nothing else running. Raw: `results/snapz-6/`
+(`rounds/page-<arm>-<n>.{json,log,rss}`, `rounds/io-<arm>-<n>.{json,log,rss}`; `run-ab.sh`, the driver; `ab.txt`, its
+log; `summary.py` → `summary.txt`, `summary.json`). **Built:** two core exports, `inflate_raw` and `deflate_raw`
+(miniz_oxide 0.9.1, now a normal dependency; ABI 70, docs/abi.md "SNAPZ: qcow2's clusters through miniz_oxide"), and
+`web/deflate.ts`: a codec-only core instance per thread (`codecCore`), synchronous. qcow2's reader inflates through
+it (on the reading thread and in each inflate-pool worker, which gets the thread's core first; the device worker's
+codec runs on the machine's core, `DevicesInit.core`; other threads fetch `CORE`), and a compressed export's
+clusters are deflated through it at level 6 (in place, and in each deflate-pool worker). `DecompressionStream` and
+`CompressionStream` are gone from qcow2's paths, and with them the byte-by-byte retry Firefox's stream needed.
+
+**The arms:** base = 8facaffa (the streams; its web files and core, ABI 69), new = this loop, nopool = this loop
+with `inflatePool`'s default size 0 (every cluster on the reading thread); each arm's files and wasm swapped into the
+checkout before its run. Rounds base new nopool, nopool new base, new base nopool. Per round and arm,
+`bench/io/inflate-page.ts` (extended here: `reads`, `export-c`; a fresh persistent profile per run) and bench/io's
+`io_reads` (fio in Buildroot over `target/bench/io-usr.qcow2`: 256 MiB of a tar of `/usr`, `qemu-img convert -c`,
+64 KiB clusters, 99 MB; 5 boots a run, the run's median). Median (range) of 3:
+
+| | base (streams) | new (miniz_oxide) | nopool |
+|---|---|---|---|
+| Debian's boot to its login (compressed qcow2 over HTTP), s | 25.65 (25.45-27.19) | 25.66 (25.59-25.95) | 25.76 (25.75-26.01) |
+| import as a stored disk, s | 14.43 (13.94-14.58) | **13.86 (13.57-13.88)** | 15.19 (15.07-15.31) |
+| export, qcow2, s | 7.60 (7.45-7.86) | **7.22 (7.21-7.41)** | 8.45 (8.25-8.48) |
+| export, compressed qcow2, s | 8.64 (8.51-9.01) | **8.19 (8.09-8.24)** | 8.86 (8.48-9.05) |
+| ... its size, MB | 448.3 | 444.6 | 444.6 |
+| fio sequential 1 MiB, MiB/s | 225.1 (220.7-225.3) | **230.8 (230.5-231.4)** | 174.3 (173.2-174.9) |
+| fio sequential 128 KiB, MiB/s | 88.8 (88.6-88.9) | **91.5 (91.3-91.6)** | 89.0 (88.5-89.1) |
+| fio random 4 KiB, MiB/s | 4.51 (4.51-4.54) | **4.57 (4.56-4.58)** | 4.57 (4.57-4.57) |
+| the reader alone (the page's thread), a 1 MiB read, one thread, ms | **2.77 (2.72-2.78)** | 2.95 (2.95-2.95) | 2.94 |
+| ... with a pool of four, ms | 1.61 (1.59-1.62) | **1.51 (1.48-1.52)** | 1.49 |
+| inflate a 64 KiB cluster, one after another, µs | **158 (158-163)** | 172 (171-172) | 171 |
+| deflate a 4 KiB cluster (`qcow2-write.ts` `deflate`), µs | 82 (80-85) at 2.27x | **72 (72-72) at 2.35x** | 71 |
+| the browser's RSS peak, a page run (the boot's), MiB | 2,881 (2,851-2,891) | **2,680 (2,673-2,699)** | 2,617 |
+| ... a fio run, MiB | 1,680 (1,648-1,687) | **1,538 (1,519-1,544)** | 1,332 |
+
+**Against the goal:** the kickoff's numbers (160 against ~400 µs a 64 KiB cluster, 66 against 307 a 4 KiB one) were
+the measuring session's harness, which piped each cluster through `Blob.stream().pipeThrough(...)` and collected the
+chunks: the page's own stream code (one writer, one reader, the output written in place) was much cheaper, 158 µs
+and 82 µs. So on one thread the core's inflate is **9% slower** a cluster (172 µs) and its deflate 12% faster at a
+3.5% better ratio. End to end the new arm is still ahead in every measure but the boot, each outside the other's
+range: the import 4% faster, the export 5%, the compressed export 5% (and 0.8% smaller), fio's reads 1-3%, the
+reader's pooled 1 MiB read 6%, the browser's peak 140-200 MiB lower (not broken down by process: the
+streams' buffers on four workers are the likely difference). The one-thread 1 MiB read is 7% slower; it is what Node and a thread
+without workers run, never the page's guests. **The boot doesn't move** (25.6-25.7 s in all three arms): its reads
+are mostly one or two clusters, and inflating is a small part of it. **The inflate pool still pays:** without it fio's 1
+MiB reads were 24% slower, the import 10% and the export 17%; it stays. **Memory:** a codec instance is a 2 MiB memory,
+2.6 MiB after a deflate (its compressor's ~200 KiB tables from the heap, allocated and freed per call: miniz_oxide
+boxes them, so `deflate_raw` isn't allocation-free; `inflate_raw` is): one per thread that reads a compressed qcow2
+(the device worker and its four inflate workers: ~13 MiB), and during an export the disk-out worker's and its four
+deflate workers' (~13 MiB more); the threads without the machine's core (the disk-in and disk-out workers) hold its
+9.6 MB wire bytes too. The measured peaks are lower than base's all the same. The core's wasm grew 155 KB (9.49 →
+9.64 MB).
+
+**Correctness:** natively (`cargo test`, `core/src/codec.rs`, `core/src/lib.rs`): round trips at every level with
+junk after the stream, the stream read by the native twin's inflater; `deflate_raw` refusing a `cap` it doesn't fit;
+`inflate_raw` refusing every truncation, a stream past its bound, a reserved block type, a stored block's bad length
+and a distance before the output's start, and 20,000 flipped-bit streams and 5,000 garbage inputs without a panic;
+the exports over 3,000 random inputs, caps and levels (a result within the cap, or the failure value). Planted, each
+caught: a corrupt stream taken (`inflate_raw` returning what it produced whatever its status: 3 tests fail), an
+inflate past its bound taken (`HasMoreOutput` as done: 2 fail). In Node (`tests/deflate.test.ts`): Node's zlib with
+QEMU's 4 KiB window (`windowBits: 12`) reads the core's 4 KiB clusters, the core reads zlib's 64 KiB ones and its own
+with a sector's junk after; corrupt, truncated, short and overlong streams refused; planted: a short cluster taken
+(caught). `tests/qcow2.test.ts`: a damaged compressed cluster fails its read, the clusters before it still read (the
+Firefox stream test is gone with the retry). The exports stay valid qcow2 for QEMU: `tests/qcow2-write.test.ts`
+(`qemu-img check` and `qemu-img compare` of compressed whole disks and changes files) and the page's
+`tests/page-save.test.ts` and `tests/page-disks.test.ts` (an image imported and exported compressed, compared by
+qemu-img) pass. A first version of the inflate pool started its workers twice when two requests came before the core
+was compiled; it starts them once now.
+`scripts/ci.sh` (788 s), `ci-debian.sh` (411 s) and `ci-machines.sh` (316 s) green on the finished tree, once each, alone.
+
+## SNAPZ: the track's end (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, nothing else running. Raw:
+`results/snapz-end/` (`rounds/<guest>-<arm>-<n>.{json,log,mem.jsonl.gz}`, the probe and memwatch per round;
+`summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab-*.txt`, its logs; `e1/`, the review's
+first finding's cost).
+
+**The arms:** base = loop 0's tree (baa1e0b3) and its core (`e4050123…`, ABI 67), **with loop 7's dev-server fix**
+(vite.config.ts answers a HEAD under `target/` from the file's `stat`; sirv read the whole disk image for each, 4.3 s
+of every desktop load, the dev server's and not the page's: a local commit, 0199f99e); new = the finished tree
+(0e8f3e68, core `44210116…`, ABI 70). So the comparison is the track's code, the HEAD's cost taken out of both.
+Each round a browser of its own with a persistent profile of the arm's (`target/snapz/profile-end-<arm>`, new for
+this run: loop 0's page and the finished one's store differ), every operation of `bench/snapz/probe.ts` (the
+finished one, which now reads headers itself so that it runs on loop 0's tree), `SETTLE_S=20`, memwatch beside it;
+the order base new base new new base base new per guest, the first two rounds (each arm's first in its fresh
+profile) left out: 3 rounds an arm. Median (range), ms; memory: the whole browser, MiB, the peak during the
+operation over the sample before it (`memAdded`).
+
+| desktop (689 MB file) | loop 0 (+ HEAD fix) | the end | |
+|---|---|---|---|
+| **load**: total | 5,762 (5,504-5,788) | 1,214 (1,129-1,240) | 4.7x |
+| ... wall (the file chosen to `running`) | 5,902 (5,695-5,986) | 1,357 (1,262-1,357) | |
+| ... check / state / RAM / disk / start | 729 / 102 / 2,610 / 2,055 / 158 | 404 / 78 / 482 / 101 / 95 | |
+| ... memory added (peak) | +2,175 (3,712) | +1,740 (3,253) | −435 |
+| **kept snapshot's start**: total | 6,010 (5,527-6,072) | 1,274 (1,267-1,356) | 4.7x |
+| ... memory added (peak) | +2,115 (5,433) | +1,642 (4,879) | |
+| **resume**: total | 4,060 (3,607-4,075) | 1,258 (1,240-1,278) | 3.2x |
+| **kept**: paused | 4,815 (4,744-4,853) | 1,089 (1,079-1,115) | 4.4x |
+| ... memory added | +64 (49-69) | +131 (126-131) | +67 |
+| **download**: paused | 5,824 (5,110-5,859) | 1,248 (1,238-1,317) | 4.7x |
+| ... memory added | +562 (536-594) | +169 (169-171) | −393 |
+| **picked file**: paused | 8,887 (7,599-8,990) | 1,285 (1,281-1,370) | 6.9x |
+| ... wall (with the copy after the resume, 1,348) | 9,019 | 3,087 | |
+| ... memory added | +521 (485-525) | +251 (244-256) | −270 |
+| **suspend**: paused | 5,443 (4,848-5,483) | 1,290 (1,231-1,290) | 4.2x |
+| ... memory added | +185 (184-188) | +213 (203-214) | +28 |
+| file's size, MB: kept / download / suspend | 690 / 693 / 677 | 676 / 679 / 663 | −2% |
+
+| Debian (97 MB file) | loop 0 (+ HEAD fix) | the end | |
+|---|---|---|---|
+| **load**: total | 961 (930-1,061) | 268 (261-283) | 3.6x |
+| ... check / RAM / disk / start | 92 / 336 / 420 / 82 | 72 / 59 / 37 / 71 | |
+| **kept snapshot's start**: total | 997 (968-1,006) | 288 (283-314) | 3.5x |
+| **resume**: total | 597 (597-616) | 273 (268-284) | 2.2x |
+| **kept** / **download** / **picked** / **suspend**: paused | 597 / 636 / 949 / 585 | 158 / 162 / 156 / 151 | 3.8-6.1x |
+| memory added: kept / download / picked / suspend | +77 / +177 / +141 / +69 | +86 / +98 / +100 / +64 | |
+
+Small machines got faster too (the kickoff allowed them slower). Every range is apart. **Memory:** the kept save holds
+~67 MiB more while it runs (the pool's six instances: kickoff decision 8 allowed 90-140), a suspend ~28 more; the
+file saves hold less (the download ~390 MiB less, a picked file ~270: staged through OPFS, no Blob parts); a load
+peaks ~435-460 MiB lower on the desktop. Against loop 0's own numbers (`results/snapz-0/`, the HEAD's cost in them):
+the desktop's pause 4.2 s → 1.1 s, its load 9.5 s → 1.2 s; this session's base pauses ran ~0.6 s over loop 0's
+(4.8 against 4.2 kept: the host), so the same-session column is the one to read.
+
+**What each loop gave** (the desktop guest; each loop's own A/B, its REPORT entry above):
+
+| loop | what | gave |
+|---|---|---|
+| 0 | the page's phase timings, `bench/snapz/probe.ts` | the baseline: pause 4.2 s, load 9.5 s |
+| 1 | lz4_flex and crc32fast in the core | pauses −9%, the load −8%, files −2% |
+| 2 | the save's pool (6 workers) | pause 3.80 → 1.07 s (Debian 0.52 → 0.16) |
+| 2b | older files refused; the save's garbage recycled | the suspend's memory +535 → +206 MiB, the download's +1,560 → +1,238 |
+| 3 | the load's pool | check, state and RAM 3.13 → 1.13 s (wall 9.5 → 7.6) |
+| 4 | the first review's findings; a file save staged through OPFS | a picked file's pause 4.7 → 1.4 s; the download's memory +1,144 → +235 |
+| 5 | the disk's blocks in runs | the restore's blocks 1.97 → 0.10 s (load 7.3 → 5.3; off the record 7.3 → 0.77) |
+| 7 | the load's machine start | the dev server's HEAD from stat, the device worker ahead: load 5.6 → 1.4 s |
+| 6 | qcow2's clusters through miniz_oxide | an import, an export 4-5% faster, the browser's peak 140-200 MiB lower |
+| end | the final review's findings (E1-E6) | refusals before anything is touched; the load unchanged (below) |
+
+**The final review** (`review/snapz-end`, a static review of f31e50f1; six findings, all real, each fixed with its test
+failing first): **E1** a restore emptied and recreated an overlay before refusing a DISK frame of an unpinned slot,
+one past the disk's end, one that doesn't unpack, or a frame out of order (all CRC-valid): the check pass now refuses
+them (the frames' order, each DISK frame's slot and place, and its unpacking: by the pool's workers, a job's `unpack`).
+Its cost on the desktop's load (`e1/`, two sessions, prefix = f31e50f1 against the fix, the same core, 3 rounds each
+per session): total 1,063 (1,055-1,069) against 1,060 (1,036-1,065) in the second session, 1,112 (1,095-1,216) against
+1,067 (1,044-1,075) in the first (its last round slow in every phase); the check pass 333 against 331, 347 against 327:
+~0-2%, within what the sessions move. A fresh overlay switched in at the end (the other way) wasn't needed. **E2** an
+inflate worker whose codec failed to start never answered, and the guest's read waited for good: it answers with an
+error now, and a request unanswered for 10 s fails the pool (its share done on the reading thread). **E3** a download's
+staging file was removed 60 s after the click whether or not the browser had read it (a `File` over a removed OPFS
+file reads `NotFoundError`, confirmed): it is kept until the next file save or the page's end. **E4** a thread's qcow2
+codec that failed once stayed failed: tried again at the next call. **E5** through the pool, an earlier frame's bad
+CRC came out as a later frame's structural refusal: the piece in hand's frames are checked first. **E6**
+`inflate_raw`/`deflate_raw` made a slice of a null pointer for length 0 (UB; a debug build aborted on it): no slice
+for no bytes.
+
+**Correctness:** tests/snapshot.test.ts "impossible things" (four CRC-valid damaged files, with and without a pool:
+refused with their own message, the overlay's blocks and generation as they were; planted, each caught: no DISK check
+in the check pass, no order check, no DISK unpacking, a failed worker's frame not unpacked again) and "a frame's bad
+CRC is refused before a later frame's bad structure" (planted: the batch not given first); tests/qcow2.test.ts "the
+inflate pool in Chromium" (a worker whose codec can't start, its stall timer past the read's bound; a silent worker;
+both hung before); tests/page-snapshot-stage.test.ts "a download's staging file is kept" (a fake clock ten minutes on:
+`NotFoundError` before); tests/deflate.test.ts (a codec whose memory was refused once); `cargo test` "no buffer for no
+bytes" (aborted before).
+`scripts/ci.sh` (797 s; its first run failed once on tests/page-clipboard-ui.test.ts's "the agent's end got [], not 62
+bytes", a clipboard test this can't reach, green on its rerun), `ci-debian.sh --platform` (612 s), `ci-graphics.sh` (257 s)
+and `ci-machines.sh` (325 s) green on the finished tree, once each, alone.
+
+## PERF loop 30: preemption's counts and tools (2026-11-16)
+
+The first entry of "Preemption without the budget" (PERF-HANDOVER.md, P0): tools and numbers for the loops that take
+the step budget out of parallel realtime's compiled code. No behavior changes. Data: `bench/boot/results/perf30/`
+(its README).
+
+**The tools** (docs/benchmarking.md "The JIT's machine code, x64 and arm64" and "Preemption's counts", docs/devenv.md
+"An x86_64 Node"; the 2026-11-16 prototypes in `bench/results/local/nobudget/` made permanent):
+- `tools/x64node.ts`: Node's official linux-x64 build of the running version (checked against `SHASUMS256.txt`) and
+  Debian trixie's amd64 libc6 2.41-12+deb13u4, libstdc++6, libgcc-s1 and libatomic1 14.2.0-19 (checked against the
+  `Packages` index) into `target/x64node/`, run under `qemu-x86_64 -L`: x64 Node 26.7.0, the same V8 (14.6.202.34).
+- `bench/jit/dump-modules.ts`: every JIT module of a deterministic guest run in Node (`WebAssembly.Module` wrapped,
+  web/vm.ts untouched); Alpine's boot: 319 modules, 12.1 MB, in 5 s, the same set as the prototype's.
+- `bench/jit/codestats.ts`: TurboFan code of dumped sets on arm64 and x64, per function (instructions, bytes, stack
+  slots, frame memory operands). Its child is plain JavaScript through `-e`: a `.ts` child made V8 print Node's own
+  type-stripping wasm too (12,048 functions instead of 7,232). It reproduces the prototype's awk exactly.
+- The `diag` feature (`core/src/tally.rs`; `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag`) and
+  `bench/boot/preempt-counts.ts`: tallies bumped by compiled code in the `Vcpu` and by the parallel run loop, published
+  past each vCPU's counters block. The normal build's code section is byte-identical with and without the change (its
+  data section differs only in panic locations' line numbers); the diagnostic core runs Alpine's boot in exactly
+  tests/steps.txt's 2,651,076,469 steps.
+
+**Counts per 1000 steps** (the diagnostic core in Node on the dev VM; `boot` and `user` deterministic on 1 vCPU as
+`boot_alpine_jit` and `alpine_user_jit`, `smp1`/`smp4` `smp_alpine_jit`'s boot, `smp-user4` `smp_user_jit_4`, parallel
+realtime):
+
+| | boot | user | compress | Lua | churn | SQLite | smp1 | smp4 | smp-user4 |
+|---|---|---|---|---|---|---|---|---|---|
+| region back-edge | 19.5 | 12.3 | 17.4 | 1.1 | 14.7 | 17.0 | 21.1 | 21.4 | 11.9 |
+| region forward edge | 106.9 | 113.4 | 97.8 | 117.3 | 117.6 | 125.4 | 106.9 | 106.2 | 110.3 |
+| transfer cache hit (BR/BLR/RET) | 4.5 | 13.2 | 4.8 | 25.7 | 5.1 | 13.9 | 3.7 | 3.6 | 15.5 |
+| miss function | 2.3 | 1.3 | 1.1 | 0.6 | 2.7 | 0.8 | 2.2 | 2.6 | 0.8 |
+| chain backward (direct) | 11.7 | 11.4 | 5.1 | 18.1 | 11.7 | 7.1 | 11.7 | 12.0 | 12.0 |
+| chain forward (direct) | 21.4 | 21.4 | 28.1 | 16.1 | 22.4 | 22.5 | 21.7 | 22.6 | 26.2 |
+| chain via jump cache, back / fwd | 0.5 / 6.3 | 0.7 / 7.2 | 0.6 / 8.0 | 0.1 / 7.2 | 0.9 / 7.9 | 1.8 / 7.0 | 0.5 / 6.4 | 0.4 / 5.9 | 0.7 / 7.9 |
+| by-VA link, back / fwd | 2.7 / 1.0 | 9.3 / 2.0 | 5.9 / 2.3 | 14.2 / 1.9 | 1.5 / 1.2 | 13.8 / 3.3 | 2.9 / 1.0 | 2.7 / 1.0 | 10.8 / 2.4 |
+| host call / return | 12.4 / 11.6 | 11.0 / 10.3 | 6.7 / 6.2 | 9.2 / 8.7 | 17.1 / 16.2 | 13.4 / 12.8 | 11.8 / 11.5 | 11.1 / 10.7 | 9.4 / 9.3 |
+| **decision 2's poll points** | 41.1 | 48.2 | 34.9 | 59.8 | 36.6 | 54.4 | 42.0 | 42.6 | 51.7 |
+| today's `left` checks taken | 176.7 | 192.3 | 171.1 | 202.3 | 185.7 | 212.6 | 178.1 | 178.3 | 198.4 |
+
+The poll points are the back-edges, transfer cache hits, miss-function entries, MMU-off jump cache hits (none: Linux
+runs with the MMU on) and backward static chains of every form; today's checks are every edge, chain and transfer
+taken. So a poll comes every 16-29 steps where a check comes every ~5: forward region edges, 55-63% of today's checks,
+need none. Backward static chains are as frequent as back-edges (Lua: 18 against 1.1, its loops are chains of
+regions), and in user space the by-VA links (backward 6-14 in compress, Lua and SQLite) go through the transfer cache
+probe and so take its poll. Host calls (~10) need none of their own (a recursion past `MAX_DEPTH` is a tail call, a
+backward chain).
+
+**How parallel realtime chunks end** (CHUNK 32,768):
+
+| | smp1 | smp4 | smp-user4 |
+|---|---|---|---|
+| chunks (mean steps) | 350,839 (6,933) | 925,626 (2,745) | 3,127,705 (10,114) |
+| by the budget: chunks, steps | 11.5%, 54.1% | 4.4%, 52.1% | 26.8%, 86.8% |
+| SVC | 32.2% | 12.3% | 6.6% |
+| Resync (ISB, DSB, ERET, unmask not fast-completed) | 29.4% | 19.7% | 9.6% |
+| exceptions (faults, traps) | 13.6% | 5.2% | 6.9% |
+| platform (timer and GIC registers) | 8.8% | 11.4% | 10.6% |
+| WFE / SEV | - | 26.7% / 13.4% | 22.4% / 11.3% |
+| TLBI IS | - | 3.9% | 4.7% |
+| device, IC, counter, WFI, HVC | 4.6% | 3.0% | 1.0% |
+
+No chunk ended early without an exit. Most chunks end by an exit, but the budget-ended ones hold half the boot's
+steps and 87% of the userspace phases': that's the time a stop word must cut short instead of the budget.
+
+**Latency today** (the same parallel runs; Node in the dev VM, so the host's sleeps are Node's): a vCPU's own timer
+line seen by its run loop past the deadline, while running: mean 78 / 86 / 42 µs (smp1 / smp4 / smp-user4), max 5.1-6.7
+ms; in WFI (the host's sleep to the deadline): mean 1.55 ms / 318 / 299 µs, max ~10.5-11 ms. An interrupt line's rise
+(`Vm::refresh`, any thread: SGIs, devices, timers) to the IRQ taken while running: mean 2.8 / 10.3 / 4.1 µs, 99% / 92%
+/ 95% under 10 µs, 2 / 18 / 17 over 1 ms (max 3.8-9.2 ms; a vCPU out in the host or the guest masking IRQs counts
+too); to a WFI completed: mean 0.3 / 11.6 / 13.2 µs. tests/baremetal/timer.c and unmask.c report no latency (they pass
+or fail; unmask.c runs in round-robin only, where it bounds the unmask's lag at 16 loop trips), and no test or tool
+measures an IPI round trip: P1's spin tests should time one.
+
+**Static counts of today's code** (Alpine's boot, 319 modules, 7,232 TurboFan functions; `codestats.json`), per
+function: arm64 1,070.3 instructions, 4,063 bytes, 15.6 stack slots, 199.4 frame memory operands; x64 840.1, 3,681,
+13.8, 175.0. The prototype's `nobudget.patch` set (317 modules, 7,143 functions) against it: arm64 −8.7% instructions,
+−8.8% bytes, −4.6% slots, −5.7% frame operands; x64 −13.4%, −12.0%, −4.8%, −14.1% (the handover's numbers,
+reproduced by the tools). x64 compiles a set in ~2 min under qemu, arm64 in ~20 s.
+
+**The baseline on the Mac** (M4, Chrome for Testing 157.0.8103.78, b707e614's code, 3 rounds, medians a round;
+`mac-r*.json`): `smp_alpine_jit` to its script / to power-off on 1 vCPU 2,913-2,949 / 5,523-5,535 ms, on 2
+2,519-2,538 / 5,127-5,163, on 4 2,481-2,504 / 5,123-5,154; `smp_user_jit_4` total 11,297 / 11,593 / 11,467 ms
+(compress 1,272-1,367, Lua 2,370-2,723: round 2's two samples 340 ms apart, churn 790-811, SQLite 1,835-1,947); `jit_mips`
+6,723-6,809 MIPS (the user-mode small guest: one thread, no VM, so not parallel realtime; it gauges compiled code's
+own cost). Spotlight indexing (`mds_stores`) took a core on the Mac right after the run (when it started is unknown). An orphaned hvf bare-metal
+QEMU from an earlier oracle run had spun for 50 minutes there before the run; it was ended first. `smp_user_jit_4`
+takes two samples a round and spread 2.6% across rounds: P1's A/B needs more rounds for it to resolve ~1%.
+
+Firefox's pages session wasn't run: its harness is broken (PERF-HANDOVER.md's queue) and P4 runs it.
+
+`scripts/ci.sh` (817 s) and `scripts/ci-jit.sh` (112 s) green, alone; `cargo clippy --features diag` clean.
+
+## PERF loop 31: parallel SMP's code without `left`, with a stop word (2026-11-16)
+
+P1 of "Preemption without the budget" (PERF-HANDOVER.md): in parallel SMP compiled code carries no step budget; it
+polls a per-vCPU stop word where a cycle can close. Data: `bench/boot/results/perf31/` (its README). docs/jit.md
+"Preemption (parallel SMP's polled code)", docs/platform.md "Parallel SMP", docs/abi.md "PERF: the stop word" (ABI 71).
+
+**As built.** `jit::Config::polled` (parallel SMP only; round-robin, deterministic or realtime, and user mode keep the
+counted code): no `left` checks, no `left -= len`, no `SUM`, `left` passed as 0; `acc` a plain local that edges bump.
+The poll is `acc < stop` (`i32.atomic.load` of `jit::State::stop` at a fixed `Vcpu` offset, ANDed into the transfer's
+condition, so a failed poll takes the path a failed budget check took). Points: static transfers (region edges,
+direct chains, chains through the jump cache, by-VA links) whose target VA is at or before their block's start, and
+every indirect transfer (the transfer cache's probe, the MMU-off jump cache's, the miss function). The run loop stores
+the chunk's steps in the word at the top of each pass, before it reads the signal word, the IRQ line, the queue and
+the timers; the dispatcher passes the steps done as `acc` and stops when the word is at or under them. Setters store 0
+after making their news: `Vm::wake` (a raised IRQ line through `Vm::refresh`, CPU_ON, drains, `Vm::signal`), the TLBI
+IS push for each target the issuer's DSB will wait for, and the host after a signal bit (`raise`, the backends' `kick`)
+through the new `vm_cpu_stop`.
+
+**The timer and the event loop without a ticker.** Decision 2 names a ticker thread for what has no event (the vCPU's
+own deadline, `yieldMs`, periodic work); the stop word's value is the chunk's steps instead of a flag, so a vCPU
+looping with no exit still ends a chunk at the first poll past them (Alpine's boot: 32,793 steps on average for the
+chunks that ran out, against 32,768), and every bound that was "within a chunk" stays one, at the same cost as a
+flag (one compare against a live `acc`). It also keeps `acc` far from `RETURNED` without a guard. A ticker that lets
+chunks run longer is P2's to measure against this. A test (`vm_set_chunk`, up to 2^30 in polled mode) makes chunks
+long so that only the setters end one early.
+
+**Counted code unchanged:** Alpine's deterministic boot dumped by both cores (`bench/jit/dump-modules.ts`): 319
+modules, the same steps (2,651,076,469), 317 byte-identical; the other two differ only in one `i32.load` offset, the
+address of the core's CRC tables, which moved with the core's data (`deterministic-modules.json`). The stop word sits
+in the padding after `jit::State::mem`, so no other `Vcpu` offset moved. tests/steps.txt didn't move.
+
+**Polls, chunks and latency** (the diagnostic core, `bench/boot/preempt-counts.ts`, Node on the dev VM; base 0ffa96ef
+against this; `counts-base.json`, `counts-new.json`):
+
+| | smp1 base / new | smp4 base / new | smp-user4 base / new |
+|---|---|---|---|
+| polls per 1000 steps | - / 56.4 | - / 55.9 | - / 65.1 (compress 46.7, Lua 74.7, churn 53.6, SQLite 73.3) |
+| chunks; ended by the steps | 352,302; 11.4% / 352,606; 11.4% | 761,324; 5.4% / 761,974; 5.2% | 3,051,006; 27.6% / 2,734,491; 30.7% |
+| ended early by the word | - / 0.61% | - / 0.71% | - / 0.32% |
+| own timer seen late, running (mean) | 80.9 / 83.0 µs | 91.3 / 93.8 µs | 42.9 / 39.3 µs |
+| IRQ line to IRQ, running (mean; <10 µs) | 3.3 / 2.9 µs; 98.9 / 98.9% | 12.6 / 10.0 µs; 93.1 / 93.1% | 5.3 / 4.1 µs; 95.3 / 96.6% |
+| wall time in Node | 6.4 / 6.5 s | 6.2 / 6.1 s | 15.2 / 13.7 s |
+
+The polls run at 56-65 per 1000 steps where loop 30 estimated 42-52 from its tallies of the points: the probes that
+miss poll twice (the probe's, then the miss function's), and region edges to a member at a lower VA poll too.
+Latency is no worse (one run each: within noise, the IRQ means a little lower).
+
+**Static counts** (`bench/jit/codestats.ts`, `codestats.json`) of a parallel SMP boot's modules (Alpine on 1 vCPU,
+`dump-modules.ts --parallel 1`, a set per core: not the same regions, so per-function means; base 313 modules, 7,134
+functions; new 312, 7,096): arm64 instructions −6.3%, code bytes −6.5%, stack slots −3.9%, frame memory operands
+−5.7%; x64 −9.8%, −8.9%, −4.0%, −13.8% (loop 30's `nobudget.patch`, no polls at all: arm64 −8.7%/−5.7%, x64
+−13.4%/−14.1%).
+
+**Spin tests** (`tests/baremetal/spin.c`, `tests/spin.test.ts`; docs/testing.md "Spin tests"): CPU 1 loops with no
+exit in five shapes (a one-block loop, a 20-block chain cycle, a BR to itself, two BRs sharing a transfer cache slot,
+a by-VA link back), at EL1 with the MMU off and on and at EL0; it takes CPU 0's IPIs (round trip timed: medians 2-21
+µs under the JIT, 37-296 under JIT-check), answers TLBI IS (DSB 30-110 µs), takes its timer (6-420 µs late under the
+JIT with the default chunk, one first-run outlier at 11 ms), and the machine pauses in ~0.1 ms (the first pause ~7
+ms); also with 2^30-step chunks, where only the setters end a chunk early. Planted, each caught: every poll kind
+(region edge, direct chain, chain through the jump cache under JIT-stress, transfer cache probe, miss function,
+MMU-off jump cache, by-VA link under JIT-check), every setter (`Vm::wake`, the TLBI IS push, the host's `raise`, the
+backends' `kick` by tests/devices.test.ts), the dispatcher's check and the chunk bound. The guest passes on QEMU TCG
+and hvf; QEMU faulted its first version's code writer, whose 8-byte store at a 4-byte boundary to Device memory (MMU
+off) waarm64 ran: in docs/backlog.md.
+
+Memory: none (4 bytes a vCPU, in padding).
+
+**The Mac A/B** (M4, Chrome for Testing 157.0.8103.78, 5 rounds, the first arm alternated, nothing else running on
+the dev VM or the Mac; medians a round; `mac-r*.json`; an earlier session beside `scripts/ci.sh` was discarded):
+
+| | base | new | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total (ms) | 2915-2947 / 5510-5539 | 2884-2940 / 5453-5535 | −1.0% / −0.8%, overlapping |
+| n2 script / total | 2531-2565 / 5149-5179 | 2483-2548 / 5086-5168 | −0.9% / −0.7%, overlapping |
+| n4 script / total | 2476-2530 / 5119-5180 | 2446-2503 / 5081-5139 | −2.1% / −0.8%, overlapping |
+| `smp_user_jit_4` total | 11275-11676 | 11225-11620 | −1.6%, overlapping |
+| compress / Lua / churn / SQLite | 1270-1398 / 2373-2780 / 816-835 / 1768-1995 | 1214-1389 / 2365-2870 / 799-827 / 1713-1815 | +5.5% / +0.3% / −0.9% / −0.7% |
+
+Every median is lower but compress's, and no difference resolves: compress is bimodal in both arms (base 1270-1288
+in four rounds and 1398 in one; new 1346-1389 in three and 1214-1216 in two), Lua spreads 400 ms in both. The
+parallel-realtime run nearest a loop-heavy small guest is `smp_alpine_jit` n1 (one vCPU worker) and the Lua phase:
+both even. jit_mips (round-robin's user mode, not this path) wasn't run: its code is unchanged. Loop 30's nobudget
+patch bounded the gain at +17% for a user-mode loop with no polls at all; with them, the boots and the userspace
+phases move ~1-2%, under the gates' resolution here. In `scripts/ci.sh` "alpine boots on 4 vCPUs in parallel" took
+66 s (49-60 s in earlier logs, under CI's load; 110 s in the contended run); alone it takes 14.6 s.
+
+CI, each alone: `scripts/ci.sh` (896 s), `scripts/ci-jit.sh` (134 s, the spin tests under JIT-stress and JIT-check with it), `scripts/ci-debian.sh` (332 s); the xHCI's tick path and sound are untouched (no `ci-usb.sh`, `ci-audio.sh`). The oracle runs (`oracle.sh`, `--hvf`) left a QEMU spinning on the Mac
+(`watch`, docs/backlog.md's known leak); the supervisor ended it.
+
+## PERF loop 32: what a chunk end costs, and the ticker that wasn't kept (2026-11-16)
+
+P2 of "Preemption without the budget" (PERF-HANDOVER.md): since loop 31 parallel SMP's polled code ends a chunk at the
+first poll past its steps (32,768), and decision 2's ticker (a thread storing 0 in the stop words at each vCPU's timer
+deadline and periodically, so that chunks could run far longer) didn't exist. This loop measured whether one pays:
+first what a chunk end costs, then the ceiling (long chunks with nothing to end them), then a ticker built behind a
+switch. **Not kept: nothing beat loop 31 past the gates' noise, and long chunks without a prompt end lose 2-4%.** Data:
+`bench/boot/results/perf32/` (its README); nothing of the arms is in the tree.
+
+**What a chunk end costs.** The diagnostic core times the run loop's work between a chunk that ended by its steps
+and the next one (`core/src/tally.rs` `BETWEEN`, `BETWEEN_NS`; `bench/boot/preempt-counts.ts` prints it; Node on the
+dev VM, loop 31's code, `counts-default.json`): **189 / 204 / 220 ns** a chunk end (smp1 / smp4 / smp-user4; two
+clock reads included), at 40,105 / 42,143 / 837,147 such ends (11.4% / 5.2% / 31.4% of the chunks). Against the vCPU
+time that's 0.12% of Alpine's boot on 1 vCPU and 0.36% of the userspace phases on 4 (837K × 220 ns over 4 × 12.7 s),
+before the dispatcher's re-entry (a key, a lookup, a call: not timed, the same order). So the most any ticker can win
+is ~0.5% of the gates, under their ~1% floor. And on the Mac, 4× the chunk ends cost nothing that shows: `?chunk=8192`
+against the default, 3 rounds alternated (`mac-short`), every gate within −0.5% to +0.9%, overlapping.
+
+**The ceiling: long chunks, nothing to end them.** The same core with 2^20-step chunks (`?chunk=1048576`, the bench's
+`smp()` takes it now), 5 rounds alternated (`mac-ceiling`; ranges of the rounds' medians, ms):
+
+| | default | 2^20 | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2822-2928 / 5379-5501 | 2980-3020 / 5551-5608 | +3.5% / +1.7%, no overlap |
+| n2 script / total | 2445-2522 / 5019-5126 | 2576-2608 / 5156-5214 | +3.5% / +1.9%, no overlap |
+| n4 script / total | 2417-2491 / 5032-5138 | 2544-2575 / 5168-5214 | +4.1% / +2.0%, no overlap |
+| `smp_user_jit_4` total | 10956-11490 | 11145-11869 | +2.7%, overlapping |
+
+Longer chunks lose, though they end 98-99% fewer chunks by their steps (Node: 674 / 697 / 17,628). Two things only a
+chunk end did, measured: the vCPU's own timer (Node, seen late while running: 83 / 84 / 36 µs mean → 178 / 161 / 260
+µs, `counts-long.json`), and **the installs of compiled modules**: the dispatcher installs what the compile worker
+finished (`Jit::fresh`) and a vCPU in compiled code reaches it only at a chunk's end, so the block interpreter runs
+on meanwhile: interpreted steps in the boot (`jit.decSteps`, medians of 5) 156 → 171M on 1 vCPU, 180 → 196M on 2,
+210 → 225M on 4. IRQs from other vCPUs and devices (loop 31's setters) stayed prompt (2.3-10.4 µs mean).
+
+**A ticker without a thread: paced chunks** (`paced.patch`, a `paced` feature). A thread that wakes at deadlines
+costs a futex wake-up (~17 µs in the dev VM, docs/platform.md "Parallel SMP"), with macOS's timer slack on top; the
+run loop already knows the vCPU's deadline, so this arm put it in the stop word instead: at each timer check it
+measures the vCPU's steps per counter tick (an average over the checks of one run) and sets the chunk to 7/8 of the
+steps estimated to its next deadline, at most 2^20 steps or ~1 ms (the event-loop visit, the publications and the
+sampler keep their bounds; 32,768 while the xHCI's completions wait), lowering the word with a compare-exchange when
+the guest sets a nearer deadline (a setter's 0 wins). Node (`counts-paced.json`): chunk ends by the steps −59% /
+−52% / −71% (16,446 / 20,129 / 244,178, 48-94K steps each), the timer seen 71 / 69 / 26 µs late (from 83 / 84 / 36),
+IRQ line to IRQ 3.3 / 14.2 / 3.7 µs (2.8 / 13.7 / 2.8). On the Mac it lost like the long chunks (`mac-paced`, one
+round of each arm and a second of `paced`): boots +2.3-4.1% to the script, interpreted steps 156 → 160M: the module
+installs again. So the compile worker became a setter too (`compile-stops.patch`: when `ready` moves it stores 0 in
+every stop word, which `vm_cpu_stop` already gives the host). Then, 5 rounds alternated, three arms (`mac-cw`):
+
+| | loop 31 | + the compile worker's stores | paced, with them |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2912-2929 / 5492-5510 | 2914-2938 / 5500-5527 (+0.2% / +0.1%) | 2911-2981 / 5487-5574 (+0.2% / +0.1%) |
+| n2 script / total | 2508-2533 / 5105-5147 | 2489-2537 / 5069-5142 (−0.1% / 0.0%) | 2510-2548 / 5106-5158 (−0.1% / +0.1%) |
+| n4 script / total | 2457-2487 / 5092-5128 | 2471-2492 / 5108-5129 (+0.4% / +0.3%) | 2459-2517 / 5092-5176 (−0.1% / 0.0%) |
+| `smp_user_jit_4` total | 11194-11466 | 11147-11431 (−0.2%) | 10979-11708 (+0.7%) |
+| compress / Lua / churn / SQLite | 1243-1377 / 2351-2659 / 778-829 / 1723-1866 | −0.1% / −0.2% / +0.7% / −4.5% | −5.3% / −0.6% / +0.5% / +2.5% |
+
+Every range overlaps; interpreted steps 156 / 156 / 158M on 1 vCPU. Neither the stores nor the pacing resolve, as the
+chunk-end cost said they couldn't, and the pacing's rate estimate can only make its timer worse than a bound in steps
+where the rate drops (interpreted code, compiles). Both were left out; so was a ticker thread, which could win no more
+than the paced arm's ceiling (the same chunk ends saved) and adds a thread's wake-ups and their jitter.
+
+**What it means for the next loops.** The chunk's steps in the stop word are the cheap ticker: they bound the timer's
+and the installs' latency at a cost under the gates' resolution, and a chunk end is what installs compiled code.
+Dropping `acc` (P3) would need something else to end a chunk with no exit at about 32K steps' pace (timers, installs);
+this loop measured that nothing cheaper does it, so P3 should keep `acc` as the bound unless its own cost is shown.
+Latency (decision 3's bounds) is as loop 31 left it: the code didn't change (the spin tests and `preempt-counts.ts`
+weren't re-run for it; the numbers above are this session's of loop 31's code).
+
+Memory: none. The Mac's Spotlight (`mds_stores`, ~40% of a core) ran through all the sessions, both arms alike. Kept:
+the diagnostic tally of the time between chunks, `preempt-counts.ts --chunk N` and `smp()`'s `?chunk=` (docs/benchmarking.md);
+the normal build's code section is byte-identical to a9b8d140's.
+
+CI, each alone: `scripts/ci.sh` (827 s) and `scripts/ci-jit.sh` (131 s) green; `cargo clippy --features diag` clean.
+Not run: `scripts/ci-debian.sh`, `ci-usb.sh`, `ci-audio.sh` (no run loop, host, xHCI or sound change is left), the spin
+tests and `oracle.sh` on the arms (none was kept).

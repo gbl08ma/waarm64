@@ -1,0 +1,140 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "profile": "off the record",
+  "ops": [
+   "load",
+   "kept",
+   "keptStart",
+   "file"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 689228158,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "e407818b",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-16T01:28:37.486Z",
+  "wallS": 90
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 6029,
+    "phases": {
+     "check": 304,
+     "checkRead": 237,
+     "checkCrc": 388,
+     "state": 75,
+     "ram": 468,
+     "disk": 763,
+     "pool": 6,
+     "read": 291,
+     "crc": 457,
+     "unpack": 766,
+     "apply": 558,
+     "prepare": 2025,
+     "start": 2210,
+     "total": 5846
+    }
+   },
+   "kept": {
+    "wallMs": 2848,
+    "kind": "kept",
+    "bytes": 675547400,
+    "pausedMs": 2717,
+    "stateMs": 222,
+    "blobBytes": 109066428,
+    "hintMs": 13,
+    "hinted": 910163968,
+    "id": "992c856af678",
+    "phases": {
+     "state": 222,
+     "blobs": 87,
+     "ram": 2078,
+     "disk": 326,
+     "pool": 6,
+     "scan": 221,
+     "compress": 2866,
+     "crc": 247,
+     "sink": 2157,
+     "poolWait": 3,
+     "poolReady": 35,
+     "pause": 1,
+     "copy": 0,
+     "close": 1
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 3534,
+      "pssMiB": 2887
+     },
+     "peak": {
+      "rssMiB": 4322,
+      "pssMiB": 3674
+     }
+    }
+   },
+   "keptStart": {
+    "wallMs": 6488,
+    "phases": {
+     "check": 272,
+     "checkRead": 205,
+     "checkCrc": 389,
+     "state": 72,
+     "ram": 390,
+     "disk": 774,
+     "pool": 6,
+     "read": 289,
+     "crc": 414,
+     "unpack": 691,
+     "apply": 308,
+     "prepare": 2345,
+     "start": 2249,
+     "total": 6101
+    }
+   },
+   "file": {
+    "wallMs": 4155,
+    "kind": "file",
+    "bytes": 678815426,
+    "pausedMs": 2667,
+    "stateMs": 205,
+    "blobBytes": 109066428,
+    "hintMs": 10,
+    "hinted": 910163968,
+    "phases": {
+     "state": 205,
+     "blobs": 89,
+     "ram": 2008,
+     "disk": 360,
+     "pool": 6,
+     "scan": 225,
+     "compress": 2902,
+     "crc": 251,
+     "sink": 2108,
+     "poolWait": 15,
+     "poolReady": 44,
+     "pause": 2,
+     "copy": 0,
+     "close": 0
+    },
+    "staging": "staged",
+    "memory": {
+     "before": {
+      "rssMiB": 3478,
+      "pssMiB": 2831
+     },
+     "peak": {
+      "rssMiB": 4282,
+      "pssMiB": 3628
+     }
+    }
+   }
+  }
+ ]
+}

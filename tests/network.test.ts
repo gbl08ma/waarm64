@@ -8,6 +8,7 @@ import { adapterViews, defaultsOf, primary6Of, primaryOf, ranksOf, roomWarned, v
 import type { FromTailscale, NetMap, Tailscale, TailscaleConfig } from '../web/tailscale.ts';
 import { msg, t } from '../web/i18n.ts';
 import { msgOf, toWire } from '../web/msg.ts';
+import { until } from './until.ts';
 
 const netmap = (over: Partial<NetMap> = {}): NetMap => ({ name: 'guest.tail.test.', addresses: ['100.90.0.2/32', 'fd7a:115c:a1e0::2/128'], peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: false }], mtu: 1280, dns: ['100.100.100.100'], domains: ['tail.test'], exitNode: '', ...over });
 
@@ -388,7 +389,7 @@ test("a local connection: the helper's link goes to the local client; an IP clie
   await net.disconnect();
   // A tailnet next: the card is told to leave the helper's frames for the gateway, before the client has the port.
   net.connect({ controlURL: 'https://c.example', hostname: 'h' });
-  await new Promise((r) => setTimeout(r, 20));
+  await until(() => seen.length > 0, 'the card told');
   assert.deepEqual(seen, [{ type: 'gateway' }]);
   await net.disconnect();
   net.connect({ controlURL: 'https://c.example', hostname: 'h' });

@@ -2,10 +2,11 @@
 // v2/v3 read through its L1/L2 tables (M4 step 4). Written from the format
 // spec, QEMU's docs/interop/qcow2.txt (no QEMU code). Refcounts are ignored
 // (read-only); unallocated and zero-flag clusters read as zeros; compressed
-// clusters are raw deflate. Refused at open: encryption, backing files (a changes
+// clusters are raw deflate (inflated by the core's miniz_oxide: web/deflate.ts). Refused at open: encryption, backing files (a changes
 // file is read by `readChanges`, not booted), external data files, extended L2
 // entries, zstd, unknown incompatible features. core/tests/common/qcow2.rs is the
 // native twin.
+import { threadDeflate } from './deflate.ts';
 import { MsgError } from './msg.ts';
 
 /** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
@@ -21,13 +22,12 @@ export type ReadAtAsync = (off: number, len: number) => Promise<Uint8Array | und
 export type Inflater = (inputs: Uint8Array[], size: number) => Promise<(Uint8Array | undefined)[]>;
 
 /**
- * The clusters one after another on this thread: streams side by side on one thread don't run any
- * faster (deflate's, 64 or 512 at once, were slower than one at a time: docs/frontend.md "Your own disk").
+ * The clusters one after another on this thread, through its codec (web/deflate.ts: the core's miniz_oxide,
+ * synchronous, ~160 µs a 64 KiB cluster in Chromium).
  */
 export const inflateEach: Inflater = async (inputs, size) => {
-  const out: (Uint8Array | undefined)[] = [];
-  for (const input of inputs) out.push(await inflate(input, size));
-  return out;
+  const z = await threadDeflate();
+  return inputs.map((input) => z.inflate(input, size));
 };
 
 export type Disk = {
@@ -36,7 +36,114 @@ export type Disk = {
   format: 'raw' | 'qcow2';
   /** Exactly `len` bytes at `off`, or undefined past the end or on a read error. */
   read(off: number, len: number): Promise<Uint8Array | undefined>;
+  /**
+   * A qcow2's clusters (the disk surface visualizer, web/surface.ts; never on a request's path): over the L2 tables
+   * read so far, the ones not read yet read with `load` first (it returns undefined where it can't without fetching: a
+   * remote image's not held in this browser), none of them when they'd be more than `ALLOCATION_MAX` bytes. The same
+   * object each time: it follows the tables as they are read (`known`, `missing`).
+   */
+  allocation?(load?: ReadAt): Allocation;
 };
+
+/**
+ * What a qcow2's clusters hold: its cluster size, and per cluster whether it has data (a data or compressed cluster;
+ * not an unallocated or zero one) and where its bytes are in the file. Per L2 table (`perTable` clusters each), whether
+ * its entries are known: a table not read yet isn't (its clusters read as unallocated here until it is).
+ */
+export type Allocation = {
+  clusterBytes: number;
+  size: number;
+  allocated(c: number): boolean;
+  /** The clusters one L2 table covers. */
+  perTable: number;
+  /** Whether table `t`'s entries are known: read, or none to read (an L1 entry without a table: unallocated). */
+  known(t: number): boolean;
+  /** How many tables aren't known yet (0: the allocation is whole). */
+  missing(): number;
+  /** Where cluster `c`'s bytes are in the file ([offset, bytes]: a data cluster's, a compressed one's packed bytes), if it has data. */
+  host(c: number): [number, number] | undefined;
+};
+
+/** The most bytes of L2 tables `allocation` reads (an image of 256 GiB at 64 KiB clusters). */
+export const ALLOCATION_MAX = 32 << 20;
+
+/** Whether L2 entry `k` (its index) of table `t` has data: compressed, or a standard cluster with an offset and (v3) no zero flag. */
+function hasData(t: DataView, k: number, version: number) {
+  const hi = t.getUint32(k * 8);
+  const lo = t.getUint32(k * 8 + 4);
+  if (hi & 0x4000_0000) return true; // bit 62: compressed
+  if (version === 3 && lo & 1) return false; // bit 0: reads as zeros
+  return (hi & 0x00ff_ffff) !== 0 || (lo & ~0x1ff) !== 0; // bits 9-55: the offset
+}
+
+/**
+ * An allocation over L2 tables `l2s` (by their index; one not there is unallocated), of an image whose L1 entries name
+ * a table where `hasTable` says, `fileSize` bytes long (a compressed cluster's bytes run at most to its end).
+ */
+function allocationOver(l2s: Map<number, DataView>, cs: number, size: number, version: number, l1Size: number, hasTable: (t: number) => boolean, fileSize: number): Allocation {
+  const per = cs / 8;
+  const x = BigInt(62 - (Math.log2(cs) - 8));
+  return {
+    clusterBytes: cs,
+    size,
+    perTable: per,
+    allocated(c) {
+      const t = l2s.get(Math.floor(c / per));
+      return !!t && hasData(t, c % per, version);
+    },
+    known: (t) => !hasTable(t) || l2s.has(t),
+    missing() {
+      let n = 0;
+      for (let t = 0; t < l1Size; t++) if (hasTable(t) && !l2s.has(t)) n++;
+      return n;
+    },
+    host(c) {
+      const t = l2s.get(Math.floor(c / per));
+      if (!t || !hasData(t, c % per, version)) return undefined;
+      const e = t.getBigUint64((c % per) * 8);
+      if (e & COMPRESSED) {
+        const off = Number(e & ((1n << x) - 1n));
+        const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
+        return [off, Math.max(0, Math.min(sectors * 512 - (off & 511), fileSize - off))];
+      }
+      return [Number(e & OFFSET_MASK), cs];
+    },
+  };
+}
+
+/**
+ * A qcow2's allocation read whole without blocking (an image file the disk surface's job worker opens: web/app/surface-job.ts):
+ * its header, L1 and every L2 table, at most `ALLOCATION_MAX` bytes of them; undefined for a raw image, one this reader
+ * refuses, or one whose tables are larger or can't be read.
+ */
+export async function readAllocation(read: ReadAtAsync, fileSize: number): Promise<Allocation | undefined> {
+  const head = fileSize >= HEADER ? await read(0, HEADER) : undefined;
+  if (!head || !isQcow2(head)) return undefined;
+  const h = new DataView(head.buffer, head.byteOffset, HEADER);
+  const version = h.getUint32(4);
+  const clusterBits = h.getUint32(20);
+  if ((version !== 2 && version !== 3) || h.getBigUint64(8) !== 0n || clusterBits < 9 || clusterBits > 21 || h.getUint32(32) !== 0) return undefined;
+  if (version === 3 && h.getBigUint64(72) & ~KNOWN_INCOMPATIBLE) return undefined;
+  const cs = 2 ** clusterBits;
+  const size = Number(h.getBigUint64(24));
+  const l1Size = h.getUint32(36);
+  const l1b = await read(Number(h.getBigUint64(40)), l1Size * 8);
+  if (!l1b) return undefined;
+  const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
+  const offs: [number, number][] = [];
+  for (let i = 0; i < l1Size; i++) {
+    const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+    if (off) offs.push([i, off]);
+  }
+  if (offs.length * cs > ALLOCATION_MAX) return undefined;
+  const l2s = new Map<number, DataView>();
+  for (const [i, off] of offs) {
+    const b = await read(off, cs);
+    if (!b) return undefined;
+    l2s.set(i, new DataView(b.buffer, b.byteOffset, cs));
+  }
+  return allocationOver(l2s, cs, size, version, l1Size, (t) => l2s.has(t), fileSize);
+}
 
 const MAGIC = 0x514649fb; // "QFI\xfb"
 const HEADER = 112; // enough for every field we read
@@ -241,7 +348,24 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
     }
     return out;
   };
-  return { size, format: 'qcow2', read };
+  /** Where L1 entry `i` names a table (0: none, unallocated). */
+  const l2Offset = (i: number) => Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+  let tables = 0;
+  for (let i = 0; i < l1Size; i++) if (l2Offset(i)) tables++;
+  /** The allocation over the tables read (they don't change while the image is open: it follows them as they come). */
+  const over = allocationOver(l2s, cs, size, version, l1Size, (t) => t < l1Size && l2Offset(t) !== 0, fileSize);
+  const allocation = (load?: ReadAt) => {
+    if (!load || tables * cs > ALLOCATION_MAX) return over;
+    for (let i = 0; i < l1Size; i++) {
+      const off = l2Offset(i);
+      if (off === 0 || l2s.has(i)) continue;
+      const b = load(off, cs);
+      // Kept as a request's read would keep it (it helps the guest's next read there).
+      if (b?.length === cs) l2s.set(i, new DataView(b.buffer, b.byteOffset, cs));
+    }
+    return over;
+  };
+  return { size, format: 'qcow2', read, allocation };
 }
 
 /** The cluster of the compressed L2 entry `e`, or undefined (a failed read, or bytes that don't unpack to a cluster). */
@@ -255,43 +379,11 @@ async function compressedCluster(readAt: ReadAt, fileSize: number, e: bigint, cl
 }
 
 /**
- * Raw deflate of one cluster: exactly `size` bytes out, or undefined. The input
- * runs to a sector boundary, so it usually ends with the next cluster's bytes,
- * which the stream reports as junk after its end. Chromium hands over the output
- * first; Firefox drops what the write holding the junk produced. So when one
- * write comes up short, the last sector (where the stream ends) goes in a byte a
- * write: the write that ends the stream then delivers before the junk arrives
- * (~3 ms a 64 KiB cluster instead of ~0.4: Firefox only).
+ * Raw deflate of one cluster: exactly `size` bytes out, or undefined. The input runs to a sector boundary, so it
+ * usually ends with the next cluster's bytes, which the inflater ignores after the stream's end.
  */
 export async function inflate(input: Uint8Array, size: number) {
-  const cut = Math.max(0, input.length - 512);
-  return await inflateParts([input], size)
-    ?? (input.length > 1 ? inflateParts([input.subarray(0, cut), ...Array.from({ length: input.length - cut }, (_, i) => input.subarray(cut + i, cut + i + 1))], size) : undefined);
-}
-
-/** `parts` written in turn to one raw-deflate stream, stopping at the first failed write: exactly `size` bytes out, or undefined. */
-async function inflateParts(parts: Uint8Array[], size: number) {
-  const ds = new DecompressionStream('deflate-raw');
-  const w = ds.writable.getWriter();
-  const r = ds.readable.getReader();
-  const out = new Uint8Array(size);
-  let n = 0;
-  const reading = (async () => {
-    for (;;) {
-      const { done, value } = await r.read();
-      if (done) return;
-      if (n + value.length > size) return void r.cancel().catch(() => {}); // fails the writes still to come
-      out.set(value, n);
-      n += value.length;
-    }
-  })().catch(() => {}); // junk after the end
-  try {
-    for (const p of parts) if (p.length) await w.write(p as Uint8Array<ArrayBuffer>);
-    await w.close();
-  } catch { /* junk after the end, or a cancelled read */ }
-  await reading;
-  r.cancel().catch(() => {});
-  return n === size ? out : undefined;
+  return (await threadDeflate()).inflate(input, size);
 }
 
 /** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and hash (web/changes.ts `hashSource`). */

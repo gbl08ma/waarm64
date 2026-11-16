@@ -1,0 +1,49 @@
+{
+ "date": "2026-11-16T13:17:54.757Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "mods-alpine",
+  "mods-nobudget"
+ ],
+ "results": {
+  "arm64": {
+   "mods-alpine": {
+    "functions": 7232,
+    "insns": 7740756,
+    "bytes": 29385576,
+    "slots": 112928,
+    "frame": 1442181
+   },
+   "mods-nobudget": {
+    "functions": 7143,
+    "insns": 6980378,
+    "bytes": 26466224,
+    "slots": 106436,
+    "frame": 1342849
+   }
+  },
+  "x64": {
+   "mods-alpine": {
+    "functions": 7232,
+    "insns": 6075567,
+    "bytes": 26623416,
+    "slots": 100148,
+    "frame": 1265806
+   },
+   "mods-nobudget": {
+    "functions": 7143,
+    "insns": 5194837,
+    "bytes": 23130944,
+    "slots": 94172,
+    "frame": 1073664
+   }
+  }
+ }
+}

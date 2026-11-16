@@ -1,5 +1,11 @@
 // The machine on this page as the toolbar and the Machines page show it: which it is, what it has, and a transient
 // machine's size (the toolbar's Machine menu), following web/app/run/page-machine.svelte.ts's `PageMachine`.
+import type { FromWorker } from '../protocol.ts';
+import type { Replies } from '../run/replies.ts';
+import type { Attachment } from '../shape.ts';
+
+/** How to ask the run's worker about its disks (`inspect`): its worker, the page's replies by id, a stored machine's attachments. */
+export type RunInspect = { worker: Worker; replies: Replies<FromWorker>; attachments?: readonly Attachment[] };
 /** A transient machine's size as the Machine menu shows it: what it runs with and what it offers. */
 export type MachineSize = {
   ncpus: number;
@@ -54,6 +60,8 @@ class Current {
   hasMouse = $state(false);
   /** Its guest's agent trims the guest's filesystems (the Machines page's Free unused disk space: web/app/areas/trim-actions.ts). */
   canTrim = $state(false);
+  /** Its last run's worker, for the disk surface window's live map (web/app/areas/surface.svelte.ts; the run writes it). */
+  inspect = $state.raw<RunInspect>();
   /** The graphics it runs with (`data-graphics` on the body, for tests); undefined without a virtio-gpu. */
   graphics = $state<'3d' | '2d'>();
 

@@ -2090,9 +2090,9 @@ impl Xhci {
         }
     }
 
-    /// Restores what [`Xhci::save`] wrote into a new controller (its ports empty), in the
-    /// state's format `version` (4 has no CSS state: a CRS after it reports SRE).
-    pub fn restore(&mut self, r: &mut Reader, version: u32) -> snapshot::Result<()> {
+    /// Restores what [`Xhci::save`] wrote into a new controller (its ports empty); one saved without
+    /// a CSS state reports SRE at a CRS after it.
+    pub fn restore(&mut self, r: &mut Reader) -> snapshot::Result<()> {
         const CORRUPT: snapshot::Error = snapshot::Error::Corrupt;
         self.usbcmd = r.u32()? & CMD_MASK;
         self.usbsts = r.u32()? & (STS_HCH | STS_EINT | STS_PCD | STS_SRE);
@@ -2170,7 +2170,7 @@ impl Xhci {
         self.lo[0] = r.u32()? & !0x3f;
         self.lo[1] = r.u32()? & !0xf;
         self.cmd_wait = r.bool()?;
-        if version >= 5 && r.bool()? {
+        if r.bool()? {
             let n = r.count(16)?;
             let erst: Vec<(u64, u32)> = (0..n)
                 .map(|_| Ok((r.u64()?, r.u32()?)))

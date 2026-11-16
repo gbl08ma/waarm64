@@ -4,6 +4,8 @@
 // serves the whole repository from source, so the test pages under tests/browser/ and bench/ load web/'s modules as they are.
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
+import { stat } from 'node:fs/promises';
+import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sirv from 'sirv';
 import { defineConfig, type Plugin } from 'vite';
@@ -76,6 +78,35 @@ const plainGzip = (): Plugin => {
 };
 
 /**
+ * A HEAD request for a file under target/, answered from its `stat`: sirv answers one as it does a GET, reading the
+ * whole file into a body Node then drops (a 2.2 GB disk image took ~1.9 s, twice in every load of a machine with it:
+ * the page checks its disks are there, the device worker reads their size; bench/boot/REPORT.md "SNAPZ loop 7"). The
+ * headers are sirv's for the file in dev mode (no ETag); anything else (a directory, a dotfile, outside target/) goes on
+ * to sirv.
+ */
+const headOnly = (dir: string, headers: () => OutgoingHttpHeaders) => (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+  if (req.method !== 'HEAD') return next();
+  let path: string;
+  try {
+    path = decodeURI(new URL(req.url ?? '/', 'http://x').pathname);
+  } catch {
+    return next();
+  }
+  const file = join(dir, path);
+  if (!file.startsWith(dir + sep) || /(^|[\\/])\./.test(path)) return next();
+  stat(file).then(
+    (st) => {
+      if (!st.isFile()) return next();
+      res.writeHead(200, { ...headers(), 'Content-Length': st.size, 'Content-Type': CONTENT_TYPES[extname(file)] ?? '', 'Last-Modified': st.mtime.toUTCString() });
+      res.end();
+    },
+    () => next(),
+  );
+};
+/** The types sirv gives the files under target/ that the page asks HEAD about (the core, the tailnet clients); others have none here. */
+const CONTENT_TYPES: Record<string, string> = { '.wasm': 'application/wasm', '.json': 'application/json', '.js': 'text/javascript' };
+
+/**
  * The dev server's `/`: the page, which is web/app/ in the repository. And target/ (the guest images, the binaries) as
  * plain files, with range requests, ahead of Vite's own handling, which takes a file without an extension (a kernel's
  * `Image`) for a module.
@@ -83,7 +114,9 @@ const plainGzip = (): Plugin => {
 const rootPage = (): Plugin => ({
   name: 'waarm64-root-page',
   configureServer(server) {
-    server.middlewares.use('/target', sirv(`${ROOT}target`, { dev: true, dotfiles: false, setHeaders: (res) => { for (const [k, v] of Object.entries(server.config.server.headers ?? {})) res.setHeader(k, v as string); } }));
+    const headers = () => server.config.server.headers ?? {};
+    server.middlewares.use('/target', headOnly(`${ROOT}target`, headers));
+    server.middlewares.use('/target', sirv(`${ROOT}target`, { dev: true, dotfiles: false, setHeaders: (res) => { for (const [k, v] of Object.entries(headers())) res.setHeader(k, v as string); } }));
     server.middlewares.use((req, res, next) => {
       const url = new URL(req.url ?? '/', 'http://x');
       if (url.pathname !== '/') return next();

@@ -156,10 +156,15 @@ pub struct Tlb {
     /// block: a bucket at 0 has none of that block's, a collision only costs
     /// a flush by VA its scan.
     rblk: [u32; RBLK],
-    /// The EL's instruction TLB filled entries from blocks in a VA half since
-    /// the EL's transfer cache entries were last dropped: a flush by VA
-    /// there drops them all, as the block's other pages may have some.
+    /// The EL's transfer cache may hold entries for pages of blocks in a VA
+    /// half: its instruction TLB held entries from blocks there when the
+    /// EL's transfer cache entries were last dropped, or filled some since
+    /// (the transfer cache refills from the TLB's entries without a walk,
+    /// and outlives the one it was filled from). A flush by VA there drops
+    /// them all, as the block's other pages may have some.
     xblk: [[bool; 2]; 2],
+    /// The EL's live instruction TLB entries from blocks, by VA half.
+    xblkn: [[u32; 2]; 2],
     /// Pages the EL's instruction fetches translated (`Mmu::miss`), hashed
     /// ([`xpage_bit`]), by EL, global or nG and VA half
     /// (`[(el * 2 + ng) * 2 + half]`): a superset of the pages the EL's live
@@ -181,8 +186,9 @@ pub struct Tlb {
 const XPAGE_BITS: usize = 4096;
 
 /// The word and bit of `va`'s page in a `Tlb::xpages` map: its page number
-/// (TBI's top byte aside) folded to 12 bits, so that 16 MiB of consecutive
-/// pages never share one.
+/// (TBI's top byte aside) folded to 12 bits, so that the pages of an aligned
+/// 16 MiB never share one (two pages fewer than 4,096 apart across such a
+/// boundary may: a collision only costs a flush by VA its scan).
 #[inline]
 fn xpage_bit(va: u64) -> (usize, u64) {
     let p = (va & VA_PAGE) >> 12;
@@ -247,7 +253,7 @@ impl Tlb {
 
     /// Drops EL `el`'s transfer cache entries.
     fn bump_el(&mut self, el: usize) {
-        self.xblk[el] = [false; 2];
+        self.xblk[el] = self.xblkn[el].map(|n| n != 0);
         self.xgen[el] += 1;
         if self.xgen[el] > 0xffff {
             self.xc.fill(Xc::default());
@@ -272,6 +278,8 @@ impl Tlb {
         self.e.fill(Slots::default());
         self.blk.fill(0);
         self.rblk.fill(0);
+        self.xblkn = [[0; 2]; 2];
+        self.xblk = [[false; 2]; 2];
         self.ng_len = 0;
         self.xng = [false; 2];
         self.xpages = [[0; XPAGE_BITS / 64]; 8];
@@ -330,12 +338,17 @@ impl Tlb {
     }
 
     /// Empties slot `s` (`index * TLB_SLOTS + array`).
+    #[inline(always)]
     fn drop_slot(&mut self, s: usize) {
         let e = core::mem::take(&mut self.e[s / TLB_SLOTS].0[s % TLB_SLOTS]);
         let k = core::mem::take(&mut self.blk[s]) & CLASS;
         if k != 0 {
             // The tag's bits 55:12 are the VA's.
             self.rblk[rblk_bucket(k, e.tag)] -= 1;
+            let a = s % TLB_SLOTS;
+            if a % 3 == Use::Exec as usize {
+                self.xblkn[a / 3][(k as usize - 1) / 2] -= 1;
+            }
         }
     }
 
@@ -353,7 +366,9 @@ impl Tlb {
             self.blk[s] = k;
             self.rblk[rblk_bucket(k, va)] += 1;
             if array % 3 == Use::Exec as usize {
-                self.xblk[array / 3][(va >> 55 & 1) as usize] = true;
+                let half = (va >> 55 & 1) as usize;
+                self.xblk[array / 3][half] = true;
+                self.xblkn[array / 3][half] += 1;
             }
         }
         if ng {
@@ -492,6 +507,9 @@ pub struct Vcpu {
     pub tlb: Tlb,
     /// FEAT_RNG's stream (`Vm::with_devices` keys it).
     pub rng: crate::rng::Rng,
+    /// The diagnostic build's tallies of compiled code (`crate::tally`), which the code bumps itself.
+    #[cfg(feature = "diag")]
+    pub diag: [u64; crate::tally::N],
 }
 
 impl Vcpu {

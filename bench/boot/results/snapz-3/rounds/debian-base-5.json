@@ -1,0 +1,177 @@
+{
+ "meta": {
+  "guest": "debian",
+  "mode": "stored",
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/debian-go.waarm64snap",
+  "bytes": 96543163,
+  "rounds": 1,
+  "settleS": 20,
+  "commit": "85e2681e",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-15T20:24:57.406Z",
+  "wallS": 91
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 2069,
+    "phases": {
+     "check": 91,
+     "checkRead": 44,
+     "checkCrc": 43,
+     "state": 3,
+     "ram": 254,
+     "apply": 40,
+     "disk": 420,
+     "read": 21,
+     "crc": 46,
+     "unpack": 156,
+     "prepare": 431,
+     "start": 756,
+     "total": 1955
+    }
+   },
+   "kept": {
+    "wallMs": 379,
+    "kind": "kept",
+    "bytes": 95235246,
+    "pausedMs": 166,
+    "stateMs": 13,
+    "blobBytes": 0,
+    "hintMs": 45,
+    "hinted": 717225984,
+    "id": "a8c45a98cee1",
+    "phases": {
+     "state": 13,
+     "blobs": 1,
+     "ram": 121,
+     "disk": 29,
+     "pool": 6,
+     "scan": 99,
+     "compress": 386,
+     "crc": 40,
+     "sink": 39,
+     "poolWait": 0,
+     "poolReady": 31,
+     "pause": 0,
+     "close": 19
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 1872,
+      "pssMiB": 1248
+     },
+     "peak": {
+      "rssMiB": 1927,
+      "pssMiB": 1302
+     }
+    }
+   },
+   "keptStart": {
+    "wallMs": 2309,
+    "phases": {
+     "check": 96,
+     "checkRead": 44,
+     "checkCrc": 48,
+     "state": 3,
+     "ram": 264,
+     "apply": 43,
+     "disk": 418,
+     "read": 27,
+     "crc": 47,
+     "unpack": 156,
+     "prepare": 545,
+     "start": 733,
+     "total": 2059
+    }
+   },
+   "file": {
+    "wallMs": 481,
+    "kind": "file",
+    "bytes": 95624973,
+    "pausedMs": 179,
+    "stateMs": 12,
+    "blobBytes": 0,
+    "hintMs": 59,
+    "hinted": 717225984,
+    "phases": {
+     "state": 12,
+     "blobs": 1,
+     "ram": 132,
+     "disk": 31,
+     "pool": 6,
+     "scan": 112,
+     "compress": 424,
+     "crc": 47,
+     "sink": 31,
+     "poolWait": 0,
+     "poolReady": 37,
+     "pause": 1,
+     "close": 0
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 2260,
+      "pssMiB": 1634
+     },
+     "peak": {
+      "rssMiB": 2377,
+      "pssMiB": 1747
+     }
+    }
+   },
+   "suspend": {
+    "wallMs": 317,
+    "kind": "suspend",
+    "bytes": 94226778,
+    "pausedMs": 150,
+    "phases": {
+     "state": 8,
+     "blobs": 1,
+     "ram": 115,
+     "disk": 0,
+     "pool": 6,
+     "scan": 111,
+     "compress": 376,
+     "crc": 42,
+     "sink": 31,
+     "close": 20,
+     "poolWait": 0,
+     "poolReady": 39,
+     "pause": 1
+    },
+    "memory": {
+     "before": {
+      "rssMiB": 2202,
+      "pssMiB": 1575
+     },
+     "peak": {
+      "rssMiB": 2198,
+      "pssMiB": 1571
+     }
+    }
+   },
+   "resume": {
+    "wallMs": 1966,
+    "phases": {
+     "check": 88,
+     "checkRead": 40,
+     "checkCrc": 46,
+     "state": 3,
+     "ram": 259,
+     "apply": 41,
+     "disk": 0,
+     "read": 19,
+     "crc": 46,
+     "unpack": 153,
+     "prepare": 425,
+     "start": 715,
+     "total": 1490
+    }
+   }
+  }
+ ]
+}

@@ -22,9 +22,11 @@ import { IoStats } from './iostats.ts';
 import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts';
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
-import { blockList, openOverlay, overlay, storageNumbers, type OverlayFiles, type WritableDisk } from './overlay.ts';
+import { blockList, openOverlay, overlay, storageNumbers, type MapLeaves, type OverlayFiles, type WritableDisk } from './overlay.ts';
+import { diskInspector, RANGE, type InspectAnswer, type InspectQuery, type LiveDisk, type LiveImage } from './surface.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
+import { coreModule } from './deflate.ts';
 import { inflatePool } from './inflate-pool.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 import { Usb, type UsbAttach } from './usb.ts';
@@ -49,7 +51,8 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * `waarm64-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
  * is a disk kept in the browser (web/stored.ts: its OPFS directory, `disks/<id>`, read under its overlay; `size` given);
  * a `size` larger than the image's (a grown overlay, docs/machines.md §4.5) is what the guest sees, the image read as
- * zeros past its end;
+ * zeros past its end, and `diskSize` is then a stored or blank disk's own size (what its surface draws as the disk:
+ * web/surface.ts; nothing the guest sees or any I/O goes by it);
  * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source). A `url` disk is
  * read through a block cache whose blocks are kept in OPFS (web/diskcache.ts) unless `keep` is false.
  */
@@ -66,7 +69,7 @@ export type DeviceSpec =
   | { type: 'balloon' }
   | VsockSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][]; swap?: string };
+export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; diskSize?: number; ramInit?: [number, Uint8Array][]; swap?: string };
 
 /**
  * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
@@ -320,6 +323,8 @@ export type Backend = {
   written?(): { blocks: Uint32Array; generation?: number }; blocks?(blocks: Uint32Array): Uint8Array;
   /** A disk's overlay compacted once no request of its runs (web/overlay.ts `compact`; `measure`: only its size): the bytes its files took before and after. */
   compact?(measure?: boolean): Promise<{ before: number; after: number }>;
+  /** A disk's surface or a range of it (web/surface.ts), from what it has in memory: answered while it runs. */
+  inspect?(query: InspectQuery): Promise<InspectAnswer>;
 };
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
@@ -738,6 +743,10 @@ export type Source = {
   readAsync?(off: number, len: number): Promise<Uint8Array | undefined>;
   /** The 4 KiB blocks that may read as other than zeros, ascending (every other block reads as zeros), where the source knows them: a stored disk's held blocks, a blank disk's none. */
   held?(): Iterable<number>;
+  /** Its block map, where it is one (a stored disk's: web/stored.ts `blockSource`; a blank disk's, empty), read-only (web/surface.ts). */
+  leaves?(): Pick<MapLeaves, 'top' | 'recs' | 'n'>;
+  /** Which of its file's bytes are here without a fetch, in blocks of `block` bytes (a remote image's: in the block cache's memory or kept in OPFS; web/blockcache.ts), read-only (web/surface.ts). */
+  kept?: { block: number; has(k: number): boolean };
 };
 
 /**
@@ -828,7 +837,9 @@ export const diskIdentity = (d: { url?: string; file?: Blob; source?: string; id
   d.identity ?? JSON.stringify(d.file ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size } : d.url ? { path: new URL(d.url, 'http://x').pathname, size } : { source: d.source, size });
 
 /** A blank disk's bytes: zeros. */
-export const zeroSource = (size: number): Source => ({ size, read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined), held: () => [] });
+export const zeroSource = (size: number): Source => ({ size, read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined), held: () => [], leaves: () => NO_LEAVES });
+/** A map with nothing in it (a blank disk's). */
+const NO_LEAVES = { top: new Uint32Array(0), recs: new Uint32Array(0), n: 0 };
 
 /** An image in a local file (`file:` URLs, Node only: its boots and the JIT's). */
 export async function fileSource(url: string): Promise<Source> {
@@ -845,9 +856,9 @@ export async function fileSource(url: string): Promise<Source> {
 }
 
 /**
- * virtio-blk over a `Source` (HTTP ranges, or a file in Node). Only qcow2's
- * compressed clusters are asynchronous (DecompressionStream; a request's together,
- * on web/inflate-pool.ts's workers too where there are workers). Read-only, or
+ * virtio-blk over a `Source` (HTTP ranges, or a file in Node). qcow2's compressed
+ * clusters are inflated a request's together (web/deflate.ts; on web/inflate-pool.ts's
+ * workers too where there are workers). Read-only, or
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
@@ -855,12 +866,14 @@ export async function fileSource(url: string): Promise<Source> {
  * A virtio-blk device over `src`, writable through `files` (an overlay) or by `src` itself (a ramdisk). `onFull`: a write
  * the browser's storage refused (a short write, `QuotaExceededError`) failed the guest's request, told once until a
  * write lands again (a ramdisk says so through its own `onFull`). `size`: the disk's size as the guest sees it (the
- * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too).
+ * spec's), which an overlay over a smaller image grows to (docs/machines.md §4.5; its meta's own size counts too);
+ * `diskSize`: then a stored or blank source's own size (its source is opened at the guest's), for the surface alone.
  */
-export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void, size?: number): Backend {
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'waarm64-blk', concurrent = false, onFull?: () => void, size?: number, diskSize?: number): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
   let pool: ReturnType<typeof inflatePool> | undefined;
+  const plain = src; // before the stats' wrapping: the surface's reads aren't the guest's
   if ('write' in src) {
     base = rw = src; // a disk that takes writes in itself (a ramdisk)
   } else {
@@ -968,6 +981,12 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return { blocks: blockList(rw), generation };
     }),
     blocks: rw && ((blocks) => {
+      if (rw.blocks) {
+        // An overlay's: runs of slots in one read each.
+        const out = rw.blocks(blocks);
+        if (!out) throw new Error(`the disk's changes can't be read from the browser's storage (blocks ${blocks[0]} to ${blocks[blocks.length - 1]})`);
+        return out;
+      }
       const out = new Uint8Array(blocks.length * 4096);
       blocks.forEach((b, k) => {
         const bytes = rw.block(b);
@@ -1031,7 +1050,96 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return { before, after: size() };
     };
   }
+  const inspector = blkInspector(ctx, backend, plain, base, files ? rw : undefined, diskSize);
+  backend.inspect = inspector.inspect;
+  const close = backend.close!;
+  backend.close = () => {
+    inspector.close(); // the activity wrapper off, its timer gone
+    close();
+  };
   return backend;
+}
+
+/**
+ * What a blk request reads or changes, as ranges (4 MiB): the first, the last, and whether it changes them (a write, a
+ * zeroing, a discard); undefined for any other request. Its 16-byte header as `blk` reads it (a DISCARD's or a
+ * WRITE_ZEROES' segment after it).
+ */
+function rangesOfRequest(ram: Ram, r: Request): [number, number, boolean] | undefined {
+  const h = gather(ram, r.read, 32).slice();
+  if (h.byteLength < 16) return undefined;
+  const v = new DataView(h.buffer);
+  const op = v.getUint32(0, true);
+  let [off, len] = [Number(v.getBigUint64(8, true)) * 512, 0];
+  if (op === T_IN) len = r.write.reduce((k, x) => k + x.len, 0) - 1;
+  else if (op === T_OUT) len = r.read.reduce((k, x) => k + x.len, 0) - 16;
+  else if ((op === T_DISCARD || op === T_WRITE_ZEROES) && h.byteLength === 32) [off, len] = [Number(v.getBigUint64(16, true)) * 512, v.getUint32(24, true) * 512];
+  else return undefined;
+  if (len <= 0) return undefined;
+  return [Math.floor(off / RANGE), Math.floor((off + len - 1) / RANGE), op !== T_IN];
+}
+
+/**
+ * A blk device's answers about its surface (web/surface.ts `diskInspector`): its disk (`src`: a ramdisk's chunks, a
+ * stored or blank disk's map, an image's size alone) and its overlay (`ov`). The activity wrapper goes around the
+ * outermost `backend.request` (the stats', concurrent and compaction wrappers are made before it, at the build, and
+ * `Devices` calls `request` from the backend at each request), and the request it wrapped is put back as it was.
+ */
+function blkInspector(ctx: Ctx, backend: Backend, src: Source | WritableDisk, base: Disk, ov: WritableDisk | undefined, diskSize?: number) {
+  let disk: LiveDisk['disk'];
+  if ('write' in src) {
+    const ram = src;
+    disk = { kind: 'ram', id: 'disk', size: ram.size, get chunks() { return ram.chunkKeys?.() ?? []; }, read: (b) => ram.block(b) };
+  } else if (src.leaves) {
+    // A stored or blank disk under a grown overlay is opened at the guest's size: its own is the spec's `diskSize`.
+    const [s, own] = [src, Math.min(src.size, diskSize ?? src.size)];
+    disk = { kind: 'map', id: 'disk', size: own, leaves: s.leaves!(), read: (b) => (b * 4096 < own ? s.read(b * 4096, Math.min(4096, own - b * 4096)) : undefined) };
+  } else disk = liveImage(src, base);
+  const o = ov?.leaves && ov;
+  let inner: Backend['request'] | undefined;
+  return diskInspector({ disk, overlay: o ? { id: 'overlay', size: o.size, leaves: () => o.leaves!(), read: (b) => o.block(b) } : undefined }, {
+    install(mark) {
+      const request = (inner = backend.request);
+      backend.request = (r) => {
+        const span = rangesOfRequest(ctx.ram(), r);
+        if (span) mark(...span);
+        const p = request.call(backend, r);
+        // A change counted again once it ended (an answer between its start and its end saw it half made).
+        if (span?.[2] && p instanceof Promise) void p.then(() => mark(...span), () => {});
+        return p;
+      };
+    },
+    uninstall() {
+      if (inner) backend.request = inner;
+      inner = undefined;
+    },
+  });
+}
+
+/**
+ * A running image's disk layer (web/surface.ts `LiveImage`), examined at an inspect, never on a request's path: a
+ * qcow2's clusters from its L2 tables, those not read yet read once from a local file (a bounded read: qcow2.ts
+ * `ALLOCATION_MAX`; past it, the tables the guest has read) but from a remote image only where the block cache or OPFS
+ * holds them (nothing is fetched for the map): what's under the others isn't examined yet; a raw image not examined. A
+ * remote image's with the blocks this browser keeps. The content check reads a local qcow2's blocks of data (through
+ * the image), no raw image's and no remote one's.
+ */
+function liveImage(src: Source, base: Disk): LiveDisk['disk'] {
+  const kept = src.kept;
+  const here = (off: number, len: number) => {
+    if (!kept) return true;
+    for (let k = Math.floor(off / kept.block); k <= Math.floor((off + len - 1) / kept.block); k++) if (!kept.has(k)) return false;
+    return true;
+  };
+  const size = base.size;
+  const examine = (): ReturnType<LiveImage['examine']> => {
+    if (base.format === 'raw' || !base.allocation) return { kind: 'opaque', id: 'disk', size, why: 'raw', ...(kept ? { kept } : {}) };
+    const allocation = base.allocation((off, n) => (here(off, n) ? src.read(off, n) : undefined));
+    return { kind: 'clusters', id: 'disk', size, allocation, why: kept ? 'tables' : 'large', ...(kept ? { kept } : {}) };
+  };
+  // A raw image's blocks aren't examined (nor read); a remote qcow2's would be fetched.
+  const read = (b: number) => (base.format === 'raw' || kept ? undefined : base.read(b * 4096, Math.min(4096, size - b * 4096)));
+  return { kind: 'image', id: 'disk', size, examine, read };
 }
 
 /** Rings the doorbell; with `wait`, returns once the backends took everything up to this ring. */
@@ -1048,6 +1156,8 @@ export function ring(bell: Int32Array, wait: boolean) {
 
 export type DevicesInit = {
   memory: WebAssembly.Memory;
+  /** The core (the machine's, not its exact-memory copy): this thread's codec for qcow2's clusters runs on it (web/deflate.ts). */
+  core?: WebAssembly.Module;
   /**
    * The host-visible window (`BootOptions.window`): its address in memory 1 (`spill[0]`), its bytes, and its
    * write-watch's address in `memory` (web/window.ts).
@@ -1066,6 +1176,8 @@ export type DevicesInit = {
   deterministic: boolean;
   /** Parallel SMP: each vCPU's wake word (`vm_cpu_signal`), bumped and notified after the signal word (docs/abi.md). */
   wakes?: number[];
+  /** Parallel SMP: each vCPU's stop word (`vm_cpu_stop`, ABI 71), set to 0 after the signal word, before the wake words. */
+  stops?: number[];
   /** A VM restored from a snapshot: each backend's saved state (`Devices.save`), null where it had none. */
   state?: unknown[];
   /** The xHCI (docs/usb.md): `vm_xhci`'s address, the page's port for the contract's messages, devices to plug in at start. */
@@ -1095,6 +1207,7 @@ export class Devices {
   private shared: number[];
   private signal: number;
   private wakes: number[];
+  private stops: number[];
   private backends: Backend[];
   /** The balloon's backend, if the machine has one (`hint`). */
   private balloon?: Balloon;
@@ -1113,8 +1226,8 @@ export class Devices {
   private sources: (Source | WritableDisk | undefined)[];
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void, onFull?: () => void) {
-    [this.memory, this.shared, this.signal, this.wakes, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], sources, deterministic];
+  private constructor({ memory, shared, ram, ramSize, layout: given, window, spill = [], signal, specs, deterministic, wakes, stops, state, xhci, io }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void, onFull?: () => void) {
+    [this.memory, this.shared, this.signal, this.wakes, this.stops, this.sources, this.deterministic] = [memory, shared, signal, wakes ?? [], stops ?? [], sources, deterministic];
     // Spill memories are made at their final size: their views never go stale.
     const spillViews = spill.map((m) => new Uint8Array(m.buffer));
     const layout = given ?? ramLayout(ramSize, spill.map((m) => m.buffer.byteLength));
@@ -1140,7 +1253,7 @@ export class Devices {
         case 'vsock': return vsockDevice(ctx, d);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull, d.size);
+          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial, !deterministic, overlays[i] && onFull, d.size, d.diskSize);
         }
         case 'net': return net(ctx, d);
         case '9p': return d.folders ? folders9p(ctx, d.folders, d.port) : p9(ctx, d.files ?? {}, deterministic);
@@ -1234,6 +1347,11 @@ export class Devices {
     return sum;
   }
 
+  /** Device `i`'s answer to `query` (a disk's surface or one of its ranges: web/surface.ts); `none` for a device that has none. */
+  async inspect(i: number, query: InspectQuery): Promise<InspectAnswer> {
+    return (await this.backends[i]?.inspect?.(query)) ?? { kind: 'none' };
+  }
+
   /** Resolves once no request of a `concurrent` backend runs (a snapshot's quiesce: their completions land first) and what the backends hold back landed. */
   async drain() {
     while (this.detached.size) await Promise.all(this.detached);
@@ -1243,6 +1361,7 @@ export class Devices {
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory, the storage full). */
   static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (m: Msg) => void = () => {}) {
+    if (init.core) void coreModule(init.core);
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
     const sources = await Promise.all(init.specs.map(async (d) => {
@@ -1363,6 +1482,8 @@ export class Devices {
     const sig = new Int32Array(this.memory.buffer, this.signal, 1);
     Atomics.or(sig, 0, SIGNAL_DEVICE);
     Atomics.notify(sig, 0);
+    // Compiled code stops at its next poll (docs/abi.md "PERF: the stop word").
+    for (const p of this.stops ?? []) Atomics.store(new Int32Array(this.memory.buffer, p, 1), 0, 0);
     for (const w of this.wakes) {
       const word = new Int32Array(this.memory.buffer, w, 1);
       Atomics.add(word, 0, 1);

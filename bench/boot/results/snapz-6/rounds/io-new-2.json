@@ -1,0 +1,213 @@
+{
+ "schema": 1,
+ "page": "bench/io/index.html",
+ "date": "2026-11-16T04:11:59.896Z",
+ "commit": "8facaffaa8ff",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "io_qcow2_randread4k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4675,
+    4691,
+    4675,
+    4661,
+    4694
+   ],
+   "median": 4675,
+   "iqr": 16,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_randread4k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1168.943685,
+    1172.942353,
+    1168.943685,
+    1165.278241,
+    1173.608797
+   ],
+   "median": 1168.943685,
+   "iqr": 3.9986679999999524,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_randread4k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    812.67890992,
+    810.17115,
+    813.372168757,
+    816.238508436,
+    810.508402044
+   ],
+   "median": 812.67890992,
+   "iqr": 2.863766713000018,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    96394,
+    93366,
+    93664,
+    102621,
+    93408
+   ],
+   "median": 93664,
+   "iqr": 2986,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    753.082306,
+    729.423525,
+    731.756081,
+    801.732756,
+    729.756748
+   ],
+   "median": 731.756081,
+   "iqr": 23.325558,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread128k_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    1289.8975646019999,
+    1332.464036546,
+    1329.1131001820002,
+    1210.514280964,
+    1332.827967123
+   ],
+   "median": 1329.1131001820002,
+   "iqr": 42.566471944000114,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_bw",
+   "unit": "KiB/s",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    238274,
+    235966,
+    237909,
+    227517,
+    236910
+   ],
+   "median": 236910,
+   "iqr": 1943,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_iops",
+   "unit": "IOPS",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    232.689747,
+    230.43623,
+    232.333333,
+    222.18521,
+    231.358189
+   ],
+   "median": 231.358189,
+   "iqr": 1.8971030000000155,
+   "n": 5
+  },
+  {
+   "name": "io_qcow2_seqread1M_lat",
+   "unit": "us",
+   "params": {
+    "disk": "qcow2",
+    "size": "256 MiB",
+    "overlay": "fresh OPFS",
+    "realtime": true,
+    "kernel": "Buildroot Image"
+   },
+   "samples": [
+    4252.62248927,
+    4292.564481214,
+    4258.263621233999,
+    4454.898758621,
+    4277.051510791
+   ],
+   "median": 4277.051510791,
+   "iqr": 34.300859980000496,
+   "n": 5
+  }
+ ]
+}

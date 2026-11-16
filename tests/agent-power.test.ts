@@ -10,10 +10,10 @@ import { render } from '../web/app/statusbar-render.ts';
 import type { Live } from '../web/app/statusbar-piece.ts';
 import type { Msg } from '../web/msg.ts';
 import { t } from '../web/i18n.ts';
+import { until } from './until.ts';
 
 const open: MessagePort[] = [];
 after(() => open.forEach((p) => p.close()));
-const settle = () => new Promise((r) => setTimeout(r, 30));
 
 /**
  * A link and the agent's end: it says HELLO with `caps` (`hello`), answers POWER with `answer` (none: silence), and
@@ -66,20 +66,20 @@ test("the link: the guest's OS as the agent names it, kept over its connections;
   assert.equal(await g.link.power(false, 100), undefined, 'not connected');
   g.connect();
   g.say(FRAME.OS, new Uint8Array([3, 0x41, 0x72, 0x63, 4, 0x61, 0x72, 0x63, 0x68, 0]));
-  await settle();
+  await until(() => g.link.os, 'the OS');
   assert.deepEqual(g.link.os, { name: 'Arc', id: 'arch', version: '' });
   assert.equal(g.link.canPower, false);
   assert.equal(await g.link.power(false, 100), undefined, "an agent that doesn't power off");
   assert.deepEqual(g.asked, [], 'not asked');
+  const closed = new Promise((r) => g.link.onClose.push(() => r(undefined)));
   g.end();
-  await settle();
+  await closed;
   assert.equal(g.link.os?.name, 'Arc', 'kept over the connection');
   g.link.close();
 
   const p = agent();
   p.connect();
-  await settle();
-  assert.equal(p.link.canPower, true);
+  await until(() => p.link.canPower, 'the HELLO with POWER');
   p.a.answer = POWERED.TAKEN;
   assert.equal(await p.link.power(false, 1000), POWERED.TAKEN);
   p.a.answer = POWERED.REFUSED;
@@ -104,14 +104,14 @@ test('the soft power-off (web/app/run/soft-power.ts): asked of an agent that can
   const g = agent(CAP.TIME);
   run.link = g.link;
   g.connect();
-  await settle();
+  assert.ok(await g.link.hello(10_000), 'the HELLO');
   assert.equal(await soft.request('off'), false, "an agent that can't: the hard one");
   assert.equal(shown.soft, undefined);
 
   const p = agent();
   run.link = p.link;
   p.connect();
-  await settle();
+  assert.ok(await p.link.hello(10_000), 'the HELLO');
   p.a.answer = POWERED.REFUSED;
   assert.equal(await soft.request('reboot'), false, 'refused: the hard one');
   assert.deepEqual([shown.soft, said], [undefined, ['machine:soft-power.refused.reboot']]);
@@ -126,7 +126,7 @@ test('the soft power-off (web/app/run/soft-power.ts): asked of an agent that can
   shown.soft = undefined;
   p.a.answer = undefined;
   const gone = soft.request('reboot');
-  await settle();
+  await until(() => p.asked.length === 3, 'the POWER asked');
   assert.equal(shown.soft, 'reboot', 'shown while asked');
   p.end();
   assert.equal(await gone, true);
@@ -137,9 +137,9 @@ test('the soft power-off (web/app/run/soft-power.ts): asked of an agent that can
   const q = agent();
   run.link = q.link;
   q.connect();
-  await settle();
+  assert.ok(await q.link.hello(10_000), 'the HELLO');
   const ended = soft.request('off');
-  await settle();
+  await until(() => q.asked.length === 1, 'the POWER asked');
   run.link = undefined;
   q.end();
   assert.equal(await ended, true);
@@ -174,16 +174,15 @@ test("the soft power-off through the run's agent (web/app/areas/agent-actions.ts
   const run = { link: actions.begin({ agent: { port1: c.port1, port2: undefined as unknown as MessagePort } as MessageChannel, clipboard: false, agentStub: false }, () => {}) };
   const soft = new SoftPower(run, power, { notify: () => undefined });
   connect();
-  await settle();
-  assert.equal(power.canSoft, true);
+  await until(() => power.canSoft, 'the HELLO with POWER');
   assert.equal(await soft.request('off'), true, 'taken');
   // systemd stops the agent on the way down: the guest still runs, and is still shutting down.
   c.port2.postMessage({ type: 'open', open: false, conn });
-  await settle();
+  await until(() => !power.canSoft, 'the connection\'s end');
   assert.deepEqual([power.soft, power.canSoft], ['off', false], 'the sign stays past the connection\'s end');
   conn = 2;
   connect(); // the agent started again: the guest isn't shutting down
-  await settle();
+  await until(() => power.canSoft, 'the new HELLO');
   assert.deepEqual([power.soft, power.canSoft], [undefined, true]);
   assert.equal(await soft.request('reboot'), true);
   actions.end();

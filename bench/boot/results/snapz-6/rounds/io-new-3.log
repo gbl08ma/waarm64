@@ -1,0 +1,16 @@
+[page] [vite] connecting...
+[page] [vite] connected.
+qcow2 run 1/5: 11290 ms
+qcow2 run 2/5: 11231 ms
+qcow2 run 3/5: 11211 ms
+qcow2 run 4/5: 11221 ms
+io_qcow2_randread4k_bw       {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}   4670.000 ±1.000 KiB/s
+io_qcow2_randread4k_iops     {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}   1167.667 ±0.333 IOPS
+io_qcow2_randread4k_lat      {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}    814.002 ±0.649 us
+io_qcow2_seqread128k_bw      {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}  93536.000 ±682.000 KiB/s
+io_qcow2_seqread128k_iops    {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}    730.756 ±5.330 IOPS
+io_qcow2_seqread128k_lat     {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}   1330.626 ±9.200 us
+io_qcow2_seqread1M_bw        {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"} 236045.000 ±944.000 KiB/s
+io_qcow2_seqread1M_iops      {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}    230.513 ±0.922 IOPS
+io_qcow2_seqread1M_lat       {"disk":"qcow2","size":"256 MiB","overlay":"fresh OPFS","realtime":true,"kernel":"Buildroot Image"}   4292.194 ±15.276 us
+wrote bench/boot/results/snapz-6/rounds/io-new-3.json

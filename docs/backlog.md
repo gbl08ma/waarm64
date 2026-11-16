@@ -11,6 +11,11 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
 
 ## CPU and ISA
 
+- **An unaligned access to Device memory with the MMU off doesn't fault** (found by `tests/baremetal/spin.c`, PERF loop
+  31): clang merged two 4-byte stores of its code writer into an 8-byte store at a 4-byte boundary, which QEMU TCG
+  faulted (alignment, DFSC 0x21: with `SCTLR_EL1.M` clear, data is Device-nGnRnE) and waarm64 ran. Check the
+  architecture's rule for every Device access (MMU on with a Device attribute too), then fault as it says, with a
+  bare-metal test against the oracles.
 - **DotProd and JSCVT on x86-64:** measured on the M4 only (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT,
   measured"). SDOT's order was picked there; `extmul_high` is several instructions on x86, so it may lose to
   widening with `i32x4.dot_i16x8_s`, by an estimate of 14 ops to 12, or to even and odd bytes at about 10. Run
@@ -357,7 +362,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
-- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test::follows_the_session_and_passes_the_child_its_frames` fail, which stops `scripts/ci.sh` there. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
+- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) six fail (2026-11-15), which stops `scripts/ci.sh` there: `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test`'s `follows_the_session_and_passes_the_child_its_frames`, `a_child_for_the_screens_size_hears_the_hello_and_the_size_first`, `applies_the_pages_layout_where_the_session_hasnt_it`, `no_session_child_without_the_clipboard` and `says_the_childs_desktop_to_a_page_that_asks`. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
 - **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
@@ -1225,6 +1230,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
+- **The stop word's loose end** (PERF loop 31; [jit.md](jit.md) "Preemption"): the differential test
+  (`tests/jit-diff.test.ts`, `jit_parallel`) still runs counted code only, so polled code's semantics are covered by
+  the parallel boots, the bare-metal tests and the spin tests, not instruction by instruction. A user-mode
+  `jit_polled` (an export: ABI) would close it.
 - **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
   N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.waarm64snap` is the
   compile workload in use meanwhile.
@@ -1260,7 +1269,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     developers' (15 of them in the renderers, 2026-11-02), and copy ends with a period.
 - **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
   once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over
-  its output before the junk error (`web/qcow2.ts` `inflate`) and SpiderMonkey runs without the
+  its output before the junk error (since SNAPZ loop 6 the core inflates them: web/deflate.ts) and SpiderMonkey runs without the
   compile worker (`web/app/worker.ts`). Open: SpiderMonkey's process holds the code of ~16,350 live wasm modules
   (64 KiB each, it seems; then `new WebAssembly.Module` throws "out of memory"), every vCPU worker compiles its
   own copy of each module, and the code cache has no module cap: a long or code-heavy run (the user's Arch
@@ -1404,6 +1413,39 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`placeCursor`) are still set on the elements, as they follow the guest's cursor messages; through state they would
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).
 
+- **The disk surface window's loose ends** (SURFACE, [frontend.md](frontend.md) "A disk's surface"; 2026-11-15):
+  - A URL disk offline isn't examined: its kept blocks are named by its identity (a chunked image's manifest id, or
+    the server's validator), which needs a request to the server; its store is locked by a machine reading it, and
+    opening the cache's bucket pushes on its expiry. The page could keep the identity in the disk's record.
+  - Storing a record with an OPFS file's handle (granted without a prompt) in IndexedDB closes Chromium's headless page
+    under Playwright (seen 2026-11-15, not traced), so the page test of a file disk examined offline is Node's
+    (`tests/surface-image.test.ts`). Worth checking a real file handle's record isn't affected.
+  - A transient machine's disk (a test's `?machine=`, `?disk=`) has no "visualize": its disk has no record; its
+    pane would need one made from the run's disks.
+  - A ramdisk viewed while its machine runs in another tab says it has nothing (only this tab's run answers live).
+  - The carrying of a dropped live answer's activity into the next picture (`SurfacePoll`, `carryActivity`) is tested
+    only as the pure function: `SurfacePoll` is a `.svelte.ts` (runes), which Node's tests don't compile.
+  - A remote qcow2's kept count passes over every cluster with data at each answer (2.5–4.9 ms at 20 GiB of 64 KiB
+    clusters, all allocated; Node, a cloud container): past ~100 GiB it would want counts kept per cell, recounted only
+    where the cache's blocks changed (the cache would have to say which).
+  - Every offline ask reads the whole map again (~105 MB for an overlay with 100 GiB written; a legacy flat map is 4
+    bytes per block), a Refresh and each settled records change too; a long-lived job worker could keep the per-range
+    counts and answer another cell size, or a refresh at the same generation, without reading it again.
+- **A RAM usage view on the surface window's pieces** (the user's idea, 2026-11-15; `ui/BlockGrid`, `ui/FloatingWindow`
+  and the `inspect` route are made for it: a `ram-surface` query kind and a worker that scans the guest's shared
+  memories, nothing added to the interpreter or the JIT). No live reads and writes: compiled code touches RAM directly.
+  **Measured** (2026-11-15, Chromium 153 on x86_64 Linux in a cloud container, one run): a worker's scan of an untouched
+  4 GiB shared wasm memory doesn't make the host commit it (the browser's processes' resident memory 372 MiB before,
+  381 MiB after; writing 512 MiB of it then added 512 MiB), so a scan doesn't inflate the tab. A zero-or-not pass per
+  4 KiB page over the 4 GiB took 0.46–1.0 s there (zeros read whole; a page with data is left at its first word that
+  isn't zero: 512 MiB of data in 7.5 ms). Not measured: macOS and Windows hosts, the cost of a checksum per cell for
+  "changed since the last pass" (it reads every byte of the pages with data), the vCPUs' slowdown beside a scan.
+  - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
+    720 × 520, fits them).
+  - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0
+    (`disks:stored.imageUnreadable`); 256 MiB worked (seen making screenshots, 2026-11-15, not traced: the import
+    worker's read of a large in-memory `File`?).
+
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a
   desktop's idle suspend) resets every virtio device in its resume without a SYSTEM_SUSPEND, so the reset isn't
@@ -1446,21 +1488,46 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **A step, not a slew:** the agent sets CLOCK_REALTIME at once (past 50 ms off). A guest with chrony or timesyncd
     sees a step it didn't make; none was seen to mind on Debian (`tests/page-clock.test.ts`), but a long-running
     guest whose NTP client disciplines the clock may log it.
-- **Snapshots' compression and wiring (the SNAPZ track, `SNAPZ-KICKOFF.md`; measured: bench/boot/REPORT.md "SNAPZ:
-  compression across the emulator, measured")**: a desktop guest's save pauses 4.2 s, 2.9 s of it the core's LZ on one
-  thread; its load takes 9.8 s. The track takes lz4_flex as codec 2, the CRC into wasm, a pool of workers for the save
-  and the load, a picked file staged through OPFS, qcow2's clusters through miniz_oxide, the overlay's per-block writes
-  in a restore, and a breakdown of the load's machine start.
-  Loops 1 (lz4_flex, crc32fast) and 2 (the save's pool: the desktop's pause 3.80 to 1.07 s) are in. Left from loop 2:
-  - **The save's memory with the pool** (bench/boot/REPORT.md "SNAPZ loop 2"): the pool's six instances add ~90-140
-    MiB while a save runs (Debian's kept and file saves +88, the desktop's kept +142); the desktop's file and suspend
-    saves added more again (+316, +347 over loop 1; four workers alike), which the pool's instances don't explain:
-    perhaps the output's buffering (the download's Blob parts, OPFS) behind a sink fed 3.5x faster, perhaps the
-    probe's 250 ms samples of a 1.1 s pause. Not looked into; transient (the RSS before each next save is loop 1's).
-  - **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
-    read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (mostly their reads through the device worker),
-    and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go
-    through the pool as `bytes` jobs (a copy each way): ~0.1 s at most.
+- **What is left of a load's compression share** (bench/boot/REPORT.md "SNAPZ loop 3" and "SNAPZ: the track's end",
+  the desktop's ~1 s: the load 1.2 s in all): the
+  check pass ~0.4 s, bound by reading the file (~0.3 s at four 4 MiB slices in flight; the file is read twice, once
+  a pass); the state 0.08-0.10 s (109 MB of BLOB frames unpacked on the machine worker: a pool job that posts the
+  bytes back could take most of it); RAM ~0.6 s wall for ~1.7 s of the workers' CPU, of which `apply` 0.4-0.75 s
+  (pages copied out of each instance into guest RAM, shared memory both: V8's word-by-word copy, and fresh RAM's
+  page faults). A frame index at the file's end would let the restore pass's workers read their frames themselves.
+  The disk's blocks are ~0.1 s since loop 5, the machine's start ~0.12 s since loop 7.
+- **What is left of a load's start** (bench/boot/REPORT.md "SNAPZ loop 7", desktop / Debian, ms): before the
+  machine worker's start, on the page, the GPU worker's WebGL start (53-100), which the start message waits for
+  (its caps): the worker could fetch, compile and check the file meanwhile and take the caps before `bootVm`; the
+  file's handling on the page ~45-75. After `running`: the vCPU workers run ~120 ms later (their modules on the
+  dev server; starting them beside the check pass cost it 80-100 ms more than it saved, `variants/`: worth trying
+  once the pool's work is over, or with fewer pool workers); the desktop's 3D state `load` in the GPU worker
+  51-108, its first present right after (the state could go to the GPU worker before the RAM fill: it doesn't read
+  guest RAM, but the device worker owns the port). Inside `start`: the memories grown 12-18, `Devices.open` 20-25
+  (the overlays' OPFS handles), the core instantiated 1-6. The worker numbers are the dev server's (modules
+  compiled per request, `Cache-Control: no-store`); a build's bundles start faster, not measured. A disk on a
+  remote server gets two HEADs a start (the machine worker's `checkDisks`, then the device worker's sync one):
+  the device worker could take the first's answer (one network round trip less).
+- **A save's memory left** (bench/boot/REPORT.md "SNAPZ loop 4"): a file save stages through OPFS now, so the
+  download's ~1.1 GiB is gone; every desktop save adds ~190-240 MiB while it runs (the pool's six instances and, for
+  a 3D machine, its read-back state: 109 MB of BLOB contents held through the save), and a picked file's ~310 MiB
+  (the copy's Blob writes in the renderer's accounting).
+- **A picked file's copy** after the resume (1.4 s for the desktop's 680 MB beside the running guest, 0.7 s on an
+  idle browser): Blob slices written by the browser, file to file; nothing faster was found from the page. A
+  download's staging file stays until the next file save or the page's end (then removed at its next start): one
+  snapshot's worth of the storage held meanwhile.
+- **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
+  read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (their reads are ~0.01 s since loop 5: the rest
+  is the frames' copies, compression and messages),
+  and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go
+  through the pool as `bytes` jobs (a copy each way): ~0.1 s at most.
+- **Off the record** (Playwright's default context, a private window: OPFS ~0.3 ms a call; bench/boot/REPORT.md
+  "SNAPZ loop 5"): the desktop's restore still makes ~1,100 overlay calls (0.77 s: ~650 data writes, ~1,100 map
+  writes, a zero run's `shrink` a `getSize` each, ~80 ms). A restore-only bulk write (a frame's runs' data, then
+  each leaf's entries once) would take the map writes to one per leaf touched (~0.3 s off the record, ~5 ms on
+  disk); not built, the persistent case being ~0.1 s already. A save off the record pauses 2.7 s, 2.2 of it the
+  sink (the file's OPFS writes). A merge into a stored disk (web/stored.ts `mergeOverlay`) still copies one block a
+  call (`changes.block`, then a write or a zeroing each): runs and `blocks()` would serve it as they do a restore.
 - **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
   test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
   stale entries, or the count of a run with TLB flushes at the same points
@@ -1668,6 +1735,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- [B] **Three bare-metal tests fail on the hvf oracle** (`tests/baremetal/oracle.sh --hvf`, 2026-11-16, PERF loop 29's
+  run; their binaries unchanged by it): `debug` exits 2, `mmio` 11, `watch` prints no exit line, though testing.md says
+  every test passes on both oracles. Find whether hvf lacks what they check (self-hosted debug, a device detail) and
+  leave those checks out of the `-DHVF` builds, or whether ours differ from the hardware.
+  (`watch` hangs; `oracle.sh` kills its QEMU at 50 s.)
 - [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
   end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
   passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.

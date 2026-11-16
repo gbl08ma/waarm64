@@ -533,39 +533,57 @@ test('gpu: a cropped console keeps the display from shrinking below its buffer',
 
 test('gpu: one flush is answered per frame, the first at once; what is queued behind a held one keeps its order', async () => {
   const { gpuBackend } = await import('../web/gpu.ts');
-  const ram = new Uint8Array(1 << 16);
-  const done: { w0: number; at: number }[] = [];
-  const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete: (w0: number) => done.push({ w0, at: performance.now() }), config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
-  const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
-  const send = (w0: number, c: Uint8Array) => {
-    ram.set(c, 0x100);
-    return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] });
-  };
-  const flush = cmd(T.FLUSH, 0, 0, 1, 1, 1, 0);
-  assert.equal(send(1, cmd(T.CREATE, 1, B8G8R8X8, 4, 3)), 24, 'not a flush: at once');
-  assert.equal(send(2, flush), 24, 'the first flush after idle: at once');
-  const t0 = performance.now();
-  assert.equal(send(3, cmd(T.INFO)), 24 + 16 * 24, 'nothing is held: at once');
-  assert.equal(send(4, flush), undefined, 'a second flush in the frame waits for its end');
-  assert.equal(send(5, cmd(T.INFO)), undefined, 'and what follows it, to keep the order');
-  assert.equal(send(6, flush), undefined);
-  assert.equal(send(7, cmd(T.INFO)), undefined);
-  assert.equal(done.length, 0);
-  for (let k = 0; k < 100 && done.length < 4; k++) await new Promise((r) => setTimeout(r, 5));
-  assert.deepEqual(done.map((d) => d.w0), [4, 5, 6, 7]);
-  assert.ok(done[1].at - done[0].at < 5, 'what was behind the first flush goes with it');
-  // Frames are a 60th of a second after the flush that was answered at once (a late timer doesn't push the next one back).
   const frame = 1000 / 60, slack = 2;
-  assert.ok(done[0].at - t0 >= frame - slack, `the held flush waits for the frame's end (${(done[0].at - t0).toFixed(1)} ms)`);
-  assert.ok(done[2].at - t0 >= 2 * frame - slack, `the next one a frame more (${(done[2].at - t0).toFixed(1)} ms)`);
-  // Idle again: at once.
-  await new Promise((r) => setTimeout(r, 30));
-  assert.equal(send(8, flush), 24);
-  // A reset drops what is held (the core drops the requests).
-  assert.equal(send(9, flush), undefined);
-  b.reset();
-  await new Promise((r) => setTimeout(r, 30));
-  assert.equal(done.length, 4);
+  // The pacing is against the clock: a stall of this process past a frame between the synchronous sends below (CI's
+  // load) ends the frame early and rightly changes what is held. Such a run proves nothing and is taken again.
+  for (let attempt = 1; ; attempt++) {
+    const ram = new Uint8Array(1 << 16);
+    // `turn`: the synchronous run each completion came in (one per task), so "together" doesn't hang on the clock.
+    const done: { w0: number; at: number; turn: number }[] = [];
+    let turn = 0, inTurn = false;
+    const complete = (w0: number) => {
+      if (!inTurn) (inTurn = true, turn++, queueMicrotask(() => { inTurn = false; }));
+      done.push({ w0, at: performance.now(), turn });
+    };
+    const ctx = { ram: () => [ram], layout: ramLayout(ram.length), complete, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+    const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
+    const send = (w0: number, c: Uint8Array) => {
+      ram.set(c, 0x100);
+      return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] });
+    };
+    const flush = cmd(T.FLUSH, 0, 0, 1, 1, 1, 0);
+    const created = send(1, cmd(T.CREATE, 1, B8G8R8X8, 4, 3));
+    const t0 = performance.now();
+    const got = [send(2, flush), send(3, cmd(T.INFO)), send(4, flush), send(5, cmd(T.INFO)), send(6, flush), send(7, cmd(T.INFO))];
+    const early = done.length;
+    if (performance.now() - t0 >= frame - slack && attempt < 10) {
+      b.reset();
+      continue;
+    }
+    assert.equal(created, 24, 'not a flush: at once');
+    assert.deepEqual(got, [24, 24 + 16 * 24, undefined, undefined, undefined, undefined], 'the first flush after idle and what follows it at once; a second flush in the frame waits for its end, and what follows it, to keep the order');
+    assert.equal(early, 0);
+    for (let k = 0; k < 2000 && done.length < 4; k++) await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(done.map((d) => d.w0), [4, 5, 6, 7]);
+    assert.equal(done[1].turn, done[0].turn, 'what was behind the first flush goes with it');
+    // Frames are a 60th of a second after the flush that was answered at once (a late timer doesn't push the next one back).
+    assert.ok(done[0].at - t0 >= frame - slack, `the held flush waits for the frame's end (${(done[0].at - t0).toFixed(1)} ms)`);
+    assert.ok(done[2].at - t0 >= 2 * frame - slack, `the next one a frame more (${(done[2].at - t0).toFixed(1)} ms)`);
+    // Idle again: at once.
+    await new Promise((r) => setTimeout(r, 30));
+    const t1 = performance.now();
+    const idle = [send(8, flush), send(9, flush)];
+    if (performance.now() - t1 >= frame - slack && attempt < 10) {
+      b.reset();
+      continue;
+    }
+    assert.deepEqual(idle, [24, undefined], 'idle: at once; the next in its frame held');
+    // A reset drops what is held (the core drops the requests).
+    b.reset();
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(done.length, 4);
+    return;
+  }
 });
 
 test('gpu: a transfer copies when it arrives, also while its reply is held (the guest reuses the buffer without waiting)', async () => {

@@ -1,0 +1,73 @@
+== desktop round 1: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":6092,"phases":{"check":726,"state":98,"ram":2717,"disk":2133,"prepare":24,"start":195,"total":5894
+round 0 keptStart {"wallMs":7063,"phases":{"check":748,"state":137,"ram":3157,"disk":2388,"prepare":30,"start":212,"total":6672
+round 0 resume {"wallMs":4951,"phases":{"check":745,"state":135,"ram":3075,"disk":0,"prepare":34,"start":223,"total":4212
+round 0 kept {"wallMs":5797,"kind":"kept","bytes":689744718,"pausedMs":5352
+round 0 file {"wallMs":6950,"kind":"file","bytes":693282790,"pausedMs":5860
+round 0 picked {"wallMs":9397,"kind":"file","bytes":693344986,"pausedMs":9217
+round 0 suspend {"wallMs":5580,"kind":"suspend","bytes":675910699,"pausedMs":5431
+== desktop round 2: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1470,"phases":{"check":423,"state":82,"ram":549,"disk":109,"prepare":20,"start":82,"total":1266
+round 0 keptStart {"wallMs":1832,"phases":{"check":430,"state":107,"ram":647,"disk":116,"prepare":33,"start":91,"total":1425
+round 0 resume {"wallMs":1837,"phases":{"check":397,"state":97,"ram":558,"disk":0,"prepare":27,"start":141,"total":1221
+round 0 kept {"wallMs":1650,"kind":"kept","bytes":675499760,"pausedMs":1205
+round 0 file {"wallMs":2748,"kind":"file","bytes":678717129,"pausedMs":1297
+round 0 picked {"wallMs":2966,"kind":"file","bytes":678846210,"pausedMs":1253
+round 0 suspend {"wallMs":1361,"kind":"suspend","bytes":662670757,"pausedMs":1209
+== desktop round 3: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":5986,"phases":{"check":736,"state":105,"ram":2610,"disk":2171,"prepare":17,"start":148,"total":5788
+round 0 keptStart {"wallMs":6376,"phases":{"check":749,"state":123,"ram":2894,"disk":2018,"prepare":32,"start":193,"total":6010
+round 0 resume {"wallMs":4665,"phases":{"check":724,"state":127,"ram":2944,"disk":0,"prepare":27,"start":237,"total":4060
+round 0 kept {"wallMs":5119,"kind":"kept","bytes":689804040,"pausedMs":4815
+round 0 file {"wallMs":6639,"kind":"file","bytes":693231849,"pausedMs":5859
+round 0 picked {"wallMs":9019,"kind":"file","bytes":693303854,"pausedMs":8887
+round 0 suspend {"wallMs":5557,"kind":"suspend","bytes":677268998,"pausedMs":5443
+== desktop round 4: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1357,"phases":{"check":426,"state":83,"ram":482,"disk":98,"prepare":23,"start":102,"total":1214
+round 0 keptStart {"wallMs":1715,"phases":{"check":434,"state":92,"ram":591,"disk":118,"prepare":33,"start":88,"total":1356
+round 0 resume {"wallMs":1916,"phases":{"check":398,"state":101,"ram":577,"disk":0,"prepare":37,"start":127,"total":1240
+round 0 kept {"wallMs":1526,"kind":"kept","bytes":675517583,"pausedMs":1115
+round 0 file {"wallMs":3054,"kind":"file","bytes":678888304,"pausedMs":1317
+round 0 picked {"wallMs":3087,"kind":"file","bytes":678941450,"pausedMs":1281
+round 0 suspend {"wallMs":1456,"kind":"suspend","bytes":663956518,"pausedMs":1290
+== desktop round 5: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1357,"phases":{"check":341,"state":78,"ram":608,"disk":101,"prepare":18,"start":95,"total":1240
+round 0 keptStart {"wallMs":1612,"phases":{"check":383,"state":87,"ram":557,"disk":112,"prepare":21,"start":107,"total":1267
+round 0 resume {"wallMs":1834,"phases":{"check":382,"state":102,"ram":574,"disk":0,"prepare":28,"start":172,"total":1258
+round 0 kept {"wallMs":1490,"kind":"kept","bytes":675493305,"pausedMs":1089
+round 0 file {"wallMs":2943,"kind":"file","bytes":678910522,"pausedMs":1248
+round 0 picked {"wallMs":2971,"kind":"file","bytes":678934900,"pausedMs":1285
+round 0 suspend {"wallMs":1397,"kind":"suspend","bytes":663209218,"pausedMs":1231
+== desktop round 6: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":5902,"phases":{"check":729,"state":97,"ram":2683,"disk":2055,"prepare":17,"start":180,"total":5762
+round 0 keptStart {"wallMs":6462,"phases":{"check":734,"state":134,"ram":2914,"disk":2073,"prepare":28,"start":190,"total":6072
+round 0 resume {"wallMs":4602,"phases":{"check":703,"state":134,"ram":2966,"disk":0,"prepare":30,"start":242,"total":4075
+round 0 kept {"wallMs":5052,"kind":"kept","bytes":689793637,"pausedMs":4744
+round 0 file {"wallMs":6606,"kind":"file","bytes":693279875,"pausedMs":5824
+round 0 picked {"wallMs":9156,"kind":"file","bytes":693313075,"pausedMs":8990
+round 0 suspend {"wallMs":5583,"kind":"suspend","bytes":676910044,"pausedMs":5483
+== desktop round 7: base at 0199f99e, core e40501230b5f1b61
+rc=0
+round 0 load {"wallMs":5695,"phases":{"check":648,"state":102,"ram":2580,"disk":1996,"prepare":21,"start":158,"total":5504
+round 0 keptStart {"wallMs":5862,"phases":{"check":663,"state":107,"ram":2585,"disk":1983,"prepare":29,"start":161,"total":5527
+round 0 resume {"wallMs":4098,"phases":{"check":648,"state":112,"ram":2607,"disk":0,"prepare":20,"start":220,"total":3607
+round 0 kept {"wallMs":5094,"kind":"kept","bytes":689757371,"pausedMs":4853
+round 0 file {"wallMs":5907,"kind":"file","bytes":693283854,"pausedMs":5110
+round 0 picked {"wallMs":7795,"kind":"file","bytes":693314426,"pausedMs":7599
+round 0 suspend {"wallMs":4947,"kind":"suspend","bytes":676117234,"pausedMs":4848
+== desktop round 8: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1262,"phases":{"check":404,"state":71,"ram":445,"disk":101,"prepare":18,"start":91,"total":1129
+round 0 keptStart {"wallMs":1653,"phases":{"check":377,"state":90,"ram":559,"disk":111,"prepare":23,"start":115,"total":1274
+round 0 resume {"wallMs":1938,"phases":{"check":392,"state":101,"ram":615,"disk":0,"prepare":24,"start":147,"total":1278
+round 0 kept {"wallMs":1442,"kind":"kept","bytes":675527127,"pausedMs":1079
+round 0 file {"wallMs":3001,"kind":"file","bytes":678985859,"pausedMs":1238
+round 0 picked {"wallMs":3442,"kind":"file","bytes":678964788,"pausedMs":1370
+round 0 suspend {"wallMs":1442,"kind":"suspend","bytes":662563907,"pausedMs":1290
+ALLDONE

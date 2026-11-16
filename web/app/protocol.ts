@@ -10,6 +10,7 @@ import type { GuestWords } from './guest-unit.ts';
 import type { DiskPlan, RestorePhases, SavePhases, SnapshotDisk } from '../snapshot.ts';
 import type { Msg, WireError } from '../msg.ts';
 import type { DevKnobs } from './run/dev-knobs.ts';
+import type { InspectAnswer, InspectQuery } from '../surface.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -188,10 +189,15 @@ export type ToWorker =
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
    * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/machines.md
-   * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). Answered by
-   * `snapshot-done` or `snapshot-error`, each message of it with its `id`.
+   * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). `stage`: a file
+   * save's staging file in OPFS (web/snapshot-stage.ts; the page holds its lock), written during the pause while the
+   * storage has room, then copied into `handle`'s stream or handed back in `snapshot-done`'s `file`. Answered by
+   * `snapshot-resumed` (the machine runs again), then `snapshot-done` or `snapshot-error`, each message of it with its
+   * `id`.
    */
-  | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean }
+  | { type: 'snapshot'; id: number; handle?: FileSystemFileHandle; keep?: string; whole?: boolean; stage?: string }
+  /** A `snapshot-chunk`'s buffer back (transferred), its bytes copied: save `id`'s next chunks are copied into it. */
+  | { type: 'snapshot-spare'; id: number; buffer: ArrayBuffer }
   /**
    * Whether a snapshot or a suspend (`what`) would be refused now by a device (Vulkan in use, a video decoding),
    * asked before the page touches the machine (its USB ports, its input); answered by `snapshot-check`.
@@ -199,6 +205,13 @@ export type ToWorker =
   | { type: 'snapshot-check'; id: number; what: 'snapshot' | 'suspend' }
   /** The disks' overlays compacted (after the guest's trim: web/app/areas/trim-actions.ts); answered by `compacted`. */
   | { type: 'compact'; id: number; measure?: boolean }
+  /**
+   * A question about the running machine's surfaces (web/surface.ts; the disk surface visualizer): a `disk-*` query is
+   * answered by the disk's device (`query.disk`: the disk's place among the machine's disks, slot order) from what it
+   * has in memory; answered by `inspected` with its `id`, `{ kind: 'none' }` without a machine or for a kind nothing
+   * answers.
+   */
+  | { type: 'inspect'; id: number; query: InspectQuery }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
   | { type: 'wake' }
   /**
@@ -260,11 +273,18 @@ export type DiskRef = { source: DiskSource; overlay?: string; identity?: string 
 /**
  * Where a save's time went, ms (`snapshot-done`, `suspend-done`; the page puts it in `#message`'s `data-snapshot`):
  * web/snapshot.ts `SavePhases`, with the worker's wait for the vCPUs to stop (`pause`) and the output's close (`close`:
- * a picked file's stream or a kept snapshot's file after the resume, not paused; a suspended copy's before the stop);
+ * a picked file's stream or a kept snapshot's file after the resume, not paused; a suspended copy's before the stop),
+ * a staged file's copy into the picked file after the resume (`copy`, 0 for none);
  * and, before the pause, the save's pool started (`poolReady`: its start to its last worker ready, 0 without one) and
  * how long the save waited for it once the guest's free memory was handed over (`poolWait`).
  */
-export type SaveTimes = SavePhases & { pause: number; close: number; poolWait: number; poolReady: number };
+export type SaveTimes = SavePhases & {
+  pause: number;
+  close: number;
+  copy: number;
+  poolWait: number;
+  poolReady: number;
+};
 /**
  * Where a start from a snapshot's time went, ms (`loaded`; the page puts it in `#message`'s `data-load`): the core
  * fetched and compiled and the machine's parts (`prepare`), web/snapshot.ts `RestorePhases` (the check pass, the state,
@@ -308,7 +328,12 @@ export type FromWorker =
   | { type: 'phase'; text: Msg }
   /** A save's progress: the phase and the fraction done of it (0 when unknown). */
   | { type: 'snapshot-progress'; id: number; phase: Msg; fraction: number }
-  /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
+  /** Save `id`'s pause is over: the machine runs again (a staged file's copy may follow before `snapshot-done`). */
+  | { type: 'snapshot-resumed'; id: number }
+  /**
+   * The next bytes of the file, when the save had no `handle` (transferred, in order): the page copies them (into a
+   * Blob) and gives the buffer back (`snapshot-spare`), so a file's worth of them never waits for a GC.
+   */
   | { type: 'snapshot-chunk'; id: number; data: Uint8Array }
   /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
   /** `stateMs`: the devices' state, of the pause (the 3D renderer's read-back is in it); `blobBytes`: their binary parts (the 3D contents), before compression. */
@@ -324,6 +349,14 @@ export type FromWorker =
       hintMs?: number;
       hinted?: number;
       phases: SaveTimes;
+      /**
+       * A file save's staging (web/snapshot-stage.ts): `staged` (through its staging file), `room` (not: the storage
+       * hadn't room for the file's bound) or `refused` (a staging write was refused partway: written again directly);
+       * none without one.
+       */
+      staging?: 'staged' | 'room' | 'refused';
+      /** A download's staged file (the page downloads it, then removes it). */
+      file?: File;
     }
   /** The save failed (the machine runs on, unless it had ended): the error for the user (`toWire`). */
   | { type: 'snapshot-error'; id: number; error: WireError }
@@ -331,6 +364,8 @@ export type FromWorker =
   | { type: 'snapshot-check'; id: number; refused?: WireError }
   /** `compact`'s answer: the bytes the overlays' files took before and after (none: no machine running). */
   | { type: 'compacted'; id: number; before?: number; after?: number }
+  /** `inspect`'s answer (its arrays transferred). */
+  | { type: 'inspected'; id: number; answer: InspectAnswer }
   /** The suspend `id` is written and the machine closed (the state `suspended` follows): the file's size, the pause's ms and where they went. */
   | { type: 'suspend-done'; id: number; bytes: number; pausedMs: number; phases: SaveTimes }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */

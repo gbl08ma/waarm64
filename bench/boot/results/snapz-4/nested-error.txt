@@ -1,0 +1,2 @@
+not cancelled: ["outer heard: Uncaught Error: inner boom","PAGE onerror: Uncaught Error: inner boom"]
+cancelled: ["outer heard: Uncaught Error: inner boom"]

@@ -19,5 +19,5 @@ step 'JIT-stress and JIT-check'
 node --disable-warning=ExperimentalWarning --test --test-name-pattern='JIT-stress|JIT-check|JIT stress' \
   --test-name-pattern='^(bare-metal|kvm-unit-tests) .*: interpreter$' \
   tests/boot-node.test.ts tests/boot-node-linux.test.ts tests/boot-node-parallel.test.ts tests/boot-node-litmus.test.ts \
-  tests/corpus-wasm.test.ts tests/jit-lockstep.test.ts
+  tests/corpus-wasm.test.ts tests/jit-lockstep.test.ts tests/spin.test.ts
 printf '\nCI-JIT OK (%d s)\n' "$SECONDS"
