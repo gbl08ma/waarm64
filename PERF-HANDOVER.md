@@ -98,6 +98,57 @@ rebase onto origin/main, commit, push to origin main.
   its MCP servers stay as child processes for the session's life, so count only shells and tool runs. A watcher logs
   what it waits on at each check; one that demanded zero children cost a night.
 
+## Preemption without the budget (the user's decisions, 2026-11-16)
+
+In parallel realtime mode (what the page runs), replace the step budget inside compiled code (the `left` parameter, its
+checks on every chain, edge and back-edge, and its bookkeeping) with the cheapest way to tell a vCPU stuck in a hot loop
+to stop. Deterministic mode is a testing gadget, not a product feature: realtime may take a very different path even if
+the deterministic tests then cover it less.
+
+**Where it starts** (raw data in `bench/results/local/nobudget/`, committed by the first loop): a build with `left` gone
+entirely (no checks, no `left -= len`, a constant in transfers; `nobudget.patch`), Chromium 155 on the dev VM, 3 rounds
+alternated, no overlap: `jit_mips` (a user-mode loop, no kernel, no IRQs: clean) **5,662 → 6,623 MIPS (+17%)**. Alpine's
+boot −5.1% and userspace −12.4% aren't clean: deterministic chunks then miss timer deadlines (46% fewer IRQs, 3.3%
+fewer steps). On x64 (the user's concern: 16 GPRs), Alpine's boot's 319 JIT modules through TurboFan (V8 14.6 on both;
+x64 under `qemu-x86_64` with Node's x64 build and a Debian amd64 sysroot), per function: instructions −13.4%, frame
+memory operands (spills, fills, frame) **−14.1%**; arm64 −8.7% and −5.7%. What realtime counts steps for: the MIPS
+readout and counters (`JIT_PUBLISH`), a cheap clock for periodic run-loop work (`TIMER_STEPS`, `BATCH_TIMEOUT`, the
+PC sampler's chunk), the bound of a `vm_run_cpu` call, and preemption; only preemption needs `left` in compiled code
+(`acc` stays: MIPS at about no cost). What only a chunk boundary sees today: this vCPU's timers, host signals (STOP,
+RX, DEVICE), an IRQ line raised by another vCPU or a device, another vCPU's TLBI IS waiting on this one's drain, the
+xHCI's tick, the worker's event-loop visit (`yieldMs`) and a parked module install.
+
+**Decisions (binding):**
+1. **Parallel SMP in realtime mode only.** Deterministic round-robin and realtime round-robin (Node's runners and
+   benchmarks: one thread, its quantum a count anyway) keep the counted path unchanged; `tests/steps.txt` doesn't move
+   (if something moves it, stop and ask). Realtime round-robin may follow later only if the counts make it cheap.
+2. **The direction to test first: a per-vCPU stop word polled where cycles close**: a region's loop back-edge,
+   indirect transfers (the transfer cache and the miss function), backward static chains (target PA ≤ source PA;
+   every cycle of direct chains has one). One atomic load from the `Vcpu`, a branch hinted unlikely, no live register.
+   Setters: the host signal word (polled or mirrored), `Vm::refresh` raising the vCPU's line, a TLBI IS push to its
+   queue, and **a ticker thread** for what has no event (the vCPU's own timer deadline, the event-loop visit, periodic
+   work). A cheaper way found by measurement wins; the finding is written either way.
+3. **Exact chunk ends aren't kept** in parallel realtime: a chunk may run on until a poll. Bounds: IRQ and timer
+   latency no worse than today's (≤ one chunk, ~1 ms of polling), a TLBI IS shootdown never waiting on a looping vCPU
+   longer than that, STOP and snapshot pauses as prompt as today.
+4. **The ABI:** the exports and host changes the stop word and the ticker need bump `ABI_VERSION`, with the design note
+   in docs/abi.md first; approved. Any other host ABI change is asked.
+5. **No new dependency.** The x64 tools (Node's official x64 build, Debian trixie's amd64 libc6, libstdc++6,
+   libgcc-s1, libatomic1, checksummed) are dev-only downloads, approved; the first loop makes a script that fetches
+   them into `target/` and documents it in docs/devenv.md.
+6. Memory: none expected; stated next to every speedup.
+
+**How its loops differ from the rest of PERF:** the **x64 static counts** (instructions, frame memory operands, stack
+slots per function, one dumped module set compiled by both arms) for every loop that changes compiled code; ranking on
+the Mac by the parallel gates (`smp_alpine_jit`, `smp_user_jit_4`) and `jit_mips` where it can run parallel realtime
+(else say what ran), Firefox's pages session at the end; latency from tests/baremetal/timer.c and unmask.c and an IPI
+round trip, before and after. **Spin tests** in parallel realtime: a vCPU spinning with no exits (EL0 and EL1; a region
+loop, indirect transfers, a backward chain cycle) must take a timer IRQ and an IPI, answer a TLBI IS and stop for STOP,
+each in bounded time; a planted bug for each poll point and each setter. The deterministic paths' tests (differential,
+lockstep, exact-step boots) must not change. CI as for any JIT loop, plus `scripts/ci-debian.sh` for the run loop or
+the host, `ci-usb.sh` for the xHCI's tick, `ci-audio.sh` if the ticker shares a thread with sound. Out-of-context
+reviews after the ticker's loop and at the block's end. Its entries in the queue are P0-P4.
+
 ## State (2026-11-14, after loop 28)
 
 Kept, with numbers in the REPORT entries: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads
@@ -121,6 +172,11 @@ loops 9, 20, 22 and 24. Loops 24-28 added state to the JIT and the MMU without a
 | Entry (docs/backlog.md) | Notes |
 |---|---|
 | **Next:** a review of loop 28 (`Tlb::xpages`, the flush by VA's filter: core/src/mmu.rs, commit 90d70e85) | out-of-context, static; the loop after it fixes its findings |
+| P0: preemption's counts and tools ("Preemption without the budget") | the x64 tools made permanent (fetch script, module dump, summarizer); counts per step of back-edges, indirect transfers, backward/forward chains and forward edges, and of chunk ends by budget vs by exit, on the gates and Firefox's pages; the Mac baseline and x64 counts; the 2026-11-16 data committed; P1-P4 sized by it |
+| P1: realtime modules without `left`, with the stop word | parallel realtime's own flavor: no `left` checks or bookkeeping, the stop word polled at the cycle points, the run loop ending a chunk on a poll; the setters with events (signals, IRQ lines, TLBI IS queues); periodic work still by steps from `acc`. Done: the spin tests for those setters; the gates and x64 counts against P0 |
+| P2: the ticker | the vCPU's own deadlines, the event-loop visit, periodic work by time where cheaper; its period by measurement (latency against cost). Done: the timer spin tests, latency no worse than P0 (decision 3). Then an out-of-context review |
+| P3: the review's findings, then what's left of the cost | whether `acc` costs measurably, whether fewer poll points suffice, the polls' form on both hosts; each kept or dropped by numbers |
+| P4: the block's end | Firefox's pages session on the Mac, every CI layer the area names, the final review's findings fixed or filed, docs/jit.md and docs/platform.md describing what exists |
 | JIT: host returns that land elsewhere than the call's continuation (loop 28's follow-up, docs/backlog.md) | 10-16% of the userspace phases' host returns reach the miss function with a valid entry; a diagnostic histogram of their PCs first; the guess is a callee taken into a region that leaves it before its RET; cost unmeasured |
 | JIT: the core's heap (the decoded blocks' budget, the page index without lists, the untuned constants), the 320 MiB budget session | memory more than speed; measure before building; one loop each |
 | JIT: V8's per-function overhead (whether superseded blocks' modules stay alive through siblings) | memory; measure first |
