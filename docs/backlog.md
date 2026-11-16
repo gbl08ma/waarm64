@@ -1561,6 +1561,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Rooms' loose ends** ([networking/rooms.md](networking/rooms.md)): `isPrivateRoom` labels any ID ending in a hyphen
   and 26 base32 letters as private, a public name typed that way too (cosmetic, and such an ID is as hard to guess as
   a private one's). Spam from members of a public room is [plans/networking-p2p.md](plans/networking-p2p.md)'s.
+- **Room names' loose ends** (NAMES track, [plans/room-names.md](plans/room-names.md); the records and rules in
+  `net/ts/src/room/names/`):
+  - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
+    ~1,400 newer generic ones (`app`, `dev`, …): words people want as names, which a guest asks under the room's
+    domain only after the name itself failed. Compile them if a guest turns out to ask them unprompted.
+  - A zone's slots are sealed with a key from the name and `seq` and a zero nonce: two zones of one title with the
+    same `seq` and different contents (a title forked between two browsers, both changing its zone) would reuse it.
+    The agent (N4) must make that impossible (`seq` from the time and the branch), or a zone carries a random nonce.
+  - The owner is computed from every entry a node holds; a server that keeps only the best chain of a name (the spec's
+    "one chain a name") can disagree with one that keeps them all when copies arrive partial (a chain shown without
+    its last anchor looks dead). N2 decides: keep every alive chain, or take a `put` only as a whole run.
+  - The header floor is 1/16 of block 976,177's difficulty: revisit if Bitcoin's difficulty ever falls far.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

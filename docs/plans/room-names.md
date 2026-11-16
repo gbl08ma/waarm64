@@ -4,8 +4,9 @@ Human-chosen names in a room, registered first come by a key, for a term, with n
 administrator: `test123` beside today's `<key>.<tag>.p2p.internal`. Chosen with the user, 2026-11-15, from the options
 in [room-names-options.md](room-names-options.md) (its option 3, changed as below; the research notes behind it are
 `room-names-research/`), then revised the same day after an out-of-context review of the first draft ("What the review
-changed", at the end). Nothing here is built; the numbers marked *estimate* are arithmetic, not measurements, and loop
-N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/room/names/`: "Names", "Names nobody
+lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does); the rest is a
+plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -70,29 +71,42 @@ server of anyone's; Bitcoin is used only as a clock (no coin, fee or wallet).
 One label, `[a-z0-9]` and inner `-`, 1 to 32 characters, lower case, no `--` in the third and fourth places (no
 punycode in v1: look-alike names are a registrar's oldest problem), and **not on a reserved list** compiled into the
 resolver and the dialog: names a guest asks for unprompted or trusts by habit (`wpad`, `isatap`, `localhost`,
-`gateway`, `router`, `broadcasthost`, and labels that are top-level domains or look like one: `com`, `net`, `org`,
-`local`, `lan`, `home`, `internal`, …). Without it, whoever registered `wpad` first would configure every guest's
-proxy, and whoever held `com` would answer `example.com.<tag>.p2p.internal`, which a guest's search list asks for.
+`localdomain`, `gateway`, `router`, `broadcasthost`, Debian's `/etc/hosts` names `ip6-localhost`, `ip6-loopback`,
+`ip6-localnet`, `ip6-mcastprefix`, `ip6-allnodes`, `ip6-allrouters`, and `ip6-allhosts`), and labels that are
+top-level domains or look like one: **every two-letter label** (the country codes, and those still to come), the
+original and sponsored generic ones (`com`, `net`, `org`, `edu`, `gov`, `mil`, `int`, `arpa`, `info`, `biz`, `name`,
+`pro`, `aero`, `coop`, `museum`, `mobi`, `asia`, `tel`, `travel`, `jobs`, `cat`, `post`, `xxx`), the special-use
+names (`local`, `localhost`, `test`, `example`, `invalid`, `onion`, `alt`, `internal`) and the private ones in habitual
+use (`lan`, `home`, `corp`, `intranet`, `private`), and `p2p` (`id.rs`, `RESERVED`). Without it, whoever registered
+`wpad` first would configure every guest's proxy, and whoever held `com` would answer `example.com.<tag>.p2p.internal`,
+which a guest's search list asks for. The ~1,400 newer generic top-level domains (`app`, `dev`, …) are not on it: they
+are words people want as names, and a guest asks for `x.dev.<tag>.p2p.internal` only after `x.dev` itself failed
+(docs/backlog.md).
 
 A registered name is `<name>.<tag>.p2p.internal`, under the domain the lease already gives the guest, so the room's
 resolver gets the query with no change to the lease, and a guest whose resolver uses the lease's domain as a search
 domain reaches it as plain `<name>` (DHCPv6 option 24 carries it; the RA has no DNSSL: N3 checks Debian and Arch, and
 what they ask the search domain unprompted). A key name is 52 characters, so the two never collide. A name's zone may
-add labels under it (`git.<name>.<tag>.p2p.internal`). A nicer suffix is the later decision; it changes the resolver's
+add one label under it (`git.<name>.<tag>.p2p.internal`; a DNS label, `[a-z0-9]` and inner `-`, up to 63 characters). A nicer suffix is the later decision; it changes the resolver's
 match and the lease's domains, nothing else here.
 
 ## Names nobody lists
 
 No record, message or stored registry holds a name in words. Three things do it:
 
-- **The name id** is BLAKE2s, keyed with a key of the room's (from its ID, a label of its own), over the name. Entries
-  and zones carry the id; servers order by it; a resolver hashes what the guest asked and asks for that.
+- **The name id** is BLAKE2s in its keyed mode, keyed with a key of the room's (from its ID, a label of its own), over
+  the name. Entries and zones carry the id; servers order by it; a resolver hashes what the guest asked and asks for
+  that.
 - **A zone is sealed under its name**: each place it points (the name itself, a label under it) is a slot, an 8-byte
   tag and a node key sealed with ChaCha20-Poly1305, tag and key both derived from the room's key, the full name asked
   **and the zone's `seq`** (so no key or tag is used twice and the unused slots, random bytes, can't be told from the
-  used across versions). A zone has 4 or 16 slots, so a holder sees neither how many labels a name has nor where any
-  points. Whoever knows the name opens its slot; the owner's signature is over the sealed bytes, so anyone can check a
-  zone without reading it.
+  used across versions). The AEAD's nonce is zero (its key is never reused but by a zone of the same name and `seq`)
+  and its associated data the zone's head (version, room, name id, owner, `seq`), so a slot can't be moved to another
+  name or version; the slots are sorted by their bytes, so their order says nothing. A zone has 4 or 16 slots, so a
+  holder sees neither how many labels a name has nor where any points. Whoever knows the name opens its slot; the
+  owner's signature is over the sealed bytes, so anyone can check a zone without reading it. Two zones of one title
+  with the same `seq` and different contents would reuse a key: the agent must never make two (a fork of a title, two
+  browsers changing a zone, could: docs/backlog.md).
 - **An owner key per name**, so a registry doesn't show that five ids are one person's.
 
 **What a server still learns:** how many names the room has; each id's owner key and the times of its entries (an
@@ -122,9 +136,11 @@ means nothing in another, even one whose prefix was made to collide.
 | name id | 32 | |
 | owner | 32 | the owner key |
 | prev | 32 | the id of the entry before; zeros in a claim |
-| ref | 32 | the hash of a recent Bitcoin block: the entry was made after it |
+| ref | 32 | the hash of a recent Bitcoin block (in the byte order Bitcoin computes it, the reverse of an explorer's): the entry was made after it |
 | nonce | 8 | proof of work |
-| signature | 64 | BIP-340 over a tagged hash of the fields above and the room's value |
+| signature | 64 | BIP-340 over the tagged hash (BIP-340's, tag `waarm64/names/entry`) of the room's value and the fields above |
+
+A claim's `prev` is zeros and a renewal's or release's isn't: anything else is invalid.
 
 - **Proof of work** is over the fields before the signature: the function's output has `POW_BITS` leading zero bits.
   It is bound to `ref`, so it can't be stockpiled or reused for the next term. The function must be cheap to check
@@ -134,7 +150,8 @@ means nothing in another, even one whose prefix was made to collide.
   without it a member could claim every word there is each term for a minute of signatures. It is not what keeps junk
   out of a registry (the servers' bound is). So the function is judged by what a million names cost an attacker a
   term on a GPU, which favours a memory-hard one. **Chosen (N0, provisional until the dev VM re-times it): Argon2id,
-  1 MiB, one pass, one lane, 32-byte output**, salted with `ref`. A GPU's lead over a tab (bench/net/REPORT.md, NAMES
+  1 MiB, one pass, one lane, 32-byte output**, over the 143 bytes before the signature, salted with `ref` (version
+  0x13; Node's `crypto.argon2Sync` gives the same, which the tests pin). A GPU's lead over a tab (bench/net/REPORT.md, NAMES
   loop 0) is ~3,900x at BLAKE2s (hashcat's published RTX 5090 figure against a tab's measured rate) and at most
   ~280x at Argon2id of 1 MiB (*estimate* from the card's memory bandwidth: no Argon2 figure at these sizes is
   published, and scrypt's suggests the card does worse than that bound), not the ~10x the first draft assumed: a
@@ -149,16 +166,23 @@ means nothing in another, even one whose prefix was made to collide.
   ~256 bytes of proof on a 207-byte entry, a tab without a wide multiply against native squaring, and group
   arithmetic with no small vetted crate. Its one gain is a fixed time where hashcash is a draw (the mean under a
   minute, some several): the *Preparing* state's words allow for that.
-- **An entry is valid** when its signature and proof of work hold and it has an anchor whose block's time `t` is
-  within `ref`'s block's time minus 2 hours (block times aren't ordered to the minute) and plus `REF_WINDOW`.
+- **An entry is valid** when its signature and proof of work hold, the header that travels with it for `ref` is
+  `ref`'s block and proves itself ("Bitcoin as the clock"), and it has an anchor whose block's time `t` is within
+  `ref`'s block's time minus 2 hours (block times aren't ordered to the minute) and plus `REF_WINDOW`.
 
-**Anchor**: OpenTimestamps operations from the entry's id to a block's Merkle root, and that block's hash. The
-verifier handles the three operations the calendars emit (append, prepend, SHA-256) and the Bitcoin attestation;
-anything else is an invalid anchor; 4 KiB at most. **One anchor an entry is kept**, the one with the earliest time; a
-node offered an earlier one for an entry it holds takes it, so an entry's time only ever moves back, and every node
-that has seen the same anchors has the same time. A *pending* anchor (which of the compiled calendars, and its
-commitment: never a URL) proves nothing and is carried only on a chain's last entry, one at most, so that a server can
-fetch the finished one; it is dropped once its entry could no longer be valid.
+**Anchor**: OpenTimestamps operations from the entry's id to a block's Merkle root, and that block's header. It is
+one path in the format's own serialization (the operations, then the Bitcoin attestation with the block's height,
+which nothing trusts: the header gives the time): the calendar's receipt (id to its commitment) and its finished proof
+(commitment to the root) joined. The verifier handles the three operations the calendars emit (append, prepend,
+SHA-256) and the Bitcoin attestation; anything else, a fork in the path, or a message past the format's 4 KiB is an
+invalid anchor; 4 KiB at most. **One anchor an entry is kept**, the one with the earliest time (equal: the lower block
+hash, then the lower bytes); a node offered an earlier one for an entry it holds takes it, so an entry's time only
+ever moves back, and every node that has seen the same anchors has the same time. A *pending* anchor (which of the
+compiled calendars, by index, and the operations to its commitment: never a URL) proves nothing and is carried only on
+a chain's last entry, one at most (of two, the lower), so that a server can fetch the finished one; it is dropped when
+the entry is anchored, when an anchored entry follows it, and once its entry could no longer be valid: now past `ref`'s
+time plus `REF_WINDOW` plus 4 hours (a block's time can trail the moment it is mined, and a calendar serves the proof
+six blocks later), when the entry, still unanchored, is dropped too.
 
 **Zone** (362 bytes with 4 slots, 1,034 with 16): version, room, name id, owner, `seq` (4), the slots (56 each), a
 signature. An address is computed from the node key a slot opens to, as today, and the resolver's answer teaches the
@@ -173,21 +197,28 @@ wall clock (rooms already need it right to within most of an hour).
 
 - An entry at time `t` holds the name until `t + TERM` and keeps it from others until `t + TERM + GRACE`.
 - **A chain is unbroken** when each renewal is by the same owner key, names the entry before, and has a time not
-  before that entry's and at most its `t + TERM + GRACE`. It **covers** from its first entry's time to its last
-  entry's `t + TERM + GRACE`. A `release` (anchored like any entry) ends the cover at its own time.
+  before that entry's and at most its `t + TERM + GRACE`; nothing follows a release, and an entry without an anchor
+  breaks the run (it has no time). A node's entries of a name form a tree by `prev`; **a chain** is an unbroken run to
+  a leaf (an entry no valid step follows), so a renewal by another key, or one too late, starts a run of its own. It
+  **covers** from its first entry's time to its last entry's `t + TERM + GRACE`. A `release` (anchored like any entry)
+  ends the cover at its own time.
 - **A chain's seniority** is the time of the first entry of the unbroken run a node holds of it: the claim's, when it
   holds the whole chain.
 - **The owner now** is, of the chains that cover now, the one with the earliest seniority. Equal: the lower SHA-256 of
   the first entry's anchor block's hash and its id. The same first entry (one chain forked, or one a longer copy of
   the other): the one whose cover ends later, then the lower last id; a chain with a release beats the same chain
   without it. That is a total order, so two nodes with the same chains pick the same one.
-- **The name resolves** while now is before the owning chain's last `t + TERM`; in the grace after it, it resolves for
-  nobody and only the owner can renew.
+- **The name resolves** while now is before the owning chain's last `t + TERM` (the last claim's or renewal's, and
+  before a release's time); in the grace after it, it resolves for nobody and only the owner can renew.
 
 The rule reads only chains that are alive, so a dead chain can be dropped by everyone without changing any answer
 (a released one is kept, as a tombstone, until its cover would have ended, or a stale copy without the release would
-bring the name back), and nodes holding the same chains agree in whatever order they got them: partitions and resets
-merge without negotiation. It has one deliberate consequence: a chain claimed while another held the name, and renewed
+bring the name back; a chain dead as held comes back only with a later renewal, which arrives with its run, as the
+owner's title carries it), and nodes holding the same chains agree in whatever order they got them: partitions and
+resets merge without negotiation. The owner is computed from every entry a node holds of the name (`chain.rs`,
+`Name`), each with its earliest anchor, which is what makes the order not matter: a node that kept only its best
+chain could disagree with one that kept them all when copies arrive partial (a chain shown without its last anchor
+looks dead and is dropped; its anchor, arriving alone, then finds nothing to attach to). It has one deliberate consequence: a chain claimed while another held the name, and renewed
 ever since, takes the name when the holder lapses (a back-order that costs proof of work every term). A server keeps
 one chain a name, the best by the order above; offered a worse one, it answers with the better.
 
@@ -199,6 +230,8 @@ once.
 |---|---|---|
 | `TERM` | 30 days | the user's "a month, or shorter" |
 | `GRACE` | 7 days | |
+| `drift` | 2 hours | how far a block's time may run ahead: a header's time may be this far past now, and an anchor this far before `ref` |
+| pending slack | 4 hours | a pending anchor goes once now is past `ref` + `REF_WINDOW` + this ("Records") |
 | `REF_WINDOW` | 48 hours | from `ref`'s block to the anchor's block, which must exceed the calendars' slowest, not their usual. N0 (bench/net/REPORT.md, NAMES loop 0): `ref` is ~1 hour old when an entry is made (p99 2.3), the slowest calendar alone (`finney`, when `alice` and `bob`, one operator, are both down) reached its block within 27 hours at worst in a year's samples, under the slow reading of the model (~16 under the fast one, which the batch's first proofs fit), and block times may run 2 hours ahead: 48 covers that with half again to spare for the days the samples missed. Provisional until N0b checks the model against the batch of real stamps. Not sensitive: all it costs is how far ahead proof of work can be made, and two days is the same against `TERM`; an entry that misses it is made again ("The names agent") |
 | renew when | the last entry is older than `TERM / 2` | two entries a month a name; the page says "every 2 weeks", and a name is lost only past 3 |
 | `POW_BITS`, function | 16, Argon2id (1 MiB, t = 1, p = 1) | target: under a minute of one core in a tab, in the background. N0 (cloud, provisional): 0.49 ms a try in Chromium's wasm, so a mean of 32 s; hashcash is a draw: half within 22 s, 90% within 74 s, 99% within 2.5 minutes. Checking one costs one evaluation |
@@ -226,9 +259,11 @@ once.
   calendars for long (blocks' 10th-percentile fee rate at most 5 sat/vB). **About 2 hours** is what the dialog can
   say; `REF_WINDOW` covers the worst.
 - **Headers prove themselves.** A verifier needs the 80-byte header of an anchor's block and of `ref`'s block; both
-  travel with the entry. It checks the header's hash against the anchor and `ref`, its proof of work against its own
-  target, that target against a floor compiled in (a fraction of the difficulty at a pinned date, so a forged header
-  costs a real miner's work), and that its time isn't past now by more than 2 hours. Nothing else: no height, no chain
+  travel with the entry. It checks the header's hash against `ref`, its Merkle root against the anchor, its proof of
+  work against its own target, that target against a floor compiled in (**1/16 of the difficulty of block 976,177,
+  2026-11-16**: sixteen times its target, compact `0x17216730`; so a forged header costs a sixteenth of a real block's
+  work, and Bitcoin's difficulty would have to fall sixteenfold before real blocks failed it), and that its time isn't
+  past now by more than 2 hours. Nothing else: no height, no chain
   of headers, **no block explorer**. Times, unlike heights, are in the header, so a header can't be passed off as an
   earlier block's.
 - **Who talks to an explorer**: only the agent, when it makes an entry, for a block hash to put in `ref` (one 6 deep,
@@ -294,6 +329,10 @@ its region, the time, a nonce) and one byte more, `spread`. Servers subscribe to
 - **What a member keeps**: each name it resolved, with its last entry and the earliest entry time it ever verified for
   that chain, persisted (small). While that chain covers now, another chain replaces it only by showing a run that
   starts earlier. So a member that knew a name refuses an impersonator after a reset, with no rule of its own.
+  (`chain.rs`, `Kept`: a run that holds the kept last entry continues it, the earliest time staying the lower; a copy
+  of the kept chain cut short is nothing new; another branch of the same owner key starting no later replaces it, as a
+  fork of one title is settled by the order; a run that holds neither, such as a renewal shown alone, is refused while
+  the kept chain covers, and the member asks for `history`.)
 - **A kept answer answers at once**, for as long as its chain is alive; one older than 5 minutes is also asked
   again in the background, and the next query gets what came back. So only a name this member never resolved waits
   on a server; the price is that a zone change or a lost name shows one query late.

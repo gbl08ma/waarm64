@@ -1078,6 +1078,30 @@
           }
         },
         {
+          "id": "crate-argon2",
+          "name": "argon2",
+          "about": "network",
+          "url": "https://crates.io/crates/argon2/0.5.3",
+          "version": "0.5.3",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/argon2/0.5.3/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/argon2/0.5.3/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`argon2`",
+            "version": "0.5.3",
+            "license": "MIT or Apache-2.0",
+            "use": "RustCrypto's; Argon2id, a room name's proof of work (docs/plans/room-names.md \"Records\"; OK'd 2026-11-15 for N0's pick)"
+          }
+        },
+        {
           "id": "crate-ipnet",
           "name": "ipnet",
           "about": "network",
@@ -2964,6 +2988,17 @@
             "version": "157.0.1 (zypper; `FIREFOX_157_0_1_RELEASE`)",
             "license": "MPL-2.0 overall (`LICENSE` defers to `toolkit/content/license.html`); its wgpu is MIT OR Apache-2.0 (above)",
             "use": "headless through Playwright in the dev VM only, A's probe of its WebGPU on the Vulkan device (`target/vk0a/firefox-probe.ts`, not committed)"
+          }
+        },
+        {
+          "id": "ref-opentimestamps",
+          "name": "OpenTimestamps",
+          "url": "https://github.com/opentimestamps/python-opentimestamps",
+          "md": {
+            "project": "[OpenTimestamps](https://github.com/opentimestamps/python-opentimestamps) (python-opentimestamps, opentimestamps-client, javascript-opentimestamps)",
+            "version": "none read: the format only",
+            "license": "LGPL-3.0",
+            "use": "room names' clock: the timestamp format a calendar answers in, which `net/ts/src/room/names/anchor.rs` verifies, written from the format (append, prepend, SHA-256, the Bitcoin attestation) with nothing copied; the public calendars `alice`, `bob` and `finney` are the services stamps go to"
           }
         }
       ],

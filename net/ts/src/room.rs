@@ -28,6 +28,7 @@
 
 pub mod link;
 pub mod lookup;
+pub mod names;
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -209,7 +210,7 @@ pub(crate) fn mac16(key: &[u8; 32], parts: &[&[u8]]) -> [u8; 16] {
     h.finalize()[..16].try_into().unwrap()
 }
 
-fn hash(label: &str, id: &str) -> [u8; 32] {
+pub(crate) fn hash(label: &str, id: &str) -> [u8; 32] {
     let mut h = Blake2s256::new();
     h.update(label.as_bytes());
     h.update([0]);
