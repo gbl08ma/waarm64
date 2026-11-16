@@ -17,7 +17,12 @@ import { test } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
 import { coreImports, helperReport } from '../web/vm.ts';
 
-const WASM = new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url);
+// `WAARM64_CORE` (a path from the repo's root): another core, such as the polled test core (Cargo feature `polled`,
+// scripts/ci-jit.sh), with `WAARM64_POLLED=1`: its JIT vCPUs compile parallel SMP's polled code, which runs on to its
+// first poll past the steps asked for (docs/testing.md "Polled code against the interpreter"), so each run compares
+// with the interpreter run for the steps the JIT ran (one more when it exited: the interpreter stops at the same exit).
+const WASM = new URL(`../${process.env.WAARM64_CORE ?? 'target/wasm32-unknown-unknown/release/waarm64_core.wasm'}`, import.meta.url);
+const POLLED = process.env.WAARM64_POLLED === '1';
 const WORDS = Number(process.env.WAARM64_JIT_DIFF ?? 4096);
 const STATES = 8;
 const CPU_BYTES = 1168;
@@ -331,14 +336,31 @@ function setup(code: number, fma = FUSED) {
   const cpus = () => [new BigUint64Array(memory.buffer, interp, 34), new BigUint64Array(memory.buffer, jit, 34)];
   /** Runs both for `n` steps; what differs, or null. */
   const run = (n: bigint, mem: boolean) => {
-    const [da, db] = [ex.interp_run_exit(interp, ma, n, ei), ex.jit_run_exit(jit, mb, n, ej)];
+    const [xa, xb] = [new BigUint64Array(memory.buffer, ei, 2), new BigUint64Array(memory.buffer, ej, 2)];
+    let da: bigint, db: bigint;
+    const before = POLLED ? a8.slice(0, code) : undefined;
+    if (POLLED) {
+      db = ex.jit_run_exit(jit, mb, n, ej);
+      da = ex.interp_run_exit(interp, ma, db + (xb[0] ? 1n : 0n), ei);
+    } else [da, db] = [ex.interp_run_exit(interp, ma, n, ei), ex.jit_run_exit(jit, mb, n, ej)];
     const ca = new Uint8Array(memory.buffer, interp, CPU_BYTES), cb = new Uint8Array(memory.buffer, jit, CPU_BYTES);
     const d = ca.findIndex((x, i) => x !== cb[i]);
-    const [xa, xb] = [new BigUint64Array(memory.buffer, ei, 2), new BigUint64Array(memory.buffer, ej, 2)];
     const m = mem ? ramDiff() : -1;
-    if (d < 0 && m < 0 && xa[0] === xb[0] && xa[1] === xb[1] && da === db) return null;
+    // Polled code runs on past the steps asked for, along forward branches, into other words and the data area's
+    // random ones, whose stores may rewrite code (stale blocks then: the guest would need an IC). Such a run is
+    // skipped, its code restored and the blocks dropped (as the tests skip a run that rewrote its own code: the JIT
+    // runs on in the stale blocks, the interpreter doesn't).
+    if (before && (Buffer.compare(a8.subarray(0, code), before) || Buffer.compare(b8.subarray(0, code), before))) {
+      a8.set(before);
+      b8.set(before);
+      ex.jit_flush(jit);
+      return null;
+    }
+    // Polled code stops only at an exit or past the steps asked for.
+    const short = POLLED && !xb[0] && db < n;
+    if (d < 0 && m < 0 && xa[0] === xb[0] && xa[1] === xb[1] && da === db && !short) return null;
     b8.set(a8);
-    return d >= 0 ? `Cpu byte ${d} (x${d >> 3})` : m >= 0 ? `RAM byte ${m}` : da !== db ? `the steps (${da} vs ${db})` : `the exit (${xa[0]}, 0x${xa[1].toString(16)} vs ${xb[0]}, 0x${xb[1].toString(16)})`;
+    return d >= 0 ? `Cpu byte ${d} (x${d >> 3})` : m >= 0 ? `RAM byte ${m}` : da !== db || short ? `the steps (${da} vs ${db} of ${n})` : `the exit (${xa[0]}, 0x${xa[1].toString(16)} vs ${xb[0]}, 0x${xb[1].toString(16)})`;
   };
   /** Instructions compiled inline and as helper calls so far. */
   const counts = () => {

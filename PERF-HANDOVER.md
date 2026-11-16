@@ -149,7 +149,7 @@ lockstep, exact-step boots) must not change. CI as for any JIT loop, plus `scrip
 the host, `ci-usb.sh` for the xHCI's tick, `ci-audio.sh` if the ticker shares a thread with sound. Out-of-context
 reviews after the ticker's loop and at the block's end. Its entries in the queue are P0-P4.
 
-## State (2026-11-16, after loop 32)
+## State (2026-11-16, after loop 33)
 
 Kept, with numbers in the REPORT entries: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads
 inline; the rich FP copy of `hot` per block (FP guest +12-14%); DAIF/DAIFClr/DIT and ISB (outside parallel) inline
@@ -166,14 +166,13 @@ X-register locals against Liftoff's zero-fill (loop 27: at best ~0.4% of the boo
 the boot and ~1.7% of userspace, loop 26, docs/v8.md). Out-of-context reviews after loops 8, 19, 21, 23 and 28, fixed in
 loops 9, 20, 22, 24 and 29 (loop 29: a block's transfer cache entries refilled from TLB hits outlived its TLBI;
 `Tlb::xblk` now follows a count of the EL's block exec entries, the gates unchanged). Loop 30 (P0): preemption's tools (`tools/x64node.ts`, `bench/jit/dump-modules.ts`, `bench/jit/codestats.ts`, the `diag`
-core and `bench/boot/preempt-counts.ts`), the counts and the Mac baseline in its REPORT entry. Loop 31 (P1): parallel SMP's code without `left`, polling a per-vCPU stop word (`acc` against the chunk's steps, 0 from the setters) at the cycle points; the spin tests; numbers in its REPORT entry. Loop 32 (P2): no ticker; a chunk end costs ~0.2 µs (≤~0.5% of the gates), longer chunks lose 2-4% (the timer and compiled modules' installs wait for a chunk end), a run-loop ticker (paced chunks, the compile worker as a setter) didn't beat the steps bound on the Mac; the finding in its REPORT entry and docs/jit.md "No ticker".
+core and `bench/boot/preempt-counts.ts`), the counts and the Mac baseline in its REPORT entry. Loop 31 (P1): parallel SMP's code without `left`, polling a per-vCPU stop word (`acc` against the chunk's steps, 0 from the setters) at the cycle points; the spin tests; numbers in its REPORT entry. Loop 32 (P2): no ticker; a chunk end costs ~0.2 µs (≤~0.5% of the gates), longer chunks lose 2-4% (the timer and compiled modules' installs wait for a chunk end), a run-loop ticker (paced chunks, the compile worker as a setter) didn't beat the steps bound on the Mac; the finding in its REPORT entry and docs/jit.md "No ticker". Loop 33: the review of loops 31-32 fixed (polls at every by-VA link and at host-call returns: aliased VAs and nested forward calls ran with no poll; interpreted runs bounded by a default chunk; SeqCst fences on both sides of the word; the polled test core, Cargo feature `polled`, running the differential test, user-mode lockstep and corpus on polled code); polls 56-65 → 68-77 per 1000 steps, the Mac's gates within ±0.5%.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** the out-of-context review of the preemption code (loops 31-32: `jit::emit::poll` and its points, the stop word's setters, the parallel run loop) | a fresh agent, the area and "find real defects" only; its findings to `review/preemption` |
-| P3: the review's findings, then what's left of the cost | whether `acc` costs measurably (it bounds the chunk now; loop 32 found no cheaper bound: a chunk end must still come at about 32K steps' pace for the timer and the installs of compiled modules, so dropping `acc` needs its own cost shown first), whether fewer poll points suffice (56-75 polls per 1000 steps measured against loop 30's estimate of 42-52), the poll's form on both hosts (atomic against plain load, `acc < word` against `word == 0`); each kept or dropped by numbers |
+| **Next:** P3, what's left of the cost | whether `acc` costs measurably (it bounds the chunk now; loop 32 found no cheaper bound: a chunk end must still come at about 32K steps' pace for the timer and the installs of compiled modules, so dropping `acc` needs its own cost shown first), whether fewer poll points suffice (68-77 polls per 1000 steps since loop 33, 10-12 of them at host-call returns), the poll's form on both hosts (atomic against plain load, `acc < word` against `word == 0`); each kept or dropped by numbers |
 | P4: the block's end | Firefox's pages session on the Mac, every CI layer the area names, the final review's findings fixed or filed, docs/jit.md and docs/platform.md describing what exists |
 | JIT: host returns that land elsewhere than the call's continuation (loop 28's follow-up, docs/backlog.md) | 10-16% of the userspace phases' host returns reach the miss function with a valid entry; a diagnostic histogram of their PCs first; the guess is a callee taken into a region that leaves it before its RET; cost unmeasured |
 | JIT: the core's heap (the decoded blocks' budget, the page index without lists, the untuned constants), the 320 MiB budget session | memory more than speed; measure before building; one loop each |

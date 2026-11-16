@@ -2272,6 +2272,11 @@ fn key(v: &mut Vcpu, mem: &Mem) -> Option<u64> {
     Some(mem.pa(p) | el | block::KEY_MMU)
 }
 
+/// The most steps polled code's dispatcher interprets before it looks at the
+/// stop word again (the block interpreter, the debug interpreter, one
+/// instruction at a time): the run loop's default chunk.
+pub const POLLED_RUN: u64 = 32768;
+
 /// Runs up to `n` instructions exactly as [`interp::steps`] does (same
 /// result, same exits), through compiled blocks where the cache has them and
 /// they fit in what's left of `n`, and through the interpreter otherwise.
@@ -2378,6 +2383,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             };
             let crate::mmu::Vcpu { cpu, tlb, .. } = vr;
             let t = &mut jit.table;
+            // Interpreted code doesn't read the stop word: in polled code a run of it is bounded as a default
+            // chunk is, so that a chunk made long (`vm_set_chunk`) still ends at a setter's 0 that soon.
+            let left = if polled { left.min(POLLED_RUN) } else { left };
             // The block decoded and the ones after it (`interp::block`);
             // without one (no key, or no instructions there), one instruction
             // at a time.
@@ -2541,8 +2549,21 @@ fn interpret<B: Regime>(
 /// # Safety
 /// As for [`steps`].
 pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
+    // SAFETY: guaranteed by the caller.
+    let polled = unsafe { &*v }
+        .jit
+        .cache
+        .as_ref()
+        .is_some_and(|j| j.polled());
     let mut done = 0;
     while done < n {
+        // Polled code (the polled test core's, Cargo feature `polled`) runs on to its first poll past the steps left,
+        // stored as a parallel run loop stores its chunk's; the steps it ran are what this returns.
+        if polled {
+            // SAFETY: guaranteed by the caller; the word is only accessed atomically.
+            let stop = unsafe { &(*v).jit.stop };
+            stop.store((n - done).min(1 << 30) as u32, Ordering::SeqCst);
+        }
         // SAFETY: guaranteed by the caller.
         let (k, e) = unsafe { steps(v, mem, n - done) };
         done += k;
@@ -2565,7 +2586,7 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
             Some(e) => return (done, Err(e)),
         }
     }
-    (n, Ok(()))
+    (if polled { done } else { n }, Ok(()))
 }
 
 /// Runs one instruction of a block compiled for the flat bus (MMU and

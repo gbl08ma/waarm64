@@ -1230,10 +1230,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
-- **The stop word's loose end** (PERF loop 31; [jit.md](jit.md) "Preemption"): the differential test
-  (`tests/jit-diff.test.ts`, `jit_parallel`) still runs counted code only, so polled code's semantics are covered by
-  the parallel boots, the bare-metal tests and the spin tests, not instruction by instruction. A user-mode
-  `jit_polled` (an export: ABI) would close it.
+- **Polled code's MMU-on paths against the interpreter** (PERF loop 33; docs/testing.md "Polled code against the
+  interpreter"): the polled test core runs the differential test, the user-mode lockstep and the corpus on flat
+  (MMU-off) `jit_new` vCPUs, so the transfer cache's probe, the forward and backward by-VA links, the miss function
+  and the guarded chains' polls are covered only by the parallel boots and the spin tests. A `jit_new` vCPU at EL1
+  with the MMU on (as `setupSpill`'s page tables, but through `jit_run_exit`) in the polled core would add them.
 - **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
   N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.waarm64snap` is the
   compile workload in use meanwhile.

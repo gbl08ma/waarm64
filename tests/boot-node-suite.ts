@@ -106,7 +106,7 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !wind
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
     assert.match(r.console, /exit 0\n$/);
-  }, { max: 50e6, input: input && { data: input.data } }); // at its idle, as core/tests/baremetal.rs
+  }, { max: 150e6, input: input && { data: input.data } }); // at its idle, as core/tests/baremetal.rs
 }
 
 // A `// round-robin` test checks what holds in round-robin only (core/tests/baremetal.rs `round_robin`): not run in

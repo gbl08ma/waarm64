@@ -327,7 +327,8 @@ pub extern "C" fn jit_new(
         decoded: interp::block::MAX_BUDGET as u32,
         warm: 0,
         fma: false,
-        polled: false,
+        // The polled test core's (Cargo feature `polled`): parallel SMP's code, against the interpreter.
+        polled: cfg!(feature = "polled"),
     }))));
     Box::into_raw(v)
 }

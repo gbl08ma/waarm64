@@ -15,7 +15,8 @@ use waarm64_core::mem::Mem;
 use waarm64_core::vm::{RAM_BASE, Vm, VmConfig, exit};
 
 const RAM_SIZE: usize = 16 << 20;
-const BUDGET: u64 = 50_000_000;
+// spin.c warms its shapes up for ~50M steps (PERF loop 33).
+const BUDGET: u64 = 150_000_000;
 
 /// Boots `image` and returns the SYSTEM_OFF code and the console output, or why it never got there.
 fn boot(image: &[u8], ncpus: u64) -> Result<(u64, String), String> {

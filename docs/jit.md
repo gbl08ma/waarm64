@@ -339,7 +339,8 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
 - **The depth:** every function takes a fourth parameter, how many host calls deep it runs (`emit::DEPTH`, 0 from
   the dispatcher). A call below `MAX_DEPTH` (**64**) passes the depth + 1; at the limit the call is a tail call as
   before, so a guest's deep recursion doesn't grow the host's stack past 64 frames. A `ret` at a depth above 0
-  returns the retired count with `RETURNED` (bit 31) set and the target in the `Cpu`'s PC (`emit::ret_up`); at
+  returns the retired count with `RETURNED` (bit 31) set and the target in the `Cpu`'s PC (`emit::ret_up`; polled
+  code polls first, and a failed poll returns without `RETURNED`: [Preemption](#preemption-parallel-smps-polled-code)); at
   depth 0 it's an indirect transfer as before. The dispatcher asserts (release builds too) that a block it called
   returned without `RETURNED`: a depth that reached 0 with entry bits still set would count ~2³¹ steps.
 - **After the call** (`emit::returned`): a result without `RETURNED` means the callee stopped (an exit, the budget,
@@ -384,13 +385,23 @@ differing only in the address of a core table they embed, the CRC tables).
   a fixed `Vcpu` offset: `emit::STOP`), ANDed into the transfer's condition (hinted likely, as the budget check was),
   so a failed poll falls to the path a failed budget check took: the block returns to the dispatcher with its PC
   stored. No register is live across it.
-- **Where:** what can close a cycle. A static transfer (a region's edge, a chain to a compiled block, one through the
-  jump cache, a by-VA link) polls when its target's VA is at or before its block's start (the loop's back-edge,
-  mostly): around any cycle of static transfers the offsets sum to 0, so one is ≤ 0. Indirect transfers poll always:
-  BR, BLR and RET at depth 0 in the transfer cache's probe (with the MMU off, the jump cache's), and the miss
-  function. A host call needs none (its return lands past its call; one that lands elsewhere goes through the miss
-  function; a recursion past `MAX_DEPTH` is a tail call, a static transfer). A forward edge or chain checks nothing:
-  in loop 30's counts those were 55-63% of the budget checks.
+- **Where:** what can close a cycle, or repeat code with no transfer backward. A static transfer whose target is
+  fixed (a region's edge, a chain to a compiled block, one through the jump cache) polls when its target's VA is at or
+  before its block's start (the loop's back-edge, mostly): along forward ones the target's key (its PA) only grows, so
+  every cycle of them has a backward one. A **by-VA link** (a chain to another page that wasn't compiled with its
+  block, found by its VA in the transfer cache) polls forward too: its target is whatever that VA maps now, so a run
+  forward through VAs that alias pages already run reaches the same compiled blocks again with no backward transfer
+  (PERF loop 33, the review of loop 31: a cycle of PCs has a backward step, a cycle of compiled blocks needn't).
+  Indirect transfers poll always: BR, BLR and RET at depth 0 in the transfer cache's probe (with the MMU off, the jump
+  cache's), and the miss function. A **host call's return** (`emit::ret_up`, a RET at depth above 0) polls too: it
+  lands back in the caller with no transfer, so forward calls from a run of call sites to one callee, nested, would
+  run steps multiplying with the depth (16 sites × 16 × a 16-step callee in `spin.c`; four levels of 256 would pass
+  2^31 steps, where `acc` reads as `RETURNED`); a failed poll there returns the count without `RETURNED`, the stop
+  every caller passes up. Unpolled, then, are only forward transfers to fixed targets, which visit each compiled block
+  at most once: a run with no poll is bounded by the compiled code. Interpreted code doesn't poll: the dispatcher
+  interprets at most `jit::POLLED_RUN` (32,768, a default chunk) steps before it reads the word again (the block
+  interpreter, the debug interpreter of an EL armed for debug, one instruction at a time). A forward edge or chain to a
+  fixed target checks nothing: in loop 30's counts those were 55-63% of the budget checks.
 - **The word:** the parallel run loop stores the chunk's steps (`n`) there at the top of each pass, before it looks
   for work; the dispatcher passes the steps done as `acc` (so a block's polls compare the chunk's count) and stops
   when the word is at or under them. Whatever has news for the vCPU stores 0 after making it (platform.md "Parallel
@@ -409,7 +420,9 @@ differing only in the address of a core table they embed, the CRC tables).
   (every gate within ±0.7%, overlapping); a ticker thread can save no more chunk ends than that, so none was built.
 - **Counted:** (bench/boot/REPORT.md "PERF loop 31", the diagnostic core's `poll` tally) 56 polls per 1000 steps in
   Alpine's parallel boot, 47-75 in the userspace phases on 4 vCPUs (loop 30 estimated 42-52 from its tallies of the
-  points); chunks ended early by the word 0.3-0.7%. A parallel boot's modules: per function arm64 −6.3% instructions
+  points); chunks ended early by the word 0.3-0.7%. Since PERF loop 33's polls at host-call returns and forward by-VA
+  links: 69 / 68 / 77 per 1000 steps (smp1 / smp4 / smp-user4, from 56 / 56 / 65), the boots' modules per function
+  within ±0.4% of instructions on both hosts. A parallel boot's modules: per function arm64 −6.3% instructions
   and −5.7% frame memory operands, x64 −9.8% and −13.8%; the Mac's gates moved ~1-2%, within their spread
   (bench/boot/REPORT.md "PERF loop 31").
 

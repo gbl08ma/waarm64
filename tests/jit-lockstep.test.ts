@@ -23,9 +23,15 @@ function checksum(m: WebAssembly.Memory, ram: number) {
   return h >>> 0;
 }
 
+// `WAARM64_CORE` and `WAARM64_POLLED=1` (tests/jit-diff.test.ts): the JIT side on another core, the polled test
+// core's polled code, which runs past a chunk to its first poll; the interpreter then runs the steps it ran. Its
+// whole VMs (EL1) are round-robin's, counted.
+const CORE = process.env.WAARM64_CORE;
+const POLLED = process.env.WAARM64_POLLED === '1';
+
 function lockstep(a: Side, b: Side, steps: number, chunk: number) {
   for (let done = 0; done < steps; done += chunk) {
-    const [ka, kb] = [a.run(chunk), b.run(chunk)];
+    const kb = b.run(chunk), ka = a.run(POLLED ? kb : chunk);
     const ca = new Uint8Array(a.memory.buffer, a.cpu, CPU_BYTES), cb = new Uint8Array(b.memory.buffer, b.cpu, CPU_BYTES);
     const k = ca.findIndex((x, i) => x !== cb[i]);
     assert.ok(ka === kb && k < 0, `after ${done} + ${ka}/${kb} steps: Cpu byte ${k} differs`);
@@ -36,7 +42,7 @@ function lockstep(a: Side, b: Side, steps: number, chunk: number) {
 for (const [bin, what] of [['guest.bin', 'integer'], ['guest-fp.bin', 'FP/NEON']]) {
   for (const [mode, jit, steps] of [['JIT', JIT_DEFAULT, STEPS], ['JIT-stress', JIT_STRESS, STEPS / 10]] as const) {
     test(`lockstep: ${what} guest, user mode, ${mode}`, { skip: mode === 'JIT-stress' && jitVariantSkip }, async () => {
-      const [a, b] = [await setup(bin), await setup(bin, jit)];
+      const [a, b] = [await setup(bin), await setup(bin, jit, 0, undefined, CORE)];
       lockstep({ ...a, ram: a.base }, { ...b, ram: b.base }, steps, 100_000);
       const c = b.counts!();
       assert.ok(c.jitSteps > (mode === 'JIT' ? steps / 2 : 0), `${c.jitSteps} of ${steps} steps in JIT code`);

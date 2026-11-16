@@ -1374,7 +1374,11 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
                 tally::BYVA_FWD
             },
         );
-        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x, off <= 0);
+        // Polled code polls every by-VA link, forward ones too: the target is
+        // whatever the VA maps now, so a run forward through VAs that alias
+        // pages already run reaches the same compiled blocks again with no
+        // static transfer backward (docs/jit.md "Preemption").
+        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x, true);
     };
     // Straight to the miss function (it reads the PC from the `Cpu`), the
     // way the chain transfers: a call's a host call, so its callee still
@@ -1391,8 +1395,9 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
         emit::dslot(c, if back { tally::JC_BACK } else { tally::JC_FWD });
         return emit::via_jc(c, Some(k), len, e.bt, e.checker, x, off <= 0);
     };
-    // Polled code polls a chain to a VA at or before the block's start (every
-    // cycle of static transfers has one).
+    // Polled code polls a chain to a VA at or before the block's start: its
+    // key is the block's plus `off`, so a run of forward chains only reaches
+    // higher keys, and every cycle of them has a backward one.
     let mut cond = false;
     if !e.polled || off <= 0 {
         if e.polled {

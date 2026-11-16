@@ -1,0 +1,49 @@
+{
+ "date": "2026-11-16T18:56:53.007Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "bench/results/local/perf33/par/base",
+  "bench/results/local/perf33/par/new"
+ ],
+ "results": {
+  "arm64": {
+   "bench/results/local/perf33/par/base": {
+    "functions": 7043,
+    "insns": 7213112,
+    "bytes": 27319408,
+    "slots": 106420,
+    "frame": 1352997
+   },
+   "bench/results/local/perf33/par/new": {
+    "functions": 7102,
+    "insns": 7248238,
+    "bytes": 27444976,
+    "slots": 107014,
+    "frame": 1349469
+   }
+  },
+  "x64": {
+   "bench/results/local/perf33/par/base": {
+    "functions": 7043,
+    "insns": 5452449,
+    "bytes": 24123456,
+    "slots": 94342,
+    "frame": 1087846
+   },
+   "bench/results/local/perf33/par/new": {
+    "functions": 7102,
+    "insns": 5499598,
+    "bytes": 24273784,
+    "slots": 94851,
+    "frame": 1086226
+   }
+  }
+ }
+}

@@ -404,9 +404,12 @@ deterministic runners compare the JIT's steps with the interpreter's), so nothin
 
 **Spin tests (`spin.c`, `tests/spin.test.ts`; PERF loop 31):** parallel SMP's compiled code has no step budget and
 polls the vCPU's stop word where a cycle can close ([jit.md](jit.md) "Preemption"), so a vCPU that loops with no exit
-must still answer what happens around it. CPU 1 spins in five shapes copied to a code area (one block; 20 blocks, more
+must still answer what happens around it. CPU 1 spins in eight shapes copied to a code area (one block; 20 blocks, more
 than a region holds, entered mid-way; a BR to itself; two BRs 64 KiB apart that share a transfer cache slot, so every
-transfer goes through the miss function; a branch back to the page before), each at EL1 with the MMU off and on and
+transfer goes through the miss function; a branch back to the page before; since PERF loop 33, forward through 16 VA
+copies of four pages of code, each copy's entry in its own transfer cache slot, so by-VA links hit (MMU on only);
+16 calls to a function making 16 calls to a 16-step one, each callee after its caller, so host calls; and the one-block
+loop with a breakpoint armed, which the debug interpreter runs), each at EL1 with the MMU off and on and
 at EL0 (text pages read-only at both ELs, the rest read-write at both: an EL0-writable page is privileged
 execute-never). CPU 0 times 8 IPI round trips (SGI 1 there, SGI 2 back) and 8 TLBI VMALLE1IS + DSB ISH a shape, then
 in a quiet second pass CPU 1 its own timer's lateness (with long chunks CPU 0 pings it after 50 ms: nothing but the
@@ -416,7 +419,14 @@ runs on the oracles and the deterministic runners too); `tests/spin.test.ts` run
 JIT-stress and JIT-check (`scripts/ci-jit.sh`), each with the default chunk and with 2^30-step chunks (`vm_set_chunk`), where only a
 setter ends a chunk early: the medians over the 15 shapes must be under 1 ms (the worst under 50 ms; typical: a few
 to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms).
-`WAARM64_SPIN_PRINT=1` prints the numbers. Planted (PERF loop 31), each caught: a poll left out of a region's
+The copies' blocks and f1's run 16 times a lap, so CPU 0 waits 200 and 400 laps (compiled by then; the loop calling
+f1 may stay interpreted, which also stops at the lap's end), and CPU 1 records where it took each ping (ELR): with a
+poll only at the lap's check (a forward by-VA link or a host call's return that didn't poll), all 8 land there; the
+test wants at least half inside the shape (PERF loop 33: 0-1 of 8 before, 6-8 after). With short laps (copies of a
+few dozen steps a page) the pings landed at the lap's end more than its share of steps says, often all 8 at EL1,
+even with the polls: what each lap's end costs outweighed the copies; a page of UDIVs each keeps them apart. The
+warm-ups take spin.c to ~84M steps, so the native runner's and `boot-node`'s bound for the bare-metal tests is 150M. The block interpreter alone (`VmConfig.jit` 4) runs the shapes too, in
+`scripts/ci-jit.sh`. `WAARM64_SPIN_PRINT=1` prints the numbers. Planted (PERF loop 31), each caught: a poll left out of a region's
 back-edge, a direct chain backward, the transfer cache's probe, the miss function or the MMU-off jump cache's probe
 hangs its shape under every mode (the run fails at its bound); one left out of a static chain through the jump cache
 only under JIT-stress (JIT and JIT-check put that link in a region or a direct chain), of a by-VA link backward only
@@ -520,6 +530,22 @@ start one target must get ALREADY_ON or ON_PENDING).
   returns normally (outside RAM is an abort), so a load that keeps its V destination's stale
   local after the helper shows only under the MMU: the Alpine userspace boot caught it, lockstep
   and Buildroot didn't.
+- **Polled code against the interpreter** (PERF loop 33; `scripts/ci-jit.sh`): parallel SMP's polled code (no
+  step budget, polls of the stop word: [jit.md](jit.md) "Preemption") runs only in parallel VMs, which the
+  differential test, lockstep and the corpus can't compare step for step. The **polled test core** (Cargo feature
+  `polled`, built into `target/polled/`; no export changes) compiles every user-mode JIT vCPU's code polled, and its
+  `jit_run` stores the steps left in the stop word, as a run loop stores its chunk's, and returns the steps the code
+  ran, which may be more (to the first poll past them). `WAARM64_CORE=<its path> WAARM64_POLLED=1` runs
+  `tests/jit-diff.test.ts`, the user-mode lockstep and `tests/corpus-wasm.test.ts` on it: the JIT side first, then the
+  interpreter for the steps the JIT ran (one more when it exited, where the interpreter stops too); a run that stopped
+  short of the steps asked for without an exit fails. A wrong `acc` shows as the interpreter stopping elsewhere; a
+  wrong condition around a poll as a transfer taken wrongly. A poll that never passes or always passes doesn't (the
+  dispatcher goes on, or the code runs to its exit): the spin tests catch those. A run that stores into code is
+  skipped (it runs on into other words and the data area's random ones, then stale blocks). Planted (PERF loop 33),
+  each caught on the polled core: a region edge's `acc` bump one too many (18 tests), a host call's return stopping
+  without its block's length, a jump-cache chain's poll ORed in instead of ANDed (42 tests); the bump left out leaves
+  a one-block loop that never stops: the run hangs at its bound. The MMU-on paths (the transfer cache, by-VA links,
+  the miss function) aren't here: the jit_new vCPUs' tests run flat.
 - **Lockstep:** `WAARM64_LOCKSTEP_STEPS=300000000` for the long run, done at the end of every loop
   that touches semantics (stress runs a tenth).
 - **JIT-stress** (threshold 0, batch 1, a 4-region cache, tier-up after one entry, the stale-code

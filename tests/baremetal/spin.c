@@ -1,11 +1,15 @@
 // A vCPU that loops in compiled code with no exits (PERF loop 31: parallel SMP's code has no step budget, it polls a
 // stop word where a cycle can close; docs/jit.md "Preemption") must still take its timer's IRQ, take another vCPU's
-// IPI, answer its TLBI IS (the issuer's DSB completes) and stop for the host. CPU 1 spins in five shapes, copied to a
+// IPI, answer its TLBI IS (the issuer's DSB completes) and stop for the host. CPU 1 spins in eight shapes, copied to a
 // code area so their layout is exact: a one-block loop (a region's back-edge once compiled), a cycle of 20 blocks (more
 // than a region holds: a backward chain, through the jump cache under JIT-check, which enters it mid-way), a BR to
 // itself (the transfer cache's probe; the jump cache's with the MMU off), two BRs 64 KiB apart (the same transfer cache
 // slot: every transfer through its miss function), and a branch back to the page before (a by-VA link under
-// JIT-check). Each at EL1 with the MMU off, at EL1 with it on, and at EL0. Meanwhile CPU 0 times IPI round trips
+// JIT-check); and (PERF loop 33) forward through 16 VA copies of the same code (by-VA links, MMU on only), nested
+// forward calls (host calls whose returns land in the caller), and the one-block loop with a breakpoint armed (the
+// debug interpreter: never compiled). Each at EL1 with the MMU off, at EL1 with it on, and at EL0. CPU 1 records where
+// it took each ping (ELR): in the copies and the calls it must mostly be inside the shape, at a poll along the way,
+// not at its lap's check. Meanwhile CPU 0 times IPI round trips
 // (SGI 1 to CPU 1, whose handler sends SGI 2 back) and TLBI VMALLE1IS + DSB ISH; then, in a second pass with nothing
 // else going on, CPU 1 its timer's lateness (1 ms after it starts to spin, when the shape is compiled already); it
 // prints the medians in µs (tests/spin.test.ts holds them to bounds in parallel SMP, with long chunks too, where only
@@ -21,7 +25,7 @@
 #define VTIMER 27
 #define PSCI_CPU_ON 0xc4000003UL
 #define ROUNDS 8
-#define FORMS 5
+#define FORMS 8
 #define ENVS 3
 
 #define TABLE 3UL
@@ -37,6 +41,16 @@
 // The code area (a 2 MiB block, read-only and executable at EL0 and EL1) and the host's words (a 2 MiB block).
 #define CODE 0x40800000UL
 #define HOST 0x40a00000UL
+// Shape 5's aliases (MMU on): NPG pages of code (the code area's second MiB), each page g entered at word AENTRY + g and
+// ending in a branch to the next page's entry, mapped NAL times at AVA, each copy NPG + 1 pages after the last (a
+// page's entries then fall in distinct transfer cache slots: VA bits 2-15), then a tail page.
+#define NPG 4UL
+#define NAL 16UL
+#define APA (CODE + 0x100000UL)
+#define AVA 0x80000000UL
+#define AVPAGES (NAL * (NPG + 1) + 1)
+#define AENTRY 0UL // page g's entry: word AENTRY + g
+#define AL3 ((AVPAGES + 511) / 512)
 #define PHASE_STOP 0x5709UL
 
 void secondary_start(void);
@@ -45,12 +59,19 @@ void secondary_start(void);
 // executable), the pages from it on read-write at both (lib.h's power_off turns the MMU off before the UART).
 static struct {
   u64 l0[512], l1[512], l2[512], l3[512];
+  // The aliases' tables (shape 5): an L2 table at VA 0x8000_0000 and its L3 tables.
+  u64 al2[512], al3[AL3][512];
   char stack1[8192];
   // The spinner's words: `done` ends a shape, `in` says it's in one (its prologue sets it).
-  volatile u64 done, in;
+  volatile u64 done, in, laps;
   volatile u64 cmd, ack, finished;
   volatile u64 back, t1, timer, late;
-  u64 rtt[ENVS][FORMS], tlbi[ENVS][FORMS], timer_late[ENVS][FORMS];
+  u64 rtt[ENVS][FORMS], tlbi[ENVS][FORMS], timer_late[ENVS][FORMS], within[ENVS][FORMS];
+  // Where CPU 1 took the last ping (ELR), and per shape the code it should mostly be taken in: the aliases past the
+  // first one's entry (shape 5), the callees (shape 6). Polled code takes it at a poll; where the shape's laps polled
+  // only at their check, the pings would all land there.
+  volatile u64 elr;
+  u64 inside[FORMS][2];
   // The shapes' entries, and where the next word goes while writing them.
   u64 shape[FORMS];
   volatile u32 *at;
@@ -96,6 +117,7 @@ void on_exception(struct frame *f, u64 vec) {
   }
   u64 iar = sysreg(ICC_IAR1_EL1);
   if (iar == 1) { // CPU 1: the ping
+    g.elr = f->elr;
     sgi(2, 0);
   } else if (iar == 2) { // CPU 0: the pong
     g.t1 = now();
@@ -125,6 +147,13 @@ static u32 cbz_to(volatile u32 *from, volatile u32 *to) { return 0xb4000001 | (u
 #define LDR_X1_X0 0xf9400001u
 #define RET 0xd65f03c0u
 #define BR(n) (0xd61f0000u | (n) << 5)
+#define UDIV_X3 0x9ac20863u  // udiv x3, x3, x2 (x2 = 1): a dependent chain of steps that cost something
+#define MOVZ_X2_1 0xd2800022u // movz x2, #1
+#define MOV_X10_X30 0xaa1e03eau
+#define MOV_X30_X10 0xaa0a03feu
+#define MOV_X9_X30 0xaa1e03e9u
+#define MOV_X30_X9 0xaa0903feu
+static u32 bl_to(volatile u32 *from, volatile u32 *to) { return 0x94000000 | (u32)((to - from) & 0x3ffffff); }
 
 // The prologue: x0 = &done, `in` = 1.
 static void prologue(void) {
@@ -133,6 +162,12 @@ static void prologue(void) {
   op(0xf9000401); // str x1, [x0, #8]
 }
 
+// A lap counted: `laps` (x0 + 16) += 1.
+static void lap(void) {
+  op(0xf9400806); // ldr x6, [x0, #16]
+  op(0x910004c6); // add x6, x6, #1
+  op(0xf9000806); // str x6, [x0, #16]
+}
 
 static void write_shapes(void) {
   // 0: a one-block loop.
@@ -205,6 +240,64 @@ static void write_shapes(void) {
   op(RET);
   *y = b_to(y, x);
 
+  // 5: forward through aliases of the same code (MMU on only): NAL copies of NPG pages of UDIVs, each page left by a
+  // branch forward to the next page's entry, then a tail page (mapped after the last copy) whose entry is the lap's
+  // check (`done`, and a lap counted) and a BR back to the first copy. With the copies' entries in the transfer cache,
+  // the PC only moves forward, from VA to VA, through by-VA links that hit it (the same compiled blocks again and
+  // again), until the tail.
+  volatile u32 *tail = (volatile u32 *)(CODE + 0xf0000);
+  u64 check = AVA + ((AVPAGES - 1) << 12) + 4 * AENTRY;
+  at = (volatile u32 *)(CODE + 0xd0000);
+  shape[5] = (u64)at;
+  prologue();
+  op(MOVZ_X2_1);
+  movx(4, check);
+  movx(5, AVA + 4 * AENTRY);
+  op(BR(4));
+  for (u64 i = 0; i < 1024; i++) tail[i] = BR(4);
+  at = tail + AENTRY;
+  lap();
+  op(LDR_X1_X0);
+  op(cbnz_to(at, at + 2));
+  op(BR(5));
+  op(RET);
+  for (u64 g = 0; g < NPG; g++) {
+    volatile u32 *p = (volatile u32 *)(APA + (g << 12));
+    for (u64 i = 0; i < 1023; i++) p[i] = UDIV_X3;
+    // Page g + 1's entry is its word AENTRY + g + 1; the last page's, past the gap, the next copy's first page's.
+    p[1023] = 0x14000000 | (u32)(g + 1 < NPG ? 1 + AENTRY + g + 1 : 1 + 1024 + AENTRY);
+  }
+  g.inside[5][0] = AVA + 4 * AENTRY + 4;
+  g.inside[5][1] = AVA + ((AVPAGES - 1) << 12); // not the tail page, where a lap ends
+
+  // 6: calls forward, nested: a loop (a lap counted) of 16 BLs to f1, f1 16 BLs to f2, f2 16 UDIVs; each callee after
+  // its caller, in another page (compiled before its callers, then called: host calls).
+  at = (volatile u32 *)(CODE + 0x60000);
+  shape[6] = (u64)at;
+  op(MOV_X10_X30);
+  prologue();
+  op(MOVZ_X2_1);
+  volatile u32 *calls = at, *f1 = (volatile u32 *)(CODE + 0x61000), *f2 = (volatile u32 *)(CODE + 0x62000);
+  lap();
+  for (int i = 0; i < 16; i++) op(bl_to(at, f1));
+  op(LDR_X1_X0);
+  op(cbz_to(at, calls));
+  op(MOV_X30_X10);
+  op(RET);
+  at = f1;
+  op(MOV_X9_X30);
+  for (int i = 0; i < 16; i++) op(bl_to(at, f2));
+  op(MOV_X30_X9);
+  op(RET);
+  at = f2;
+  for (int i = 0; i < 16; i++) op(UDIV_X3);
+  op(RET);
+  g.inside[6][0] = (u64)f1;
+  g.inside[6][1] = (u64)at;
+
+  // 7: the one-block loop with a breakpoint armed (`debug`): it runs in the debug interpreter, never compiled.
+  shape[7] = shape[0];
+
   __asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
 }
 
@@ -221,6 +314,13 @@ static void tables(void) {
   }
   g.l2[(CODE - 0x40000000UL) >> 21] = CODE | BLOCK | AF | SH_INNER | AP_RO_ALL;
   g.l2[(HOST - 0x40000000UL) >> 21] = HOST | BLOCK | AF | SH_INNER | AP_RW_ALL | XN;
+  // Shape 5's aliases: VA page j * (NPG + 1) + g maps code page g, the gap after each copy nothing, the last the tail.
+  g.l1[AVA >> 30] = (u64)g.al2 | TABLE;
+  for (u64 t = 0; t < AL3; t++) g.al2[t] = (u64)g.al3[t] | TABLE;
+  for (u64 v = 0; v < AVPAGES; v++) {
+    u64 k = v % (NPG + 1), pa = v == AVPAGES - 1 ? CODE + 0xf0000 : k < NPG ? APA + (k << 12) : 0;
+    g.al3[v / 512][v % 512] = pa ? pa | PAGE | AF | SH_INNER | AP_RO_ALL : 0;
+  }
 }
 
 static void mmu_on(void) {
@@ -265,8 +365,19 @@ void secondary_main(void) {
       set_sysreg(cntv_tval_el0, sysreg(CNTFRQ_EL0) / 1000); // 1 ms
       set_sysreg(cntv_ctl_el0, 1);
     }
+    // Shape 7: a breakpoint armed for EL1 and EL0 at an address never executed (the host's words: execute-never).
+    if (form == 7) {
+      set_sysreg(oslar_el1, 0);
+      set_sysreg(dbgbvr0_el1, HOST);
+      set_sysreg(dbgbcr0_el1, 0xfUL << 5 | 3UL << 1 | 1);
+      set_sysreg(mdscr_el1, 1UL << 15 | 1UL << 13); // MDE, KDE
+    }
     __atomic_store_n(&g.ack, cmd, __ATOMIC_SEQ_CST);
     spin(env, form);
+    if (form == 7) {
+      set_sysreg(mdscr_el1, 0);
+      set_sysreg(dbgbcr0_el1, 0);
+    }
     __atomic_store_n(&g.finished, cmd, __ATOMIC_SEQ_CST);
   }
   __atomic_store_n(&g.finished, CMD_END, __ATOMIC_SEQ_CST);
@@ -304,8 +415,13 @@ static void stop(u64 cmd, u64 code) {
 // Runs a shape twice: CPU 0 times what it must answer, then CPU 1 its own timer, with nothing else going on.
 static void run(u64 env, u64 form) {
   u64 cmd = (env << 8 | form) + 1, gap = sysreg(CNTFRQ_EL0) / 20000; // 50 µs
+  g.laps = 0;
   start(cmd, 10 + form);
-  u64 r[ROUNDS];
+  // Shapes 5 and 6 run their copies' and f1's blocks 16 times a lap: compiled after ~1000-2000 dispatches each (the
+  // loop calling f1 may stay interpreted: the dispatcher's looks at the stop word land there too, at the lap's end).
+  // Interpreted, they'd be stopped at the dispatcher's next look, at the lap's end too: more laps than that, cheap ones.
+  if (form == 5 || form == 6) WAIT(__atomic_load_n(&g.laps, __ATOMIC_SEQ_CST) >= (form == 5 ? 200 : 400), 60 + form);
+  u64 r[ROUNDS], in = 0;
   for (int i = 0; i < ROUNDS; i++) {
     delay(gap);
     g.back = 0;
@@ -313,8 +429,10 @@ static void run(u64 env, u64 form) {
     sgi(1, 1);
     WAIT(__atomic_load_n(&g.back, __ATOMIC_SEQ_CST), 20 + form);
     r[i] = g.t1 - t0;
+    in += g.elr >= g.inside[form][0] && g.elr < g.inside[form][1];
   }
   g.rtt[env][form] = us(median(r));
+  g.within[env][form] = in;
   for (int i = 0; i < ROUNDS; i++) {
     delay(gap);
     u64 t0 = now();
@@ -339,7 +457,14 @@ static void run(u64 env, u64 form) {
 }
 
 static const char *const ENV[ENVS] = {"el1-off", "el1-on", "el0-on"};
-static const char *const FORM[FORMS] = {"loop", "chain", "br", "miss", "byva"};
+static const char *const FORM[FORMS] = {"loop", "chain", "br", "miss", "byva", "alias", "calls", "debug"};
+// Shape 5 needs the MMU.
+static int runs(u64 env, u64 form) {
+#ifdef SPIN_ONLY
+  if (form != SPIN_ONLY || env != 1) return 0;
+#endif
+  return env >= 1 || form != 5;
+}
 
 int main(void) {
   mmio32(GICD) = 1 << 4 | 1 << 1; // ARE, EnableGrp1
@@ -354,7 +479,8 @@ int main(void) {
   __asm__ volatile("msr daifclr, #2" ::: "memory");
   for (u64 env = 0; env < ENVS; env++) {
     if (env == 1) mmu_on();
-    for (u64 form = 0; form < FORMS; form++) run(env, form);
+    for (u64 form = 0; form < FORMS; form++)
+      if (runs(env, form)) run(env, form);
   }
   // The host's pauses: CPU 1 spins in the loop at EL1.
   start(CMD_STOP, 50);
@@ -369,6 +495,7 @@ int main(void) {
   mmio32(UART + 0x30) = 0x301; // CR: UARTEN, TXE, RXE
   for (u64 env = 0; env < ENVS; env++)
     for (u64 form = 0; form < FORMS; form++) {
+      if (!runs(env, form)) continue;
       uart_puts("spin ");
       uart_puts(ENV[env]);
       uart_puts(" ");
@@ -379,6 +506,8 @@ int main(void) {
       uart_dec(g.tlbi[env][form]);
       uart_puts(" timer ");
       uart_dec(g.timer_late[env][form]);
+      uart_puts(" inside ");
+      uart_dec(g.within[env][form]);
       uart_puts("\n");
     }
   return 0;

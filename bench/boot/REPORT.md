@@ -5946,3 +5946,127 @@ the normal build's code section is byte-identical to a9b8d140's.
 CI, each alone: `scripts/ci.sh` (827 s) and `scripts/ci-jit.sh` (131 s) green; `cargo clippy --features diag` clean.
 Not run: `scripts/ci-debian.sh`, `ci-usb.sh`, `ci-audio.sh` (no run loop, host, xHCI or sound change is left), the spin
 tests and `oracle.sh` on the arms (none was kept).
+
+## PERF loop 33: the review of the preemption code, fixed (2026-11-16)
+
+The out-of-context review of loops 31-32's preemption (the stop word, its polls and setters; branch
+`review/perf-preempt`, deleted with this loop) found four things; all four are fixed, and a fifth, next to the first,
+that the review had passed over. Data: `bench/boot/results/perf33/` (its README). docs/jit.md "Preemption (parallel
+SMP's polled code)", docs/testing.md "Spin tests" and "Polled code against the interpreter".
+
+**1. A cycle of compiled blocks needn't have a backward PC.** docs/jit.md argued that around any cycle of static
+transfers the offsets sum to 0, so one transfer is backward and polls. That holds for transfers to fixed targets (their
+key, a PA, only grows forward), not for a **by-VA link**, whose target is whatever its VA maps now: a run forward
+through VAs that alias pages already run reaches the same compiled blocks again. The review's bound was too high (a
+code offset's entries fit in only 16 transfer cache slots, VA bits 12-15, so a run with no poll is at most ~16 × the
+compiled code, not 16,384 × a page), but it is a multiple of the code, not of a chunk. **And host calls** (not in the
+review, which took "a host call needs none" from the docs): a callee's return lands back in its caller with no
+transfer, so forward calls from a run of call sites to one callee, nested, run steps that multiply with the depth
+(four levels of 256 sites would pass 2^31 steps, where `acc` reads as `RETURNED` and the dispatcher's assert panics the
+vCPU's worker).
+- *Confirming tests, failing first:* two spin.c shapes that record where CPU 1 took each of CPU 0's 8 pings (ELR):
+  `alias` (MMU on: 16 VA copies of 4 pages of UDIVs, each copy's entry in its own transfer cache slot; a tail page
+  after the last copy with the lap's check and counter) and `calls` (16 BLs to f1, f1 16 BLs to f2, f2 16 UDIVs, each
+  callee in a later page: host calls once compiled), each warmed first (200 and 400 laps; spin.c now takes ~84M
+  steps, so the bare-metal tests' step bound is 150M in `core/tests/baremetal.rs` and `boot-node`). With a poll only at the lap's check every
+  ping lands there: on 783e88a7 **0-1 of 8** inside the shape for `alias` (EL1, EL0; default chunks: with 2^30-step
+  chunks the copies may still run interpreted when the pings come) and `calls` (EL1 MMU off and on, EL0) under the
+  JIT, and `calls` 0 of 8 under JIT-check (JIT-stress evicts too fast to show it); the test wants at least 4. The round
+  trips didn't show it: the laps (~64K and ~4K steps) take tens of µs. A first version with short pages (a few dozen
+  UDIVs) didn't separate the arms: the pings landed at the lap's end more than its share of steps, at EL1 often all 8
+  with the fix too (what a lap's end costs outweighed the copies).
+- *Fix:* polled code polls every by-VA link (`block::chain`'s `by_va`: the transfer cache probe's poll) and a RET at a
+  host-call depth (`emit::ret_up`): a failed poll returns the count without `RETURNED`, the stop every caller passes
+  up to the dispatcher, the PC at the return's target. Unpolled are then only forward transfers to fixed targets,
+  each compiled block at most once a run: a run with no poll is bounded by the compiled code (and `acc` by
+  2^30 + it). After: 6-8 of 8 inside, in every mode (JIT, JIT-stress, JIT-check, the block interpreter; both chunk lengths). Planted: each poll left out is the base above.
+
+**2. Interpreted code ignored the stop word under long chunks.** `jit::steps` ran the block interpreter (and the
+debug interpreter, for an EL armed for debug) for the rest of the chunk: up to 2^30 steps under `vm_set_chunk`.
+- *Confirming tests, failing first:* a spin.c shape `debug` (the one-block loop with a breakpoint armed at an address
+  never executed: the debug interpreter runs it), and the spin test under the block interpreter alone (`VmConfig.jit`
+  4, in `scripts/ci-jit.sh`). On 783e88a7 with 2^30-step chunks: under the JIT, CPU 0's IPI wait gave up (exit 27,
+  `debug` at EL1, MMU off); under the block interpreter, no power-off in 60 s (stuck in the first shape).
+- *Fix:* in polled code the dispatcher interprets at most `jit::POLLED_RUN` (32,768, a default chunk) steps before it
+  reads the word again: the default chunk's bound at no cost per block (a check at the block interpreter's block
+  boundaries would cost one per block). After: `debug`'s round trips 0.5-1.3 ms in both chunk modes (~32K steps of
+  the debug interpreter), the block interpreter's runs pass (round trips 4-16 µs).
+
+**3. Polled code had no differential coverage.** A knob without a host ABI change (a `jit_parallel` bit or an export
+would have been one, ABI 72; not taken): the **polled test core**, Cargo feature `polled` built into `target/polled/`
+(~20 s), whose user-mode JIT vCPUs compile polled code; its `jit_run` stores the steps left in the stop word, as a run
+loop stores its chunk's, and returns the steps the code ran. `WAARM64_CORE=… WAARM64_POLLED=1` runs
+`tests/jit-diff.test.ts`, the user-mode lockstep and `tests/corpus-wasm.test.ts` on it, the interpreter running the
+steps the JIT ran (one more after an exit); `scripts/ci-jit.sh` does, with 1024 words a class (~1.5 min; all 4096:
+~6 min, green). The harness skips a polled run that stored into code: it runs on past the steps asked for into other
+words and the data area's random ones, and then runs stale blocks, as the tests already skip a run that rewrote its
+own code (two such runs failed the first full pass). Planted on the polled core, each caught by the differential test:
+a region edge's `acc` bump one too many (18 tests fail), a host-call return's stop without its block's length
+(`branch to register`), the jump cache's poll ORed into its condition instead of ANDed (42 tests). A region edge's
+`acc` bump left out (or one short) leaves a one-block loop polling past nothing: the run hangs at its bound (caught,
+not as a named failure). A poll that always or never passes changes no result the interpreter sees: the spin tests
+catch those. The MMU-on paths (the transfer cache, by-VA links, the miss function) stay the parallel boots' and the
+spin tests' (docs/backlog.md).
+
+**4. SeqCst on one side.** The run loop stores the chunk's steps (SeqCst), then reads the signal word (Acquire);
+`Vm::signal` sets its bit with an AcqRel `fetch_or` before the setter's SeqCst store of 0: store-then-load needs SC on
+all four under the C++20/Rust model, or fences. Now a SeqCst fence after the run loop's store and one in `Vm::stop`
+before its store of 0, which covers every kind of news whatever its own ordering (the fence rules). No test can show
+it: wasm's atomics are all SC, and natively AArch64's STLR then LDAR and x86's locked store don't reorder either.
+
+**Counted code unchanged:** Alpine's deterministic boot dumped by both cores: 319 modules each, all byte-identical,
+2,651,076,469 steps each (`deterministic-modules.json`); tests/steps.txt didn't move.
+
+**Polls and latency** (the diagnostic cores, `preempt-counts.ts`, Node 26.7.0 on the dev VM; `counts-base.json`,
+`counts-new.json`):
+
+| | smp1 base / new | smp4 base / new | smp-user4 base / new |
+|---|---|---|---|
+| polls per 1000 steps | 56.3 / 69.0 | 56.5 / 68.2 | 65.5 / 77.4 (compress 46.7 / 54.0, Lua 74.9 / 85.2, churn 54.5 / 72.3, SQLite 74.2 / 91.4) |
+| host returns; by-VA links forward, per 1000 | 11.5; 1.1 / 11.5; 1.0 | 10.6; 1.0 / 10.9; 0.7 | 9.5; 2.2 / 9.9; 2.7 |
+| chunks ended early by the word | 0.60 / 0.61% | 0.74 / 0.72% | 0.32 / 0.29% |
+| own timer seen late, running (mean) | 79.4 / 83.3 µs | 86.0 / 86.3 µs | 35.4 / 36.2 µs |
+| IRQ line to IRQ, running (mean) | 3.2 / 2.9 µs | 13.4 / 13.0 µs | 3.6 / 3.6 µs |
+
+The polls rise ~12 per 1000 steps (+21%): the host returns, 10-12 per 1000; the forward by-VA links ~1-3. Latency as
+before (one run each).
+
+**Static counts** (`codestats.json`: a parallel boot's modules per core, `dump-modules.ts --parallel 1`, per function;
+base 310 modules / 7,043 functions, new 311 / 7,102): arm64 instructions −0.3%, code bytes −0.4%, stack slots −0.3%,
+frame memory operands −1.1%; x64 0.0%, −0.2%, −0.3%, −1.0%. A poll is one atomic load and a compare in a function
+that already had the transfer; the sets differ a little run to run, so this is "no change".
+
+**The Mac A/B** (M4, Chrome for Testing 157, 5 rounds, the first arm alternated, nothing else on the dev VM; medians a
+round, ms; `mac-r*.json`, `summary.py . mac base new`):
+
+| | base | new | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2886-2919 / 5464-5506 | 2901-2947 / 5484-5533 | +0.5% / +0.3%, overlapping |
+| n2 script / total | 2486-2538 / 5072-5150 | 2501-2537 / 5088-5132 | 0.0% / +0.2%, overlapping |
+| n4 script / total | 2451-2480 / 5084-5097 | 2451-2493 / 5091-5126 | +0.5% / +0.3%, overlapping |
+| `smp_user_jit_4` total | 11116-11333 | 11040-11420 | −0.4%, overlapping |
+| compress / Lua / churn / SQLite | 1230-1402 / 2347-2635 / 777-801 / 1695-1915 | 1196-1309 / 2339-2460 / 793-835 / 1714-1951 | −1.5% / +1.3% / +3.7% / −0.8%, overlapping |
+
+Nothing resolves: the boots' medians move +0.2-0.5% (under the ~1% floor, overlapping), the userspace total −0.4%;
+churn's +3.7% overlaps (777-801 against 793-835). Memory: none (a constant, two fences, the polls' bytes in the
+modules).
+
+**Oracles:** spin.c passes on QEMU TCG and hvf (hvf with the shapes' first version; the breakpoint's registers too),
+the final spin.bin and the fixed smp.bin on TCG; `oracle.sh` also printed what it does with binaries this loop didn't
+change (TCG: `watch` timed out, `xblock` 132, once `isb` 10; hvf: `debug` 2, `mmio` 11, `watch` timed out). No QEMU or
+Chrome left on the Mac.
+
+**smp.c's lost wake-up (a guest bug, its own commit).** `scripts/ci-jit.sh` failed 4 times in a row on `parallel:
+bare-metal smp.bin (JIT-check)` (exit 30 after ~100 s): a secondary frozen at 211 steps in its WFI loop. It reproduced
+on the base core too (1 in 30 runs beside that suite), and the supervisor's static review found the cause: both of
+smp.c's WFI loops checked their condition with IRQs unmasked, so an IRQ taken between the check and the WFI returned
+onto the WFI, and the last one left the CPU asleep for good (architecturally allowed). The loops check masked now and
+unmask only around the WFI: 60 of 60 runs beside the suite passed. No other bare-metal test checks unmasked before a
+WFI (timer.c and rx.c wait masked; the rest end in a WFI loop). Beside it, ci-jit.sh now runs the spin tests in a step
+of their own: they shared the cores with the parallel boots and missed a bound once (JIT-stress's round trips, 1.4 ms
+median) when ci-jit.sh ran them together.
+
+CI, each alone, on the final tree: `scripts/ci.sh` (826 s), `scripts/ci-jit.sh` (287 s: the polled core's build and
+its differential, lockstep and corpus runs ~100 s of it), `scripts/ci-debian.sh` (362 s; the run loop's fences). Not
+run: `ci-usb.sh`, `ci-audio.sh` (no xHCI or sound change), `oracle.sh --hvf` on the final spin.bin (the first version
+passed there; the breakpoint arming is unchanged).

@@ -48,10 +48,10 @@ export const JIT_INTERP: JitConfig = [0xffff_ffff, 32, 16384, 0, 1000];
 /**
  * Instantiates the core, loads a guest into RAM placed after the core's state
  * (layout A), `pad` bytes into its first page; with `jit` (jit_new's
- * arguments), runs it through the JIT.
+ * arguments), runs it through the JIT; `core`: the core's path from the repo's root.
  */
-export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0, fma = new URLSearchParams((globalThis as { name?: string }).name).get('fma') !== 'emul') {
-  const wasm = await load('../../target/wasm32-unknown-unknown/release/waarm64_core.wasm');
+export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0, fma = new URLSearchParams((globalThis as { name?: string }).name).get('fma') !== 'emul', core = 'target/wasm32-unknown-unknown/release/waarm64_core.wasm') {
+  const wasm = await load(`../../${core}`);
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);
   const { instance } = await WebAssembly.instantiate(wasm, imports);

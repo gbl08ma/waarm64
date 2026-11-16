@@ -10,6 +10,10 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # The diagnostic build's tallies (core/src/tally.rs): `scripts/build-wasm.sh --features diag`, never the normal build.
 diag = []
+# The differential tests' polled core (scripts/ci-jit.sh): user-mode JIT vCPUs (`jit_new`) compile parallel SMP's polled
+# code, and `jit_run` stores the steps left in the stop word and returns the steps it ran (docs/testing.md "Polled code
+# against the interpreter"). A test build in its own target directory, never the normal build: no export changes.
+polled = []
 
 [dependencies]
 # The snapshot file's codec 2 (the LZ4 block format) and its frames' CRC-32 (docs/platform.md "The snapshot file").

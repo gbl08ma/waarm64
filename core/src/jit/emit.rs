@@ -1978,12 +1978,28 @@ pub const ENTRY_BIT: u32 = 16;
 
 /// A `ret` at a depth above 0 (a host call's, [`DEPTH`]): returns the
 /// block's retired count with [`RETURNED`] (the PC is in the `Cpu`).
+///
+/// Polled code polls there first: a callee's return lands back in its caller
+/// with no transfer, so calls forward to the same callee from a run of call
+/// sites, nested, would run steps multiplying with the depth and never poll
+/// (docs/jit.md "Preemption"). A failed poll returns the count without
+/// [`RETURNED`] (stopped, the PC the return's target), so every caller
+/// returns it in turn to the dispatcher.
 pub fn ret_up(c: &mut Func, len: u32) {
     c.local_get(DEPTH).if_();
     dbump(c, crate::tally::HOST_RET);
+    if c.polled {
+        poll(c);
+        c.hint(true).if_();
+    }
     c.acc();
     c.i32_const(len as i32).op(ADD);
     c.i32_const(RETURNED as i32).op(OR).return_();
+    if c.polled {
+        c.end();
+        c.acc();
+        c.i32_const(len as i32).op(ADD).return_();
+    }
     c.end();
 }
 
@@ -2070,9 +2086,10 @@ pub const STOP: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, stop)) a
 /// atomic load: the run loop stores the chunk's steps there, and whatever has
 /// news for the vCPU stores 0, so the transfer isn't taken and the block
 /// returns to the dispatcher). Points: a region's edges and static chains to a
-/// VA at or before their block's start (every cycle of static transfers has
-/// one), branches to a register (the transfer cache's probe, the MMU-off jump
-/// cache's), by-VA links backward and the transfer cache's miss function.
+/// VA at or before their block's start (every cycle of static transfers to
+/// fixed targets has one), branches to a register (the transfer cache's
+/// probe, the MMU-off jump cache's), every by-VA link, a host call's return
+/// ([`ret_up`]) and the transfer cache's miss function.
 pub fn poll(c: &mut Func) {
     const I32_ATOMIC_LOAD: u8 = 0x10;
     dbump(c, crate::tally::POLL);

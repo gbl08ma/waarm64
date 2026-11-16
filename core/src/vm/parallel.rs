@@ -356,6 +356,11 @@ impl Vm {
             // after these reads stores 0 there after making it ([`Vm::stop`]), and the chunk stops at its next poll.
             if polled {
                 v.jit.stop.store(n as u32, Ordering::SeqCst);
+                // A store then loads of other words (the setters: their news, then a store of 0): with a SeqCst
+                // fence on both sides ([`Vm::stop`]), either these reads see the news or the setter's 0 comes after
+                // this store, whatever ordering the news and its reads take (C++20's fence rules; the Rust model's).
+                // The wasm build's atomics are all sequentially consistent anyway.
+                fence(Ordering::SeqCst);
             }
             // Read before looking for work (see the module docs).
             let wake = sh.wake.load(Ordering::SeqCst);
@@ -855,6 +860,9 @@ impl Vm {
     pub(super) fn stop(&self, i: usize) {
         let w = self.shared.cpus[i].par.stop.load(Ordering::Relaxed);
         if !w.is_null() {
+            // Orders the news before the 0 against the run loop's store of its chunk and its reads after
+            // (its fence, `run_loop`): its news may be stored with any ordering (`Vm::signal`'s AcqRel).
+            fence(Ordering::SeqCst);
             // SAFETY: the word is in vCPU `i`'s boxed `Vcpu`, which lives as long as the VM; it's only accessed
             // atomically (its own thread's run loop and dispatcher, compiled code's atomic loads).
             unsafe { &*w }.store(0, Ordering::SeqCst);

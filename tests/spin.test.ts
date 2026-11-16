@@ -12,24 +12,29 @@ import { test } from 'node:test';
 import { jitVariantSkip } from './jit-variants.ts';
 import { runToPowerOff, type BootOptions } from '../web/vm.ts';
 
-const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/waarm64_core.wasm', import.meta.url));
+// `WAARM64_CORE` (a path from the repo's root): another core (an A/B's base, say).
+const WASM = readFileSync(new URL(`../${process.env.WAARM64_CORE ?? 'target/wasm32-unknown-unknown/release/waarm64_core.wasm'}`, import.meta.url));
 const KERNEL = readFileSync(new URL('baremetal/spin.bin', import.meta.url));
 /** spin.c's host words (guest PA 0x40a0_0000: the phase, the host's hello, the release) and its phase's value. */
 const HOST = 0xa0_0000, PHASE_STOP = 0x5709n;
 const PAUSES = 8;
+/** spin.c's pings a shape. */
+const ROUNDS = 8;
 /** The medians' bounds (µs): the median over the 15 shapes, and the worst shape's. Typical: tens of µs. */
 const MEDIAN_US = 1000, WORST_US = 50_000;
 /** The pauses' (ms): the median of `PAUSES`. */
 const PAUSE_MS = 5;
+/** spin.c's shapes: 8 forms at 3 ELs and MMU settings, but the aliases (shape 5) with the MMU off. */
+const LINES = 8 * 3 - 1;
 const MAX_MS = Number(process.env.WAARM64_SPIN_MAX_MS ?? 60_000);
 
-type Line = { env: string; form: string; rtt: number; tlbi: number; timer: number };
+type Line = { env: string; form: string; rtt: number; tlbi: number; timer: number; inside: number };
 
-const opts = (jit: 1 | 2 | 3): BootOptions => ({ ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', ncpus: 2, parallel: true, idleLimitMs: 30_000, jit });
+const opts = (jit: 1 | 2 | 3 | 4): BootOptions => ({ ramSize: 16 << 20, kernel: KERNEL, kernelOffset: 0, cmdline: '', ncpus: 2, parallel: true, idleLimitMs: 30_000, jit });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
-async function run(jit: 1 | 2 | 3, long: boolean) {
+async function run(jit: 1 | 2 | 3 | 4, long: boolean) {
   let host!: Promise<number[]>;
   const r = await runToPowerOff(WASM, opts(jit), 1e12, (vm) => {
     if (long) vm.setChunk(2 ** 30);
@@ -58,8 +63,8 @@ async function run(jit: 1 | 2 | 3, long: boolean) {
   }, undefined, MAX_MS);
   assert.equal(r.x[1], 0n, r.console);
   const pauses = await host;
-  const lines: Line[] = [...r.console.matchAll(/^spin (\S+) (\S+) rtt (\d+) tlbi (\d+) timer (\d+)$/gm)].map((m) => ({ env: m[1], form: m[2], rtt: +m[3], tlbi: +m[4], timer: +m[5] }));
-  assert.equal(lines.length, 15, r.console);
+  const lines: Line[] = [...r.console.matchAll(/^spin (\S+) (\S+) rtt (\d+) tlbi (\d+) timer (\d+) inside (\d+)$/gm)].map((m) => ({ env: m[1], form: m[2], rtt: +m[3], tlbi: +m[4], timer: +m[5], inside: +m[6] }));
+  assert.equal(lines.length, LINES, r.console);
   return { lines, pauses };
 }
 
@@ -67,14 +72,19 @@ function bounded(what: string, xs: number[], all: string) {
   assert.ok(median(xs) <= MEDIAN_US && Math.max(...xs) <= WORST_US, `${what}: median ${median(xs)} µs, worst ${Math.max(...xs)} µs (bounds ${MEDIAN_US}, ${WORST_US})\n${all}`);
 }
 
-for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-check', 3]] as const) {
+// The block interpreter alone (`VmConfig.jit` 4: the dispatcher never compiles) in scripts/ci-jit.sh too: interpreted
+// code reads no stop word, so the dispatcher interprets at most a default chunk's steps between its looks at it.
+for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-check', 3], ['the block interpreter', 4]] as const) {
   for (const long of [false, true]) {
     test(`spin: a looping vCPU takes its IRQs, answers TLBI IS and pauses (${mode}${long ? ', 2^30-step chunks' : ''})`, { skip: jit !== 1 && jitVariantSkip }, async () => {
       const { lines, pauses } = await run(jit, long);
-      const all = lines.map((l) => `${l.env} ${l.form}: rtt ${l.rtt} tlbi ${l.tlbi} timer ${l.timer}`).join('\n') + `\npauses (ms): ${pauses.map((p) => p.toFixed(2)).join(' ')}`;
+      const all = lines.map((l) => `${l.env} ${l.form}: rtt ${l.rtt} tlbi ${l.tlbi} timer ${l.timer} inside ${l.inside}`).join('\n') + `\npauses (ms): ${pauses.map((p) => p.toFixed(2)).join(' ')}`;
       if (process.env.WAARM64_SPIN_PRINT) console.log(all);
       bounded('IPI round trip', lines.map((l) => l.rtt), all);
       bounded('TLBI IS + DSB', lines.map((l) => l.tlbi), all);
+      // Where the pings were taken in the aliases and the nested calls: at polls along the way, not only at their laps'
+      // checks (a forward by-VA link, a callee's return, that didn't poll).
+      for (const l of lines.filter((l) => l.form === 'alias' || l.form === 'calls')) assert.ok(l.inside >= ROUNDS / 2, `${l.env} ${l.form}: ${l.inside} of ${ROUNDS} pings taken inside the shape\n${all}`);
       // The timer has no setter: its bound is the chunk's steps (with long chunks, spin.c's ping after 50 ms), whose
       // time JIT-check's checker (a hash at every transfer) stretches to milliseconds.
       if (!long && jit === 1) bounded("the spinner's own timer, late", lines.map((l) => l.timer), all);
