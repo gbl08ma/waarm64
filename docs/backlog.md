@@ -1435,8 +1435,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A pass reads every page with data whole for its fingerprint; a sample per page (a word per 256 bytes) would read a
     quarter of the cache lines and look ~4 times as often, but would miss writes it doesn't sample. Not measured beside
     running vCPUs (their slowdown while the map is open), nor on macOS or Windows hosts.
-  - Nothing says what a page is (kernel, page cache, a process's, compiled code's pages the JIT watches): the core
-    knows the last, through a new export (an ABI change).
+  - Nothing says what a page is (kernel, page cache, a process's). Two layers the core could give, both ideas held
+    back on 2026-11-16 while a parallel lane changes the ABI and the JIT's design (each needs a new export, an ABI
+    bump and a design note in [abi.md](abi.md) first):
+    - **The TLB as "recently touched"**: each vCPU's TLB (16,384 entries per EL and read, write, execute; core-internal
+      today, [jit.md](jit.md) "Functions") maps a guest VA to a host address, so the scanner could turn its live
+      entries into guest physical pages: read, written or executed lately, by which vCPU (a write entry exists only
+      because the guest wrote the page). The nearest thing to the disk map's reads and writes without touching the
+      access path (~2.4 MiB a vCPU to read a look). It says translated since the last flush or conflict, not how often
+      accessed; an ASID switch drops the user half's entries, so that shows mostly the process running now.
+    - **Pages with compiled code**: the guest pages the JIT has blocks for (it keeps them per 4 KiB page for
+      invalidation, [jit.md](jit.md) "Invalidation"), and how they go as invalidations drop blocks. More the JIT's
+      developers' view than a user's.
+    - Not worth it: a VA map from a walk of the page tables (possible now: they're in guest RAM, TTBR0/1 in the
+      vCPUs' registers). The kernel half is the linear map and a few regions; the user half is whichever process a
+      vCPU runs at the look, unnamed (the emulator knows no processes). Page-table pages as a RAM layer, found by a
+      walk from the live TTBRs, would be a small developer's view.
   - It has one entry, the status bar's RAM element: with RAM taken out of the bar, there's no way to it.
   - Notes on the disk surface's measurement that led to it (2026-11-15, Chromium 153 on x86_64 Linux, one run): a
     worker's scan of an untouched 4 GiB shared wasm memory doesn't make the host commit it (the browser's processes'

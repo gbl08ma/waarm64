@@ -360,7 +360,7 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 - **Elements:** power state, [Guest OS](ui:statusbar:statusbar-kinds.kind.os) (the guest's os-release's name, once its
   agent named it: devices.md "The guest's OS"), vCPUs, RAM (a link to the RAM map while a machine runs in this tab:
   "RAM's map"), uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
-  IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
+  IRQ/s, the TLB (its misses and flushes a second, all vCPUs, a process switch's drop of its translations a flush too: the counters of docs/abi.md, `statusbar-mmu.ts`), blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
   in and out as the guest sees them, counted as the xHCI's transfers complete, `web/usb.ts`); the renderer (3D or 2D,
   WebGL2 or a canvas, amber when WebGL2 is software; [Framebuffer](ui:statusbar:statusbar-graphics.gpu.framebuffer) on a machine

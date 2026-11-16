@@ -405,6 +405,9 @@ export type Status = {
   jitSteps: number;
   jitBytes: number;
   irqs: number;
+  /** The TLB's misses and flushes, all vCPUs (docs/cpu.md "MMU and TLB"). */
+  tlbMisses: number;
+  tlbFlushes: number;
   /** The worker's run loop: the longest gap between its iterations since the last status (ms), and ms since the last one now (the stress test, bench/stress). */
   loopMaxMs: number;
   loopAgeMs: number;
