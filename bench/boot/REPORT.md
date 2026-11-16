@@ -4890,7 +4890,7 @@ overlay's per-block writes (2.25 s) and the machine's start (~4.3 s), neither of
 
 **Decided (the user, 2026-11-15):** lz4_flex replaces the core's LZ (codec 2), crc32fast takes the CRC into wasm, and
 the save and the load go through a pool; a picked file is staged through OPFS when there's room, else written
-directly. zstd (C: clang for wasm32 in every build) was not taken. The work: the SNAPZ track (`SNAPZ-KICKOFF.md`).
+directly. zstd (C: clang for wasm32 in every build) was not taken. The work: the SNAPZ track (its kickoff in git history; the outcome: "SNAPZ: the track's end").
 
 ## SNAPZ loop 0: the probe and the baseline (2026-11-15)
 
@@ -5065,7 +5065,7 @@ The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, the
 `.mem.jsonl.gz`, the probe's and memwatch's per round; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the
 driver; `ab.txt`, its log; `rounds/diag-*`, the first diagnosis on 7b7b4342 and one with the recycling alone).
 
-**Part 1, older files refused** (SNAPZ-KICKOFF.md decision 7; ABI 69, docs/abi.md "SNAPZ: older files refused"):
+**Part 1, older files refused** (the kickoff's decision 7, now docs/platform.md "The snapshot file"; ABI 69, docs/abi.md "SNAPZ: older files refused"):
 gone are codec 1 (deflate-raw) in the reader and as the writer's default (the writer and the reader are given their
 codec, whose CRC-32 takes the frames'; `readHeader` reads a header alone with the JS CRC), the old-LZ fixture and its
 tests, the core's readers of state versions 4 and 5 (`snapshot_version_min`, the xHCI's state without its CSS state,
@@ -5539,3 +5539,101 @@ Firefox stream test is gone with the retry). The exports stay valid qcow2 for QE
 qemu-img) pass. A first version of the inflate pool started its workers twice when two requests came before the core
 was compiled; it starts them once now.
 `scripts/ci.sh` (788 s), `ci-debian.sh` (411 s) and `ci-machines.sh` (316 s) green on the finished tree, once each, alone.
+
+## SNAPZ: the track's end (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs: a pool of 6), Chromium 155.0.8059.84 headless, nothing else running. Raw:
+`results/snapz-end/` (`rounds/<guest>-<arm>-<n>.{json,log,mem.jsonl.gz}`, the probe and memwatch per round;
+`summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab-*.txt`, its logs; `e1/`, the review's
+first finding's cost).
+
+**The arms:** base = loop 0's tree (baa1e0b3) and its core (`e4050123…`, ABI 67), **with loop 7's dev-server fix**
+(vite.config.ts answers a HEAD under `target/` from the file's `stat`; sirv read the whole disk image for each, 4.3 s
+of every desktop load, the dev server's and not the page's: a local commit, 0199f99e); new = the finished tree
+(0e8f3e68, core `44210116…`, ABI 70). So the comparison is the track's code, the HEAD's cost taken out of both.
+Each round a browser of its own with a persistent profile of the arm's (`target/snapz/profile-end-<arm>`, new for
+this run: loop 0's page and the finished one's store differ), every operation of `bench/snapz/probe.ts` (the
+finished one, which now reads headers itself so that it runs on loop 0's tree), `SETTLE_S=20`, memwatch beside it;
+the order base new base new new base base new per guest, the first two rounds (each arm's first in its fresh
+profile) left out: 3 rounds an arm. Median (range), ms; memory: the whole browser, MiB, the peak during the
+operation over the sample before it (`memAdded`).
+
+| desktop (689 MB file) | loop 0 (+ HEAD fix) | the end | |
+|---|---|---|---|
+| **load**: total | 5,762 (5,504-5,788) | 1,214 (1,129-1,240) | 4.7x |
+| ... wall (the file chosen to `running`) | 5,902 (5,695-5,986) | 1,357 (1,262-1,357) | |
+| ... check / state / RAM / disk / start | 729 / 102 / 2,610 / 2,055 / 158 | 404 / 78 / 482 / 101 / 95 | |
+| ... memory added (peak) | +2,175 (3,712) | +1,740 (3,253) | −435 |
+| **kept snapshot's start**: total | 6,010 (5,527-6,072) | 1,274 (1,267-1,356) | 4.7x |
+| ... memory added (peak) | +2,115 (5,433) | +1,642 (4,879) | |
+| **resume**: total | 4,060 (3,607-4,075) | 1,258 (1,240-1,278) | 3.2x |
+| **kept**: paused | 4,815 (4,744-4,853) | 1,089 (1,079-1,115) | 4.4x |
+| ... memory added | +64 (49-69) | +131 (126-131) | +67 |
+| **download**: paused | 5,824 (5,110-5,859) | 1,248 (1,238-1,317) | 4.7x |
+| ... memory added | +562 (536-594) | +169 (169-171) | −393 |
+| **picked file**: paused | 8,887 (7,599-8,990) | 1,285 (1,281-1,370) | 6.9x |
+| ... wall (with the copy after the resume, 1,348) | 9,019 | 3,087 | |
+| ... memory added | +521 (485-525) | +251 (244-256) | −270 |
+| **suspend**: paused | 5,443 (4,848-5,483) | 1,290 (1,231-1,290) | 4.2x |
+| ... memory added | +185 (184-188) | +213 (203-214) | +28 |
+| file's size, MB: kept / download / suspend | 690 / 693 / 677 | 676 / 679 / 663 | −2% |
+
+| Debian (97 MB file) | loop 0 (+ HEAD fix) | the end | |
+|---|---|---|---|
+| **load**: total | 961 (930-1,061) | 268 (261-283) | 3.6x |
+| ... check / RAM / disk / start | 92 / 336 / 420 / 82 | 72 / 59 / 37 / 71 | |
+| **kept snapshot's start**: total | 997 (968-1,006) | 288 (283-314) | 3.5x |
+| **resume**: total | 597 (597-616) | 273 (268-284) | 2.2x |
+| **kept** / **download** / **picked** / **suspend**: paused | 597 / 636 / 949 / 585 | 158 / 162 / 156 / 151 | 3.8-6.1x |
+| memory added: kept / download / picked / suspend | +77 / +177 / +141 / +69 | +86 / +98 / +100 / +64 | |
+
+Small machines got faster too (the kickoff allowed them slower). Every range is apart. **Memory:** the kept save holds
+~67 MiB more while it runs (the pool's six instances: kickoff decision 8 allowed 90-140), a suspend ~28 more; the
+file saves hold less (the download ~390 MiB less, a picked file ~270: staged through OPFS, no Blob parts); a load
+peaks ~435-460 MiB lower on the desktop. Against loop 0's own numbers (`results/snapz-0/`, the HEAD's cost in them):
+the desktop's pause 4.2 s → 1.1 s, its load 9.5 s → 1.2 s; this session's base pauses ran ~0.6 s over loop 0's
+(4.8 against 4.2 kept: the host), so the same-session column is the one to read.
+
+**What each loop gave** (the desktop guest; each loop's own A/B, its REPORT entry above):
+
+| loop | what | gave |
+|---|---|---|
+| 0 | the page's phase timings, `bench/snapz/probe.ts` | the baseline: pause 4.2 s, load 9.5 s |
+| 1 | lz4_flex and crc32fast in the core | pauses −9%, the load −8%, files −2% |
+| 2 | the save's pool (6 workers) | pause 3.80 → 1.07 s (Debian 0.52 → 0.16) |
+| 2b | older files refused; the save's garbage recycled | the suspend's memory +535 → +206 MiB, the download's +1,560 → +1,238 |
+| 3 | the load's pool | check, state and RAM 3.13 → 1.13 s (wall 9.5 → 7.6) |
+| 4 | the first review's findings; a file save staged through OPFS | a picked file's pause 4.7 → 1.4 s; the download's memory +1,144 → +235 |
+| 5 | the disk's blocks in runs | the restore's blocks 1.97 → 0.10 s (load 7.3 → 5.3; off the record 7.3 → 0.77) |
+| 7 | the load's machine start | the dev server's HEAD from stat, the device worker ahead: load 5.6 → 1.4 s |
+| 6 | qcow2's clusters through miniz_oxide | an import, an export 4-5% faster, the browser's peak 140-200 MiB lower |
+| end | the final review's findings (E1-E6) | refusals before anything is touched; the load unchanged (below) |
+
+**The final review** (`review/snapz-end`, a static review of f31e50f1; six findings, all real, each fixed with its test
+failing first): **E1** a restore emptied and recreated an overlay before refusing a DISK frame of an unpinned slot,
+one past the disk's end, one that doesn't unpack, or a frame out of order (all CRC-valid): the check pass now refuses
+them (the frames' order, each DISK frame's slot and place, and its unpacking: by the pool's workers, a job's `unpack`).
+Its cost on the desktop's load (`e1/`, two sessions, prefix = f31e50f1 against the fix, the same core, 3 rounds each
+per session): total 1,063 (1,055-1,069) against 1,060 (1,036-1,065) in the second session, 1,112 (1,095-1,216) against
+1,067 (1,044-1,075) in the first (its last round slow in every phase); the check pass 333 against 331, 347 against 327:
+~0-2%, within what the sessions move. A fresh overlay switched in at the end (the other way) wasn't needed. **E2** an
+inflate worker whose codec failed to start never answered, and the guest's read waited for good: it answers with an
+error now, and a request unanswered for 10 s fails the pool (its share done on the reading thread). **E3** a download's
+staging file was removed 60 s after the click whether or not the browser had read it (a `File` over a removed OPFS
+file reads `NotFoundError`, confirmed): it is kept until the next file save or the page's end. **E4** a thread's qcow2
+codec that failed once stayed failed: tried again at the next call. **E5** through the pool, an earlier frame's bad
+CRC came out as a later frame's structural refusal: the piece in hand's frames are checked first. **E6**
+`inflate_raw`/`deflate_raw` made a slice of a null pointer for length 0 (UB; a debug build aborted on it): no slice
+for no bytes.
+
+**Correctness:** tests/snapshot.test.ts "impossible things" (four CRC-valid damaged files, with and without a pool:
+refused with their own message, the overlay's blocks and generation as they were; planted, each caught: no DISK check
+in the check pass, no order check, no DISK unpacking, a failed worker's frame not unpacked again) and "a frame's bad
+CRC is refused before a later frame's bad structure" (planted: the batch not given first); tests/qcow2.test.ts "the
+inflate pool in Chromium" (a worker whose codec can't start, its stall timer past the read's bound; a silent worker;
+both hung before); tests/page-snapshot-stage.test.ts "a download's staging file is kept" (a fake clock ten minutes on:
+`NotFoundError` before); tests/deflate.test.ts (a codec whose memory was refused once); `cargo test` "no buffer for no
+bytes" (aborted before).
+`scripts/ci.sh` (797 s; its first run failed once on tests/page-clipboard-ui.test.ts's "the agent's end got [], not 62
+bytes", a clipboard test this can't reach, green on its rerun), `ci-debian.sh --platform` (612 s), `ci-graphics.sh` (257 s)
+and `ci-machines.sh` (325 s) green on the finished tree, once each, alone.

@@ -581,7 +581,7 @@ test('a snapshot of another machine, another version or with a damaged state is 
   assert.equal(await refused({ ...o, devices: [...o.devices!, { type: 'rng' }] }), 'other-machine');
   assert.equal(await refused({ ...o, crypto: false }), 'other-machine');
   assert.equal(await refused(o, file, codec.snapshotVersion + 1), 'other-version');
-  // An older file (SNAPZ-KICKOFF.md decision 7: not read) is refused by its version, before its frames are read: here
+  // An older file (docs/platform.md "The snapshot file": not read) is refused by its version, before its frames are read: here
   // one of codec 1 (deflate-raw, which the reader no longer takes), which a check pass would call damage.
   const bytes = new Uint8Array(await file.arrayBuffer());
   const old = reheaded(bytes, (h) => { h.coreVersion = codec.snapshotVersion - 1; });

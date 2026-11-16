@@ -656,7 +656,7 @@ fn a_state_is_refused_by_another_version_or_machine() {
     let mut other = state.clone();
     other[4] += 1;
     assert_eq!(restore(&other, cfg, &[DEV]), Err(Error::Format));
-    // The version before this one: older states are refused, not read (SNAPZ-KICKOFF.md decision 7).
+    // The version before this one: older states are refused, not read (docs/platform.md "The snapshot file").
     other[4] -= 2;
     assert_eq!(restore(&other, cfg, &[DEV]), Err(Error::Format));
     // Another machine: its CPUs, its timer, its mode, its features, its devices.

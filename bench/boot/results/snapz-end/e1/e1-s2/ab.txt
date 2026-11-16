@@ -1,0 +1,19 @@
+== desktop round 1: prefix at f31e50f1, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1266,"phases":{"check":331,"state":75,"ram":467,"disk":91,"prepare":17,"start":80,"total":1060
+== desktop round 2: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1164,"phases":{"check":333,"state":71,"ram":456,"disk":90,"prepare":20,"start":85,"total":1055
+== desktop round 3: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1255,"phases":{"check":347,"state":72,"ram":457,"disk":90,"prepare":17,"start":86,"total":1069
+== desktop round 4: prefix at f31e50f1, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1156,"phases":{"check":328,"state":72,"ram":445,"disk":90,"prepare":20,"start":81,"total":1036
+== desktop round 5: prefix at f31e50f1, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1273,"phases":{"check":331,"state":71,"ram":461,"disk":93,"prepare":17,"start":93,"total":1065
+== desktop round 6: new at 0e8f3e68, core 442101161976dc9a
+rc=0
+round 0 load {"wallMs":1264,"phases":{"check":330,"state":71,"ram":462,"disk":93,"prepare":20,"start":86,"total":1063
+ALLDONE

@@ -1145,10 +1145,7 @@ mod tests {
                 inflate_raw(core::ptr::null(), 0, core::ptr::null_mut(), 0),
                 usize::MAX
             );
-            assert_eq!(
-                deflate_raw(core::ptr::null(), 0, dst.as_mut_ptr(), 16, 1) > 0,
-                true
-            );
+            assert!(deflate_raw(core::ptr::null(), 0, dst.as_mut_ptr(), 16, 1) > 0);
             assert_eq!(
                 deflate_raw(core::ptr::null(), 0, core::ptr::null_mut(), 0, 1),
                 0

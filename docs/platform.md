@@ -363,6 +363,11 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
 The user owns snapshots as files (the user's call, 2026-09-29): the page saves one for download and resumes one
 given to it, in a fresh browser profile too. A kept snapshot is the same file ([machines.md](machines.md) §5). The
 container is streamed both ways (RAM is up to GiBs) and knows nothing of the core:
+- **Decisions** (the user's, 2026-11-15, the SNAPZ track): the frames' codec is the LZ4 block format through
+  **lz4_flex** (its safe encoder and decoder) and their CRC-32 **crc32fast**, both in the core, and qcow2's clusters
+  go through the core's **miniz_oxide** (docs/devices.md "qcow2"); no other codec dependency (zstd, C, was weighed and
+  not taken). **Older snapshot files need not load:** a file of an older state version is refused, never migrated
+  (below). **A save's pool may hold ~90-140 MiB while a save runs** (its six instances, released after).
 - `WAARMSNP`, a u32 format version, the JSON header with its CRC-32, then frames, little-endian. A frame is `{tag,
   codec, index, raw length, stored length, CRC-32, reserved}` (32 bytes; the CRC covers the frame header's first 24
   bytes, so a flipped index or length is caught, then the stored bytes) and the stored bytes.
@@ -445,7 +450,7 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
   a truncated file, frames that say impossible things (above). A `ReadableStream` (the tests' only) has no check pass:
-  its refusals come as its frames are read. **Older files are refused, not read** (SNAPZ-KICKOFF.md decision 7): the header's `coreVersion`
+  its refusals come as its frames are read. **Older files are refused, not read** (the decisions above): the header's `coreVersion`
   is checked first (`otherVersion`, in `readSnapshot` before the check pass and in the machine worker's restore before
   the devices), so a file of an older state version, which may also hold deflate-raw frames (codec 1, no longer
   read) or a device list from before the clock, the notify socket or the balloon, gets

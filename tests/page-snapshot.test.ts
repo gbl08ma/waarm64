@@ -369,8 +369,8 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await running(page);
   assert.equal(await suspendFile(), undefined);
   assert.equal(await susvar(), '');
-  // A suspended machine kept by an older page (its state of an older version: older files aren't read, SNAPZ-KICKOFF.md
-  // decision 7) is refused as that, in the page's words, and the machine boots instead: no crash, no hang.
+  // A suspended machine kept by an older page (its state of an older version: older files aren't read:
+  // docs/platform.md "The snapshot file") is refused as that, in the page's words, and the machine boots instead: no crash, no hang.
   await onSerial(page, 'SUSVAR=four\n');
   assert.equal(await susvar(), 'four');
   await suspend();

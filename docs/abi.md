@@ -469,7 +469,7 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
   pins the bytes of a fixed machine's state, so a layout change without the bump fails.
   A restore reads that version only (`vm_snapshot_restore` returns 1 for any other), and the host refuses a file of
   another version by its header before it reads its frames (`web/snapshot.ts` `otherVersion`): older files aren't
-  migrated (SNAPZ-KICKOFF.md decision 7; `snapshot_version_min` and the older versions' readers went in ABI 69, "SNAPZ:
+  migrated (the user's decision, docs/platform.md "The snapshot file"; `snapshot_version_min` and the older versions' readers went in ABI 69, "SNAPZ:
   older files refused").
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
@@ -536,7 +536,7 @@ implemented by this step).
 
 ## SNAPZ: qcow2's clusters through miniz_oxide (design note for ABI 70)
 
-The SNAPZ track's loop 6 (`SNAPZ-KICKOFF.md` decisions 1 and 4; measured in `bench/boot/REPORT.md` "SNAPZ:
+The SNAPZ track's loop 6 (the user's decisions for the track: the codecs, docs/platform.md "The snapshot file", and these exports; measured in `bench/boot/REPORT.md` "SNAPZ:
 compression across the emulator, measured", its qcow2 table): a qcow2's compressed clusters are inflated, and a
 compressed export's clusters deflated, by miniz_oxide (a normal dependency of the core now; it was the native
 twin's dev-dependency) in place of the platform's `DecompressionStream` and `CompressionStream`. Two exports,
@@ -556,7 +556,7 @@ instance (`codecCore`, web/lz.ts) on any thread; `core/src/codec.rs` holds them 
 
 ## SNAPZ: older files refused (design note for ABI 69)
 
-The SNAPZ track's loop 2b (`SNAPZ-KICKOFF.md` decision 7: old snapshot files need not load; decision 4: the ABI).
+The SNAPZ track's loop 2b (the user's decisions: old snapshot files need not load, docs/platform.md "The snapshot file"; and these exports).
 **`snapshot_version_min` is gone**, and a restore reads `snapshot::VERSION` (6) only: the readers of versions 4 and 5
 (the xHCI's state without its Controller Save State, a virtio transport's without its carried reset, a format 5
 suspended guest's devices marked at the restore) are removed with it. The host checks the header's `coreVersion`
@@ -567,7 +567,7 @@ export changes.
 
 ## SNAPZ: the snapshot codec and CRC (design note for ABI 68)
 
-The SNAPZ track's loop 1 (`SNAPZ-KICKOFF.md` decisions 1 and 4; measured in `bench/boot/REPORT.md` "SNAPZ:
+The SNAPZ track's loop 1 (the user's decisions for the track: the codecs, docs/platform.md "The snapshot file", and these exports; measured in `bench/boot/REPORT.md` "SNAPZ:
 compression across the emulator, measured"): lz4_flex (its `safe-encode` and `safe-decode` features, no `alloc`:
 its hash table is on the stack) takes the place of the core's own LZ (`core/src/lz.rs`, removed) behind the same
 three exports, and crc32fast gives the frames' CRC-32 a fourth. `core/src/codec.rs` holds both, with the contract's
