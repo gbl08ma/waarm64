@@ -862,8 +862,9 @@ resume; 0 for none). A start from a snapshot or a suspended copy posts `loaded` 
 it runs, and `#message`'s `data-load` has its phases (ms; protocol.ts `LoadPhases`, web/snapshot.ts `RestorePhases`):
 `prepare` (the core fetched and compiled, the firmware's files), `check` (the whole file's checksums before anything is
 touched: `checkRead`, `checkCrc`), `state` (the CORE, DEVS and BLOB frames), `ram` (RAM's frames read and placed),
-`disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the machine's workers, the
-devices' state put back) and `total` (from the worker's start); over the restore's pass, `read`, `crc`, `unpack` and
+`disk` (the disks' blocks into their overlays), `start` (the rest to `running`: the core instantiated, the
+devices' state put back in the device worker, which is started beside the check pass: web/vm.ts `warmWorkers`; the
+vCPU workers start after, at the first run) and `total` (from the worker's start); over the restore's pass, `read`, `crc`, `unpack` and
 `apply` (RAM's placing); `pool` (the load's workers, 0: the machine worker did it all: platform.md "A load's pool"),
 with which `checkCrc` and RAM's share of `crc`, `unpack` and `apply` are the workers' sums (CPU time, up to `pool` times
 their phase's wall).
@@ -2015,7 +2016,9 @@ Node never goes through it: tools, tests and `bench/` run `.ts` directly, as bef
   source: TypeScript and Svelte compiled per request, so the test pages under `tests/browser/`, `bench/*/index.html`
   and modules a test imports in a page (`import('/web/app/store.ts')`) work as they are. `/` redirects to the page at
   `/web/app/` (with the query). `target/` is served by sirv ahead of Vite (range requests and HEAD for the disks and
-  firmware; Vite would take an extensionless file, a kernel's `Image`, for a module). No dependency pre-bundling (the
+  firmware; Vite would take an extensionless file, a kernel's `Image`, for a module); a HEAD there is answered from
+  the file's `stat` (`headOnly`): sirv's reads the whole file, ~1.9 s for a 2.2 GB disk image, twice a start
+  (bench/boot/REPORT.md "SNAPZ loop 7"). No dependency pre-bundling (the
   packages are ES modules, and parallel test processes would race on its cache). The tests and benchmarks run it in
   mode `test`: no file watching or hot reloading, Svelte's production code and the packages' production builds.
   `npm run serve` runs it in development mode, hot reloading. Both send COOP, COEP and `Cache-Control: no-store`.

@@ -1486,16 +1486,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in a restore, and a breakdown of the load's machine start.
   Loops 1 (lz4_flex, crc32fast), 2 (the save's pool: the desktop's pause 3.80 to 1.07 s), 2b (older files refused,
   the save's garbage recycled), 3 (the load's pool: its check, state and RAM 3.13 to 1.13 s) and 4 (a file save staged
-  through OPFS: a picked file's pause 4.7 to 1.4 s, a kept one's) and 5 (the disk's blocks in runs: the desktop's
-  restore 1.97 to 0.10 s, 7.3 to 0.77 s off the record) are in. Left:
+  through OPFS: a picked file's pause 4.7 to 1.4 s, a kept one's), 5 (the disk's blocks in runs: the desktop's
+  restore 1.97 to 0.10 s, 7.3 to 0.77 s off the record) and 7 (the machine's start: the dev server's HEADs, the
+  device worker beside the check pass; the desktop's load 5.6 to 1.4 s) are in. Left:
   - **What is left of a load's compression share** (bench/boot/REPORT.md "SNAPZ loop 3", the desktop's 1.13 s): the
     check pass ~0.4 s, bound by reading the file (~0.3 s at four 4 MiB slices in flight; the file is read twice, once
     a pass); the state 0.08-0.10 s (109 MB of BLOB frames unpacked on the machine worker: a pool job that posts the
     bytes back could take most of it); RAM ~0.6 s wall for ~1.7 s of the workers' CPU, of which `apply` 0.4-0.75 s
     (pages copied out of each instance into guest RAM, shared memory both: V8's word-by-word copy, and fresh RAM's
     page faults). A frame index at the file's end would let the restore pass's workers read their frames themselves.
-    The rest of the load is the machine's start (prepare ~2 s, start ~2.2 s, loop 7); the disk's blocks are ~0.1 s
-    since loop 5.
+    The disk's blocks are ~0.1 s since loop 5, the machine's start ~0.12 s since loop 7.
+  - **What is left of a load's start** (bench/boot/REPORT.md "SNAPZ loop 7", desktop / Debian, ms): before the
+    machine worker's start, on the page, the GPU worker's WebGL start (53-100), which the start message waits for
+    (its caps): the worker could fetch, compile and check the file meanwhile and take the caps before `bootVm`; the
+    file's handling on the page ~45-75. After `running`: the vCPU workers run ~120 ms later (their modules on the
+    dev server; starting them beside the check pass cost it 80-100 ms more than it saved, `variants/`: worth trying
+    once the pool's work is over, or with fewer pool workers); the desktop's 3D state `load` in the GPU worker
+    51-108, its first present right after (the state could go to the GPU worker before the RAM fill: it doesn't read
+    guest RAM, but the device worker owns the port). Inside `start`: the memories grown 12-18, `Devices.open` 20-25
+    (the overlays' OPFS handles), the core instantiated 1-6. The worker numbers are the dev server's (modules
+    compiled per request, `Cache-Control: no-store`); a build's bundles start faster, not measured. A disk on a
+    remote server gets two HEADs a start (the machine worker's `checkDisks`, then the device worker's sync one):
+    the device worker could take the first's answer (one network round trip less).
   - **A save's memory left** (bench/boot/REPORT.md "SNAPZ loop 4"): a file save stages through OPFS now, so the
     download's ~1.1 GiB is gone; every desktop save adds ~190-240 MiB while it runs (the pool's six instances and, for
     a 3D machine, its read-back state: 109 MB of BLOB contents held through the save), and a picked file's ~310 MiB

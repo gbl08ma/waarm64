@@ -13,7 +13,7 @@ import type { SndState } from './snd.ts';
 import type { UsbFromWorker, UsbIdentity, UsbState, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
 import { WindowWatch } from './window.ts';
-import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, stateBuffers, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { corrupt, SnapshotError } from './snapshot-file.ts';
@@ -620,6 +620,11 @@ export type BootOptions = {
    */
   compileWorker?: boolean;
   /**
+   * The browser's workers started ahead of `bootVm` ({@link warmWorkers}): taken where it would start its own, the
+   * rest ended once the machine's are all started (or `bootVm` fails).
+   */
+  warm?: WarmWorkers;
+  /**
    * Parallel mode: each vCPU worker returns to its event loop this often, in ms (web/vcpu-worker.ts `yieldMs`;
    * default {@link VCPU_YIELD_MS}, 0: never).
    */
@@ -792,7 +797,65 @@ const GAUGE_WORDS = 8;
  */
 export const HEAP_RESERVE = 1 << 30;
 
+/**
+ * A machine's workers started ahead of its `bootVm` (`BootOptions.warm`): a worker's module loads in ~60-120 ms on
+ * the dev server, which a start from a snapshot then spends beside its check pass rather than after it (the device
+ * worker before the devices' state goes back, the vCPU workers before the guest runs again; bench/boot/REPORT.md
+ * "SNAPZ loop 7"). `take` hands out one of a kind or a new one; one that failed to load is replaced (the new one fails
+ * where its error is heard). `end` ends those not taken: once the vCPU workers are started, or `bootVm` failed.
+ */
+export type WarmWorkers = { take(which: WorkerKind): Worker; end(): void };
+type WorkerKind = 'device' | 'vcpu' | 'compile';
+
+/**
+ * A browser worker of `which` kind: `new Worker(new URL('…', import.meta.url))` written out whole, as the page's
+ * bundler finds workers (docs/frontend.md "The build").
+ */
+function newWorker(which: WorkerKind) {
+  if (which === 'device') return new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
+  if (which === 'vcpu') return new Worker(new URL('./vcpu-worker.ts', import.meta.url), { type: 'module' });
+  return new Worker(new URL('./jit-compile-worker.ts', import.meta.url), { type: 'module' });
+}
+
+/**
+ * The machine's workers made now, for its `bootVm` (`BootOptions.warm`): the device worker, `ncpus` vCPU workers (a
+ * snapshot's machine may have another count: what's missing is made then, what's left ended), and with `compile` the
+ * JIT's compile worker. Nothing without browser workers (Node: undefined).
+ */
+export function warmWorkers(ncpus: number, compile: boolean): WarmWorkers | undefined {
+  if (typeof Worker === 'undefined' || typeof WorkerGlobalScope === 'undefined') return undefined;
+  const failed = new WeakSet<Worker>();
+  const spawn = (which: WorkerKind) => {
+    const w = newWorker(which);
+    w.onerror = (e) => { e.preventDefault(); failed.add(w); };
+    return w;
+  };
+  const ready: Record<WorkerKind, Worker[]> = { device: [spawn('device')], vcpu: Array.from({ length: ncpus }, () => spawn('vcpu')), compile: compile ? [spawn('compile')] : [] };
+  return {
+    take(which) {
+      const w = ready[which].shift();
+      if (!w) return newWorker(which);
+      w.onerror = null;
+      if (!failed.has(w)) return w;
+      w.terminate();
+      return newWorker(which);
+    },
+    end() {
+      for (const list of Object.values(ready)) for (const w of list.splice(0)) w.terminate();
+    },
+  };
+}
+
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
+  try {
+    return await boot(wasm, o);
+  } catch (err) {
+    o.warm?.end();
+    throw err;
+  }
+}
+
+async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
   // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
   // The reserve takes what 4 GiB leaves, capped at HEAP_RESERVE, never under HEAP_FLOOR.
@@ -948,7 +1011,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The window is memory 1's bytes at `windowAt`; its write-watch's words are memory 0's.
   const venusWindow = windowBytes ? { at: windowAt, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
   const layout = ramLayout(o.ramSize, spillSizes, windowBytes, spillAt);
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice);
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, layout, window: venusWindow, spill, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci, io }, scratch + S_BELL, parallel, o.onNotice, o.warm);
   const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
@@ -1021,7 +1084,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
+  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS, warm: o.warm }) : undefined;
+  if (!par) o.warm?.end();
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -1338,6 +1402,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** Stops the vCPUs and releases the backends; resolves once their files are closed. */
     close: () => {
       par?.close();
+      o.warm?.end(); // a machine closed before its vCPUs ran
       usbChannel?.port2.close();
       return devices.close();
     },
@@ -1387,7 +1452,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number; warm?: WarmWorkers }) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -1462,11 +1527,11 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     Atomics.add(pword, 0, 1);
     Atomics.notify(pword, 0);
   };
-  // `new Worker(new URL('…', import.meta.url))` written out whole, as the page's bundler finds workers (docs/frontend.md
-  // "The build"); Node's worker_threads get the same files by a URL it leaves alone.
+  // A browser's worker (one started ahead if there is: `BootOptions.warm`); Node's worker_threads get the same files by
+  // a URL it leaves alone.
   const spawn = async (which: 'vcpu' | 'compile' = 'vcpu'): Promise<Handle> => {
     if (typeof Worker !== 'undefined') {
-      const w = which === 'vcpu' ? new Worker(new URL('./vcpu-worker.ts', import.meta.url), { type: 'module' }) : new Worker(new URL('./jit-compile-worker.ts', import.meta.url), { type: 'module' });
+      const w = c.warm?.take(which) ?? newWorker(which);
       const h: Handle = { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => w.terminate() };
       w.onmessage = (e: MessageEvent<VcpuEnd | VcpuClock>) => heard(h, e.data);
       w.onerror = (e) => ended({ type: 'error', cpu: -1, message: e.message });
@@ -1488,12 +1553,14 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
       const ports = channels.map((ch) => ch.port2);
       void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
     }
-    return Array.from({ length: c.ncpus }, async (_, cpu) => {
+    const made = Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();
       const compile = channels[cpu]?.port1;
       h.post({ module: c.module, memory: c.memory, spill: c.spill, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile, yieldMs: c.yieldMs }, compile ? [compile] : []);
       return h;
     });
+    c.warm?.end(); // every worker is taken (synchronously, in `spawn`): the ones started ahead and not wanted end
+    return made;
   };
   return {
     /**
@@ -1674,7 +1741,7 @@ async function ringAsync(bell: Int32Array, stopped: () => boolean) {
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
  * returns once they've taken all of it (deterministic mode).
  */
-async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean, notice?: (m: Msg) => void) {
+async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean, notice?: (m: Msg) => void, warm?: WarmWorkers) {
   let text = '';
   const out = (_device: number, t: string) => { text += t; };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
@@ -1730,7 +1797,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       output: () => text, flush: async () => {}, close: async () => (d.close(), d.stats()),
     };
   }
-  const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
+  const worker = warm?.take('device') ?? newWorker('device');
   let flushed = () => {};
   const drained: (() => void)[] = []; // one a `drain` message, answered in order
   let closed = (_stats?: unknown) => {};
@@ -1770,7 +1837,9 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       }
     };
   });
-  worker.postMessage({ type: 'init', ...init, bell: bellAddr } satisfies ToDeviceWorker, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : [])]);
+  // A restore's state is the device worker's from here: its bytes (a 3D renderer's contents, ~100 MB on a desktop)
+  // moved, not copied (a copy took ~80 ms of the start; bench/boot/REPORT.md "SNAPZ loop 7").
+  worker.postMessage({ type: 'init', ...init, bell: bellAddr } satisfies ToDeviceWorker, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : []), ...stateBuffers(init.state ?? [])]);
   await ready; // before anything blocks on it
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
   return {

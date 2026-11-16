@@ -191,6 +191,10 @@ and a Suspend, then the page opened
   flag). `OPS` (comma-separated: `load`, `kept`, `keptStart`, `file`, `picked`, `suspend`, the last with the resume;
   default all) picks a round's operations: off the record loop 5 ran `load,kept,keptStart,file`
   (`bench/boot/results/snapz-5/run-ab.sh`).
+- **The disks are URLs on the dev server**, unlike a user's (stored disks, or a remote server): until SNAPZ loop 7 its
+  HEADs read the whole image (sirv's), ~1.9 s twice in every desktop load (`prepare` and `start`, 4.3 s of 5.5); loads
+  measured before then carry it. Finer than the phases: `bench/boot/results/snapz-7/marks.py` puts timestamps in the
+  page and its workers (`UNDO=1` takes them out), into `data-load`'s `marks` and the console.
 
 ## Screening an A/B
 

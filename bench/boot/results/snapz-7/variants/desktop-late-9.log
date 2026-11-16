@@ -1,0 +1,3 @@
+stored machine 22928317fcee file /home/gabriel.guest/Development/waarm64/target/snapz/desktop-62b96998779f.waarm64snap
+round 0 load {"wallMs":1260,"phases":{"check":323,"checkRead":255,"checkCrc":388,"state":66,"ram":503,"disk":79,"pool":6,"read":314,"crc":476,"unpack":776,"apply":359,"prepare":20,"start":87,"total":1080}}
+wrote /home/gabriel.guest/Development/waarm64/bench/results/local/snapz-7/var/desktop-late-9.json

@@ -837,7 +837,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
 - **Over HTTP** in the browser: one **synchronous XHR range request** per request (needs a worker:
   no binary sync XHR on a page's main thread, no XHR in Node, where `file:` URLs read with
   `node:fs`). The dev server answers `Range: bytes=` requests on `target/` (206/416, `Accept-Ranges`,
-  HEAD: sirv, `vite.config.ts`). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
+  HEAD from the file's `stat`: sirv, `vite.config.ts`). The device worker reads it through a **block cache** (`web/blockcache.ts`): the file in aligned 1 MiB blocks,
   the 256 MiB most recently used kept in memory, a read's missing blocks fetched in one request per run of adjacent
   ones; a read larger than the cache goes past it. A remote desktop boot's 2160 reads became 422 requests, and its
   time to Firefox 181 → 82 s at 47 ms a request (bench/remote-disk/REPORT.md "R1"). The import, export and disk-job

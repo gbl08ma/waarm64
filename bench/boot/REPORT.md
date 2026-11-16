@@ -5368,3 +5368,103 @@ list of held blocks" (slots out of the blocks' order, across leaves, zeroed bloc
 each caught: a run's map entries not written to the file (`setRun` without its `putMap`), runs not split where data
 turns to zeros (both the restore's test and the file's), `blocks()` reading across a slot gap, and no past-the-end
 check (the write refused, said as the storage full instead of a damaged file).
+
+## SNAPZ loop 7: the load's machine start (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, the persistent profile `target/snapz/profile`,
+nothing else running. Raw: `results/snapz-7/` (`breakdown/`, the instrumented loads below; `variants/`, which
+workers to start ahead; `rounds/<guest>-<arm>-<n>.{json,log,mem.jsonl.gz}`, the A/B's probe and memwatch per round,
+`s1-…` its first session; `summary.py` → `summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab-*.txt`, its logs;
+`marks.py`, the timing marks: `python3 marks.py` puts them in the tree, `UNDO=1` takes them out).
+
+**Where the time went.** `marks.py` timestamps the machine worker's start (`performance.timeOrigin + now()`, so the
+workers' clocks agree), its device worker (module loaded, `init` received, `Devices.open` done, each backend's
+`restore`), the vCPU workers (module loaded, job, instantiated, running), the GPU worker (the 3D state's `load`, its
+first present) and the page (`Runner.start`, the start message posted); `data-load` carries the machine worker's
+marks. One load each on ec293884 (`breakdown/i1-*.json`), ms from the machine worker's start:
+
+| | desktop | Debian |
+|---|---|---|
+| `prepare`: the core fetched (cached) / compiled (V8 compiles lazily) | 19 / 7 | 65 / 8 |
+| ... **the disks' HEAD** (web/app/worker-fetch.ts `checkDisks`, beside the fetch, awaited after it) | **1,851** | **382** |
+| check pass and state (with the pool's start, 14-17) | 963 | 83 |
+| `bootVm` to `fill` (instantiate, the memories grown, the disks' specs) / `fill` (RAM, the disks' blocks) | 34 / 794 | 19 / 116 |
+| the device worker: its module loaded / `init` in (the state's structured copy) | 105 / 34 | 47 / 0 |
+| ... **`Devices.open`** (the URL disks' sync HEADs, web/devices.ts `httpSource`; the backends' `restore` 5) | **2,416** | **604** |
+| quiesce, the screen, `running` | 9 | 6 |
+| total | 6,245 | 1,342 |
+
+**4.3 s of the desktop's 5.5 s load were the dev server's HEADs.** sirv (vite.config.ts serves `target/` with it)
+answers a HEAD as a GET: it pipes the whole file into a response Node then drops, ~1.2 GB/s from the page cache, so
+the desktop's 2.26 GB qcow2 took ~1.9 s per HEAD (Debian's 403 MB ~0.35 s), and a load makes two: the machine worker's
+check that the disk is there and the device worker's size. This is the dev server's (the tests, the probe, `npm run
+serve`), not the page's: `npm start` and the deployed page serve no disk images, and stored disks make no request.
+Every load the SNAPZ probe measured since loop 0 had it in `prepare` and `start` ("the machine's start ~4.3 s"). What
+the rest was (after the HEAD's fix, `breakdown/i2-*.json`; desktop / Debian): `prepare` 20 / 22; the device worker's
+module 76 / 57 ms and `init` 19 / 1; `Devices.open` 20 / 26 (the overlays' OPFS handles); the other parts as above.
+After `running`, outside `total`: the vCPU workers run ~120 ms later (spawned at the first run: their modules ~100-115
+ms, the clock's queries 3, instantiating 1; platform.md "Snapshots"), and on the desktop the GPU worker's 3D state
+`load` takes 51-108 ms, its first present 4 ms after it. Before the worker's start, on the page: the GPU worker's
+WebGL start, 53-100 ms, comes before the start message (the caps are in it), and the file's handling ~45-75 ms.
+The core: compiled once a load (4-7 ms: V8 compiles lazily, so its cost is in the first calls), the copy with exact
+memory limits compiled while the first instance lays the memory out (awaited 0 ms); no code cache applies
+(`WebAssembly.compile` of bytes, and the exact copy's bytes are rewritten), and how the core's code tiers up is the
+JIT's compile policy (not touched).
+
+**Built:** (1) **the dev server answers a HEAD under `target/` from the file's `stat`** (vite.config.ts `headOnly`:
+sirv's headers for the file in dev mode, Content-Length, Last-Modified, the server's; anything else goes on to sirv).
+(2) **The device worker is started beside the check pass** (web/vm.ts `warmWorkers`, `BootOptions.warm`: the machine
+worker starts it once the load's pool is up, at once for a boot; `bootVm` takes it, ends what it doesn't take), and
+**a restore's state moves to it** (the 3D contents transferred, not copied: with the worker started early the copy was
+what was left of its start, 79 ms). Starting the vCPU workers (and the compile worker) ahead too was measured and lost
+(`variants/`, desktop loads, 3 each): all started ahead 1,045-1,329 ms (the check pass 409-525), the device worker
+only 973-1,024 (check 332-343), all after the check pass 1,080-1,152 (RAM's phase 498-559 against 390-425): six
+workers' modules loading beside the pool's six cost the check pass (or RAM) 80-100 ms, more than the device worker's
+start saves; the vCPU workers still start at the first run. (The first session's arm `s1-allwarm` is that variant.)
+
+**The A/B:** base = ec293884 (loop 5), head = + the HEAD fix, new = + the device worker ahead and the state moved
+(this loop); each round a browser of its own, base head new new head base base new head per guest, every operation,
+`SETTLE_S=20`, memwatch beside it. Median (range) of 3, ms; memory = the whole browser at the operation's peak, MiB:
+
+| desktop (689 MB file) | base | head | new |
+|---|---|---|---|
+| load: total | 5,575 (5,358-5,951) | 1,563 (1,540-1,620) | 1,436 (1,416-1,437) |
+| ... wall (the probe's: the file chosen to `running`) | 5,721 (5,505-6,105) | 1,762 (1,675-1,762) | 1,577 (1,571-1,578) |
+| ... prepare / check / ram / start | 1,993 / 413 / 623 / 2,472 | 28 / 506 / 624 / 229 | 27 / 495 / 617 / 89 |
+| ... memory peak | 3,389 | 3,414 | 3,202 |
+| kept snapshot's start: total | 6,117 (5,888-6,166) | 1,516 (1,435-1,558) | 1,371 (1,344-1,523) |
+| ... start / memory peak | 2,678 / 5,106 | 284 / 5,128 | 110 / 4,821 |
+| resume: total | 5,594 (5,566-5,879) | 1,378 (1,356-1,379) | 1,192 (1,191-1,197) |
+| ... start | 2,267 | 287 | 125 |
+| saves' pauses: kept / file / picked / suspend | 1,173 / 1,273 / 1,222 / 1,240 | 1,126 / 1,275 / 1,216 / 1,210 | 1,111 / 1,257 / 1,183 / 1,279 |
+
+| Debian (97 MB file) | base | head | new |
+|---|---|---|---|
+| load: total | 1,437 (1,376-1,501) | 316 (303-317) | 288 (279-295) |
+| ... wall | 1,577 (1,567-1,668) | 457 (456-460) | 456 (455-456) |
+| ... prepare / check / start | 485 / 55 / 777 | 25 / 54 / 128 | 22 / 70 / 84 |
+| kept snapshot's start: total | 1,291 (1,284-1,352) | 301 (295-312) | 288 (271-293) |
+| resume: total | 1,283 (1,201-1,315) | 314 (309-329) | 288 (276-298) |
+| saves' pauses: kept / file / picked / suspend | 159 / 158 / 156 / 151 | 154 / 161 / 156 / 152 | 162 / 156 / 156 / 156 |
+
+**Against the goal:** the desktop's load 5.6 → 1.4 s (its `prepare` + `start` 4.5 s → 0.12 s), a kept snapshot's
+start 6.1 → 1.4, the resume 5.6 → 1.2; Debian's load 1.44 → 0.29 s. The HEAD fix is nearly all of it; the device worker
+ahead is 130-190 ms more on the desktop (`start` 229-287 → 89-125: load and resume past the ranges, the kept start's
+overlapping), 13-28 on Debian (load past the ranges), net of what the device worker's start costs the check pass
+beside it (Debian's 54 → 70 ms; the desktop's within its noise). The saves don't move. What a load is now
+(desktop): the check pass ~0.4-0.5 s (read-bound), the state 0.09, RAM ~0.6, the disk 0.1, the rest 0.12; the probe's
+wall is ~0.14-0.2 s more (the page's side, the GPU worker's start). **Memory:** less: the desktop's load peaks ~190-210
+MiB lower (3,202 against 3,389-3,414), a kept start's ~285-305 lower, and the browser holds ~170-310 MiB less before
+each later save of the round (the state's 109 MB copy and its source no longer both kept); Debian's within its ranges.
+
+**Correctness:** `tests/serve.test.ts` "a HEAD under target/ is answered from the file's stat" (the headers a GET has;
+a file that can't be read still answers 200 with its size; a missing one 404); `tests/warm-workers.test.ts` (fake
+browser workers: each kind made ahead and taken in turn, then new ones; a worker that failed to load replaced and its
+error kept from the page; `end` ends only those not taken; none outside a browser worker; and a real `bootVm` in
+Node: the warm workers ended once the vCPU workers start, not before, when `bootVm` fails, and at the boot of a machine
+that isn't parallel). The page's own snapshot, 3D and machines tests run the new start (`scripts/ci-debian.sh`,
+`ci-machines.sh`). Planted, each caught: the HEAD handler left out (the unreadable file's HEAD never answers), `end`
+not terminating, a failed worker handed out, the coordinator not ending them, `bootVm`'s failure not ending them, a
+machine without vCPU workers not ending them.
+`scripts/ci.sh` (815 s), `ci-debian.sh` (344 s), `ci-machines.sh` (343 s) and `ci-graphics.sh` (266 s, the 3D state
+handed over differently) green over loop 5 and this loop, once each, alone.

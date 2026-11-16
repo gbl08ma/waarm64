@@ -1,0 +1,142 @@
+{
+ "meta": {
+  "guest": "desktop",
+  "mode": "stored",
+  "profile": "persistent",
+  "ops": [
+   "load"
+  ],
+  "file": "/home/gabriel.guest/Development/waarm64/target/snapbench/pages.waarm64snap",
+  "bytes": 689228158,
+  "rounds": 1,
+  "settleS": 5,
+  "commit": "ec293884-dirty",
+  "core": "a8deea545dc27dff",
+  "chromium": "Chromium 155.0.8059.84 stable",
+  "host": "8 CPUs unknown",
+  "date": "2026-11-16T02:03:56.864Z",
+  "wallS": 3
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "load": {
+    "wallMs": 1159,
+    "phases": {
+     "check": 313,
+     "checkRead": 246,
+     "checkCrc": 401,
+     "state": 62,
+     "ram": 402,
+     "disk": 82,
+     "pool": 6,
+     "read": 254,
+     "crc": 430,
+     "unpack": 706,
+     "apply": 315,
+     "prepare": 56,
+     "start": 134,
+     "total": 1049,
+     "marks": [
+      [
+       "start",
+       1794794635627
+      ],
+      [
+       "prepare0",
+       1794794635627
+      ],
+      [
+       "responses",
+       1794794635630
+      ],
+      [
+       "bodies",
+       1794794635674
+      ],
+      [
+       "disksHead",
+       1794794635674
+      ],
+      [
+       "fetched",
+       1794794635674
+      ],
+      [
+       "compiled",
+       1794794635681
+      ],
+      [
+       "codec",
+       1794794635685
+      ],
+      [
+       "header",
+       1794794635694
+      ],
+      [
+       "readSnapshot",
+       1794794636144
+      ],
+      [
+       "restoreOpened",
+       1794794636144
+      ],
+      [
+       "bootVm0",
+       1794794636144
+      ],
+      [
+       "vm.instantiate0",
+       1794794636149
+      ],
+      [
+       "vm.instantiated",
+       1794794636149
+      ],
+      [
+       "vm.fill0",
+       1794794636161
+      ],
+      [
+       "vm.filled",
+       1794794636646
+      ],
+      [
+       "vm.deviceHost0",
+       1794794636647
+      ],
+      [
+       "dw.loaded",
+       1794794635739
+      ],
+      [
+       "dw.open0",
+       1794794636651
+      ],
+      [
+       "dw.opened",
+       1794794636670
+      ],
+      [
+       "vm.deviceHost1",
+       1794794636670
+      ],
+      [
+       "vm.quiesced",
+       1794794636672
+      ],
+      [
+       "bootVm1",
+       1794794636672
+      ],
+      [
+       "booted",
+       1794794636676
+      ]
+     ]
+    }
+   }
+  }
+ ]
+}

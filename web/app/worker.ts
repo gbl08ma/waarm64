@@ -12,7 +12,7 @@
 // web/app/worker-snapshot.ts's.
 import { bootVm, compileCore, Exit, PSCI_SYSTEM_OFF, type Restore, type Vm } from '../vm.ts';
 import { msg, MsgError } from '../msg.ts';
-import { dropSuspend, saveFlash, suspended } from '../overlay.ts';
+import { dropSuspend, saveFlash } from '../overlay.ts';
 import { lzCodec } from '../lz.ts';
 import type { SnapshotHeader } from '../snapshot-file.ts';
 import type { RestorePhases } from '../snapshot.ts';
@@ -39,6 +39,8 @@ import {
   releasing,
   planOf,
   showScreen,
+  suspendedCopy,
+  warming,
   type Plan,
 } from './worker-start.ts';
 
@@ -63,6 +65,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
   switch (m.type) {
     case 'start':
       start(m).catch((err: unknown) => {
+        warming.end();
         if (stopping) return;
         const [problem, error] = explain(err, MACHINES[m.config.machine], { restoring, ramMiB });
         state(vm ? 'crashed' : 'failed', { error, problem });
@@ -170,21 +173,9 @@ function running(): Running | undefined {
   };
 }
 
-/**
- * A suspended machine kept beside the disk (docs/frontend.md "Suspend") is resumed, unless the page says boot; either
- * way it is dropped before a machine runs on the disk, which is what keeps a suspended machine and its disk together.
- */
-async function suspendedCopy(m: StartMessage): Promise<Blob | undefined> {
-  if (!home || m.snapshot) return undefined;
-  // A suspension that can't be dropped doesn't stop the boot the page asked for.
-  if (m.resume !== false) return suspended(home).catch(() => undefined);
-  await dropSuspend(home).catch(() => undefined);
-  return undefined;
-}
-
 /** The machine a snapshot (or a suspended copy) says, with its restore. */
 async function fromSnapshot(m: StartMessage, machine: Machine, snapshot: Blob, resume: boolean) {
-  const r = await openRestore(snapshot, m, machine, resume, await codec());
+  const r = await openRestore(snapshot, m, machine, resume, await codec(), warming.pooled);
   // Its guest's leases renewed once the page's connections are up; a template's identity too (web/snapshot-file.ts `asTemplate`).
   post({ type: 'restored', template: !resume && r.header.template === true });
   ramMiB = r.plan.ramMiB;
@@ -214,8 +205,9 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   home = m.home;
   stageRoom = m.config.dev.stageRoom;
   state('loading');
-  const resume = await suspendedCopy(m);
+  const resume = await suspendedCopy(m, home);
   const snapshot: Blob | undefined = m.snapshot ?? resume;
+  warming.begin(!snapshot);
   /** A suspended machine that can't be resumed is dropped, and the machine boots (saying why, as a note: no problem). */
   const bootInstead = async (err: unknown) => {
     if (home) await dropSuspend(home).catch(() => undefined); // the boot goes on, as when it was dropped
@@ -259,7 +251,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     checkSplit(plan, m, machine, !!snapshot);
     const devices = (liveSpecs = devicesOf(plan, m, machine, specs));
     session = sessionOf(m, plan);
-    booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore));
+    booting = bootVm(parts.core, bootOptions(m, machine, plan, parts, devices, restore, warming.take()));
     try {
       return { devices, v: (vm = await booting) };
     } catch (err) {
