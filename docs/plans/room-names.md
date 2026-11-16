@@ -5,9 +5,10 @@ administrator: `test123` beside today's `<key>.<tag>.p2p.internal`. Chosen with 
 in [room-names-options.md](room-names-options.md) (its option 3, changed as below; the research notes behind it are
 `room-names-research/`), then revised the same day after an out-of-context review of the first draft ("What the review
 changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/room/names/`: "Names", "Names nobody
-lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), and the names
-client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does; a member's
-side is N3's); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
+client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
+member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"); the
+rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -290,8 +291,10 @@ question is open** (2.5 s, at most 32: the servers answering it); a server it ca
 server never learns which node asked (not its key, so not its address or name; not its IP address, which only DERP
 sees), and the question below can be sealed with the room's key without listing anyone. The node's own key carries
 none of it: the guest's UDP on port 2 between members is the guest's, untouched. A server's names client starts when
-the node runs (and again a minute after it fails) and runs while the room does; a member's (N3) starts at the first
-query for a name that isn't a key and stops after 10 minutes without one. Registry messages are UDP between two
+the node runs (and again a minute after it fails) and runs while the room does; a member's (`names/member.rs`, room.rs
+`MemberHost`) starts at the guest's first query for a name that isn't a key (its question waits until its home region
+is up, so the servers' call backs reach it) and closes after 10 minutes without one (a minute's wait after it fails;
+the next query then starts it again). Registry messages are UDP between two
 names clients' room addresses, port 2 both ends (`NAMES_PORT`), binary, 1,200 bytes a datagram at most (`wire.rs`):
 a message goes in numbered parts (kind, transfer, part, parts: 9 bytes, then up to 1,191 of the message), each
 acknowledged, resent after 0.5, 1 and 2 s and given up 2 s after that (the transfer fails), at most 8 of a peer's
@@ -327,10 +330,15 @@ copies by nonce **and round** (the three rounds share a nonce).
   covers now (`check_serve`). So only a node that holds a live name's secret can serve, which costs a registration.
 - **The choice.** The asker waits 0.3 s from the first answer, then keeps the two servers with the lowest
   `BLAKE2s(nonce, server's key)`: not the two fastest, which an attacker could always be; the others are let go. A
-  member holds them while it asks and for 3 minutes after, and one of the two is replaced at each new question round
-  (N3). A server holds them for its sync round (below), and asks afresh each round.
+  member that has only one answer by then asks everyone at once (the last round, and 0.3 s again), so it holds two where the
+  room has two: a lone server could leave a name out or show a younger chain unseen (N3: in a room of two servers, a
+  quarter of questions stopped at one). A member holds its servers while it asks and for 3 minutes after the last
+  `get`; one that fails (a transfer given up, its session gone) is let go, and with none left the next lookup asks
+  again, so a new question draws both afresh (the first draft replaced one of the two at each round; a fresh nonce
+  already redraws them, and a member that asks rarely asks anew anyway). A server holds them for its sync round (below),
+  and asks afresh each round.
 - **Nobody answered** within 1.5 s of the third round (2.5 s from the first): the queries that waited get NXDOMAIN
-  then, and the fact is remembered, for 30 s the first time and twice as long each time after, to 10 minutes; during
+  then (measured through the fake DERP and relay: 2.5 s), and the fact is remembered, for 30 s the first time and twice as long each time after, to 10 minutes; during
   it, names that aren't keys get NXDOMAIN at once and no question goes out. The next query after it asks again, so a
   member finds a server that appeared, or the room's first name, with no reconnection: within 30 s when its guest
   rarely met the silence, within 10 minutes at worst. An answer resets the doubling. A room with no names costs a
@@ -342,27 +350,45 @@ copies by nonce **and round** (the three rounds share a nonce).
 
 ### A member resolving a name
 
-- `get` (the name id, and the last entry id the member holds, if any) goes to both servers; each answers with what the
-  member lacks: the chain's last entry, its anchor and headers, the zone; or "none".
-- **The member checks the last entry only** (signature, proof of work, anchor, headers, alive by its clock) and opens
-  the zone. One alive chain is the owner whatever its history, since nothing contests it; a server can leave a better
-  chain out, which is why there are two, chosen as above.
-- **The servers disagree** (two chains for one id) or **the answer contests what the member holds** (below): the
-  member asks each for `history`, the whole unbroken run, and picks by "Who owns a name".
-- **What a member keeps**: each name it resolved, with its last entry and the earliest entry time it ever verified for
-  that chain, persisted (small). While that chain covers now, another chain replaces it only by showing a run that
-  starts earlier. So a member that knew a name refuses an impersonator after a reset, with no rule of its own.
-  (`chain.rs`, `Kept`: a run that holds the kept last entry continues it, the earliest time staying the lower; a copy
-  of the kept chain cut short is nothing new; another branch of the same owner key starting no later replaces it, as a
-  fork of one title is settled by the order; a run that holds neither, such as a renewal shown alone, is refused while
-  the kept chain covers, and the member asks for `history`.)
-- **A kept answer answers at once**, for as long as its chain is alive; one older than 5 minutes is also asked
-  again in the background, and the next query gets what came back. So only a name this member never resolved waits
-  on a server; the price is that a zone change or a lost name shows one query late.
-- Both say none: NXDOMAIN, kept 60 s. One says none: the other's answer stands.
+(`names/member.rs`, `member_tests.rs`; through the resolver, room/tests/names.rs.)
+
+- `get` (owner mode: the name id, and the last entry and zone the member keeps, if any) goes to both servers; each
+  answers with what the member lacks of the owning chain's last entry (its anchor and headers) and the zone, or "none"
+  (an empty answer: the server has no chain that owns the name now).
+- **The member checks the last entry only** (signature, proof of work, its headers, its anchor, alive by its clock),
+  with the last entry it keeps, if the server's continues it, and checks the zone's signature; the chain the server
+  says owns the name is the one ending at that entry. One alive chain is the owner whatever its history, since nothing
+  contests it; a server can leave a better chain out, which is why there are two, chosen as above. An answer that
+  doesn't hold up (a forged entry, anchor, header or zone, a dead chain) counts as none from that server.
+- **The servers disagree** (their chains end at different entries) or **an answer contests what the member keeps**
+  (`Kept::offer` would refuse it): the member asks each for `history` (a `get` mode: the owning chain's whole unbroken
+  run and the zone), checks every entry (the first that fails refuses that server's run, so a junk history costs one
+  check), and picks by "Who owns a name" over every entry shown, which `Kept::offer` then takes or refuses. Last entries
+  alone can't be compared (a renewal's time isn't its chain's seniority): an impostor claimed ten days ago beats the
+  owner's renewal of four days ago until the owner's run shows its claim of twenty (`member_tests.rs`).
+- **What a member keeps**: each name it resolved, with its chain's last entry, the earliest entry time it ever verified
+  for that chain, the zone and when servers last confirmed it, persisted (a record a name, version 2: under 2 KB with a
+  wide zone; 1,024 names at most, the least asked for going first). While that chain covers now, another chain replaces
+  it only by showing a run that starts earlier. So a member that knew a name refuses an impersonator after a reset, with
+  no rule of its own. (`chain.rs`, `Kept`: a run that holds the kept last entry continues it, the earliest time staying
+  the lower; a copy of the kept chain cut short is nothing new; another branch of the same owner key starting no later
+  replaces it, as a fork of one title is settled by the order; a run that holds neither, such as a renewal shown alone,
+  is refused while the kept chain covers, and the member asks for `history`.) The same chain shown again (its last entry
+  the one kept) takes the newer zone, if any.
+- **A kept answer answers at once**, for as long as its chain resolves; one confirmed more than 5 minutes ago is also
+  asked again in the background, and the next query gets what came back. So only a name this member never resolved
+  waits on a server; the price is that a zone change or a lost name shows one query late (measured on the bus: the
+  query at 5 minutes gets the old zone, the next the new). In its grace a kept name is NXDOMAIN while it was confirmed
+  in the last 5 minutes, and waits for a renewal the servers may hold after that. Both servers saying none doesn't
+  drop a kept chain that still covers (a server that lost it says nothing against it).
+- Both say none: NXDOMAIN, kept 60 s. One says none: the other's answer stands (but still goes through `Kept::offer`:
+  one server's chain against a contesting kept one is asked for `history` and refused, `member_tests.rs`). Neither
+  answers (both transfers given up): asked once more, with servers found again if need be; the query meanwhile gets
+  the resolver's SERVFAIL.
 - **The dialog's check** for a name being typed must not tell a server which id someone is about to claim (it could
-  guess the name and stamp too): it asks for `ids`, every id in the 1/256 of the registry that shares the id's first
-  byte, and looks for its own there.
+  guess the name and stamp too): it asks for `ids` (a `get` mode with the id's first byte only), every id in the 1/256 of
+  the registry that shares it, and looks for its own there (`Member::ids`; not counted as the name being asked for). The
+  dialog is N5's.
 
 ### Servers
 
@@ -402,8 +428,9 @@ copies by nonce **and round** (the three rounds share a nonce).
   (the first question finds nobody, both then serve, the next finds the other); twenty servers holding 40 names in 6
   minutes (8,900 DERP packets in all, a 51 KB registry each); after a reset, three owners' names are back everywhere
   in 40 s. (The tests' entries carry one 4-operation pretend anchor each, so bytes are small against real anchors'.)
-- **`get`** has a second mode, `owner` (a member's, N3): the owning chain's last entry and the zone, if the member
-  lacks them; it counts as the name being asked for. A server that leaves names out (or lies) is outvoted in sync by
+- **`get`** has three more modes, a member's: `owner` (the owning chain's last entry and the zone, those the member
+  lacks; nothing when no chain owns the name now) and `history` (the owning chain's whole run and the zone), each
+  counting as the name being asked for; and `ids` (every id held under one first byte, answered `ids`; not counted). A server that leaves names out (or lies) is outvoted in sync by
   any other server holding them, and a member asking it for one gets nothing from it and the name from its other
   server (N3: the answer that has one stands).
 - **Take from anyone**: `put` (an item, from an owner's agent or a member that holds a better chain than the server
@@ -425,8 +452,12 @@ copies by nonce **and round** (the three rounds share a nonce).
 - **Persist** per name, binary, one record each (a version byte, when it was last asked for, the item): the module
   emits each as it changes (action 11, the name id and the record; none: delete it) and takes them back before its
   first tick (`ts_room_names_load`), trusted; a record is written again for being asked for only once that moved an
-  hour. The node's own names aren't stored there (their titles are the agent's). The page's side, a store of its own
-  in `waarm64-room` written as records come, is N3's and N4's: N2 stops at the module's interface.
+  hour. The node's own names aren't stored there (their titles are the agent's). A member's records (what it keeps, a
+  version byte of 2) go the same way. **The page's side** (N3, web/room.ts `roomNamesStore`, web/room-worker.ts): IndexedDB
+  `waarm64-room`'s store `names` (the database's version 2), each record under the room (16 bytes of SHA-256 over its
+  ID, in hex: a private room's ID is a secret) and the id, written in batches of a second, read back at the start and
+  streamed into the module before its first tick; one the module doesn't take (another role's, a lapsed name's) is
+  deleted. Only a stored connection's (one with an `identityKey`): an ephemeral one keeps nothing.
 
 ### Size, and where it stops
 
@@ -447,19 +478,23 @@ owners, so the user's call); fewer renewals a term. None is in v1; the first is 
 
 ## The resolver
 
-`resolve()` (room.rs) gains, after the key-name case, for a name under `<tag>.p2p.internal` whose last label passes
-"Names"' rules:
+`resolve()` (room.rs) gains, after the key-name case, for a name under `<tag>.p2p.internal` (the name, or one label under
+it) that passes "Names"' rules:
 
-- a pending name of this node's own answers this node's address (a server can be tried by name before its
-  registration is public);
-- a name the member holds, its chain alive: AAAA from the slot the name asked opens, TTL 60; the module learns the key
-  (and asks again in the background when what it holds is older than 5 minutes);
-- otherwise the query waits while the names client asks: answered when the answer comes; SERVFAIL after 4 s (a first
-  query that must also find servers takes 1 to 3 s on public relays, *estimate*; a guest's resolver retries);
-- NXDOMAIN at once for a reserved or ill-formed name, a name both servers don't have, and any name not held while
-  the member remembers that nobody answered "who serves?" ("Finding a server": 30 s to 10 minutes).
+- on a server's node, from the registry it holds whole (`Server::resolve`); a name of this node's own that isn't public
+  yet (or lapsed) answers from its title's zone, or this node's address for the name itself (a server can be tried by
+  name before its registration is public); a name not held waits while the first sync isn't over, else NXDOMAIN;
+- on a member's, a name it keeps, its chain alive: AAAA from the slot the name asked opens (none opens: NXDOMAIN), TTL
+  60; the module learns the key (and asks again in the background when what it keeps is older than 5 minutes);
+- otherwise the query waits while the names client asks: answered when the answer comes; SERVFAIL after 4 s
+  (`DNS_WAIT`; 64 queries wait at most, past that SERVFAIL at once; a first query that must also find servers took 1.3 s
+  through the fake DERP and relay and 1.4 s on the page test's rig (tests/page-room.test.ts, a cloud session); a guest's resolver retries);
+- NXDOMAIN at once for a reserved or ill-formed name, a name both servers don't have (for 60 s), and any name not kept
+  while the member remembers that nobody answered "who serves?" ("Finding a server": 30 s to 10 minutes).
 
-Guest-visible, in that names that were NXDOMAIN now answer, and some answers take seconds.
+Every type is answered alike (AAAA has the address, A and the rest an empty answer). Each query for a name that isn't a
+key is logged (`resolver: <name> (type <n>): <answer>`), to the worker's console only. Guest-visible, in that names that
+were NXDOMAIN now answer, and some answers take seconds.
 
 ## The names agent (the page)
 
@@ -585,13 +620,29 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
   that leaves names out; a worse chain refused; forged anchors, headers and signatures; the answer rule's counts at 1,
   20 and 500 servers; a flood of questions leaving the node's own lookups alone; no WebRTC and no node key on port 2.
 - **N3** The member's side and the resolver: `get`, `history`, what a member keeps, the waits and the negative
-  answers, persistence, the tests' pretend calendar and explorer. tests/page-room.test.ts: two Debian guests, one
-  name, by full name and by the short one, a label under it, a zone change, the reserved names, a room with no server.
+  answers, persistence, the tests' pretend calendar and explorer (tests/net/ots-calendar.ts), and titles for tests
+  (net/ts/examples/names-title.rs, on the module built with the `test-params` feature: below). tests/page-room.test.ts:
+  two Debian guests, one name, by full name and by the short one, a label under it, a zone change, the reserved names,
+  a room with no server, one whose first server appears while a guest keeps asking.
 - **N4** The agent: secrets, titles, the worker, stamping, collecting, renewing, publishing without a machine, forks
   between two browsers, a lost name, export and import.
 - **N5** The page: the dialog, the adapter's states, the details, the Machines page's dates, the catalog.
 - **N6** Scale and abuse: 1,000 members, 20 servers and 5,000 names (a server's load, a cold lookup, a join storm of
   500, junk in bulk against the bound, also when its registrant asks for it); days on the public services with real stamps; the final review.
+
+## Tests' parameters
+
+Production's parameters need real Bitcoin work (a header at a sixteenth of a real block's difficulty), so a test can't
+make a title they accept. The parameters are not configuration: the module runs on `Params::BUILT`, which is
+`Params::PRODUCTION` unless the crate is built with the `test-params` feature, which compiles in `Params::TEST` (the
+tests' pretend Bitcoin: regtest's floor, Argon2id of 8 KiB and 2 bits) instead. `net/ts/build.sh --test-params` builds
+that module to `target/net/ts-test.wasm` (a target directory of its own), which the page tests serve in `ts.wasm`'s place
+(a Playwright route); `npm run dist` ships `ts.wasm` only, and no page, link or config can choose the other. A room's
+`self` event says which it runs on (`params`: `production` or `test`). Checked: `cargo test`'s
+`the_module_runs_on_production_parameters` (a pretend title's header is under the floor), and tests/room-names.test.ts
+(the shipped module says `production`, the tests' `test`). Titles for the page tests come from
+`net/ts/examples/names-title.rs` (the same feature), until the agent makes them (N4, which uses the pretend calendars
+and explorer of tests/net/ots-calendar.ts).
 
 ## Open, to settle in the loops
 

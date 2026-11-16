@@ -63,7 +63,9 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
 - **A room's link and key**: the link (`room.link`, `waarm64-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
   private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
   `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
-  machine's address and name in the room stay the same. A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
+  machine's address and name in the room stay the same. The same database's `names` store (version 2) keeps a stored
+  connection's room-names records, by room (a hash of its ID) and name id (web/room.ts `roomNamesStore`,
+  docs/plans/room-names.md "Persist"). A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
   own; named by a hash of the key, a stored connection's read from its entry and made there at its first claim, so
   every kind of connection that has a key, in any tab, names one lock), so another connection on that key, on another

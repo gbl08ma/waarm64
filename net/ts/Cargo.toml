@@ -9,6 +9,12 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The tests' pretend Bitcoin (room/names: easy headers, cheap proof of work) compiled in as the parameters the module runs
+# on, for the page tests' build (`net/ts/build.sh --test-params`: target/net/ts-test.wasm) and the title tool
+# (examples/names-title.rs). Never the shipped module's: without it, the module has no other parameters than production's.
+test-params = []
+
 [dependencies]
 # tailscale-rs's sans-I/O protocol crates (BSD-3-Clause): WireGuard, keys, packets.
 ts_tunnel = "0.6.1"
@@ -52,3 +58,8 @@ regex = "1"
 [[example]]
 name = "room-key-mine"
 test = true
+
+# Titles for the page tests (tests/page-room.test.ts), on the tests' pretend Bitcoin, until the names agent makes them.
+[[example]]
+name = "names-title"
+required-features = ["test-params"]

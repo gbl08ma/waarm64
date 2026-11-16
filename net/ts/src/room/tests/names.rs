@@ -321,3 +321,268 @@ fn two_servers_asking_at_once_still_find_each_other() {
     n.advance(Duration::from_secs(5));
     assert_eq!((n.server(0).stats.syncs, n.server(1).stats.syncs), (1, 1));
 }
+
+// ---- A member resolving names (room-names.md "A member resolving a name", "The resolver") ----
+
+/// A title of node `seed`'s for `name`: the name points at `node`, `git.<name>` at `git`.
+fn title_to(
+    b: &mut Bitcoin,
+    seed: u8,
+    name: &str,
+    node: [u8; 32],
+    git: [u8; 32],
+) -> ([u8; 32], Item) {
+    use crate::room::names::{entry::Kind, zone::Zone};
+    let key = b.key(seed, name);
+    let claim = b.at(Kind::Claim, &key, name, [0; 32], day(20));
+    let renew = b.at(Kind::Renew, &key, name, claim.id(), day(4));
+    let zone = Zone::seal(
+        &b.names,
+        &key,
+        name,
+        1,
+        &[(None, node), (Some("git"), git)],
+        false,
+    )
+    .unwrap();
+    (
+        key.to_bytes().into(),
+        b.item(name, &[claim, renew], Some(zone)),
+    )
+}
+
+/// A DNS answer: its rcode, its AAAA addresses and their TTL.
+#[derive(Debug, PartialEq)]
+struct Dns {
+    rcode: u8,
+    addrs: Vec<[u8; 16]>,
+    ttl: Option<u32>,
+}
+
+impl Net {
+    /// Node `i`'s guest asks the room's resolver for `rel` under the room's domain, and the time runs until the answer
+    /// comes (10 s at most): the answer and how long it took.
+    fn ask(&mut self, i: usize, rel: &str, qtype: u16) -> (Dns, Duration) {
+        let domain = self.nodes[i].c.room.domain();
+        let name = format!("{rel}.{domain}");
+        let mut q = vec![0x56, 0x78, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];
+        for l in name.split('.') {
+            q.push(l.len() as u8);
+            q.extend_from_slice(l.as_bytes());
+        }
+        q.extend_from_slice(&[0]);
+        q.extend_from_slice(&qtype.to_be_bytes());
+        q.extend_from_slice(&[0, 1]);
+        let to = self.nodes[i].c.resolver;
+        let p = ip::udp(
+            (IpAddr::V6(self.addr(i).into()), 5353),
+            (IpAddr::V6(to.into()), 53),
+            &q,
+        );
+        let start = self.now;
+        self.nodes[i].guest.clear();
+        let now = self.now;
+        self.nodes[i].c.guest_packet(&p, now);
+        self.run();
+        loop {
+            if let Some(a) = self.nodes[i]
+                .guest
+                .iter()
+                .find(|a| a[6] == ip::UDP && a[48..50] == [0x56, 0x78])
+            {
+                let m = &a[48..];
+                let n = u16::from_be_bytes([m[6], m[7]]) as usize;
+                let addrs = (0..n)
+                    .map(|k| m[m.len() - 16 * (n - k)..][..16].try_into().unwrap())
+                    .collect();
+                let ttl = (n > 0)
+                    .then(|| u32::from_be_bytes(m[m.len() - 22..m.len() - 18].try_into().unwrap()));
+                let d = Dns {
+                    rcode: dns::rcode(m),
+                    addrs,
+                    ttl,
+                };
+                self.nodes[i].guest.clear();
+                return (d, self.now - start);
+            }
+            assert!(
+                self.now - start < Duration::from_secs(10),
+                "no answer to {rel}"
+            );
+            self.advance(Duration::from_millis(10));
+        }
+    }
+
+    /// Node `i`'s open names-client connections.
+    fn names_conns(&self, i: usize) -> usize {
+        self.nodes[i]
+            .conns
+            .keys()
+            .filter(|c| **c >= NAMES_CONN)
+            .count()
+    }
+}
+
+fn aaaa(addr: [u8; 16]) -> Dns {
+    Dns {
+        rcode: dns::NOERROR,
+        addrs: vec![addr],
+        ttl: Some(60),
+    }
+}
+
+fn nx() -> Dns {
+    Dns {
+        rcode: dns::NXDOMAIN,
+        addrs: vec![],
+        ttl: None,
+    }
+}
+
+#[test]
+fn a_member_resolves_a_registered_name_through_a_names_client_of_its_own() {
+    let mut b = Bitcoin::new(ROOM, 6);
+    let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
+    let bravo = title(&mut b, 2, "bravo");
+    let mut n = Net::new(vec![
+        server_config(1, vec![alpha.clone()]),
+        server_config(2, vec![bravo]),
+        config(3),
+    ]);
+    // The servers find each other (the first question of each finds nobody).
+    n.converge(
+        &[0, 1],
+        &[alpha.1.id, bravo_id(&b)].into(),
+        Duration::from_secs(120),
+    );
+    assert_eq!(
+        n.names_conns(2),
+        0,
+        "no names client before a name is asked for"
+    );
+    // Reserved and ill-formed names: NXDOMAIN at once, nothing asked.
+    for r in ["wpad", "com", "localhost", "isatap", "a.b.alpha", "xn--abc"] {
+        assert_eq!(n.ask(2, r, dns::AAAA), (nx(), Duration::ZERO), "{r}");
+    }
+    assert_eq!(n.names_conns(2), 0, "nothing asked");
+    // A cold lookup: the names client starts, finds the servers, asks them.
+    let (a, took) = n.ask(2, "alpha", dns::AAAA);
+    eprintln!("a member's cold lookup through the fake DERP and relay: {took:?}");
+    assert_eq!(a, aaaa(n.addr(1)));
+    assert!(
+        n.nodes[2].c.known.get(&n.addr(1)) == Some(&public(2)),
+        "the module learned the key"
+    );
+    assert!(n.names_conns(2) > 0, "a names client of its own");
+    // A label under it, at once from what is kept; A is an empty answer; a name nobody holds is NXDOMAIN.
+    assert_eq!(
+        n.ask(2, "git.alpha", dns::AAAA),
+        (aaaa(n.addr(0)), Duration::ZERO)
+    );
+    let (a, _) = n.ask(2, "alpha", dns::A);
+    assert_eq!((a.rcode, a.addrs.len()), (dns::NOERROR, 0));
+    assert_eq!(n.ask(2, "charlie", dns::AAAA).0, nx());
+    assert_eq!(
+        n.ask(2, "charlie", dns::AAAA),
+        (nx(), Duration::ZERO),
+        "remembered"
+    );
+    // The node's own key carried none of it: no packet under it at all.
+    let me = public(3);
+    assert!(
+        n.by_keys.keys().all(|(s, d)| *s != me && *d != me),
+        "the member's node key carried nothing"
+    );
+    assert_eq!(n.nodes[2].rtc_opens, 0);
+    // Kept, and stored.
+    let records: Vec<Vec<u8>> = n.nodes[2].stored.values().cloned().collect();
+    assert_eq!(records.len(), 1);
+    // Ten minutes without a query: the names client closes.
+    n.advance(Duration::from_secs(9 * 60));
+    assert!(n.names_conns(2) > 0);
+    n.advance(Duration::from_secs(70));
+    assert_eq!(
+        n.names_conns(2),
+        0,
+        "closed after 10 minutes without a name asked"
+    );
+    // The page reloads with its records: answered at once, with no names client.
+    n.restart(2, config(3));
+    for r in &records {
+        assert!(n.nodes[2].c.names_load(r));
+    }
+    let n2 = n.addr(1);
+    assert_eq!(n.ask(2, "alpha", dns::AAAA), (aaaa(n2), Duration::ZERO));
+}
+
+fn bravo_id(b: &Bitcoin) -> [u8; 32] {
+    b.names.name_id("bravo")
+}
+
+#[test]
+fn with_no_server_nxdomain_then_a_server_that_appears_is_found_while_the_guest_keeps_asking() {
+    let mut b = Bitcoin::new(ROOM, 7);
+    let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
+    let mut n = Net::new(vec![config(1), config(2)]);
+    let (a, took) = n.ask(1, "alpha", dns::AAAA);
+    eprintln!("nobody serves: NXDOMAIN in {took:?}");
+    assert_eq!(a, nx());
+    assert!(
+        (Duration::from_millis(2400)..Duration::from_secs(4)).contains(&took),
+        "{took:?}"
+    );
+    assert_eq!(
+        n.ask(1, "alpha", dns::AAAA),
+        (nx(), Duration::ZERO),
+        "remembered: at once"
+    );
+    // The room's first server appears; the guest asks every 2 s.
+    n.restart(0, server_config(1, vec![alpha]));
+    n.advance(Duration::from_secs(3)); // it learns it's alone, and serves
+    let start = n.now;
+    loop {
+        let (a, _) = n.ask(1, "alpha", dns::AAAA);
+        if a.rcode == dns::NOERROR {
+            assert_eq!(a, aaaa(n.addr(1)));
+            break;
+        }
+        assert!(n.now - start < Duration::from_secs(60), "found");
+        n.advance(Duration::from_secs(2));
+    }
+    eprintln!(
+        "the room's first server found {:?} after it appeared",
+        n.now - start
+    );
+}
+
+#[test]
+fn a_query_that_gets_no_answer_in_four_seconds_is_servfail() {
+    let mut b = Bitcoin::new(ROOM, 8);
+    let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
+    let mut n = Net::new(vec![server_config(1, vec![alpha]), config(2)]);
+    n.advance(Duration::from_secs(3));
+    assert_eq!(n.ask(1, "alpha", dns::AAAA).0, aaaa(n.addr(1)));
+    // The server's page goes away; the member still holds it as its server.
+    n.restart(0, config(1));
+    let (a, took) = n.ask(1, "bravo", dns::AAAA);
+    assert_eq!((a.rcode, took), (dns::SERVFAIL, DNS_WAIT));
+}
+
+#[test]
+fn a_servers_own_name_not_public_yet_answers_its_own_address() {
+    use crate::room::names::entry::Kind;
+    let mut b = Bitcoin::new(ROOM, 9);
+    let key = b.key(1, "mine");
+    let claim = b.entry(Kind::Claim, &key, "mine", [0; 32], day(0) - 3600); // no anchor yet
+    let item = b.item("mine", &[claim], None);
+    let mut n = Net::new(vec![
+        server_config(1, vec![(key.to_bytes().into(), item)]),
+        config(2),
+    ]);
+    n.advance(Duration::from_secs(3));
+    let me = n.addr(0);
+    assert_eq!(n.ask(0, "mine", dns::AAAA), (aaaa(me), Duration::ZERO));
+    assert_eq!(n.ask(0, "git.mine", dns::AAAA).0, nx());
+    // Nobody else sees it: it isn't public.
+    assert_eq!(n.ask(1, "mine", dns::AAAA).0, nx());
+}

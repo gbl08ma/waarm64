@@ -33,14 +33,16 @@ use super::{
     chain::Name,
     entry::{Pow, Stamped, sign, tagged, verify},
     id::RoomNames,
+    member::Answer,
     store::{Held, Registry, read_record, zone_tag},
     wire::{GetMode, Item, Msg, Question, Range, SyncAnswer, Transfers, WireEntry},
+    zone::Zone,
 };
 
 /// The shares a question asks, as `spread` (top bits of the hash that must be zero), and when
 /// each round goes out after the first.
 pub const SPREADS: [u8; 3] = [6, 3, 0];
-const ROUND_AT: [Duration; 3] = [
+pub(super) const ROUND_AT: [Duration; 3] = [
     Duration::ZERO,
     Duration::from_millis(400),
     Duration::from_millis(1000),
@@ -50,11 +52,11 @@ const ROUND_AT: [Duration; 3] = [
 /// by then its session may carry our `serve`.
 const CROSSED_WAIT: Duration = Duration::from_millis(500);
 /// The choice is made this long after the first answer.
-const CHOOSE_AFTER: Duration = Duration::from_millis(300);
+pub(super) const CHOOSE_AFTER: Duration = Duration::from_millis(300);
 /// No answer this long after the first round: nobody serves.
-const GIVE_UP: Duration = Duration::from_millis(2500);
-const NOBODY_FIRST: Duration = Duration::from_secs(30);
-const NOBODY_MAX: Duration = Duration::from_secs(600);
+pub(super) const GIVE_UP: Duration = Duration::from_millis(2500);
+pub(super) const NOBODY_FIRST: Duration = Duration::from_secs(30);
+pub(super) const NOBODY_MAX: Duration = Duration::from_secs(600);
 /// Incoming handshakes a question lets in (servers answering it), at most.
 pub const ACCEPT_MAX: usize = 32;
 /// Askers a server holds at once, and how long one is held without a message.
@@ -63,7 +65,7 @@ const ASKER_IDLE: Duration = Duration::from_secs(60);
 /// A server's answers a second: a budget of the names client's own, apart from the node's call
 /// backs and trials, so a flood of questions can't keep the node's own lookups out.
 pub const ANSWERS_PER_SECOND: usize = 4;
-const QUESTIONS_PER_SECOND: usize = 1;
+pub(super) const QUESTIONS_PER_SECOND: usize = 1;
 pub const SYNC_EVERY: Duration = Duration::from_secs(300);
 const SYNC_JITTER_MS: u64 = 30_000;
 /// A range this small (on the answering side) is listed.
@@ -254,6 +256,8 @@ pub struct Server {
     pub reg: Registry,
     titles: Vec<(SigningKey, [u8; 32])>,
     own: BTreeSet<[u8; 32]>,
+    /// The zones of this node's titles, as the titles carry them: a name not public yet answers from them.
+    title_zones: BTreeMap<[u8; 32], Zone>,
     max_names: usize,
     max_bytes: usize,
     /// The names client's key, once its transport runs.
@@ -298,7 +302,7 @@ pub struct Stats {
     pub syncs: usize,
 }
 
-fn random<const N: usize>() -> [u8; N] {
+pub(super) fn random<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
     let _ = getrandom::fill(&mut b);
     b
@@ -314,6 +318,7 @@ impl Server {
             reg: Registry::default(),
             titles: Vec::new(),
             own: BTreeSet::new(),
+            title_zones: BTreeMap::new(),
             max_names: cfg.max_names,
             max_bytes: cfg.max_bytes,
             key: None,
@@ -348,9 +353,47 @@ impl Server {
             let id = t.item.id;
             s.titles.push((key, id));
             s.own.insert(id);
+            if let Some(z) = t.item.zone.clone() {
+                s.title_zones.insert(id, z);
+            }
             s.take_trusted(t.item, unix, unix);
         }
         s
+    }
+
+    /// What the resolver answers on a server's node for `full` (relative to the room's domain, passed the rules),
+    /// whose registered name is `name`: from the registry, which a server holds whole; a name of this node's own not
+    /// public yet (or lapsed) from its title's zone, or this node's address; a name not held waits until the first
+    /// sync is over, then is NXDOMAIN.
+    pub fn resolve(&self, full: &str, name: &str, unix: u64) -> Answer {
+        let id = self.names.name_id(name);
+        let held = self
+            .reg
+            .get(&id)
+            .filter(|h| h.owner.as_ref().is_some_and(|o| o.resolves(unix)));
+        if let Some(h) = held {
+            let node = h.zone.as_ref().and_then(|z| z.open(&self.names, full));
+            return node.map_or(Answer::Nx, Answer::Node);
+        }
+        if self.own.contains(&id) {
+            if let Some(k) = self
+                .title_zones
+                .get(&id)
+                .and_then(|z| z.open(&self.names, full))
+            {
+                return Answer::Node(k);
+            }
+            return if full == name {
+                Answer::Own
+            } else {
+                Answer::Nx
+            };
+        }
+        if self.synced {
+            Answer::Nx
+        } else {
+            Answer::Wait
+        }
     }
 
     /// The names client's key: the transport runs. Subscribes and starts the first round.
@@ -767,6 +810,14 @@ impl Server {
                 self.send(from, &Msg::SyncAnswer(a), xid, now);
             }
             Msg::Get {
+                mode: GetMode::Ids,
+                id,
+                ..
+            } => {
+                let ids = self.reg.matching(&id);
+                self.send(from, &Msg::Ids(ids), xid, now);
+            }
+            Msg::Get {
                 mode,
                 id,
                 zone,
@@ -784,8 +835,10 @@ impl Server {
                     };
                     match mode {
                         GetMode::All => items.push(h.lacking(&held, zone)),
-                        GetMode::Owner => {
-                            items.push(h.owner_answer(&held, zone));
+                        GetMode::Ids => {}
+                        GetMode::Owner | GetMode::History => {
+                            let history = mode == GetMode::History;
+                            items.extend(h.owner_answer(&held, zone, history));
                             let moved = unix.saturating_sub(h.asked) >= ASKED_STORE;
                             h.asked = h.asked.max(unix);
                             if moved {
@@ -794,7 +847,7 @@ impl Server {
                         }
                     }
                 }
-                if mode == GetMode::Owner && id.len() == 32 {
+                if matches!(mode, GetMode::Owner | GetMode::History) && id.len() == 32 {
                     self.dropped.remove(&<[u8; 32]>::try_from(&id[..]).unwrap());
                 }
                 self.send(from, &Msg::Items(items), xid, now);
@@ -816,7 +869,7 @@ impl Server {
                 zone_checked: false,
             }),
             // Answers without a request (ours timed out): nothing to do.
-            Msg::Items(_) | Msg::Taken | Msg::Better(_) | Msg::SyncAnswer(_) => {}
+            Msg::Items(_) | Msg::Taken | Msg::Better(_) | Msg::SyncAnswer(_) | Msg::Ids(_) => {}
         }
     }
 
@@ -1156,7 +1209,7 @@ impl Server {
 }
 
 /// Whether `window` (times in the last second) has room for one more, under `max` a second.
-fn room_in(window: &mut VecDeque<Instant>, max: usize, now: Instant) -> bool {
+pub(super) fn room_in(window: &mut VecDeque<Instant>, max: usize, now: Instant) -> bool {
     while window
         .front()
         .is_some_and(|t| now.saturating_duration_since(*t) >= Duration::from_secs(1))

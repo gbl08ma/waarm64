@@ -265,6 +265,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                     incoming: r.incoming.unwrap_or(true),
                     unix_time: r.unix_time,
                     names: r.names.map(names_config).transpose()?,
+                    params: room::names::Params::BUILT,
                 };
                 return room::Client::new(cfg, Instant::now()).map(|r| Any::Room(Box::new(r)));
             }
@@ -471,7 +472,7 @@ fn names_config(n: JsNames) -> Result<room::names::server::Config, String> {
         })
         .collect::<Result<_, String>>()?;
     Ok(room::names::server::Config {
-        params: room::names::Params::PRODUCTION,
+        params: room::names::Params::BUILT,
         titles,
         max_names: n.max_names.unwrap_or(room::names::server::MAX_NAMES),
         max_bytes: n.max_bytes.unwrap_or(room::names::server::MAX_BYTES),

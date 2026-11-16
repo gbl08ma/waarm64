@@ -278,10 +278,18 @@ pub type Held = ([u8; 8], [u8; 4]);
 /// What a `get` asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GetMode {
-    /// A member's: the owning chain's last entry and the zone (N3 widens it). Counts as asked.
+    /// A member's: the owning chain's last entry and the zone, if the asker lacks them; none (an empty `items`) when
+    /// the server has no live chain of the name. Counts as asked.
     Owner = 0,
     /// A server's: everything held that the asker lacks.
     All = 1,
+    /// A member's when answers disagree or contest what it keeps: the owning chain's whole unbroken run and the zone.
+    /// Counts as asked.
+    History = 2,
+    /// The dialog's check (room-names.md "A member resolving a name"): every id held whose first byte is the `id`
+    /// given (one byte), so the server can't tell which id is about to be claimed. Answered with [`Msg::Ids`]; not
+    /// counted as asked.
+    Ids = 3,
 }
 
 /// A range of name ids: those that start with `depth` nibbles of `prefix`.
@@ -376,6 +384,8 @@ pub enum Msg {
     Better(Item),
     /// Items that changed: the receiver `get`s what it lacks.
     Have(Vec<[u8; 32]>),
+    /// A `get` in [`GetMode::Ids`]'s answer: the ids held under its first byte.
+    Ids(Vec<[u8; 32]>),
     Sync {
         range: Range,
         fp: Fp,
@@ -417,6 +427,7 @@ impl Msg {
             Msg::Have(_) => 7,
             Msg::Sync { .. } => 8,
             Msg::SyncAnswer(_) => 9,
+            Msg::Ids(_) => 10,
         };
         o.push(ty);
         w32(&mut o, reply);
@@ -458,7 +469,7 @@ impl Msg {
             }
             Msg::Put(it) | Msg::Better(it) => o.extend(it.encode()),
             Msg::Taken => {}
-            Msg::Have(ids) => {
+            Msg::Have(ids) | Msg::Ids(ids) => {
                 w16(&mut o, ids.len());
                 for i in ids {
                     o.extend_from_slice(i);
@@ -512,10 +523,17 @@ impl Msg {
                 let mode = match r.u8()? {
                     0 => GetMode::Owner,
                     1 => GetMode::All,
+                    2 => GetMode::History,
+                    3 => GetMode::Ids,
                     _ => return Err(Invalid::Encoding),
                 };
                 let n = r.u8()? as usize;
-                if n != 8 && n != 32 {
+                let ok = match mode {
+                    GetMode::Ids => n == 1,
+                    GetMode::All => n == 8 || n == 32,
+                    GetMode::Owner | GetMode::History => n == 32,
+                };
+                if !ok {
                     return Err(Invalid::Encoding);
                 }
                 let id = r.take(n)?.to_vec();
@@ -543,9 +561,14 @@ impl Msg {
             4 => Msg::Put(Item::read(&mut r)?),
             5 => Msg::Taken,
             6 => Msg::Better(Item::read(&mut r)?),
-            7 => {
+            7 | 10 => {
                 let n = r.u16()? as usize;
-                Msg::Have((0..n).map(|_| r.a()).collect::<Result<_, _>>()?)
+                let ids = (0..n).map(|_| r.a()).collect::<Result<_, _>>()?;
+                if ty == 7 {
+                    Msg::Have(ids)
+                } else {
+                    Msg::Ids(ids)
+                }
             }
             8 => Msg::Sync {
                 range: Range {

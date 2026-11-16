@@ -9,7 +9,8 @@
   // comes to its port 7 back to the sender; `echoes` sends to `to`'s port 7 and counts what comes back; `resolve`
   // asks the room's resolver for a name's address. `?noUdp`: this browser gathers no candidate (as one with no UDP for
   // WebRTC: every connection's policy is relay, with no TURN server) until `noUdp(false)`, a setting changed live;
-  // `?probeMs`: how often a blocked member probes again.
+  // `?probeMs`: how often a blocked member probes again. `?names=` (JSON: titles, each a name's owner key and its item, as
+  // net/ts/examples/names-title.rs prints them): it serves the room's names (tests/page-room.test.ts).
   import { startRoom } from '../../web/room.ts';
   import { packetsOf } from '../../web/net.ts';
   const q = new URLSearchParams(location.search);
@@ -22,6 +23,7 @@
     room: {
       link: `waarm64-room:${encodeURIComponent(q.get('room'))}?nostr=${encodeURIComponent(q.get('nostr'))}&derp=${encodeURIComponent(q.get('relay'))}`,
       known: q.has('peer') ? [q.get('peer')] : [], relayOnly: q.has('relayOnly'), incoming: q.get('incoming') !== '0',
+      ...(q.has('names') ? { names: { titles: JSON.parse(q.get('names')) } } : {}),
     },
     iceServers: [],
     ...(q.has('probeMs') ? { probeMs: Number(q.get('probeMs')) } : {}),

@@ -43,12 +43,19 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   (`web/ts-client.ts` `failureOf`, docs/i18n.md), with any technical `detail` beside it. Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
 - **A room's registry** (docs/plans/room-names.md "The registry"): a room's config with `names` (`titles`: each a
   name's owner key, 64 hex digits, and its item, hex: `room/names/wire.rs`; `maxNames`, `maxBytes`) makes the node a
-  server of the room's names. Its names client is a second room client inside the same handle: its WebSocket
+  server of the room's names; without it the node is a member, which asks servers for the names its guest wants
+  (`room/names/member.rs`). Either's names client is a second room client inside the same handle (a member's only
+  from its guest's first query for a name that isn't a key until 10 minutes after the last): its WebSocket
   connections are numbered from `0x40000000` (`room::NAMES_CONN`), so the worker opens, feeds and closes them as any
   other, and of its events only its log comes out (marked `names client:`). Action 11 stores a name's record (the
-  name id, 32 bytes, then the record; the id alone: delete it); `ts_room_names_load(h, ptr, len)` takes one back, and
-  the worker streams them all in before the first `ts_tick`. The page doesn't write or read them yet (N3/N4): the
-  worker ignores action 11 as it ignores any action it doesn't know.
+  name id, 32 bytes, then the record; the id alone: delete it), a server's (version 1) or a member's (version 2);
+  `ts_room_names_load(h, ptr, len)` takes one back (1 when taken; a record of the other role's, or a member's whose
+  chain lapsed, isn't), and the worker streams them all in before the first `ts_tick`: web/room-worker.ts keeps them
+  in IndexedDB `waarm64-room`, store `names`, under the room and the id (web/room.ts `roomNamesStore`; a stored
+  connection's only), and deletes what the module didn't take. The room's `self` event says which parameters names
+  are checked with (`params`: `production`; `test` only in the page tests' build, `net/ts/build.sh --test-params` →
+  `target/net/ts-test.wasm`, never shipped: room-names.md "Tests' parameters"). The room's resolver answers registered
+  names (room-names.md "The resolver") and logs each query for one (`resolver: …`).
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and

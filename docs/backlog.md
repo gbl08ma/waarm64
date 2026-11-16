@@ -1585,10 +1585,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The module grew 92 KB Brotli (592 to 684, `net/ts/build.sh`, 2026-11-16) once the names code was linked (N1's
     records and rules were dead code until N2 used them). Not looked into: what dominates (Argon2, the anchor
     verifier, monomorphized collections), and whether it's worth trimming.
-  - The page's side of the registry's persistence (a store in `waarm64-room` written from action 11 and streamed back
-    through `ts_room_names_load`), titles as they change (an export beside the config's `names.titles`) and the
-    TypeScript config type for `names` are N3's and N4's; the module has no `params` override yet for page tests with
-    a pretend Bitcoin (N3 adds it if its page test needs one).
+  - Titles as they change (an export beside the config's `names.titles`) are N4's; the page's side of persistence and
+    the TypeScript config type for `names` came with N3.
+  - The `names` store in `waarm64-room` is kept by room, not by connection: deleting a connection leaves the room's
+    records (a member's few KB, a server's registry) until another connection to that room starts and the module
+    refuses what lapsed. Records of a room nobody joins again stay. A per-room sweep at Delete (when no other
+    connection names the room) would clean them.
+  - A member that holds a better chain than a server showed it (it kept the owner's after a reset) doesn't `put` it:
+    it keeps only the chain's last entry, not the run a server needs to take it. The owner's agent puts it back at its
+    next visit (N4).
+  - A member's resolver logs every query for a name that isn't a key to the worker's console, names in words
+    included (the page tests read it to see what a guest asks on its own). Quieter (a count, or only in a debug
+    mode) once N6 has its numbers.
+  - A member's lookup that two servers left unanswered is tried once more and then given up (the query gets SERVFAIL
+    at 4 s); a server that never answers a `get` but always answers "who serves?" is found again at each new question.
+    N6 sees whether that matters at scale.
   - The header floor is 1/16 of block 976,177's difficulty: revisit if Bitcoin's difficulty ever falls far.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix

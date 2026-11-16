@@ -1,5 +1,5 @@
-//! Registered names in a room (docs/plans/room-names.md), the records and the rules: pure, no
-//! I/O, nothing exported from the module yet.
+//! Registered names in a room (docs/plans/room-names.md): the records and the rules, and the registry's two sides, sans
+//! I/O (room.rs carries them through names clients).
 //!
 //! - [`id`]: a name's rules (one label, the reserved list), its id (BLAKE2s keyed with a key from
 //!   the room's ID), the room's value that signatures take, and an owner key per name.
@@ -13,6 +13,8 @@
 //! - [`zone`]: where a name points, 4 or 16 slots sealed under the full name and `seq`.
 //! - [`chain`]: unbroken runs, cover, seniority, the owner now (a total order: forks and
 //!   releases), and what a member keeps.
+//! - [`wire`], [`store`], [`server`]: what the registry sends, what a server holds, a server's side.
+//! - [`member`]: a member's side: what the resolver asks for a name that isn't a key, and what it keeps.
 //!
 //! Times are Unix seconds: an entry's is its anchor's block header's; `now` is the caller's
 //! clock.
@@ -22,15 +24,18 @@ pub mod chain;
 pub mod entry;
 pub mod header;
 pub mod id;
+pub mod member;
 pub mod server;
 pub mod store;
 pub mod wire;
 pub mod zone;
 
 #[cfg(test)]
-mod server_tests;
+mod member_tests;
 #[cfg(test)]
-pub(crate) mod testkit;
+mod server_tests;
+#[cfg(any(test, feature = "test-params"))]
+pub mod testkit;
 #[cfg(test)]
 mod tests;
 
@@ -79,6 +84,32 @@ impl Params {
         pow_p: 1,
         pow_bits: 16,
     };
+
+    /// The tests' pretend Bitcoin: the spec's clock with cheap proof of work (8 KiB, 2 bits) and a floor any pretend
+    /// header meets (regtest's target). Compiled only into the tests and a `test-params` build.
+    #[cfg(any(test, feature = "test-params"))]
+    pub const TEST: Params = Params {
+        floor: 0x207f_ffff,
+        pow_m_kib: 8,
+        pow_bits: 2,
+        ..Params::PRODUCTION
+    };
+
+    /// What the module runs on (wasm.rs): production's. A build with the `test-params` feature (the page tests' module,
+    /// target/net/ts-test.wasm, never shipped) runs on [`Params::TEST`] instead; no configuration chooses them.
+    #[cfg(not(feature = "test-params"))]
+    pub const BUILT: Params = Params::PRODUCTION;
+    #[cfg(feature = "test-params")]
+    pub const BUILT: Params = Params::TEST;
+
+    /// What the room's `self` event says the module runs on: `production`, or `test`.
+    pub fn label(&self) -> &'static str {
+        if *self == Params::PRODUCTION {
+            "production"
+        } else {
+            "test"
+        }
+    }
 }
 
 /// Why a record is refused.

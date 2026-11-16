@@ -6,7 +6,13 @@
 // page's network configuration (its address, the room's resolver), and one pings the other by its name in the room
 // (`<key>.<tag>.p2p.internal`, which the room's resolver answers, through the guest's systemd-resolved; asked directly
 // too), the menu showing the name, the member reached and the
-// link to copy. Two Debian boots at once, ~4 min alone. Opt-in like the other network tests (scripts/ci-net.sh):
+// link to copy. Then registered names (docs/plans/room-names.md "The resolver"): a room with no server answers NXDOMAIN;
+// a server appears (a guest-less member in the room's harness page, tests/browser/room.html, serving titles the test's
+// own tool makes on the tests' pretend Bitcoin, net/ts/examples/names-title.rs) while a guest keeps asking, and is found;
+// a name by its full name, by the short one through the search domain, a label under it, a zone change, reserved
+// names; and what Debian asks the room's resolver on its own. Every page runs the page tests' module
+// (target/net/ts-test.wasm, net/ts/build.sh --test-params, served in ts.wasm's place), which takes the pretend Bitcoin's
+// titles. Two Debian boots at once, ~4 min alone in the dev VM. Opt-in like the other network tests (scripts/ci-net.sh):
 // WAARM64_NET_TESTS=1, WAARM64_DISTROS=debian and WAARM64_TAILCAT=1 (Go for derper).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -35,6 +41,8 @@ const skip = process.env.WAARM64_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh
   : !has('go', 'version') && !existsSync(`${ROOT}target/net/tailcat-test/bin/derper`) ? 'SKIPPED: no Go to build derper'
   : undefined;
 const script = `${ROOT}tests/net/tailcat.sh`;
+const TEST_WASM = `${ROOT}target/net/ts-test.wasm`;
+const TITLE_TOOL = `${ROOT}target/debug/examples/names-title`;
 const BOOT_MS = 300_000;
 
 let browser: Browser;
@@ -44,6 +52,9 @@ let closeServer: () => void;
 before(async () => {
   if (skip) return;
   execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 });
+  // The page tests' module and the title tool (both on the tests' pretend Bitcoin).
+  execFileSync(`${ROOT}net/ts/build.sh`, ['--test-params'], { encoding: 'utf8', timeout: 600_000 });
+  execFileSync('cargo', ['build', '-q', '-p', 'waarm64_ts', '--features', 'test-params', '--example', 'names-title'], { cwd: ROOT, encoding: 'utf8', timeout: 600_000 });
   nostr = await startNostrRelay();
   const server = await startServer();
   closeServer = () => server.close();
@@ -105,11 +116,44 @@ const rooms = (page: Page) => page.evaluate(() => new Promise<{ id: string; name
   open.onerror = () => reject(open.error);
 }));
 
+/** The room's resolver's log lines (`resolver: <name> (type <n>): <answer>`), every page's: what the guests asked. */
+const resolverLog: string[] = [];
+/** Every page in `ctx` runs the page tests' module. */
+const testModule = (ctx: BrowserContext) => ctx.route(/\/target\/net\/ts\.wasm(\?.*)?$/, (r) => r.fulfill({ path: TEST_WASM, contentType: 'application/wasm' }));
+const logOf = (n: number | string) => (m: { text(): string }) => {
+  if (/room: resolver: /.test(m.text())) resolverLog.push(`${n}: ${m.text().replace(/^room: resolver: /, '')}`);
+  if (/rror|panic|room:/.test(m.text())) console.log(`# page ${n}: ${m.text().slice(0, 300)}`);
+};
+
+const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
+/** A node key from its name's first label (base32, room.rs `base32`), in hex. */
+function keyOfName(name: string): string {
+  let [acc, bits, out] = [0, 0, [] as number[]];
+  for (const c of name.split('.')[0]) {
+    acc = ((acc << 5) | B32.indexOf(c)) & 0xffff;
+    bits += 5;
+    if (bits >= 8) { bits -= 8; out.push((acc >> bits) & 255); }
+  }
+  return Buffer.from(out.slice(0, 32)).toString('hex');
+}
+
+type Title = { name: string; key: string; items: string[] };
+/** Titles on the tests' pretend Bitcoin (net/ts/examples/names-title.rs): each name's chain with each of its zones. */
+const makeTitles = (spec: object): Title[] => JSON.parse(execFileSync(TITLE_TOOL, [JSON.stringify(spec)], { encoding: 'utf8', timeout: 60_000 }));
+
+/** Milliseconds a command takes on the guest, and its output. */
+async function timed(page: Page, cmd: string, ms = 60_000): Promise<{ ms: number; out: string }> {
+  const r = await run(page, `s=$(date +%s%N); out=$(${cmd} 2>&1); echo "$(( ($(date +%s%N) - s) / 1000000 )) $out"`, ms);
+  const [t, ...rest] = r.split(' ');
+  return { ms: Number(t), out: rest.join(' ') };
+}
+
 async function machine(contexts: BrowserContext[]): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, ignoreHTTPSErrors: true }); // the rig's derper has a self-signed certificate
   contexts.push(ctx);
+  await testModule(ctx);
   const page = await ctx.newPage();
-  page.on('console', (m) => { if (/rror|panic|room:/.test(m.text())) console.log(`# page ${contexts.length}: ${m.text().slice(0, 300)}`); });
+  page.on('console', logOf(contexts.length));
   await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
   return page;
@@ -221,6 +265,8 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await menuSays(b, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
     const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
+
+    await registeredNames({ a, b, nameA, nameB, a6, b6, roomId: parsed.room.id, contexts });
     assert.equal(await a.locator('#net-room-link-copy').getAttribute('aria-label'), t('common:ValueField.copy'));
     // Where the clipboard refuses, the link is shown in its field and selected (not the machine's name).
     await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
@@ -270,3 +316,121 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     for (const c of contexts) await c.close();
   }
 }));
+
+/** A guest-less member serving `titles` (one item each) in the room: tests/browser/room.html. */
+async function namesServer(contexts: BrowserContext[], roomId: string, titles: { key: string; item: string }[]): Promise<Page> {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  contexts.push(ctx);
+  await testModule(ctx);
+  const page = await ctx.newPage();
+  page.on('console', logOf('server'));
+  // It serves once its first question is over (nobody else serves, or it synced with who does).
+  const serving = page.waitForEvent('console', { predicate: (m) => /nobody serves the registry|synced: answering/.test(m.text()), timeout: 90_000 });
+  page.on('pageerror', (e) => console.log(`# server page error: ${e}`));
+  const q = new URLSearchParams({ room: roomId, relay: RIG_RELAY, nostr: nostr.url, names: JSON.stringify(titles) });
+  await page.goto(`${base}/tests/browser/room.html?${q}`);
+  await page.waitForFunction('window.harness?.room().state === "Running"', null, { timeout: 60_000, polling: 100 });
+  await serving;
+  return page;
+}
+
+/** The registered names' part (docs/plans/room-names.md "The resolver"), on the two guests of the room the test made. */
+async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: string; a6: string; b6: string; roomId: string; contexts: BrowserContext[] }) {
+  const { a, b, roomId, contexts } = o;
+  const domain = o.nameA.split('.').slice(1).join('.');
+  const [ipA, ipB] = [o.a6.split('/')[0], o.b6.split('/')[0]];
+  const [keyA, keyB] = [keyOfName(o.nameA), keyOfName(o.nameB)];
+  const full = (n: string) => `${n}.${domain}`;
+  const [title] = makeTitles({
+    room: roomId,
+    titles: [{
+      name: 'test123', secret: 1, claimDaysAgo: 20, renewDaysAgo: [4],
+      zones: [
+        { seq: 1, points: [{ label: null, key: keyA }, { label: 'git', key: keyB }] },
+        { seq: 2, points: [{ label: null, key: keyB }, { label: 'git', key: keyA }] },
+      ],
+    }],
+  });
+  const lookup = (p: Page, name: string) => timed(p, `getent ahosts ${name} | head -1`);
+
+  // A room with no server: NXDOMAIN once nobody answered "who serves?" (2.5 s), then at once while that's remembered.
+  const none = await lookup(b, full('test123'));
+  console.log(`# names: with no server, ${full('test123')} took ${none.ms} ms: ${none.out || '(not found)'}`);
+  assert.equal(none.out, '', 'not found');
+  const again = await lookup(b, full('test123'));
+  console.log(`# names: asked again: ${again.ms} ms`);
+  assert.equal(again.out, '');
+  assert.ok(again.ms < none.ms, `remembered: ${again.ms} ms after ${none.ms}`);
+
+  // Reserved and ill-formed names: NXDOMAIN at once, nothing asked.
+  for (const r of ['wpad', 'com', 'localhost', 'isatap', 'a.b.test123']) {
+    const x = await lookup(b, full(r));
+    assert.equal(x.out, '', `${r} isn't found`);
+    assert.ok(x.ms < 1500, `${r}: at once (${x.ms} ms)`);
+  }
+
+  // The guest keeps asking while the room's first server appears.
+  await run(b, `rm -f /tmp/found; (for i in $(seq 1 120); do if getent ahosts ${full('test123')} > /dev/null; then date +%s%N > /tmp/found; break; fi; sleep 2; done) < /dev/null > /dev/null 2>&1 & true`);
+  const server = await namesServer(contexts, roomId, [{ key: title.key, item: title.items[0] }]);
+  const appeared = BigInt(await run(b, 'date +%s%N'));
+  let found = '';
+  for (let k = 0; k < 120 && !found; k++) {
+    found = await run(b, 'cat /tmp/found 2>/dev/null');
+    if (!found) await b.waitForTimeout(2000);
+  }
+  assert.ok(found, 'the guest that kept asking found the name');
+  console.log(`# names: the room's first server found ${Number(BigInt(found) - appeared) / 1e6} ms after it ran`);
+
+  // By its full name: A's address, and B pings A by it.
+  const byName = await lookup(b, full('test123'));
+  assert.match(byName.out, new RegExp(`^${ipA}\\s`), `test123 is A: ${byName.out}`);
+  const ping = await run(b, `ping -6 -c 2 -W 10 ${full('test123')} | tail -2`, 60_000);
+  assert.match(ping, / 0% packet loss/, `B pings A by its registered name: ${ping}`);
+  // A label under it: B itself.
+  const git = await lookup(b, full('git.test123'));
+  assert.match(git.out, new RegExp(`^${ipB}\\s`), `git.test123 is B: ${git.out}`);
+  assert.ok(git.ms < 1500, `from what the member keeps, at once (${git.ms} ms)`);
+
+  // By the short name, through the search domain the lease gives (DHCPv6's domain list), which Debian takes as it is.
+  const iface = await run(b, `ip -6 -o addr show | awk '/ fd/{print $2; exit}'`);
+  const domains = await run(b, `resolvectl domain ${iface}`);
+  console.log(`# names: the room's interface ${iface}, its search domains: ${domains}`);
+  assert.ok(domains.includes(domain), `Debian takes the lease's search domain (systemd-networkd, DHCPv6's domain list): ${domains}`);
+  let short = { ms: 0, out: '' };
+  for (let k = 0; k < 10 && !short.out; k++) {
+    short = await lookup(b, 'test123');
+    if (!short.out) await b.waitForTimeout(2000);
+  }
+  assert.match(short.out, new RegExp(`^${ipA}\\s`), `the short name through the search domain: ${short.out}`);
+
+  // A zone change: the server's title now points the name at B. A member that hadn't asked sees it at once; one that
+  // keeps the name sees it once what it keeps is 5 minutes old (room-names.md "A member resolving a name").
+  await server.context().close();
+  await namesServer(contexts, roomId, [{ key: title.key, item: title.items[1] }]);
+  const changed = await lookup(a, full('test123'));
+  assert.match(changed.out, new RegExp(`^${ipB}\\s`), `after the zone change, test123 is B for A: ${changed.out}`);
+  console.log(`# names: after the zone change A resolved test123 in ${changed.ms} ms`);
+  const stale = await lookup(b, full('test123'));
+  console.log(`# names: B, which keeps it, still says ${stale.out.split(/\s/)[0]} (until 5 minutes after it last checked)`);
+
+  // Kept and stored: A (a stored connection) keeps the name it resolved in IndexedDB; the label, from what it keeps.
+  const fromA = await lookup(a, full('git.test123'));
+  assert.match(fromA.out, new RegExp(`^${ipA}\\s`), `after the zone change, git.test123 is A: ${fromA.out}`);
+  await a.waitForTimeout(2500);
+  const kept = await a.evaluate(() => new Promise<number>((resolve) => {
+    const open = indexedDB.open('waarm64-room');
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains('names')) { db.close(); return resolve(-1); }
+      const r = db.transaction('names').objectStore('names').count();
+      r.onsuccess = () => { db.close(); resolve(r.result); };
+    };
+    open.onerror = () => resolve(-2);
+  }));
+  assert.equal(kept, 1, 'A keeps the name it resolved');
+
+  // What the guests asked the room's resolver for on their own (anything but the names above).
+  const ours = /^(test123|git\.test123|wpad|com|localhost|isatap|a\.b\.test123) /;
+  const own = [...new Set(resolverLog.map((l) => l.replace(/^[^:]+: /, '')).filter((l) => !ours.test(l)))];
+  console.log(`# names: the guests asked on their own: ${own.length ? own.join('; ') : 'nothing'}`);
+}

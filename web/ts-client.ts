@@ -32,6 +32,7 @@ type Exports = {
   ts_rtc_message(h: number, rtc: number, ptr: number, len: number): void;
   ts_rtc_closed(h: number, rtc: number): void;
   ts_rtc_blocked(h: number, blocked: number): void;
+  ts_room_names_load(h: number, ptr: number, len: number): number;
 };
 
 /** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
@@ -52,6 +53,9 @@ export type RoomConfig = {
     incoming?: boolean;
     /** The wall clock at the start, Unix seconds (default: the system's): a benchmark's shifted clock. */
     unixTime?: number;
+    /** The node's titles (docs/plans/room-names.md "The registry"): each a name's owner key and its item (hex,
+     * net/ts/src/room/names/wire.rs). With them the node serves the room's names; without, it is a member that asks. */
+    names?: { titles: { key: string; item: string }[]; maxNames?: number; maxBytes?: number };
   };
   derpMapURL?: string;
   /** The node's private key, 64 hex digits. */
@@ -90,8 +94,9 @@ export type TsFailure = { code?: string; detail?: string };
 export type TsEvent =
   | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
-  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.internal`) and the link. */
-  | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string }
+  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.internal`), the link and the
+   * parameters its names are checked with (`production`; `test` only in the page tests' module, ts-test.wasm). */
+  | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string; params?: 'production' | 'test' }
   | { type: 'serving'; addr: string }
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }
   /** A room: a peer whose data decrypted, and the path a peer's packets take. */
@@ -121,6 +126,9 @@ export type TsHandlers = {
   /** A room's WebRTC connections, which the page holds (web/room.ts): it hands each one's data channel back with
    * `rtcChannel` and its descriptions and candidates with `rtcSignal`. */
   rtc?: RtcHandlers;
+  /** A room's registry record to keep (`record`) or delete (null), by its name id (32 bytes): action 11, streamed back with
+   * `namesLoad` at the next start (docs/networking/tailnet.md "The module"). */
+  namesStore?(id: Uint8Array, record: Uint8Array | null): void;
 };
 
 export type RtcHandlers = {
@@ -306,6 +314,13 @@ export class TsClient {
     this.pump();
   }
 
+  /** A room: one stored registry record, before the first tick (right after the client is made): whether it was taken
+   * (one it doesn't take, another role's or a lapsed name's, is for the page to delete). */
+  namesLoad(record: Uint8Array): boolean {
+    if (this.closed) return false;
+    return this.m.x.ts_room_names_load(this.h, ...this.m.put(record)) === 1;
+  }
+
   /** A room: whether this browser makes no direct paths now (web/room.ts), or does again. */
   rtcBlocked(blocked: boolean) {
     if (this.closed) return;
@@ -377,6 +392,9 @@ export class TsClient {
           this.on.rtc?.close(id);
           break;
         }
+        case 11:
+          this.on.namesStore?.(rest.slice(0, 32), rest.length > 32 ? rest.slice(32) : null);
+          break;
       }
     }
     clearTimeout(this.timer);

@@ -6,7 +6,7 @@ import { toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
 import { failureOf, TsClient, TsModule, type RoomConfig } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
-import { roomIdentity, type FromRoom, type ToRoom } from './room.ts';
+import { parseRoomLink, roomIdentity, roomNamesStore, type FromRoom, type RoomNamesStore, type ToRoom } from './room.ts';
 
 const post = (m: FromRoom) => self.postMessage(m);
 
@@ -17,6 +17,8 @@ let primary = true;
 let primary6 = true;
 let rank = 0;
 let client: TsClient | undefined;
+/** A stored connection's registry records (web/room.ts `roomNamesStore`); an ephemeral one keeps none. */
+let names: RoomNamesStore | undefined;
 /** On another adapter, the room offers its /48 only (docs/networking/adapters.md §4). */
 const offered = () => ranked(routedLease(lease, primary, { v4: [], v6: lease?.prefix6 ? [lease.prefix6] : [] }, primary6), rank);
 
@@ -50,6 +52,8 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
       if (ip) ip.onmessage = null;
       client?.close();
       client = undefined;
+      void names?.flush();
+      names = undefined;
       self.postMessage({ type: 'detached', ip } satisfies FromRoom, ip ? [ip] : []);
       ip = undefined;
       send = undefined;
@@ -66,8 +70,14 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     // The kept identity (docs/networking/adapters.md §2.1): the same address and name each time it joins.
     const id = m.identity ?? (m.identityKey !== undefined ? await roomIdentity(m.identityKey) : undefined);
     const config = id ? { ...m.config, key: id.key } : m.config;
+    // The room's registry records, streamed in before the first tick (docs/networking/tailnet.md "The module").
+    const parsed = parseRoomLink(m.config.room.link);
+    const store = m.identityKey !== undefined && 'room' in parsed ? await roomNamesStore(parsed.room.id).catch(() => undefined) : undefined;
+    const records = (await store?.load().catch(() => undefined)) ?? [];
     if (!ip) return; // detached meanwhile
+    names = store;
     client = new TsClient(mod, config, {
+      namesStore: (k, record) => names?.write(k, record),
       packet: (p) => send?.(p),
       rtc: {
         open: (rtc, offer) => post({ type: 'rtc-open', rtc, offer }),
@@ -84,6 +94,8 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
         post({ type: 'event', event: ev });
       },
     });
+    // Before the first tick (the timer the constructor set fires later): one the module doesn't take is deleted.
+    for (const r of records) if (!client.namesLoad(r.record)) names?.write(r.id, null);
   } catch (err) {
     post({ type: 'error', error: toWire(err) });
   }

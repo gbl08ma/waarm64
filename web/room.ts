@@ -271,19 +271,28 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
 /** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `waarm64-room` (docs/networking/adapters.md §2.1). */
 export type RoomIdentity = { key: string };
 const IDB = 'waarm64-room';
+/** Version 2 added `names` (the room's registry records). */
+const IDB_VERSION = 2;
 
-function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open(IDB, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('identity');
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
+    const open = indexedDB.open(IDB, IDB_VERSION);
+    open.onupgradeneeded = () => {
       const db = open.result;
-      const r = f(db.transaction('identity', mode).objectStore('identity'));
-      r.onsuccess = () => { db.close(); resolve(r.result); };
-      r.onerror = (e) => { e.preventDefault(); db.close(); reject(r.error); }; // handled here (`add`'s refusal)
+      if (!db.objectStoreNames.contains('identity')) db.createObjectStore('identity');
+      if (!db.objectStoreNames.contains('names')) db.createObjectStore('names');
     };
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => resolve(open.result);
   });
+}
+
+function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>, store = 'identity'): Promise<T> {
+  return openIdb().then((db) => new Promise((resolve, reject) => {
+    const r = f(db.transaction(store, mode).objectStore(store));
+    r.onsuccess = () => { db.close(); resolve(r.result); };
+    r.onerror = (e) => { e.preventDefault(); db.close(); reject(r.error); }; // handled here (`add`'s refusal)
+  }));
 }
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -319,6 +328,65 @@ export const hasRoomIdentity = (key: string) => idb<number>('readonly', (s) => s
 
 /** Forgets the identity under `key`: the next start makes a new key, so a new address and name in every room that used it. */
 export const forgetRoomIdentity = (key: string) => idb('readwrite', (s) => s.delete(key)).then(() => {});
+
+/**
+ * A room's registry records (docs/plans/room-names.md "Servers" "Persist", "A member resolving a name"), in `waarm64-room`'s
+ * `names` store: what a server holds of each name, or what a member keeps of each name it resolved, one record a name id,
+ * keyed by the room (a hash of its ID: `roomNamesKey`) and the id in hex. The module emits them (action 11) and takes them
+ * back at the start (`TsClient.namesLoad`), so a member answers names it knew before it asks anyone. Only a stored
+ * connection's (one with an `identityKey`): an ephemeral one keeps nothing.
+ */
+export type RoomNamesStore = {
+  /** This room's records. */
+  load(): Promise<{ id: string; record: Uint8Array }[]>;
+  /** Keeps a record (null: deletes it); written in batches, the last of an id's winning. */
+  write(id: Uint8Array | string, record: Uint8Array | null): void;
+  /** Writes what's waiting now. */
+  flush(): Promise<void>;
+};
+
+/** The key a room's records are kept under: 16 bytes of SHA-256 over the room's ID, in hex (the ID itself is a private room's secret). */
+export async function roomNamesKey(id: string): Promise<string> {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`waarm64 room names\n${id}`));
+  return hex(new Uint8Array(h).subarray(0, 16));
+}
+
+/** How long writes wait to go in one transaction (a server's sync changes many names at once). */
+export const NAMES_WRITE_MS = 1000;
+
+/** The records of the room with ID `id`. */
+export async function roomNamesStore(id: string): Promise<RoomNamesStore> {
+  const room = await roomNamesKey(id);
+  const waiting = new Map<string, Uint8Array | null>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let last: Promise<void> = Promise.resolve();
+  const flush = (): Promise<void> => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (!waiting.size) return last;
+    const batch = [...waiting];
+    waiting.clear();
+    last = last.then(() => openIdb()).then((db) => new Promise<void>((resolve) => {
+      const tx = db.transaction('names', 'readwrite');
+      const s = tx.objectStore('names');
+      for (const [k, record] of batch) {
+        if (record) s.put({ id: k, record }, [room, k]);
+        else s.delete([room, k]);
+      }
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = tx.onabort = () => { console.log('room: names not kept:', tx.error); db.close(); resolve(); };
+    }), (err) => console.log('room: names not kept:', err));
+    return last;
+  };
+  return {
+    load: () => idb<{ id: string; record: Uint8Array }[]>('readonly', (s) => s.getAll(IDBKeyRange.bound([room], [room, []])), 'names'),
+    write(k, record) {
+      waiting.set(typeof k === 'string' ? k : hex(k), record);
+      timer ??= setTimeout(() => void flush(), NAMES_WRITE_MS);
+    },
+    flush,
+  };
+}
 
 // A room's link, as net/ts/src/room/link.rs reads it: `waarm64-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part
 // percent-encoded. The page builds it (Create a room) and checks one pasted (Join a room); the module reads it again.

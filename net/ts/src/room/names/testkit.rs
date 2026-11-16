@@ -21,18 +21,14 @@ pub const EASY: u32 = 0x207f_ffff;
 
 /// The spec's clock with cheap proof of work and a floor any pretend header meets.
 pub fn params() -> Params {
-    Params {
-        floor: EASY,
-        pow_m_kib: 8,
-        pow_bits: 2,
-        ..Params::PRODUCTION
-    }
+    Params::TEST
 }
 
 /// SplitMix64: the tests' only randomness.
 pub struct Rng(pub u64);
 
 impl Rng {
+    #[allow(clippy::should_implement_trait)] // never ends: not an iterator
     pub fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.0;

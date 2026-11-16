@@ -227,22 +227,33 @@ impl Held {
         }
     }
 
-    /// The owning chain's last entry and the zone, if the asker lacks them (a member's `get`).
-    pub fn owner_answer(&self, held: &[HeldTag], zone: (u32, [u8; 4])) -> Item {
+    /// A member's `get`: the owning chain's last entry (`history`: its whole run) and the zone, those the asker lacks;
+    /// None when no chain owns the name now (the member hears "none").
+    pub fn owner_answer(
+        &self,
+        held: &[HeldTag],
+        zone: (u32, [u8; 4]),
+        history: bool,
+    ) -> Option<Item> {
+        let o = self.owner.as_ref()?;
         let mut it = Item {
             id: self.id(),
             ..Item::default()
         };
-        if let Some(o) = &self.owner
-            && let Some(last) = self.name.get(&o.last())
-        {
-            let k: [u8; 8] = last.id()[..8].try_into().unwrap();
-            if !held.iter().any(|(i, a)| *i == k && *a == anchor_tag(last)) {
-                it.entries.push(WireEntry::of(last));
+        let ids = if history {
+            &o.ids[..]
+        } else {
+            &o.ids[o.ids.len() - 1..]
+        };
+        for id in ids {
+            let e = self.name.get(id)?;
+            let k: [u8; 8] = id[..8].try_into().unwrap();
+            if !held.iter().any(|(i, a)| *i == k && *a == anchor_tag(e)) {
+                it.entries.push(WireEntry::of(e));
             }
-            it.zone = self.zone.clone().filter(|z| zone_tag(Some(z)) != zone);
         }
-        it
+        it.zone = self.zone.clone().filter(|z| zone_tag(Some(z)) != zone);
+        Some(it)
     }
 
     /// What this server holds of the name, for its own `get`s.
