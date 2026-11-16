@@ -1739,9 +1739,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   run; their binaries unchanged by it): `debug` exits 2, `mmio` 11, `watch` prints no exit line, though testing.md says
   every test passes on both oracles. Find whether hvf lacks what they check (self-hosted debug, a device detail) and
   leave those checks out of the `-DHVF` builds, or whether ours differ from the hardware.
-  `watch`'s QEMU then spun on the Mac for 50 minutes (found and killed in PERF loop 30): `oracle.sh`'s Mac-side bound,
-  `perl -e 'alarm …; exec qemu'`, doesn't end QEMU (SIGALRM survives the exec but QEMU handles or ignores it, very
-  likely); bound it with a forking parent that sends SIGKILL, and make `bench/gpu/mac-leftovers.sh` look for QEMU too.
+  (`watch` hangs; `oracle.sh` kills its QEMU at 50 s.)
 - [B] **The agent link's test waits a fixed 30 ms** (`tests/agent.test.ts` "the link: frames out only while the agent's
   end is open…", its `settle`): under `scripts/ci.sh`'s load it once saw no `open` yet (2026-11-15; 5 of 5 alone
   passed). Waiting on the message itself (a promise resolved in `onOpen`, bounded) instead of a timer would fix it.

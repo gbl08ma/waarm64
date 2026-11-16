@@ -18,8 +18,8 @@ the x86_64 desktop (which the user needs for other work).
   for Testing, which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/waarm64-chrome/<version>/` when
   Stable moves, not Playwright's own download: that lags Stable and is an early build of its milestone (153.0.8010.12
   read clobbered immediates in indirect dispatches, which 153's release didn't: GD G4). After every run on the Mac (not the VM's own CI,
-  which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load and any Chrome for Testing no run owns
-  (`--kill` ends those, by PID): a run that hangs the GPU leaves its browser behind (the harness's alarm ends node,
+  which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load, any Chrome for Testing no run owns
+  and any QEMU no ssh session or Lima owns (an orphaned `tests/baremetal/oracle.sh --hvf` run's; `--kill` ends those, by PID): a run that hangs the GPU leaves its browser behind (the harness's alarm ends node,
   not Chrome), and a GPU held at 100% throttles the whole Mac, the dev VM's CI with it (GD G4: five such browsers made
   CI's timing tests fail for an hour). A GPU process stuck exiting can't be ended: only a restart of the Mac frees it.
 - Side checkouts: `../waarm64-exp` and `../waarm64-base` (detached worktrees for A/B experiments).

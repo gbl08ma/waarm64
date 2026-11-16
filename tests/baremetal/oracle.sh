@@ -16,6 +16,11 @@ out=../../target/baremetal
 MAC=macmini.lan
 qemu_args=(-m 128 -display none -monitor none -serial stdio -no-reboot)
 hvf=$([ "${1:-}" = --hvf ] && echo 1 || true)
+# perl <seconds> <cmd...> on the Mac: runs cmd as a child and SIGKILLs it at the deadline (or when the parent is
+# signalled); exits with cmd's code, 124 if it was killed. No single quotes in it: it's sent inside them.
+mac_bound='$t = shift; defined(my $p = fork) or die; if (!$p) { exec @ARGV; exit 127 }
+  $SIG{ALRM} = $SIG{HUP} = $SIG{TERM} = $SIG{INT} = sub { kill 9, $p }; alarm $t; waitpid $p, 0;
+  exit($? & 127 ? 124 : $? >> 8)'
 if [ -n "$hvf" ]; then
   ssh "$MAC" 'mkdir -p /tmp/waarm64-baremetal'
   scp -q "$out"/*-hvf.elf "$MAC":/tmp/waarm64-baremetal/
@@ -37,8 +42,9 @@ for src in *.c; do
     fi
   fi
   if [ -n "$hvf" ]; then
-    # Bounded on the Mac too: timeout ends ssh, not the QEMU it started there (one spun for days, 2026-11-03).
-    log=$(timeout 60 ssh "$MAC" perl -e "'alarm shift; exec @ARGV'" 50 /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host -smp "$smp" \
+    # Bounded on the Mac too: timeout ends ssh, not the QEMU it started there (one spun for days, 2026-11-03). A
+    # parent that SIGKILLs it: an alarm left across exec doesn't end QEMU (watch-hvf.elf spun 25-50 min, 2026-11-16).
+    log=$(timeout 60 ssh "$MAC" perl -e "'$mac_bound'" 50 /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host -smp "$smp" \
       "${qemu_args[@]}" "${flash[@]}" -kernel "/tmp/waarm64-baremetal/$t-hvf.elf" < <(stdin) || true)
   else
     log=$(timeout 30 qemu-system-aarch64 -M virt,gic-version=3 -accel tcg -cpu "$cpu" -smp "$smp" "${qemu_args[@]}" \
