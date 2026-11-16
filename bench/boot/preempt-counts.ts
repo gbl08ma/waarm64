@@ -4,7 +4,8 @@
 // or an exit, by kind); and parallel mode's timer and IRQ latencies. Runs the gates' guests in Node (the dev VM):
 //   CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag
 //   node bench/boot/preempt-counts.ts [--wasm target/diag/wasm32-unknown-unknown/release/waarm64_core.wasm]
-//     [--json out.json] [run...]       runs: boot user smp1 smp4 smp-user4 (default: all)
+//     [--json out.json] [--chunk N] [run...]       runs: boot user smp1 smp4 smp-user4 (default: all); --chunk:
+//     parallel mode's chunk (`vm_set_chunk`)
 //   node bench/boot/preempt-counts.ts --in out.json      # print a saved run again
 // boot: Alpine's boot as boot_alpine_jit (deterministic, 1 vCPU); user: alpine_user_jit (deterministic, 1 vCPU, by
 // phase); smpN: smp_alpine_jit's boot on N vCPUs (parallel, realtime); smp-user4: smp_user_jit_4 (by phase). A normal
@@ -17,7 +18,7 @@ import { compileCore, Counter, DISTROS } from '../../web/vm.ts';
 /** core/src/tally.rs's slots. */
 const JIT = ['back-edge', 'forward edge', 'transfer cache hit', 'miss function', 'jump cache hit (MMU off)', 'chain back', 'chain fwd', 'chain via jc back', 'chain via jc fwd', 'by-VA link back', 'by-VA link fwd', 'host call', 'host return', 'poll (polled code)'];
 const END = ['budget', 'early (stop word, park)', 'Resync (ISB/DSB/ERET/unmask)', 'Invalidate (IC)', 'WFI', 'WFE', 'SEV', 'TLBI IS', 'HVC', 'counter read', 'platform (timer/GIC regs)', 'device (MMIO)', 'SVC', 'exception', 'other'];
-const N = 64, END_AT = 16, END_STEPS = 32, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60;
+const N = 64, END_AT = 16, END_STEPS = 32, BETWEEN = 31, BETWEEN_NS = 47, TIMER_LATE = 48, IRQ_LATE = 54, IRQ_HIST = 60;
 
 type Tallies = number[];
 type Phase = { name: string; steps: number; t: Tallies };
@@ -25,7 +26,7 @@ type Run = { name: string; ncpus: number; parallel: boolean; steps: number; ms: 
 
 const { values: a, positionals } = parseArgs({
   allowPositionals: true,
-  options: { wasm: { type: 'string', default: 'target/diag/wasm32-unknown-unknown/release/waarm64_core.wasm' }, json: { type: 'string' }, in: { type: 'string' } },
+  options: { wasm: { type: 'string', default: 'target/diag/wasm32-unknown-unknown/release/waarm64_core.wasm' }, json: { type: 'string' }, in: { type: 'string' }, chunk: { type: 'string' } },
 });
 
 const sum = (xs: Tallies[]) => Array.from({ length: N }, (_, i) => (i % 3 === 2 && i >= TIMER_LATE && i < IRQ_HIST ? Math.max(...xs.map((x) => x[i])) : xs.reduce((s, x) => s + x[i], 0)));
@@ -45,7 +46,7 @@ async function run(name: string): Promise<Run> {
   const marks: Phase[] = [];
   const mark = (m: string) => marks.push({ name: m, steps: vm.stats().steps, t: sum(read()) });
   const t0 = performance.now();
-  const r = await boot(module, img, (v) => { vm = v; mark('begin'); }, { cmdline: parallel && user ? `${d.cmdline} waarm64.threads=${ncpus}` : d.cmdline, ncpus, parallel, realtime: parallel, onMark: (m) => mark(m) });
+  const r = await boot(module, img, (v) => { vm = v; if (a.chunk) v.setChunk(Number(a.chunk)); mark('begin'); }, { cmdline: parallel && user ? `${d.cmdline} waarm64.threads=${ncpus}` : d.cmdline, ncpus, parallel, realtime: parallel, onMark: (m) => mark(m) });
   const ms = performance.now() - t0;
   const cpus = read();
   const t = sum(cpus);
@@ -72,6 +73,8 @@ function print(r: Run) {
     const c = r.t[END_AT + k];
     if (c) console.log(`  ${n.padEnd(30)} ${String(c).padStart(10)} ${((100 * c) / chunks).toFixed(2).padStart(6)}% ${(r.t[END_STEPS + k] / c).toFixed(0).padStart(7)}`);
   });
+  const b = r.t[BETWEEN];
+  if (b) console.log(`  between a chunk ended by its steps and the next: ${b}, mean ${(r.t[BETWEEN_NS] / b).toFixed(0)} ns`);
   const tick = 1e3 / 62.5; // ns a counter tick
   const lat = (label: string, at: number, scale: number) => {
     const [c, s, m] = r.t.slice(at, at + 3);

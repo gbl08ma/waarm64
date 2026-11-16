@@ -464,7 +464,9 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   and miss-function entries, static chains backward (target PA ≤ source PA) and forward (direct, through the jump
   cache, by VA), host calls and returns, polled code's polls (PERF loop 31); for parallel runs, how chunks ended (the budget or an exit, by kind, with
   their mean steps) and two latencies: a vCPU's own timer line seen past its deadline, and an IRQ line's rise
-  (`Vm::refresh`) to its IRQ taken or its WFI completed. The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
+  (`Vm::refresh`) to its IRQ taken or its WFI completed, and the run loop's time from a chunk that ended by its steps
+  to the next one's start (PERF loop 32). `--chunk N` runs the parallel guests with N-step chunks (`vm_set_chunk`), as
+  `smp_alpine_jit` and `smp_user_jit*` do with `?chunk=N` (`bench/run.ts --query=chunk=N`). The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
   the end of each vCPU's counters block, where the run loops publish them; a diagnostic core runs the same steps as
   the normal one (Alpine's boot: tests/steps.txt's count).
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`

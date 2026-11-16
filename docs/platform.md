@@ -136,7 +136,8 @@ indexes of their instance).
   `kick`). A store that lands before the run loop's is seen by its reads; one after stops the chunk at its next poll.
   What has no event (the vCPU's own timer deadline, the xHCI's due time, the worker's event-loop visit, the periodic
   publications, the PC sampler) stays paced by the chunk's steps as before: a vCPU that loops with no exit ends a
-  chunk within a poll of 32,768 steps. The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
+  chunk within a poll of 32,768 steps. A ticker that let chunks run longer didn't pay (PERF loop 32: a chunk end
+  costs ~0.2 µs, and it's where the vCPU sees its timer and installs compiled modules; [jit.md](jit.md) "No ticker"). The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
   looping vCPU answers.
 - **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
   never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a

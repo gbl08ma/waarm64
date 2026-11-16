@@ -1,0 +1,165 @@
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index a0f48b4e..855ee2aa 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -136,6 +136,15 @@ const JIT_PUBLISH: u64 = 1 << 16;
+ /// then show as latency; the polls compare it with an i32 `acc`).
+ const POLL_MAX: u64 = 1 << 30;
+ 
++/// Paced chunks (PERF loop 32's switch): the longest and shortest chunk, and the share of the estimated steps to
++/// the deadline that a chunk runs.
++#[cfg(feature = "paced")]
++const PACE_MAX: u64 = 1 << 20;
++#[cfg(feature = "paced")]
++const PACE_MIN: u64 = 1024;
++#[cfg(feature = "paced")]
++const PACE_EARLY: f64 = 0.875;
++
+ /// Steps between two checks of a running vCPU's timers against the clock
+ /// (`run_loop`, between chunks), unless their registers change: a few µs of guest code.
+ const TIMER_STEPS: u64 = 4096;
+@@ -230,6 +239,12 @@ pub(super) struct Own {
+     /// not checked yet, as after a restore).
+     timer_at: u64,
+     timer_regs: Option<[u64; 4]>,
++    /// Paced chunks (PERF loop 32's switch): the vCPU's steps per counter tick while running (0: not measured
++    /// yet), and `steps` when its next timer deadline is expected (`u64::MAX`: none).
++    #[cfg(feature = "paced")]
++    rate: f64,
++    #[cfg(feature = "paced")]
++    due: u64,
+ }
+ 
+ /// Waits while `word` holds `expected`, at most `ns` nanoseconds (or until a
+@@ -340,15 +355,25 @@ impl Vm {
+             j.unpark();
+         }
+         let polled = v.jit.cache.as_ref().is_some_and(|j| j.polled());
++        // The diagnostic build: when the last chunk ended by its steps (the time to the next one's start).
++        #[cfg(feature = "diag")]
++        let mut between: Option<u64> = None;
++        // Paced chunks: the last timer check of this call (steps, counter), for the rate.
++        #[cfg(feature = "paced")]
++        let mut last: Option<(u64, u64)> = None;
+         loop {
+             // The chunk's steps: shorter while the PC sampler runs (`Shared::chunk`: the PC is published at each
+             // chunk's end); a test may make it longer under polled code (its setters then show).
+-            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
++            let set = self.shared.chunk.load(Ordering::Relaxed);
++            let chunk = match set {
++                #[cfg(feature = "paced")]
++                0 if polled => self.paced(own),
+                 0 => CHUNK,
+                 k if polled => k.min(POLL_MAX),
+                 k => k.min(CHUNK),
+             };
+-            let n = chunk.min(budget.saturating_sub(own.steps - start)).max(1);
++            #[allow(unused_mut)]
++            let mut n = chunk.min(budget.saturating_sub(own.steps - start)).max(1);
+             // Polled code's bound, stored before anything here looks for work: whatever makes work for this vCPU
+             // after these reads stores 0 there after making it ([`Vm::stop`]), and the chunk stops at its next poll.
+             if polled {
+@@ -421,9 +446,31 @@ impl Vm {
+             ];
+             let check =
+                 own.wfi || own.timer_regs != Some(regs) || own.steps - own.timer_at >= TIMER_STEPS;
++            #[cfg(feature = "paced")]
++            let check = check || own.steps >= own.due;
+             let now = if check { self.now() } else { 0 };
+             if check {
+                 self.drive_timers(c, v, own, now);
++                #[cfg(feature = "paced")]
++                if polled {
++                    self.pace(v, own, now, &mut last);
++                    // A deadline nearer than the chunk's bound (the guest just set it): lowered unless a
++                    // setter stored 0 meanwhile.
++                    let m = if set == 0 { self.paced(own).min(n) } else { n };
++                    if m < n
++                        && v.jit
++                            .stop
++                            .compare_exchange(
++                                n as u32,
++                                m as u32,
++                                Ordering::SeqCst,
++                                Ordering::SeqCst,
++                            )
++                            .is_ok()
++                    {
++                        n = m;
++                    }
++                }
+             }
+             // The xHCI's completions once their latency passed. An idle vCPU waits for that too
+             // (below): another one may be what keeps the machine busy.
+@@ -503,6 +550,12 @@ impl Vm {
+                 v.jit.counter = self.counter();
+             }
+             debug_assert!(v.jit.io.is_none(), "a device access's outcome left over");
++            #[cfg(feature = "diag")]
++            if let Some(t) = between.take() {
++                let d = &sh.counters.diag;
++                crate::tally::add(d, crate::tally::BETWEEN, 1);
++                crate::tally::add(d, crate::tally::BETWEEN_NS, self.clock.ns() - t);
++            }
+             let (k, e) = if v.jit.cache.is_some() {
+                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
+                 unsafe { jit::steps(v, &self.mem, n) }
+@@ -519,6 +572,9 @@ impl Vm {
+                 let kind = crate::tally::end_kind(e.as_ref(), k >= n);
+                 crate::tally::add(d, crate::tally::END + kind, 1);
+                 crate::tally::add(d, crate::tally::END_STEPS + kind, k);
++                if kind == crate::tally::BUDGET {
++                    between = Some(self.clock.ns());
++                }
+             }
+             own.steps += k;
+             self.publish_cpu(c, v, own, false);
+@@ -617,6 +673,48 @@ impl Vm {
+         }
+     }
+ 
++    /// Paced chunks (PERF loop 32's switch): the chunk's steps for polled code, from the vCPU's measured rate and
++    /// its next timer deadline (`pace`): to a little before the deadline, at most [`PACE_MAX`] steps or ~1 ms;
++    /// [`CHUNK`] until the rate is known.
++    #[cfg(feature = "paced")]
++    fn paced(&self, own: &Own) -> u64 {
++        if own.rate == 0.0 {
++            return CHUNK;
++        }
++        let ms = (own.rate * self.cfg.cntfrq as f64 / 1000.0) as u64;
++        let mut n = own.due.saturating_sub(own.steps).min(ms).min(PACE_MAX);
++        // The xHCI's completions wait for a chunk's end (`run_loop`).
++        if self.shared.xhci_due.load(Ordering::Relaxed) != u64::MAX {
++            n = n.min(CHUNK);
++        }
++        n.max(PACE_MIN)
++    }
++
++    /// Paced chunks: the vCPU's rate (steps per counter tick, between two timer checks of one run) and the steps
++    /// at its next deadline, as of counter value `now`.
++    #[cfg(feature = "paced")]
++    fn pace(&self, v: &Vcpu, own: &mut Own, now: u64, last: &mut Option<(u64, u64)>) {
++        if let Some((s, t)) = *last
++            && now > t
++            && !own.wfi
++        {
++            let r = (own.steps - s) as f64 / (now - t) as f64;
++            own.rate = if own.rate == 0.0 {
++                r
++            } else {
++                (own.rate * 3.0 + r) / 4.0
++            };
++        }
++        *last = Some((own.steps, now));
++        own.due = match deadline(&v.cpu, now) {
++            // A little early: the rate is an estimate.
++            Some(t) if own.rate > 0.0 => {
++                own.steps + ((t - now) as f64 * own.rate * PACE_EARLY) as u64
++            }
++            _ => u64::MAX,
++        };
++    }
++
+     /// Drives vCPU `c`'s timer lines into the GIC as of counter value `now`
+     /// (`run_loop` every [`TIMER_STEPS`] steps or when they may have changed,
+     /// and before a platform access that can show them).

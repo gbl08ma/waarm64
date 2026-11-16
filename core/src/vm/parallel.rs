@@ -340,6 +340,9 @@ impl Vm {
             j.unpark();
         }
         let polled = v.jit.cache.as_ref().is_some_and(|j| j.polled());
+        // The diagnostic build: when the last chunk ended by its steps (the time to the next one's start).
+        #[cfg(feature = "diag")]
+        let mut between: Option<u64> = None;
         loop {
             // The chunk's steps: shorter while the PC sampler runs (`Shared::chunk`: the PC is published at each
             // chunk's end); a test may make it longer under polled code (its setters then show).
@@ -503,6 +506,12 @@ impl Vm {
                 v.jit.counter = self.counter();
             }
             debug_assert!(v.jit.io.is_none(), "a device access's outcome left over");
+            #[cfg(feature = "diag")]
+            if let Some(t) = between.take() {
+                let d = &sh.counters.diag;
+                crate::tally::add(d, crate::tally::BETWEEN, 1);
+                crate::tally::add(d, crate::tally::BETWEEN_NS, self.clock.ns() - t);
+            }
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }
@@ -519,6 +528,9 @@ impl Vm {
                 let kind = crate::tally::end_kind(e.as_ref(), k >= n);
                 crate::tally::add(d, crate::tally::END + kind, 1);
                 crate::tally::add(d, crate::tally::END_STEPS + kind, k);
+                if kind == crate::tally::BUDGET {
+                    between = Some(self.clock.ns());
+                }
             }
             own.steps += k;
             self.publish_cpu(c, v, own, false);

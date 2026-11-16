@@ -5870,3 +5870,79 @@ phases move ~1-2%, under the gates' resolution here. In `scripts/ci.sh` "alpine 
 
 CI, each alone: `scripts/ci.sh` (896 s), `scripts/ci-jit.sh` (134 s, the spin tests under JIT-stress and JIT-check with it), `scripts/ci-debian.sh` (332 s); the xHCI's tick path and sound are untouched (no `ci-usb.sh`, `ci-audio.sh`). The oracle runs (`oracle.sh`, `--hvf`) left a QEMU spinning on the Mac
 (`watch`, docs/backlog.md's known leak); the supervisor ended it.
+
+## PERF loop 32: what a chunk end costs, and the ticker that wasn't kept (2026-11-16)
+
+P2 of "Preemption without the budget" (PERF-HANDOVER.md): since loop 31 parallel SMP's polled code ends a chunk at the
+first poll past its steps (32,768), and decision 2's ticker (a thread storing 0 in the stop words at each vCPU's timer
+deadline and periodically, so that chunks could run far longer) didn't exist. This loop measured whether one pays:
+first what a chunk end costs, then the ceiling (long chunks with nothing to end them), then a ticker built behind a
+switch. **Not kept: nothing beat loop 31 past the gates' noise, and long chunks without a prompt end lose 2-4%.** Data:
+`bench/boot/results/perf32/` (its README); nothing of the arms is in the tree.
+
+**What a chunk end costs.** The diagnostic core times the run loop's work between a chunk that ended by its steps
+and the next one (`core/src/tally.rs` `BETWEEN`, `BETWEEN_NS`; `bench/boot/preempt-counts.ts` prints it; Node on the
+dev VM, loop 31's code, `counts-default.json`): **189 / 204 / 220 ns** a chunk end (smp1 / smp4 / smp-user4; two
+clock reads included), at 40,105 / 42,143 / 837,147 such ends (11.4% / 5.2% / 31.4% of the chunks). Against the vCPU
+time that's 0.12% of Alpine's boot on 1 vCPU and 0.36% of the userspace phases on 4 (837K × 220 ns over 4 × 12.7 s),
+before the dispatcher's re-entry (a key, a lookup, a call: not timed, the same order). So the most any ticker can win
+is ~0.5% of the gates, under their ~1% floor. And on the Mac, 4× the chunk ends cost nothing that shows: `?chunk=8192`
+against the default, 3 rounds alternated (`mac-short`), every gate within −0.5% to +0.9%, overlapping.
+
+**The ceiling: long chunks, nothing to end them.** The same core with 2^20-step chunks (`?chunk=1048576`, the bench's
+`smp()` takes it now), 5 rounds alternated (`mac-ceiling`; ranges of the rounds' medians, ms):
+
+| | default | 2^20 | |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2822-2928 / 5379-5501 | 2980-3020 / 5551-5608 | +3.5% / +1.7%, no overlap |
+| n2 script / total | 2445-2522 / 5019-5126 | 2576-2608 / 5156-5214 | +3.5% / +1.9%, no overlap |
+| n4 script / total | 2417-2491 / 5032-5138 | 2544-2575 / 5168-5214 | +4.1% / +2.0%, no overlap |
+| `smp_user_jit_4` total | 10956-11490 | 11145-11869 | +2.7%, overlapping |
+
+Longer chunks lose, though they end 98-99% fewer chunks by their steps (Node: 674 / 697 / 17,628). Two things only a
+chunk end did, measured: the vCPU's own timer (Node, seen late while running: 83 / 84 / 36 µs mean → 178 / 161 / 260
+µs, `counts-long.json`), and **the installs of compiled modules**: the dispatcher installs what the compile worker
+finished (`Jit::fresh`) and a vCPU in compiled code reaches it only at a chunk's end, so the block interpreter runs
+on meanwhile: interpreted steps in the boot (`jit.decSteps`, medians of 5) 156 → 171M on 1 vCPU, 180 → 196M on 2,
+210 → 225M on 4. IRQs from other vCPUs and devices (loop 31's setters) stayed prompt (2.3-10.4 µs mean).
+
+**A ticker without a thread: paced chunks** (`paced.patch`, a `paced` feature). A thread that wakes at deadlines
+costs a futex wake-up (~17 µs in the dev VM, docs/platform.md "Parallel SMP"), with macOS's timer slack on top; the
+run loop already knows the vCPU's deadline, so this arm put it in the stop word instead: at each timer check it
+measures the vCPU's steps per counter tick (an average over the checks of one run) and sets the chunk to 7/8 of the
+steps estimated to its next deadline, at most 2^20 steps or ~1 ms (the event-loop visit, the publications and the
+sampler keep their bounds; 32,768 while the xHCI's completions wait), lowering the word with a compare-exchange when
+the guest sets a nearer deadline (a setter's 0 wins). Node (`counts-paced.json`): chunk ends by the steps −59% /
+−52% / −71% (16,446 / 20,129 / 244,178, 48-94K steps each), the timer seen 71 / 69 / 26 µs late (from 83 / 84 / 36),
+IRQ line to IRQ 3.3 / 14.2 / 3.7 µs (2.8 / 13.7 / 2.8). On the Mac it lost like the long chunks (`mac-paced`, one
+round of each arm and a second of `paced`): boots +2.3-4.1% to the script, interpreted steps 156 → 160M: the module
+installs again. So the compile worker became a setter too (`compile-stops.patch`: when `ready` moves it stores 0 in
+every stop word, which `vm_cpu_stop` already gives the host). Then, 5 rounds alternated, three arms (`mac-cw`):
+
+| | loop 31 | + the compile worker's stores | paced, with them |
+|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2912-2929 / 5492-5510 | 2914-2938 / 5500-5527 (+0.2% / +0.1%) | 2911-2981 / 5487-5574 (+0.2% / +0.1%) |
+| n2 script / total | 2508-2533 / 5105-5147 | 2489-2537 / 5069-5142 (−0.1% / 0.0%) | 2510-2548 / 5106-5158 (−0.1% / +0.1%) |
+| n4 script / total | 2457-2487 / 5092-5128 | 2471-2492 / 5108-5129 (+0.4% / +0.3%) | 2459-2517 / 5092-5176 (−0.1% / 0.0%) |
+| `smp_user_jit_4` total | 11194-11466 | 11147-11431 (−0.2%) | 10979-11708 (+0.7%) |
+| compress / Lua / churn / SQLite | 1243-1377 / 2351-2659 / 778-829 / 1723-1866 | −0.1% / −0.2% / +0.7% / −4.5% | −5.3% / −0.6% / +0.5% / +2.5% |
+
+Every range overlaps; interpreted steps 156 / 156 / 158M on 1 vCPU. Neither the stores nor the pacing resolve, as the
+chunk-end cost said they couldn't, and the pacing's rate estimate can only make its timer worse than a bound in steps
+where the rate drops (interpreted code, compiles). Both were left out; so was a ticker thread, which could win no more
+than the paced arm's ceiling (the same chunk ends saved) and adds a thread's wake-ups and their jitter.
+
+**What it means for the next loops.** The chunk's steps in the stop word are the cheap ticker: they bound the timer's
+and the installs' latency at a cost under the gates' resolution, and a chunk end is what installs compiled code.
+Dropping `acc` (P3) would need something else to end a chunk with no exit at about 32K steps' pace (timers, installs);
+this loop measured that nothing cheaper does it, so P3 should keep `acc` as the bound unless its own cost is shown.
+Latency (decision 3's bounds) is as loop 31 left it: the code didn't change (the spin tests and `preempt-counts.ts`
+weren't re-run for it; the numbers above are this session's of loop 31's code).
+
+Memory: none. The Mac's Spotlight (`mds_stores`, ~40% of a core) ran through all the sessions, both arms alike. Kept:
+the diagnostic tally of the time between chunks, `preempt-counts.ts --chunk N` and `smp()`'s `?chunk=` (docs/benchmarking.md);
+the normal build's code section is byte-identical to a9b8d140's.
+
+CI, each alone: `scripts/ci.sh` (827 s) and `scripts/ci-jit.sh` (131 s) green; `cargo clippy --features diag` clean.
+Not run: `scripts/ci-debian.sh`, `ci-usb.sh`, `ci-audio.sh` (no run loop, host, xHCI or sound change is left), the spin
+tests and `oracle.sh` on the arms (none was kept).

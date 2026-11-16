@@ -65,6 +65,12 @@ pub const SVC: usize = 12;
 pub const EXCEPTION: usize = 13;
 pub const OTHER: usize = 14;
 
+/// Chunks that ended by their steps followed by another in the same run (parallel), and the clock's ns from the
+/// end of each to the next one's start: the run loop's work between them (the slots after [`END`]'s and
+/// [`END_STEPS`]'s kinds).
+pub const BETWEEN: usize = END + 15;
+pub const BETWEEN_NS: usize = END_STEPS + 15;
+
 /// A timer line of the vCPU's own seen high by the run loop (parallel): count, the counter ticks since its deadline
 /// summed, their maximum; while running, then (`+ 3`) when the vCPU was in WFI.
 pub const TIMER_LATE: usize = 48;

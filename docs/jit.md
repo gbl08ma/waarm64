@@ -399,6 +399,14 @@ differing only in the address of a core table they embed, the CRC tables).
   timer deadline, the worker's event-loop visit, the periodic publications, the PC sampler) keeps its bounds without
   a ticker thread, and `acc` stays far from `RETURNED`. `vm_set_chunk` may set chunks of up to 2^30 steps here (the
   spin tests'), past which only the setters end one.
+- **No ticker** (PERF loop 32, bench/boot/REPORT.md): a chunk end costs ~0.2 µs of run loop (Node on the dev VM), at
+  most ~0.5% of the gates' vCPU time, and 4× as many (8,192-step chunks) didn't move the Mac's gates. Longer chunks
+  lose instead: 2^20 steps with nothing to end them slowed Alpine's boots 3.5-4.1%, because a chunk end is also where
+  the vCPU sees its own timer and where the dispatcher installs the modules the compile worker finished (`Jit::fresh`:
+  until then the block interpreter runs, +15M steps in the boot). A ticker in the run loop (chunks paced to the
+  vCPU's next deadline by its measured rate, up to 2^20 steps, the compile worker storing 0 when `ready` moved) cut
+  the chunk ends by steps 52-71% and kept the timer as prompt, and still didn't beat the steps bound on the Mac
+  (every gate within ±0.7%, overlapping); a ticker thread can save no more chunk ends than that, so none was built.
 - **Counted:** (bench/boot/REPORT.md "PERF loop 31", the diagnostic core's `poll` tally) 56 polls per 1000 steps in
   Alpine's parallel boot, 47-75 in the userspace phases on 4 vCPUs (loop 30 estimated 42-52 from its tallies of the
   points); chunks ended early by the word 0.3-0.7%. A parallel boot's modules: per function arm64 −6.3% instructions

@@ -343,7 +343,10 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
   // Boots: also to the distro's first marker (its local.d script), since realtime power-off includes busybox init's 2 s of sleeps.
   const phases = what === 'user' ? [...USER_PHASES, 'total'] : ['script', 'total'];
   const out = new Map<string, Sample>();
-  const one = (n: number) => boot(module, img, undefined, { cmdline: what === 'user' ? `${d.cmdline} waarm64.threads=${n}` : d.cmdline, ncpus: n, parallel: true });
+  // `?chunk=N`: the vCPUs' chunk (`vm_set_chunk`; PERF loop 32's ceiling of longer chunks).
+  const chunk = pageQuery().has('chunk') ? Number(pageQuery().get('chunk')) : undefined;
+  const onVm = chunk ? (vm: Awaited<ReturnType<typeof bootVm>>) => vm.setChunk(chunk) : undefined;
+  const one = (n: number) => boot(module, img, onVm, { cmdline: what === 'user' ? `${d.cmdline} waarm64.threads=${n}` : d.cmdline, ncpus: n, parallel: true });
   for (const n of ns) await one(n);
   for (let i = 0; i < (o.quick ? 1 : rounds); i++) {
     for (const n of ns) {
@@ -357,7 +360,7 @@ async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: nu
         if (!out.has(name)) out.set(name, { name, unit: 'ms', params: {}, samples: [] });
         const s = out.get(name)!;
         s.samples.push(ms[p]);
-        s.params = { distro: 'alpine', cmdline: d.cmdline, threads: what === 'user' ? n : undefined, ncpus: n, parallel: true, jit: 1, steps: r.stats.steps, counters: r.stats, cpus: r.cpus };
+        s.params = { distro: 'alpine', cmdline: d.cmdline, threads: what === 'user' ? n : undefined, ncpus: n, parallel: true, jit: 1, chunk, steps: r.stats.steps, counters: r.stats, cpus: r.cpus };
       }
       const cpus = r.cpus.map((c) => `${(c.steps / 1e6).toFixed(0)}M/${c.jit.blocks}b/${(c.jit.compileNs / 1e6).toFixed(0)}ms`).join(' ');
       o.log?.(`smp_${what} n=${n}: ${phases.map((p) => `${p} ${ms[p].toFixed(0)}`).join(', ')} ms; per vCPU steps/regions/compile: ${cpus}`);
