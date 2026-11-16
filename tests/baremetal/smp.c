@@ -74,10 +74,11 @@ void secondary_main(void) {
   gic_cpu_init(c);
   arm_timer();
   __atomic_store_n(&started[c], 1, __ATOMIC_SEQ_CST);
-  __asm__ volatile("msr daifclr, #2" ::: "memory");
-  while (!pings[c] || !timer_hits[c])
-    __asm__ volatile("wfi");
-  __asm__ volatile("msr daifset, #2" ::: "memory");
+  // Checked with IRQs masked, unmasked only around each WFI (which wakes on a pending IRQ, masked or not): an IRQ
+  // taken between an unmasked check and its WFI would return onto the WFI, and if it was the last one, sleep forever.
+  while (!pings[c] || !timer_hits[c]) {
+    __asm__ volatile("wfi; msr daifclr, #2; isb; msr daifset, #2" ::: "memory");
+  }
   psci(PSCI_CPU_OFF, 0, 0, 0);
   power_off(80); // CPU_OFF returned
 }
@@ -106,15 +107,14 @@ int main(void) {
   }
   // Ping-pong, and CPU 0's own timer.
   arm_timer();
-  __asm__ volatile("msr daifclr, #2" ::: "memory");
   for (u64 c = 1; c < NCPU; c++) sgi(1, c);
+  // Checked with IRQs masked, as the secondaries' wait.
   for (;;) {
     u64 n = 0;
     for (u64 c = 1; c < NCPU; c++) n += __atomic_load_n(&pongs[c], __ATOMIC_SEQ_CST);
     if (n == NCPU - 1 && timer_hits[0] && sgi2) break;
-    __asm__ volatile("wfi");
+    __asm__ volatile("wfi; msr daifclr, #2; isb; msr daifset, #2" ::: "memory");
   }
-  __asm__ volatile("msr daifset, #2" ::: "memory");
   check(pings[0] == 0 && timer_hits[0] == 1 && sgi2 >= 1 && sgi2 < NCPU, 21);
   // The secondaries turn themselves off once they've had their ping and their
   // timer (which may still be pending when their pong arrives).
