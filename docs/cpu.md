@@ -368,7 +368,7 @@ The table is `core/src/interp/sys.rs`.
   since its 2 MiB entries are always live: in Alpine's boot ~6K of ~34K flushes by VA, 25M slots read; in the
   userspace benchmark (THP in the low half too) 16K, 65M slots; with the buckets Alpine's boot scans under 400 times
   (counted natively; neither run filled an entry from a 1 GiB block). A flush by VA also drops an EL's transfer cache
-  if its instruction TLB filled from a block in that half. Without this, stale pages of a freed THP
+  if it may hold entries for pages of blocks in that half ([jit.md](jit.md) "Linking": `Tlb::xblk`). Without this, stale pages of a freed THP
   stayed mapped until the next ASID switch: hidden while KPTI switched ASIDs at every kernel entry,
   it corrupted glibc's heap in dEQP once FEAT_E0PD let a KASLR kernel run without KPTI
   (`c3ae697`; bisected and narrowed with `kpti=1`, `nokaslr` and `transparent_hugepage=never`

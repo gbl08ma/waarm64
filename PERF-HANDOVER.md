@@ -149,7 +149,7 @@ lockstep, exact-step boots) must not change. CI as for any JIT loop, plus `scrip
 the host, `ci-usb.sh` for the xHCI's tick, `ci-audio.sh` if the ticker shares a thread with sound. Out-of-context
 reviews after the ticker's loop and at the block's end. Its entries in the queue are P0-P4.
 
-## State (2026-11-14, after loop 28)
+## State (2026-11-16, after loop 29)
 
 Kept, with numbers in the REPORT entries: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads
 inline; the rich FP copy of `hot` per block (FP guest +12-14%); DAIF/DAIFClr/DIT and ISB (outside parallel) inline
@@ -163,16 +163,15 @@ FCMA, FP16, FHM, BF16. Dropped with findings in the docs: slot size/count, the d
 as a field, NZCV in a local, ADRP+ADD, misaligned stores, CCMP's kind, LSE2, LSE min/max inline, ISB inline in
 parallel, the shared cache's leftovers, the SMP leftovers, a device call compiled into the slow arm (loop 21), sharing
 X-register locals against Liftoff's zero-fill (loop 27: at best ~0.4% of the boot; the fills themselves cost ~2.8% of
-the boot and ~1.7% of userspace, loop 26, docs/v8.md). Out-of-context reviews after loops 8, 19, 21 and 23, fixed in
-loops 9, 20, 22 and 24. Loops 24-28 added state to the JIT and the MMU without a review since loop 23's: loop 28's
-`Tlb::xpages` (transfer-cache flush filtering) is the candidate for the next one.
+the boot and ~1.7% of userspace, loop 26, docs/v8.md). Out-of-context reviews after loops 8, 19, 21, 23 and 28, fixed in
+loops 9, 20, 22, 24 and 29 (loop 29: a block's transfer cache entries refilled from TLB hits outlived its TLBI;
+`Tlb::xblk` now follows a count of the EL's block exec entries, the gates unchanged).
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** loop 29, the review of loop 28's findings (`review/perf-l28`, REVIEW-PERF-L28.md) | 1 (high, from 53c603b6): `bump_el` clears `xblk` while block exec entries stay in the instruction TLB, so a later TLBI of another page of the block leaves a refilled transfer-cache entry live; its two confirming unit tests are in the file; also a block-mapped variant of tests/baremetal/xcache.c. 2 (low): `xpage_bit`'s comment on 16 MiB windows (aligned only) |
-| P0: preemption's counts and tools ("Preemption without the budget") | the x64 tools made permanent (fetch script, module dump, summarizer); counts per step of back-edges, indirect transfers, backward/forward chains and forward edges, and of chunk ends by budget vs by exit, on the gates and Firefox's pages; the Mac baseline and x64 counts; the 2026-11-16 data committed; P1-P4 sized by it |
+| **Next:** P0: preemption's counts and tools ("Preemption without the budget") | the x64 tools made permanent (fetch script, module dump, summarizer); counts per step of back-edges, indirect transfers, backward/forward chains and forward edges, and of chunk ends by budget vs by exit, on the gates and Firefox's pages; the Mac baseline and x64 counts; the 2026-11-16 data committed; P1-P4 sized by it |
 | P1: realtime modules without `left`, with the stop word | parallel realtime's own flavor: no `left` checks or bookkeeping, the stop word polled at the cycle points, the run loop ending a chunk on a poll; the setters with events (signals, IRQ lines, TLBI IS queues); periodic work still by steps from `acc`. Done: the spin tests for those setters; the gates and x64 counts against P0 |
 | P2: the ticker | the vCPU's own deadlines, the event-loop visit, periodic work by time where cheaper; its period by measurement (latency against cost). Done: the timer spin tests, latency no worse than P0 (decision 3). Then an out-of-context review |
 | P3: the review's findings, then what's left of the cost | whether `acc` costs measurably, whether fewer poll points suffice, the polls' form on both hosts; each kept or dropped by numbers |

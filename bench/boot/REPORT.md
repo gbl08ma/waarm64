@@ -4792,6 +4792,57 @@ global maps; a bump clearing them; global fetches not marked. Skipping the IS by
 the bare-metal test too. `isb.bin` came out of `build.sh` different (the clang here), rebuilt with the others. No step
 count moved. CI: `scripts/ci.sh` (794 s) and `scripts/ci-jit.sh` pass.
 
+## PERF loop 29: the review of loop 28 (2026-11-16)
+
+The out-of-context review of loop 28 (`review/perf-l28`) found:
+
+1. **(High, from 53c603b6) A block's transfer cache entries outlived the block's TLBI.** `Tlb::xblk[el][half]` (a
+   flush by VA in the half bumps the EL's transfer cache, since the block's other pages may have entries there) was
+   set only by a fill of an instruction TLB entry from a block, and cleared by every bump. A bump drops only the
+   transfer cache: the TLB's block entries stay, and the dispatcher and the miss function fill the cache again from
+   them on a hit, with no fill to set the flag. A TLBI later for another page of the block (Linux's one TLBI per
+   2 MiB: munmap, mremap, migration of an exec THP) then dropped the TLB's entries but left the refilled transfer
+   cache entry, and compiled code kept branching to the old block. Any bump cleared the flag: the JIT's dropping
+   blocks (frequent), a flush by VA of any page of the half, the nG entries' drop.
+2. **(Low)** `xpage_bit`'s comment: the 12-bit fold keeps the pages of an *aligned* 16 MiB apart, not any 16 MiB.
+   Comment and docs/jit.md fixed. A collision only costs a scan.
+
+The review's latent case (a RAM region not in whole pages, whose block page would hand out a translation without a
+TLB fill) can't arise in a VM: `Mem::at`, `with_spill` and `with_window` assert whole pages (docs/cpu.md); only the
+bare `mem_new` export (the interpreter benchmarks, MMU off) skips `at`. Nothing added.
+
+**The fix:** `Tlb::xblkn[el][half]` counts the EL's live instruction TLB entries from blocks (`fill` adds,
+`drop_slot` removes; `drop_slot` forced inline, which keeps `fill`, `flush_va` and `flush_ng` as before), and a bump
+sets `xblk` from it instead of clearing it: after a bump the cache can hold an entry for a page of a block only if
+an entry from a block was live then or was filled since. Checking the count at flush time alone would be wrong: an
+entry for a page whose TLB entry was since evicted would survive (a case of the new unit test). Setting the flag
+at the transfer cache's fills from a hit, the review's other direction, would add a load to the miss function; this
+adds nothing to compiled code or the dispatcher, only an add or subtract on a TLB fill or drop of a block's entry.
+What it does cost: while Linux's kernel text (2 MiB blocks, global) is in EL1's instruction TLB, every flush by VA in
+the kernel's half bumps EL1's transfer cache (3,408 of the boot's 24,316 flushes by VA, loop 28's counts), as was
+the intent.
+
+**Measured** (`bench/interp/ab-mac.sh`, the Mac M4, Chrome for Testing 157.0.8103.78, base 818a9422, base first in
+rounds 1 and 3, fix first in round 2; `results/perf29/`), ms:
+
+| | base r1 · r2 · r3; median | fix r1 · r2 · r3; median |
+|---|---|---|
+| `alpine_jit_total` | 4,013.9 · 4,034.8 · 4,027.6; **4,027.6** | 4,016.9 · 4,021.6 · 4,050.8; **4,021.6** (−0.1%) |
+| `alpine_user_jit_total` | 10,806.3 · 10,823.6 · 10,814.2; **10,814.2** | 10,803.2 · 10,805.3 · 10,892.9; **10,805.3** (−0.1%) |
+
+The rounds overlap: no cost the gates see. Memory: 16 bytes a vCPU.
+
+**Tests**, each failing on 818a9422 first: `mmu::tests` "a block flush drops transfer cache entries filled from
+hits" (the review's two cases and the nG drop's, each with and without the page's TLB entry evicted by a page's:
+all six failed); `tests/baremetal/xblock.c`: a BLR into a page of a 2 MiB block, the transfer cache dropped with the
+TLB's entry kept (IC IALLU; a TLBI of a data page in the half; an nG page run, then ASIDE1), the calls going on, then
+the block remapped and flushed by VA at its start: under the JIT in Node, each of the three failed on the unfixed
+core (exits 132, 138, 144: the new block's first call ran the old code). It passes on hvf (the M4, `oracle.sh
+--hvf`); QEMU 11.1's TCG fails it as we did (exit 132; docs/testing.md). Planted: the count not decremented (fails
+`block_counts_follow_their_block`, which now checks the counts); the flag replaced by the count at flush time (fails
+the new unit test's evicted cases). The other bare-metal binaries came out of `build.sh` unchanged. No step count
+moved. CI: `scripts/ci.sh` (838 s) and `scripts/ci-jit.sh` (112 s) pass.
+
 ## SNAPZ: compression across the emulator, measured (2026-11-15)
 
 The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, commit 40751074; nothing else ran. Tools:

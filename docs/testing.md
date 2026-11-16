@@ -334,7 +334,9 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   (11.1) on the Mac with `-accel hvf` for real Apple hardware at EL1 (MMU, exceptions; devices are
   QEMU's). The Sail ARM model for disputed corner cases.
 - **Findings:** QEMU TCG raises no SP alignment faults (hvf does, as do we); QEMU under hvf makes
-  unassigned PAs RAZ/WI (TCG aborts, as do we); HVF can't emulate a GICv2 (moot since we dropped
+  unassigned PAs RAZ/WI (TCG aborts, as do we); QEMU 11.1's TCG fails `xblock` (code reached through a pointer into
+  a 2 MiB block, the block remapped and flushed by VA at its start: TCG runs the old code; hvf passes, as do we since
+  PERF loop 29); HVF can't emulate a GICv2 (moot since we dropped
   ours). **hvf does give a GICv3** (`-M
   virt,gic-version=3`): kvm-unit-tests' `gicv3-ipi`, `gicv3-active`, `selftest-smp`, `psci` and
   `timer` pass there at 4 CPUs. **It's Apple's in-kernel vGIC** (the default, and with

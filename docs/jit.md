@@ -279,13 +279,22 @@ the interpreter's own code.
     churn 7% slower (bench/boot/REPORT.md "M8: a VA-keyed cache for indirect transfers").
   - **A flush by VA scans those 1024 slots (16 KiB) only for a page that instruction fetches
     translated** (`Tlb::xpages`, PERF loop 28): eight 4096-bit maps (by EL, global or nG, VA half) of
-    the pages `Mmu::miss` translated for a fetch, cached or not, a page number folded to 12 bits.
+    the pages `Mmu::miss` translated for a fetch, cached or not, a page number folded to 12 bits (distinct within an
+    aligned 16 MiB; a collision costs a scan).
     Every entry is filled for a fetch the instruction TLB translated (the dispatcher's key, the miss
     function's TLB probe), and a TLB entry came from such a miss, so the maps hold every page the
     live entries are for. The nG maps of an EL are cleared with its nG entries when its transfer
     cache's go too (`flush_ng`, the EL's `xng`), every map by a flush of everything; a bump alone
     (blocks dropped, a flush by VA in a half with block entries) clears none, as the TLB's entries
-    stay and fill the cache again without a walk. Of the 60,054 flushes by VA in Alpine's boot and
+    stay and fill the cache again without a walk.
+  - **Pages of blocks:** a flush by VA of one page of a block drops the TLB's entries for all of its pages
+    (docs/cpu.md "Blocks"), and so must drop the transfer cache's for them, which the page's 1024 slots don't
+    hold: it bumps the EL's generation when the EL's cache may hold entries for pages of blocks in that half
+    (`Tlb::xblk`). That is the case while the EL's instruction TLB holds entries from blocks there (counted,
+    `Tlb::xblkn`), and stays so after a bump that left some (the cache refills from them without a walk, and an
+    entry outlives the TLB entry it came from), until a bump finds none. Linux's kernel text is in 2 MiB blocks,
+    so every flush by VA in the kernel's half bumps EL1's; before PERF loop 29 a bump cleared the flag outright,
+    and a refill from a hit after it left a block's entries live through the block's TLBI (`tests/baremetal/xblock.c`). Of the 60,054 flushes by VA in Alpine's boot and
     userspace benchmark 99.95% cleared nothing (they're for data pages); with the maps 1.8% scan
     (a scan ~0.4 µs in Node: ~10 ms of the boot's 3.6 s, 0.27%, and ~0.5% of the churn and shutdown
     phases before; under the gates' floor on the Mac: bench/boot/REPORT.md "PERF loop 28"). 4 KiB a vCPU.
