@@ -1,0 +1,37 @@
+== debian off round 1: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":2783,disk:1336
+round 0 keptStart {"wallMs":2830,disk:1345
+round 0 kept {"wallMs":1041,"kind":"kept","bytes":95268685,"pausedMs":884
+round 0 file {"wallMs":1190,"kind":"file","bytes":95484914,"pausedMs":877
+== debian off round 2: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1583,disk:223
+round 0 keptStart {"wallMs":1655,disk:218
+round 0 kept {"wallMs":636,"kind":"kept","bytes":95273559,"pausedMs":455
+round 0 file {"wallMs":745,"kind":"file","bytes":95461233,"pausedMs":443
+== debian off round 3: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1565,disk:220
+round 0 keptStart {"wallMs":1740,disk:220
+round 0 kept {"wallMs":625,"kind":"kept","bytes":95251763,"pausedMs":450
+round 0 file {"wallMs":749,"kind":"file","bytes":95465127,"pausedMs":447
+== debian off round 4: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":2780,disk:1331
+round 0 keptStart {"wallMs":2700,disk:1338
+round 0 kept {"wallMs":1041,"kind":"kept","bytes":95254396,"pausedMs":874
+round 0 file {"wallMs":1172,"kind":"file","bytes":95500808,"pausedMs":878
+== debian off round 5: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":2693,disk:1337
+round 0 keptStart {"wallMs":2827,disk:1334
+round 0 kept {"wallMs":1042,"kind":"kept","bytes":95264454,"pausedMs":874
+round 0 file {"wallMs":1157,"kind":"file","bytes":95494997,"pausedMs":873
+== debian off round 6: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":1564,disk:218
+round 0 keptStart {"wallMs":1736,disk:218
+round 0 kept {"wallMs":625,"kind":"kept","bytes":95236712,"pausedMs":444
+round 0 file {"wallMs":735,"kind":"file","bytes":95432943,"pausedMs":450
+ALLDONE

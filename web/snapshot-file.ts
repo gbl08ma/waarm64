@@ -19,6 +19,7 @@
 // writer and the reader are given their codec, whose CRC-32 (the core's crc32fast) takes the frames' checksums; the
 // header's is this file's own (`crc32`: read before there is a codec). A frame of another codec is refused.
 import { msg, MsgError, type Msg, type Params } from './msg.ts';
+import { isZero } from './qcow2-write.ts';
 
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
 export type SnapshotHeader = { format: 1; coreVersion: number; abi: number; created: string; [key: string]: unknown };
@@ -219,6 +220,23 @@ export function applyRam(ram: Uint8Array, index: number, data: Uint8Array): void
 export function* diskBlocks(index: number, data: Uint8Array): Generator<{ block: number; data: Uint8Array }> {
   if (data.length === 0 || data.length % PAGE !== 0 || data.length > MAX_RUN * PAGE) throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
   for (let i = 0; i < data.length / PAGE; i++) yield { block: index + i, data: data.subarray(i * PAGE, (i + 1) * PAGE) };
+}
+
+/**
+ * A DISK frame's blocks as runs: consecutive blocks that are all zeros (`zero`) or all not, `count` of them from
+ * `block`, their bytes a view of `data`. A restore writes a run in one overlay call (web/snapshot.ts).
+ */
+export function* diskRuns(index: number, data: Uint8Array): Generator<{ block: number; count: number; zero: boolean; data: Uint8Array }> {
+  const n = data.length / PAGE;
+  if (data.length === 0 || !Number.isInteger(n) || n > MAX_RUN) throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
+  const zero = (i: number) => isZero(data.subarray(i * PAGE, (i + 1) * PAGE));
+  for (let i = 0, z = zero(0); i < n;) {
+    let j = i + 1;
+    let zj = false;
+    while (j < n && (zj = zero(j)) === z) j++;
+    yield { block: index + i, count: j - i, zero: z, data: data.subarray(i * PAGE, j * PAGE) };
+    [i, z] = [j, zj];
+  }
 }
 
 // ---- writer ----

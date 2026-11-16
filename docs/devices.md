@@ -919,7 +919,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   per request that maps new slots), a slot freed by a discard or a move is reused only once the map that freed it is
   flushed, a compaction's copies are flushed before their entries move, and `data` is cut only once the map entries
   that left its end are flushed. They cost nothing bench/io's suite can see (bench/io/REPORT.md "Ordered flushes");
-  `tests/overlay.test.ts` replays every crash point with either file as of its last flush.
+  `tests/overlay.test.ts` replays every crash point with either file as of its last flush. **A snapshot's restore**
+  writes its overlay unordered (`overlay`'s `ordered: false`) and flushes both files at its end: until then the overlay
+  is part of a snapshot's blocks over an emptied one whatever its order, and a data flush per run was most of the
+  restore's disk phase (bench/boot/REPORT.md "SNAPZ loop 5").
   **The map's two levels** (RESIZE loop 2b): the entries are in **leaves** of 1,024 (4 KiB, a 4 MiB range of the
   disk), a leaf made at the first write (or zeroing) into its range; a range without one reads as the base (or zeros
   past it), as an unwritten block does. So the map file and the memory grow with what's written, not with the disk's
@@ -967,7 +970,9 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
   consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
   from the request's bytes in one write with their map entries in one more per leaf the run crosses (a range's first
-  write makes its leaf in that write); only a block a write covers in part is read-modify-write.
+  write makes its leaf in that write); only a block a write covers in part is read-modify-write. A snapshot's restore
+  writes each DISK frame's runs of data blocks and of zero blocks with a call each, and a save reads the blocks it
+  carries with `blocks(list)` (those in consecutive slots one read): bench/boot/REPORT.md "SNAPZ loop 5".
   **Its size** is the largest of the base's, its own (`meta`) and the spec's `size` (the guest's, from the page):
   past the base's end it reads as zeros until written (`grown`), and its map grows as blocks there are written
   (the capacity the guest sees is the spec's `size`), a leaf where a range is first written.

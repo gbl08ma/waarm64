@@ -980,6 +980,12 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return { blocks: blockList(rw), generation };
     }),
     blocks: rw && ((blocks) => {
+      if (rw.blocks) {
+        // An overlay's: runs of slots in one read each.
+        const out = rw.blocks(blocks);
+        if (!out) throw new Error(`the disk's changes can't be read from the browser's storage (blocks ${blocks[0]} to ${blocks[blocks.length - 1]})`);
+        return out;
+      }
       const out = new Uint8Array(blocks.length * 4096);
       blocks.forEach((b, k) => {
         const bytes = rw.block(b);

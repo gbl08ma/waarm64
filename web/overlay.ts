@@ -76,6 +76,12 @@ export type WritableDisk = Disk & {
   written(): Iterable<number>;
   /** The overlay's own copy of block `b` (one of `written()`), 4 KiB (zeros past the disk's end); undefined on a failed read. */
   block(b: number): Uint8Array | undefined;
+  /**
+   * The overlay's copies of blocks `list` (each one of `written()`), 4 KiB each in `list`'s order: those in consecutive
+   * slots in one read (a snapshot's save; an OPFS call costs ~0.3 ms off the record). Undefined on a failed read or a
+   * block the overlay doesn't hold. An overlay's; a ramdisk's are read with `block`.
+   */
+  blocks?(list: ArrayLike<number>): Uint8Array | undefined;
   /** Whether block `b` is one the overlay holds as zeros, without a slot. */
   zeroed(b: number): boolean;
   /**
@@ -783,7 +789,21 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return data.read(out, { at: (e - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; }, leaves: () => ({ top, recs, n }) };
+  const blocksOf = (list: ArrayLike<number>) => {
+    const out = new Uint8Array(list.length * BLOCK);
+    for (let k = 0; k < list.length;) {
+      const e = ent(list[k]);
+      if (!e) return undefined;
+      if (e === ZERO) { k++; continue; } // `out` is zeros there already
+      let j = k + 1;
+      while (j < list.length && ent(list[j]) === e + (j - k)) j++;
+      if (data.read(out.subarray(k * BLOCK, j * BLOCK), { at: (e - 1) * BLOCK }) !== (j - k) * BLOCK) return undefined;
+      k = j;
+    }
+    return out;
+  };
+
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, blocks: blocksOf, zeroed: (b) => ent(b) === ZERO, compact: () => compact(true), bytes: () => data.getSize() + mapFile.getSize(), flush: () => { data.flush(); mapFile.flush(); unsettled = false; }, generation: () => gen.generation, epoch: () => { bumped = false; }, leaves: () => ({ top, recs, n }) };
 }
 
 /**

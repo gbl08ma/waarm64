@@ -237,6 +237,40 @@ test('a request is a few OPFS calls: consecutive blocks are one read or write, m
   assert.deepEqual([calls['data.write'] - dw, calls['map.write'] - mw], [2, 2], "a fresh block in a leaf there is (its entry), and one in a new leaf (its making, with the entry): one map write each");
 });
 
+test("blocks() reads a list of held blocks as block() does, those in consecutive slots in one read", async () => {
+  const size = 8 << 20;
+  const base = openDisk((off, len) => new Uint8Array(len).fill(0xee), size);
+  const [log, calls]: [{ file: string; at: number; bytes: Uint8Array }[], Record<string, number>] = [[], {}];
+  const data = logged('data', log, calls);
+  const d = overlay(base, data, logged('map', log, calls));
+  const fill = (b: number) => new Uint8Array(4096).fill((b * 37 + 11) & 255);
+  // Slots in another order than the blocks: 10-13 in one write (slots 0-3), then 4 and 5 (slots 4, 5), 14 (slot 6),
+  // 2000 and 3 across leaves (slots 7, 8); 20-22 zeroed (no slot).
+  for (const [b, n] of [[10, 4], [4, 1], [5, 1], [14, 1], [2000, 1], [3, 1]] as const) {
+    assert.ok(await d.write(b * 4096, new Uint8Array(Buffer.concat(Array.from({ length: n }, (_, k) => fill(b + k))))));
+  }
+  assert.ok(await d.zero(20 * 4096, 3 * 4096));
+  const list = [...d.written()];
+  assert.deepEqual(list, [3, 4, 5, 10, 11, 12, 13, 14, 20, 21, 22, 2000]);
+  const each = Buffer.concat(list.map((b) => d.block(b)!));
+  const reads = calls['data.read'] ?? 0;
+  const got = d.blocks!(list);
+  assert.ok(got && Buffer.compare(got, each) === 0, 'the blocks as block() reads them');
+  // Their slots in the list's order: 8 | 4 5 | 0 1 2 3 | 6 | (zeros) | 7 (14's slot is 6, not 4: a read of its own).
+  assert.equal(calls['data.read'] - reads, 5, 'one read per run of consecutive slots');
+  // Any order, a list in another order than the slots', a single block.
+  const shuffled = [2000, 13, 12, 21, 4, 5];
+  const some = d.blocks!(shuffled);
+  assert.ok(some && Buffer.compare(some, Buffer.concat(shuffled.map((b) => d.block(b)!))) === 0, 'a list in another order');
+  const one = d.blocks!([11]);
+  assert.ok(one && Buffer.compare(one, fill(11)) === 0, 'a single block');
+  assert.equal(d.blocks!([3, 7])?.length, undefined, 'a block the overlay doesn\'t hold');
+  const reading = data.read;
+  data.read = () => 0;
+  assert.equal(d.blocks!([10, 11]), undefined, 'a failed read');
+  data.read = reading;
+});
+
 test('random writes, discards and reads of every shape match a model, across reopens', async () => {
   const g = splitmix64(11n);
   const rand = (n: number) => Number(g.next().value as bigint % BigInt(n));

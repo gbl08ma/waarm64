@@ -339,8 +339,11 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   state, so a snapshot is only valid on the disk as it was. The header lists each writable disk
   (its slot, the identity of the image its overlay is over, its size, the base's hash where the
   writer knew it) and DISK frames carry the blocks its overlay holds, read through the backends
-  (the device worker has the overlay's handles). A restore **replaces the overlay** with them
-  before the new VM's backends open it. Everything that can be refused is refused before that: a
+  (the device worker has the overlay's handles: those in consecutive slots one read). A restore **replaces the
+  overlay** with them before the new VM's backends open it: each frame's runs of data blocks and of zero blocks a
+  write each (zeros without slots), unordered, both files flushed at the end (docs/devices.md "Crash and refusal");
+  a frame past the disk's end is refused before any of it is written. The desktop's 11,952 blocks take ~0.1 s on disk
+  (2.0 s one block a write: a data flush each) and ~0.8 s off the record (7.3 s: bench/boot/REPORT.md "SNAPZ loop 5"). Everything that can be refused is refused before that: a
   `File` is read once for its checksums and its end first (a damaged file must not half-replace a
   disk), and the disk on the machine must be the snapshot's: the same identity, or, when that
   differs and the file has a hash, the same hash (asked for only then: a restore that "resumes in seconds"
@@ -397,8 +400,8 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   goes to worker c mod n, three in flight a worker; the machine worker writes the frames in order. Each frame is
   compressed alone with the same codec and rule (stored when it doesn't shrink), so **the file's bytes don't depend on
   the pool's size**, nor on whether there is one (`tests/snapshot.test.ts` "a save's pool"). The pool covers RAM
-  only: CORE, DEVS, BLOB and DISK frames (the desktop's: 46 ms and ~110-180 ms of a 1.1 s pause, the disk's mostly
-  its reads) stay on the machine worker. It is started **per save, when the save is asked for** (Snapshot, a kept
+  only: CORE, DEVS, BLOB and DISK frames (the desktop's: 46 ms and ~110-180 ms of a 1.1 s pause; the disk's blocks
+  are read in runs of consecutive slots since SNAPZ loop 5) stay on the machine worker. It is started **per save, when the save is asked for** (Snapshot, a kept
   snapshot, Suspend: `web/app/worker-snapshot.ts`), beside the balloon's hint, and closed once the file is written:
   its start (~35-45 ms to six instances) is not paused time, and no worker stays between saves. **The fallback:**
   a pool that can't start (no worker, a failed instance, none ready in 10 s, one CPU) is none, and the save runs on

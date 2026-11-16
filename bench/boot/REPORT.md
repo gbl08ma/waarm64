@@ -5285,3 +5285,86 @@ the download's (its page gone) removed at the next start, and no room (`?stagero
 file kept (neither the worker nor the page's release removing it), the room never checked, and a refusal partway not
 written again. `tests/snapshot-file.test.ts`: `snapshotBound` over the worst case (incompressible RAM, blobs,
 scattered blocks) is never under the file and is told before its first byte.
+
+## SNAPZ loop 5: the disk's blocks in runs (2026-11-16)
+
+The M4 dev VM (Lima, 8 vCPUs), Chromium 155.0.8059.84 headless, nothing else running. Raw: `results/snapz-5/`
+(`rounds/<guest>-<profile>-<arm>-<n>.{json,log}` and the persistent rounds' `.mem.jsonl.gz`; `summary.py` →
+`summary.txt`, `summary.json`; `run-ab.sh`, the driver; `ab-*.txt`, its logs; `harness/`, the breakdown below).
+
+**Where the time went** (`harness/`: the restore's disk phase alone in a worker, over OPFS, every sync-handle call
+timed; `extract.ts` keeps a snapshot's DISK frames in a file of their own; `h.ts <arms> <file>`, `PROFILE=<dir>` for
+a persistent profile; `summary.txt`, 3 rounds each). The desktop's 11,952 blocks are 211 DISK frames, 177 runs of
+consecutive blocks, 2,234 zero blocks; as runs of one kind (data or zeros) within a frame, 1,117 overlay calls
+(`runs.txt`; Debian's 2,103 blocks: 300). One overlay write a block, as the restore did (arm `block`), ms:
+
+| desktop | persistent | off the record |
+|---|---|---|
+| the disk phase (block) | 1,913 (1,727-2,111) | 7,104 (7,082-7,145) |
+| ... `data` flushes (9,719) | 1,664 | 5 |
+| ... `data` writes (9,718) / map writes (11,953) | 57 / 113 | 3,025 / 3,606 |
+| ... `getSize` (a zeroing's `shrink`) | 2 | 382 |
+| ... frames read and unpacked / `isZero` | 37 / 8 | 35 / 11 |
+| a run a call (`run`: 1,117 calls) | 198 (174-200) | 739 (732-744) |
+| a run a call, unordered (`runu`: no flush between a run's data and its map) | 62 (62-73) | 742 (738-747) |
+| the save's reads: a block a read / in runs of consecutive slots | 26-30 / 8-12 | 2,134-2,153 / 166-170 |
+
+On disk each first write's `data` flush (`ORDERED`) was the cost: ~0.17 ms each, 87% of the phase. Off the record a
+flush is free and every call ~0.3 ms. **Built** (`runu` and the reads in runs): the restore writes each DISK frame's
+runs of data blocks and of zero blocks with one call each (`diskRuns`, web/snapshot-file.ts), the overlay's map
+updated once a run (a leaf at a time: the write path as it was), and opens its overlay unordered, flushing both files
+at its end (docs/devices.md "Crash and refusal": until then the overlay is part of a snapshot over an emptied one
+whatever its order); a frame past the disk's end is refused before any of it is written. A save reads a batch of
+blocks with the overlay's `blocks(list)` (those in consecutive slots one read; a ramdisk's as before). Not built: a
+restore-only bulk write (a frame's data, then each leaf's entries once), which would take the off-the-record map
+writes from ~1,100 to one per leaf touched (~0.3 s off the record, ~5 ms on disk: docs/backlog.md SNAPZ).
+
+**The A/B on the page** (`bench/snapz/probe.ts`, which now has `WAARM64_PROFILE=off` and `OPS`: docs/benchmarking.md
+"The snapshot probe"): base = a34c9c85 (loop 4 and the SURFACE merge), new = this loop; both run this loop's probe;
+each round a browser of its own, base new new base base new per guest and profile. Persistent: the profile
+`target/snapz/profile`, every operation, `SETTLE_S=20`, memwatch beside it. Off the record: a fresh context per
+round, the load, a kept snapshot, the start from it and a download. Median (range) of 3, ms; `disk` the phase:
+
+| desktop (689 MB file) | persistent base | persistent new | off base | off new |
+|---|---|---|---|---|
+| load: total | 7,332 (6,962-7,720) | 5,310 (5,107-5,873) | 12,345 (12,308-12,399) | 5,846 (5,766-5,936) |
+| ... disk | 1,972 (1,917-2,056) | 100 (99-116) | 7,252 (7,225-7,295) | 764 (763-797) |
+| kept snapshot's start: total | 7,647 (7,199-7,840) | 5,224 (5,181-5,661) | 12,811 (12,476-12,854) | 6,101 (5,964-6,518) |
+| ... disk | 2,033 (2,000-2,115) | 111 (109-121) | 7,287 (7,266-7,360) | 774 (761-819) |
+| kept: paused (disk) | 1,164 (150) | 1,116 (109) | 5,036 (2,440) | 2,721 (325) |
+| download: paused (disk) | 1,312 (200) | 1,263 (178) | 5,260 (2,760) | 2,698 (360) |
+| picked: paused (disk) | 1,269 (241) | 1,207 (176) | | |
+| suspend: paused / resume: total | 1,296 / 5,745 | 1,282 / 5,610 | | |
+
+| Debian (97 MB file) | persistent base | persistent new | off base | off new |
+|---|---|---|---|---|
+| load: total (disk) | 1,814 (456) | 1,359 (34) | 2,578 (1,336) | 1,405 (220) |
+| kept snapshot's start: total (disk) | 1,695 (413) | 1,322 (33) | 2,464 (1,338) | 1,397 (218) |
+| kept: paused (disk) | 163 (25) | 157 (23) | 874 (542) | 450 (116) |
+| download: paused (disk) | 165 (29) | 157 (18) | 877 (536) | 447 (107) |
+
+(The pauses' ranges are in `summary.txt`; a pause's `disk` medians, ranges there too: desktop kept 138-151 against
+103-138.) **Against the goal:** the desktop's restore of its blocks 1.97-2.03 s → 0.10-0.11 s with a persistent
+profile (the load 7.3 → 5.3 s, a kept snapshot's start 7.6 → 5.2 s), 7.3 s → 0.77 s off the record (the load 12.3 →
+5.8 s). The save's disk blocks: 150-200 → 109-178 ms with a persistent profile (their reads were ~30 ms of it; the
+rest is the frames' copies, compression and the device worker's messages), 2.4-2.8 s → 0.33-0.36 s off the record (a
+desktop save's pause 5.0-5.3 → 2.7 s there; 2.2 s of what's left is the sink, the file's OPFS writes). Debian: its
+load's disk 456 → 34 ms, off the record 1,336 → 220. Nothing else moved past its ranges (the RAM, check and start
+phases, suspends and resumes).
+
+**Memory** (memwatch, the whole browser's peak over the sample before the save, MiB): less, not more: desktop kept
++184 (171-197) → +141 (122-148), download +217 → +163, picked +317 → +253, suspend +214 → +211 (no blocks); Debian
+kept +69 → +60. The save no longer makes a 4 KiB array per block in the device worker; a batch is one array, as
+before.
+
+**Correctness:** `tests/snapshot.test.ts` "a restore writes a disk's blocks in runs" (a made file: data and zero runs,
+one across the 1,024-block leaf boundary, a frame of 256, lone blocks, the disk's last block of 1,000 bytes, over an
+overlay that had other blocks; read back by a new opening: the blocks it holds, each one's bytes and whether it's a
+zero without a slot, the data file a slot per data block, the whole disk; a frame past the disk's end refused as
+corrupt), `tests/snapshot-file.test.ts` (`diskRuns`: runs split where data turns to zeros and back, a block whose
+last byte isn't zero is data, views of the frame, bad sizes refused) and `tests/overlay.test.ts` "blocks() reads a
+list of held blocks" (slots out of the blocks' order, across leaves, zeroed blocks, a list in any order: the bytes
+`block()` reads, one read per run of consecutive slots; a block not held and a failed read give undefined). Planted,
+each caught: a run's map entries not written to the file (`setRun` without its `putMap`), runs not split where data
+turns to zeros (both the restore's test and the file's), `blocks()` reading across a slot gap, and no past-the-end
+check (the write refused, said as the storage full instead of a damaged file).

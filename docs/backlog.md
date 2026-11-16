@@ -1486,15 +1486,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in a restore, and a breakdown of the load's machine start.
   Loops 1 (lz4_flex, crc32fast), 2 (the save's pool: the desktop's pause 3.80 to 1.07 s), 2b (older files refused,
   the save's garbage recycled), 3 (the load's pool: its check, state and RAM 3.13 to 1.13 s) and 4 (a file save staged
-  through OPFS: a picked file's pause 4.7 to 1.4 s, a kept one's) are in. Left:
+  through OPFS: a picked file's pause 4.7 to 1.4 s, a kept one's) and 5 (the disk's blocks in runs: the desktop's
+  restore 1.97 to 0.10 s, 7.3 to 0.77 s off the record) are in. Left:
   - **What is left of a load's compression share** (bench/boot/REPORT.md "SNAPZ loop 3", the desktop's 1.13 s): the
     check pass ~0.4 s, bound by reading the file (~0.3 s at four 4 MiB slices in flight; the file is read twice, once
     a pass); the state 0.08-0.10 s (109 MB of BLOB frames unpacked on the machine worker: a pool job that posts the
     bytes back could take most of it); RAM ~0.6 s wall for ~1.7 s of the workers' CPU, of which `apply` 0.4-0.75 s
     (pages copied out of each instance into guest RAM, shared memory both: V8's word-by-word copy, and fresh RAM's
     page faults). A frame index at the file's end would let the restore pass's workers read their frames themselves.
-    The rest of the load is the disk's blocks (~2.2 s, loop 5) and the machine's start (prepare ~2 s, start ~2.2 s,
-    loop 7).
+    The rest of the load is the machine's start (prepare ~2 s, start ~2.2 s, loop 7); the disk's blocks are ~0.1 s
+    since loop 5.
   - **A save's memory left** (bench/boot/REPORT.md "SNAPZ loop 4"): a file save stages through OPFS now, so the
     download's ~1.1 GiB is gone; every desktop save adds ~190-240 MiB while it runs (the pool's six instances and, for
     a 3D machine, its read-back state: 109 MB of BLOB contents held through the save), and a picked file's ~310 MiB
@@ -1503,9 +1504,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     idle browser): Blob slices written by the browser, file to file; nothing faster was found from the page. A
     staging file of a download stays 60 s (its address); one whose page ends first is removed at the next start.
   - **What stays on the machine worker during the pause** (the desktop's 1.07 s): the devices' state 0.23 s (the 3D
-    read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (mostly their reads through the device worker),
+    read-back), the BLOB frames 0.05, the disk's blocks 0.11-0.18 (their reads are ~0.01 s since loop 5: the rest
+    is the frames' copies, compression and messages),
     and RAM's ~0.67 s wall of which the frames' writing (the sink, in order) ~0.25. BLOB and DISK frames could go
     through the pool as `bytes` jobs (a copy each way): ~0.1 s at most.
+  - **Off the record** (Playwright's default context, a private window: OPFS ~0.3 ms a call; bench/boot/REPORT.md
+    "SNAPZ loop 5"): the desktop's restore still makes ~1,100 overlay calls (0.77 s: ~650 data writes, ~1,100 map
+    writes, a zero run's `shrink` a `getSize` each, ~80 ms). A restore-only bulk write (a frame's runs' data, then
+    each leaf's entries once) would take the map writes to one per leaf touched (~0.3 s off the record, ~5 ms on
+    disk); not built, the persistent case being ~0.1 s already. A save off the record pauses 2.7 s, 2.2 of it the
+    sink (the file's OPFS writes). A merge into a stored disk (web/stored.ts `mergeOverlay`) still copies one block a
+    call (`changes.block`, then a write or a zeroing each): runs and `blocks()` would serve it as they do a restore.
 - **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
   test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
   stale entries, or the count of a run with TLB flushes at the same points

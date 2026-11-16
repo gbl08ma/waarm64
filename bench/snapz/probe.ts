@@ -16,8 +16,10 @@
 // header is that machine's (its name, shape and hash, its disks' identities, no overlay pinned: the frames are the file's),
 // target/snapz/<guest>-<hash>.waarm64snap, once (the header is taken from a kept snapshot of the machine's first seconds).
 // MODE=transient instead loads the file itself on the page's transient machine and saves it to a file only (what the
-// REPORT's SNAPZ measurement did). A persistent profile is required: off the record OPFS costs ~250 µs a call
-// (bench/boot/REPORT.md "SNAPZ: compression across the emulator, measured"). Runs alone, like any Chromium session.
+// REPORT's SNAPZ measurement did). A persistent profile is the measure: off the record OPFS costs ~250 µs a call
+// (bench/boot/REPORT.md "SNAPZ: compression across the emulator, measured"); WAARM64_PROFILE=off measures that case on
+// purpose (a fresh context each run). OPS (comma-separated, default all: load, kept, keptStart, file, picked, suspend)
+// picks a round's operations. Runs alone, like any Chromium session.
 import { createReadStream, createWriteStream, existsSync, mkdirSync, openAsBlob, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { cpus } from 'node:os';
@@ -55,6 +57,12 @@ const g = GUESTS[guest as keyof typeof GUESTS];
 if (!g) throw new Error(`the guest is desktop or debian, not ${guest}`);
 const profile = process.env.WAARM64_PROFILE;
 if (!profile || !process.env.WAARM64_DOWNLOADS) throw new Error('WAARM64_PROFILE and WAARM64_DOWNLOADS (directories under target/) are required');
+/** `WAARM64_PROFILE=off`: Playwright's off-the-record context (OPFS in memory, ~250 µs a call) instead of a profile. */
+const offRecord = profile === 'off';
+/** The operations a round runs (`OPS`, comma-separated; default all): load, kept, keptStart, file, picked, suspend (and the resume). */
+const OPS = new Set((process.env.OPS ?? 'load,kept,keptStart,file,picked,suspend').split(','));
+/** A flag of the browser's command line that finds its processes (`browserPids`), off the record too. */
+const TAG = `--waarm64-probe=${process.pid}`;
 const ROUNDS = Number(process.env.ROUNDS ?? 3);
 const SETTLE_S = Number(process.env.SETTLE_S ?? 20);
 const MODE = process.env.MODE ?? 'stored';
@@ -75,7 +83,8 @@ function browserPids(): number[] {
     try {
       const stat = readFileSync(`/proc/${p}/stat`, 'utf8');
       parent.set(p, Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]));
-      if (root === undefined && readFileSync(`/proc/${p}/cmdline`, 'utf8').includes(`--user-data-dir=${dir}`) && !readFileSync(`/proc/${p}/cmdline`, 'utf8').includes('--type=')) root = p;
+      const cmd = readFileSync(`/proc/${p}/cmdline`, 'utf8');
+      if (root === undefined && (offRecord ? cmd.includes(TAG) : cmd.includes(`--user-data-dir=${dir}`)) && !cmd.includes('--type=')) root = p;
     } catch { /* gone */ }
   }
   if (root === undefined) return [];
@@ -107,10 +116,10 @@ function sampler() {
 
 const server = await startServer(Number(process.env.WAARM64_PORT ?? 8197)); // a kept profile keeps its storage for one origin
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-const ctx = await chromium.launchPersistentContext(profile, {
-  executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: true, downloadsPath: resolve(process.env.WAARM64_DOWNLOADS),
-  env: chromiumEnv(), viewport: { width: 1400, height: 1300 },
-});
+const launch = { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: true, downloadsPath: resolve(process.env.WAARM64_DOWNLOADS), env: chromiumEnv(), args: [TAG] };
+const ctx = offRecord
+  ? await (await chromium.launch(launch)).newContext({ viewport: { width: 1400, height: 1300 }, acceptDownloads: true })
+  : await chromium.launchPersistentContext(profile, { ...launch, viewport: { width: 1400, height: 1300 } });
 const page = ctx.pages()[0] ?? (await ctx.newPage());
 // The user agent says 155.0.0.0 (reduced): the binary says its version.
 const chromiumVersion = execFileSync(process.env.CHROMIUM ?? '/usr/bin/chromium', ['--version'], { encoding: 'utf8' }).trim();
@@ -299,60 +308,71 @@ if (MODE === 'transient') {
     if ((await state()) === 'loading') await until(['booting', 'running', 'off', 'suspended', 'failed']);
     const r: Record<string, unknown> = { round: k, load: await load(file) };
     say(`round ${k} load`, r.load as Record<string, unknown>);
-    await settle();
-    const kept = await save('kept', () => page.locator('#save-snapshot').click());
-    r.kept = kept;
-    say(`round ${k} kept`, kept);
-    await settle();
-    // The machine started from that kept snapshot (the Snapshots tab's Restore; its overlay replaced by the file's
-    // blocks: the probe answers no to keeping the changes), then the snapshot deleted.
-    r.keptStart = await keptStart(kept.id as string);
-    say(`round ${k} keptStart`, r.keptStart as Record<string, unknown>);
-    await store(`(store, id) => store.deleteSnapshot(id)`, kept.id);
-    await settle();
-    const deleted = await download();
-    r.file = await save('file', async () => {
-      await page.locator('#machines-open').click();
-      await page.locator('.machines [data-tab=snapshots]').click();
-      await page.locator('.machines').getByRole('button', { name: t('snapshots:Snapshots.toFile') }).click();
-    }, deleted);
-    say(`round ${k} file`, r.file as Record<string, unknown>);
-    if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
-    await settle();
-    // A picked file (a file in OPFS stands in for the user's pick: a FileSystemWritableFileStream as a real pick's):
-    // the pause, and a staged save's copy after the resume (`phases.copy`, in the wall time).
-    await page.evaluate(() => {
-      (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('probe-picked.waarm64snap', { create: true });
-    });
-    r.picked = await save('file', async () => {
-      await page.locator('#machines-open').click();
-      await page.locator('.machines [data-tab=snapshots]').click();
-      await page.locator('.machines').getByRole('button', { name: t('snapshots:Snapshots.toFile') }).click();
-    });
-    await page.evaluate(async () => {
-      (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined;
-      await (await navigator.storage.getDirectory()).removeEntry('probe-picked.waarm64snap');
-    });
-    say(`round ${k} picked`, r.picked as Record<string, unknown>);
-    if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
-    await settle();
-    r.suspend = await save('suspend', () => page.locator('#suspend').click(), () => until(['suspended']).then(() => undefined));
-    say(`round ${k} suspend`, r.suspend as Record<string, unknown>);
-    // The resume: the page opened again starts the machine from its suspended copy.
-    const tr = performance.now();
-    await page.goto(url);
-    await until(['running', 'booting', 'failed']);
-    if (!(await messageText()).includes(t('machine:worker.resumed'))) throw new Error(`no resume: ${await messageText()}`);
-    await page.waitForFunction(() => !!document.getElementById('message')?.dataset.load, null, { timeout: 10_000 });
-    r.resume = round({ wallMs: performance.now() - tr, phases: JSON.parse(await data('load')) });
-    say(`round ${k} resume`, r.resume as Record<string, unknown>);
+    if (OPS.has('kept') || OPS.has('keptStart')) {
+      await settle();
+      const kept = await save('kept', () => page.locator('#save-snapshot').click());
+      r.kept = kept;
+      say(`round ${k} kept`, kept);
+      if (OPS.has('keptStart')) {
+        await settle();
+        // The machine started from that kept snapshot (the Snapshots tab's Restore; its overlay replaced by the file's
+        // blocks: the probe answers no to keeping the changes), then the snapshot deleted.
+        r.keptStart = await keptStart(kept.id as string);
+        say(`round ${k} keptStart`, r.keptStart as Record<string, unknown>);
+      }
+      await store(`(store, id) => store.deleteSnapshot(id)`, kept.id);
+    }
+    if (OPS.has('file')) {
+      await settle();
+      const deleted = await download();
+      r.file = await save('file', async () => {
+        await page.locator('#machines-open').click();
+        await page.locator('.machines [data-tab=snapshots]').click();
+        await page.locator('.machines').getByRole('button', { name: t('snapshots:Snapshots.toFile') }).click();
+      }, deleted);
+      say(`round ${k} file`, r.file as Record<string, unknown>);
+      if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
+    }
+    if (OPS.has('picked')) {
+      await settle();
+      // A picked file (a file in OPFS stands in for the user's pick: a FileSystemWritableFileStream as a real pick's):
+      // the pause, and a staged save's copy after the resume (`phases.copy`, in the wall time).
+      await page.evaluate(() => {
+        (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('probe-picked.waarm64snap', { create: true });
+      });
+      r.picked = await save('file', async () => {
+        await page.locator('#machines-open').click();
+        await page.locator('.machines [data-tab=snapshots]').click();
+        await page.locator('.machines').getByRole('button', { name: t('snapshots:Snapshots.toFile') }).click();
+      });
+      await page.evaluate(async () => {
+        (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined;
+        await (await navigator.storage.getDirectory()).removeEntry('probe-picked.waarm64snap');
+      });
+      say(`round ${k} picked`, r.picked as Record<string, unknown>);
+      if (await page.locator('.machines').isVisible()) await page.locator('#machines-open').click();
+    }
+    if (OPS.has('suspend')) {
+      await settle();
+      r.suspend = await save('suspend', () => page.locator('#suspend').click(), () => until(['suspended']).then(() => undefined));
+      say(`round ${k} suspend`, r.suspend as Record<string, unknown>);
+      // The resume: the page opened again starts the machine from its suspended copy.
+      const tr = performance.now();
+      await page.goto(url);
+      await until(['running', 'booting', 'failed']);
+      if (!(await messageText()).includes(t('machine:worker.resumed'))) throw new Error(`no resume: ${await messageText()}`);
+      await page.waitForFunction(() => !!document.getElementById('message')?.dataset.load, null, { timeout: 10_000 });
+      r.resume = round({ wallMs: performance.now() - tr, phases: JSON.parse(await data('load')) });
+      say(`round ${k} resume`, r.resume as Record<string, unknown>);
+    }
     results.push(r);
   }
 }
 
-const meta = { guest, mode: MODE, file: warm, bytes: (await openAsBlob(warm)).size, rounds: ROUNDS, settleS: SETTLE_S, commit: commit(), core: sha(CORE_PATH), chromium: chromiumVersion, host: `${cpus().length} CPUs ${cpus()[0]?.model ?? ''}`.trim(), date: new Date().toISOString(), wallS: Math.round((performance.now() - t0) / 1000) };
+const meta = { guest, mode: MODE, profile: offRecord ? 'off the record' : 'persistent', ops: [...OPS], file: warm, bytes: (await openAsBlob(warm)).size, rounds: ROUNDS, settleS: SETTLE_S, commit: commit(), core: sha(CORE_PATH), chromium: chromiumVersion, host: `${cpus().length} CPUs ${cpus()[0]?.model ?? ''}`.trim(), date: new Date().toISOString(), wallS: Math.round((performance.now() - t0) / 1000) };
 writeFileSync(out, JSON.stringify({ meta, rounds: results }, null, 1) + '\n');
 console.log('wrote', out);
 await ctx.close();
+if (offRecord) await ctx.browser()?.close();
 server.close();
 process.exit(0);

@@ -12,7 +12,7 @@ import { runInNewContext } from 'node:vm';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
 import type { Vm } from '../web/vm.ts';
 import {
-  applyRam, crc32, diskBlocks, openSnapshot, readHeader, SnapshotError, SnapshotWriter,
+  applyRam, crc32, diskBlocks, diskRuns, openSnapshot, readHeader, SnapshotError, SnapshotWriter,
   type Codec, type SnapshotHeader,
 } from '../web/snapshot-file.ts';
 import { deflateCodec, storedCodec } from './snapshot-codecs.ts';
@@ -369,6 +369,18 @@ test('refusals: well-formed frames that say impossible things', async () => {
   assert.throws(() => [...diskBlocks(0, new Uint8Array(100))], (e) => e instanceof SnapshotError && e.problem === 'corrupt');
   assert.throws(() => [...diskBlocks(0, new Uint8Array(0))], (e) => e instanceof SnapshotError);
   assert.deepEqual([...diskBlocks(7, concat([page, page]))].map((b) => b.block), [7, 8]);
+  // Runs: consecutive blocks of one kind (data, zeros), as views of the frame; a zero block is all zeros, a data
+  // block's one byte not zero makes it data.
+  const z = new Uint8Array(4096);
+  const late = new Uint8Array(4096);
+  late[4095] = 1;
+  const frame = concat([page, page, z, z, z, late, z, page]);
+  const runs = [...diskRuns(7, frame)];
+  assert.deepEqual(runs.map((r) => [r.block, r.count, r.zero]), [[7, 2, false], [9, 3, true], [12, 1, false], [13, 1, true], [14, 1, false]]);
+  assert.ok(runs.every((r) => r.data.length === r.count * 4096 && r.data.buffer === frame.buffer && r.data.byteOffset === frame.byteOffset + (r.block - 7) * 4096), 'each run a view of its blocks');
+  assert.deepEqual([...diskRuns(0, concat([z, z]))].map((r) => [r.block, r.count, r.zero]), [[0, 2, true]]);
+  assert.deepEqual([...diskRuns(3, page)].map((r) => [r.block, r.count, r.zero]), [[3, 1, false]]);
+  for (const bad of [new Uint8Array(100), new Uint8Array(0), new Uint8Array(257 * 4096)]) assert.throws(() => [...diskRuns(0, bad)], (e) => e instanceof SnapshotError && e.problem === 'corrupt');
   // A codec that unpacks to another size than the frame says (the core's stops at it: web/lz.ts).
   const long = await deflateCodec.compress(new Uint8Array(2000));
   await refused(ok([hand('CORE', 2, 0, 1000, long), END(1)]), 'corrupt', /damage\.unpackSize/);

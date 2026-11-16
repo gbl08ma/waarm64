@@ -185,7 +185,12 @@ and a Suspend, then the page opened
   measured (its 9.8 s load and 4.15-4.25 s pause): loop 0's transient and stored loads were 9.9 and 9.8 s, their file saves' pauses
   4.34 and 4.31 s.
 - **A persistent profile, always** (`WAARM64_PROFILE`, a fixed port: `WAARM64_PORT`, default 8197): Playwright's
-  default context is off the record, where every OPFS call costs ~250 µs and a save's disk blocks alone took 2.3-2.6 s.
+  default context is off the record, where every OPFS call costs ~250 µs (a desktop save's disk blocks took 2.4 s
+  before SNAPZ loop 5's batching, 0.3 s since). To measure that case on purpose, `WAARM64_PROFILE=off`: a fresh
+  off-the-record context (the stored machine made again each run; its memory found by the browser's command-line
+  flag). `OPS` (comma-separated: `load`, `kept`, `keptStart`, `file`, `picked`, `suspend`, the last with the resume;
+  default all) picks a round's operations: off the record loop 5 ran `load,kept,keptStart,file`
+  (`bench/boot/results/snapz-5/run-ab.sh`).
 
 ## Screening an A/B
 

@@ -7,14 +7,13 @@
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, readHeader, snapshotBound, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
+import { BLOB_CHUNKS, CHUNK, corrupt, diskRuns, openSnapshot, readHeader, snapshotBound, SnapshotError, SnapshotWriter, truncated, type Codec, type LoadPool, type RamPool, type ReadTimes, type Sink, type SnapshotHeader, type WriteTimes } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
 import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, withRoom, writeMeta, type WritableDisk } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
-import { isZero } from './qcow2-write.ts';
 import { zeroDisk } from './stored.ts';
 import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
@@ -318,7 +317,9 @@ export async function readSnapshot(
           if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '', size: t.size })))) throw await full();
           // Over zeros: the file's blocks are written whole, but the disk's last one may be shorter than 4 KiB, and its
           // write reads the rest of its block (none: zeros). No meta: its generation is set.
-          const disk = overlay(zeroDisk(t.size), files.data, files.map);
+          // Unordered (no flush between a run's data and its map entries): until the restore's end the overlay is half
+          // a snapshot's whatever its order, and the end flushes both (docs/devices.md "Crash and refusal").
+          const disk = overlay(zeroDisk(t.size), files.data, files.map, undefined, 0, { ordered: false });
           open.set(slot, { disk, close: files.close, size: t.size });
           if (t.whole && !(await lands(() => disk.zero(0, t.size)))) throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
         }
@@ -328,11 +329,14 @@ export async function readSnapshot(
           const o = open.get(Math.floor(index / SLOT));
           if (!o) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
           if (o === 'skip') continue;
-          for (const { block, data: bytes } of diskBlocks(index % SLOT, data)) {
-            const at = block * BLOCK;
-            if (at >= o.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
-            const part = bytes.subarray(0, Math.min(BLOCK, o.size - at));
-            if (!(await lands(() => (isZero(part) ? o.disk.zero(at, part.length) : o.disk.write(at, part))))) throw await full();
+          // A frame past the disk's end is refused before any of it is written. Its runs of data blocks and of zero
+          // blocks are a call each (an OPFS call costs ~0.3 ms off the record, a data flush per call ~0.15 ms on disk:
+          // bench/boot/REPORT.md "SNAPZ loop 5"); the disk's last block may be shorter than 4 KiB.
+          if ((index % SLOT + data.length / BLOCK - 1) * BLOCK >= o.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
+          for (const run of diskRuns(index % SLOT, data)) {
+            const at = run.block * BLOCK;
+            const len = Math.min(run.count * BLOCK, o.size - at);
+            if (!(await lands(() => (run.zero ? o.disk.zero(at, len) : o.disk.write(at, run.data.subarray(0, len)))))) throw await full();
           }
         }
         for (const o of open.values()) if (o !== 'skip') o.disk.flush();

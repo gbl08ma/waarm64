@@ -1,0 +1,37 @@
+== desktop off round 1: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":12555,disk:7295
+round 0 keptStart {"wallMs":12809,disk:7266
+round 0 kept {"wallMs":5174,"kind":"kept","bytes":675520386,"pausedMs":5036
+round 0 file {"wallMs":6764,"kind":"file","bytes":678833531,"pausedMs":5260
+== desktop off round 2: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":6029,disk:763
+round 0 keptStart {"wallMs":6488,disk:774
+round 0 kept {"wallMs":2848,"kind":"kept","bytes":675547400,"pausedMs":2717
+round 0 file {"wallMs":4155,"kind":"file","bytes":678815426,"pausedMs":2667
+== desktop off round 3: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":6112,disk:797
+round 0 keptStart {"wallMs":6876,disk:819
+round 0 kept {"wallMs":3047,"kind":"kept","bytes":675403003,"pausedMs":2932
+round 0 file {"wallMs":5304,"kind":"file","bytes":678864290,"pausedMs":3405
+== desktop off round 4: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":12450,disk:7252
+round 0 keptStart {"wallMs":13195,disk:7360
+round 0 kept {"wallMs":5234,"kind":"kept","bytes":675547030,"pausedMs":5077
+round 0 file {"wallMs":7196,"kind":"file","bytes":678917076,"pausedMs":5281
+== desktop off round 5: base at a34c9c85, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":12527,disk:7225
+round 0 keptStart {"wallMs":13210,disk:7287
+round 0 kept {"wallMs":5142,"kind":"kept","bytes":675488741,"pausedMs":5014
+round 0 file {"wallMs":6439,"kind":"file","bytes":678930844,"pausedMs":5061
+== desktop off round 6: new at e407818b, core a8deea545dc27dff
+rc=0
+round 0 load {"wallMs":5895,disk:764
+round 0 keptStart {"wallMs":6354,disk:761
+round 0 kept {"wallMs":2838,"kind":"kept","bytes":675504380,"pausedMs":2721
+round 0 file {"wallMs":4170,"kind":"file","bytes":678903190,"pausedMs":2698
+ALLDONE

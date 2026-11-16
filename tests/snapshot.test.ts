@@ -8,7 +8,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { lzCodec } from '../web/lz.ts';
 import { ramStarts, readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
-import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
+import { dropSuspend, openOverlay, overlay, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
+import { diskIdentity } from '../web/devices.ts';
+import { zeroDisk } from '../web/stored.ts';
 import { crc32 as zlibCrc32 } from 'node:zlib';
 import { applyRam, crc32, frameHeader, openSnapshot, SnapshotError, SnapshotWriter, type LoadPool, type RamPool, type SnapshotHeader } from '../web/snapshot-file.ts';
 import { poolSize, startPool } from '../web/snapshot-pool.ts';
@@ -391,6 +393,72 @@ test('a load\'s pool: RAM placed as on one thread for any pool size, a failing w
   } finally {
     p?.close();
   }
+});
+
+test('a restore writes a disk\'s blocks in runs: every block, its zeros without slots, across leaves and up to a short last block', async () => {
+  const codec = await lzCodec(WASM);
+  const name = 'snapshot-test-runs';
+  // A disk of two leaves and 10 blocks, its last block 1,000 bytes; the file's blocks: data and zeros alternating in
+  // runs, a run across the leaves' boundary (1,024), a frame of 256, lone blocks, and the last block.
+  const size = (2 * 1024 + 10) * 4096 + 1000;
+  const last = Math.ceil(size / 4096) - 1;
+  const spec = { type: 'blk', url: 'file:///runs/disk.img', overlay: name } as const;
+  const kinds = new Map<number, 'data' | 'zero'>();
+  const mark = (from: number, to: number, k: 'data' | 'zero') => { for (let b = from; b < to; b++) kinds.set(b, k); };
+  mark(0, 3, 'data'); mark(3, 5, 'zero'); mark(5, 6, 'data'); mark(7, 8, 'zero'); mark(100, 356, 'data');
+  mark(1015, 1020, 'zero'); mark(1020, 1030, 'data'); mark(1030, 1031, 'zero'); mark(1031, 1033, 'data'); mark(2000, 2040, 'zero');
+  kinds.set(last, 'data');
+  const bytesOf = (b: number) => {
+    const d = new Uint8Array(4096);
+    if (kinds.get(b) === 'data') d.fill((b % 251) + 1, 0, b === last ? size % 4096 : 4096);
+    return d;
+  };
+  const blocks = [...kinds.keys()].sort((x, y) => x - y);
+  const header: SnapshotHeader = { ...HEADER, coreVersion: codec.snapshotVersion, ramSize: 65536, disks: [{ slot: 0, identity: diskIdentity(spec, size), size, blocks: blocks.length }] };
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, header, { codec, concurrency: 1 });
+  await w.bytes('CORE', new Uint8Array(3000).fill(9));
+  await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify({ devices: [], input: [] })));
+  await w.disk(blocks.map((b) => ({ block: b, data: bytesOf(b) })));
+  await w.end();
+  const file = new Blob(parts as BlobPart[]);
+  // The overlay had other blocks: emptied first.
+  await removeOverlay(name);
+  {
+    const f = await openOverlay(name, diskIdentity(spec, size));
+    const o = overlay(zeroDisk(size), f.data, f.map, f.meta);
+    assert.ok(await o.write(6 * 4096, new Uint8Array(3 * 4096).fill(7)));
+    assert.ok(await o.write(1500 * 4096, new Uint8Array(4096).fill(8)));
+    o.flush();
+    f.close();
+  }
+  const r = await readSnapshot(file, codec, codec.snapshotVersion, { devices: [spec] });
+  await r.restore.fill(new Uint8Array(65536));
+  // Read back by a new opening (its map read from the file).
+  const f = await openOverlay(name, diskIdentity(spec, size));
+  try {
+    const o = overlay(zeroDisk(size), f.data, f.map);
+    assert.deepEqual([...o.written()], blocks, 'the overlay holds the file\'s blocks, and only those');
+    for (const b of blocks) {
+      assert.equal(o.zeroed(b), kinds.get(b) === 'zero', `block ${b}: ${kinds.get(b)}`);
+      assert.ok(Buffer.compare(o.block(b)!, bytesOf(b)) === 0, `block ${b}'s bytes`);
+    }
+    const data = blocks.filter((b) => kinds.get(b) === 'data').length;
+    assert.equal(f.data.getSize(), data * 4096, 'a slot for each data block, none for the zeros');
+    assert.ok(Buffer.compare((await o.read(0, size))!, Buffer.concat(Array.from({ length: last + 1 }, (_, b) => bytesOf(b))).subarray(0, size)) === 0, 'the whole disk');
+  } finally {
+    f.close();
+  }
+  // A frame past the disk's end is refused.
+  const past: Uint8Array[] = [];
+  const wp = new SnapshotWriter((b) => { past.push(b.slice()); }, { ...header, disks: [{ slot: 0, identity: diskIdentity(spec, size), size, blocks: 2 }] }, { codec, concurrency: 1 });
+  await wp.bytes('CORE', new Uint8Array(3000).fill(9));
+  await wp.bytes('DEVS', new TextEncoder().encode(JSON.stringify({ devices: [], input: [] })));
+  await wp.disk([{ block: last, data: bytesOf(last) }, { block: last + 1, data: new Uint8Array(4096) }]);
+  await wp.end();
+  const rp = await readSnapshot(new Blob(past as BlobPart[]), codec, codec.snapshotVersion, { devices: [spec] });
+  await assert.rejects(async () => rp.restore.fill(new Uint8Array(65536)), (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt');
+  await removeOverlay(name);
 });
 
 test('a snapshot of another machine, another version or with a damaged state is refused', { skip }, async () => {
