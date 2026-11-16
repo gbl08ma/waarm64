@@ -8,7 +8,7 @@ import type { PageFolders } from './folders-live.ts';
 import type { FromWorker, Status } from './protocol.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker } from '../gpu-worker.ts';
-import type { Surface } from '../surface.ts';
+import type { RamPlace, Surface } from '../surface.ts';
 import type { SurfaceLook } from './surface-look.ts';
 
 /** The 3D screen read back (RGBA, top row first). */
@@ -67,6 +67,19 @@ declare global {
       live: boolean;
       stale: boolean;
       surface?: Surface;
+      look?: SurfaceLook;
+      pinned?: number;
+      answers: () => number;
+    };
+    /**
+     * The RAM map's view (web/app/RamWindow.svelte; tests/page-ram.test.ts): whether it follows a running machine, its
+     * last surface (`stale`: the run before's), where its offsets are, its looks, the square pinned, the answers taken.
+     */
+    __ram?: {
+      live: boolean;
+      stale: boolean;
+      surface?: Surface;
+      layout: RamPlace[];
       look?: SurfaceLook;
       pinned?: number;
       answers: () => number;

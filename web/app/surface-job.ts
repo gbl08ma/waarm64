@@ -158,7 +158,8 @@ async function answer(job: SurfaceJob, stored: Open | undefined, over: Open | un
     if (ov) layers.push(summarize(ov.leaves, 'overlay', ov.size, cellBytes));
     return { kind: 'disk-surface', surface: surfaceOf(cellBytes, layers) };
   }
-  if (!Number.isInteger(q.range) || q.range < 0 || q.range >= rangesOf(size)) return { kind: 'none' };
+  if (q.kind !== 'disk-range' || !Number.isInteger(q.range) || q.range < 0 || q.range >= rangesOf(size))
+    return { kind: 'none' };
   const detail = rangeDetail(q.range, size, disk, ov);
   if (q.content) detail.content = await contentOf(detail, blockReader(job, disk, stored, over));
   return { kind: 'disk-range', detail };

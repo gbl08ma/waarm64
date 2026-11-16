@@ -32,6 +32,8 @@ export function status(
     jitSteps: s.jit.steps,
     jitBytes: s.jit.bytes,
     irqs: s.irqs,
+    tlbMisses: s.tlbMisses,
+    tlbFlushes: s.tlbFlushes,
     loopMaxMs,
     loopAgeMs,
     vcpus: vm.liveness(),

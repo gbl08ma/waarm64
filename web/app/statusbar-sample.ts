@@ -13,6 +13,8 @@ export const SAMPLE: { metrics: Metrics; disks: string[]; nets: Live['nets']; gp
     mips: 812,
     jit: 98.7,
     irqs: 2140,
+    tlbMisses: 184_300,
+    tlbFlushes: 46,
     blocks: 48_213,
     flushes: 0,
     compileMs: 9300,

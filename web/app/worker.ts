@@ -25,6 +25,7 @@ import type { StartMessage } from './worker-devices.ts';
 import { explain } from './worker-errors.ts';
 import { sessionOf, type Session } from './worker-header.ts';
 import { asked } from './worker-profile.ts';
+import { stopRam } from './worker-ram.ts';
 import { post, state } from './worker-post.ts';
 import { limitJit, status, watchKeyboard } from './worker-status.ts';
 import { checkSnapshot, saveSnapshot, spareBuffer, suspend, TAIL, type Running } from './worker-snapshot.ts';
@@ -88,6 +89,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       return up?.();
     case 'stop':
       stopping = true;
+      stopRam();
       void (async () => {
         // A machine still booting is closed once it's there (its device worker may have the overlay open).
         const v = vm ?? (await booting?.catch(() => undefined));

@@ -15,6 +15,9 @@ export type Metrics = {
   /** The highest vCPU's MIPS seen in this run: the bars' full height. */
   cpuPeak: number;
   irqs?: number;
+  /** The TLB's misses and flushes a second, all vCPUs. */
+  tlbMisses?: number;
+  tlbFlushes?: number;
   blocks: number;
   flushes: number;
   compileMs: number;
@@ -74,6 +77,8 @@ export function metrics(s: Status, at: number, prev?: Sample, tabBytes?: number)
     cpus,
     cpuPeak: Math.max(prev?.metrics.cpuPeak ?? 0, ...(cpus ?? []).map((c) => c.mips)),
     irqs: rate(s.irqs, p?.irqs),
+    tlbMisses: rate(s.tlbMisses, p?.tlbMisses),
+    tlbFlushes: rate(s.tlbFlushes, p?.tlbFlushes),
     blocks: s.jitBlocks,
     flushes: s.jitFlushes,
     compileMs: s.jitCompileMs,

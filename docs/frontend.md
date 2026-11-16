@@ -358,8 +358,9 @@ the network's, disks' and USB's in `statusbar-traffic.ts`, with the received and
 a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#state[data-state]` stays, hidden, for the
 tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor (a chip of its bar `StatusChip.svelte`, its palette `StatusPalette.svelte`, its chosen chip's settings `StatusOptions.svelte`, its drags `status-drag.svelte.ts`); what both draw besides the statuses (the power state, the mouse and keys, the adapters' states) is `areas/status-live.ts` `liveNow`.
 - **Elements:** power state, [Guest OS](ui:statusbar:statusbar-kinds.kind.os) (the guest's os-release's name, once its
-  agent named it: devices.md "The guest's OS"), vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
-  IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
+  agent named it: devices.md "The guest's OS"), vCPUs, RAM (a link to the RAM map while a machine runs in this tab:
+  "RAM's map"), uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
+  IRQ/s, the TLB (its misses and flushes a second, all vCPUs, a process switch's drop of its translations a flush too: the counters of docs/abi.md, `statusbar-mmu.ts`), blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
   in and out as the guest sees them, counted as the xHCI's transfers complete, `web/usb.ts`); the renderer (3D or 2D,
   WebGL2 or a canvas, amber when WebGL2 is software; [Framebuffer](ui:statusbar:statusbar-graphics.gpu.framebuffer) on a machine
@@ -607,6 +608,44 @@ was (on the screen).
   device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms).
 - `window.__surface` is the tests' view of it (web/app/hooks.ts).
 
+### RAM's map
+
+While a machine runs in this tab, the status bar's RAM element is a link (`StatusBar.svelte`; a press leaves the
+keyboard's focus on the screen) that opens the running machine's RAM as a block map in a floating window
+(`RamWindow.svelte`, the disk surface window's pieces: `ui/FloatingWindow.svelte`, its place remembered under
+`windows.ram`, `ui/BlockGrid.svelte`, `SurfaceLegend.svelte`, `surface-poll.svelte.ts`). It is open independently of a
+disk's window; `areas/ram.svelte.ts` says whether it is, and `App.svelte` mounts it beside the disk's, so it stays
+over the machine and the Machines page.
+
+- **What it shows**: all of RAM (memory 0's, then each spill memory's, one after another), a square 4 MiB times the
+  smallest power of two for which it fits the window's room, as for a disk. A square's **rim** is how many of its 4 KiB
+  pages hold anything but zeros ([All zeros](ui:machine:ram-look.legend.zero), four shades to
+  [Full](ui:machine:ram-look.legend.full)); its **core**, from the second look on, how many changed since the look
+  before (other data, or written from zeros), hollow where pages were only cleared (data then, zeros now). The
+  balloon's free page reporting zeroes the memory the guest gives back (devices.md "balloon"), so a page with data is
+  roughly memory in use, plus freed memory not given back yet. The line under the map says how much holds data and
+  changed as a whole, or the pointed square's guest physical addresses (`0x4000_0000`) and counts
+  (`ram-look.ts`); a click pins a square in a window of its own (`RamDetails.svelte`): one 4 MiB range page by page
+  (32 × 32), asked again after each look. Words in the `machine` catalog (`RamWindow`, `RamDetails`, `ram-look`,
+  `ram-source`).
+- **No reads and writes** are shown, unlike a disk's: compiled code touches RAM directly, and a hook on that path
+  would cost every access. The map looks at RAM itself instead, pass after pass: nothing runs while it's closed.
+- **Where the numbers come from**: `inspect` with `ram-surface {cells}` (a new pass) or `ram-range {range}` (the last
+  pass's) to the run's worker (`ram-source.ts`), which sends them to a scanner worker of its own
+  (`worker-ram.ts`, `ram-scan-worker.ts`): started at the first such query and handed the machine's RAM where it lies
+  (its shared buffers and `Vm.layout`, the parts' guest addresses), ended after 20 s without one, at the machine's
+  stop, or for another machine. A pass (web/ram-scan.ts `RamScan`) reads every page: a zero page whole, a page with
+  data whole for its fingerprint (four lanes of sums and sums of sums, 4 bytes a page kept for the next pass). Its
+  cost is the reading: ~0.1 s a GiB never written (untouched memory reads the host's zero page and isn't committed by
+  being read: docs/backlog.md's measurement), ~0.35 s a GiB with data (Node on a cloud container's x86_64; a Debian
+  guest's 1 GiB took ~0.2 s). Nothing touches the vCPUs, the machine worker or the devices.
+- **When it asks**: once a second at most, stretched so the passes take under 1/8 of the time (`ramDelay`: the next
+  ask ≥ 8 × the pass's `cost`), only while the page is visible; the window says how often ([Updated every 2
+  seconds](ui:machine:RamWindow.live_other)). A 4 GiB RAM full of data looks every ~12 s. While no machine runs here,
+  the window says so ([The RAM map shows the RAM of a machine running in this tab. Start the machine to see
+  it.](ui:machine:ram-source.notRunning)) and RAM isn't a link.
+- `window.__ram` is the tests' view of it (web/app/hooks.ts).
+
 ### About
 
 **[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is waarm64's own: a link to its
@@ -675,8 +714,8 @@ Page → worker:
 - `inspect {id, query}`: a question about the running machine's surfaces (web/surface.ts `InspectQuery`; the disk
   surface visualizer, docs/plans/surface.md). The worker sends it to whoever answers its kind: a `disk-*` query to the
   disk's device in the device worker (`Vm.inspect`: `query.disk` is the disk's place among the machine's disks, slot
-  order), which answers from the maps it has in memory; any other kind, or no machine, is answered `{kind: 'none'}`.
-  Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
+  order), which answers from the maps it has in memory; a `ram-*` query to the RAM map's scanner worker ("RAM's map":
+  `worker-ram.ts`); any other kind, or no machine, is answered `{kind: 'none'}`. Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
   device's activity wrapper on for ~3 s (devices.md "blk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have

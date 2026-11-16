@@ -99,6 +99,8 @@ export type SurfaceSource = {
   readonly live: boolean;
   surface(cells: number): Promise<InspectAnswer>;
   range(range: number, content: boolean): Promise<InspectAnswer>;
+  /** A live source's next ask after an answer that took `cost` ms to make (none: `pollDelay`). */
+  delay?(cost?: number): number;
   close(): void;
 };
 

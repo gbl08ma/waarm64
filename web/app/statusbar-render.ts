@@ -1,6 +1,6 @@
 // What each status bar element draws now (docs/frontend.md "The status bar"): a renderer per kind, the page's own
 // (power, clock, input, links) and the machine's numbers here, the graphics' (web/app/statusbar-graphics.ts) and the
-// traffic's (statusbar-traffic.ts) beside. DOM-free, for tests/statusbar.test.ts.
+// traffic's (statusbar-traffic.ts) and the TLB's (statusbar-mmu.ts) beside. DOM-free, for tests/statusbar.test.ts.
 import { t } from '../i18n.ts';
 import { bytesText } from './bytes.ts';
 import type { IconName } from './icons.ts';
@@ -10,6 +10,7 @@ import { fpsPiece, gpuPiece, videoPiece, vulkanPiece } from './statusbar-graphic
 import type { Metrics } from './statusbar-metrics.ts';
 import { count, devices, hms, piece, type Live, type Piece, type Tone } from './statusbar-piece.ts';
 import { diskPieces, netPieces, usbPieces } from './statusbar-traffic.ts';
+import { tlbPiece } from './statusbar-mmu.ts';
 import type { PageState } from './areas/power.svelte.ts';
 
 type Renderer = (i: Item, icon: IconName | undefined, m: Metrics | undefined, live: Live) => Piece[];
@@ -324,6 +325,7 @@ const RENDERERS: Record<Kind, Renderer> = {
   uptime: numbers(uptimePiece),
   memory: numbers(memoryPiece),
   irqs: numbers(irqsPiece),
+  tlb: numbers(tlbPiece),
   blocks: numbers(blocksPiece),
   compile: numbers(compilePiece),
   jitcache: numbers(jitcachePiece),

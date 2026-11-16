@@ -14,7 +14,7 @@ import { msg, t } from '../web/i18n.ts';
 const MiB = 2 ** 20;
 const RUNNING = t('machine:messages.state.running');
 const status = (o: Partial<Status> = {}): Status => ({
-  ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0,
+  ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0, tlbMisses: 0, tlbFlushes: 0,
   loopMaxMs: 0, loopAgeMs: 0, vcpus: [], stats: {} as Status['stats'],
   memory: { ramBytes: 0, heapLive: 0, heapPeak: 0, jitLiveBytes: 10 * MiB, jitModules: 0, jitBudget: 320 * MiB, jitEpochs: 0, jitLimit: 0, jitKeys: 0, jitKeyBytes: 0, jitHeld: 0 }, estimateBytes: 0, peakBytes: 0,
   disks: [{ read: 0, written: 0 }], nets: [{ rx: 0, tx: 0 }, { rx: 0, tx: 0 }], cpus: [{ steps: 0, jitSteps: 0 }, { steps: 0, jitSteps: 0 }],
@@ -151,4 +151,14 @@ test('the palette names one chip per kind and scope', () => {
   for (const w of want) assert.ok(names.includes(w), w);
   assert.equal(new Set(names).size, names.length);
   assert.equal(nameOf({ kind: 'netrate', scope: 'one', index: 2 }), t('statusbar:statusbar.name.one.net', { name: name('statusbar:statusbar-kinds.kind.netrate'), index: 2 }));
+});
+
+test('the TLB: misses and flushes a second, from two statuses; nothing from one', () => {
+  const a = status({ tlbMisses: 1_000, tlbFlushes: 10 });
+  const b = status({ uptime: 12_000, tlbMisses: 401_000, tlbFlushes: 110 });
+  assert.equal(text({ kind: 'tlb' }, metrics(a, 0)), '');
+  const m = metrics(b, 2000, { status: a, at: 0, metrics: metrics(a, 0) });
+  assert.deepEqual([m.tlbMisses, m.tlbFlushes], [200_000, 50]);
+  assert.equal(text({ kind: 'tlb' }, m), t('statusbar:statusbar-mmu.tlb', { misses: '200,000', flushes: '50', count: 50 }));
+  assert.deepEqual(normalize([{ kind: 'tlb', look: 'icon' }]), [{ kind: 'tlb', look: 'icon' }]);
 });

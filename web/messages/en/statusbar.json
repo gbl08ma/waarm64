@@ -930,5 +930,33 @@
   "power.loading": {
     "message": "Loading",
     "note": "The power state at the left of the status bar (the page's footer) when the page opens, before the machine's first state."
+  },
+  "StatusBar.ramMap": {
+    "message": "{{words}}. Click to see what the machine's RAM holds.",
+    "note": "Tooltip of the RAM element in the status bar (the page's footer) while the machine runs in this tab, where the element is a link that opens the RAM map (a floating window with the running machine's RAM as a grid of squares). {{words}} is the element's own tooltip (RAM: 4096 MiB)."
+  },
+  "statusbar-kinds.kind.tlb": {
+    "message": "TLB",
+    "note": "The name of a status bar element (the tlb kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. TLB: the translation lookaside buffer, where the emulated processor keeps the address translations it has looked up."
+  },
+  "statusbar-kinds.kind.tlb.about": {
+    "message": "The address translations the processor had to look up in the guest's page tables a second (TLB misses), and how many times a second it dropped translations it kept: all of them, a process's when the guest switched to another, or a page's.",
+    "note": "What the TLB status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
+  },
+  "statusbar-mmu.tlb_one": {
+    "message": "{{misses}} TLB misses/s, {{flushes}} flush/s",
+    "note": "The TLB element in the status bar (the page's footer): {{misses}} is the address translations the emulated processor looked up in the guest's page tables in the last second (all vCPUs), {{flushes}} the times in that second the processor dropped translations it kept: all of them, a process's (the guest switched to another), or a page's. Used when {{flushes}} is 1."
+  },
+  "statusbar-mmu.tlb_other": {
+    "message": "{{misses}} TLB misses/s, {{flushes}} flushes/s",
+    "note": "The TLB element in the status bar (the page's footer): {{misses}} is the address translations the emulated processor looked up in the guest's page tables in the last second (all vCPUs), {{flushes}} the times in that second the processor dropped translations it kept: all of them, a process's (the guest switched to another), or a page's."
+  },
+  "statusbar-mmu.tlb.title_one": {
+    "message": "{{misses}} TLB misses a second, each an address translation looked up in the guest's page tables. {{flushes}} TLB flush a second, which drops translations for a process switch or a change of the page tables.",
+    "note": "Tooltip of the TLB element in the status bar (the page's footer): {{misses}} and {{flushes}} as in the element's words, for the last second, all vCPUs. Used when {{flushes}} is 1."
+  },
+  "statusbar-mmu.tlb.title_other": {
+    "message": "{{misses}} TLB misses a second, each an address translation looked up in the guest's page tables. {{flushes}} TLB flushes a second, which drop translations for process switches and changes of the page tables.",
+    "note": "Tooltip of the TLB element in the status bar (the page's footer): {{misses}} and {{flushes}} as in the element's words, for the last second, all vCPUs."
   }
 }

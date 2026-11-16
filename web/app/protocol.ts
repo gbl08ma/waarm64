@@ -208,8 +208,8 @@ export type ToWorker =
   /**
    * A question about the running machine's surfaces (web/surface.ts; the disk surface visualizer): a `disk-*` query is
    * answered by the disk's device (`query.disk`: the disk's place among the machine's disks, slot order) from what it
-   * has in memory; answered by `inspected` with its `id`, `{ kind: 'none' }` without a machine or for a kind nothing
-   * answers.
+   * has in memory; a `ram-*` query by the RAM map's scanner (web/app/worker-ram.ts); answered by `inspected` with its
+   * `id`, `{ kind: 'none' }` without a machine or for a kind nothing answers.
    */
   | { type: 'inspect'; id: number; query: InspectQuery }
   /** Wake the guest if it is in PSCI SYSTEM_SUSPEND (`Status.asleep`): a key or a click reached it. */
@@ -405,6 +405,9 @@ export type Status = {
   jitSteps: number;
   jitBytes: number;
   irqs: number;
+  /** The TLB's misses and flushes, all vCPUs (docs/cpu.md "MMU and TLB"). */
+  tlbMisses: number;
+  tlbFlushes: number;
   /** The worker's run loop: the longest gap between its iterations since the last status (ms), and ms since the last one now (the stress test, bench/stress). */
   loopMaxMs: number;
   loopAgeMs: number;
