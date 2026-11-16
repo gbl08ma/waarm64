@@ -31,4 +31,10 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Open questions
 
-None yet.
+- **A year of the calendars' history** (the kickoff's N0): reading it whole through the explorers is ~16,000+
+  requests (a calendar pays from rotating coins, so no address lists it), far past "a few hundred". N0a took the
+  complete last days plus year-long samples (an upper bound). The supervisor accepts that for `REF_WINDOW` (48 h has
+  margin over the samples' worst); the user is told, and asked only if they want the full year (a bigger budget or
+  another source).
+- **Argon2id's GPU lead** is ~280x at checkable sizes (the spec's estimate said ~10x): a million names is tens of
+  GPU-hours a term either way. Within the decisions (proof of work prices a term; the bound keeps junk out); noted.
