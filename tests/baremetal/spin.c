@@ -1,13 +1,15 @@
 // A vCPU that loops in compiled code with no exits (PERF loop 31: parallel SMP's code has no step budget, it polls a
 // stop word where a cycle can close; docs/jit.md "Preemption") must still take its timer's IRQ, take another vCPU's
-// IPI, answer its TLBI IS (the issuer's DSB completes) and stop for the host. CPU 1 spins in eight shapes, copied to a
+// IPI, answer its TLBI IS (the issuer's DSB completes) and stop for the host. CPU 1 spins in nine shapes, copied to a
 // code area so their layout is exact: a one-block loop (a region's back-edge once compiled), a cycle of 20 blocks (more
 // than a region holds: a backward chain, through the jump cache under JIT-check, which enters it mid-way), a BR to
 // itself (the transfer cache's probe; the jump cache's with the MMU off), two BRs 64 KiB apart (the same transfer cache
 // slot: every transfer through its miss function), and a branch back to the page before (a by-VA link under
 // JIT-check); and (PERF loop 33) forward through 16 VA copies of the same code (by-VA links, MMU on only), nested
 // forward calls (host calls whose returns land in the caller), and the one-block loop with a breakpoint armed (the
-// debug interpreter: never compiled). Each at EL1 with the MMU off, at EL1 with it on, and at EL0. CPU 1 records where
+// debug interpreter: never compiled); and (PERF loop 34) a loop with no memory access at all (a register add: where V8
+// may keep a plain load of the stop word out of the wasm loop, so its poll must be an atomic load), which only an
+// IRQ ends (`done` set, the handler moves ELR past it: CPU 0 pings until it's out). Each at EL1 with the MMU off, at EL1 with it on, and at EL0. CPU 1 records where
 // it took each ping (ELR): in the copies and the calls it must mostly be inside the shape, at a poll along the way,
 // not at its lap's check. Meanwhile CPU 0 times IPI round trips
 // (SGI 1 to CPU 1, whose handler sends SGI 2 back) and TLBI VMALLE1IS + DSB ISH; then, in a second pass with nothing
@@ -25,7 +27,7 @@
 #define VTIMER 27
 #define PSCI_CPU_ON 0xc4000003UL
 #define ROUNDS 8
-#define FORMS 8
+#define FORMS 9
 #define ENVS 3
 
 #define TABLE 3UL
@@ -116,6 +118,8 @@ void on_exception(struct frame *f, u64 vec) {
     power_off(100 + vec);
   }
   u64 iar = sysreg(ICC_IAR1_EL1);
+  // Shape 8 (no memory access): out of its loop once `done` is set.
+  if (g.done && f->elr >= g.inside[8][0] && f->elr < g.inside[8][1]) f->elr = g.inside[8][1];
   if (iar == 1) { // CPU 1: the ping
     g.elr = f->elr;
     sgi(2, 0);
@@ -149,6 +153,7 @@ static u32 cbz_to(volatile u32 *from, volatile u32 *to) { return 0xb4000001 | (u
 #define BR(n) (0xd61f0000u | (n) << 5)
 #define UDIV_X3 0x9ac20863u  // udiv x3, x3, x2 (x2 = 1): a dependent chain of steps that cost something
 #define MOVZ_X2_1 0xd2800022u // movz x2, #1
+#define ADD_X2_1 0x91000442u  // add x2, x2, #1
 #define MOV_X10_X30 0xaa1e03eau
 #define MOV_X30_X10 0xaa0a03feu
 #define MOV_X9_X30 0xaa1e03e9u
@@ -298,6 +303,17 @@ static void write_shapes(void) {
   // 7: the one-block loop with a breakpoint armed (`debug`): it runs in the debug interpreter, never compiled.
   shape[7] = shape[0];
 
+  // 8: a loop with no memory access (`pure`): an add and a branch back; the IRQ handler leaves it once `done` is set.
+  at = (volatile u32 *)(CODE + 0x70000);
+  shape[8] = (u64)at;
+  prologue();
+  volatile u32 *pure = at;
+  op(ADD_X2_1);
+  op(b_to(at, pure));
+  op(RET);
+  g.inside[8][0] = (u64)pure;
+  g.inside[8][1] = (u64)(pure + 2);
+
   __asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
 }
 
@@ -406,9 +422,17 @@ static void start(u64 cmd, u64 code) {
   WAIT(__atomic_load_n(&g.ack, __ATOMIC_SEQ_CST) == cmd && g.in, code);
 }
 
-// Ends CPU 1's spin in `cmd`'s shape.
+// Ends CPU 1's spin in `cmd`'s shape (shape 8 at its next IRQ: pinged every 50 µs until it's out).
 static void stop(u64 cmd, u64 code) {
   __atomic_store_n(&g.done, 1, __ATOMIC_SEQ_CST);
+  if (((cmd & ~TIMED) - 1 & 0xff) == 8 && cmd != CMD_STOP) {
+    u64 n = 0, gap = sysreg(CNTFRQ_EL0) / 20000;
+    while (__atomic_load_n(&g.finished, __ATOMIC_SEQ_CST) != cmd) {
+      if (++n > 100000) power_off(code);
+      sgi(1, 1);
+      delay(gap);
+    }
+  }
   WAIT(__atomic_load_n(&g.finished, __ATOMIC_SEQ_CST) == cmd, code);
 }
 
@@ -457,7 +481,7 @@ static void run(u64 env, u64 form) {
 }
 
 static const char *const ENV[ENVS] = {"el1-off", "el1-on", "el0-on"};
-static const char *const FORM[FORMS] = {"loop", "chain", "br", "miss", "byva", "alias", "calls", "debug"};
+static const char *const FORM[FORMS] = {"loop", "chain", "br", "miss", "byva", "alias", "calls", "debug", "pure"};
 // Shape 5 needs the MMU.
 static int runs(u64 env, u64 form) {
 #ifdef SPIN_ONLY

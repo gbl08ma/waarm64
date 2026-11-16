@@ -1,0 +1,61 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index a4725e3a..a6d96ec5 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -1179,7 +1179,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             }
+             bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
+             c.conform(entry[j]);
+-            if !c.sum {
++            if !c.sum && !e.polled {
+                 c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+                 c.local_set(emit::ACC);
+             }
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bafe6ec7..46247690 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -956,7 +956,9 @@ impl Func {
+     /// instructions retired (the registers and flags already in the `Cpu`).
+     /// Pushes `acc`: the parameter, or `SUM - left` in a region with edges.
+     pub fn acc(&mut self) {
+-        if self.sum {
++        if self.polled {
++            self.c.i32_const(0);
++        } else if self.sum {
+             self.c.local_get(SUM).local_get(LEFT).op(0x6b); // i32.sub
+         } else {
+             self.c.local_get(ACC);
+@@ -2189,7 +2191,8 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>, pol
+     }
+     transfer(&mut c, Xfer::Tail, 0, ty, To::Load(JCE, 8), 1);
+     c.end();
+-    c.local_get(ACC).end();
++    c.acc();
++    c.end();
+     c
+ }
+ 
+@@ -2278,7 +2281,8 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
+     c.i32_load(off).local_tee(V);
+     c.i32_const(0).op(LT_S).if_();
+-    c.local_get(VCPU).local_get(ACC);
++    c.local_get(VCPU);
++    c.acc();
+     if c.polled {
+         c.i32_const(0);
+     } else {
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 37831b2e..9f2ab484 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2350,7 +2350,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             // Polled code's `acc` starts at the steps done, which its polls
+             // compare with the stop word (the chunk's steps, or 0).
+             let (acc, left) = if polled {
+-                (done as u32, 0)
++                (0, 0)
+             } else {
+                 (0, left.min(i32::MAX as u64) as u32)
+             };

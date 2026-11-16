@@ -410,12 +410,14 @@ deterministic runners compare the JIT's steps with the interpreter's), so nothin
 
 **Spin tests (`spin.c`, `tests/spin.test.ts`; PERF loop 31):** parallel SMP's compiled code has no step budget and
 polls the vCPU's stop word where a cycle can close ([jit.md](jit.md) "Preemption"), so a vCPU that loops with no exit
-must still answer what happens around it. CPU 1 spins in eight shapes copied to a code area (one block; 20 blocks, more
+must still answer what happens around it. CPU 1 spins in nine shapes copied to a code area (one block; 20 blocks, more
 than a region holds, entered mid-way; a BR to itself; two BRs 64 KiB apart that share a transfer cache slot, so every
 transfer goes through the miss function; a branch back to the page before; since PERF loop 33, forward through 16 VA
 copies of four pages of code, each copy's entry in its own transfer cache slot, so by-VA links hit (MMU on only);
 16 calls to a function making 16 calls to a 16-step one, each callee after its caller, so host calls; and the one-block
-loop with a breakpoint armed, which the debug interpreter runs), each at EL1 with the MMU off and on and
+loop with a breakpoint armed, which the debug interpreter runs; since PERF loop 34, `pure`, a loop of a register add
+with no memory access, where V8 may keep a plain load out of the wasm loop: the handler of the IRQ that comes once
+`done` is set moves ELR past it, and CPU 0 pings it every 50 µs until it's out), each at EL1 with the MMU off and on and
 at EL0 (text pages read-only at both ELs, the rest read-write at both: an EL0-writable page is privileged
 execute-never). CPU 0 times 8 IPI round trips (SGI 1 there, SGI 2 back) and 8 TLBI VMALLE1IS + DSB ISH a shape, then
 in a quiet second pass CPU 1 its own timer's lateness (with long chunks CPU 0 pings it after 50 ms: nothing but the
@@ -423,7 +425,7 @@ chunk's steps ends a chunk for a timer); last, CPU 1 spins while the host pauses
 at 0x40a0_0000; with no host the guest moves on after 10 ms of the counter). The guest checks only completion (it
 runs on the oracles and the deterministic runners too); `tests/spin.test.ts` runs it in parallel under the JIT, and
 JIT-stress and JIT-check (`scripts/ci-jit.sh`), each with the default chunk and with 2^30-step chunks (`vm_set_chunk`), where only a
-setter ends a chunk early: the medians over the 15 shapes must be under 1 ms (the worst under 50 ms; typical: a few
+setter ends a chunk early: the medians over the 26 shape runs (9 shapes at 3 ELs and MMU settings, the aliases MMU-on only) must be under 1 ms (the worst under 50 ms; typical: a few
 to ~100 µs), the timer's under the JIT with the default chunk, the pauses' median under 5 ms (typical ~0.1 ms).
 The copies' blocks and f1's run 16 times a lap, so CPU 0 waits 200 and 400 laps (compiled by then; the loop calling
 f1 may stay interpreted, which also stops at the lap's end), and CPU 1 records where it took each ping (ELR): with a
@@ -436,7 +438,11 @@ warm-ups take spin.c to ~84M steps, so the native runner's and `boot-node`'s bou
 back-edge, a direct chain backward, the transfer cache's probe, the miss function or the MMU-off jump cache's probe
 hangs its shape under every mode (the run fails at its bound); one left out of a static chain through the jump cache
 only under JIT-stress (JIT and JIT-check put that link in a region or a direct chain), of a by-VA link backward only
-under JIT-check (hence the by-VA shape's entry from a third page: the backward branch's block compiles first); a
+under JIT-check (hence the by-VA shape's entry from a third page: the backward branch's block compiles first)
+(PERF loop 34: polls only on a region's back-edge, not on its other edges to a lower VA, fails the 2^30-step runs
+under the JIT: the 20-block chain's cycle leaves its region and comes back through chains forward, its one backward
+step an edge to a member that isn't the head; the polls on looped regions' edges as plain loads fail nothing, since
+today's V8 reads the word again every few laps, PERF loop 34); a
 setter left out (`Vm::wake`, the TLBI IS push, the host's `raise`), or the dispatcher's own check, fails the
 2^30-step runs' bounds (the device backends' `kick`: tests/devices.test.ts "changeConfig") (milliseconds instead of microseconds); the run loop's chunk bound left out fails the timer's
 bound under the JIT.

@@ -381,10 +381,21 @@ PERF-HANDOVER.md "Preemption without the budget"): `Config::polled` (set for a V
 user mode keep the counted code above, byte for byte (Alpine's boot dumped by both cores: the same 319 modules, two
 differing only in the address of a core table they embed, the CRC tables).
 - **`acc` stays** (steps and MIPS still count) and is a plain local: an edge adds its block's length to it.
-- **The poll** (`emit::poll`): `acc < stop`, `stop` the vCPU's stop word (`jit::State::stop`, an `i32.atomic.load` at
-  a fixed `Vcpu` offset: `emit::STOP`), ANDed into the transfer's condition (hinted likely, as the budget check was),
-  so a failed poll falls to the path a failed budget check took: the block returns to the dispatcher with its PC
-  stored. No register is live across it.
+- **The poll** (`emit::poll`): `acc < stop`, `stop` the vCPU's stop word (`jit::State::stop`, at a fixed `Vcpu`
+  offset: `emit::STOP`), ANDed into the transfer's condition (hinted likely, as the budget check was), so a failed poll
+  falls to the path a failed budget check took: the block returns to the dispatcher with its PC stored. No register is
+  live across it. **A plain `i32.load`, but an `i32.atomic.load` on a looped region's edges** (PERF loop 34): an atomic
+  load costs an alignment check (a test and a branch to a trap), an address add and an LDAR on arm64, ~7 instructions
+  a poll more than a plain load folded into its offset; per function arm64 −1.4% instructions, x64 −2.1% (the same
+  dumped set rewritten, `bench/boot/results/perf34/`). A plain load isn't guaranteed fresh: the memory model lets a compiler merge racy reads, and
+  TurboFan (V8 14.6) does: in a stand-alone wasm `loop` of a load and a compare it loads the word once before the loop,
+  and in a JIT region's loop it loads it once per four unrolled laps (the loop's stack check, a call on its slow path,
+  makes it read memory again at the loop's head). So every poll on a looped region's edges (one of them is on every
+  lap) is atomic; the other polls leave the function's invocation when they pass, and V8 reads the word again in each
+  invocation and after every call (it inlines a few levels of a direct tail call into itself, merging their loads,
+  then makes the real call). A read that did go stale is the chunk's steps or 0, so the chunk's bound holds whatever V8
+  merges; only a setter's promptness could suffer. No test fails with plain loads on the loops too (today's V8 reads
+  again often enough): `spin.c`'s `pure` shape, a loop of a register add, is there for a V8 that hoists further.
 - **Where:** what can close a cycle, or repeat code with no transfer backward. A static transfer whose target is
   fixed (a region's edge, a chain to a compiled block, one through the jump cache) polls when its target's VA is at or
   before its block's start (the loop's back-edge, mostly): along forward ones the target's key (its PA) only grows, so
@@ -418,6 +429,22 @@ differing only in the address of a core table they embed, the CRC tables).
   vCPU's next deadline by its measured rate, up to 2^20 steps, the compile worker storing 0 when `ready` moved) cut
   the chunk ends by steps 52-71% and kept the timer as prompt, and still didn't beat the steps bound on the Mac
   (every gate within ±0.7%, overlapping); a ticker thread can save no more chunk ends than that, so none was built.
+- **What `acc` costs** (PERF loop 34, bench/boot/REPORT.md): a parameter live through every function and across its
+  helper calls, so V8 spills it at each definition (the edges' bumps) and fills it at the polls and exits. A
+  measurement core without it (`acc` a constant 0, polls `0 < word`; chunks then end only at exits and setters) has per
+  function arm64 −2 to −3% instructions and **−9% frame memory operands**, x64 −3% and −10 to −11%; on the Mac (the
+  compile worker storing 0 when modules were ready, so installs stayed prompt) Alpine's boots −1.0 to −2.0% to the
+  script (n1 and n4 past the rounds' spread) and the userspace phases −2.5% (overlapping). So `acc` costs ~1-2% (all the polls,
+  for comparison: arm64 −3.5% instructions, x64 −5.4%, with no spills of their own). It stays: it is the chunk's bound (the timer and the installs, PERF loop 32) and the step count
+  the MIPS readout, the run loop's step clocks and the sampler use; dropping it needs a setter for each of those, a
+  redesign filed in docs/backlog.md.
+- **No poll point is redundant** (PERF loop 34): each closes cycles no other one does. Polls only on a region's
+  back-edge (not on its other edges to a lower VA) drop the polls 19% and hang a spin test: a cycle through other
+  functions (the 20-block chain, out of its region and back through chains forward) has its one backward step on such
+  an edge, a forward `br`. The miss function polls again after the probe that sent it there (1-4% of the polls, when
+  the probe's tag missed): its poll is also the only one of a guarded chain whose guard failed, and the probe's failed
+  poll falls to it, which would then run on. The form `word == 0` (no `acc`) saves nothing by itself (static ±0.1%:
+  V8 compares with a register either way) and loses the chunk's bound.
 - **Counted:** (bench/boot/REPORT.md "PERF loop 31", the diagnostic core's `poll` tally) 56 polls per 1000 steps in
   Alpine's parallel boot, 47-75 in the userspace phases on 4 vCPUs (loop 30 estimated 42-52 from its tallies of the
   points); chunks ended early by the word 0.3-0.7%. Since PERF loop 33's polls at host-call returns and forward by-VA

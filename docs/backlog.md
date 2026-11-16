@@ -80,6 +80,15 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 
 ## JIT
 
+- **Parallel SMP's code without `acc`** (PERF loop 34, bench/boot/REPORT.md; docs/jit.md "Preemption"): `acc`
+  costs ~1-2% of the Mac's parallel gates (a measurement core without it: boots −1.0 to −2.0% to the script, userspace
+  −2.5%; per function −9 to −11% frame memory operands on both hosts). It bounds the chunk and counts the steps, so
+  dropping it needs a setter for each thing it serves: the compile worker storing 0 when modules are ready (PERF loop
+  32's `compile-stops.patch`), the vCPU's own timer deadline (a thread, or the host's timers, storing 0), the
+  worker's event-loop visit and the periodic publications; and the MIPS readout, the run loop's step clocks
+  (`TIMER_STEPS`, `BATCH_TIMEOUT`) and the PC sampler's chunk moved to time. Decision 3's latency bounds must hold
+  (the spin tests); a design note first (host ABI). Measure a timer setter's latency on the Mac before building the
+  rest.
 - **Indirect transfers into a browser's code** (2026-10-16; `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes
   in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail

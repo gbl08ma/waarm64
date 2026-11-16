@@ -1,7 +1,7 @@
 // Parallel SMP's polled code (PERF loop 31; docs/jit.md "Preemption", docs/testing.md "Spin tests"): a vCPU looping in
 // compiled code with no exits takes its timer's IRQ, another vCPU's IPI and TLBI IS, and stops for the host's pause,
-// each in bounded time. tests/baremetal/spin.c spins CPU 1 in five shapes (one block, a 20-block chain, BR, the transfer
-// cache's miss function, a by-VA link) at EL1 with the MMU off and on and at EL0, and prints the medians it timed; this
+// each in bounded time. tests/baremetal/spin.c spins CPU 1 in nine shapes (one block, a 20-block chain, BR, the transfer
+// cache's miss function, a by-VA link, VA aliases, nested calls, the debug interpreter, a loop with no memory access) at EL1 with the MMU off and on and at EL0, and prints the medians it timed; this
 // file pauses the machine while CPU 1 spins and holds the numbers to bounds. Each JIT mode (JIT; JIT-stress and JIT-check in scripts/ci-jit.sh) runs twice: with the default
 // chunk (the timer's bound is the chunk's steps, as before the stop word), and with chunks of 2^30 steps
 // (`vm_set_chunk`), where only the stop word's setters end one early, so a missing setter shows as milliseconds (a
@@ -24,8 +24,8 @@ const ROUNDS = 8;
 const MEDIAN_US = 1000, WORST_US = 50_000;
 /** The pauses' (ms): the median of `PAUSES`. */
 const PAUSE_MS = 5;
-/** spin.c's shapes: 8 forms at 3 ELs and MMU settings, but the aliases (shape 5) with the MMU off. */
-const LINES = 8 * 3 - 1;
+/** spin.c's shapes: 9 forms at 3 ELs and MMU settings, but the aliases (shape 5) with the MMU off. */
+const LINES = 9 * 3 - 1;
 const MAX_MS = Number(process.env.WAARM64_SPIN_MAX_MS ?? 60_000);
 
 type Line = { env: string; form: string; rtt: number; tlbi: number; timer: number; inside: number };

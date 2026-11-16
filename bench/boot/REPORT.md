@@ -6070,3 +6070,97 @@ CI, each alone, on the final tree: `scripts/ci.sh` (826 s), `scripts/ci-jit.sh` 
 its differential, lockstep and corpus runs ~100 s of it), `scripts/ci-debian.sh` (362 s; the run loop's fences). Not
 run: `ci-usb.sh`, `ci-audio.sh` (no xHCI or sound change), `oracle.sh --hvf` on the final spin.bin (the first version
 passed there; the breakpoint arming is unchanged).
+
+## PERF loop 34: what's left of the preemption's cost (2026-11-16)
+
+P3 of "Preemption without the budget" (PERF-HANDOVER.md): what `acc`, the poll points and the poll's form still cost
+in parallel SMP's polled code, each kept or dropped by numbers. **Kept: plain loads for the polls but on looped
+regions' edges** (arm64 −1.4% instructions, x64 −2.1%; the Mac's gates −0.2 to −1.0%). **`acc` costs ~1-2%** and stays
+(it's the chunk's bound and the step count; its replacement is filed); no poll point is redundant; `word == 0` saves
+nothing. Data: `bench/boot/results/perf34/` (its README). docs/jit.md "Preemption (parallel SMP's polled code)".
+
+**Static counts** (`bench/jit/codestats.ts`, per function; sets dumped by `dump-modules.ts --parallel 1`, Alpine's boot
+on 1 vCPU, ~7,060 functions; the poll forms are the *same* set rewritten in place by `rewrite.mjs`, exact; two dumps
+of one core differ by +0.5% instructions, +0.6% frame operands):
+
+| | arm64 instructions / frame memory operands | x64 instructions / frame memory operands |
+|---|---|---|
+| plain `i32.load` for every poll | −1.6% / −1.1% | −2.3% / −1.1% |
+| `0 <u word` (the `word != 0` form) | −0.1% / +0.3% | 0.0% / +0.6% |
+| no poll at all (`i32.const 1`: the polls' whole cost) | −3.5% / −1.0% | −5.4% / −1.5% |
+| **kept: plain but on looped regions' edges** (its set against itself all atomic) | **−1.4% / −1.1%** | **−2.1% / −1.0%** |
+| no `acc` (`noacc.patch`, two dumps against base's) | −1.8, −2.6% / −8.7, −9.4% | −2.7, −3.5% / −10.2, −10.9% |
+
+An `i32.atomic.load` of the word is, on arm64, an address add, `tst` and `b.ne` to a trap stub (alignment), another
+add and an LDAR, against one `ldr w, [x, #1444]`: ~7 instructions more a poll, at ~2 polls a function. `0 <u word`
+compiles to the same compare as `acc <u word`, so the `word == 0` form saves nothing and would lose the chunk's bound.
+`acc`'s cost is in the frame: it's a parameter live everywhere and across the helper calls, spilled at each of the
+edges' bumps.
+
+**Is a plain load correct?** Wasm's memory model (JavaScript's) lets a compiler merge racy plain reads, and TurboFan
+(V8 14.6) does: a stand-alone `loop` of a plain load and a compare loads the word once before the loop (`hoist.mjs`;
+the atomic form loads it every lap), and a direct tail call to itself is inlined four levels with one load, then a
+real call (`tailself.mjs`). In the JIT's own loops (`spin.c`'s new `pure` shape, dumped from the spin test) it loads
+the word once per four unrolled laps: the loop's stack check, a call on its slow path, makes it read memory again at
+the head. A read gone stale is the chunk's steps or 0 (nothing else is ever stored), so the chunk's bound holds
+whatever is merged; only a setter's promptness could suffer. So the polls on a looped region's edges (one is on every
+lap of the wasm loop) stay atomic, and the rest (chains, the transfer cache's and jump cache's probes, the miss
+function, host-call returns: each leaves the function's invocation when it passes, and V8 reads memory afresh in each
+invocation and after any call) are plain: 1,255 of ~15,000 polls atomic in a boot's set.
+
+**Fewer poll points:** none is redundant. Polling only a region's back-edge (the head's edge), not its other edges to
+a lower VA, took the polls from 69 / 68 / 77 to 56 / 55 / 62 per 1000 steps (smp1 / smp4 / smp-user4) and failed the
+spin test with 2^30-step chunks under the JIT (CPU 0's DSB waited 10 s): the 20-block chain's cycle leaves its region
+and comes back through chains forward, and its only backward step is an edge to a non-head member, a forward `br` in
+the wasm. The miss function's second poll after the probe's (when the probe's tag missed; 1-4% of the polls) is the
+only poll of a guarded chain whose guard failed, and the probe's failed poll falls to the miss function, which would
+then run on. Host-call returns (10-12 per 1000) bound nested forward calls (loop 33).
+
+**What `acc` costs on the Mac** (`noacc.patch`: `acc` a constant 0, the polls `0 < word`, so chunks end only at exits
+and setters; with `compile-stops.patch` on its runs, so that modules' installs stay prompt, PERF loop 32; its steps
+and MIPS are wrong by design: measurement only). The A/B (M4, Chrome for Testing 157, 5 rounds, each round's order of
+the three arms rotated, nothing else on the dev VM; medians a round, ms; `mac-r*.json`, `summary.py . mac base new`):
+
+| | base | new (kept) | | noacc (measurement) | |
+|---|---|---|---|---|---|
+| `smp_alpine_jit` n1 script / total | 2887-2920 / 5448-5515 | 2884-2906 / 5451-5488 | −0.4% / −0.3% | 2870-2882 / 5430-5456 | **−1.3%** / −1.0% |
+| n2 script / total | 2493-2542 / 5091-5150 | 2477-2512 / 5068-5124 | −0.8% / −0.4% | 2459-2498 / 5030-5100 | −1.6% / −0.9% |
+| n4 script / total | 2461-2502 / 5083-5144 | 2433-2456 / 5056-5086 | **−1.0%** / −0.8% | 2416-2428 / 5026-5045 | **−2.0% / −1.3%** |
+| `smp_user_jit_4` total | 11017-11334 | 11087-11469 | −0.2% | 10860-11112 | −2.5% |
+| compress / Lua / churn / SQLite | 1215-1298 / 2337-2489 / 784-809 / 1722-1923 | −2.1% / +1.8% / −1.2% / +3.0% | | −4.1% / −4.7% / −3.1% / +0.2% | |
+
+Bold: no overlap. The kept change: every boot median lower (n4's script past the rounds' spread), the userspace
+total even; Lua and SQLite spread 150-200 ms in each arm. Without `acc` the boots are 1-2% faster and the userspace
+phases 2.5% (overlapping), though its chunks run long between exits (its own timer seen later, loop 32): `acc`'s ~1-2%
+is about what loop 31 got from dropping `left`. It stays: it bounds the chunk (the timer and the installs, loop 32: no
+cheaper bound) and it is the steps the MIPS readout, the run loop's step clocks and the sampler count. Dropping it needs
+a setter for each and time in place of the steps: docs/backlog.md "Parallel SMP's code without `acc`".
+
+**Polls and latency** (the diagnostic cores, `preempt-counts.ts`, Node 26.7.0 on the dev VM; `counts-*.json`): polls
+per 1000 steps unchanged (base 68.9 / 68.1 / 76.6, new 69.0 / 67.8 / 76.8); chunks ended early by the word 0.60 /
+0.86 / 0.28% (base 0.61 / 0.54 / 0.30%); own timer seen late while running, means 80-96 µs in 3 runs of each arm on
+1 vCPU (base 81-88), 94 / 38 µs on smp4 / smp-user4 (base 97 / 36); IRQ line to IRQ while running 3.0-3.5 µs (base
+3.0-3.3), 14.2 / 3.9 µs (base 14.3 / 3.7). Memory: none (the modules ~1% smaller in machine code).
+
+**Counted code unchanged:** Alpine's deterministic boot dumped by both cores: 319 modules each, all byte-identical,
+2,651,076,469 steps each (`deterministic-modules.json`); tests/steps.txt didn't move.
+
+**Tests.** `spin.c` has a ninth shape, `pure`: a loop of a register add with no memory access (the only kind where
+V8 might keep a plain load of the word out of the loop for good); only an IRQ ends it (the handler moves ELR past the
+loop once `done` is set; CPU 0 pings until it's out). It passes on QEMU TCG and hvf. Planted: polls on a region's
+back-edge only (above: the spin test with 2^30-step chunks fails under the JIT); the looped regions' polls as plain
+loads: **nothing fails**, under every mode and chunk, `pure` included (V8 reloads every four laps there): the atomic
+loads are the memory model's guarantee, not a tested behavior. The spin tests (all modes, both chunk lengths) and
+the polled differential, lockstep and corpus (1024 words a class) pass.
+
+**The oracle side check** (its own commit, ce9a22a7): `xblock`'s 132 on TCG is QEMU's (docs/testing.md "System-level
+oracles" already had it). `isb`'s exit 10 on TCG reproduces every run now (30 of 30: 5-8 stale calls of 8 after the
+architected cross-modification sequence, MMU off) and passes 30 of 30 on hvf: a TCG difference, recorded there. On
+hvf, `mmio`'s 11 was the known RAZ/WI of holes, and past it QEMU asserted on MMIO accesses with no syndrome (a
+misaligned one, one with a writeback): its `-DHVF` build leaves those out and it passes on both; `watch` is a
+`// window` test the host drives, which `oracle.sh` now skips; `debug`'s 2 is QEMU's hvf model of `OSLSR_EL1` (it
+reads 0 where an ARMv8 PE reads 0x8), with a later failure (exit 120) behind it: docs/backlog.md. The committed
+binaries didn't change.
+
+CI, each alone, on the final tree: `scripts/ci.sh` (863 s), `scripts/ci-jit.sh` (283 s). Not run: `scripts/ci-debian.sh`
+(no run loop or host change), `ci-usb.sh`, `ci-audio.sh`; Firefox's pages session (P4's).

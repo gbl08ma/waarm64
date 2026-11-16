@@ -1,0 +1,49 @@
+{
+ "date": "2026-11-16T21:30:31.676Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "bench/results/local/perf34/par/base1",
+  "bench/results/local/perf34/par/base1-plain",
+  "bench/results/local/perf34/par/base1-zero",
+  "bench/results/local/perf34/par/base1-none"
+ ],
+ "results": {
+  "x64": {
+   "bench/results/local/perf34/par/base1": {
+    "functions": 7064,
+    "insns": 5454096,
+    "bytes": 24070892,
+    "slots": 94303,
+    "frame": 1076298
+   },
+   "bench/results/local/perf34/par/base1-plain": {
+    "functions": 7064,
+    "insns": 5331145,
+    "bytes": 23754336,
+    "slots": 93324,
+    "frame": 1064218
+   },
+   "bench/results/local/perf34/par/base1-zero": {
+    "functions": 7064,
+    "insns": 5454961,
+    "bytes": 24065248,
+    "slots": 94399,
+    "frame": 1082927
+   },
+   "bench/results/local/perf34/par/base1-none": {
+    "functions": 7064,
+    "insns": 5159178,
+    "bytes": 22929772,
+    "slots": 93345,
+    "frame": 1060226
+   }
+  }
+ }
+}

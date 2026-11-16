@@ -1134,11 +1134,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             let to = &r.blocks[j];
             let jlen = to.words.len() as u32;
             // Polled code polls an edge to a member at or before this block's VA
-            // (every cycle inside the region has one: the loop's back-edge, mostly).
+            // (every cycle inside the region has one: the loop's back-edge, mostly;
+            // and a cycle through other functions may take it as a forward `br`).
+            // In a looped region with a fresh read: one of them is on every lap of
+            // the wasm `loop`, where V8 may keep a plain load's value.
             let mut cond = when;
             if !e.polled || to.va.wrapping_sub(b.va) as i64 <= 0 {
                 if e.polled {
-                    emit::poll(c);
+                    emit::poll(c, looped);
                 } else {
                     c.local_get(emit::LEFT)
                         .i32_const((len + jlen) as i32)
@@ -1401,7 +1404,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
     let mut cond = false;
     if !e.polled || off <= 0 {
         if e.polled {
-            emit::poll(c);
+            emit::poll(c, false);
         } else {
             c.local_get(emit::LEFT)
                 .i32_const((len + tlen) as i32)

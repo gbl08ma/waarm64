@@ -1,0 +1,33 @@
+{
+ "date": "2026-11-16T21:48:53.830Z",
+ "node": "v26.7.0",
+ "v8": "14.6.202.34-node.28",
+ "flags": [
+  "--no-liftoff",
+  "--no-wasm-lazy-compilation",
+  "--single-threaded",
+  "--print-wasm-code"
+ ],
+ "sets": [
+  "bench/results/local/perf34/par/newnop-atomic",
+  "bench/results/local/perf34/par/newnop"
+ ],
+ "results": {
+  "x64": {
+   "bench/results/local/perf34/par/newnop-atomic": {
+    "functions": 7091,
+    "insns": 5507537,
+    "bytes": 24316848,
+    "slots": 94472,
+    "frame": 1088958
+   },
+   "bench/results/local/perf34/par/newnop": {
+    "functions": 7091,
+    "insns": 5393410,
+    "bytes": 24021660,
+    "slots": 93619,
+    "frame": 1077916
+   }
+  }
+ }
+}

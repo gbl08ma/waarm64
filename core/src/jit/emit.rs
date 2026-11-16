@@ -1989,7 +1989,7 @@ pub fn ret_up(c: &mut Func, len: u32) {
     c.local_get(DEPTH).if_();
     dbump(c, crate::tally::HOST_RET);
     if c.polled {
-        poll(c);
+        poll(c, false);
         c.hint(true).if_();
     }
     c.acc();
@@ -2054,7 +2054,7 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
     c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).op(AND);
     if c.polled {
         if poll {
-            self::poll(c);
+            self::poll(c, false);
             c.op(AND);
         }
     } else {
@@ -2082,19 +2082,34 @@ pub const HOT_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, hot))
 pub const STOP: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, stop)) as u32;
 
 /// Polled code's check where a cycle can close (docs/jit.md "Preemption"):
-/// pushes an i32, non-zero while `acc` is under the vCPU's stop word (one
-/// atomic load: the run loop stores the chunk's steps there, and whatever has
-/// news for the vCPU stores 0, so the transfer isn't taken and the block
-/// returns to the dispatcher). Points: a region's edges and static chains to a
-/// VA at or before their block's start (every cycle of static transfers to
-/// fixed targets has one), branches to a register (the transfer cache's
-/// probe, the MMU-off jump cache's), every by-VA link, a host call's return
-/// ([`ret_up`]) and the transfer cache's miss function.
-pub fn poll(c: &mut Func) {
+/// pushes an i32, non-zero while `acc` is under the vCPU's stop word (the run
+/// loop stores the chunk's steps there, and whatever has news for the vCPU
+/// stores 0, so the transfer isn't taken and the block returns to the
+/// dispatcher). Points: a region's edges and static chains to a VA at or
+/// before their block's start (every cycle of static transfers to fixed
+/// targets has one), branches to a register (the transfer cache's probe, the
+/// MMU-off jump cache's), every by-VA link, a host call's return ([`ret_up`])
+/// and the transfer cache's miss function.
+///
+/// `fresh`: an `i32.atomic.load`, for the edges of a looped region (one is on
+/// every lap of its wasm `loop`); elsewhere a plain `i32.load`, at a transfer
+/// that leaves the function's invocation when the poll passes. The memory
+/// model lets V8 merge racy plain reads, and it does inside a loop (across its
+/// unrolled laps, or out of it altogether), but it reads memory again in each
+/// invocation and after every call; an atomic load costs an alignment check,
+/// an address add and an acquire besides (PERF loop 34: per function arm64
+/// −1.4% instructions, x64 −2.1%). A read gone stale can only be the chunk's
+/// steps or 0, so the chunk's bound holds whatever V8 merges.
+pub fn poll(c: &mut Func, fresh: bool) {
     const I32_ATOMIC_LOAD: u8 = 0x10;
     dbump(c, crate::tally::POLL);
     c.acc();
-    c.local_get(VCPU).atomic(I32_ATOMIC_LOAD, 2, STOP);
+    c.local_get(VCPU);
+    if fresh {
+        c.atomic(I32_ATOMIC_LOAD, 2, STOP);
+    } else {
+        c.i32_load(STOP);
+    }
     c.op(LT_U);
 }
 
@@ -2164,7 +2179,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>, pol
         .i64_load(0);
     c.local_get(KEY).op(EQ + WC).op(AND);
     if polled {
-        poll(&mut c);
+        poll(&mut c, false);
     } else {
         c.local_get(LEFT).local_get(JCE).i32_load(12).op(GE_U);
     }
@@ -2231,7 +2246,7 @@ pub fn via_jc(
     c.op(EQ + WC).op(AND);
     if c.polled {
         if poll {
-            self::poll(c);
+            self::poll(c, false);
             c.op(AND);
         }
     } else {
