@@ -15,6 +15,7 @@
   import NetWizard from './NetWizard.svelte';
   import NetDetails from './NetDetails.svelte';
   import Osk from './Osk.svelte';
+  import RamWindow from './RamWindow.svelte';
   import StatusBar from './StatusBar.svelte';
   import SurfaceWindow from './SurfaceWindow.svelte';
   import Toolbar from './Toolbar.svelte';
@@ -31,6 +32,7 @@
   import { mouse } from './areas/mouse.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
   import { surfaceWindow } from './areas/surface.svelte.ts';
+  import { ramWindow } from './areas/ram.svelte.ts';
   import { page } from './page.ts';
   import type { Mods } from './osk.ts';
   import { t } from '../i18n.ts';
@@ -149,6 +151,8 @@
 {#if machinesNav.open}<MachinesPage {store} {net} {folders} />{/if}
 <!-- A disk's surface floats over the machine and the Machines page alike, and stays as the user goes between them. -->
 {#if surfaceWindow.open}{#key surfaceWindow.open}<SurfaceWindow open={surfaceWindow.open} />{/key}{/if}
+<!-- The RAM map, the same way: over the machine and the Machines page. -->
+{#if ramWindow.open}<RamWindow />{/if}
 <StatusBar {net} />
 <NetWizard {net} />
 <NetDetails {net} />

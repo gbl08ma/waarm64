@@ -1191,6 +1191,7 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
      * is the disk's place among the machine's disks (its blk devices, in slot order); `none` past them.
      */
     inspect(query: InspectQuery): Promise<InspectAnswer> {
+      if (!('disk' in query)) return Promise.resolve({ kind: 'none' }); // RAM's are the machine worker's (web/app/worker-ram.ts)
       const slot = specs.map((d, i) => (d.type === 'blk' ? i : -1)).filter((i) => i >= 0)[query.disk];
       return slot === undefined ? Promise.resolve({ kind: 'none' }) : devices.inspect(slot, query);
     },
@@ -1219,6 +1220,8 @@ async function boot(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
     flash: () => (flashAt ? bytes().slice(flashAt, flashAt + flashSize) : undefined),
     /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
     ram,
+    /** Where each memory's RAM is in the guest's physical address space, memory 0 first (web/ram.ts `RamLayout`). */
+    layout,
     /**
      * What the core's heap has touched, for benchmarks (docs/spill-memories.md "The heap floor"): the non-zero 4 KiB
      * pages below the scratch page (the core's data, stacks and first heap), and in the reserve past RAM and fw_cfg's

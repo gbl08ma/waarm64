@@ -1426,20 +1426,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     square has a window of its own now, but the offline source runs one range ask at a time (`jobSource`: a newer ask
     of a kind ends the one before), so each window's first answer would end another's; it would key range asks by
     range, and `BlockGrid`'s `pinned` would become a list.
-- **A RAM usage view on the surface window's pieces** (the user's idea, 2026-11-15; `ui/BlockGrid`, `ui/FloatingWindow`
-  and the `inspect` route are made for it: a `ram-surface` query kind and a worker that scans the guest's shared
-  memories, nothing added to the interpreter or the JIT). No live reads and writes: compiled code touches RAM directly.
-  **Measured** (2026-11-15, Chromium 153 on x86_64 Linux in a cloud container, one run): a worker's scan of an untouched
-  4 GiB shared wasm memory doesn't make the host commit it (the browser's processes' resident memory 372 MiB before,
-  381 MiB after; writing 512 MiB of it then added 512 MiB), so a scan doesn't inflate the tab. A zero-or-not pass per
-  4 KiB page over the 4 GiB took 0.46–1.0 s there (zeros read whole; a page with data is left at its first word that
-  isn't zero: 512 MiB of data in 7.5 ms). Not measured: macOS and Windows hosts, the cost of a checksum per cell for
-  "changed since the last pass" (it reads every byte of the pages with data), the vCPUs' slowdown beside a scan.
   - The pinned square's details are a 204 px column; in a short window its words scroll (the window's default,
     720 × 520, fits them).
   - Importing a 512 MiB raw image built in a page (`new File([Uint8Array])`) failed at offset 0
     (`disks:stored.imageUnreadable`); 256 MiB worked (seen making screenshots, 2026-11-15, not traced: the import
     worker's read of a large in-memory `File`?).
+- **The RAM map's loose ends** ([frontend.md](frontend.md) "RAM's map"; 2026-11-16):
+  - A pass reads every page with data whole for its fingerprint; a sample per page (a word per 256 bytes) would read a
+    quarter of the cache lines and look ~4 times as often, but would miss writes it doesn't sample. Not measured beside
+    running vCPUs (their slowdown while the map is open), nor on macOS or Windows hosts.
+  - Nothing says what a page is (kernel, page cache, a process's, compiled code's pages the JIT watches): the core
+    knows the last, through a new export (an ABI change).
+  - It has one entry, the status bar's RAM element: with RAM taken out of the bar, there's no way to it.
+  - Notes on the disk surface's measurement that led to it (2026-11-15, Chromium 153 on x86_64 Linux, one run): a
+    worker's scan of an untouched 4 GiB shared wasm memory doesn't make the host commit it (the browser's processes'
+    resident memory 372 MiB before, 381 MiB after; writing 512 MiB of it then added 512 MiB); a zero-or-not pass per
+    4 KiB page over the 4 GiB took 0.46–1.0 s there.
 
 ## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A suspend Linux aborts after its devices' suspend** (a wakeup event before SYSTEM_SUSPEND; `systemctl suspend`, a

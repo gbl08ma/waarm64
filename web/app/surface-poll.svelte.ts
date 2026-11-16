@@ -1,11 +1,12 @@
-// A surface window's asks (web/app/SurfaceWindow.svelte, docs/frontend.md "A disk's surface"): the map at the room the
-// grid has, from the source the view's choice makes (web/app/surface-source.ts). Live, it asks every 500 ms while the
-// document is visible, stretched so that making the answers (their `cost`) stays under 2% of the time; not live, once,
+// A surface window's asks (web/app/SurfaceWindow.svelte, docs/frontend.md "A disk's surface"; web/app/RamWindow.svelte,
+// "RAM's map"): the map at the room the grid has, from the source the view's choice makes (web/app/surface-source.ts,
+// web/app/ram-source.ts). Live, it asks every 500 ms while the document is visible, stretched so that making the
+// answers (their `cost`) stays under 2% of the time (a source may pace itself: `delay`); not live, once,
 // and again on Refresh or when the records change. A new source (the machine started or stopped, another overlay)
 // drops what the old one had in flight, and its picture is `stale` until the new one's first answer. An answer a newer
 // ask of the same source replaced (a resize, a Refresh) is dropped, but its activity goes with the next one taken.
 import type { Msg } from '../msg.ts';
-import { carryActivity, type InspectAnswer, type RangeDetail, type Surface } from '../surface.ts';
+import { carryActivity, type InspectAnswer, type RamPlace, type RangeDetail, type Surface } from '../surface.ts';
 import { pollDelay, type SurfaceSource } from './surface-source.ts';
 
 /** After a switch from live to the files, how long an answer that the files are in use is taken for the machine's own close. */
@@ -15,6 +16,8 @@ const RETRY_MS = 1_000;
 export class SurfacePoll {
   /** The last surface, and why there is none (the source's words) when there's none. */
   surface = $state.raw<Surface>();
+  /** RAM's: where the surface's offsets are in the guest's physical address space. */
+  layout = $state.raw<RamPlace[]>();
   why = $state.raw<Msg>();
   /** The source follows the running guest. */
   live = $state(false);
@@ -68,7 +71,7 @@ export class SurfacePoll {
     if (!s) return undefined;
     const a = await s.range(range, content);
     if (s !== this.#source) return undefined;
-    return a.kind === 'disk-range' ? a.detail : a.kind === 'none' ? a.why : undefined;
+    return a.kind === 'disk-range' || a.kind === 'ram-range' ? a.detail : a.kind === 'none' ? a.why : undefined;
   }
   close() {
     this.#closed = true;
@@ -97,7 +100,7 @@ export class SurfacePoll {
     const a = await s.surface(this.#cells).catch((): InspectAnswer => ({ kind: 'none' }));
     if (this.#stale(gen)) {
       // Replaced by a newer ask of this source: the reads and writes it carried show with the next picture.
-      if (s === this.#source && a.kind === 'disk-surface' && a.surface.activity)
+      if (s === this.#source && (a.kind === 'disk-surface' || a.kind === 'ram-surface') && a.surface.activity)
         this.#carried = {
           cellBytes: a.surface.cellBytes,
           activity: this.#carried ? carryActivity(this.#carried, a.surface) : a.surface.activity,
@@ -113,20 +116,22 @@ export class SurfacePoll {
 
   /** Takes answer `a` of source `s`; returns when to ask again (none: not until asked). */
   #take(s: SurfaceSource, a: InspectAnswer): number | undefined {
-    if (a.kind === 'disk-surface') {
+    const delay = (cost?: number) => (s.delay ? s.delay(cost) : pollDelay(cost));
+    if (a.kind === 'disk-surface' || a.kind === 'ram-surface') {
       if (this.#carried) a.surface.activity = carryActivity(this.#carried, a.surface);
       this.#carried = undefined;
       this.surface = a.surface;
+      this.layout = a.kind === 'ram-surface' ? a.layout : undefined;
       this.why = undefined;
       this.stale = false;
-      return s.live ? pollDelay(a.surface.cost) : undefined;
+      return s.live ? delay(a.surface.cost) : undefined;
     }
     if (a.kind !== 'none') return undefined;
     if (s.live) {
       // Live without an answer: the machine is starting (no devices yet) or busy, and is asked again; the last picture
       // stays meanwhile (none yet and no words why: still reading).
       if (!this.surface) [this.why, this.asking] = [a.why, !a.why];
-      return pollDelay();
+      return delay();
     }
     this.surface = undefined;
     this.stale = false;

@@ -1,11 +1,13 @@
 <!--
   The status bar (docs/frontend.md "The status bar"): the elements chosen in Preferences (web/app/statusbar.ts), in
   their order, from the last second's numbers. Neighbours are split by a dot; a spacer takes the free room, a divider
-  draws a line. No element that shows anything: no bar. The bar keeps the last status as `data-status` (for tools),
+  draws a line. RAM is a link to the RAM map while a machine runs here (RamWindow.svelte). No element that shows
+  anything: no bar. The bar keeps the last status as `data-status` (for tools),
   and `#state[data-state]` is there even when the power state isn't shown (the tests wait on it).
   An element's pieces are web/app/StatusPiece.svelte's (the Preferences' editor draws them too).
 -->
 <script lang="ts">
+  import Button from './ui/Button.svelte';
   import StatusPiece from './StatusPiece.svelte';
   import type { PageNetwork } from './net-live.ts';
   import { shows, type Item } from './statusbar.ts';
@@ -14,6 +16,8 @@
   import { power } from './areas/power.svelte.ts';
   import { liveNow } from './areas/status-live.ts';
   import { status } from './areas/status.svelte.ts';
+  import { ramHost, ramWindow } from './areas/ram.svelte.ts';
+  import { t } from '../i18n.ts';
 
   let { net }: { net: PageNetwork } = $props();
 
@@ -42,6 +46,21 @@
     {#if dotBetween(entries[n - 1]?.item, e.item)}<span class="sep" aria-hidden="true">·</span>{/if}
     {#if e.item.kind === 'spacer'}<span class="spacer"></span>
     {:else if e.item.kind === 'divider'}<span class="divider" role="separator"></span>
+    {:else if e.item.kind === 'ram' && ramHost()}
+      <!-- RAM opens the RAM map while the machine runs here (a press doesn't take the focus from the screen). -->
+      <Button
+        variant="link"
+        class="ram-map"
+        data-action="ram-open"
+        onmousedown={(ev: MouseEvent) => ev.preventDefault()}
+        onclick={() => ramWindow.show()}
+        ><span class="group"
+          >{#each e.pieces as p, k (k)}<StatusPiece
+              item={e.item}
+              p={{ ...p, title: t('statusbar:StatusBar.ramMap', { words: p.title }) }}
+            />{/each}</span
+        ></Button
+      >
     {:else}
       <span class="group"
         >{#each e.pieces as p, k (k)}<StatusPiece
