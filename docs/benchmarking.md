@@ -442,6 +442,28 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   modules:** dump them from `web/vm.ts`'s install temporarily (`if (process.env.X)
   fs.writeFileSync(…)`, and remove it before any Chromium run: `process` doesn't exist there),
   then `wasm-tools print` (shows branch hints) or `wasm-tools validate`.
+- **The JIT's machine code, x64 and arm64** (for a change to what the JIT emits; x64 has 16 GPRs where arm64 has 31,
+  so spills differ): `node bench/jit/dump-modules.ts <dir> [--wasm core.wasm] [--guest alpine|buildroot]` boots the
+  guest in Node deterministically with `WebAssembly.Module` wrapped and saves every module the JIT installs
+  (`m<n>.wasm`, the core not; `index.json`: the core's SHA256, steps, modules); Alpine's boot gives 319 modules (12 MB)
+  in ~5 s, the same set every run of one core. `node bench/jit/codestats.ts <dir> [<dir>…] [--arch arm64,x64]
+  [--json f]` compiles each set in a child Node with `--no-liftoff --no-wasm-lazy-compilation --single-threaded
+  --print-wasm-code` (on x64 under qemu-user: devenv.md "An x86_64 Node", the same V8) and sums the TurboFan functions'
+  instructions, code bytes, stack slots and instructions with a frame-relative memory operand (spills, fills and
+  V8's own frame set-up: compare arms, not absolutes), per function against the first set. Alpine's set takes ~20 s
+  on arm64 and ~2 min on x64. Numbers: bench/boot/REPORT.md "PERF loop 30".
+- **Preemption's counts** (a diagnostic core: the `diag` feature, never in the normal build, whose code section it
+  leaves byte-identical): `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag` (its own target
+  directory, ~20 s from cold), then `node bench/boot/preempt-counts.ts [--json f] [boot user smp1 smp4 smp-user4]`
+  runs the gates' guests in Node (Alpine's boot and userspace as `boot_alpine_jit` and `alpine_user_jit`; parallel
+  realtime: `smp_alpine_jit`'s boot on 1 and 4 vCPUs, `smp_user_jit_4`; ~1 min for all) and prints per 1000 steps
+  (by phase for the userspace runs) what compiled code took: region back-edges and forward edges, transfer cache hits
+  and miss-function entries, static chains backward (target PA ≤ source PA) and forward (direct, through the jump
+  cache, by VA), host calls and returns; for parallel runs, how chunks ended (the budget or an exit, by kind, with
+  their mean steps) and two latencies: a vCPU's own timer line seen past its deadline, and an IRQ line's rise
+  (`Vm::refresh`) to its IRQ taken or its WFI completed. The tallies (`core/src/tally.rs`) live in the `Vcpu` and past
+  the end of each vCPU's counters block, where the run loops publish them; a diagnostic core runs the same steps as
+  the normal one (Alpine's boot: tests/steps.txt's count).
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`
   for the small guests; `runToPowerOff` (`web/vm.ts`) for boots. `bench/run.ts --out` resolves
   against the repo root.

@@ -7,6 +7,10 @@ license.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The diagnostic build's tallies (core/src/tally.rs): `scripts/build-wasm.sh --features diag`, never the normal build.
+diag = []
+
 [dependencies]
 # The snapshot file's codec 2 (the LZ4 block format) and its frames' CRC-32 (docs/platform.md "The snapshot file").
 lz4_flex = { version = "0.14.2", default-features = false, features = ["safe-encode", "safe-decode"] }

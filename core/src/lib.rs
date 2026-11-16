@@ -27,6 +27,7 @@ pub mod pl031;
 pub mod rng;
 pub mod smbios;
 pub mod snapshot;
+pub mod tally;
 pub mod virtio;
 pub mod vm;
 pub mod xhci;

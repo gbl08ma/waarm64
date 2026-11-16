@@ -405,6 +405,8 @@ impl Vm {
             if own.wfi {
                 // WFI completes when an interrupt is signaled, masked or not.
                 if irq {
+                    #[cfg(feature = "diag")]
+                    self.irq_late(c, crate::tally::IRQ_LATE + 3);
                     own.wfi = false;
                     v.cpu.pc = v.cpu.pc.wrapping_add(4);
                     own.steps += 1;
@@ -421,6 +423,8 @@ impl Vm {
                 return exit::IDLE;
             }
             if irq && v.cpu.pstate & PSTATE_I == 0 {
+                #[cfg(feature = "diag")]
+                self.irq_late(c, crate::tally::IRQ_LATE);
                 take_irq(&mut v.cpu);
                 own.steps += 1;
                 bump(&sh.counters.irqs);
@@ -474,6 +478,13 @@ impl Vm {
             };
             v.jit.fast = None;
             v.jit.unmask = jit::Unmask::default();
+            #[cfg(feature = "diag")]
+            {
+                let d = &sh.counters.diag;
+                let kind = crate::tally::end_kind(e.as_ref(), k >= n);
+                crate::tally::add(d, crate::tally::END + kind, 1);
+                crate::tally::add(d, crate::tally::END_STEPS + kind, k);
+            }
             own.steps += k;
             self.publish_cpu(c, v, own, false);
             if let Some(e) = e
@@ -583,6 +594,18 @@ impl Vm {
             v.cpu.cntp_cval_el0,
         ]);
         let ppi = timers(&v.cpu, now);
+        #[cfg(feature = "diag")]
+        {
+            use crate::tally::{TIMER_LATE, late};
+            let d = &self.shared.cpus[c].counters.diag;
+            let at = TIMER_LATE + if own.wfi { 3 } else { 0 };
+            if ppi.0 && !own.ppi.0 {
+                late(d, at, now.saturating_sub(v.cpu.cntv_cval_el0));
+            }
+            if ppi.1 && !own.ppi.1 {
+                late(d, at, now.saturating_sub(v.cpu.cntp_cval_el0));
+            }
+        }
         if ppi != own.ppi {
             let mut pl = self.plat_of(c);
             pl.gic.set_level(c, IRQ_VTIMER, ppi.0);
@@ -738,8 +761,35 @@ impl Vm {
         spis(pl, &self.shared);
         for (i, s) in self.shared.cpus.iter().enumerate() {
             let on = pl.gic.irq(i);
-            if s.par.irq.swap(on, Ordering::SeqCst) != on && on {
+            let was = s.par.irq.swap(on, Ordering::SeqCst);
+            #[cfg(feature = "diag")]
+            if was != on {
+                let t = if on { self.ns().max(1) } else { 0 };
+                s.counters.diag[crate::tally::IRQ_STAMP].store(t, Ordering::Relaxed);
+            }
+            if was != on && on {
                 self.wake(i);
+            }
+        }
+    }
+
+    /// The diagnostic build: the latency from vCPU `c`'s interrupt line's rise to now, into the triple at `at`.
+    #[cfg(feature = "diag")]
+    fn irq_late(&self, c: usize, at: usize) {
+        use crate::tally::{IRQ_HIST, IRQ_LATE, IRQ_STAMP, add, late};
+        let d = &self.shared.cpus[c].counters.diag;
+        let t = d[IRQ_STAMP].swap(0, Ordering::Relaxed);
+        if t == 0 {
+            return;
+        }
+        let ns = self.ns().saturating_sub(t);
+        late(d, at, ns);
+        if at == IRQ_LATE {
+            match ns {
+                0..10_000 => add(d, IRQ_HIST, 1),
+                10_000..100_000 => add(d, IRQ_HIST + 1, 1),
+                100_000..1_000_000 => add(d, IRQ_HIST + 2, 1),
+                _ => {}
             }
         }
     }
@@ -1058,6 +1108,10 @@ impl Vm {
         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
         if let Some(j) = &v.jit.cache {
             publish_jit(k, &j.table.stats());
+        }
+        #[cfg(feature = "diag")]
+        for (a, &x) in k.diag.iter().zip(&v.diag[..crate::tally::JIT_SLOTS]) {
+            a.store(x, Ordering::Relaxed);
         }
     }
 }

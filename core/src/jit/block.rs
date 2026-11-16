@@ -12,6 +12,7 @@ use super::emit::Xfer;
 use super::wasm::{F64, I32, I64, Module};
 use crate::decode::{Op, decode};
 use crate::mem::Mem;
+use crate::tally;
 use std::collections::HashMap;
 
 /// Instructions per block, at most.
@@ -1163,6 +1164,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             }
             c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
             c.local_set(emit::LEFT);
+            emit::dbump(
+                c,
+                if j == 0 {
+                    tally::BACK_EDGE
+                } else {
+                    tally::FWD_EDGE
+                },
+            );
             // Around a loop, the stale-code checker runs as at a chained entry.
             if let (0, Some(chk)) = (j, e.checker) {
                 c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
@@ -1331,8 +1340,17 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
     let guarded = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
     let exec = emit::tlb_array(b.key & KEY_EL1, 2);
     // The PC is in the `Cpu` by now: the successor's VA.
+    let back = k & !3 <= b.key & !3;
     let by_va = |c: &mut emit::Func| {
         let miss = Some(e.miss(b.key));
+        emit::dslot(
+            c,
+            if off <= 0 {
+                tally::BYVA_BACK
+            } else {
+                tally::BYVA_FWD
+            },
+        );
         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
     };
     // Straight to the miss function (it reads the PC from the `Cpu`), the
@@ -1347,6 +1365,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
             return by_va(c);
         }
         c.i32_const(1);
+        emit::dslot(c, if back { tally::JC_BACK } else { tally::JC_FWD });
         return emit::via_jc(c, Some(k), len, e.bt, e.checker, x);
     };
     c.local_get(emit::LEFT)
@@ -1358,6 +1377,14 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
         c.op(0x71); // i32.and
     }
     c.hint(true).if_();
+    emit::dbump(
+        c,
+        if back {
+            tally::CHAIN_BACK
+        } else {
+            tally::CHAIN_FWD
+        },
+    );
     if let Some(chk) = e.checker {
         c.local_get(0).i64_const(k as i64).call(chk);
     }

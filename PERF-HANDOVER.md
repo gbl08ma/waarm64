@@ -105,7 +105,7 @@ checks on every chain, edge and back-edge, and its bookkeeping) with the cheapes
 to stop. Deterministic mode is a testing gadget, not a product feature: realtime may take a very different path even if
 the deterministic tests then cover it less.
 
-**Where it starts** (raw data in `bench/results/local/nobudget/`, committed by the first loop): a build with `left` gone
+**Where it starts** (data in `bench/boot/results/perf30/`, bench/boot/REPORT.md "PERF loop 30"): a build with `left` gone
 entirely (no checks, no `left -= len`, a constant in transfers; `nobudget.patch`), Chromium 155 on the dev VM, 3 rounds
 alternated, no overlap: `jit_mips` (a user-mode loop, no kernel, no IRQs: clean) **5,662 → 6,623 MIPS (+17%)**. Alpine's
 boot −5.1% and userspace −12.4% aren't clean: deterministic chunks then miss timer deadlines (46% fewer IRQs, 3.3%
@@ -149,7 +149,7 @@ lockstep, exact-step boots) must not change. CI as for any JIT loop, plus `scrip
 the host, `ci-usb.sh` for the xHCI's tick, `ci-audio.sh` if the ticker shares a thread with sound. Out-of-context
 reviews after the ticker's loop and at the block's end. Its entries in the queue are P0-P4.
 
-## State (2026-11-16, after loop 29)
+## State (2026-11-16, after loop 30)
 
 Kept, with numbers in the REPORT entries: SUBS/CMP micro-op kinds (dec_mips +3%); misaligned pair and SIMD&FP loads
 inline; the rich FP copy of `hot` per block (FP guest +12-14%); DAIF/DAIFClr/DIT and ISB (outside parallel) inline
@@ -165,15 +165,15 @@ parallel, the shared cache's leftovers, the SMP leftovers, a device call compile
 X-register locals against Liftoff's zero-fill (loop 27: at best ~0.4% of the boot; the fills themselves cost ~2.8% of
 the boot and ~1.7% of userspace, loop 26, docs/v8.md). Out-of-context reviews after loops 8, 19, 21, 23 and 28, fixed in
 loops 9, 20, 22, 24 and 29 (loop 29: a block's transfer cache entries refilled from TLB hits outlived its TLBI;
-`Tlb::xblk` now follows a count of the EL's block exec entries, the gates unchanged).
+`Tlb::xblk` now follows a count of the EL's block exec entries, the gates unchanged). Loop 30 (P0): preemption's tools (`tools/x64node.ts`, `bench/jit/dump-modules.ts`, `bench/jit/codestats.ts`, the `diag`
+core and `bench/boot/preempt-counts.ts`), the counts and the Mac baseline in its REPORT entry.
 
 ## Still open (the queue: the first is next; by expected gain)
 
 | Entry (docs/backlog.md) | Notes |
 |---|---|
-| **Next:** P0: preemption's counts and tools ("Preemption without the budget") | the x64 tools made permanent (fetch script, module dump, summarizer); counts per step of back-edges, indirect transfers, backward/forward chains and forward edges, and of chunk ends by budget vs by exit, on the gates and Firefox's pages; the Mac baseline and x64 counts; the 2026-11-16 data committed; P1-P4 sized by it |
-| P1: realtime modules without `left`, with the stop word | parallel realtime's own flavor: no `left` checks or bookkeeping, the stop word polled at the cycle points, the run loop ending a chunk on a poll; the setters with events (signals, IRQ lines, TLBI IS queues); periodic work still by steps from `acc`. Done: the spin tests for those setters; the gates and x64 counts against P0 |
-| P2: the ticker | the vCPU's own deadlines, the event-loop visit, periodic work by time where cheaper; its period by measurement (latency against cost). Done: the timer spin tests, latency no worse than P0 (decision 3). Then an out-of-context review |
+| **Next:** P1: realtime modules without `left`, with the stop word | parallel realtime's own flavor: no `left` checks or bookkeeping, the stop word polled at the cycle points, the run loop ending a chunk on a poll; the setters with events (signals, IRQ lines, TLBI IS queues); periodic work still by steps from `acc`. Loop 30's counts: forward edges are 55-63% of today's budget checks and need no poll; the poll points take 35-63 per 1000 steps (one per 16-29 steps) where today's checks take 171-218; static chains backward 4-20, by-VA links backward 1.5-14 (through the transfer cache probe, so its poll), the miss function 0.3-2.6, host calls ~10 (a recursion past `MAX_DEPTH` is a backward chain). Parallel chunks never end early without an exit; 4-27% end by the budget, and those hold 52-87% of the steps (the ones a poll must end now). Done: the spin tests for those setters; the gates and x64 counts against loop 30's (`bench/jit/codestats.ts`, `bench/boot/preempt-counts.ts`) |
+| P2: the ticker | the vCPU's own deadlines, the event-loop visit, periodic work by time where cheaper; its period by measurement (latency against cost). Done: the timer spin tests, latency no worse than loop 30's (`preempt-counts.ts`, Node: a timer seen 41-86 µs late on average while running, an IRQ line's rise to its IRQ 3-10 µs, 92-99% under 10 µs; a WFI's timer is the host's sleep, 0.3-1.5 ms in Node, not the poll's). No test measures an IPI round trip: the spin tests should time one. Then an out-of-context review |
 | P3: the review's findings, then what's left of the cost | whether `acc` costs measurably, whether fewer poll points suffice, the polls' form on both hosts; each kept or dropped by numbers |
 | P4: the block's end | Firefox's pages session on the Mac, every CI layer the area names, the final review's findings fixed or filed, docs/jit.md and docs/platform.md describing what exists |
 | JIT: host returns that land elsewhere than the call's continuation (loop 28's follow-up, docs/backlog.md) | 10-16% of the userspace phases' host returns reach the miss function with a valid entry; a diagnostic histogram of their PCs first; the guess is a callee taken into a region that leaves it before its RET; cost unmeasured |

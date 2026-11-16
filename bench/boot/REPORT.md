@@ -5688,3 +5688,96 @@ bytes" (aborted before).
 `scripts/ci.sh` (797 s; its first run failed once on tests/page-clipboard-ui.test.ts's "the agent's end got [], not 62
 bytes", a clipboard test this can't reach, green on its rerun), `ci-debian.sh --platform` (612 s), `ci-graphics.sh` (257 s)
 and `ci-machines.sh` (325 s) green on the finished tree, once each, alone.
+
+## PERF loop 30: preemption's counts and tools (2026-11-16)
+
+The first entry of "Preemption without the budget" (PERF-HANDOVER.md, P0): tools and numbers for the loops that take
+the step budget out of parallel realtime's compiled code. No behavior changes. Data: `bench/boot/results/perf30/`
+(its README).
+
+**The tools** (docs/benchmarking.md "The JIT's machine code, x64 and arm64" and "Preemption's counts", docs/devenv.md
+"An x86_64 Node"; the 2026-11-16 prototypes in `bench/results/local/nobudget/` made permanent):
+- `tools/x64node.ts`: Node's official linux-x64 build of the running version (checked against `SHASUMS256.txt`) and
+  Debian trixie's amd64 libc6 2.41-12+deb13u4, libstdc++6, libgcc-s1 and libatomic1 14.2.0-19 (checked against the
+  `Packages` index) into `target/x64node/`, run under `qemu-x86_64 -L`: x64 Node 26.7.0, the same V8 (14.6.202.34).
+- `bench/jit/dump-modules.ts`: every JIT module of a deterministic guest run in Node (`WebAssembly.Module` wrapped,
+  web/vm.ts untouched); Alpine's boot: 319 modules, 12.1 MB, in 5 s, the same set as the prototype's.
+- `bench/jit/codestats.ts`: TurboFan code of dumped sets on arm64 and x64, per function (instructions, bytes, stack
+  slots, frame memory operands). Its child is plain JavaScript through `-e`: a `.ts` child made V8 print Node's own
+  type-stripping wasm too (12,048 functions instead of 7,232). It reproduces the prototype's awk exactly.
+- The `diag` feature (`core/src/tally.rs`; `CARGO_TARGET_DIR=target/diag scripts/build-wasm.sh --features diag`) and
+  `bench/boot/preempt-counts.ts`: tallies bumped by compiled code in the `Vcpu` and by the parallel run loop, published
+  past each vCPU's counters block. The normal build's code section is byte-identical with and without the change (its
+  data section differs only in panic locations' line numbers); the diagnostic core runs Alpine's boot in exactly
+  tests/steps.txt's 2,651,076,469 steps.
+
+**Counts per 1000 steps** (the diagnostic core in Node on the dev VM; `boot` and `user` deterministic on 1 vCPU as
+`boot_alpine_jit` and `alpine_user_jit`, `smp1`/`smp4` `smp_alpine_jit`'s boot, `smp-user4` `smp_user_jit_4`, parallel
+realtime):
+
+| | boot | user | compress | Lua | churn | SQLite | smp1 | smp4 | smp-user4 |
+|---|---|---|---|---|---|---|---|---|---|
+| region back-edge | 19.5 | 12.3 | 17.4 | 1.1 | 14.7 | 17.0 | 21.1 | 21.4 | 11.9 |
+| region forward edge | 106.9 | 113.4 | 97.8 | 117.3 | 117.6 | 125.4 | 106.9 | 106.2 | 110.3 |
+| transfer cache hit (BR/BLR/RET) | 4.5 | 13.2 | 4.8 | 25.7 | 5.1 | 13.9 | 3.7 | 3.6 | 15.5 |
+| miss function | 2.3 | 1.3 | 1.1 | 0.6 | 2.7 | 0.8 | 2.2 | 2.6 | 0.8 |
+| chain backward (direct) | 11.7 | 11.4 | 5.1 | 18.1 | 11.7 | 7.1 | 11.7 | 12.0 | 12.0 |
+| chain forward (direct) | 21.4 | 21.4 | 28.1 | 16.1 | 22.4 | 22.5 | 21.7 | 22.6 | 26.2 |
+| chain via jump cache, back / fwd | 0.5 / 6.3 | 0.7 / 7.2 | 0.6 / 8.0 | 0.1 / 7.2 | 0.9 / 7.9 | 1.8 / 7.0 | 0.5 / 6.4 | 0.4 / 5.9 | 0.7 / 7.9 |
+| by-VA link, back / fwd | 2.7 / 1.0 | 9.3 / 2.0 | 5.9 / 2.3 | 14.2 / 1.9 | 1.5 / 1.2 | 13.8 / 3.3 | 2.9 / 1.0 | 2.7 / 1.0 | 10.8 / 2.4 |
+| host call / return | 12.4 / 11.6 | 11.0 / 10.3 | 6.7 / 6.2 | 9.2 / 8.7 | 17.1 / 16.2 | 13.4 / 12.8 | 11.8 / 11.5 | 11.1 / 10.7 | 9.4 / 9.3 |
+| **decision 2's poll points** | 41.1 | 48.2 | 34.9 | 59.8 | 36.6 | 54.4 | 42.0 | 42.6 | 51.7 |
+| today's `left` checks taken | 176.7 | 192.3 | 171.1 | 202.3 | 185.7 | 212.6 | 178.1 | 178.3 | 198.4 |
+
+The poll points are the back-edges, transfer cache hits, miss-function entries, MMU-off jump cache hits (none: Linux
+runs with the MMU on) and backward static chains of every form; today's checks are every edge, chain and transfer
+taken. So a poll comes every 16-29 steps where a check comes every ~5: forward region edges, 55-63% of today's checks,
+need none. Backward static chains are as frequent as back-edges (Lua: 18 against 1.1, its loops are chains of
+regions), and in user space the by-VA links (backward 6-14 in compress, Lua and SQLite) go through the transfer cache
+probe and so take its poll. Host calls (~10) need none of their own (a recursion past `MAX_DEPTH` is a tail call, a
+backward chain).
+
+**How parallel realtime chunks end** (CHUNK 32,768):
+
+| | smp1 | smp4 | smp-user4 |
+|---|---|---|---|
+| chunks (mean steps) | 350,839 (6,933) | 925,626 (2,745) | 3,127,705 (10,114) |
+| by the budget: chunks, steps | 11.5%, 54.1% | 4.4%, 52.1% | 26.8%, 86.8% |
+| SVC | 32.2% | 12.3% | 6.6% |
+| Resync (ISB, DSB, ERET, unmask not fast-completed) | 29.4% | 19.7% | 9.6% |
+| exceptions (faults, traps) | 13.6% | 5.2% | 6.9% |
+| platform (timer and GIC registers) | 8.8% | 11.4% | 10.6% |
+| WFE / SEV | - | 26.7% / 13.4% | 22.4% / 11.3% |
+| TLBI IS | - | 3.9% | 4.7% |
+| device, IC, counter, WFI, HVC | 4.6% | 3.0% | 1.0% |
+
+No chunk ended early without an exit. Most chunks end by an exit, but the budget-ended ones hold half the boot's
+steps and 87% of the userspace phases': that's the time a stop word must cut short instead of the budget.
+
+**Latency today** (the same parallel runs; Node in the dev VM, so the host's sleeps are Node's): a vCPU's own timer
+line seen by its run loop past the deadline, while running: mean 78 / 86 / 42 µs (smp1 / smp4 / smp-user4), max 5.1-6.7
+ms; in WFI (the host's sleep to the deadline): mean 1.55 ms / 318 / 299 µs, max ~10.5-11 ms. An interrupt line's rise
+(`Vm::refresh`, any thread: SGIs, devices, timers) to the IRQ taken while running: mean 2.8 / 10.3 / 4.1 µs, 99% / 92%
+/ 95% under 10 µs, 2 / 18 / 17 over 1 ms (max 3.8-9.2 ms; a vCPU out in the host or the guest masking IRQs counts
+too); to a WFI completed: mean 0.3 / 11.6 / 13.2 µs. tests/baremetal/timer.c and unmask.c report no latency (they pass
+or fail; unmask.c runs in round-robin only, where it bounds the unmask's lag at 16 loop trips), and no test or tool
+measures an IPI round trip: P1's spin tests should time one.
+
+**Static counts of today's code** (Alpine's boot, 319 modules, 7,232 TurboFan functions; `codestats.json`), per
+function: arm64 1,070.3 instructions, 4,063 bytes, 15.6 stack slots, 199.4 frame memory operands; x64 840.1, 3,681,
+13.8, 175.0. The prototype's `nobudget.patch` set (317 modules, 7,143 functions) against it: arm64 −8.7% instructions,
+−8.8% bytes, −4.6% slots, −5.7% frame operands; x64 −13.4%, −12.0%, −4.8%, −14.1% (the handover's numbers,
+reproduced by the tools). x64 compiles a set in ~2 min under qemu, arm64 in ~20 s.
+
+**The baseline on the Mac** (M4, Chrome for Testing 157.0.8103.78, b707e614's code, 3 rounds, medians a round;
+`mac-r*.json`): `smp_alpine_jit` to its script / to power-off on 1 vCPU 2,913-2,949 / 5,523-5,535 ms, on 2
+2,519-2,538 / 5,127-5,163, on 4 2,481-2,504 / 5,123-5,154; `smp_user_jit_4` total 11,297 / 11,593 / 11,467 ms
+(compress 1,272-1,367, Lua 2,370-2,723: round 2's two samples 340 ms apart, churn 790-811, SQLite 1,835-1,947); `jit_mips`
+6,723-6,809 MIPS (the user-mode small guest: one thread, no VM, so not parallel realtime; it gauges compiled code's
+own cost). Spotlight indexing (`mds_stores`) took a core on the Mac right after the run (when it started is unknown). An orphaned hvf bare-metal
+QEMU from an earlier oracle run had spun for 50 minutes there before the run; it was ended first. `smp_user_jit_4`
+takes two samples a round and spread 2.6% across rounds: P1's A/B needs more rounds for it to resolve ~1%.
+
+Firefox's pages session wasn't run: its harness is broken (PERF-HANDOVER.md's queue) and P4 runs it.
+
+`scripts/ci.sh` (817 s) and `scripts/ci-jit.sh` (112 s) green, alone; `cargo clippy --features diag` clean.

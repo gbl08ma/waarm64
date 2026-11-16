@@ -507,6 +507,9 @@ pub struct Vcpu {
     pub tlb: Tlb,
     /// FEAT_RNG's stream (`Vm::with_devices` keys it).
     pub rng: crate::rng::Rng,
+    /// The diagnostic build's tallies of compiled code (`crate::tally`), which the code bumps itself.
+    #[cfg(feature = "diag")]
+    pub diag: [u64; crate::tally::N],
 }
 
 impl Vcpu {

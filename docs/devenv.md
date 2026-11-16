@@ -107,6 +107,14 @@ your own processes) and `wasm-tools` (`cargo +stable install --locked wasm-tools
 `--print-wasm-code` prints V8's machine code without either. gdb can't run in the dev VM (the M4's SME/SVE registers
 under Lima): use ASan builds and valgrind.
 
+**An x86_64 Node** (V8's x64 code for the JIT's modules, beside the arm64 code: benchmarking.md "The JIT's machine
+code, x64 and arm64"): `node tools/x64node.ts` fetches Node's official linux-x64 build of the running Node's version
+(checked against nodejs.org's `SHASUMS256.txt`) and Debian trixie's amd64 `libc6`, `libstdc++6`, `libgcc-s1` and
+`libatomic1` (each checked against the SHA256 in trixie's `Packages` index, whose own signature isn't checked) into
+`target/x64node/` (~240 MB unpacked; a sysroot with the `lib` and `lib64` links Debian's merged /usr needs), and runs as
+`qemu-x86_64 -L target/x64node/sysroot target/x64node/node-v<ver>-linux-x64/bin/node` (qemu-linux-user, above; the
+host's `xz`, `ar` and `tar` unpack it). Rerun it after a Node update (`--force` fetches again).
+
 ## Commands
 
 The CI scripts, and when each must run, are in CLAUDE.md. The rest:

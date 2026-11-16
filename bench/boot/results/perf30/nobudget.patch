@@ -1,0 +1,207 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index c6b99c50..cf508aaa 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -985,7 +985,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+     }
+     let looped = r.looped();
+-    if n > 1 || looped {
++    if (n > 1 || looped) && !emit::NO_BUDGET {
+         c.local_get(emit::ACC).local_get(emit::LEFT).op(0x6a); // i32.add
+         c.local_set(emit::SUM);
+         c.sum = true;
+@@ -1127,11 +1127,17 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+         let mut edge = |c: &mut emit::Func, j: usize, depth: u32, when: bool| {
+             let to = &r.blocks[j];
+             let jlen = to.words.len() as u32;
+-            c.local_get(emit::LEFT)
+-                .i32_const((len + jlen) as i32)
+-                .op(0x4f); // i32.ge_u
+-            if when {
+-                c.op(0x71); // i32.and
++            if emit::NO_BUDGET {
++                if !when {
++                    c.i32_const(1);
++                }
++            } else {
++                c.local_get(emit::LEFT)
++                    .i32_const((len + jlen) as i32)
++                    .op(0x4f); // i32.ge_u
++                if when {
++                    c.op(0x71); // i32.and
++                }
+             }
+             if r.checked(i, j) {
+                 // The check's VA goes through ADDR: a RET's target is no
+@@ -1161,8 +1167,10 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                 c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+                 c.local_set(emit::ACC);
+             }
+-            c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+-            c.local_set(emit::LEFT);
++            if !emit::NO_BUDGET {
++                c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
++                c.local_set(emit::LEFT);
++            }
+             // Around a loop, the stale-code checker runs as at a chained entry.
+             if let (0, Some(chk)) = (j, e.checker) {
+                 c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
+@@ -1349,13 +1357,22 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+         c.i32_const(1);
+         return emit::via_jc(c, Some(k), len, e.bt, e.checker, x);
+     };
+-    c.local_get(emit::LEFT)
+-        .i32_const((len + tlen) as i32)
+-        .op(0x4f); // i32.ge_u
+-    if guarded {
+-        let host = e.base.wrapping_add((k & !3) - e.phys);
+-        emit::maps_to(c, off, exec, host);
+-        c.op(0x71); // i32.and
++    if emit::NO_BUDGET {
++        if guarded {
++            let host = e.base.wrapping_add((k & !3) - e.phys);
++            emit::maps_to(c, off, exec, host);
++        } else {
++            c.i32_const(1);
++        }
++    } else {
++        c.local_get(emit::LEFT)
++            .i32_const((len + tlen) as i32)
++            .op(0x4f); // i32.ge_u
++        if guarded {
++            let host = e.base.wrapping_add((k & !3) - e.phys);
++            emit::maps_to(c, off, exec, host);
++            c.op(0x71); // i32.and
++        }
+     }
+     c.hint(true).if_();
+     if let Some(chk) = e.checker {
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 742073e5..1902cc8e 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -57,6 +57,8 @@ const ENTRY: u32 = 1;
+ /// them parameters 1 and 2); 125 (i32) holds a conditional branch's outcome.
+ pub const ACC: u32 = 126;
+ pub const LEFT: u32 = 127;
++/// EXPERIMENT (not for main): no `left` checks inside compiled code.
++pub const NO_BUDGET: bool = option_env!("WAARM64_NO_BUDGET").is_some();
+ pub const TAKEN: u32 = 125;
+ /// In a region with edges ([`Func::sum`]): `acc + left` at entry (i32), which
+ /// the edges keep, so they update only `left` and `acc` is `SUM - left`.
+@@ -1872,7 +1874,11 @@ fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
+     c.local_get(VCPU);
+     c.acc();
+     c.i32_const(len as i32).op(ADD);
+-    c.local_get(LEFT).i32_const(len as i32).op(SUB);
++    if NO_BUDGET {
++        c.i32_const(0);
++    } else {
++        c.local_get(LEFT).i32_const(len as i32).op(SUB);
++    }
+     c.local_get(DEPTH);
+     if deeper {
+         c.i32_const(1).op(ADD);
+@@ -1948,8 +1954,10 @@ pub fn returned(c: &mut Func, len: u32, off: i64) {
+         // acc + left stays SUM.
+         c.local_get(SUM).local_get(RESULT).op(SUB).local_set(LEFT);
+     } else {
+-        c.local_get(LEFT).local_get(ACC).op(ADD);
+-        c.local_get(RESULT).op(SUB).local_set(LEFT);
++        if !NO_BUDGET {
++            c.local_get(LEFT).local_get(ACC).op(ADD);
++            c.local_get(RESULT).op(SUB).local_set(LEFT);
++        }
+         c.local_get(RESULT).local_set(ACC);
+     }
+     c.local_get(VCPU).i64_load(PC);
+@@ -1981,10 +1989,13 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
+     c.i64_const(48).op(SHR_U + W);
+     c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).op(AND);
+     // left >= len + its length
+-    c.local_get(LEFT);
+-    c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
+-    c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
+-    c.op(GE_U).op(AND).hint(true).if_();
++    if !NO_BUDGET {
++        c.local_get(LEFT);
++        c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
++        c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
++        c.op(GE_U).op(AND);
++    }
++    c.hint(true).if_();
+     if let Some(chk) = check {
+         c.local_get(VCPU).i64_const(-1).call(chk);
+     }
+@@ -2058,11 +2069,13 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) ->
+         .local_tee(JCE)
+         .i64_load(0);
+     c.local_get(KEY).op(EQ + WC).op(AND);
+-    c.local_get(LEFT)
+-        .local_get(JCE)
+-        .i32_load(12)
+-        .op(GE_U)
+-        .op(AND);
++    if !NO_BUDGET {
++        c.local_get(LEFT)
++            .local_get(JCE)
++            .i32_load(12)
++            .op(GE_U)
++            .op(AND);
++    }
+     c.hint(true).if_();
+     // The entry: tag, then idx | len << 32 | gen << 48.
+     xc_entry(&mut c);
+@@ -2115,12 +2128,15 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
+     }
+     c.op(EQ + WC).op(AND);
+     // left >= len + its length
+-    c.local_get(LEFT)
+-        .local_get(JCE)
+-        .i32_load(12)
+-        .i32_const(len as i32)
+-        .op(ADD);
+-    c.op(GE_U).op(AND).hint(true).if_();
++    if !NO_BUDGET {
++        c.local_get(LEFT)
++            .local_get(JCE)
++            .i32_load(12)
++            .i32_const(len as i32)
++            .op(ADD);
++        c.op(GE_U).op(AND);
++    }
++    c.hint(true).if_();
+     if let Some(chk) = check {
+         c.local_get(VCPU);
+         match key {
+@@ -2155,9 +2171,13 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+     c.i32_load(off).local_tee(V);
+     c.i32_const(0).op(LT_S).if_();
+     c.local_get(VCPU)
+-        .local_get(ACC)
+-        .local_get(LEFT)
+-        .local_get(DEPTH);
++        .local_get(ACC);
++    if NO_BUDGET {
++        c.i32_const(0);
++    } else {
++        c.local_get(LEFT);
++    }
++    c.local_get(DEPTH);
+     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
+     c.return_call_indirect(ty).end();
+     c.local_get(V).if_();
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index dbc35796..f4c51ab1 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2366,7 +2366,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             }
+         }
+     }
+-    (n, None)
++    (if emit::NO_BUDGET { done } else { n }, None)
+ }
+ 
+ /// The bus a run of decoded blocks goes through, and how it finds the key of

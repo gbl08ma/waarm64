@@ -349,6 +349,47 @@ pub struct Func {
     /// what [`Func::chain_open`] needs of a register a segment stores from a
     /// shadow.
     vzx: u32,
+    /// The diagnostic build's tally (`crate::tally`) the next transfer cache or jump cache hit bumps, if not its
+    /// own ([`dslot`]).
+    #[cfg(feature = "diag")]
+    dslot: Option<u32>,
+}
+
+/// The diagnostic build only (`crate::tally`): code that bumps the vCPU's tally `i`. Nothing in a normal build.
+pub fn dbump(c: &mut Func, i: u32) {
+    #[cfg(feature = "diag")]
+    {
+        let o = (offset_of!(Vcpu, diag) + 8 * i as usize) as u32;
+        c.local_get(VCPU)
+            .local_get(VCPU)
+            .i64_load(o)
+            .i64_const(1)
+            .i64_add()
+            .i64_store(o);
+    }
+    #[cfg(not(feature = "diag"))]
+    let _ = (c, i);
+}
+
+/// The diagnostic build only: the tally the next cache hit ([`via_xc`], [`via_jc`]) bumps instead of its own.
+pub fn dslot(c: &mut Func, i: u32) {
+    #[cfg(feature = "diag")]
+    {
+        c.dslot = Some(i);
+    }
+    #[cfg(not(feature = "diag"))]
+    let _ = (c, i);
+}
+
+/// Bumps the tally [`dslot`] chose, or `own`.
+fn dhit(c: &mut Func, own: u32) {
+    #[cfg(feature = "diag")]
+    {
+        let i = c.dslot.take().unwrap_or(own);
+        dbump(c, i);
+    }
+    #[cfg(not(feature = "diag"))]
+    let _ = (c, own);
 }
 
 /// Load and store failure exits that share their write-backs (docs/jit.md
@@ -1903,6 +1944,7 @@ pub fn transfer(c: &mut Func, x: Xfer, len: u32, ty: u32, to: To, inner: u32) {
             .op(LT_U)
             .hint(true)
             .if_();
+        dbump(c, crate::tally::HOST_CALL);
         args(c, len, true, to);
         match to {
             To::Func(f, _) => c.call(f),
@@ -1926,6 +1968,7 @@ pub const ENTRY_BIT: u32 = 16;
 /// block's retired count with [`RETURNED`] (the PC is in the `Cpu`).
 pub fn ret_up(c: &mut Func, len: u32) {
     c.local_get(DEPTH).if_();
+    dbump(c, crate::tally::HOST_RET);
     c.acc();
     c.i32_const(len as i32).op(ADD);
     c.i32_const(RETURNED as i32).op(OR).return_();
@@ -1985,6 +2028,7 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
     c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
     c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
     c.op(GE_U).op(AND).hint(true).if_();
+    dhit(c, crate::tally::XC_HIT);
     if let Some(chk) = check {
         c.local_get(VCPU).i64_const(-1).call(chk);
     }
@@ -2032,6 +2076,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
     const JCE: u32 = HOST; // i32 scratch
     let mut c = Func::default();
     let (arr, base, phys) = tlb;
+    dbump(&mut c, crate::tally::XC_MISS);
     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
     c.local_get(ADDR);
@@ -2121,6 +2166,7 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
         .i32_const(len as i32)
         .op(ADD);
     c.op(GE_U).op(AND).hint(true).if_();
+    dhit(c, crate::tally::JC_HIT);
     if let Some(chk) = check {
         c.local_get(VCPU);
         match key {
