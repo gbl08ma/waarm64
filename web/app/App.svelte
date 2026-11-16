@@ -9,9 +9,8 @@
   import BootCard from './BootCard.svelte';
   import FilePickers from './FilePickers.svelte';
   import FolderWizard from './FolderWizard.svelte';
-  import Button from './ui/Button.svelte';
-  import ErrorBanner from './ui/ErrorBanner.svelte';
   import MachinesPage from './MachinesPage.svelte';
+  import MessageBar from './MessageBar.svelte';
   import NetWizard from './NetWizard.svelte';
   import NetDetails from './NetDetails.svelte';
   import Osk from './Osk.svelte';
@@ -28,7 +27,6 @@
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
   import { keys } from './areas/keys.svelte.ts';
-  import { messageBar } from './areas/message-bar.svelte.ts';
   import { mouse } from './areas/mouse.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
   import { surfaceWindow } from './areas/surface.svelte.ts';
@@ -88,34 +86,7 @@
   onfullscreenchange={view.events.fullscreenChanged}
 />
 <Toolbar {audio} {net} {folders} />
-<!-- Its own wrapper, of no height: the bar floats over the machine (whose screen keeps its size), and the page in full
-     screen hides it. -->
-<div class="message">
-  <ErrorBanner
-    id="message"
-    role={messageBar.kind === 'info' ? 'status' : 'alert'}
-    tone={messageBar.kind}
-    floating
-    countdown={messageBar.countdown}
-    hidden={!messageBar.text}
-    data-kind={messageBar.kind}
-    data-snapshot={messageBar.snapshot || undefined}
-    data-load={messageBar.load || undefined}
-    bodyId="message-body"
-    actionsId="message-actions"
-    dismissId="message-close"
-    dismissLabel={t('common:App.message.close')}
-    ondismiss={() => page.dismiss()}
-  >
-    <pre id="message-text">{messageBar.text}</pre>
-    {#if messageBar.details.length}<pre id="message-details">{messageBar.details.join('\n')}</pre>{/if}
-    {#snippet actions()}
-      {#each messageBar.actions as a (a)}<Button
-          onclick={(e: MouseEvent & { currentTarget: HTMLButtonElement }) => a.run(e.currentTarget)}>{a.label}</Button
-        >{/each}
-    {/snippet}
-  </ErrorBanner>
-</div>
+<MessageBar />
 <main bind:this={main}>
   <div id="screen-view" bind:this={box}>
     <div id="screen-frame">
@@ -164,32 +135,6 @@
 <FilePickers />
 
 <style>
-  pre {
-    margin: 0;
-    white-space: pre-wrap;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-  }
-  #message-text::first-line {
-    font-weight: var(--weight-bold);
-  }
-  #message-details {
-    opacity: 0.8;
-  }
-  .message {
-    position: relative;
-    z-index: 1;
-    height: 0;
-  }
-  .message > :global(#message) {
-    position: absolute;
-    top: var(--space-4);
-    left: 50%;
-    transform: translateX(-50%);
-    width: max-content;
-    max-width: calc(100% - 2 * var(--space-5));
-  }
-
   /* The machine: its screen, its serial terminal, or both (`body[data-view]`, which `setView` sets at once with
      `screen.view`: it measures the screen's room right after). */
   main {
@@ -285,10 +230,6 @@
   }
   /* The Machines page takes the machine's place; the machine runs on behind it. */
   :global(body[data-page='machines']) main {
-    display: none;
-  }
-  /* Full screen with the status bar (Preferences): the page, without its toolbar and message bar. */
-  :global(body:fullscreen) .message {
     display: none;
   }
   @media (max-width: 1100px) {
