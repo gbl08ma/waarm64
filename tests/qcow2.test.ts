@@ -136,6 +136,39 @@ test('deflate.qcow2 through the inflate pool in Chromium: workers take shares, a
   assert.deepEqual(r, { pooled: true, sent: 12, closed: true, after: 12 });
 });
 
+test('the inflate pool in Chromium: a worker whose codec can\'t start, or that never answers, leaves its share to this thread', async () => {
+  const page = await browser!.newPage();
+  await page.goto(`${base}/tests/browser/core.html`);
+  const r = await page.evaluate(async () => {
+    const { openDisk } = await import('/web/qcow2.ts' as string);
+    const { inflatePool } = await import('/web/inflate-pool.ts' as string);
+    const bytes = async (u: string) => new Uint8Array(await (await fetch(u)).arrayBuffer());
+    const [img, raw] = [await bytes('/tests/qcow2/deflate.qcow2'), await bytes('/tests/qcow2/data.raw')];
+    const same = (a?: Uint8Array) => !!a && a.length === raw.length && a.every((x, k) => x === raw[k]);
+    const at = (off: number, len: number) => (off + len <= img.length ? img.subarray(off, off + len) : undefined);
+    // The real worker, given a core without the codec: its codec fails to start at its first request.
+    const empty = await WebAssembly.compile(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+    const noCodec = () => {
+      const w = new Worker('/web/inflate-worker.ts', { type: 'module' });
+      const post = w.postMessage.bind(w) as (m: unknown, t?: Transferable[]) => void;
+      w.postMessage = ((m: { type?: string }, t?: Transferable[]) => post(m.type === 'init' ? { type: 'init', module: empty } : m, t)) as typeof w.postMessage;
+      return w;
+    };
+    // A worker that takes its requests and never answers.
+    const silent = () => new Worker(URL.createObjectURL(new Blob(['self.onmessage = () => {};'], { type: 'text/javascript' })));
+    // The codec's failure is answered at once (its stall timer is past the read's bound); the silence is the timer's.
+    const read = async (worker: () => Worker, stallMs: number) => {
+      const pool = inflatePool(3, { worker, stallMs });
+      const got = await Promise.race([openDisk(at, img.length, pool).read(0, raw.length), new Promise<'hung'>((r) => setTimeout(() => r('hung'), 5000))]);
+      pool.close();
+      return got === 'hung' ? got : same(got);
+    };
+    return { noCodec: await read(noCodec, 60_000), silent: await read(silent, 300) };
+  });
+  await page.close();
+  assert.deepEqual(r, { noCodec: true, silent: true });
+});
+
 test('a qcow2 read through `readAsync` (several requests at once, answers in any order) reads as data.raw', async () => {
   let seed = 11;
   const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) >>> 0) % n);

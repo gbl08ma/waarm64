@@ -345,7 +345,10 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copie
   a frame past the disk's end is refused before any of it is written. The desktop's 11,952 blocks take ~0.1 s on disk
   (2.0 s one block a write: a data flush each) and ~0.8 s off the record (7.3 s: bench/boot/REPORT.md "SNAPZ loop 5"). Everything that can be refused is refused before that: a
   `File` is read once for its checksums and its end first (a damaged file must not half-replace a
-  disk), and the disk on the machine must be the snapshot's: the same identity, or, when that
+  disk), a pass that also refuses what the disk phase would (a frame out of the restore's order, a DISK frame of a
+  slot the header doesn't pin or past its disk's end, one that doesn't unpack to its size: its DISK frames are unpacked
+  and dropped, by the pool's workers when there is one, which costs the desktop's load nothing measurable: bench/boot/REPORT.md
+  "SNAPZ: the track's end"; tests/snapshot.test.ts "impossible things"), and the disk on the machine must be the snapshot's: the same identity, or, when that
   differs and the file has a hash, the same hash (asked for only then: a restore that "resumes in seconds"
   shouldn't read the whole base every time).
 - **Run modes:** round-robin's `Sched` and parallel mode's per-vCPU state are saved in one form
@@ -425,9 +428,10 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   in file order, as on one thread; the workers take each frame's CRC in their own core instance and, for the restore
   pass's RAM frames, unpack them and put their pages straight into guest RAM and the spill memories (`applyRam` on
   the shared memories), posting back only the jobs they failed and their times. CORE, DEVS, BLOB and DISK frames are
-  read on the machine worker in the restore pass. **The check pass still comes first and ends only once every CRC is
+  read on the machine worker in the restore pass (the check pass's DISK frames are unpacked by the workers too). **The check pass still comes first and ends only once every CRC is
   in**: a damaged frame anywhere is refused before RAM or a disk is touched, and a refusal is the first failing
-  frame's (`tests/snapshot.test.ts` "a load's pool"; the page's refusal in tests/page-snapshot.test.ts). `placed()`
+  frame's (the frames of the piece in hand not yet given to a worker are checked before a later frame's structural
+  refusal) (`tests/snapshot.test.ts` "a load's pool"; the page's refusal in tests/page-snapshot.test.ts). `placed()`
   waits for every RAM frame given so far (the piece in hand given as a copy), so the restore pass's own refusal also
   comes before the disks. **The fallback:** a frame a worker fails, or a piece whose worker failed (a failed worker fails
   the whole pool, as a save's does), is read again from the file and done on the machine worker (a damaged one refused
@@ -440,7 +444,8 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
 - **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
   what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
-  a truncated file. **Older files are refused, not read** (SNAPZ-KICKOFF.md decision 7): the header's `coreVersion`
+  a truncated file, frames that say impossible things (above). A `ReadableStream` (the tests' only) has no check pass:
+  its refusals come as its frames are read. **Older files are refused, not read** (SNAPZ-KICKOFF.md decision 7): the header's `coreVersion`
   is checked first (`otherVersion`, in `readSnapshot` before the check pass and in the machine worker's restore before
   the devices), so a file of an older state version, which may also hold deflate-raw frames (codec 1, no longer
   read) or a device list from before the clock, the notify socket or the balloon, gets

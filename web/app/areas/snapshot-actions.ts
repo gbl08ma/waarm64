@@ -14,8 +14,8 @@ import { progressText, withNote } from '../run/messages.ts';
 import type { Run } from '../run/run.ts';
 import type { Replies } from '../run/replies.ts';
 import { fromWire } from '../../msg.ts';
-import { download, DOWNLOAD_KEPT_MS, savePicker } from './disk-export.ts';
-import { holdStaging, removeStale } from '../../snapshot-stage.ts';
+import { download, savePicker } from './disk-export.ts';
+import { dropDownload, holdStaging, keepForDownload, removeStale } from '../../snapshot-stage.ts';
 import { messageBar } from './message-bar.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
 
@@ -211,7 +211,9 @@ export class SnapshotActions {
     power.saving = true;
     const parts: Blob[] = [];
     const once = { done: false };
-    // The staging file's name, its lock held until the file is gone (web/snapshot-stage.ts; none: written directly).
+    // The last download's staging file goes first (its room is this save's); then this save's name, its lock held until
+    // the file is gone (web/snapshot-stage.ts; none: written directly).
+    await dropDownload();
     const stage = await holdStaging().catch(() => undefined);
     let downloaded = false;
     try {
@@ -250,8 +252,9 @@ export class SnapshotActions {
     } catch (e) {
       this.#failed(r, e, t('snapshots:snapshot-actions.runsOn.noFile'));
     } finally {
-      // A download's staged file is read by the browser after the click: kept as long as its address (`download`).
-      stage?.release(downloaded ? DOWNLOAD_KEPT_MS : 0);
+      // A download's staged file is read by the browser after the click: kept until the next file save.
+      if (stage && downloaded) keepForDownload(stage);
+      else void stage?.release();
       this.#over(r, unplugged, once);
     }
   }

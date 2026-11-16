@@ -26,7 +26,7 @@ const SAVES: Record<ExportMode, { suffix: string; description: string; type: str
 /** A stored disk with one of its overlays (none: the stored disk itself). */
 type Target = { disk: DiskRecord; overlay?: string };
 
-/** How long a download's address (and a staged snapshot behind it: web/snapshot-stage.ts) is kept after its click. */
+/** How long a download's address is kept after its click (a staged snapshot's file behind it is kept longer: web/snapshot-stage.ts `keepForDownload`). */
 export const DOWNLOAD_KEPT_MS = 60_000;
 
 /** Downloads `blob` as `name`. */

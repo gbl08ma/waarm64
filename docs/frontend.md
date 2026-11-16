@@ -824,7 +824,9 @@ resumes (`snapshot-resumed`: the guest's input, its USB devices and its clock co
 file gets the staging file copied into its stream, in 64 MiB slices written as Blobs (the browser copies them file to file), while the state line says
 [Copying the snapshot to the file](ui:snapshots:worker-stage.phase.copying) with a percentage; the staging file is
 removed after. A download is the staging file itself (`snapshot-done`'s `file`: the page holds none of its bytes),
-removed when its address is revoked, a minute after the click (`DOWNLOAD_KEPT_MS`). The copy is still the save in
+kept until the next file save starts or the page ends (`keepForDownload`; then removed at its next start): the
+browser reads it after the click for as long as it takes (a save dialog left open), and a `File` whose OPFS file is
+removed can't be read (tests/page-snapshot-stage.test.ts). The copy is still the save in
 progress (one at a time: Snapshot, Suspend, Restart and Power off stay disabled until it ends), though the machine
 runs. **The fallbacks write the file directly, as before staging:** when the storage hasn't room
 (`navigator.storage.estimate()`'s quota less usage, against the file's bound, `snapshotBound`, known once the devices'

@@ -75,7 +75,7 @@ function ram(c: Core, buffer: SharedArrayBuffer, off: number, len: number, index
 }
 
 /**
- * Job `j`'s frame in `piece` checked (its CRC), and with `place` unpacked and its pages put into guest RAM; the times
+ * Job `j`'s frame in `piece` checked (its CRC), with `unpack` unpacked (and dropped), with `place` unpacked and its pages put into guest RAM; the times
  * added to `t`. Throws for a frame that fails (the reader does it again, and refuses it as one thread would).
  */
 function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
@@ -86,7 +86,7 @@ function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
   const head = new DataView(piece, j.at, 32);
   if ((c.ex.crc32(c.ex.crc32(0, c.dst, 24), c.dst + 32, j.len) >>> 0) !== head.getUint32(24, true)) throw new Error('the frame\'s checksum fails');
   t.crc += performance.now() - t0;
-  if (!j.place) return;
+  if (!j.place && !j.unpack) return;
   t0 = performance.now();
   const [id, rawLen] = [head.getUint32(4, true), head.getUint32(16, true)];
   let at = c.dst + 32;
@@ -95,6 +95,7 @@ function frame(c: Core, piece: ArrayBuffer, j: FrameJob, t: FrameTimes) {
     at = c.src;
   } else if (id !== 0 || j.len !== rawLen) throw new Error('a frame of another codec');
   t.unpack += performance.now() - t0;
+  if (!j.place) return; // a check pass's: unpacked and dropped
   t0 = performance.now();
   const { ram, off, len, chunk } = j.place;
   applyRam(new Uint8Array(ram, off, len), chunk, new Uint8Array(c.memory.buffer, at, rawLen));

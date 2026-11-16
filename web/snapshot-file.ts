@@ -266,9 +266,10 @@ export type FrameTimes = { crc: number; unpack: number; apply: number };
 /**
  * A frame in a piece of the file a load's pool is given: its 32-byte header at `at`, then its `len` stored bytes. Its
  * CRC is checked; with `place`, it is a RAM frame, unpacked and its pages put into guest RAM as `applyRam` does: chunk
- * `chunk` of the `len` bytes at `off` of `ram` (shared memory).
+ * `chunk` of the `len` bytes at `off` of `ram` (shared memory); with `unpack` (a check pass's DISK frame), it is
+ * unpacked to its size and dropped.
  */
-export type FrameJob = { at: number; len: number; place?: { ram: SharedArrayBuffer; off: number; len: number; chunk: number } };
+export type FrameJob = { at: number; len: number; unpack?: true; place?: { ram: SharedArrayBuffer; off: number; len: number; chunk: number } };
 /**
  * Workers that check and unpack a reader's frames (web/snapshot-pool.ts): `frames` gives one of them a piece of the
  * file (transferred) and its frames' jobs, and resolves to the jobs it failed (their positions in `jobs`), which the
@@ -699,7 +700,7 @@ export async function readHeader(source: ReadableStream<Uint8Array> | Blob): Pro
  * `chunk` (`applyRam`'s), called before the next frame is asked for; through a pool its `data` is empty and the pool's
  * workers do it: `placed()` then waits for every frame placed so far (and throws the first one's refusal).
  */
-export type ReadFrame = { tag: string; index: number; data: Uint8Array; place?: (ram: Uint8Array, chunk: number) => void };
+export type ReadFrame = { tag: string; index: number; data: Uint8Array; size?: number; place?: (ram: Uint8Array, chunk: number) => void };
 
 /** A frame header's fields. */
 type Head = { tag: string; id: number; index: number; rawLen: number; storedLen: number; want: number };
@@ -739,7 +740,8 @@ function frameHead(h: Uint8Array, version: number, codec: number): Head {
  * CRC-32) and decompressed (by `codec`, or stored), as it arrives. A stream shorter than the magic
  * is `not-snapshot`; a file that ends later without its end marker is `truncated`. `frames()` reads
  * the stream once; the end of the file is checked when it finishes. With `check`, frames come
- * without their data: their checksums and the file's structure are verified, nothing is unpacked.
+ * without their data but with their raw `size`: their checksums and the file's structure are verified, and DISK frames
+ * are unpacked (and dropped), so that a restore's disk phase finds none it refuses (web/snapshot.ts `readSnapshot`).
  * `times`: where the reading's time went so far (`ReadTimes`).
  *
  * `pool`, for a Blob (docs/platform.md "A load's pool"): the file is read in pieces, each given whole to a worker with
@@ -836,8 +838,11 @@ export async function openSnapshot(
         times.crc += performance.now() - t;
         if (!crcOk) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
         count++;
-        // Checked, not unpacked: a pass over a file before a restore touches anything.
-        if (opts.check) yield { tag: h.tag, index: h.index, data: new Uint8Array(0) };
+        // Checked, not unpacked (but DISK's): a pass over a file before a restore touches anything.
+        if (opts.check) {
+          if (h.tag === 'DISK') await unpack(h.id, stored, h.rawLen);
+          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen };
+        }
         else if (h.tag === 'RAM ') {
           const data = await unpack(h.id, stored, h.rawLen);
           checkRam(data);
@@ -876,7 +881,10 @@ export async function openSnapshot(
           const frame = new Uint8Array(await b.slice(j.at, j.at + FRAME_HEADER + j.job.len).arrayBuffer());
           if (frame.length !== FRAME_HEADER + j.job.len) throw truncated();
           if (j.ram) await placeHere(frame, j.head, j.ram, j.chunk!);
-          else checkHere(frame, j.head.want);
+          else {
+            checkHere(frame, j.head.want);
+            if (j.job.unpack) await unpack(j.head.id, frame.subarray(FRAME_HEADER), j.head.rawLen);
+          }
         }
       };
       /** `mine`, frames of `piece`, given to a worker (waiting while `limit` pieces are with them). */
@@ -958,9 +966,10 @@ export async function openSnapshot(
         count++;
         const j: Job = { job: { at: inPiece ? at - curAt : 0, len: h.storedLen }, head: h, at };
         if (opts.check) {
+          if (h.tag === 'DISK') j.job.unpack = true;
           if (inPiece) batch.push(j);
           else await give(frame.buffer as ArrayBuffer, [j]);
-          yield { tag: h.tag, index: h.index, data: new Uint8Array(0) };
+          yield { tag: h.tag, index: h.index, data: new Uint8Array(0), size: h.rawLen };
           continue;
         }
         if (h.tag !== 'RAM ') {
@@ -989,8 +998,10 @@ export async function openSnapshot(
         yield* pool ? pooled(source as Blob, pool) : oneThread();
       } catch (e) {
         // An earlier frame's refusal comes first, as it would on one thread: a job's is (the jobs still queued are later
-        // frames'); a refusal of the structure here is after the frames queued before it.
+        // frames'); a refusal of the structure here is after the frames queued before it, those of the piece in hand
+        // not yet given to a worker too.
         if (e !== jobRefusal) {
+          await flush();
           for (const j of jobs.splice(0)) {
             const f = await j;
             if (f) throw f;

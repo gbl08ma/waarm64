@@ -61,12 +61,19 @@ export async function deflateOn(module: WebAssembly.Module): Promise<Deflate> {
 let module: Promise<WebAssembly.Module> | undefined;
 let codec: Promise<Deflate> | undefined;
 
+/** `p`, cached by its caller until it fails: then `drop` forgets it, so the next call tries again (a fetch, a memory refused once). */
+function retried<T>(p: Promise<T>, drop: (p: Promise<T>) => void): Promise<T> {
+  p.catch(() => drop(p));
+  return p;
+}
+
 /**
  * The core this thread's codec runs on: `given` where the thread has it already (the device worker gets the
- * machine's: web/devices.ts `DevicesInit.core`), else `CORE` fetched (read, in Node) and compiled, once a thread.
+ * machine's: web/devices.ts `DevicesInit.core`), else `CORE` fetched (read, in Node) and compiled, once a thread (a
+ * failure is tried again at the next call).
  */
 export function coreModule(given?: WebAssembly.Module): Promise<WebAssembly.Module> {
-  return (module ??= given ? Promise.resolve(given) : loadCore());
+  return (module ??= retried(given ? Promise.resolve(given) : loadCore(), (p) => { if (module === p) module = undefined; }));
 }
 
 async function loadCore() {
@@ -79,5 +86,6 @@ async function loadCore() {
   return WebAssembly.compile(await r.arrayBuffer());
 }
 
-/** This thread's codec (one instance, made at its first use). */
-export const threadDeflate = (): Promise<Deflate> => (codec ??= coreModule().then(deflateOn));
+/** This thread's codec (one instance, made at its first use; one that failed to start is tried again at the next). */
+export const threadDeflate = (): Promise<Deflate> =>
+  (codec ??= retried(coreModule().then(deflateOn), (p) => { if (codec === p) codec = undefined; }));

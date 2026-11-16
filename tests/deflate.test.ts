@@ -67,3 +67,22 @@ test('a stream that is corrupt, truncated, short of its size or past it is refus
   // Garbage.
   for (let k = 0; k < 200; k++) assert.doesNotThrow(() => z.inflate(cluster(1, 1 + k * 7), 65536));
 });
+
+test('a thread\'s codec that failed to start (no memory for it, once) starts at the next call', async () => {
+  // A module of its own (a fresh `threadDeflate`, none made yet), its first instance's memory refused.
+  const { threadDeflate: fresh } = await import(`../web/deflate.ts?first-fails=${Date.now()}`) as typeof import('../web/deflate.ts');
+  const Memory = WebAssembly.Memory;
+  let refused = 0;
+  WebAssembly.Memory = function (this: unknown, d: WebAssembly.MemoryDescriptor) {
+    if (!refused++) throw new RangeError('WebAssembly.Memory(): could not allocate memory');
+    return new Memory(d);
+  } as unknown as typeof WebAssembly.Memory;
+  try {
+    await assert.rejects(fresh(), RangeError, 'the first start fails');
+  } finally {
+    WebAssembly.Memory = Memory;
+  }
+  const z = await fresh();
+  const c = cluster(2);
+  assert.ok(same(z.inflate(z.deflate(c, LEVEL)!, CLUSTER), c), 'the codec made at the next call works');
+});

@@ -172,15 +172,74 @@ export async function readSnapshot(
     return at - was;
   };
   const phases: RestorePhases = { check: 0, checkRead: 0, checkCrc: 0, state: 0, ram: 0, disk: 0, pool: 0, read: 0, crc: 0, unpack: 0, apply: 0 };
+  // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
+  // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
+  type Target = { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean } | { kind: 'skip' } | { kind: 'ram'; spec: BlkSpec; size: number };
+  const targets = new Map<number, Target>();
+  /** The header's refusals (another version, a suspend's file or not, the disks it pins against `devices`), `targets` made. */
+  const aim = async (header: SnapshotHeader) => {
+    const other = otherVersion(header, coreVersion);
+    if (other) throw other;
+    if (!!header.suspend !== !!opts.resume) {
+      throw header.suspend
+        ? new SnapshotError('snapshots:snapshot.suspended', {}, 'other-disk')
+        : corrupt(msg('snapshots:snapshot.damage.notSuspended'));
+    }
+    const pinned = (header.disks ?? []) as SnapshotDisk[];
+    if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt(msg('snapshots:snapshot.damage.diskList'));
+    for (const d of pinned) {
+      const spec = opts.devices?.[d.slot];
+      if (d.ram) {
+        if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
+        targets.set(d.slot, { kind: 'ram', spec, size: d.size });
+        continue;
+      }
+      if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
+      const identity = diskIdentity(spec, d.size);
+      if (identity !== d.identity) {
+        const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
+        if (!same) {
+          throw new SnapshotError('snapshots:snapshot.otherDisk', { was: describe(d.identity), here: describe(identity) }, 'other-disk');
+        }
+      }
+      const plan = opts.plan?.find((p) => p.slot === d.slot);
+      // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
+      // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
+      if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
+        throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
+      }
+      targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
+    }
+  };
+  /** DISK frame `index` of `rawLen` bytes refused if its slot isn't pinned or it goes past its disk's end. */
+  const diskFrame = (index: number, rawLen: number) => {
+    const t = targets.get(Math.floor(index / SLOT));
+    if (!t) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
+    if (t.kind !== 'skip' && (index % SLOT + rawLen / BLOCK - 1) * BLOCK >= t.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
+    return t;
+  };
+  /** The stages of a file's frames, in the order a restore reads them: a frame of an earlier stage after a later one is refused. */
+  const STAGE: Record<string, number> = { CORE: 0, DEVS: 0, BLOB: 1, 'RAM ': 2, DISK: 3 };
   if (source instanceof Blob) {
     // Another version's file is refused by its header, before its frames are read (an older file may have frames of a
-    // codec no longer read).
-    const other = otherVersion(await readHeader(source), coreVersion);
-    if (other) throw other;
-    // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
-    // the file damaged halfway.
+    // codec no longer read); then whatever else the header alone refuses.
+    await aim(await readHeader(source));
+    // A pass over the whole file first: a restore replaces the disk's changes, so it must not find the file damaged
+    // halfway. Its CRCs and structure, and what the restore's disk phase would refuse: the frames' order, and each DISK
+    // frame's slot, its place in its disk and its unpacking (docs/platform.md "The snapshot file").
     const check = await openSnapshot(source, { codec, check: true, pool: opts.pool });
-    for await (const _ of check.frames()) void _;
+    let stage = 0;
+    for await (const f of check.frames()) {
+      try {
+        if (STAGE[f.tag] < stage) throw corrupt(msg('snapshots:snapshot.damage.unexpected'));
+        stage = STAGE[f.tag];
+        if (f.tag === 'DISK') diskFrame(f.index, f.size!);
+      } catch (e) {
+        // An earlier frame's own refusal (a CRC the pool still has) comes first.
+        await check.placed();
+        throw e;
+      }
+    }
     [phases.check, phases.checkRead, phases.checkCrc] = [since(), check.times.read, check.times.crc];
   }
   // With a pool, RAM's frames are checked, unpacked and placed by its workers (docs/platform.md "A load's pool").
@@ -189,42 +248,7 @@ export async function readSnapshot(
   /** The restore pass's reading times so far, into `phases`. */
   const read = () => Object.assign(phases, s.times);
   const { header } = s;
-  const other = otherVersion(header, coreVersion);
-  if (other) throw other;
-  if (!!header.suspend !== !!opts.resume) {
-    throw header.suspend
-      ? new SnapshotError('snapshots:snapshot.suspended', {}, 'other-disk')
-      : corrupt(msg('snapshots:snapshot.damage.notSuspended'));
-  }
-  const pinned = (header.disks ?? []) as SnapshotDisk[];
-  if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt(msg('snapshots:snapshot.damage.diskList'));
-  // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
-  // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
-  type Target = { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean } | { kind: 'skip' } | { kind: 'ram'; spec: BlkSpec; size: number };
-  const targets = new Map<number, Target>();
-  for (const d of pinned) {
-    const spec = opts.devices?.[d.slot];
-    if (d.ram) {
-      if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
-      targets.set(d.slot, { kind: 'ram', spec, size: d.size });
-      continue;
-    }
-    if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
-    const identity = diskIdentity(spec, d.size);
-    if (identity !== d.identity) {
-      const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
-      if (!same) {
-        throw new SnapshotError('snapshots:snapshot.otherDisk', { was: describe(d.identity), here: describe(identity) }, 'other-disk');
-      }
-    }
-    const plan = opts.plan?.find((p) => p.slot === d.slot);
-    // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
-    // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
-    if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
-      throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
-    }
-    targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
-  }
+  if (!(source instanceof Blob)) await aim(header);
   const frames = s.frames();
   // CORE and DEVS come first, each in index order.
   const parts: Record<string, Uint8Array[]> = { CORE: [], DEVS: [] };
@@ -326,13 +350,13 @@ export async function readSnapshot(
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;
           if (tag !== 'DISK') throw corrupt(msg('snapshots:snapshot.damage.unexpected'));
-          const o = open.get(Math.floor(index / SLOT));
-          if (!o) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
+          // An unlisted slot or a frame past the disk's end (for a stream: a Blob's check pass refused them) is refused
+          // before any of it is written. Its runs of data blocks and of zero blocks are a call each (an OPFS call costs
+          // ~0.3 ms off the record, a data flush per call ~0.15 ms on disk: bench/boot/REPORT.md "SNAPZ loop 5"); the
+          // disk's last block may be shorter than 4 KiB.
+          diskFrame(index, data.length);
+          const o = open.get(Math.floor(index / SLOT))!;
           if (o === 'skip') continue;
-          // A frame past the disk's end is refused before any of it is written. Its runs of data blocks and of zero
-          // blocks are a call each (an OPFS call costs ~0.3 ms off the record, a data flush per call ~0.15 ms on disk:
-          // bench/boot/REPORT.md "SNAPZ loop 5"); the disk's last block may be shorter than 4 KiB.
-          if ((index % SLOT + data.length / BLOCK - 1) * BLOCK >= o.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
           for (const run of diskRuns(index % SLOT, data)) {
             const at = run.block * BLOCK;
             const len = Math.min(run.count * BLOCK, o.size - at);

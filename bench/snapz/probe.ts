@@ -30,7 +30,16 @@ import { startServer } from '../../tools/serve.ts';
 import { chromiumEnv } from '../../tools/nosme.ts';
 import { answerAsks } from '../../tests/page-ask.ts';
 import { credentialsQuery } from '../../tests/debian-unattended.ts';
-import { crc32, readHeader, type SnapshotHeader } from '../../web/snapshot-file.ts';
+import { crc32, type SnapshotHeader } from '../../web/snapshot-file.ts';
+
+/**
+ * A snapshot's header (the magic and version, the JSON's length at 12, the JSON at 16), read here rather than with
+ * web/snapshot-file.ts's `readHeader`, which loop 0's tree doesn't have (SNAPZ's end measured against it).
+ */
+async function readHeader(b: Blob): Promise<SnapshotHeader> {
+  const h = new DataView(await b.slice(0, 16).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(await b.slice(16, 16 + h.getUint32(12, true)).arrayBuffer())) as SnapshotHeader;
+}
 import { commit, CORE_PATH, sha } from '../snapshot-start.ts';
 import { t } from '../../web/i18n.ts';
 import { words } from '../../tests/words.ts';
@@ -224,7 +233,10 @@ async function storedMachine(): Promise<string> {
 
 /** The header of the snapshot kept as `id` of machine `m`, read from OPFS on the page. */
 const keptHeader = (m: string, id: string) => page.evaluate(async ([m, id]) => {
-  const { readHeader } = await import('/web/snapshot-file.ts' as string);
+  const readHeader = async (b: Blob) => {
+    const h = new DataView(await b.slice(0, 16).arrayBuffer());
+    return JSON.parse(new TextDecoder().decode(await b.slice(16, 16 + h.getUint32(12, true)).arrayBuffer())) as unknown;
+  };
   let dir = await navigator.storage.getDirectory();
   for (const p of ['machines', m, 'snapshots']) dir = await dir.getDirectoryHandle(p);
   return readHeader(await (await dir.getFileHandle(id)).getFile());

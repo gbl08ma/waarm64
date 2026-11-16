@@ -1032,13 +1032,8 @@ pub unsafe extern "C" fn inflate_raw(
     dst: *mut u8,
     cap: usize,
 ) -> usize {
-    // SAFETY: guaranteed by the caller.
-    let (s, d) = unsafe {
-        (
-            core::slice::from_raw_parts(src, len),
-            core::slice::from_raw_parts_mut(dst, cap),
-        )
-    };
+    // SAFETY: guaranteed by the caller (a pointer with length 0 is never read: it may be null).
+    let (s, d) = unsafe { (raw_slice(src, len), raw_slice_mut(dst, cap)) };
     codec::inflate_raw(s, d).unwrap_or(usize::MAX)
 }
 
@@ -1055,14 +1050,34 @@ pub unsafe extern "C" fn deflate_raw(
     cap: usize,
     level: u32,
 ) -> usize {
-    // SAFETY: guaranteed by the caller.
-    let (s, d) = unsafe {
-        (
-            core::slice::from_raw_parts(src, len),
-            core::slice::from_raw_parts_mut(dst, cap),
-        )
-    };
+    // SAFETY: guaranteed by the caller (a pointer with length 0 is never read: it may be null).
+    let (s, d) = unsafe { (raw_slice(src, len), raw_slice_mut(dst, cap)) };
     codec::deflate_raw(s, d, level).unwrap_or(0)
+}
+
+/// The `len` bytes at `p`, or none (`p` unread, null or not) for `len` 0: a slice may not be made of a null pointer,
+/// and a host's first call with nothing to pass has no buffer yet (web/deflate.ts).
+///
+/// # Safety
+/// For `len` > 0, `p` points to `len` readable bytes that live for `'a` and nothing writes meanwhile.
+unsafe fn raw_slice<'a>(p: *const u8, len: usize) -> &'a [u8] {
+    if len == 0 {
+        return &[];
+    }
+    // SAFETY: guaranteed by the caller.
+    unsafe { core::slice::from_raw_parts(p, len) }
+}
+
+/// [`raw_slice`]'s writable twin.
+///
+/// # Safety
+/// For `len` > 0, `p` points to `len` writable bytes that live for `'a` and nothing else reads or writes meanwhile.
+unsafe fn raw_slice_mut<'a>(p: *mut u8, len: usize) -> &'a mut [u8] {
+    if len == 0 {
+        return &mut [];
+    }
+    // SAFETY: guaranteed by the caller.
+    unsafe { core::slice::from_raw_parts_mut(p, len) }
 }
 
 #[cfg(test)]
@@ -1112,6 +1127,32 @@ mod tests {
                     assert_eq!(short, usize::MAX);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn deflate_exports_take_no_buffer_for_no_bytes() {
+        // A thread's first call with nothing to read (or no room) may pass a null pointer (web/deflate.ts has no
+        // buffer yet): no slice is made of it.
+        let mut dst = vec![0u8; 16];
+        // SAFETY: the null pointers come with length 0; `dst` is live for its length.
+        unsafe {
+            assert_eq!(
+                inflate_raw(core::ptr::null(), 0, dst.as_mut_ptr(), 16),
+                usize::MAX
+            );
+            assert_eq!(
+                inflate_raw(core::ptr::null(), 0, core::ptr::null_mut(), 0),
+                usize::MAX
+            );
+            assert_eq!(
+                deflate_raw(core::ptr::null(), 0, dst.as_mut_ptr(), 16, 1) > 0,
+                true
+            );
+            assert_eq!(
+                deflate_raw(core::ptr::null(), 0, core::ptr::null_mut(), 0, 1),
+                0
+            );
         }
     }
 

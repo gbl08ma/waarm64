@@ -1,7 +1,7 @@
 // A snapshot to a file staged through OPFS on the page (docs/frontend.md "Snapshots", SNAPZ's decision 3), on Buildroot
 // in an on-disk profile: a download and a picked file (a file in OPFS stands in for the user's pick) go through a
 // staging file during the pause, the picked one copied after the resume and the staging file removed, the download's
-// kept for its address; the fallbacks write the file directly: no room (`?stageroom=0`), a staging write refused partway
+// kept until the next file save; the fallbacks write the file directly: no room (`?stageroom=0`), a staging write refused partway
 // (the origin's quota lowered through the DevTools protocol, `Storage.overrideQuotaForOrigin`, which `estimate()`
 // doesn't report: tests/page-quota.test.ts), and a copy that fails after the resume (the quota between one file's
 // worth and two) says so and leaves nothing behind; a staging file no page holds (one left by a crash) is removed at the
@@ -105,7 +105,7 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     await onSerial(page, 'echo sa""ved-$((6*7))\n');
     await shows(page, /saved-42/);
 
-    // A download: staged, the file handed to the browser, its staging file kept for the download's address.
+    // A download: staged, the file handed to the browser, its staging file kept until the next file save.
     const first = await download(page, 'first.waarm64snap');
     assert.equal(first.info.staging, 'staged');
     const kept = await staging(page);
@@ -120,7 +120,7 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     assert.equal(p.staging, 'staged');
     assert.ok(p.phases.copy > 0, `the copy's time: ${JSON.stringify(p.phases)}`);
     assert.deepEqual(await picked(page, 'picked.waarm64snap'), { size: p.bytes, magic: 'WAARMSNP' });
-    assert.deepEqual(await staging(page), kept, 'the picked file\'s staging file is gone');
+    assert.deepEqual(await staging(page), {}, 'the download\'s staging file let go at this save\'s start, the picked file\'s gone');
     await onSerial(page, 'echo aft""er-$((6*7))\n');
     await shows(page, /after-42/);
 
@@ -132,7 +132,7 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     const refused = await download(page, 'refused.waarm64snap');
     assert.equal(refused.info.staging, 'refused');
     assert.ok(Math.abs(refused.bytes.length - N) < N / 4, `a whole file (${refused.bytes.length} against ${N})`);
-    assert.deepEqual(await staging(page), kept, 'the refused staging file is gone');
+    assert.deepEqual(await staging(page), {}, 'the refused staging file is gone');
 
     // A copy that fails after the resume (room for one file's worth, not the picked file's too): said, nothing left.
     await pickInto(page, 'failed.waarm64snap');
@@ -141,14 +141,16 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-details')?.textContent ?? ''), words('snapshots:worker-stage.notCopied', { name: 'failed.waarm64snap' }, { start: true }).source, { timeout: 120_000, polling: 50 });
     assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? ''), words('snapshots:worker-snapshot.notSaved', {}, { start: true }));
     assert.equal((await picked(page, 'failed.waarm64snap')).size, 0, 'the picked file holds none of it');
-    assert.deepEqual(await staging(page), kept, 'the failed copy\'s staging file is gone');
+    assert.deepEqual(await staging(page), {}, 'the failed copy\'s staging file is gone');
     await cdp.send('Storage.overrideQuotaForOrigin', { origin: base });
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running');
     await onSerial(page, 'echo st""ill-$((6*7))\n');
     await shows(page, /still-42/);
 
-    // A staging file no page holds (a crash's), beside the download's (its page about to end): both removed at the next
+    // A staging file no page holds (a crash's), beside a download's (its page about to end): both removed at the next
     // start, here with no room for staging.
+    await noPicker(page);
+    assert.equal((await download(page, 'second.waarm64snap')).info.staging, 'staged');
     await page.evaluate(async () => {
       const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('snapshot-staging', { create: true });
       const w = await (await d.getFileHandle('left-by-a-crash', { create: true })).createWritable();
@@ -167,5 +169,50 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
+  }
+});
+
+test('a download\'s staging file is kept however long the browser takes to read it, until the next file save', async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+    const page = await browser.newPage();
+    await page.clock.install(); // no guest here: the page's timers are the test's
+    await page.goto(`${base}/tests/browser/core.html`);
+    const stage = () => page.evaluate(async () => {
+      const { holdStaging, stagedFile, keepForDownload } = await import('/web/snapshot-stage.ts' as string) as typeof import('../web/snapshot-stage.ts');
+      const s = (await holdStaging())!;
+      const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('snapshot-staging', { create: true });
+      const w = await (await d.getFileHandle(s.name, { create: true })).createWritable();
+      await w.write(new TextEncoder().encode(s.name));
+      await w.close();
+      const file = await stagedFile(s.name);
+      keepForDownload(s);
+      ((window as unknown as { files: Record<string, File> }).files ??= {})[s.name] = file;
+      return s.name;
+    });
+    /** Download `name`'s File read now (as the browser would, late): its bytes, or why it can't be read. */
+    const read = (name: string) => page.evaluate(async (n) => {
+      try {
+        return new TextDecoder().decode(await (window as unknown as { files: Record<string, File> }).files[n].arrayBuffer());
+      } catch (e) {
+        return `unreadable: ${(e as Error).name}`;
+      }
+    }, name);
+    const a = await stage();
+    await page.clock.runFor(10 * 60_000); // a save dialog left open, a slow disk
+    assert.equal(await read(a), a, 'the download\'s file still reads ten minutes on');
+    assert.deepEqual(Object.keys(await staging(page)), [a]);
+    // The next download's keeps its own and lets the previous go.
+    const b = await stage();
+    await eventually(async () => assert.deepEqual(Object.keys(await staging(page)), [b], 'the previous download\'s staging file removed'));
+    assert.equal(await read(b), b);
+    // The next file save's start lets the last download's go too.
+    await page.evaluate(async () => {
+      const { dropDownload } = await import('/web/snapshot-stage.ts' as string) as typeof import('../web/snapshot-stage.ts');
+      await dropDownload();
+    });
+    assert.deepEqual(await staging(page), {});
+  } finally {
+    await browser.close();
   }
 });

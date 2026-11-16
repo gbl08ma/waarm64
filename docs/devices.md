@@ -901,7 +901,10 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   clusters are inflated as one batch (an `Inflater`): where the thread can start workers (the device worker, the
   disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s
   (`inflate-worker.ts`, each given the thread's core; started by the first request with two or more, each share one message; a single cluster
-  stays on the reading thread), otherwise one after another in place (Node). The pool still pays with the core's
+  stays on the reading thread), otherwise one after another in place (Node). A worker that fails (an error, a
+  request it answers it couldn't do: its codec didn't start; or no answer in 10 s, `INFLATE_STALL_MS`) leaves its
+  share, and every later request, to the reading thread (tests/qcow2.test.ts "the inflate pool"); a thread's codec
+  that failed to start (the core's fetch, its memory) is tried again at the next call. The pool still pays with the core's
   inflate (bench/boot/REPORT.md "SNAPZ loop 6": without it fio's 1 MiB reads were 24% slower, an import 10%, an
   export 17%). Against `DecompressionStream`, which it replaced there: one cluster is 9% slower on one thread
   (171 µs a 64 KiB cluster against 158), but a request has no stream to set up per cluster, so fio's reads were 1-3%

@@ -47,11 +47,36 @@ export async function stagedFile(name: string): Promise<File> {
   return (await (await opfsDir(STAGING)).getFileHandle(name)).getFile();
 }
 
+/** A staging file held (`holdStaging`). */
+export type Staging = { name: string; release(after?: number): Promise<void> };
+
+/** The staging file behind the last download, kept (`keepForDownload`). */
+let downloaded: Staging | undefined;
+
+/**
+ * Keeps `s`, a download's staging file, for the browser to read, until the next file save (`dropDownload`) or this
+ * one's (the previous download's is let go), or the page's end (then `removeStale` at its next start): the browser
+ * reads it after the click for as long as it takes (a save dialog left open, a slow disk), and a File whose OPFS file is
+ * removed can't be read (NotFoundError; tests/page-snapshot-stage.test.ts).
+ */
+export function keepForDownload(s: Staging) {
+  const was = downloaded;
+  downloaded = s;
+  void was?.release();
+}
+
+/** The last download's staging file let go (the next file save's start): resolves once it's removed. */
+export async function dropDownload() {
+  const s = downloaded;
+  downloaded = undefined;
+  await s?.release();
+}
+
 /**
  * A staging name for one save, its lock held (none: this context can't stage). `release` removes the file and lets the
- * lock go; `after`: in that many ms (a download's: the browser reads the file after the page's click).
+ * lock go (`after`: in that many ms), resolved once it's gone; a download's is kept instead (`keepForDownload`).
  */
-export async function holdStaging(): Promise<{ name: string; release(after?: number): void } | undefined> {
+export async function holdStaging(): Promise<Staging | undefined> {
   if (!(await canStage())) return undefined;
   const name = `${Date.now().toString(36)}-${crypto.randomUUID()}`;
   let free!: () => void;
@@ -65,15 +90,12 @@ export async function holdStaging(): Promise<{ name: string; release(after?: num
       .catch(() => resolve(false));
   });
   if (!got) return undefined;
-  let released = false;
-  const end = () => void removeStaged(name).catch(() => undefined).finally(free);
+  let released: Promise<void> | undefined;
+  const end = () => removeStaged(name).catch(() => undefined).finally(free);
   return {
     name,
     release(after = 0) {
-      if (released) return;
-      released = true;
-      if (after > 0) setTimeout(end, after);
-      else end();
+      return (released ??= after > 0 ? new Promise<void>((r) => setTimeout(r, after)).then(end) : end());
     },
   };
 }
