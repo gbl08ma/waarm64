@@ -1,0 +1,169 @@
+# Room names, loop R3: a first lookup asks the room through the relays
+
+This replaces "R3" and option C of question 2 in [room-names-redesign.md](room-names-redesign.md). The user accepted
+(2026-11-17) that a first lookup shows its name id to every server in the room and to a relay that knows the room's
+ID. Given that, a first lookup no longer finds servers and then asks them: **it asks the room for the name, and the
+answers come back through the relays too.** Nothing here is built. The numbers marked *estimate* are from the P2P
+track's R4 table (bench/net/REPORT.md "Rooms on public servers"), not measurements of this design.
+
+## Summary
+
+- **One new question, `ask`**, an ephemeral event under the room's names tag: the name id, what the asker has been
+  shown so far, and how wide a share of servers should answer. **One new answer, `reply`**, an ephemeral event under a
+  tag the asker listens on: the owning chain's last entry with its anchor and header, and the zone.
+- **Sampling** as "who serves?" does it (1/64, 1/8, everyone), started where the last lookup found the room. **Dissent
+  is the same message** sent once more, saying whose chain was shown: every server that holds another owner answers,
+  whatever the share.
+- **No call back, no DERP and no server's proof on a first lookup.** A reply is believed for what it contains, which
+  the member checks; who sent it doesn't matter, so there is no draw to win and no handshake window to fill. A session
+  through DERP is opened only when two owners contest a name, or a reply is too big for an event, and then only to
+  the servers the member names.
+- **"Who serves?" stays** for what must not name an id: the dialog's check, a publisher's `put`s, servers' sync
+  partners, and the refresh of names a member keeps. It goes back to the plain draw: N5a's tiers come out.
+- **A first lookup** on public relays: about 1 s in a room it has asked before, about 2 s the first time (*estimate*).
+- **For the user**: four points at the end. None changes a decision as amended; two widen what answer 3 covered by
+  a little, one is about touching public relays before N6.
+
+## The messages
+
+Both are events of the rooms' kind, MAC'd and sealed with the room's lookup key as a question is
+(`lookup::seal_bare`), dropped by the same rules (the MAC first, copies through other relays, an hour off the clock).
+
+**`ask`** (~165 bytes; about 650 on the wire), under `Room::names_tag`, which servers already hold a subscription to:
+
+| Field | Bytes | |
+|---|---|---|
+| a lookup's body | 122 | the names client's key (new each session), its region, the time, a nonce |
+| name id | 32 | |
+| mode | 1 | `share`, `dissent` or `fetch` |
+| spread | 1 | `share`: a server answers when its rank's top `spread` bits are zero, as for "who serves?" |
+| shown | 8 | `dissent`: the first 8 bytes of the owner key the asker was shown, zeros for none. `fetch`: the first 8 bytes of the names key of the one server asked |
+
+**`reply`**, under the asker's reply tag, `BLAKE2s(tag salt, "names-reply", the asker's names key, hour)`, which its
+names client subscribes to once, when it starts:
+
+| Field | Bytes | |
+|---|---|---|
+| nonce | 16 | the ask's |
+| server | 34 | the replier's names key and region, for a `fetch` |
+| since | 4 | the time of the first entry of the owning chain's run, as the server holds it; unchecked, used only to order a contest |
+| item | 0, or 0.6 to 2.7 KB | nothing: the server holds no owner for the id. Else the owning chain's last entry (175 bytes), its anchor (300 to 1,250) and header (80), and the zone (366, or 1,038 wide) |
+
+A reply with its item is 1.3 to 4.1 KB on the wire (base64 in an event). An item past `REPLY_MAX` (a parameter, set from what the default
+relays forward; 4 KiB to start) is left out and a flag says so: the member fetches it (below).
+
+**A server** (`on_ask`), for an ask whose MAC holds, once it has synced:
+- `share`: in the share, it replies, with the item or with none. Out of it, nothing.
+- `dissent`: it replies only if it holds an owner for the id whose owner key doesn't start with `shown` (any owner,
+  when `shown` is zeros). Whatever the share.
+- `fetch`: if `shown` names it, it calls the asker back and sends `history` for the id, as it does today.
+- It publishes a reply through the two relays that brought the ask first. Budget: replies have one of their own (2 a
+  second, apart from call backs and from answers to "who serves?"), and one reply tag gets 16 a minute.
+- A reply carries no proof that the replier is a server. Its share is its own to keep: an honest server answers only
+  in its share, and a dishonest one gains nothing by answering outside it.
+
+## A first lookup
+
+For a name the member doesn't keep (never resolved, or what it kept has ended):
+
+1. **Ask**, mode `share`, at the spread that last brought one to eight replies in this room (the first time: 6), then
+   wider after 0.4 s and 1 s while nothing comes, as today's rounds.
+2. **Check each reply's item** as a `get`'s answer is checked now (signature, proof of work, header, anchor, alive;
+   the zone's signature). One reply an entry id is checked; a junk one is dropped at its first failed check. There is
+   no limit on how many are let in, only a budget of checks a turn.
+3. **At the first reply**, unless the round already asked everyone: ask once more, mode `dissent`, `shown` the owner
+   key of the best item so far (zeros when every reply so far said none).
+4. **0.7 s after that ask** (0.3 s after the first reply when everyone was asked), decide:
+   - **every item names one owner key**: that owner. Of several last entries by one key (a server a renewal behind, a
+     title forked), the latest. No history is needed: one key, one owner.
+   - **none, from at least one server**: NXDOMAIN, kept 60 s, doubling to 10 minutes while the name stays unknown.
+   - **two or more owner keys**: a contest. The member sends `fetch` to one replier for each key, eight at a time, the
+     earliest `since` first, lets in handshakes from those names keys only, checks each `history` as it does today,
+     and picks by "Who owns a name". It stops when the best run checked is older than every `since` left. The query
+     gets SERVFAIL at 4 s if this isn't done; the lookup goes on and the next query has the answer.
+   - **silence through the last round**: nobody serves. Remembered as today (30 s doubling to 10 minutes).
+5. A reply that comes after the decision, within 3 s, is still checked: a different owner starts the contest, and what
+   the member keeps changes if the newcomer's run is older.
+
+Then the name is kept, and everything after is as now: it answers at once, and its refresh, 5 minutes on if the guest
+still asks, goes to two servers found by "who serves?" over sessions. **A refresh never sends an `ask`**: that would
+tell the room how long a name stays in use. The member redraws its two servers every 15 minutes while it holds any,
+so a pair that serves a stale zone isn't kept for as long as the guest goes on asking.
+
+## Why dissent makes the sample's honesty irrelevant
+
+The share only bounds how many answer. An attacker can be every server in the sample and can add replies of its own
+at will; each is either a valid chain for the id or nothing. The dissent ask then names the owner shown, and any
+honest server that holds another owner replies with it. The member decides by the rule over everything it was shown,
+so the real owner's chain wins if one honest holder heard the ask and its reply arrived. Registrations buy the
+attacker nothing here: there is no place to win.
+
+## Time and load (*estimates*)
+
+- **A relay leg** (publish to delivery) is 100 to 250 ms on the relays that carried rooms in R4; a lost event and its
+  resend, 1.4 s.
+- **A first lookup in a room asked before**: ask and first reply ~0.4 s, dissent's wait 0.7 s: **~1.1 s**.
+- **The first in a session**: the names client's relay connections and subscription first (0.3 to 0.6 s; it doesn't
+  wait for DERP any more), and in a room of a few servers the rounds down to everyone (1 s): **~2 s**. Today's path
+  (a DERP connection, question, call back, `serve`, `get`) was 1.3 s on the fake relay and wasn't measured on public
+  ones; it has two DERP round trips and a handshake more.
+- **A relay carries**, a first lookup: two to four asks (650 bytes each, forwarded to every server on that relay, as
+  questions are now) and one to eight replies of 1.3 to 4.1 KB through two relays, to one subscriber. A member sends
+  4 asks a second at most.
+- **Servers**: a look in their store an ask; a reply only in their share or when they differ.
+- **Not known**: whether every default relay forwards an ephemeral event of 4 KB, and at what rate it limits a
+  server's replies. Two of 25 relays rate-limited a burst of 16 small events in R4. If a relay's limit is under the
+  item's size, `REPLY_MAX` goes under it and items come by `fetch`: the design holds, a first lookup costs a session.
+
+## What an attacker can still do
+
+| | Cost | Result |
+|---|---|---|
+| Be the whole sample, show its own younger chain or none | registrations | nothing, while one honest holder's dissent arrives |
+| Keep honest dissent away: flood asks until servers' reply budgets are spent | events at each server's 2 a second, sustained, through relays that rate-limit | members take what the attacker shows for names they don't keep, while it lasts. Loud; the budget for replies is apart from "who serves?" answers so the two can't starve each other |
+| Hold many younger claims on one name, each lying about `since` | a registration on that name each, every term | that name's first lookups run a contest: a `fetch` and a history check a liar, eight at a time. A hundred liars (two hours of a core a term) hold a first lookup up for tens of seconds. The owner still wins |
+| Send junk replies under an asker's tag (it reads the tag's inputs in the ask) | events | a failed check each (0.15 ms for a bad signature); no place taken from anyone |
+| Forged asks that make servers reply (`dissent` with a made-up `shown`, or `share` at spread 0) | one event | every holder replies once: up to 4.1 KB each through two relays, where today's forged question costs a handshake each. Bounded by 2 replies a second a server and 16 a minute a tag. With hundreds of servers that is megabytes a second onto public relays: where such rooms exist, servers answer on one relay and thin their replies by the room's size |
+| A relay that knows the room's ID drops replies | being a relay of the link | one relay of several: replies go through two, asks through all |
+| Be both servers of a member's refresh | registrations (the plain draw) | a stale zone, or a release unseen, for 15 minutes at most before the redraw; never another owner (a kept chain yields only to an older run) |
+| Swallow a publisher's `put`s, be a new server's sync partners | registrations | slower spread, as in the redesign document: each put and each round draws afresh |
+
+## What a member reveals
+
+As answer 3 accepted, and no more on a first lookup: the name id, to every server and to a relay that knows the room's
+ID, from a key new each session. Two things follow from the shape that are worth saying:
+- **A name that doesn't exist is asked again** when its negative answer runs out (60 s doubling to 10 minutes), for as
+  long as the guest asks for it. Each is still a lookup of a name the member doesn't keep.
+- **Replies show the room what was answered.** They carry registry records, which any asker can have anyway.
+
+## What changes in the code
+
+- **`wire.rs`**: `ask`'s three bytes and `shown` after a lookup's body; `reply`. `Serve` loses its run (one entry).
+- **`room.rs`**: the names client subscribes to its reply tag and publishes and receives the two events (the
+  plumbing a question uses); a member's names client no longer waits for its home region before a first lookup; the
+  accept window, for a member, lets in only keys it sent `fetch` to.
+- **`server.rs`**: `on_ask`, the replies' budget and the per-tag limit; `TIERS`, `tier`, the tier in `rank` and
+  `choice`, and `SERVE_RUN` removed; `on_question`, `serve`, `get`, sync and `put` otherwise as they are.
+- **`member.rs`**: a first lookup's states (rounds, replies, dissent, decide, contest) replace "find servers, `get`
+  both, `history` if they disagree" for names not kept; the contest reuses the history check and `Kept::offer`. The
+  servers a member holds, `get` in owner mode and `ids` stay, for refresh and the dialog; the 15-minute redraw is new.
+- **Unchanged**: the store, sync, the agent, the publisher, the dialog's check, the page, the resolver's cases and
+  waits.
+- **Tests** (failing first, a planted bug each): a first lookup with no session opened; the sample all an attacker's
+  (128 and 1,280 junk registrations, one honest holder: the member gets the owner); none shown and a holder dissents;
+  one key's two last entries need no history; liars' `since` cost a fetch each and lose; a late dissent replaces
+  what was kept; junk replies take no place; a refresh sends no `ask`; an item past `REPLY_MAX` comes by `fetch`; the
+  reply budget apart from the answers'; no `ask` for a kept name. tests/page-room.test.ts's first-lookup time again.
+
+## For the user
+
+1. **Registry records pass through relays** as ephemeral events (replies), where until now only questions did.
+   Nothing is stored and nothing is shown that an asker couldn't get: inside decision 2 as written, but it is new.
+2. **Names that don't exist are announced again** each time their negative answer runs out. Answer 3 said "a first
+   lookup's name id"; this reads it as "a lookup of a name the member doesn't keep".
+3. **Public relays before N6.** The kickoff keeps public services to N0 and N6. Whether the default relays forward a
+   4 KB ephemeral event, and how fast, decides `REPLY_MAX`: about a hundred events to the six defaults, from R3 or
+   from N0c before it. Without it R3 builds with 4 KiB and N6 finds out.
+4. **Optional, not in the plan above**: a publisher could check that the room has its last entry by an ordinary `ask`
+   for its own name, and put again through a fresh draw when it hasn't. That announces the id from the owner's
+   address (as any member's lookup would look), which answer 3 didn't cover. Left out unless wanted.
