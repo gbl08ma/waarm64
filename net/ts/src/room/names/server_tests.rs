@@ -195,14 +195,22 @@ fn items_messages_and_transfers_round_trip() {
     let (_, item) = b.title(1, "test123", t(20), &[t(5)], [9; 32]);
     let enc = item.encode();
     assert_eq!(Item::decode(&enc), Ok(item.clone()));
-    // Two entries, four headers (each `ref` and each anchor's), one zone: headers once each.
+    // Two entries, sixteen headers (each `ref`, each anchor's block and the six after it), one zone: headers once
+    // each. An anchor adds 13 bytes for its followers (a count and six indices), a distinct block 480 (six headers).
     assert_eq!(
         enc.len(),
         1 + 32
             + 2
-            + 4 * 80
+            + (2 + 2 * 7) * 80
             + 2
-            + 2 * (207 + 2 + 2 + item.entries[0].anchor.as_ref().unwrap().0.encode().len() + 2 + 2)
+            + 2 * (207
+                + 2
+                + 2
+                + item.entries[0].anchor.as_ref().unwrap().0.encode().len()
+                + 2
+                + 1
+                + 6 * 2
+                + 2)
             + 2
             + 362
     );
@@ -643,7 +651,7 @@ fn forged_anchors_headers_and_signatures_are_refused() {
     // An anchor header whose work is broken; one that doesn't reach the root; one past the
     // window: the entry is unanchored, a claim without a time, so nothing is kept.
     let mut w = WireEntry::of(&good);
-    w.anchor.as_mut().unwrap().1.0[40] ^= 1;
+    w.anchor.as_mut().unwrap().1.block.0[40] ^= 1;
     refused(&mut bus, item(&b, w));
     let mut w = WireEntry::of(&good);
     w.anchor.as_mut().unwrap().0.ops[0] = super::anchor::Op::Append(vec![0; 16]);
@@ -821,7 +829,7 @@ fn the_bound_drops_the_longest_unasked_never_its_own() {
         let (_, it) = b.title(k + 20, &format!("bytes{k}"), t(20), &[t(4)], [k; 32]);
         s.load(&record(&it, T - (5 - k as u64) * HOUR as u64), T);
     }
-    assert!(s.reg.len() <= 3 && s.reg.bytes <= 3 * 2000);
+    assert!(s.reg.len() <= 3 && s.reg.bytes <= 3 * 2600);
 }
 
 /// Servers that sync: everything each holds reaches the others; a server that leaves names out

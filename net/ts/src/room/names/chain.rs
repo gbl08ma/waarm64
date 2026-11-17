@@ -262,7 +262,7 @@ fn chain(run: &[&Stamped], params: &Params) -> Chain {
         (end, t(last) + term, end)
     };
     let mut tie = Sha256::new();
-    tie.update(first.anchor().unwrap().header.hash());
+    tie.update(first.anchor().unwrap().run.block.hash());
     tie.update(first.id());
     Chain {
         ids: run.iter().map(|s| s.id()).collect(),

@@ -9,7 +9,8 @@
 //! - [`anchor`]: an OpenTimestamps verifier written from the format (append, prepend, SHA-256 and
 //!   the Bitcoin attestation; anything else invalid; 4 KiB at most), and pending anchors.
 //! - [`header`]: an 80-byte Bitcoin header: its hash, its work against its own target, that
-//!   target against a compiled floor, its time not past now by more than [`Params::drift`].
+//!   target against the compiled floor at its own time, its time not past now by more than
+//!   [`Params::drift`]; an anchor's block's header and the six after it, linked.
 //! - [`zone`]: where a name points, 4 or 16 slots sealed under the full name and `seq`.
 //! - [`chain`]: unbroken runs, cover, seniority, the owner now (a total order: forks and
 //!   releases), and what a member keeps.
@@ -56,8 +57,16 @@ pub struct Params {
     /// A pending anchor is dropped once now is past `ref`'s time + `ref_window` + this: a block's
     /// time can trail the moment it was mined, and a calendar serves a proof six blocks later.
     pub pending_slack: u32,
-    /// The floor: the easiest target (Bitcoin's compact form) a header may claim.
-    pub floor: u32,
+    /// The floor by header time (header.rs `floor`): points of (Unix seconds, the easiest target a header of that
+    /// time may claim in Bitcoin's compact form), earliest first. A release only appends points (at past times, about
+    /// half of the difficulty then), so a header that met the floor once still does.
+    pub floor: &'static [(u32, u32)],
+    /// Past a point, its target doubles every `floor_step` seconds...
+    pub floor_step: u32,
+    /// ...`floor_steps` times at most.
+    pub floor_steps: u32,
+    /// An anchor's followers are timed at most this far past its block (and at most `drift` before it).
+    pub run_span: u32,
     /// Argon2id's memory in KiB, passes and lanes.
     pub pow_m_kib: u32,
     pub pow_t: u32,
@@ -70,15 +79,19 @@ const HOUR: u32 = 3600;
 const DAY: u32 = 24 * HOUR;
 
 impl Params {
-    /// The spec's values (N0, provisional). The floor is 1/16 of the difficulty of block 976,177
-    /// (2026-11-16, bits `0x17021673`): sixteen times its target.
+    /// The spec's values (N0, provisional). The floor's one point is half of the difficulty of block 976,177
+    /// (2026-11-16 19:25:21 UTC, bits `0x17021673`): twice its target; past it the floor halves every 21 days, five
+    /// times at most, to 1/64 of that block's difficulty (room-names.md "Bitcoin as the clock").
     pub const PRODUCTION: Params = Params {
         term: 30 * DAY,
         grace: 7 * DAY,
         ref_window: 48 * HOUR,
         drift: 2 * HOUR,
         pending_slack: 4 * HOUR,
-        floor: 0x1721_6730,
+        floor: &[(1_794_857_121, 0x1704_2ce6)],
+        floor_step: 21 * DAY,
+        floor_steps: 5,
+        run_span: 12 * HOUR,
         pow_m_kib: 1024,
         pow_t: 1,
         pow_p: 1,
@@ -89,7 +102,7 @@ impl Params {
     /// header meets (regtest's target). Compiled only into the tests and a `test-params` build.
     #[cfg(any(test, feature = "test-params"))]
     pub const TEST: Params = Params {
-        floor: 0x207f_ffff,
+        floor: &[(0, 0x207f_ffff)],
         pow_m_kib: 8,
         pow_bits: 2,
         ..Params::PRODUCTION
@@ -132,6 +145,9 @@ pub enum Invalid {
     HeaderFloor,
     /// A header whose time is too far past now.
     HeaderFuture,
+    /// An anchor's block without the six headers after it: fewer or more, one that doesn't name the one before, or
+    /// one timed outside the block's span.
+    HeaderRun,
     /// The header given for `ref` isn't `ref`'s block.
     RefHeader,
     /// An anchor that isn't one: an operation or attestation other than the four, too big, or

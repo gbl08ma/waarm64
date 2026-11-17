@@ -15,7 +15,7 @@ use super::{
     Invalid, Params,
     anchor::{Anchor, Pending},
     arr,
-    header::Header,
+    header::{Header, Run},
     id::RoomNames,
 };
 
@@ -230,22 +230,27 @@ fn leading_zeros(h: &[u8; 32]) -> u32 {
     n
 }
 
-/// An anchor checked: its header, its time, its block.
+/// An anchor checked: its block's header and the six after it, its time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchored {
     pub anchor: Anchor,
-    pub header: Header,
+    pub run: Run,
 }
 
 impl Anchored {
     pub fn time(&self) -> u32 {
-        self.header.time()
+        self.run.block.time()
     }
 
     /// The order among one entry's anchors: earliest time, then lower block hash, then lower
-    /// bytes, so every node that saw the same anchors keeps the same one.
-    fn key(&self) -> (u32, [u8; 32], Vec<u8>) {
-        (self.time(), self.header.hash(), self.anchor.encode())
+    /// bytes, then the lower followers, so every node that saw the same anchors keeps the same one.
+    fn key(&self) -> (u32, [u8; 32], Vec<u8>, Vec<[u8; 32]>) {
+        (
+            self.time(),
+            self.run.block.hash(),
+            self.anchor.encode(),
+            self.run.next_hashes(),
+        )
     }
 }
 
@@ -342,26 +347,26 @@ impl Stamped {
         )
     }
 
-    /// An anchor offered for this entry: checked (its header proves itself, it reaches the
-    /// header's Merkle root, its time is in the window) and kept if it is the earliest. Ok(true)
-    /// when it was taken.
+    /// An anchor offered for this entry: checked (its block's header and the six after it prove
+    /// themselves and link, it reaches the block's Merkle root, its time is in the window) and kept
+    /// if it is the earliest. Ok(true) when it was taken.
     pub fn offer_anchor(
         &mut self,
         anchor: Anchor,
-        header: Header,
+        run: Run,
         params: &Params,
         now: u64,
     ) -> Result<bool, Invalid> {
-        header.check(params, now)?;
-        if anchor.root(&self.id) != Some(header.merkle_root()) {
+        run.check(params, now)?;
+        if anchor.root(&self.id) != Some(run.block.merkle_root()) {
             return Err(Invalid::AnchorRoot);
         }
         let (lo, hi) = self.window(params);
-        let t = header.time() as u64;
+        let t = run.block.time() as u64;
         if t < lo || t > hi {
             return Err(Invalid::AnchorWindow);
         }
-        Ok(self.take(Anchored { anchor, header }))
+        Ok(self.take(Anchored { anchor, run }))
     }
 
     fn take(&mut self, a: Anchored) -> bool {

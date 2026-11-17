@@ -31,13 +31,17 @@ pub const MAX_TOMBSTONES: usize = 2;
 pub const ZONE_EVERY: u64 = 600;
 const RECORD_VERSION: u8 = 1;
 
-/// 4 bytes of an entry's anchor's digest (zeros: unanchored): what a `get` says it holds.
+/// 4 bytes of an entry's anchor's digest (its block, its operations, the six headers after the block; zeros:
+/// unanchored): what a `get` says it holds.
 pub fn anchor_tag(s: &Stamped) -> [u8; 4] {
     match s.anchor() {
         Some(a) => {
             let mut h = Sha256::new();
-            h.update(a.header.hash());
+            h.update(a.run.block.hash());
             h.update(a.anchor.encode());
+            for f in a.run.next_hashes() {
+                h.update(f);
+            }
             h.finalize()[..4].try_into().unwrap()
         }
         None => [0; 4],

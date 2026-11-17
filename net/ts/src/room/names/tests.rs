@@ -9,7 +9,7 @@ use super::{
     anchor::{Anchor, Calendar, Op, Pending, apply},
     chain::{Chain, Kept, Name, order},
     entry::{Entry, Kind, Pow, Stamped},
-    header::{Header, target},
+    header::{FOLLOWERS, Header, Run, target},
     id::{RoomNames, owner_key},
 };
 
@@ -21,12 +21,7 @@ const EASY: u32 = 0x207f_ffff;
 
 /// The spec's clock with cheap proof of work and a floor any pretend header meets.
 fn params() -> Params {
-    Params {
-        floor: EASY,
-        pow_m_kib: 8,
-        pow_bits: 2,
-        ..Params::PRODUCTION
-    }
+    Params::TEST
 }
 
 /// A small seeded PRNG (SplitMix64): the property tests' only randomness.
@@ -64,12 +59,18 @@ impl Rng {
     }
 }
 
-/// A header at `time` over `root`, mined to its own `bits`.
+/// A header at `time` over `root`, mined to its own `bits`, after a made-up block.
 fn header(rng: &mut Rng, time: u32, root: [u8; 32], bits: u32) -> Header {
+    let prev = rng.bytes::<32>();
+    after(prev, time, root, bits)
+}
+
+/// A header at `time` over `root` naming block `prev`, mined to its own `bits`.
+fn after(prev: [u8; 32], time: u32, root: [u8; 32], bits: u32) -> Header {
     let t = target(bits).unwrap();
     let mut h = [0u8; 80];
     h[..4].copy_from_slice(&0x2000_0000u32.to_le_bytes());
-    h[4..36].copy_from_slice(&rng.bytes::<32>());
+    h[4..36].copy_from_slice(&prev);
     h[36..68].copy_from_slice(&root);
     h[68..72].copy_from_slice(&time.to_le_bytes());
     h[72..76].copy_from_slice(&bits.to_le_bytes());
@@ -137,7 +138,7 @@ impl World {
     }
 
     /// An anchor for `id` in a block at `time`: a calendar's kind of path to a made-up root.
-    fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Header) {
+    fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Run) {
         let ops = vec![
             Op::Append(self.rng.bytes::<16>().to_vec()),
             Op::Sha256,
@@ -150,8 +151,22 @@ impl World {
                 ops,
                 height: 900_000,
             },
-            header(&mut self.rng, time, root, EASY),
+            self.run(time, root),
         )
+    }
+
+    /// A block at `time` over `root` and the six after it, ten minutes apart, each naming the one before.
+    fn run(&mut self, time: u32, root: [u8; 32]) -> Run {
+        let block = header(&mut self.rng, time, root, EASY);
+        let mut next = Vec::new();
+        let mut prev = block.hash();
+        for k in 1..=FOLLOWERS as u32 {
+            let root = self.rng.bytes();
+            let h = after(prev, time + 600 * k, root, EASY);
+            prev = h.hash();
+            next.push(h);
+        }
+        Run { block, next }
     }
 
     /// An entry anchored at `time` (its `ref` an hour before).
@@ -250,7 +265,7 @@ fn headers_and_the_floor() {
     let h = header(&mut rng, T0, [1; 32], EASY);
     assert_eq!(h.check(&p, T0 as u64), Ok(()));
     // The floor raised (a harder target): the same header is under it.
-    p.floor = 0x1f00_ffff;
+    p.floor = &[(0, 0x1f00_ffff)];
     assert_eq!(h.check(&p, T0 as u64), Err(Invalid::HeaderFloor));
     let h2 = header(&mut rng, T0, [1; 32], 0x1f00_ffff);
     assert_eq!(h2.check(&p, T0 as u64), Ok(()));
@@ -363,11 +378,23 @@ fn the_earliest_anchor_is_kept_whatever_the_order() {
     let early = w.anchor(&s.id(), T0 + HOUR);
     let late = w.anchor(&s.id(), T0 + 3 * HOUR);
     let mut a = s.clone();
-    assert_eq!(a.offer_anchor(late.0.clone(), late.1, &p, LATE), Ok(true));
-    assert_eq!(a.offer_anchor(early.0.clone(), early.1, &p, LATE), Ok(true));
+    assert_eq!(
+        a.offer_anchor(late.0.clone(), late.1.clone(), &p, LATE),
+        Ok(true)
+    );
+    assert_eq!(
+        a.offer_anchor(early.0.clone(), early.1.clone(), &p, LATE),
+        Ok(true)
+    );
     let mut b = s.clone();
-    assert_eq!(b.offer_anchor(early.0.clone(), early.1, &p, LATE), Ok(true));
-    assert_eq!(b.offer_anchor(late.0.clone(), late.1, &p, LATE), Ok(false));
+    assert_eq!(
+        b.offer_anchor(early.0.clone(), early.1.clone(), &p, LATE),
+        Ok(true)
+    );
+    assert_eq!(
+        b.offer_anchor(late.0.clone(), late.1.clone(), &p, LATE),
+        Ok(false)
+    );
     assert_eq!(a, b);
     assert_eq!(a.time(), Some(T0 + HOUR));
     // The same through merging copies.
@@ -699,7 +726,7 @@ fn a_member_keeps_what_it_verified() {
 /// One entry of a scenario and the anchors it may get (two calendars' blocks, say).
 struct Made {
     bare: Stamped,
-    anchors: Vec<(Anchor, Header)>,
+    anchors: Vec<(Anchor, Run)>,
 }
 
 /// A name's history: A's title (renewed, sometimes broken by a late renewal, sometimes forked
@@ -783,7 +810,7 @@ fn copy(made: &[Made], rng: &mut Rng, p: &Params) -> Vec<Stamped> {
         let mut s = m.bare.clone();
         for (a, h) in &m.anchors {
             if rng.chance(0.6) {
-                s.offer_anchor(a.clone(), *h, p, LATE).unwrap();
+                s.offer_anchor(a.clone(), h.clone(), p, LATE).unwrap();
             }
         }
         if rng.chance(0.2) {
@@ -885,7 +912,7 @@ fn the_order_is_total() {
         for m in &made {
             let mut s = m.bare.clone();
             for (a, h) in &m.anchors {
-                s.offer_anchor(a.clone(), *h, &p, LATE).unwrap();
+                s.offer_anchor(a.clone(), h.clone(), &p, LATE).unwrap();
             }
             n.insert(s, &p, T0 as u64);
         }
@@ -897,4 +924,289 @@ fn the_order_is_total() {
             }
         }
     }
+}
+
+// ---- An anchor's block and the six after it; the floor by header time (review 1, finding 6).
+
+/// The block after 976,177 (bench/net/results/names0/proofs.json): it names 976,177.
+const HEADER_976178: &str = "00000020e8cbc8ae276bfcffdd868d63126d613eb8dea47cdf8a000000000000000000003e711f9fec3134bd040b3f5e1960bf3f2c8b9024e8eda0740502e90a1cb287e59d5bfb6a73160217706d51ab";
+/// A target 12 bits under the top (about 4,096 hashes a header): the schedules' points below.
+const HARD: u32 = 0x1f0f_ffff;
+/// Exactly twice [`HARD`]'s target.
+const HALF_HARD: u32 = 0x1f1f_fffe;
+
+/// A run at `time` over `root`, the six after it mined to `bits` with `dt` seconds between them.
+fn run_of(rng: &mut Rng, time: u32, root: [u8; 32], bits: u32, dt: u32) -> Run {
+    let block = after(rng.bytes(), time, root, bits);
+    let mut next = Vec::new();
+    let mut prev = block.hash();
+    for k in 1..=FOLLOWERS as u32 {
+        let h = after(prev, time + dt * k, rng.bytes(), bits);
+        prev = h.hash();
+        next.push(h);
+    }
+    Run { block, next }
+}
+
+#[test]
+fn a_lone_header_at_the_floor_backdates_nothing() {
+    // Review 1, finding 6: a header mined in private at the floor, timed 36 days back, its Merkle root the forger's,
+    // anchors a claim that beats a chain claimed since and renewed with a real stamp today. Now an anchor's block
+    // needs the six headers after it, each naming the one before: a lone header anchors nothing.
+    let mut w = World::new(40);
+    let p = w.params.clone();
+    let honest = w.key(1, "test123");
+    let forger = w.key(2, "test123");
+    let now = T0 + 30 * DAY;
+    let claim = w.at(Kind::Claim, &honest, "test123", [0; 32], T0);
+    let back = now - 36 * DAY;
+    let mut forged = w.entry(Kind::Claim, &forger, "test123", [0; 32], back - HOUR);
+    let (a, mut run) = w.anchor(&forged.id(), back);
+    run.next.clear();
+    let r = forged.offer_anchor(a, run, &p, now as u64);
+    let renew = {
+        let mut s = w.entry(Kind::Renew, &forger, "test123", forged.id(), now - HOUR);
+        let (a, h) = w.anchor(&s.id(), now);
+        let _ = s.offer_anchor(a, h, &p, now as u64);
+        s
+    };
+    let n = w.name("test123", &[&claim, &forged, &renew]);
+    let o = n.owner(&p, now as u64).unwrap();
+    assert_eq!(r, Err(Invalid::HeaderRun), "a lone header anchors nothing");
+    assert_eq!(forged.time(), None);
+    assert_eq!(o.ids, vec![claim.id()], "the honest claim still owns");
+}
+
+#[test]
+fn an_anchors_block_comes_with_the_six_after_it() {
+    let mut w = World::new(41);
+    let p = w.params.clone();
+    let key = w.key(1, "test123");
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 - HOUR);
+    let (a, good) = w.anchor(&s.id(), T0);
+    let offer = |run: Run, now: u64| s.clone().offer_anchor(a.clone(), run, &p, now);
+    assert_eq!(offer(good.clone(), LATE), Ok(true));
+    assert_eq!(good.check(&p, LATE), Ok(()));
+    // Fewer than six, or more.
+    for k in 0..FOLLOWERS {
+        let mut r = good.clone();
+        r.next.truncate(k);
+        assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "{k}");
+    }
+    let mut r = good.clone();
+    let last = *r.next.last().unwrap();
+    r.next.push(after(last.hash(), T0 + 4200, [3; 32], EASY));
+    assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "seven");
+    // A link broken: one of the six names another block (its own work fine).
+    for k in 0..FOLLOWERS {
+        let mut r = good.clone();
+        let h = r.next[k];
+        r.next[k] = after([7; 32], h.time(), h.merkle_root(), EASY);
+        assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "link {k}");
+    }
+    // Six that follow another block, linked among themselves.
+    let other = w.run(T0, [5; 32]);
+    let r = Run {
+        block: good.block,
+        next: other.next.clone(),
+    };
+    assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "another block's");
+    // In another order.
+    let mut r = good.clone();
+    r.next.swap(2, 3);
+    assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "out of order");
+    // Timed where the block can't be followed: before it by more than `drift`, or past it by more than `run_span`.
+    let mut rng = Rng(42);
+    let span = |first: u32, dt: u32, rng: &mut Rng| {
+        let mut prev = good.block.hash();
+        let next = (0..FOLLOWERS as u32)
+            .map(|k| {
+                let h = after(prev, first + dt * k, rng.bytes(), EASY);
+                prev = h.hash();
+                h
+            })
+            .collect();
+        Run {
+            block: good.block,
+            next,
+        }
+    };
+    assert_eq!(offer(span(T0 - p.drift, 0, &mut rng), LATE), Ok(true));
+    assert_eq!(
+        offer(span(T0 - p.drift - 1, 0, &mut rng), LATE),
+        Err(Invalid::HeaderRun)
+    );
+    assert_eq!(
+        offer(span(T0 + 600, (p.run_span - 600) / 5, &mut rng), LATE),
+        Ok(true)
+    );
+    assert_eq!(
+        offer(span(T0 + 601, (p.run_span - 600) / 5, &mut rng), LATE),
+        Err(Invalid::HeaderRun)
+    );
+    // Each of the six proves itself: its own work, and no further past now than `drift`.
+    let mut r = good.clone();
+    let mut x = r.next[4];
+    loop {
+        x.0[76] = x.0[76].wrapping_add(1);
+        let mut v = x.hash();
+        v.reverse();
+        if v > target(EASY).unwrap() {
+            break;
+        }
+    }
+    r.next[4] = x;
+    r.next[5] = after(x.hash(), r.next[5].time(), r.next[5].merkle_root(), EASY);
+    assert_eq!(offer(r, LATE), Err(Invalid::HeaderWork));
+    let latest = good.next.iter().map(Header::time).max().unwrap();
+    assert_eq!(offer(good.clone(), (latest - p.drift) as u64), Ok(true));
+    assert_eq!(
+        offer(good.clone(), (latest - p.drift) as u64 - 1),
+        Err(Invalid::HeaderFuture)
+    );
+    // Through the wire: an item whose anchor lists five decodes, and is refused when checked.
+    let mut st = s.clone();
+    st.offer_anchor(a.clone(), good.clone(), &p, LATE).unwrap();
+    let mut we = super::wire::WireEntry::of(&st);
+    we.anchor.as_mut().unwrap().1.next.pop();
+    let item = super::wire::Item {
+        id: st.entry.name,
+        entries: vec![we],
+        zone: None,
+    };
+    let back = super::wire::Item::decode(&item.encode()).unwrap();
+    let (a2, r2) = back.entries[0].anchor.clone().unwrap();
+    assert_eq!(r2.next.len(), 5);
+    assert_eq!(
+        s.clone().offer_anchor(a2, r2, &p, LATE),
+        Err(Invalid::HeaderRun)
+    );
+}
+
+#[test]
+fn the_floor_is_the_schedules_at_each_headers_time() {
+    // A schedule of one point at T0, its target HARD, doubling every 21 days five times at most.
+    let mut p = params();
+    p.floor = &[(T0, HARD)];
+    let step = p.floor_step;
+    let mut rng = Rng(43);
+    let at = |t: u32, bits: u32, rng: &mut Rng| after(rng.bytes(), t, [1; 32], bits);
+    // At the point, a header of half its difficulty is under the floor; one at it passes.
+    assert_eq!(at(T0, HARD, &mut rng).check(&p, LATE), Ok(()));
+    assert_eq!(
+        at(T0, HALF_HARD, &mut rng).check(&p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    // A step past the point, half the difficulty passes; not a second before.
+    assert_eq!(
+        at(T0 + step - 1, HALF_HARD, &mut rng).check(&p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    assert_eq!(at(T0 + step, HALF_HARD, &mut rng).check(&p, LATE), Ok(()));
+    // Older than the schedule covers: the first point's floor, not none.
+    assert_eq!(at(T0 - 400 * DAY, HARD, &mut rng).check(&p, LATE), Ok(()));
+    assert_eq!(
+        at(T0 - 400 * DAY, HALF_HARD, &mut rng).check(&p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    assert_eq!(
+        at(1, EASY, &mut rng).check(&p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    // Past the last point: future times keep working, down to 1/32 of the point's difficulty and no lower.
+    let far = T0 + 1000 * DAY;
+    let thirty_second = 0x2001_ffff; // HARD's target times 32, rounded down to a compact target
+    assert_eq!(at(far, thirty_second, &mut rng).check(&p, LATE), Ok(()));
+    assert_eq!(
+        at(far, 0x2003_ffff, &mut rng).check(&p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    assert_eq!(
+        at(T0 + 4 * step, thirty_second, &mut rng).check(&p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    assert_eq!(
+        at(T0 + 5 * step, thirty_second, &mut rng).check(&p, LATE),
+        Ok(())
+    );
+    // An anchor's run is held to the floor at each header's own time, the block's included: a run of half the
+    // difficulty fails at the point and passes a step later, its followers too.
+    let mut w = World::new(44);
+    let key = w.key(1, "test123");
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 + step);
+    let root = |s: &Stamped, a: &Anchor| -> [u8; 32] { a.root(&s.id()).unwrap() };
+    let (a, _) = w.anchor(&s.id(), T0 + step);
+    let r = run_of(&mut rng, T0 + step + HOUR, root(&s, &a), HALF_HARD, 600);
+    assert_eq!(s.clone().offer_anchor(a.clone(), r, &p, LATE), Ok(true));
+    // The block meets the floor, one follower doesn't: refused.
+    let mut r = run_of(&mut rng, T0 + step + HOUR, root(&s, &a), HALF_HARD, 600);
+    let h3 = r.next[3];
+    r.next[3] = after(r.next[2].hash(), h3.time(), h3.merkle_root(), 0x1f3f_fffc);
+    for k in 4..FOLLOWERS {
+        let h = r.next[k];
+        r.next[k] = after(r.next[k - 1].hash(), h.time(), h.merkle_root(), HALF_HARD);
+    }
+    assert_eq!(
+        s.clone().offer_anchor(a.clone(), r, &p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    // A schedule raised in a later release (a point appended) leaves this run as it was.
+    let mut q = p.clone();
+    q.floor = &[(T0, HARD), (T0 + 100 * DAY, 0x1e0f_ffff)];
+    let r = run_of(&mut rng, T0 + step + HOUR, root(&s, &a), HALF_HARD, 600);
+    assert_eq!(
+        s.clone().offer_anchor(a.clone(), r.clone(), &q, LATE),
+        Ok(true)
+    );
+    // Past the new point the floor is the new point's.
+    let late = at(T0 + 100 * DAY, HALF_HARD, &mut rng);
+    assert_eq!(late.check(&p, LATE), Ok(()));
+    assert_eq!(late.check(&q, LATE), Err(Invalid::HeaderFloor));
+}
+
+#[test]
+fn the_real_block_and_the_one_after_it() {
+    // proofs.json holds blocks 976,177 and 976,178 only, not the five after those: the real pair is checked here,
+    // the rest of a run is pretend (and so can't meet production's floor).
+    let p = Params::PRODUCTION;
+    let b = Header::from_bytes(&unhex(HEADER)).unwrap();
+    let f = Header::from_bytes(&unhex(HEADER_976178)).unwrap();
+    assert_eq!(f.prev(), b.hash(), "976,178 names 976,177");
+    assert!(f.time() > b.time() && f.time() - b.time() < p.run_span);
+    assert_eq!(f.check(&p, LATE), Ok(()));
+    assert_eq!(b.check(&p, LATE), Ok(()));
+    // Both meet production's floor at their time, with room: half of 976,177's difficulty.
+    assert_eq!(
+        super::header::floor(&p, b.time()),
+        {
+            let mut t = target(0x1702_1673).unwrap();
+            let mut c = 0;
+            for x in t.iter_mut().rev() {
+                let n = *x >> 7;
+                *x = (*x << 1) | c;
+                c = n;
+            }
+            t
+        },
+        "twice its target"
+    );
+    // A run of the real two and five pretend: the link and spans hold (checked against a floor pretend headers
+    // meet); against production's, the first pretend one is under the floor.
+    let mut rng = Rng(45);
+    let mut next = vec![f];
+    let mut prev = f.hash();
+    for k in 1..FOLLOWERS as u32 {
+        let h = after(prev, f.time() + 600 * k, rng.bytes(), EASY);
+        prev = h.hash();
+        next.push(h);
+    }
+    let run = Run { block: b, next };
+    assert_eq!(run.check(&params(), LATE), Ok(()));
+    assert_eq!(run.check(&p, LATE), Err(Invalid::HeaderFloor));
+    // The real block alone, as an anchor once was: refused.
+    let lone = Run {
+        block: b,
+        next: vec![f],
+    };
+    assert_eq!(lone.check(&p, LATE), Err(Invalid::HeaderRun));
 }

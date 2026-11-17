@@ -1,8 +1,9 @@
 //! What the registry sends (room-names.md "The registry"): binary, integers little-endian.
 //!
 //! - **An item**: a name's record as a server holds and sends it: its id, the headers its entries
-//!   need (once each), its entries (each with its `ref` header, its anchor and that anchor's header,
-//!   or a pending anchor) and its zone. Also what a server stores, one record a name.
+//!   need (once each), its entries (each with its `ref` header, its anchor with its block's header
+//!   and the six after it, or a pending anchor) and its zone. Also what a server stores, one record
+//!   a name.
 //! - **The question**, "who serves the registry?": a lookup's body (the names client's key, its
 //!   region, the time, a nonce) and one byte more, `spread`, sealed and MAC'd as a lookup to a bare
 //!   address is (lookup.rs) under the room's names tag.
@@ -20,7 +21,7 @@ use super::{
     anchor::{Anchor, MAX_ANCHOR, Pending},
     arr,
     entry::{Anchored, ENTRY_LEN, Entry, Stamped},
-    header::{HEADER_LEN, Header},
+    header::{FOLLOWERS, HEADER_LEN, Header, Run},
     zone::Zone,
 };
 
@@ -38,7 +39,10 @@ pub const IN_FLIGHT: usize = 8;
 pub const MAX_MESSAGE: usize = 1 << 20;
 /// The most entries an item may carry.
 pub const MAX_ENTRIES: usize = 1024;
-const ITEM_VERSION: u8 = 1;
+/// 2: an anchor's block's header comes with the six after it.
+const ITEM_VERSION: u8 = 2;
+/// The most followers an anchor's block may list on the wire (a run is checked for exactly [`FOLLOWERS`]).
+const MAX_FOLLOWERS: usize = 2 * FOLLOWERS;
 
 /// A little-endian reader that fails on short input.
 pub(super) struct Rd<'a> {
@@ -98,7 +102,7 @@ impl<'a> Rd<'a> {
 pub struct WireEntry {
     pub entry: Entry,
     pub ref_header: Header,
-    pub anchor: Option<(Anchor, Header)>,
+    pub anchor: Option<(Anchor, Run)>,
     pub pending: Option<Pending>,
 }
 
@@ -107,7 +111,7 @@ impl WireEntry {
         WireEntry {
             entry: s.entry.clone(),
             ref_header: s.ref_header,
-            anchor: s.anchor().map(|a| (a.anchor.clone(), a.header)),
+            anchor: s.anchor().map(|a| (a.anchor.clone(), a.run.clone())),
             pending: s.pending().cloned(),
         }
     }
@@ -117,8 +121,7 @@ impl WireEntry {
         Stamped::trusted(
             self.entry,
             self.ref_header,
-            self.anchor
-                .map(|(anchor, header)| Anchored { anchor, header }),
+            self.anchor.map(|(anchor, run)| Anchored { anchor, run }),
             self.pending,
         )
     }
@@ -149,11 +152,15 @@ impl Item {
             es.extend_from_slice(&e.entry.encode());
             es.extend_from_slice(&index(&e.ref_header, &mut headers).to_le_bytes());
             match &e.anchor {
-                Some((a, h)) => {
+                Some((a, run)) => {
                     let b = a.encode();
                     es.extend_from_slice(&(b.len() as u16).to_le_bytes());
                     es.extend_from_slice(&b);
-                    es.extend_from_slice(&index(h, &mut headers).to_le_bytes());
+                    es.extend_from_slice(&index(&run.block, &mut headers).to_le_bytes());
+                    es.push(run.next.len() as u8);
+                    for h in &run.next {
+                        es.extend_from_slice(&index(h, &mut headers).to_le_bytes());
+                    }
                 }
                 None => es.extend_from_slice(&0u16.to_le_bytes()),
             }
@@ -205,7 +212,15 @@ impl Item {
                 0 => None,
                 n if n <= MAX_ANCHOR => {
                     let a = Anchor::decode(r.take(n)?).map_err(|_| Invalid::AnchorFormat)?;
-                    Some((a, hdr(r.u16()?)?))
+                    let block = hdr(r.u16()?)?;
+                    let k = r.u8()? as usize;
+                    if k > MAX_FOLLOWERS {
+                        return Err(Invalid::Encoding);
+                    }
+                    let next = (0..k)
+                        .map(|_| hdr(r.u16()?))
+                        .collect::<Result<Vec<_>, Invalid>>()?;
+                    Some((a, Run { block, next }))
                 }
                 _ => return Err(Invalid::AnchorFormat),
             };

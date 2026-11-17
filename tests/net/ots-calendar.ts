@@ -12,7 +12,9 @@
 // - `mine(n)` mines blocks: each takes every commitment waiting (on every calendar) into its Merkle tree; `every`
 //   mines one on a timer. `down` holds calendars that answer 503.
 // - The explorer, at `explorer` (`…/api`): `blocks/tip/height`, `blocks/tip/hash`, `block-height/<h>`,
-//   `block/<hash>/header` (hex), CORS open; hashes in the explorers' byte order (the reverse of the header's).
+//   `block/<hash>/header` (hex), `block/<hash>/status` (Esplora's `{ in_best_chain, height, next_best }`: how the agent
+//   walks to the six headers after an anchor's block, which an anchor carries), CORS open; hashes in the explorers'
+//   byte order (the reverse of the header's).
 //
 // The formats are OpenTimestamps' (ops 0x08 SHA-256, 0xf0 append, 0xf1 prepend; 0x00 and an 8-byte tag for an
 // attestation, its payload as varbytes), as net/ts/src/room/names/anchor.rs reads them.
@@ -199,6 +201,11 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
       if (parts[2] === 'block-height' && blocks[Number(parts[3])]) return res.end(display(blocks[Number(parts[3])]));
       const b = parts[2] === 'block' && blocks.find((x) => display(x) === parts[3]);
       if (b && parts[4] === 'header') return res.end(b.header.toString('hex'));
+      if (b && parts[4] === 'status') {
+        const next = blocks[b.height + 1];
+        res.setHeader('content-type', 'application/json');
+        return res.end(JSON.stringify({ in_best_chain: true, height: b.height, next_best: next ? display(next) : null }));
+      }
       return res.writeHead(404).end('Block not found');
     }
     const cal = parts[0] as CalendarName;

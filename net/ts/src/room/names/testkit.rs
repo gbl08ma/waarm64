@@ -8,7 +8,7 @@ use super::{
     Params,
     anchor::{Anchor, Op, apply},
     entry::{Entry, Kind, Pow, Stamped},
-    header::{Header, target},
+    header::{FOLLOWERS, Header, Run, target},
     id::{RoomNames, owner_key},
     wire::{Item, WireEntry},
     zone::Zone,
@@ -46,12 +46,18 @@ impl Rng {
     }
 }
 
-/// A header at `time` over `root`, mined to its own `bits`.
+/// A header at `time` over `root`, mined to its own `bits`, after a made-up block.
 pub fn header(rng: &mut Rng, time: u32, root: [u8; 32], bits: u32) -> Header {
+    let prev = rng.bytes::<32>();
+    after(prev, time, root, bits)
+}
+
+/// A header at `time` over `root` naming block `prev`, mined to its own `bits`.
+pub fn after(prev: [u8; 32], time: u32, root: [u8; 32], bits: u32) -> Header {
     let t = target(bits).unwrap();
     let mut h = [0u8; 80];
     h[..4].copy_from_slice(&0x2000_0000u32.to_le_bytes());
-    h[4..36].copy_from_slice(&rng.bytes::<32>());
+    h[4..36].copy_from_slice(&prev);
     h[36..68].copy_from_slice(&root);
     h[68..72].copy_from_slice(&time.to_le_bytes());
     h[72..76].copy_from_slice(&bits.to_le_bytes());
@@ -118,7 +124,7 @@ impl Bitcoin {
     }
 
     /// An anchor for `id` in a block at `time`: a calendar's kind of path to a made-up root.
-    pub fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Header) {
+    pub fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Run) {
         let ops = vec![
             Op::Append(self.rng.bytes::<16>().to_vec()),
             Op::Sha256,
@@ -131,8 +137,22 @@ impl Bitcoin {
                 ops,
                 height: 900_000,
             },
-            header(&mut self.rng, time, root, EASY),
+            self.run(time, root),
         )
+    }
+
+    /// A block at `time` over `root` and the six after it, ten minutes apart, each naming the one before.
+    pub fn run(&mut self, time: u32, root: [u8; 32]) -> Run {
+        let block = header(&mut self.rng, time, root, EASY);
+        let mut next = Vec::new();
+        let mut prev = block.hash();
+        for k in 1..=FOLLOWERS as u32 {
+            let root = self.rng.bytes();
+            let h = after(prev, time + 600 * k, root, EASY);
+            prev = h.hash();
+            next.push(h);
+        }
+        Run { block, next }
     }
 
     /// An entry anchored at `time` (its `ref` an hour before).

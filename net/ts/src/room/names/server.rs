@@ -1510,7 +1510,7 @@ impl Server {
             },
         };
         if let Some((a, h)) = w.anchor {
-            let better = s.anchor().is_none_or(|b| b.anchor != a || b.header != h);
+            let better = s.anchor().is_none_or(|b| b.anchor != a || b.run != h);
             if better {
                 cost += 1;
                 if let Err(e) = s.offer_anchor(a, h, &self.params, unix) {
