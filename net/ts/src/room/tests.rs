@@ -89,6 +89,8 @@ struct Net {
     subs: Vec<Sub>,
     /// Every event published, in order.
     published: Vec<Value>,
+    /// Every event a node published, and the relay it went to.
+    published_on: Vec<(String, Value)>,
     now: Instant,
     faults: Faults,
     relayed: usize,
@@ -177,6 +179,7 @@ impl Net {
             ends: BTreeMap::new(),
             subs: Vec::new(),
             published: Vec::new(),
+            published_on: Vec::new(),
             now,
             faults,
             relayed: 0,
@@ -257,6 +260,7 @@ impl Net {
                 .retain(|s| !(s.node == i && s.conn == conn && s.id == m[1])),
             "EVENT" => {
                 let e = m[1].clone();
+                self.published_on.push((url.clone(), e.clone()));
                 let ok = json!(["OK", e["id"], true, ""]).to_string();
                 let now = self.now;
                 self.nodes[i].c.ws_message(conn, ok.as_bytes(), now);

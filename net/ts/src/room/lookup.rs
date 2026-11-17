@@ -80,6 +80,15 @@ pub fn open_bare(room: &Room, tag: &str, b: &[u8], len: usize) -> Option<Vec<u8>
         .ok()
 }
 
+/// [`seal_bare`] of a plaintext of any length up to `max` sealed bytes (a names reply's): its plaintext, if its MAC holds
+/// and it opens.
+pub fn open_bare_var(room: &Room, tag: &str, b: &[u8], max: usize) -> Option<Vec<u8>> {
+    if b.len() < 32 + 16 + 16 || b.len() > max {
+        return None;
+    }
+    open_bare(room, tag, b, b.len())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lookup {
     pub key: [u8; 32],
@@ -97,6 +106,20 @@ impl Room {
         let mut h = Blake2s256::new();
         h.update(self.salt);
         h.update(b"names");
+        h.update(hour.to_be_bytes());
+        h.finalize()[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// A member's names client's reply tag for `hour`: what it subscribes to, and servers publish their replies to its
+    /// asks under (room-names-r3.md).
+    pub fn reply_tag(&self, key: &[u8; 32], hour: u64) -> String {
+        let mut h = Blake2s256::new();
+        h.update(self.salt);
+        h.update(b"names-reply");
+        h.update(key);
         h.update(hour.to_be_bytes());
         h.finalize()[..16]
             .iter()

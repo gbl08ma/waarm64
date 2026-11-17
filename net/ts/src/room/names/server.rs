@@ -41,7 +41,10 @@ use super::{
     id::RoomNames,
     member::Answer,
     store::{Held, Registry, read_record, zone_tag},
-    wire::{GetMode, Item, Msg, Proof, Question, Range, SyncAnswer, Transfers, WireEntry},
+    wire::{
+        AskMode, GetMode, Item, Msg, NameAsk, Proof, Question, REPLY_MAX, Range, Reply, ReplyItem,
+        SyncAnswer, Transfers, WireEntry,
+    },
     zone::Zone,
 };
 
@@ -84,6 +87,16 @@ pub const ANSWERS_PER_SECOND: usize = 4;
 pub(super) const QUESTIONS_PER_SECOND: usize = 1;
 /// An `ids` answer's cover ends are rounded up to this (seconds).
 pub const IDS_UNTIL_STEP: u64 = 7 * 24 * 3600;
+/// A server's replies to asks a second (room-names-r3.md): a budget of their own, apart from call backs and from answers
+/// to "who serves?", so neither starves the other.
+pub const REPLIES_PER_SECOND: usize = 2;
+/// Replies under one reply tag (one asker's names key), a minute: a flood of forged asks naming one key reaches it
+/// this often at most.
+pub const REPLIES_PER_TAG: usize = 16;
+const REPLIES_PER_TAG_WINDOW: Duration = Duration::from_secs(60);
+/// Ask nonces replied to lately: an ask's rounds share a nonce, and a server in the first round's share is in the
+/// next's too.
+const REPLIED_KEPT: usize = 1024;
 /// Answers to questions naming one key, a minute (an honest asker asks a question a second at most, and rarely).
 pub const ANSWERS_PER_KEY: usize = 4;
 const ANSWERS_PER_KEY_WINDOW: Duration = Duration::from_secs(60);
@@ -152,6 +165,16 @@ pub enum Input {
     Gone([u8; 32]),
     /// The page's answer to [`Cmd::Fetch`] `id`: the HTTP status (0: no answer, the fetch failed) and the body.
     Fetched { id: u32, status: u16, body: Vec<u8> },
+    /// An ask under the names tag (a server's), opened and checked as a question is; `region` the link's index of the
+    /// asker's region, for a `fetch`'s call back (None: a region outside the link); `via` the event's mark, which the
+    /// reply names so the transport sends it through the relays that brought the ask.
+    Ask {
+        ask: NameAsk,
+        region: Option<usize>,
+        via: [u8; 16],
+    },
+    /// A reply under our reply tag (a member's), opened.
+    Reply(Reply),
 }
 
 /// What the registry asks the transport (or the page) to do.
@@ -180,6 +203,27 @@ pub enum Cmd {
     Forget([u8; 32]),
     /// Subscribe to the names tag (a server) or not.
     Subscribe(bool),
+    /// Subscribe to our reply tag (a member: room-names-r3.md) or not.
+    Replies(bool),
+    /// An ask under the names tag of the hour (a member's first lookup).
+    Ask {
+        nonce: [u8; 16],
+        id: [u8; 32],
+        mode: AskMode,
+        spread: u8,
+        shown: [u8; 8],
+    },
+    /// A reply (encoded) to the ask marked `via`, under the reply tag of names key `to`.
+    Reply {
+        to: [u8; 32],
+        via: [u8; 16],
+        data: Vec<u8>,
+    },
+    /// Let in handshakes from these keys only (the servers a member sent `fetch` to) until `until`.
+    AcceptFrom {
+        keys: Vec<[u8; 32]>,
+        until: Instant,
+    },
     /// GET `url` (a compiled calendar's or explorer's, never one from a record: [`outside`]); the answer comes back as
     /// [`Input::Fetched`] with this `id`. Only a server asks: a member asks nothing outside the room.
     Fetch {
@@ -202,6 +246,10 @@ pub struct AcceptWindow {
     max: usize,
     /// Who came in and when, and its answer's [`rank`] key once its `serve` held.
     admitted: Vec<([u8; 32], Instant, Option<u128>)>,
+    /// Keys let in by name until a time, apart from the question's places: the servers a member's `fetch` asked
+    /// (room-names-r3.md), and nobody else.
+    only: Vec<[u8; 32]>,
+    only_until: Option<Instant>,
 }
 
 impl AcceptWindow {
@@ -232,13 +280,30 @@ impl AcceptWindow {
     /// key that came in a while ago and never served (junk, which then makes room: a fixed number of places taken
     /// first come would let anyone who reads the question shut every server out), or a served one ranked below the
     /// best two.
-    pub fn room(&self, now: Instant) -> bool {
+    /// Keys named by [`AcceptWindow::open_for`] come in while it lasts.
+    pub fn room(&self, key: &[u8; 32], now: Instant) -> bool {
+        if self.named(key, now) {
+            return true;
+        }
         self.until.is_some_and(|u| now < u)
             && (self.admitted.len() < self.max || self.evictable(now).is_some())
     }
 
+    fn named(&self, key: &[u8; 32], now: Instant) -> bool {
+        self.only_until.is_some_and(|u| now < u) && self.only.contains(key)
+    }
+
+    /// Lets in handshakes from `keys` only, until `until` (replacing the last such list): a member's fetches.
+    pub fn open_for(&mut self, keys: Vec<[u8; 32]>, until: Instant) {
+        self.only = keys;
+        self.only_until = Some(until);
+    }
+
     /// `key`'s handshake came in (after [`AcceptWindow::room`]): the key let go to make room for it, if any.
     pub fn admit(&mut self, key: [u8; 32], now: Instant) -> Option<[u8; 32]> {
+        if self.named(&key, now) {
+            return None;
+        }
         let gone = if self.admitted.len() >= self.max {
             self.evictable(now).map(|i| self.admitted.remove(i).0)
         } else {
@@ -501,6 +566,13 @@ pub struct Server {
     /// [`ANSWERS_PER_KEY`] times a minute at most (review 2: questions naming a victim's key).
     answered_keys: BTreeMap<[u8; 32], VecDeque<Instant>>,
     askers: BTreeMap<[u8; 32], Asker>,
+    /// Replies to asks lately: every one ([`REPLIES_PER_SECOND`]), by reply tag ([`REPLIES_PER_TAG`]), by nonce.
+    replies: VecDeque<Instant>,
+    reply_tags: BTreeMap<[u8; 32], VecDeque<Instant>>,
+    replied: BTreeSet<[u8; 16]>,
+    replied_order: VecDeque<[u8; 16]>,
+    /// The largest item a reply carries (the tests' lower it): [`REPLY_MAX`].
+    pub reply_max: usize,
     /// Call backs waiting out [`CROSSED_WAIT`].
     deferred: Vec<(Instant, [u8; 32], usize)>,
     /// The first sync is done (or nobody answered): only then does it answer questions.
@@ -542,6 +614,9 @@ pub struct Server {
     /// The tests' lying server: names it never keeps (so never lists or serves).
     #[cfg(test)]
     pub refuse: BTreeSet<[u8; 32]>,
+    /// The tests' liar about `since` (a reply's claim of how old its chain is).
+    #[cfg(test)]
+    pub lie_since: Option<u32>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -554,6 +629,11 @@ pub struct Stats {
     pub blocks_refused: usize,
     pub answered: usize,
     pub refused: usize,
+    /// Replies to asks sent (with an item or none), and asks left unreplied for a budget.
+    pub replied: usize,
+    pub replies_refused: usize,
+    /// `fetch`es answered (a call back and the run).
+    pub fetched: usize,
     pub rounds: usize,
     pub syncs: usize,
     /// Entries checked whole.
@@ -588,6 +668,11 @@ impl Server {
             answers: VecDeque::new(),
             answered_keys: BTreeMap::new(),
             askers: BTreeMap::new(),
+            replies: VecDeque::new(),
+            reply_tags: BTreeMap::new(),
+            replied: BTreeSet::new(),
+            replied_order: VecDeque::new(),
+            reply_max: REPLY_MAX,
             deferred: Vec::new(),
             synced: false,
             next_round: None,
@@ -613,6 +698,8 @@ impl Server {
             out: outside::Outside::default(),
             #[cfg(test)]
             refuse: BTreeSet::new(),
+            #[cfg(test)]
+            lie_since: None,
         };
         s.set_titles(cfg.titles, unix);
         s
@@ -1094,47 +1181,15 @@ impl Server {
             }
             return;
         }
-        self.answered_keys.retain(|_, w| {
-            w.back()
-                .is_some_and(|t| now.saturating_duration_since(*t) < ANSWERS_PER_KEY_WINDOW)
-        });
-        let w = self.answered_keys.entry(q.key).or_default();
-        while w
-            .front()
-            .is_some_and(|t| now.saturating_duration_since(*t) >= ANSWERS_PER_KEY_WINDOW)
-        {
-            w.pop_front();
-        }
-        if w.len() >= ANSWERS_PER_KEY {
+        if !self.key_allows(&q.key, now) || !self.asker_room(&q.key) {
             self.stats.refused += 1;
             return;
-        }
-        w.push_back(now);
-        // Every asker's place taken: the one held longest goes (junk can't keep them all for good), but never a sync
-        // partner of this round.
-        if self.askers.len() >= MAX_ASKERS && !self.askers.contains_key(&q.key) {
-            let old = (self.askers.iter())
-                .filter(|(k, _)| !self.runs.contains_key(*k))
-                .min_by_key(|(_, a)| a.since)
-                .map(|(k, _)| *k);
-            let Some(old) = old else {
-                self.stats.refused += 1;
-                return;
-            };
-            self.askers.remove(&old);
-            self.cmds.push_back(Cmd::Forget(old));
         }
         self.answers.push_back(now);
         self.stats.answered += 1;
         let me = self.key.unwrap();
         let sig = sign(&k, &serve_hash(&self.names, &q.nonce, &me));
-        self.askers
-            .entry(q.key)
-            .or_insert(Asker {
-                since: now,
-                active: now,
-            })
-            .active = now;
+        self.hold_asker(q.key, now);
         if self.ask.is_some() && me > q.key {
             self.deferred.push((now + CROSSED_WAIT, q.key, region));
         } else {
@@ -1149,6 +1204,212 @@ impl Server {
         self.flush();
     }
 
+    /// Whether a call back to `key` (named by a question or a `fetch`, which prove nothing of it) is within
+    /// [`ANSWERS_PER_KEY`] a minute; counted when it is.
+    fn key_allows(&mut self, key: &[u8; 32], now: Instant) -> bool {
+        self.answered_keys.retain(|_, w| {
+            w.back()
+                .is_some_and(|t| now.saturating_duration_since(*t) < ANSWERS_PER_KEY_WINDOW)
+        });
+        let w = self.answered_keys.entry(*key).or_default();
+        while w
+            .front()
+            .is_some_and(|t| now.saturating_duration_since(*t) >= ANSWERS_PER_KEY_WINDOW)
+        {
+            w.pop_front();
+        }
+        if w.len() >= ANSWERS_PER_KEY {
+            return false;
+        }
+        w.push_back(now);
+        true
+    }
+
+    /// Whether `key` may be held as an asker: with every place taken, the one held longest goes (junk can't keep them
+    /// all for good), but never a sync partner of this round.
+    fn asker_room(&mut self, key: &[u8; 32]) -> bool {
+        if self.askers.len() >= MAX_ASKERS && !self.askers.contains_key(key) {
+            let old = (self.askers.iter())
+                .filter(|(k, _)| !self.runs.contains_key(*k))
+                .min_by_key(|(_, a)| a.since)
+                .map(|(k, _)| *k);
+            let Some(old) = old else {
+                return false;
+            };
+            self.askers.remove(&old);
+            self.cmds.push_back(Cmd::Forget(old));
+        }
+        true
+    }
+
+    fn hold_asker(&mut self, key: [u8; 32], now: Instant) {
+        self.askers
+            .entry(key)
+            .or_insert(Asker {
+                since: now,
+                active: now,
+            })
+            .active = now;
+    }
+
+    // ---- Asks (room-names-r3.md) ----
+
+    /// An ask under the names tag: a `share` in our share, or a `dissent` where we hold another owner, is replied
+    /// through the relays (its own budgets); a `fetch` naming us is called back and sent the owning chain's run.
+    fn on_ask(
+        &mut self,
+        a: NameAsk,
+        region: Option<usize>,
+        via: [u8; 16],
+        now: Instant,
+        unix: u64,
+    ) {
+        let Some(me) = self.key else { return };
+        if !self.synced || a.key == me {
+            return;
+        }
+        match a.mode {
+            AskMode::Share => {
+                // The share is ours to keep (the reply proves nothing): the plain draw over our live names' owner keys.
+                let r = (self.live_titles(unix).iter())
+                    .map(|(_, e)| rank(&share_hash(&a.nonce, &e.entry.owner)))
+                    .min()
+                    .unwrap_or(u128::MAX);
+                if in_share(r, a.spread) {
+                    self.reply(&a, via, now, unix);
+                }
+            }
+            AskMode::Dissent => {
+                let owner = self.owner_of(&a.id, unix);
+                if owner.is_some_and(|o| a.shown == [0; 8] || o[..8] != a.shown) {
+                    self.reply(&a, via, now, unix);
+                }
+            }
+            AskMode::Fetch => {
+                if a.shown != me[..8] {
+                    return;
+                }
+                let Some(region) = region else { return };
+                // A call back, as a question's answer is: from the answers' budget, a key's few a minute.
+                if !room_in(&mut self.answers, ANSWERS_PER_SECOND, now)
+                    || !self.key_allows(&a.key, now)
+                    || !self.asker_room(&a.key)
+                {
+                    self.stats.refused += 1;
+                    return;
+                }
+                self.answers.push_back(now);
+                self.stats.fetched += 1;
+                self.hold_asker(a.key, now);
+                let params = self.params.clone();
+                let item = (self.settled(&a.id, unix))
+                    .and_then(|h| h.owner_answer(&[], (0, [0; 4]), true, &params));
+                self.note_asked(&a.id, unix);
+                if self.ask.is_some() && me > a.key {
+                    self.deferred.push((now + CROSSED_WAIT, a.key, region));
+                } else {
+                    self.cmds.push_back(Cmd::CallBack { key: a.key, region });
+                }
+                let m = Msg::Items(item.into_iter().collect());
+                self.xf.send(a.key, &m.encode(0), now);
+                self.flush();
+            }
+        }
+    }
+
+    /// The item held for `id`, settled first if time made it stale.
+    fn settled(&mut self, id: &[u8; 32], unix: u64) -> Option<&mut Held> {
+        if self.reg.get(id).is_some_and(|h| h.stale(unix))
+            && self.reg.settle(id, &self.params, unix)
+        {
+            self.stored(id);
+        }
+        self.reg.items.get_mut(id)
+    }
+
+    /// The owner key of the chain that owns `id` now, as held.
+    fn owner_of(&mut self, id: &[u8; 32], unix: u64) -> Option<[u8; 32]> {
+        let h = self.settled(id, unix)?;
+        h.owner
+            .as_ref()
+            .filter(|o| o.covers(unix) && !o.released)
+            .map(|o| o.owner)
+    }
+
+    /// A name asked for (by a `get` or an ask): what the bound keeps longest, fetched again by sync if it was dropped.
+    fn note_asked(&mut self, id: &[u8; 32], unix: u64) {
+        self.dropped.remove(id);
+        if let Some(h) = self.reg.items.get_mut(id) {
+            let moved = unix.saturating_sub(h.asked) >= ASKED_STORE;
+            h.asked = h.asked.max(unix);
+            if moved {
+                self.stored(id);
+            }
+        }
+    }
+
+    /// Replies to ask `a` (once a nonce, within [`REPLIES_PER_SECOND`] and [`REPLIES_PER_TAG`]): the owning chain's
+    /// last entry and the zone, none, or that its item is past [`Server::reply_max`].
+    fn reply(&mut self, a: &NameAsk, via: [u8; 16], now: Instant, unix: u64) {
+        let me = self.key.unwrap();
+        if self.replied.contains(&a.nonce) {
+            return;
+        }
+        let tag = self.reply_tags.entry(a.key).or_default();
+        while tag
+            .front()
+            .is_some_and(|t| now.saturating_duration_since(*t) >= REPLIES_PER_TAG_WINDOW)
+        {
+            tag.pop_front();
+        }
+        if tag.len() >= REPLIES_PER_TAG || !room_in(&mut self.replies, REPLIES_PER_SECOND, now) {
+            self.stats.replies_refused += 1;
+            return;
+        }
+        tag.push_back(now);
+        self.replies.push_back(now);
+        self.reply_tags.retain(|_, w| {
+            w.back()
+                .is_some_and(|t| now.saturating_duration_since(*t) < REPLIES_PER_TAG_WINDOW)
+        });
+        self.replied.insert(a.nonce);
+        self.replied_order.push_back(a.nonce);
+        if self.replied_order.len() > REPLIED_KEPT
+            && let Some(old) = self.replied_order.pop_front()
+        {
+            self.replied.remove(&old);
+        }
+        let params = self.params.clone();
+        let (item, since) = match self.settled(&a.id, unix) {
+            Some(h) => (
+                h.owner_answer(&[], (0, [0; 4]), false, &params),
+                h.owner.as_ref().map_or(0, |o| o.seniority),
+            ),
+            None => (None, 0),
+        };
+        self.note_asked(&a.id, unix);
+        #[cfg(test)]
+        let since = self.lie_since.filter(|_| item.is_some()).unwrap_or(since);
+        let item = match item {
+            None => ReplyItem::None,
+            Some(it) if it.encode().len() > self.reply_max => ReplyItem::TooBig,
+            Some(it) => ReplyItem::Item(Box::new(it)),
+        };
+        self.stats.replied += 1;
+        let r = Reply {
+            nonce: a.nonce,
+            server: me,
+            region: 0, // the transport fills in its home region
+            since,
+            item,
+        };
+        self.cmds.push_back(Cmd::Reply {
+            to: a.key,
+            via,
+            data: r.encode(),
+        });
+    }
+
     // ---- Messages ----
 
     pub fn input(&mut self, i: Input, now: Instant, unix: u64) {
@@ -1159,6 +1420,8 @@ impl Server {
         self.last_unix = unix;
         match i {
             Input::Question { q, region } => self.on_question(q, region, now, unix),
+            Input::Ask { ask, region, via } => self.on_ask(ask, region, via, now, unix),
+            Input::Reply(_) => {}
             Input::Gone(k) => self.gone(k),
             Input::Fetched { id, status, body } => self.fetched(id, status, &body, now, unix),
             Input::Datagram { from, data } => {

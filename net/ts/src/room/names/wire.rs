@@ -266,6 +266,162 @@ impl Question {
     }
 }
 
+/// What an `ask` wants (docs/plans/room-names-r3.md "The messages").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AskMode {
+    /// Servers in the share `spread` names reply, with the owning chain's last entry or with none.
+    Share = 0,
+    /// Every server that holds an owner whose key doesn't start with `shown` (any owner: zeros) replies.
+    Dissent = 1,
+    /// The server whose names key starts with `shown` calls the asker back and sends the owning chain's whole run.
+    Fetch = 2,
+}
+
+/// A first lookup's question to the room (room-names-r3.md): what a member's names client publishes under the room's
+/// names tag, sealed and MAC'd as "who serves?" is. It names the id: a lookup of a name the member doesn't keep (the
+/// user's decision 12 as widened, 2026-11-17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NameAsk {
+    /// The asker's names client's key (made new each session): the reply tag's, and a `fetch`'s call back's.
+    pub key: [u8; 32],
+    pub region: u16,
+    /// Unix seconds.
+    pub time: u64,
+    /// Replies carry it back.
+    pub nonce: [u8; 16],
+    pub id: [u8; 32],
+    pub mode: AskMode,
+    /// `Share`: the top bits of a server's rank that must be zero (as a question's).
+    pub spread: u8,
+    /// `Dissent`: the first 8 bytes of the owner key the asker was shown (zeros: none). `Fetch`: of the names key of the
+    /// one server asked.
+    pub shown: [u8; 8],
+}
+
+pub const ASK_PLAIN: usize = 32 + 2 + 8 + 16 + 32 + 1 + 1 + 8;
+/// An ask's bytes, sealed as a bare lookup is: 164.
+pub const ASK_SIZE: usize = 32 + ASK_PLAIN + 16 + 16;
+
+impl NameAsk {
+    pub fn plain(&self) -> Vec<u8> {
+        let mut p = Vec::with_capacity(ASK_PLAIN);
+        p.extend_from_slice(&self.key);
+        p.extend_from_slice(&self.region.to_be_bytes());
+        p.extend_from_slice(&self.time.to_be_bytes());
+        p.extend_from_slice(&self.nonce);
+        p.extend_from_slice(&self.id);
+        p.push(self.mode as u8);
+        p.push(self.spread);
+        p.extend_from_slice(&self.shown);
+        p
+    }
+
+    pub fn from_plain(p: &[u8]) -> Option<NameAsk> {
+        if p.len() != ASK_PLAIN {
+            return None;
+        }
+        let mode = match p[90] {
+            0 => AskMode::Share,
+            1 => AskMode::Dissent,
+            2 => AskMode::Fetch,
+            _ => return None,
+        };
+        Some(NameAsk {
+            key: p[..32].try_into().unwrap(),
+            region: u16::from_be_bytes([p[32], p[33]]),
+            time: u64::from_be_bytes(p[34..42].try_into().unwrap()),
+            nonce: p[42..58].try_into().unwrap(),
+            id: p[58..90].try_into().unwrap(),
+            mode,
+            spread: p[91],
+            shown: p[92..100].try_into().unwrap(),
+        })
+    }
+}
+
+/// The most bytes of an item a reply carries: past it the item is left out and [`Reply::item`] says so, and the asker
+/// fetches it through a session (room-names-r3.md: set from what the default relays forward; 4 KiB to start, the
+/// user's choice, 2026-11-17, until a dev VM session measures them).
+pub const REPLY_MAX: usize = 4096;
+/// A reply's head: the nonce, the replier's names key and region, `since`, the item's kind.
+pub const REPLY_HEAD: usize = 16 + 32 + 2 + 4 + 1;
+/// The most bytes a sealed reply may have (a member drops a longer one unread).
+pub const REPLY_SEALED_MAX: usize = 32 + REPLY_HEAD + REPLY_MAX + 16 + 16;
+
+/// What a reply says of the name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReplyItem {
+    /// The server holds no owner for the id.
+    None,
+    /// The owning chain's last entry with its anchor and header, and the zone.
+    Item(Box<Item>),
+    /// It holds an owner, but its item is past [`REPLY_MAX`]: the asker fetches it.
+    TooBig,
+}
+
+/// A server's answer to an ask (room-names-r3.md), published under the asker's reply tag
+/// (`Room::reply_tag`), sealed as an ask is. It proves nothing of who sent it: it is believed for what its item holds,
+/// which the member checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reply {
+    /// The ask's.
+    pub nonce: [u8; 16],
+    /// The replier's names key and region, for a `fetch`.
+    pub server: [u8; 32],
+    pub region: u16,
+    /// The time of the first entry of the owning chain's run as the server holds it (0: none). Unchecked: it only
+    /// orders a contest's fetches.
+    pub since: u32,
+    pub item: ReplyItem,
+}
+
+impl Reply {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut o = Vec::with_capacity(REPLY_HEAD + 1024);
+        o.extend_from_slice(&self.nonce);
+        o.extend_from_slice(&self.server);
+        o.extend_from_slice(&self.region.to_be_bytes());
+        o.extend_from_slice(&self.since.to_le_bytes());
+        match &self.item {
+            ReplyItem::None => o.push(0),
+            ReplyItem::Item(it) => {
+                o.push(1);
+                o.extend(it.encode());
+            }
+            ReplyItem::TooBig => o.push(2),
+        }
+        o
+    }
+
+    pub fn decode(b: &[u8]) -> Result<Reply, Invalid> {
+        let mut r = Rd::new(b);
+        let nonce = r.a()?;
+        let server = r.a()?;
+        let region = u16::from_be_bytes(r.a()?);
+        let since = r.u32()?;
+        let item = match r.u8()? {
+            0 => ReplyItem::None,
+            1 => {
+                let it = r.rest();
+                if it.len() > REPLY_MAX {
+                    return Err(Invalid::Encoding);
+                }
+                ReplyItem::Item(Box::new(Item::decode(it)?))
+            }
+            2 => ReplyItem::TooBig,
+            _ => return Err(Invalid::Encoding),
+        };
+        r.end()?;
+        Ok(Reply {
+            nonce,
+            server,
+            region,
+            since,
+            item,
+        })
+    }
+}
+
 /// An entry's place in a `get`'s list of what the asker holds: 8 bytes of its id and 4 of its
 /// anchor's digest (zeros: unanchored).
 pub type Held = ([u8; 8], [u8; 4]);

@@ -465,10 +465,27 @@ fn a_member_resolves_a_registered_name_through_a_names_client_of_its_own() {
         assert_eq!(n.ask(2, r, dns::AAAA), (nx(), Duration::ZERO), "{r}");
     }
     assert_eq!(n.names_conns(2), 0, "nothing asked");
-    // A cold lookup: the names client starts, finds the servers, asks them.
+    // A first lookup: the names client starts and asks the room through the relays (room-names-r3.md); the replies
+    // come back through them too: no question, no DERP, no session.
     let (a, took) = n.ask(2, "alpha", dns::AAAA);
-    eprintln!("a member's cold lookup through the fake DERP and relay: {took:?}");
+    eprintln!("a member's first lookup through the fake DERP and relay: {took:?}");
     assert_eq!(a, aaaa(n.addr(1)));
+    let mk = n.nodes[2]
+        .c
+        .member
+        .as_ref()
+        .unwrap()
+        .transport
+        .as_ref()
+        .unwrap()
+        .public;
+    assert!(
+        n.by_keys.keys().all(|(s, d)| *s != mk && *d != mk),
+        "the member's names client sent and got nothing through DERP"
+    );
+    let st = n.nodes[2].c.member.as_ref().unwrap().member.stats.clone();
+    assert_eq!((st.questions, st.gets, st.fetches), (0, 0, 0));
+    assert!(st.asks >= 1 && st.replies >= 1, "{st:?}");
     assert!(
         n.nodes[2].c.known.get(&n.addr(1)) == Some(&public(2)),
         "the module learned the key"
@@ -481,7 +498,9 @@ fn a_member_resolves_a_registered_name_through_a_names_client_of_its_own() {
     );
     let (a, _) = n.ask(2, "alpha", dns::A);
     assert_eq!((a.rcode, a.addrs.len()), (dns::NOERROR, 0));
-    assert_eq!(n.ask(2, "charlie", dns::AAAA).0, nx());
+    let (a, took) = n.ask(2, "charlie", dns::AAAA);
+    eprintln!("a second first lookup in that room (a name nobody holds): {took:?}");
+    assert_eq!(a, nx());
     assert_eq!(
         n.ask(2, "charlie", dns::AAAA),
         (nx(), Duration::ZERO),
@@ -812,4 +831,71 @@ fn titles_given_while_the_room_runs_make_a_member_a_server_and_change_its_regist
         .clone()
         .unwrap();
     assert_eq!(o.last(), renew.id());
+}
+
+/// A first lookup of a contested name through the fake DERP and relays: the replies show two owner keys, and the
+/// member fetches each one's run through a session its server opens (a call back to the member's names client, which
+/// lets in those keys only); the owner wins. Each reply goes out through two relays.
+#[test]
+fn a_contested_first_lookup_fetches_through_sessions_and_the_owner_wins() {
+    use crate::room::names::{entry::Kind, zone::Zone};
+    let mut b = Bitcoin::new(ROOM, 9);
+    let alpha = title_to(&mut b, 5, "alpha", public(1), public(1));
+    let fake = {
+        let key = b.key(66, "alpha");
+        let claim = b.at(Kind::Claim, &key, "alpha", [0; 32], day(10));
+        let zone = Zone::seal(&b.names, &key, "alpha", 1, &[(None, public(2))], false).unwrap();
+        b.item("alpha", &[claim], Some(zone))
+    };
+    let relays: Vec<String> = (0..3).map(|k| format!("wss://nostr{k}.test")).collect();
+    let mut cfgs = vec![
+        server_config(1, vec![title(&mut b, 1, "one")]),
+        server_config(2, vec![title(&mut b, 2, "two")]),
+        config(3),
+    ];
+    for c in &mut cfgs {
+        c.link.nostr = relays.clone();
+    }
+    let mut n = Net::new(cfgs);
+    // Each server holds one of the chains, and keeps it whatever sync brings (the tests' lying servers).
+    for (i, it) in [(0, &alpha.1), (1, &fake)] {
+        assert!(n.nodes[i].c.names_load(&record(it, T0)));
+        let h = n.nodes[i].c.names.as_mut().unwrap();
+        h.server.refuse.insert(it.id);
+    }
+    n.advance(Duration::from_secs(40));
+    assert!(n.server(0).synced && n.server(1).synced);
+    let (a, took) = n.ask(2, "alpha", dns::AAAA);
+    eprintln!("a contested first lookup through the fake DERP and relays: {took:?}");
+    assert_eq!(a, aaaa(n.addr(0)), "the owner's");
+    let h = n.nodes[2].c.member.as_ref().unwrap();
+    let mk = h.transport.as_ref().unwrap().public;
+    let st = h.member.stats.clone();
+    assert_eq!((st.contests, st.fetches, st.questions), (1, 2, 0), "{st:?}");
+    assert_eq!(h.member.kept[&alpha.1.id].kept.earliest, day(20));
+    let (k0, k1) = (n.names_key(0), n.names_key(1));
+    for k in [k0, k1] {
+        assert!(
+            n.by_keys.get(&(k, mk)).is_some_and(|c| *c > 0),
+            "a session from each fetched server"
+        );
+    }
+    // Every reply went out through two relays (the one that brought its ask, and its copy's).
+    let hour = T0 / 3600;
+    let tags: Vec<String> = (hour - 1..=hour + 1)
+        .map(|h| n.nodes[2].c.room.reply_tag(&mk, h))
+        .collect();
+    let mut by_event: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (url, e) in &n.published_on {
+        if tags.iter().any(|t| e["tags"][0][1] == *t) {
+            by_event
+                .entry(e["id"].as_str().unwrap().into())
+                .or_default()
+                .insert(url.clone());
+        }
+    }
+    assert!(!by_event.is_empty());
+    for (id, urls) in &by_event {
+        assert_eq!(urls.len(), 2, "reply {id}: {urls:?}");
+    }
 }

@@ -63,7 +63,7 @@ use self::{
         Params,
         member::{self, Answer, Member},
         server::{Cmd, Input, Server},
-        wire::{NAMES_PORT, QUESTION_SIZE, Question},
+        wire::{ASK_SIZE, NAMES_PORT, NameAsk, QUESTION_SIZE, Question, REPLY_SEALED_MAX, Reply},
     },
 };
 use crate::{
@@ -120,6 +120,11 @@ const LOOKUP_QUEUE: usize = 16;
 /// a dialer sends each lookup up to three times.
 const LOOKUP_EVENTS_PER_SECOND: usize = 128;
 const OPENED_FOR: Duration = Duration::from_secs(10);
+/// A server's reply to an ask goes through the relay that brought the ask and the one whose copy came next; with no
+/// copy this long after the reply, through another relay (room-names-r3.md: replies through two relays).
+const REPLY_SECOND_WAIT: Duration = Duration::from_secs(1);
+/// An ask's copies are remembered this long.
+const ASK_COPIES_FOR: Duration = Duration::from_secs(5);
 const MAX_OPENED: usize = 8192;
 /// A target drops lookups this much older (or newer) than its clock: the tags' window, as a
 /// dialer's clock may be off by most of an hour (rooms.md "Finding a peer"); a copy within it is dropped by its
@@ -406,6 +411,15 @@ pub struct MemberHost {
     /// The guest's last query for a name that isn't a key.
     last_query: Option<Instant>,
     retry_at: Option<Instant>,
+}
+
+/// An ask a server's names client opened ([`Client::ask_copies`]).
+struct AskCopy {
+    at: Instant,
+    first: usize,
+    second: Option<usize>,
+    /// The reply, once made, until it went through a second relay.
+    reply: Option<String>,
 }
 
 /// A query to the room's resolver waiting for the names client.
@@ -714,6 +728,11 @@ pub struct Client {
     /// relay only; questions and registry datagrams go to `names_events`.
     names_mode: bool,
     names_subscribed: bool,
+    /// A member's names client: subscribed to its reply tag (room-names-r3.md).
+    names_replies: bool,
+    /// Asks opened lately (by the event's mark): the relay that brought each first, the one whose copy came next, and
+    /// the reply waiting for that copy.
+    ask_copies: BTreeMap<[u8; 16], AskCopy>,
     /// Handshakes from unknown keys are let in until then, this many at most (our question's
     /// answers), and how many came.
     names_window: names::server::AcceptWindow,
@@ -918,6 +937,8 @@ impl Client {
             map_pending: false,
             names_mode: false,
             names_subscribed: false,
+            names_replies: false,
+            ask_copies: BTreeMap::new(),
             names_window: Default::default(),
             names_events: VecDeque::new(),
             names,
@@ -1450,13 +1471,26 @@ impl Client {
 
     /// The tags we subscribe to: our address's of the previous, current and next hour (a names
     /// client: the room's names tag's).
-    fn tags(&self) -> [String; 3] {
+    fn tags(&self) -> Vec<String> {
         let h = self.hour;
         let hours = [h.saturating_sub(1), h, h + 1];
-        match self.names_mode {
-            true => hours.map(|h| self.room.names_tag(h)),
-            false => hours.map(|h| self.room.tag_for(&self.addr, h)),
+        if !self.names_mode {
+            return hours.map(|h| self.room.tag_for(&self.addr, h)).to_vec();
         }
+        let mut t = Vec::new();
+        if self.names_subscribed {
+            t.extend(hours.map(|h| self.room.names_tag(h)));
+        }
+        if self.names_replies {
+            t.extend(self.reply_tags());
+        }
+        t
+    }
+
+    /// A member's names client's reply tags: the previous, current and next hour's.
+    fn reply_tags(&self) -> [String; 3] {
+        let h = self.hour;
+        [h.saturating_sub(1), h, h + 1].map(|h| self.room.reply_tag(&self.public, h))
     }
 
     fn nostr_send(&mut self, i: usize, text: String) {
@@ -1473,7 +1507,7 @@ impl Client {
     /// The hour's tags are taken here, so a turned hour waits for a renewal.
     fn nostr_subscribe(&mut self, i: usize, now: Instant) {
         self.hour = self.unix(now) / 3600;
-        if self.names_mode && !self.names_subscribed {
+        if self.names_mode && !self.names_subscribed && !self.names_replies {
             // An asker only publishes: nothing comes to it through a relay.
             if let Some(old) = self.nostr[i].sub.take() {
                 self.nostr_send(i, nostr::unsubscribe(&old));
@@ -1556,11 +1590,13 @@ impl Client {
 
     /// An event under tag `x` through Nostr relay `i`: a lookup for us, if it opens, is called back.
     fn on_lookup(&mut self, i: usize, x: &str, content: &str, now: Instant) {
-        if self.state != State::Running || !self.tags().iter().any(|t| t == x) {
+        // A names client hears its relays before its home region is up (a member's first lookup doesn't wait for it).
+        let up = self.state == State::Running || self.names_mode && self.state != State::Failed;
+        if !up || !self.tags().iter().any(|t| t == x) {
             return;
         }
         if self.names_mode {
-            return self.on_question(i, x, content, now);
+            return self.on_names_event(i, x, content, now);
         }
         // Only a member's lookup goes further: an outsider's junk under our tag (anyone who saw a
         // lookup to us can publish under the tag) costs a BLAKE2s and takes no budget.
@@ -1633,12 +1669,94 @@ impl Client {
         self.call_back(l.key, region, now);
     }
 
+    /// An event under a names client's tags: a question or an ask under the names tag (a server's), a reply under its
+    /// reply tag (a member's).
+    fn on_names_event(&mut self, i: usize, x: &str, content: &str, now: Instant) {
+        if self.names_replies && self.reply_tags().iter().any(|t| t == x) {
+            return self.on_reply(i, x, content, now);
+        }
+        if !self.names_subscribed {
+            return;
+        }
+        // A copy of an ask we opened, through another relay: the relay a reply goes through too.
+        let seen = event_mark(x, content);
+        if let Some(c) = self.ask_copies.get_mut(&seen) {
+            if c.first != i && c.second.is_none() {
+                c.second = Some(i);
+                if let Some(text) = c.reply.take() {
+                    self.nostr_send(i, text);
+                }
+            }
+            return;
+        }
+        if content.len() == ASK_SIZE.div_ceil(3) * 4 {
+            return self.on_ask(i, x, content, seen, now);
+        }
+        if self.state == State::Running {
+            self.on_question(i, x, content, now);
+        }
+    }
+
+    /// An ask under the names tag (a server's names client): checked as a question is (the MAC first, copies and the
+    /// relay's budget, the time, not our own key) and handed to the registry, with the region it names if the link
+    /// has it (a `fetch`'s call back).
+    fn on_ask(&mut self, i: usize, x: &str, content: &str, seen: [u8; 16], now: Instant) {
+        let Ok(b) = b64().decode(content) else { return };
+        if !lookup::authentic_len(&self.room, x, &b, ASK_SIZE) || !self.admit(i, x, content, now) {
+            return;
+        }
+        let Some(ask) =
+            lookup::open_bare(&self.room, x, &b, ASK_SIZE).and_then(|p| NameAsk::from_plain(&p))
+        else {
+            return;
+        };
+        let unix = self.unix(now);
+        if ask.key == self.public || unix.abs_diff(ask.time) > LOOKUP_MAX_AGE {
+            return;
+        }
+        let region = self.local_region(ask.region);
+        self.ask_copies.insert(
+            seen,
+            AskCopy {
+                at: now,
+                first: i,
+                second: None,
+                reply: None,
+            },
+        );
+        self.names_events.push_back(Input::Ask {
+            ask,
+            region,
+            via: seen,
+        });
+    }
+
+    /// A reply under our reply tag (a member's names client): the MAC, copies and the relay's budget, then opened.
+    fn on_reply(&mut self, i: usize, x: &str, content: &str, now: Instant) {
+        if content.len() > REPLY_SEALED_MAX.div_ceil(3) * 4 {
+            return; // past what a server sends: dropped unread
+        }
+        let Ok(b) = b64().decode(content) else { return };
+        if b.len() < 64 || !lookup::authentic_len(&self.room, x, &b, b.len()) {
+            return;
+        }
+        if !self.admit(i, x, content, now) {
+            return;
+        }
+        let Some(r) = lookup::open_bare_var(&self.room, x, &b, REPLY_SEALED_MAX)
+            .and_then(|p| Reply::decode(&p).ok())
+        else {
+            return;
+        };
+        self.names_events.push_back(Input::Reply(r));
+    }
+
     /// A question under the names tag through Nostr relay `i` (a names client subscribed to it,
     /// a server's): checked as a lookup is (the MAC first, copies and the relay's budget, the
     /// time, a fresh nonce, a region of the link's, not our own) and handed to the registry.
     fn on_question(&mut self, i: usize, x: &str, content: &str, now: Instant) {
         let Ok(b) = b64().decode(content) else { return };
-        if !self.names_subscribed || !lookup::authentic_len(&self.room, x, &b, QUESTION_SIZE) {
+        if !lookup::authentic_len(&self.room, x, &b, QUESTION_SIZE) {
             return;
         }
         if !self.admit(i, x, content, now) {
@@ -1674,11 +1792,7 @@ impl Client {
     /// one opened lately (through another relay), and within that relay's budget.
     fn admit(&mut self, i: usize, x: &str, content: &str, now: Instant) -> bool {
         // A copy of an event opened already (through another relay): dropped before the budget.
-        let mut h = Blake2s256::new();
-        h.update(x.as_bytes());
-        h.update([0]);
-        h.update(content.as_bytes());
-        let seen: [u8; 16] = h.finalize()[..16].try_into().unwrap();
+        let seen = event_mark(x, content);
         while let Some(&(old, t)) = self.opened_order.front()
             && (now.saturating_duration_since(t) >= OPENED_FOR
                 || self.opened_order.len() >= MAX_OPENED)
@@ -1885,7 +1999,7 @@ impl Client {
                 // on, or a flow of the guest's with it) one that opens a connection, on trial.
                 let addr = self.room.addr(&src);
                 // A names client lets in only the servers answering its own question.
-                let names = self.names_mode && self.names_window.room(now);
+                let names = self.names_mode && self.names_window.room(&src, now);
                 let expected = self.pending.contains_key(&addr) || names;
                 if !expected && !(self.cfg.incoming || self.has_flow(&addr, now)) {
                     return;
@@ -2969,6 +3083,9 @@ impl Client {
             }
         }
         self.flush_relays();
+        if self.names_mode {
+            self.ask_copies_tick(now);
+        }
         self.names_tick(now);
     }
 
@@ -3030,6 +3147,12 @@ impl Client {
             .min()
         });
         let waiting = self.dns_waiting.iter().map(|w| w.until).min();
+        let copies = (self.ask_copies.values())
+            .map(|c| match c.reply {
+                Some(_) => c.at + REPLY_SECOND_WAIT,
+                None => c.at + ASK_COPIES_FOR,
+            })
+            .min();
         let publisher = self.publisher.as_ref().and_then(|p| p.deadline());
         [
             publisher,
@@ -3039,6 +3162,7 @@ impl Client {
             names,
             member,
             waiting,
+            copies,
         ]
         .into_iter()
         .chain(peers)
@@ -3159,6 +3283,7 @@ impl Client {
         let unix = self.unix(now);
         if self.state == State::Running && !p.running() {
             p.start(self.public, now);
+            p.ready(now);
         }
         if self.state == State::Failed && p.running() {
             p.stop();
@@ -3349,13 +3474,16 @@ impl Client {
             self.names = Some(h);
         }
         if let Some(mut h) = self.member.take() {
-            // The member starts once its names client runs (its home region up, so servers' call backs reach it).
-            if let Some(t) = h.transport.as_ref()
-                && t.state == State::Running
-                && !h.member.running()
-            {
-                let key = t.public;
-                h.member.start(key, now);
+            // The member starts with its names client (its relays: a first lookup asks the room at once), and is ready
+            // once its home region is up (servers' call backs reach it: "who serves?", `fetch`).
+            if let Some(t) = h.transport.as_ref() {
+                if !h.member.running() && t.state != State::Failed {
+                    let key = t.public;
+                    h.member.start(key, now);
+                }
+                if t.state == State::Running && !h.member.is_ready() {
+                    h.member.ready(now);
+                }
             }
             if self.pump_side(&mut h.transport, &mut h.member, now) {
                 h.transport = None;
@@ -3465,15 +3593,118 @@ impl Client {
             }
             Cmd::Subscribe(on) => {
                 self.names_subscribed = on;
-                for i in 0..self.nostr.len() {
-                    if self.nostr[i].conn.is_some() {
-                        self.nostr_subscribe(i, now);
-                    }
-                }
+                self.resubscribe(now);
             }
+            Cmd::Replies(on) => {
+                self.names_replies = on;
+                self.resubscribe(now);
+            }
+            Cmd::Ask {
+                nonce,
+                id,
+                mode,
+                spread,
+                shown,
+            } => self.publish_ask(nonce, id, mode, spread, shown, now),
+            Cmd::Reply { to, via, data } => self.publish_reply(to, via, data, now),
+            Cmd::AcceptFrom { keys, until } => self.names_window.open_for(keys, until),
             // A publisher's and a member's sides ask nothing outside the room.
             Cmd::Store { .. } | Cmd::Log(_) | Cmd::Fetch { .. } => {}
         }
+    }
+
+    fn resubscribe(&mut self, now: Instant) {
+        for i in 0..self.nostr.len() {
+            if self.nostr[i].conn.is_some() {
+                self.nostr_subscribe(i, now);
+            }
+        }
+    }
+
+    /// An ask (a member's first lookup) under the names tag of the hour, on every relay of the link.
+    fn publish_ask(
+        &mut self,
+        nonce: [u8; 16],
+        id: [u8; 32],
+        mode: names::wire::AskMode,
+        spread: u8,
+        shown: [u8; 8],
+        now: Instant,
+    ) {
+        let unix = self.unix(now);
+        let a = NameAsk {
+            key: self.public,
+            region: self.wire_region(self.home),
+            time: unix,
+            nonce,
+            id,
+            mode,
+            spread,
+            shown,
+        };
+        let tag = self.room.names_tag(unix / 3600);
+        let content = b64().encode(lookup::seal_bare(&self.room, &tag, &a.plain()));
+        let text = nostr::publish(&self.author.event(KIND, &tag, &content, unix));
+        for i in 0..self.nostr.len() {
+            self.nostr_send(i, text.clone());
+        }
+    }
+
+    /// A reply (a server's) under names key `to`'s reply tag of the hour: through the relay that brought the ask
+    /// (`via`) and the one whose copy came next, or another after [`REPLY_SECOND_WAIT`].
+    fn publish_reply(&mut self, to: [u8; 32], via: [u8; 16], mut data: Vec<u8>, now: Instant) {
+        // Our home region, which the registry's side doesn't know.
+        let region = self.wire_region(self.home).to_be_bytes();
+        if let Some(r) = data.get_mut(48..50) {
+            r.copy_from_slice(&region);
+        }
+        let unix = self.unix(now);
+        let tag = self.room.reply_tag(&to, unix / 3600);
+        let content = b64().encode(lookup::seal_bare(&self.room, &tag, &data));
+        let text = nostr::publish(&self.author.event(KIND, &tag, &content, unix));
+        let (first, second) = match self.ask_copies.get_mut(&via) {
+            Some(c) => {
+                if c.second.is_none() {
+                    c.reply = Some(text.clone());
+                }
+                (Some(c.first), c.second)
+            }
+            None => (None, None),
+        };
+        let mut sent = 0;
+        for i in [first, second].into_iter().flatten() {
+            self.nostr_send(i, text.clone());
+            sent += 1;
+        }
+        if first.is_none() {
+            let up: Vec<usize> = (0..self.nostr.len())
+                .filter(|i| self.nostr[*i].conn.is_some())
+                .collect();
+            for i in up {
+                if sent == 2 {
+                    break;
+                }
+                self.nostr_send(i, text.clone());
+                sent += 1;
+            }
+        }
+    }
+
+    /// Replies whose ask's copy didn't come go through another relay; old asks are forgotten.
+    fn ask_copies_tick(&mut self, now: Instant) {
+        let due: Vec<([u8; 16], usize, String)> = (self.ask_copies.iter_mut())
+            .filter(|(_, c)| now >= c.at + REPLY_SECOND_WAIT && c.reply.is_some())
+            .map(|(k, c)| (*k, c.first, c.reply.take().unwrap()))
+            .collect();
+        for (_, first, text) in due {
+            if let Some(i) =
+                (0..self.nostr.len()).find(|i| *i != first && self.nostr[*i].conn.is_some())
+            {
+                self.nostr_send(i, text);
+            }
+        }
+        self.ask_copies
+            .retain(|_, c| now.saturating_duration_since(c.at) < ASK_COPIES_FOR);
     }
 
     /// "Who serves the registry?" under the names tag of the hour, on every relay of the link.
@@ -3556,6 +3787,15 @@ impl Client {
         self.pending.clear();
         self.state = State::Failed;
     }
+}
+
+/// An event's mark: a hash of its tag and content, the same through every relay.
+fn event_mark(x: &str, content: &str) -> [u8; 16] {
+    let mut h = Blake2s256::new();
+    h.update(x.as_bytes());
+    h.update([0]);
+    h.update(content.as_bytes());
+    h.finalize()[..16].try_into().unwrap()
 }
 
 #[cfg(test)]

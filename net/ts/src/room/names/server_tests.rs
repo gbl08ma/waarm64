@@ -10,8 +10,8 @@ use super::{
     Invalid,
     entry::{Entry, Kind, Stamped},
     server::{
-        ANSWERS_PER_SECOND, Cmd, Config, Input, MAX_BYTES, MAX_NAMES, SPREADS, Server, Title,
-        UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
+        ANSWERS_PER_SECOND, Cmd, Config, Input, MAX_BYTES, MAX_NAMES, REPLIES_PER_TAG, SPREADS,
+        Server, Title, UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
     },
     store::read_record,
     testkit::{Bitcoin, DAY, HOUR, Services, params},
@@ -132,7 +132,13 @@ impl Bus {
                 let (status, body) = self.svc.as_mut().map_or((0, Vec::new()), |v| v.get(&url));
                 self.s[i].input(Input::Fetched { id, status, body }, now, unix);
             }
-            Cmd::Accept { .. } | Cmd::Log(_) | Cmd::Served(..) => {}
+            Cmd::Accept { .. }
+            | Cmd::Log(_)
+            | Cmd::Served(..)
+            | Cmd::Replies(_)
+            | Cmd::Ask { .. }
+            | Cmd::Reply { .. }
+            | Cmd::AcceptFrom { .. } => {}
         }
     }
 
@@ -1296,13 +1302,13 @@ fn junk_handshakes_dont_shut_servers_out_of_a_questions_window() {
     w.open(t0 + Duration::from_millis(2500), ACCEPT_MAX);
     // Junk handshakes fill the window as soon as the question is out; one of them is a real server's.
     for k in 0..ACCEPT_MAX as u8 {
-        assert!(w.room(t0));
+        assert!(w.room(&[250; 32], t0));
         assert_eq!(w.admit([k; 32], t0), None);
     }
     w.served(&[0; 32], 5);
     // An honest server's call back a second later: a session that never served is let go for it.
     let t1 = t0 + Duration::from_millis(1100);
-    assert!(w.room(t1), "room for a server's call back");
+    assert!(w.room(&[250; 32], t1), "room for a server's call back");
     let gone = w.admit([200; 32], t1);
     assert!(
         gone.is_some_and(|g| g != [0; 32]),
@@ -1310,14 +1316,14 @@ fn junk_handshakes_dont_shut_servers_out_of_a_questions_window() {
     );
     // Keys just let in hold their place for a while; the window closes with the question.
     for k in 0..(ACCEPT_MAX - 2) as u8 {
-        assert!(w.room(t1));
+        assert!(w.room(&[250; 32], t1));
         w.admit([100 + k; 32], t1);
     }
     assert!(
-        !w.room(t1 + Duration::from_millis(100)),
+        !w.room(&[250; 32], t1 + Duration::from_millis(100)),
         "everyone in it new or served"
     );
-    assert!(!w.room(t0 + Duration::from_millis(2500)));
+    assert!(!w.room(&[250; 32], t0 + Duration::from_millis(2500)));
 }
 
 /// Review 2's finding 2: cheap registrations that answer first and serve properly mustn't fill every place. With the
@@ -1329,12 +1335,15 @@ fn served_keys_ranked_worst_make_room_but_the_best_two_stay() {
     let t0 = Instant::now();
     w.open(t0 + Duration::from_millis(2500), ACCEPT_MAX);
     for k in 0..ACCEPT_MAX as u8 {
-        assert!(w.room(t0));
+        assert!(w.room(&[250; 32], t0));
         assert_eq!(w.admit([k; 32], t0), None);
         w.served(&[k; 32], 1000 - k as u128); // the later, the better
     }
     let t1 = t0 + Duration::from_millis(100);
-    assert!(w.room(t1), "room for an honest server answering late");
+    assert!(
+        w.room(&[250; 32], t1),
+        "room for an honest server answering late"
+    );
     assert_eq!(
         w.admit([200; 32], t1),
         Some([0; 32]),
@@ -2711,4 +2720,306 @@ fn block_checks_are_paced_newest_first_and_load_back() {
     }
     assert_eq!(asked, 0, "every block's check loaded back");
     compiled_only(&bus);
+}
+
+// ---- R3: asks and replies (docs/plans/room-names-r3.md) ----
+
+/// What a server says to one ask: the reply (decoded), whether it called the asker back, and what it sent it.
+fn ask_one(
+    s: &mut Server,
+    ask: super::wire::NameAsk,
+    now: Instant,
+    unix: u64,
+) -> (Option<super::wire::Reply>, bool, Option<Msg>) {
+    s.input(
+        Input::Ask {
+            ask,
+            region: Some(0),
+            via: [0; 16],
+        },
+        now,
+        unix,
+    );
+    let (mut reply, mut called, mut sent) = (None, false, None);
+    let mut z = Transfers::default();
+    while let Some(c) = s.poll() {
+        match c {
+            Cmd::Reply { to, data, .. } => {
+                assert_eq!(to, ask.key, "under the asker's reply tag");
+                reply = Some(super::wire::Reply::decode(&data).unwrap());
+            }
+            Cmd::CallBack { key, .. } => called |= key == ask.key,
+            Cmd::Send { data, .. } => {
+                if let Some((_, m)) = z.input([7; 32], &data, now) {
+                    sent = Some(Msg::decode(&m).unwrap().0);
+                }
+            }
+            _ => {}
+        }
+    }
+    (reply, called, sent)
+}
+
+fn an_ask(
+    key: u8,
+    n: u32,
+    id: [u8; 32],
+    mode: super::wire::AskMode,
+    spread: u8,
+    shown: [u8; 8],
+) -> super::wire::NameAsk {
+    let mut nonce = [key; 16];
+    nonce[..4].copy_from_slice(&n.to_le_bytes());
+    super::wire::NameAsk {
+        key: [key; 32],
+        region: 0,
+        time: T,
+        nonce,
+        id,
+        mode,
+        spread,
+        shown,
+    }
+}
+
+/// A server's replies: a `share` in its share (with the owning chain's last entry and the zone, or none), a `dissent`
+/// only where it holds another owner, a `fetch` only when it names this server (a call back and the whole run); once
+/// a nonce; nothing before its first sync.
+#[test]
+fn a_server_replies_to_asks_by_their_mode() {
+    use super::wire::{AskMode, ReplyItem};
+    let mut b = Bitcoin::new(ROOM, 50);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let (_, alpha) = b.title(2, "alpha", t(30), &[t(15), t(2)], [0xa1; 32]);
+    let owner = alpha.entries[0].entry.owner;
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    assert!(s.load(&record(&alpha, T), T));
+    let me = [7u8; 32];
+    let mut now = Instant::now();
+    s.start(me, now);
+    while s.poll().is_some() {}
+    let none = [0u8; 8];
+    let ask = |k, n, mode, spread, shown| an_ask(k, n, alpha.id, mode, spread, shown);
+    assert!(
+        ask_one(&mut s, ask(1, 0, AskMode::Share, 0, none), now, T)
+            .0
+            .is_none(),
+        "not before its first sync"
+    );
+    s.synced = true;
+    now += Duration::from_secs(2);
+    let (r, called, _) = ask_one(&mut s, ask(1, 1, AskMode::Share, 0, none), now, T);
+    let r = r.expect("everyone asked: a reply");
+    assert!(!called, "a reply is no call back");
+    assert_eq!((r.server, r.since), (me, t(30)));
+    let ReplyItem::Item(it) = &r.item else {
+        panic!("{:?}", r.item)
+    };
+    assert_eq!(it.entries.len(), 1, "the last entry alone");
+    assert_eq!(it.entries[0], alpha.entries[2]);
+    assert_eq!(it.zone, alpha.zone);
+    assert!(
+        ask_one(&mut s, ask(1, 1, AskMode::Share, 0, none), now, T)
+            .0
+            .is_none(),
+        "once a nonce (an ask's rounds share it)"
+    );
+    // A name it doesn't hold: none.
+    now += Duration::from_secs(2);
+    let r = ask_one(
+        &mut s,
+        an_ask(3, 2, [5; 32], AskMode::Share, 0, none),
+        now,
+        T,
+    )
+    .0;
+    assert_eq!(r.map(|r| r.item), Some(ReplyItem::None));
+    // The share: by the hash of its own live names' owner keys, as "who serves?".
+    let mine = s
+        .reg
+        .get(&b.names.name_id("mine"))
+        .unwrap()
+        .owner
+        .as_ref()
+        .unwrap()
+        .owner;
+    let mut inside = 0;
+    for n in 10..74u32 {
+        now += Duration::from_secs(1);
+        let a = ask(4, n, AskMode::Share, 3, none);
+        let replied = ask_one(&mut s, a, now, T).0.is_some();
+        assert_eq!(
+            replied,
+            in_share(rank(&share_hash(&a.nonce, &mine)), 3),
+            "{n}"
+        );
+        inside += replied as usize;
+    }
+    assert!((2..=20).contains(&inside), "{inside} of 64 at 1/8");
+    // A dissent: silent when it holds the owner shown, a reply when it holds another (or none was shown).
+    now += Duration::from_secs(1);
+    let shown: [u8; 8] = owner[..8].try_into().unwrap();
+    assert!(
+        ask_one(&mut s, ask(5, 100, AskMode::Dissent, 6, shown), now, T)
+            .0
+            .is_none()
+    );
+    assert!(
+        ask_one(&mut s, ask(5, 101, AskMode::Dissent, 6, [1; 8]), now, T)
+            .0
+            .is_some()
+    );
+    now += Duration::from_secs(1);
+    assert!(
+        ask_one(&mut s, ask(5, 102, AskMode::Dissent, 6, none), now, T)
+            .0
+            .is_some()
+    );
+    assert!(
+        ask_one(
+            &mut s,
+            an_ask(5, 103, [5; 32], AskMode::Dissent, 6, none),
+            now,
+            T
+        )
+        .0
+        .is_none(),
+        "no owner held: nothing to dissent with"
+    );
+    // A fetch: only one naming this server; a call back and the owning chain's whole run.
+    now += Duration::from_secs(1);
+    let (r, called, _) = ask_one(&mut s, ask(6, 200, AskMode::Fetch, 0, [1; 8]), now, T);
+    assert!(r.is_none() && !called, "another server's fetch");
+    let (r, called, sent) = ask_one(
+        &mut s,
+        ask(6, 201, AskMode::Fetch, 0, me[..8].try_into().unwrap()),
+        now,
+        T,
+    );
+    assert!(r.is_none() && called);
+    let Some(Msg::Items(items)) = sent else {
+        panic!("{sent:?}")
+    };
+    assert_eq!(items[0].entries, alpha.entries, "the whole run");
+    assert_eq!(s.stats.fetched, 1);
+}
+
+/// Reply budgets: 2 a second a server, 16 a minute under one reply tag, apart from "who serves?"'s answers. A flood of
+/// forged asks (dissents naming a made-up owner, shares at spread 0) makes few replies, and questions are still
+/// answered meanwhile.
+#[test]
+fn reply_budgets_bound_a_flood_of_forged_asks() {
+    use super::wire::AskMode;
+    let mut b = Bitcoin::new(ROOM, 51);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let (_, alpha) = b.title(2, "alpha", t(30), &[t(2)], [0xa1; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    assert!(s.load(&record(&alpha, T), T));
+    let mut now = Instant::now();
+    s.start([7; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    // Per server: 200 forged asks from 200 keys within a second, for ten seconds.
+    let mut replies = 0;
+    for sec in 0..10u32 {
+        for k in 0..200u32 {
+            let mut a = an_ask(1, sec * 1000 + k, alpha.id, AskMode::Dissent, 0, [1; 8]);
+            a.key[..4].copy_from_slice(&k.to_le_bytes());
+            let a = if k % 2 == 0 {
+                a
+            } else {
+                super::wire::NameAsk {
+                    mode: AskMode::Share,
+                    ..a
+                }
+            };
+            replies += ask_one(&mut s, a, now + Duration::from_millis(k as u64 * 4), T)
+                .0
+                .is_some() as usize;
+            if k == 100 {
+                // "Who serves?" is answered from its own budget meanwhile.
+                let q = Question {
+                    key: [0xcc; 32],
+                    region: 0,
+                    time: T,
+                    nonce: [sec as u8; 16],
+                    spread: 0,
+                };
+                s.input(Input::Question { q, region: 0 }, now, T);
+                let mut called = false;
+                while let Some(c) = s.poll() {
+                    called |= matches!(c, Cmd::CallBack { .. });
+                }
+                assert!(called || sec >= 4, "second {sec}: a question answered");
+                s.input(Input::Gone([0xcc; 32]), now, T);
+                while s.poll().is_some() {}
+            }
+        }
+        now += Duration::from_secs(1);
+    }
+    eprintln!("2,000 forged asks over 10 s from 200 keys: {replies} replies");
+    assert!(replies <= 2 * 10 + 2, "{replies}: 2 a second");
+    // Per tag: one key's asks, spread out so the second's budget always has room, for two minutes.
+    let mut one = 0;
+    for n in 0..120u32 {
+        now += Duration::from_secs(1);
+        let a = an_ask(9, 5000 + n, alpha.id, AskMode::Dissent, 0, [1; 8]);
+        one += ask_one(&mut s, a, now, T).0.is_some() as usize;
+    }
+    eprintln!("one reply tag's 120 asks over 2 minutes: {one} replies");
+    assert!(
+        (16..=REPLIES_PER_TAG * 2 + 1).contains(&one),
+        "{one}: 16 a minute"
+    );
+    assert!(s.stats.replies_refused > 0);
+}
+
+/// A reply's item is bounded: past the server's `reply_max` (4 KiB) it is left out, and the reply says so.
+#[test]
+fn an_item_past_the_reply_bound_is_left_out() {
+    use super::wire::{AskMode, REPLY_MAX, ReplyItem};
+    let mut b = Bitcoin::new(ROOM, 52);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let (_, alpha) = b.title(2, "alpha", t(30), &[t(2)], [0xa1; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    assert!(s.load(&record(&alpha, T), T));
+    assert_eq!(s.reply_max, REPLY_MAX);
+    let mut now = Instant::now();
+    s.start([7; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    let r = ask_one(
+        &mut s,
+        an_ask(1, 1, alpha.id, AskMode::Share, 0, [0; 8]),
+        now,
+        T,
+    )
+    .0
+    .unwrap();
+    let ReplyItem::Item(it) = r.item else {
+        panic!()
+    };
+    let size = it.encode().len();
+    s.reply_max = size - 1;
+    now += Duration::from_secs(1);
+    let r = ask_one(
+        &mut s,
+        an_ask(1, 2, alpha.id, AskMode::Share, 0, [0; 8]),
+        now,
+        T,
+    )
+    .0
+    .unwrap();
+    assert_eq!(r.item, ReplyItem::TooBig, "{size} bytes past {}", size - 1);
+    // And a member refuses a reply whose item is past REPLY_MAX at the wire.
+    let big = super::wire::Reply {
+        item: ReplyItem::Item(Box::new(Item {
+            zone: None,
+            ..*it.clone()
+        })),
+        ..r.clone()
+    };
+    let mut bytes = big.encode();
+    bytes.extend(vec![0; REPLY_MAX]);
+    assert!(super::wire::Reply::decode(&bytes).is_err());
 }

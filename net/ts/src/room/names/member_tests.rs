@@ -11,7 +11,7 @@ use super::{
     member::{Answer, IdsDone, IdsResult, KEPT_REFRESH, Member},
     server::{Cmd, Config, Input, MAX_BYTES, MAX_NAMES, Server, Title},
     testkit::{Bitcoin, DAY, params},
-    wire::{GetMode, Item, Msg, Question},
+    wire::{AskMode, GetMode, Item, Msg, NameAsk, Question, Reply},
     zone::Zone,
 };
 
@@ -61,6 +61,16 @@ struct Bus {
     stored: BTreeMap<[u8; 32], Option<Vec<u8>>>,
     t0: Instant,
     now: Instant,
+    /// The member's asks (mode, spread, shown, nonce) and the replies that reached it.
+    asks: Vec<(AskMode, u8, [u8; 8], [u8; 16])>,
+    replies: usize,
+    /// Datagrams the member sent (a session's: none on a first lookup but a contest's or a fetch's).
+    sends: usize,
+    /// Server `i`'s replies reach the member this much later (a slow relay).
+    delay: Vec<Duration>,
+    delayed: Vec<(Instant, Reply)>,
+    /// Replies an attacker sends under the member's reply tag as each `share` ask goes out, ahead of the servers'.
+    junk: Vec<Reply>,
 }
 
 impl Bus {
@@ -83,6 +93,12 @@ impl Bus {
             stored: BTreeMap::new(),
             t0: now,
             now,
+            asks: Vec::new(),
+            replies: 0,
+            sends: 0,
+            delay: vec![Duration::ZERO; n],
+            delayed: Vec::new(),
+            junk: Vec::new(),
         };
         for i in 0..n {
             let k = b.keys[i];
@@ -90,6 +106,7 @@ impl Bus {
         }
         let mk = b.mkey;
         b.m.start(mk, now);
+        b.m.ready(now);
         // Each server asks, nobody answers, and it serves from then on.
         b.advance(Duration::from_secs(3));
         assert!(b.s.iter().all(|s| s.synced));
@@ -121,12 +138,22 @@ impl Bus {
 
     fn carry_server(&mut self, i: usize, c: Cmd) {
         let (now, unix) = (self.now, self.unix());
-        if let Cmd::Send { to, data } = c
-            && to == self.mkey
-            && self.up[i]
-        {
-            let from = self.keys[i];
-            self.m.input(Input::Datagram { from, data }, now, unix);
+        match c {
+            Cmd::Send { to, data } if to == self.mkey && self.up[i] => {
+                let from = self.keys[i];
+                self.m.input(Input::Datagram { from, data }, now, unix);
+            }
+            // A reply through the relays: under the member's reply tag, to whoever subscribes.
+            Cmd::Reply { to, data, .. } if to == self.mkey && self.up[i] => {
+                self.replies += 1;
+                let r = Reply::decode(&data).unwrap();
+                if self.delay[i] > Duration::ZERO {
+                    self.delayed.push((now + self.delay[i], r));
+                } else {
+                    self.m.input(Input::Reply(r), now, unix);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -147,7 +174,47 @@ impl Bus {
                     }
                 }
             }
+            Cmd::Ask {
+                nonce,
+                id,
+                mode,
+                spread,
+                shown,
+            } => {
+                self.asks.push((mode, spread, shown, nonce));
+                if mode == AskMode::Share {
+                    for mut r in self.junk.clone() {
+                        r.nonce = nonce;
+                        self.m.input(Input::Reply(r), now, unix);
+                    }
+                }
+                for j in 0..self.s.len() {
+                    if self.up[j] {
+                        let ask = NameAsk {
+                            key: from,
+                            region: 0,
+                            time: unix,
+                            nonce,
+                            id,
+                            mode,
+                            spread,
+                            shown,
+                        };
+                        let via = [j as u8; 16];
+                        self.s[j].input(
+                            Input::Ask {
+                                ask,
+                                region: Some(0),
+                                via,
+                            },
+                            now,
+                            unix,
+                        );
+                    }
+                }
+            }
             Cmd::Send { to, data } => {
+                self.sends += 1;
                 if let Some(j) = self.keys.iter().position(|k| *k == to)
                     && self.up[j]
                     && !self.mute[j]
@@ -162,7 +229,13 @@ impl Bus {
             Cmd::Log(l) => eprintln!("member: {l}"),
             // Decision 4 as amended: servers ask an explorer and a calendar, members nothing.
             Cmd::Fetch { url, .. } => panic!("a member fetched {url}"),
-            Cmd::Accept { .. } | Cmd::CallBack { .. } | Cmd::Subscribe(_) | Cmd::Served(..) => {}
+            Cmd::Accept { .. }
+            | Cmd::AcceptFrom { .. }
+            | Cmd::CallBack { .. }
+            | Cmd::Subscribe(_)
+            | Cmd::Replies(_)
+            | Cmd::Reply { .. }
+            | Cmd::Served(..) => {}
         }
     }
 
@@ -172,6 +245,7 @@ impl Bus {
             self.run();
             let next = (self.s.iter().filter_map(Server::deadline))
                 .chain(self.m.deadline())
+                .chain(self.delayed.iter().map(|d| d.0))
                 .min();
             match next {
                 Some(t) if t <= end => {
@@ -181,6 +255,12 @@ impl Bus {
                         if s.deadline().is_some_and(|t| t <= now) {
                             s.tick(now, unix);
                         }
+                    }
+                    let (due, wait): (Vec<_>, Vec<_>) =
+                        self.delayed.drain(..).partition(|d| d.0 <= now);
+                    self.delayed = wait;
+                    for (_, r) in due {
+                        self.m.input(Input::Reply(r), now, unix);
                     }
                     if self.m.deadline().is_some_and(|t| t <= now) {
                         self.m.tick(now, unix);
@@ -209,6 +289,11 @@ impl Bus {
 
     fn gets(&self) -> usize {
         self.m.stats.gets
+    }
+
+    /// The member's asks of one mode.
+    fn asked(&self, mode: AskMode) -> usize {
+        self.asks.iter().filter(|a| a.0 == mode).count()
     }
 }
 
@@ -245,6 +330,8 @@ fn title(
     b.item(name, &run, Some(zone))
 }
 
+/// A first lookup asks the room through the relays: no question, no session, no `get` (room-names-r3.md). What is kept
+/// answers at once, and its refresh after 5 minutes goes through "who serves?" and `get`, never an ask.
 #[test]
 fn a_member_resolves_a_name_keeps_it_and_asks_again_after_five_minutes() {
     let mut b = Bitcoin::new(ROOM, 1);
@@ -252,17 +339,32 @@ fn a_member_resolves_a_name_keeps_it_and_asks_again_after_five_minutes() {
     let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&alpha]));
     let mut bus = Bus::new(vec![s0, s1], member());
     let (a, took) = bus.resolve("alpha");
-    eprintln!("a cold lookup on the bus: {took:?}");
+    eprintln!(
+        "a first lookup on the bus: {took:?}, {} asks, {} replies",
+        bus.asks.len(),
+        bus.replies
+    );
     assert_eq!(a, Answer::Node([0xa1; 32]));
-    assert_eq!(bus.m.servers().len(), 2, "two servers held");
-    assert_eq!(bus.gets(), 2, "a get to each");
+    assert_eq!(
+        (
+            bus.gets(),
+            bus.m.stats.questions,
+            bus.sends,
+            bus.m.stats.fetches
+        ),
+        (0, 0, 0, 0),
+        "no question, no session, no get"
+    );
+    assert!(bus.asked(AskMode::Share) >= 1);
+    assert!(bus.m.servers().is_empty(), "no servers held");
     // A label under it: from what is kept, at once.
+    let asks = bus.asks.len();
     assert_eq!(
         bus.resolve("git.alpha"),
         (Answer::Node([0xa2; 32]), Duration::ZERO)
     );
     assert_eq!(bus.resolve("www.alpha").0, Answer::Nx, "no slot opens");
-    assert_eq!(bus.gets(), 2, "nothing asked");
+    assert_eq!(bus.asks.len(), asks, "nothing asked");
     // Stored: a member made from the record answers at once, with no names client.
     let rec = bus.stored[&alpha.id].clone().unwrap();
     assert_eq!(rec[0], 2, "a member's record");
@@ -273,31 +375,39 @@ fn a_member_resolves_a_name_keeps_it_and_asks_again_after_five_minutes() {
         m.query("alpha", bus.now, bus.unix(), true),
         Answer::Node([0xa1; 32])
     );
-    // Older than 5 minutes: answered at once, and asked again in the background.
+    // Older than 5 minutes: answered at once, and asked again in the background, through servers "who serves?" found.
     bus.advance(Duration::from_secs(KEPT_REFRESH + 1));
     assert_eq!(
         bus.resolve("alpha"),
         (Answer::Node([0xa1; 32]), Duration::ZERO)
     );
     bus.advance(Duration::from_secs(2));
-    assert!(bus.gets() > 2, "asked again");
+    assert_eq!(bus.gets(), 2, "asked again: a get to each server");
+    assert_eq!(bus.m.stats.questions, 1);
+    assert_eq!(bus.asks.len(), asks, "a refresh sends no ask");
 }
 
+/// A name nobody holds: the replies say none, so NXDOMAIN, remembered for a minute; asked again after it (a lookup of
+/// a name the member doesn't keep), and remembered twice as long each time while it stays unknown, to 10 minutes.
 #[test]
-fn both_servers_saying_none_is_nxdomain_remembered_for_a_minute() {
+fn a_name_nobody_holds_is_nxdomain_remembered_and_doubling() {
     let mut b = Bitcoin::new(ROOM, 2);
     let (s0, s1) = (serving(&mut b, 1, &[]), serving(&mut b, 2, &[]));
     let mut bus = Bus::new(vec![s0, s1], member());
     let (a, took) = bus.resolve("nobody");
     assert_eq!(a, Answer::Nx);
     assert!(took < Duration::from_secs(2), "{took:?}");
-    let gets = bus.gets();
-    bus.advance(Duration::from_secs(30));
-    assert_eq!(bus.resolve("nobody"), (Answer::Nx, Duration::ZERO));
-    assert_eq!(bus.gets(), gets, "within the minute: nothing asked");
-    bus.advance(Duration::from_secs(31));
-    assert_eq!(bus.resolve("nobody").0, Answer::Nx);
-    assert!(bus.gets() > gets, "past the minute: asked again");
+    assert!(bus.replies >= 1, "the replies said none");
+    let mut asks = bus.asks.len();
+    for (k, wait) in [60u64, 120, 240, 480, 600, 600].into_iter().enumerate() {
+        bus.advance(Duration::from_secs(wait - 2));
+        assert_eq!(bus.resolve("nobody"), (Answer::Nx, Duration::ZERO), "{k}");
+        assert_eq!(bus.asks.len(), asks, "{k}: within {wait} s, nothing asked");
+        bus.advance(Duration::from_secs(3));
+        assert_eq!(bus.resolve("nobody").0, Answer::Nx, "{k}");
+        assert!(bus.asks.len() > asks, "{k}: past {wait} s, asked again");
+        asks = bus.asks.len();
+    }
 }
 
 #[test]
@@ -388,16 +498,24 @@ fn one_servers_answer_isnt_trusted_against_a_contesting_kept_chain() {
 }
 
 /// The servers disagree: one holds the owner's chain, the other (which never got it) an impostor's claimed before the
-/// owner's last renewal. Their last entries alone would pick the impostor; `history` shows the owner's run.
+/// owner's last renewal. Their last entries alone would pick the impostor: two owner keys are a contest, each key's
+/// run fetched through a session (the earliest `since` first), and the owner's run of twenty days wins.
 #[test]
-fn servers_that_disagree_are_asked_for_history() {
+fn servers_that_disagree_run_a_contest_and_the_owner_wins() {
     let mut b = Bitcoin::new(ROOM, 7);
     let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
     let fake = title(&mut b, 66, "alpha", 10, &[], [0x66; 32], [0x66; 32]);
     let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&fake]));
     let mut bus = Bus::new(vec![s0, s1], member());
-    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
-    assert_eq!(bus.m.stats.histories, 2);
+    let (a, took) = bus.resolve("alpha");
+    eprintln!(
+        "a contested first lookup: {took:?}, {} fetches",
+        bus.m.stats.fetches
+    );
+    assert_eq!(a, Answer::Node([0xa1; 32]));
+    assert_eq!(bus.m.stats.contests, 1);
+    assert_eq!(bus.m.stats.fetches, 2, "each key's run, at once");
+    assert!(bus.sends > 0, "a session for the fetch");
     assert_eq!(
         bus.m.kept[&alpha.id].kept.earliest,
         t(20),
@@ -405,7 +523,28 @@ fn servers_that_disagree_are_asked_for_history() {
     );
 }
 
-/// In a room of two servers a member holds both: a round that brings one answer widens once more.
+/// Liars about `since`: servers holding an impostor's young chain claim it is older than the owner's. Each costs a
+/// fetch, and loses: its run shows its real age.
+#[test]
+fn liars_since_cost_a_fetch_each_and_lose() {
+    let mut b = Bitcoin::new(ROOM, 15);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let mut servers = vec![serving(&mut b, 1, &[&alpha])];
+    for k in 0..3u8 {
+        let fake = title(&mut b, 70 + k, "alpha", 2, &[], [0x66; 32], [0x66; 32]);
+        let mut s = serving(&mut b, 10 + k, &[&fake]);
+        s.lie_since = Some(t(300) + k as u32);
+        servers.push(s);
+    }
+    let mut bus = Bus::new(servers, member());
+    let (a, took) = bus.resolve("alpha");
+    eprintln!("three liars: {took:?}, {} fetches", bus.m.stats.fetches);
+    assert_eq!(a, Answer::Node([0xa1; 32]));
+    assert_eq!(bus.m.stats.fetches, 4, "each liar, then the owner's");
+}
+
+/// In a room of two servers a member holds both ("who serves?", for the dialog's check here): a round that brings one
+/// answer widens once more.
 #[test]
 fn a_member_holds_two_servers_where_the_room_has_two() {
     let mut b = Bitcoin::new(ROOM, 14);
@@ -418,10 +557,15 @@ fn a_member_holds_two_servers_where_the_room_has_two() {
         bus.mkey = [0x40 + k as u8; 32];
         let (mk, now) = (bus.mkey, bus.now);
         bus.m.start(mk, now);
-        bus.m.kept.clear();
-        assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+        bus.m.ready(now);
+        bus.m.ids(7, now);
+        bus.advance(Duration::from_secs(3));
         assert_eq!(bus.m.servers().len(), 2, "question {k}");
     }
+    assert!(
+        bus.asks.is_empty(),
+        "the dialog's check never asks the room"
+    );
 }
 
 /// A renewal and a zone change reach a member at its next look after 5 minutes.
@@ -466,8 +610,8 @@ fn a_renewal_and_a_zone_change_show_one_query_late() {
     assert_eq!(bus.m.stats.histories, 0, "a continuation needs no history");
 }
 
-/// Nobody serves: the query waits 2.5 s, then NXDOMAIN; remembered 30 s, doubling; a server that appears is found at
-/// the next question after the memory.
+/// Nobody serves: the query waits 2.5 s (silence through the last round), then NXDOMAIN; remembered 30 s, doubling; a
+/// server that appears is found at the next lookup after the memory.
 #[test]
 fn with_nobody_serving_nxdomain_is_remembered_and_doubles_until_a_server_appears() {
     let mut b = Bitcoin::new(ROOM, 9);
@@ -481,17 +625,18 @@ fn with_nobody_serving_nxdomain_is_remembered_and_doubles_until_a_server_appears
         (Duration::from_millis(2400)..Duration::from_millis(2700)).contains(&took),
         "{took:?}"
     );
-    assert_eq!(bus.m.stats.questions, 1);
+    assert_eq!(bus.m.stats.nobody, 1);
+    assert_eq!(bus.asked(AskMode::Share), 3, "three rounds");
     bus.advance(Duration::from_secs(20));
     assert_eq!(
         bus.resolve("alpha"),
         (Answer::Nx, Duration::ZERO),
         "remembered"
     );
-    assert_eq!(bus.m.stats.questions, 1, "no question meanwhile");
+    assert_eq!(bus.asks.len(), 3, "nothing asked meanwhile");
     bus.advance(Duration::from_secs(10));
     assert_eq!(bus.resolve("alpha").0, Answer::Nx);
-    assert_eq!(bus.m.stats.questions, 2, "asked again after 30 s");
+    assert_eq!(bus.m.stats.nobody, 2, "asked again after 30 s");
     bus.advance(Duration::from_secs(40));
     assert_eq!(
         bus.resolve("alpha"),
@@ -516,19 +661,28 @@ fn with_nobody_serving_nxdomain_is_remembered_and_doubles_until_a_server_appears
     assert!(bus.m.nobody_until().is_none(), "an answer resets it");
 }
 
-/// A server that answers the question but never a `get`: the query waits (the resolver's SERVFAIL at 4 s); the server
-/// is let go, and the next query asks again.
+/// A server that answers the question but never a refresh's `get`: the kept name answers throughout; the server is
+/// let go, and the next refresh asks again.
 #[test]
 fn a_server_that_answers_nothing_is_let_go() {
     let mut b = Bitcoin::new(ROOM, 10);
     let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
     let s0 = serving(&mut b, 1, &[&alpha]);
     let mut bus = Bus::new(vec![s0], member());
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
     bus.mute[0] = true;
-    assert_eq!(bus.resolve("alpha"), (Answer::Wait, Duration::from_secs(4)));
+    bus.advance(Duration::from_secs(KEPT_REFRESH + 1));
+    assert_eq!(
+        bus.resolve("alpha"),
+        (Answer::Node([0xa1; 32]), Duration::ZERO)
+    );
     bus.advance(Duration::from_secs(20));
+    assert!(bus.m.servers().is_empty(), "let go");
+    let checked = bus.m.kept[&alpha.id].checked;
     bus.mute[0] = false;
     assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    bus.advance(Duration::from_secs(3));
+    assert!(bus.m.kept[&alpha.id].checked > checked, "confirmed again");
 }
 
 /// The dialog's check: every id under one first byte, from each server; not counted as asked.
@@ -717,7 +871,13 @@ fn drive(
     let mut now = t0;
     let unix = |now: Instant| T + now.duration_since(t0).as_secs();
     m.start(mkey, now);
-    m.query(query, now, unix(now), true);
+    m.ready(now);
+    // No name: the dialog's check, which asks "who serves?" (a first lookup asks the room instead).
+    if query.is_empty() {
+        m.ids(7, now);
+    } else {
+        m.query(query, now, unix(now), true);
+    }
     watch(m);
     let mut published = Vec::new();
     while now < t0 + d {
@@ -778,7 +938,9 @@ fn drive(
                 .deadline()
                 .map_or(now + Duration::from_millis(50), |t| t.max(now));
             m.tick(now, unix(now));
-            m.query(query, now, unix(now), false);
+            if !query.is_empty() {
+                m.query(query, now, unix(now), false);
+            }
             watch(m);
         }
     }
@@ -802,7 +964,7 @@ fn a_serve_outside_the_share_sent_isnt_counted() {
         &mut m,
         &mut fakes,
         Duration::from_millis(600),
-        "alpha",
+        "",
         &mut |_, _| None,
         &mut |_| {},
     );
@@ -829,7 +991,8 @@ fn many_keys(first: bool) -> (Keys, Keys, Keys) {
     let mut nonce = None;
     let mut now = Instant::now();
     m.start([0x99; 32], now);
-    m.query("alpha", now, T, true);
+    m.ready(now);
+    m.ids(7, now);
     loop {
         while let Some(c) = m.poll() {
             if let Cmd::Publish {
@@ -1033,17 +1196,26 @@ fn a_release_ends_a_kept_name_and_its_next_owner_is_taken() {
     );
 }
 
-/// Review 2's finding 9: a lookup whose answers are being checked (its `asked` emptied) isn't asked again by whatever
+/// Review 2's finding 9: a refresh whose answers are being checked (its `asked` emptied) isn't asked again by whatever
 /// else sends: stray owner answers would fill the `history` lookup it may start, deciding it on last entries.
 #[test]
 fn a_lookup_being_checked_isnt_asked_again() {
     let mut b = Bitcoin::new(ROOM, 42);
     let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let beta = title(&mut b, 2, "beta", 20, &[4], [0xb1; 32], [0xb2; 32]);
     // The other server holds another chain of alpha, a long one: the servers disagree, and its history takes turns.
     let renewals: Vec<u32> = (1..20).map(|k| 400 - 20 * k).collect();
     let long = title(&mut b, 66, "alpha", 400, &renewals, [0x66; 32], [0x66; 32]);
-    let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&long]));
-    let mut bus = Bus::new(vec![s0, s1], member());
+    let (s0, s1) = (
+        serving(&mut b, 1, &[&alpha, &beta]),
+        serving(&mut b, 2, &[&long, &beta]),
+    );
+    let mut m = member();
+    // Both kept, confirmed a while ago: their lookups are refreshes.
+    for it in [&alpha, &beta] {
+        assert!(m.load(&kept_record(it, T - KEPT_REFRESH - 10), T));
+    }
+    let mut bus = Bus::new(vec![s0, s1], m);
     let (now, unix) = (bus.now, bus.unix());
     bus.m.query("alpha", now, unix, true);
     let mut seen = false;
@@ -1072,4 +1244,324 @@ fn a_lookup_being_checked_isnt_asked_again() {
     bus.m.query("beta", now, unix, true);
     bus.run();
     assert_eq!(asks(&bus.m), before + 2, "beta's gets alone");
+    assert!(bus.asks.is_empty(), "refreshes ask the room nothing");
+}
+
+/// A member's record of `it`'s last entry and zone, confirmed at `checked`.
+fn kept_record(it: &Item, checked: u64) -> Vec<u8> {
+    let last = it.entries.last().unwrap().clone();
+    let mut rec = vec![2u8];
+    rec.extend_from_slice(&last.anchor.as_ref().unwrap().1.time().to_le_bytes());
+    rec.extend_from_slice(&checked.to_le_bytes());
+    rec.extend(
+        Item {
+            id: it.id,
+            entries: vec![last],
+            zone: it.zone.clone(),
+        }
+        .encode(),
+    );
+    rec
+}
+
+// ---- R3: a first lookup asks the room through the relays (docs/plans/room-names-r3.md) ----
+
+/// A server holding `items`, with a title of its own named `name` (claimed two days ago: anyone's cheap registration).
+fn junk_server(b: &mut Bitcoin, k: u32, items: &[&Item]) -> Server {
+    let (key, item) = b.title((k % 250) as u8 + 1, &format!("junk{k}"), t(2), &[], [1; 32]);
+    let mut s = Server::new(
+        ROOM,
+        Config {
+            params: params(),
+            titles: vec![Title { key, item }],
+            max_names: MAX_NAMES,
+            max_bytes: MAX_BYTES,
+        },
+        T,
+    );
+    for it in items {
+        assert!(s.load(&record(it, T), T));
+    }
+    s
+}
+
+/// Review 2's finding 2, as R3 answers it: junk registrations, as many as one likes, are the whole of a first lookup's
+/// sample, and show their own younger chain of the name (or say none). One honest server holds the owner's chain: it
+/// dissents, the contest checks both runs, and the member gets the owner. Registrations buy no place: there is none.
+#[test]
+fn junk_registrations_dont_hide_the_owner_from_a_first_lookup() {
+    let mut b = Bitcoin::new(ROOM, 40);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let fake = title(&mut b, 66, "alpha", 2, &[], [0x66; 32], [0x66; 32]);
+    for (n, shows) in [(128u32, true), (128, false), (1280, true), (1280, false)] {
+        let mut servers = vec![serving(&mut b, 1, &[&alpha])];
+        for k in 0..n {
+            let items: &[&Item] = if shows { &[&fake] } else { &[] };
+            servers.push(junk_server(&mut b, k, items));
+        }
+        let mut bus = Bus::new(servers, member());
+        const LOOKUPS: usize = 6;
+        let (mut most, mut replies, mut fetches) = (Duration::ZERO, 0, 0);
+        for k in 0..LOOKUPS {
+            // A new names client each time (a new key), what it kept forgotten: each a first lookup.
+            bus.m.stop();
+            bus.m.kept.clear();
+            bus.advance(Duration::from_secs(2));
+            bus.mkey = [0x40 + k as u8; 32];
+            let (mk, now) = (bus.mkey, bus.now);
+            bus.m.start(mk, now);
+            bus.m.ready(now);
+            let (r0, f0) = (bus.replies, bus.m.stats.fetches);
+            let (a, took) = bus.resolve("alpha");
+            assert_eq!(
+                a,
+                Answer::Node([0xa1; 32]),
+                "{n} junk, showing {shows}: lookup {k}"
+            );
+            if shows {
+                assert_eq!(
+                    bus.m.kept[&alpha.id].kept.earliest,
+                    t(20),
+                    "the owner's run"
+                );
+            }
+            most = most.max(took);
+            replies += bus.replies - r0;
+            fetches += bus.m.stats.fetches - f0;
+            assert_eq!(bus.m.stats.questions, 0, "no draw");
+        }
+        eprintln!(
+            "{n} junk registrations {}: the owner every time ({LOOKUPS} lookups), at most {most:?}, {:.1} replies and \
+             {:.1} fetches a lookup, the next starting at spread {}",
+            if shows {
+                "showing a younger chain"
+            } else {
+                "saying none"
+            },
+            replies as f64 / LOOKUPS as f64,
+            fetches as f64 / LOOKUPS as f64,
+            bus.m.spread()
+        );
+        if !shows {
+            assert_eq!(fetches, 0, "one key shown: no contest");
+        }
+        if n == 1280 {
+            assert!(bus.m.spread() > 6, "a large room: narrower");
+        }
+    }
+}
+
+/// The sample says none; a holder outside it dissents (`shown` zeros: any owner), and its owner is taken without a
+/// session.
+#[test]
+fn none_shown_and_a_holder_dissents() {
+    let mut b = Bitcoin::new(ROOM, 43);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let mut servers: Vec<Server> = (0..64).map(|k| junk_server(&mut b, k, &[])).collect();
+    servers.push(serving(&mut b, 1, &[&alpha]));
+    let mut bus = Bus::new(servers, member());
+    let mut zeros = 0;
+    for k in 0..10u8 {
+        bus.m.stop();
+        bus.m.kept.clear();
+        bus.advance(Duration::from_secs(2));
+        bus.mkey = [0x40 + k; 32];
+        let (mk, now) = (bus.mkey, bus.now);
+        bus.m.start(mk, now);
+        bus.m.ready(now);
+        let n = bus.asks.len();
+        assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]), "{k}");
+        zeros += bus.asks[n..]
+            .iter()
+            .any(|a| a.0 == AskMode::Dissent && a.2 == [0; 8]) as usize;
+    }
+    assert!(zeros >= 1, "{:?}", bus.asks);
+    assert_eq!((bus.sends, bus.m.stats.fetches), (0, 0));
+}
+
+/// Forged replies under the member's tag, ahead of the servers': a forged entry, a forged anchor on a copy of the
+/// owner's real entry, a forged zone on it. Each fails a check and takes no place: the owner's real reply is taken.
+#[test]
+fn junk_replies_take_no_place() {
+    let mut b = Bitcoin::new(ROOM, 44);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let real = alpha.entries.last().unwrap().clone();
+    let key66 = b.key(66, "alpha");
+    let mut forged_zone =
+        Zone::seal(&b.names, &key66, "alpha", 99, &[(None, [0x66; 32])], false).unwrap();
+    forged_zone.owner = real.entry.owner;
+    let item = |w: super::wire::WireEntry, zone: Option<Zone>| {
+        super::wire::ReplyItem::Item(Box::new(Item {
+            id: alpha.id,
+            entries: vec![w],
+            zone,
+        }))
+    };
+    let mut junk = Vec::new();
+    for k in 0..300u32 {
+        let mut w = real.clone();
+        match k % 3 {
+            0 => w.entry.sig[(k % 64) as usize] ^= 1 + (k / 64) as u8,
+            // The header's merkle root: the anchor's proof no longer reaches it.
+            1 => w.anchor.as_mut().unwrap().1.0[36 + (k % 32) as usize] ^= 1,
+            _ => {}
+        }
+        let zone = (k % 3 == 2).then(|| forged_zone.clone());
+        let mut server = [0x55; 32];
+        server[..4].copy_from_slice(&k.to_le_bytes());
+        junk.push(Reply {
+            nonce: [0; 16],
+            server,
+            region: 0,
+            since: t(400),
+            item: item(w, zone),
+        });
+    }
+    let s0 = serving(&mut b, 1, &[&alpha]);
+    let mut bus = Bus::new(vec![s0], member());
+    bus.junk = junk;
+    let (a, took) = bus.resolve("alpha");
+    eprintln!(
+        "300 junk replies a round: {took:?}, {} entries checked whole, {} refused",
+        bus.m.stats.checked, bus.m.stats.refused
+    );
+    assert_eq!(a, Answer::Node([0xa1; 32]));
+    assert!(bus.m.stats.refused >= 300, "{}", bus.m.stats.refused);
+    assert_eq!(bus.m.stats.fetches, 0, "no contest: junk shows no owner");
+    assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone, "the owner's zone");
+}
+
+/// One key's last entries from two servers, one a renewal behind: the latest is taken, and no history is needed.
+#[test]
+fn one_keys_two_last_entries_need_no_history() {
+    let mut b = Bitcoin::new(ROOM, 45);
+    let key = b.key(1, "alpha");
+    let claim = b.at(Kind::Claim, &key, "alpha", [0; 32], t(30));
+    let r1 = b.at(Kind::Renew, &key, "alpha", claim.id(), t(15));
+    let r2 = b.at(Kind::Renew, &key, "alpha", r1.id(), t(2));
+    let zone = Zone::seal(&b.names, &key, "alpha", 1, &[(None, [0xa1; 32])], false).unwrap();
+    let behind = b.item("alpha", &[claim.clone(), r1.clone()], Some(zone.clone()));
+    let current = b.item("alpha", &[claim, r1, r2.clone()], Some(zone));
+    let (s0, s1) = (
+        serving(&mut b, 1, &[&behind]),
+        serving(&mut b, 2, &[&current]),
+    );
+    let mut bus = Bus::new(vec![s0, s1], member());
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    assert_eq!(bus.m.kept[&current.id].last.id(), r2.id(), "the latest");
+    assert_eq!((bus.m.stats.fetches, bus.m.stats.contests), (0, 0));
+}
+
+/// A dissent that comes after the decision (a slow relay), within 3 s: another owner starts a contest, and what was
+/// kept is replaced by the older run.
+#[test]
+fn a_late_dissent_replaces_what_was_kept() {
+    let mut b = Bitcoin::new(ROOM, 46);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let fake = title(&mut b, 66, "alpha", 10, &[], [0x66; 32], [0x66; 32]);
+    let (s0, s1) = (serving(&mut b, 1, &[&fake]), serving(&mut b, 2, &[&alpha]));
+    let mut bus = Bus::new(vec![s0, s1], member());
+    bus.delay[1] = Duration::from_millis(1900);
+    assert_eq!(
+        bus.resolve("alpha").0,
+        Answer::Node([0x66; 32]),
+        "decided before the owner's reply came"
+    );
+    bus.advance(Duration::from_secs(4));
+    assert_eq!(bus.m.stats.contests, 1);
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    assert_eq!(bus.m.kept[&alpha.id].kept.earliest, t(20));
+    // Past the late window, the lookup is over.
+    assert_eq!(bus.m.firsts(), 0);
+}
+
+/// An item past what a reply carries is left out: the member fetches it through a session.
+#[test]
+fn an_oversized_item_is_fetched_not_replied() {
+    let mut b = Bitcoin::new(ROOM, 47);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let mut s0 = serving(&mut b, 1, &[&alpha]);
+    let size = alpha.encode().len();
+    s0.reply_max = 600;
+    assert!(size > 600, "{size}");
+    let mut bus = Bus::new(vec![s0], member());
+    let (a, took) = bus.resolve("alpha");
+    eprintln!("an item of {size} bytes past a 600-byte reply: fetched in {took:?}");
+    assert_eq!(a, Answer::Node([0xa1; 32]));
+    assert_eq!(bus.m.stats.fetches, 1);
+    assert!(bus.sends > 0, "through a session");
+}
+
+/// The next first lookup starts where the last found the room: at the spread that brought its replies (with no
+/// dissent when that was everyone, nobody being left).
+#[test]
+fn a_first_lookup_starts_where_the_last_found_the_room() {
+    let mut b = Bitcoin::new(ROOM, 48);
+    let names: Vec<Item> = (0..8u8)
+        .map(|k| {
+            title(
+                &mut b,
+                k + 1,
+                &format!("name{k}"),
+                20,
+                &[4],
+                [k; 32],
+                [k; 32],
+            )
+        })
+        .collect();
+    let refs: Vec<&Item> = names.iter().collect();
+    let (s0, s1) = (serving(&mut b, 1, &refs), serving(&mut b, 2, &refs));
+    let mut bus = Bus::new(vec![s0, s1], member());
+    let mut everyone = 0;
+    for k in 0..8u8 {
+        let spread = bus.m.spread();
+        let n = bus.asks.len();
+        let (a, took) = bus.resolve(&format!("name{k}"));
+        assert_eq!(a, Answer::Node([k; 32]));
+        let modes: Vec<(AskMode, u8)> = bus.asks[n..].iter().map(|a| (a.0, a.1)).collect();
+        assert_eq!(
+            modes[0],
+            (AskMode::Share, spread),
+            "{k}: where the last found the room"
+        );
+        if spread == 0 {
+            everyone += 1;
+            assert!(
+                !modes.iter().any(|m| m.0 == AskMode::Dissent),
+                "no dissent: {modes:?}"
+            );
+            assert!(took <= Duration::from_millis(1300), "{took:?}");
+        }
+    }
+    eprintln!("a room of two: {everyone} of 8 first lookups asked everyone at once");
+}
+
+/// A member's servers for refreshes (and the dialog's check, and puts) are redrawn every 15 minutes while it holds
+/// them; none of it asks the room.
+#[test]
+fn servers_held_are_redrawn_every_fifteen_minutes() {
+    let mut b = Bitcoin::new(ROOM, 49);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let servers = (1..=4).map(|k| serving(&mut b, k, &[&alpha])).collect();
+    let mut bus = Bus::new(servers, member());
+    let now = bus.now;
+    bus.m.ids(7, now);
+    bus.advance(Duration::from_secs(3));
+    assert_eq!(bus.m.stats.questions, 1);
+    for minute in 1..=16 {
+        bus.advance(Duration::from_secs(60));
+        let now = bus.now;
+        bus.m.ids(7, now);
+        bus.advance(Duration::from_millis(100));
+        let want = if minute < 15 { 1 } else { 2 };
+        assert_eq!(bus.m.stats.questions, want, "minute {minute}");
+    }
+    let now = bus.now;
+    assert!(bus.m.put(alpha.clone(), now));
+    bus.advance(Duration::from_secs(3));
+    assert!(
+        bus.asks.is_empty(),
+        "the dialog's check and puts never ask the room"
+    );
 }
