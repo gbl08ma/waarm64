@@ -1,0 +1,411 @@
+{
+ "year": {
+  "alice": {
+   "transactions": 216,
+   "windows": [
+    "2026-11-15T22:54 to 2026-11-16T19:00 (24)",
+    "2025-12-10T07:58 to 2025-12-10T21:08 (24)",
+    "2026-02-09T23:01 to 2026-02-10T13:29 (24)",
+    "2026-03-13T13:03 to 2026-03-14T09:11 (24)",
+    "2026-04-25T22:59 to 2026-04-26T09:34 (24)",
+    "2026-06-10T16:54 to 2026-06-11T09:38 (24)",
+    "2026-07-22T20:35 to 2026-07-23T12:37 (24)",
+    "2026-09-20T08:35 to 2026-09-20T17:36 (24)",
+    "2026-10-24T05:45 to 2026-10-24T11:46 (24)"
+   ],
+   "gaps": 207,
+   "gapBlocks": {
+    "median": 3,
+    "p90": 6,
+    "max": 13
+   },
+   "gapHours": {
+    "median": 0.43,
+    "p90": 1.37,
+    "p99": 2.21,
+    "max": 3.4
+   },
+   "meanGapHours": 0.61,
+   "stampToBlockHours": {
+    "next": {
+     "median": 0.53,
+     "p90": 1.4,
+     "p99": 2.42,
+     "max": 3.56
+    },
+    "second": {
+     "median": 1.21,
+     "p90": 2.57,
+     "p99": 4.62,
+     "max": 5.39
+    }
+   },
+   "stampToProofHours": {
+    "next": {
+     "median": 1.42,
+     "p90": 2.46,
+     "p99": 3.78,
+     "max": 6.29
+    },
+    "second": {
+     "median": 2.11,
+     "p90": 3.56,
+     "p99": 5.72,
+     "max": 7.61
+    }
+   }
+  },
+  "bob": {
+   "transactions": 126,
+   "windows": [
+    "2026-11-14T12:51 to 2026-11-16T19:00 (18)",
+    "2026-03-15T23:23 to 2026-03-17T22:10 (18)",
+    "2026-04-17T21:47 to 2026-04-18T16:06 (18)",
+    "2026-06-10T22:27 to 2026-06-12T00:53 (18)",
+    "2026-07-30T16:01 to 2026-07-31T16:07 (18)",
+    "2026-09-13T20:25 to 2026-09-14T10:31 (18)",
+    "2026-11-10T05:08 to 2026-11-14T05:48 (18)"
+   ],
+   "gaps": 119,
+   "gapBlocks": {
+    "median": 9,
+    "p90": 30,
+    "max": 49
+   },
+   "gapHours": {
+    "median": 1.56,
+    "p90": 5.64,
+    "p99": 8.72,
+    "max": 12.12
+   },
+   "meanGapHours": 2.36,
+   "stampToBlockHours": {
+    "next": {
+     "median": 1.73,
+     "p90": 5.47,
+     "p99": 9.65,
+     "max": 12.28
+    },
+    "second": {
+     "median": 5.16,
+     "p90": 11.11,
+     "p99": 16.77,
+     "max": 19.56
+    }
+   },
+   "stampToProofHours": {
+    "next": {
+     "median": 2.65,
+     "p90": 6.47,
+     "p99": 10.94,
+     "max": 14.14
+    },
+    "second": {
+     "median": 6.03,
+     "p90": 12.08,
+     "p99": 17.93,
+     "max": 21.92
+    }
+   }
+  },
+  "finney": {
+   "transactions": 28,
+   "windows": [
+    "2026-11-14T19:00 to 2026-11-16T18:14 (8)",
+    "2026-06-08T14:00 to 2026-06-11T09:38 (8)",
+    "2026-07-11T12:18 to 2026-07-14T05:10 (8)",
+    "2026-10-14T12:20 to 2026-10-15T07:23 (4)"
+   ],
+   "gaps": 24,
+   "gapBlocks": {
+    "median": 49,
+    "p90": 71,
+    "max": 74
+   },
+   "gapHours": {
+    "median": 7.94,
+    "p90": 12.21,
+    "p99": 12.41,
+    "max": 12.41
+   },
+   "meanGapHours": 8.28,
+   "stampToBlockHours": {
+    "next": {
+     "median": 4.21,
+     "p90": 8.24,
+     "p99": 11.75,
+     "max": 12.57
+    },
+    "second": {
+     "median": 12.81,
+     "p90": 18.75,
+     "p99": 23.26,
+     "max": 24.78
+    }
+   },
+   "stampToProofHours": {
+    "next": {
+     "median": 5.03,
+     "p90": 9.21,
+     "p99": 12.65,
+     "max": 15.02
+    },
+    "second": {
+     "median": 13.6,
+     "p90": 19.71,
+     "p99": 24.24,
+     "max": 26.5
+    }
+   }
+  },
+  "firstOfThree": {
+   "stampToBlockHours": {
+    "next": {
+     "median": 0.45,
+     "p90": 1.1,
+     "p99": 1.97,
+     "max": 3.56
+    },
+    "second": {
+     "median": 1.16,
+     "p90": 2.39,
+     "p99": 4.22,
+     "max": 5.38
+    }
+   },
+   "stampToProofHours": {
+    "next": {
+     "median": 1.28,
+     "p90": 2.1,
+     "p99": 3.08,
+     "max": 5.34
+    },
+    "second": {
+     "median": 2.03,
+     "p90": 3.37,
+     "p99": 5.26,
+     "max": 7.61
+    }
+   }
+  },
+  "refToAnchorBlockHours": {
+   "alice": {
+    "median": 2.33,
+    "p90": 3.77,
+    "p99": 5.76,
+    "max": 8.48
+   },
+   "bob": {
+    "median": 6.22,
+    "p90": 12.26,
+    "p99": 18.01,
+    "max": 21.49
+   },
+   "finney": {
+    "median": 13.89,
+    "p90": 19.9,
+    "p99": 24.45,
+    "max": 27.24
+   }
+  }
+ },
+ "refAgeHours": {
+  "median": 1,
+  "p90": 1.64,
+  "p99": 2.3,
+  "max": 4.02
+ },
+ "recent": {
+  "alice": {
+   "transactions": 143,
+   "blocks": "975717 to 976174",
+   "from": "2026-11-13T22:07",
+   "gapBlocks": {
+    "median": 3,
+    "p90": 6,
+    "max": 8,
+    "mean": 3.22
+   },
+   "feeRate": {
+    "min": 0.32,
+    "median": 0.32,
+    "max": 1.41
+   },
+   "stampToBlockHours": {
+    "next": {
+     "median": 0.42,
+     "p90": 0.99,
+     "p99": 1.5,
+     "max": 1.76
+    },
+    "second": {
+     "median": 0.91,
+     "p90": 1.91,
+     "p99": 2.76,
+     "max": 2.96
+    }
+   },
+   "stampToProofHours": {
+    "median": 1.2,
+    "p90": 1.96,
+    "p99": 2.87,
+    "max": 3.97
+   },
+   "ownSpan": {
+    "stampToBlockHours": {
+     "median": 0.42,
+     "p90": 0.98,
+     "p99": 1.5,
+     "max": 1.76
+    },
+    "stampToProofHours": {
+     "median": 1.19,
+     "p90": 2,
+     "p99": 2.91,
+     "max": 3.89
+    }
+   }
+  },
+  "bob": {
+   "transactions": 105,
+   "blocks": "975712 to 976174",
+   "from": "2026-11-13T20:57",
+   "gapBlocks": {
+    "median": 4,
+    "p90": 7,
+    "max": 11,
+    "mean": 4.44
+   },
+   "feeRate": {
+    "min": 0.2,
+    "median": 0.3,
+    "max": 2.77
+   },
+   "stampToBlockHours": {
+    "next": {
+     "median": 0.51,
+     "p90": 1.18,
+     "p99": 2.11,
+     "max": 2.73
+    },
+    "second": {
+     "median": 1.15,
+     "p90": 2.26,
+     "p99": 3.5,
+     "max": 3.98
+    }
+   },
+   "stampToProofHours": {
+    "median": 1.28,
+    "p90": 2.16,
+    "p99": 3.5,
+    "max": 4.95
+   },
+   "ownSpan": {
+    "stampToBlockHours": {
+     "median": 0.51,
+     "p90": 1.24,
+     "p99": 2.32,
+     "max": 2.73
+    },
+    "stampToProofHours": {
+     "median": 1.28,
+     "p90": 2.23,
+     "p99": 3.77,
+     "max": 4.82
+    }
+   }
+  },
+  "finney": {
+   "transactions": 103,
+   "blocks": "972115 to 976167",
+   "from": "2026-10-19T06:24",
+   "gapBlocks": {
+    "median": 40,
+    "p90": 53,
+    "max": 65,
+    "mean": 39.73
+   },
+   "feeRate": {
+    "min": 0.12,
+    "median": 0.37,
+    "max": 3.37
+   },
+   "stampToBlockHours": {
+    "next": {
+     "median": 3.56,
+     "p90": 6.84,
+     "p99": 8.05,
+     "max": 8.41
+    },
+    "second": {
+     "median": 9.74,
+     "p90": 13.36,
+     "p99": 15.93,
+     "max": 16.34
+    }
+   },
+   "stampToProofHours": {
+    "median": 4.3,
+    "p90": 7.59,
+    "p99": 8.97,
+    "max": 10.03
+   },
+   "ownSpan": {
+    "stampToBlockHours": {
+     "median": 3.54,
+     "p90": 6.78,
+     "p99": 8.78,
+     "max": 10.71
+    },
+    "stampToProofHours": {
+     "median": 4.39,
+     "p90": 7.69,
+     "p99": 9.84,
+     "max": 12.86
+    }
+   }
+  },
+  "commonSpan": "2026-11-13T22:07 to 2026-11-16T18:14",
+  "firstOfThree": {
+   "stampToBlockHours": {
+    "median": 0.39,
+    "p90": 0.94,
+    "p99": 1.48,
+    "max": 1.76
+   },
+   "stampToProofHours": {
+    "median": 1.03,
+    "p90": 1.69,
+    "p99": 2.53,
+    "max": 3.16
+   }
+  },
+  "refToAnchorBlockHours": {
+   "alice": {
+    "median": 1.52,
+    "p90": 2.31,
+    "p99": 3.05,
+    "max": 3.8
+   },
+   "bob": {
+    "median": 1.59,
+    "p90": 2.48,
+    "p99": 3.42,
+    "max": 4.52
+   },
+   "finney": {
+    "median": 4.65,
+    "p90": 7.91,
+    "p99": 9.23,
+    "max": 10.98
+   }
+  }
+ },
+ "note": "Hours. Cloud session 2026-11-16. Sampled windows of consecutive calendar transactions (see bench/net/REPORT.md, NAMES loop 0); stamps drawn uniformly over the windows; five blocks to the sixth confirmation drawn as exponential intervals at the local mean. `next`: a stamp is in the first calendar transaction mined after it; `second`: in the one after that.",
+ "requests": {
+  "blockstream.info": 161,
+  "mempool.space": 160
+ },
+ "lead": "a stamp misses a calendar transaction mined less than 600 s after it (N0b)"
+}

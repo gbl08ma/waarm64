@@ -9,11 +9,16 @@
 //   agree) and checks its Merkle root, and writes the proofs and headers to `--proofs`
 //   (bench/net/results/names0/proofs.json). Run it again until nothing is pending; it asks nothing it already has.
 //   `--before <ISO time>` asks only about the stamps made before it. Then `sizes` prints the anchors' sizes, raw and with what proofs in one block share.
+// - `anchors` (N0b): the anchors' sizes as the module encodes them, raw and stored as one tree a calendar transaction,
+//   and their times against the calendars' own transactions (each status page once: every recent transaction with its
+//   confirmations) and the blocks' times (an explorer's block lists): stamp to block and to the sixth confirmation,
+//   next or later transaction, the first of the three, when the page's agent would collect it. Writes
+//   bench/net/results/names0/anchors.json; what it fetches is cached under bench/results/local/names0b/.
 // The format is read from the OpenTimestamps format's description, not from its (LGPL) libraries. Public services:
-// every request is counted and printed; no test runs this. Node 26: `node bench/net/ots-stamps.ts stamp|collect|sizes`.
+// every request is counted and printed; no test runs this. Node 26: `node bench/net/ots-stamps.ts stamp|collect|sizes|anchors`.
 // In a session behind a proxy Node's fetch needs NODE_USE_ENV_PROXY=1 (docs/cloud.md).
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
@@ -201,7 +206,8 @@ async function collect() {
       if (!r.commitment || have.has(`${s.digest}/${cal}`)) continue;
       const res = await get(`${CALENDARS[cal]}/timestamp/${r.commitment}`).catch((e) => String(e));
       if (typeof res === 'string' || !res.ok) {
-        p.pending[`${s.digest}/${cal}`] = typeof res === 'string' ? res : `HTTP ${res.status}`;
+        // What the calendar says of it (a 404's body names the transaction it waits on, and the confirmations).
+        p.pending[`${s.digest}/${cal}`] = typeof res === 'string' ? res : `HTTP ${res.status}: ${(await res.text().catch(() => '')).trim().slice(0, 200)}`;
         continue;
       }
       const body = new Uint8Array(await res.arrayBuffer());
@@ -269,10 +275,192 @@ function sizes() {
   console.log(JSON.stringify(rows, null, 1));
 }
 
+// ---- N0b: the batch's anchors against the calendars' own transactions. ----
+const CACHE_B = `${ROOT}bench/results/local/names0b/`;
+const PAGES: Record<string, string> = { alice: `${CALENDARS.alice}/`, bob: `${CALENDARS.bob}/`, finney: `${CALENDARS.finney}/` };
+
+/** A cached GET (text): asked once, kept under bench/results/local/names0b/. */
+async function cachedText(url: string, name: string, accept = 'text/html'): Promise<string> {
+  const file = `${CACHE_B}${name}`;
+  if (existsSync(file)) return readFileSync(file, 'utf8');
+  const res = await get(url, { headers: { Accept: accept } });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const t = await res.text();
+  mkdirSync(CACHE_B, { recursive: true });
+  writeFileSync(file, t);
+  return t;
+}
+
+/** The calendar transaction an anchor goes through: the first SHA-256 over more than 64 bytes (a transaction, where
+ * a tree's or a block's hashes are over 64) and the one after it give its txid. */
+function txidOf(ops: Op[], msg: Uint8Array): string {
+  let m = msg;
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    if (op.op === 'sha256') {
+      if (m.length > 64 && ops[i + 1]?.op === 'sha256') return hex(sha256(sha256(m)).reverse());
+      m = sha256(m);
+    } else if (op.op === 'append') m = Buffer.concat([m, op.arg!]);
+    else m = Buffer.concat([op.arg!, m]);
+  }
+  throw new Error('no transaction in the anchor');
+}
+
+const pct = (xs: number[], q: number) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.ceil((q / 100) * s.length) - 1))];
+};
+const stats = (xs: number[], d = 2) => {
+  const r = (x: number) => +x.toFixed(d);
+  return { n: xs.length, min: r(Math.min(...xs)), median: r(pct(xs, 50)), p90: r(pct(xs, 90)), max: r(Math.max(...xs)), mean: r(xs.reduce((a, b) => a + b, 0) / xs.length) };
+};
+
+/** N0b: sizes (raw, a calendar transaction's anchors stored as one tree, headers once a block) and times (stamp to
+ * block, to 6 deep; next or later calendar transaction), from the committed stamps and proofs, the calendars' status
+ * pages and the blocks' times; writes results/names0/anchors.json. */
+async function anchors() {
+  const doc: Stamps = JSON.parse(readFileSync(o.out!, 'utf8'));
+  const p: Proofs = JSON.parse(readFileSync(o.proofs!, 'utf8'));
+  const byDigest = new Map(doc.stamps.map((s) => [s.digest, s]));
+  const opsOf = (pr: Proof): Op[] => {
+    const s = byDigest.get(pr.digest)!;
+    const front = leaves(Buffer.from(s.receipts[pr.calendar].hex!, 'hex'), Buffer.from(s.digest, 'hex')).find((l) => l.kind === 'pending')!;
+    const back = leaves(Buffer.from(pr.hex, 'hex'), Buffer.from(s.receipts[pr.calendar].commitment!, 'hex')).find((l) => l.kind === 'bitcoin' && l.height === pr.height)!;
+    return [...front.ops, ...back.ops];
+  };
+  // The module's encoding of an anchor (anchor.rs `Anchor::encode`): the operations, then 0x00, the attestation's
+  // 8-byte tag, a length and the height's varuint (3 bytes at these heights).
+  const encoded = (ops: Op[], height: number) => opsBytes(ops) + 1 + 8 + 1 + Math.ceil(Math.log2(height + 1) / 7);
+  const rows = p.proofs.map((pr) => {
+    const ops = opsOf(pr);
+    return { pr, ops, txid: txidOf(ops, Buffer.from(pr.digest, 'hex')), size: encoded(ops, pr.height) };
+  });
+
+  // Sizes. Shared: the anchors through one calendar transaction stored as one tree (each operation once for every
+  // anchor whose path from the root runs through it), and each block's header once.
+  const sizesBy = (f: (r: (typeof rows)[number]) => boolean) => stats(rows.filter(f).map((r) => r.size), 0);
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) groups.set(r.txid, [...(groups.get(r.txid) ?? []), r]);
+  const trees = [...groups.entries()].map(([txid, list]) => {
+    const nodes = new Set<string>();
+    let shared = 0;
+    for (const r of list) {
+      let key = '';
+      for (let i = r.ops.length - 1; i >= 0; i--) {
+        const op = r.ops[i];
+        key += `|${op.op}:${op.arg ? hex(op.arg) : ''}`;
+        if (nodes.has(key)) continue;
+        nodes.add(key);
+        shared += opsBytes([op]);
+      }
+      shared += 13; // each anchor's own attestation and height
+    }
+    const raw = list.reduce((a, r) => a + r.size, 0);
+    const groupsInIt = new Set(list.map((r) => byDigest.get(r.pr.digest)!.group)).size;
+    return { calendar: list[0].pr.calendar, height: list[0].pr.height, txid, anchors: list.length, stampGroups: groupsInIt, raw, shared, perAnchorRaw: Math.round(raw / list.length), perAnchorShared: Math.round(shared / list.length) };
+  });
+  // Pairs: two anchors through one transaction, made apart (singles) or at once (a burst): what the second adds.
+  const pairAdd = (same: boolean) => {
+    const adds: number[] = [];
+    for (const list of groups.values()) {
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+        const gi = byDigest.get(list[i].pr.digest)!.group, gj = byDigest.get(list[j].pr.digest)!.group;
+        if ((gi === gj && gi.startsWith('burst')) !== same) continue;
+        const a = list[i].ops, b = list[j].ops;
+        let t = 0;
+        while (t < a.length && t < b.length && JSON.stringify(a[a.length - 1 - t]) === JSON.stringify(b[b.length - 1 - t])) t++;
+        adds.push(opsBytes(b.slice(0, b.length - t)) + 13);
+      }
+    }
+    return stats(adds, 0);
+  };
+
+  // Times. Each calendar's transactions with their heights (its status page, now), the blocks' times (an explorer's
+  // block lists, ten a request), and each stamp's block, its sixth confirmation, and how many of the calendar's
+  // transactions were mined after the stamp and before the one that carries it.
+  const heights = rows.map((r) => r.pr.height);
+  const lo = Math.min(...heights) - 30, hi = Math.max(...heights) + 5;
+  const blockTime = new Map<number, number>();
+  for (let h = hi + 9; h >= lo; h -= 10) {
+    const list: { height: number; timestamp: number }[] = JSON.parse(await cachedText(`${EXPLORERS.blockstream}/blocks/${h}`, `blocks-${h}.json`, 'application/json'));
+    for (const b of list) blockTime.set(b.height, b.timestamp);
+  }
+  for (const [h, v] of Object.entries(p.headers)) {
+    if (Buffer.from(v.header, 'hex').readUInt32LE(68) !== blockTime.get(+h)) throw new Error(`block ${h}'s time differs from its header's`);
+  }
+  const calTx: Record<string, { txid: string; height: number }[]> = {};
+  const pageNotes: Record<string, unknown> = {};
+  for (const [name, url] of Object.entries(PAGES)) {
+    const html = await cachedText(url, `page-${name}.html`);
+    const best = +html.match(/height (\d+)/)![1];
+    const list = [...html.matchAll(/\/tx\/([0-9a-f]{64})\?mode=details">[0-9a-f]+<\/a><\/td>\s*<td[^>]*>([\d.]+)<\/td>\s*<td[^>]*>(\d+)<\/td>/g)]
+      .map((r) => ({ txid: r[1], height: best - +r[3] + 1, confs: +r[3] }));
+    const waiting = +(html.match(/Transactions waiting for confirmation:\s*(?:<[^>]*>\s*)*([\d,]+)/)?.[1] ?? 'NaN');
+    pageNotes[name] = { best, listed: list.length, waitingForConfirmation: waiting, minedUnder6: list.filter((t) => t.confs < 6).length, confsOfLatest: list.slice(0, 8).map((t) => t.confs) };
+    calTx[name] = list.filter((t) => t.height >= lo && t.height <= hi).map(({ txid, height }) => ({ txid, height })).sort((a, b) => a.height - b.height);
+  }
+  const H = 3600;
+  type T = { digest: string; group: string; calendar: string; madeAt: string; height: number; later: number; toBlockH: number; toSixDeepH: number };
+  const times: T[] = [];
+  for (const r of rows) {
+    const s = byDigest.get(r.pr.digest)!;
+    const made = Date.parse(s.madeAt) / 1000;
+    const txs = calTx[r.pr.calendar];
+    if (!txs.some((t) => t.txid === r.txid && t.height === r.pr.height)) throw new Error(`${r.txid} isn't on ${r.pr.calendar}'s page at ${r.pr.height}`);
+    // The calendar's transactions mined in a block timed after the stamp, before the one that carries it.
+    const later = txs.filter((t) => blockTime.get(t.height)! > made && t.height < r.pr.height).length;
+    times.push({
+      digest: r.pr.digest, group: s.group, calendar: r.pr.calendar, madeAt: s.madeAt, height: r.pr.height, later,
+      toBlockH: +((blockTime.get(r.pr.height)! - made) / H).toFixed(3),
+      toSixDeepH: +((blockTime.get(r.pr.height + 5)! - made) / H).toFixed(3),
+    });
+  }
+  const per: Record<string, unknown> = {};
+  for (const cal of Object.keys(CALENDARS)) {
+    const t = times.filter((x) => x.calendar === cal);
+    per[cal] = {
+      transactions: [...new Set(t.map((x) => `${x.height}`))].join(', '),
+      nextTransaction: t.filter((x) => x.later === 0).length, laterTransaction: t.filter((x) => x.later > 0).length,
+      stampToBlockHours: stats(t.map((x) => x.toBlockH)), stampToSixDeepHours: stats(t.map((x) => x.toSixDeepH)),
+      blockToSixDeepHours: stats([...new Set(t.map((x) => x.height))].map((h) => (blockTime.get(h + 5)! - blockTime.get(h)!) / H)),
+    };
+  }
+  const first = doc.stamps.map((s) => Math.min(...times.filter((x) => x.digest === s.digest).map((x) => x.toSixDeepH)));
+  const firstWho = doc.stamps.map((s) => times.filter((x) => x.digest === s.digest).reduce((a, b) => (a.toSixDeepH <= b.toSixDeepH ? a : b)).calendar);
+  // When the page's agent (web/names.ts, page open throughout) would collect the first of the three: it asks 5 minutes
+  // after stamping (`RETRY_MS`), then waits 5 minutes doubling to an hour (`PASS_MS`): asks at 5, 10, 20, 40, 80, 140,
+  // 200, ... minutes. And `PUBLIC_IN_MS` (2 hours), what the dialog counts down from.
+  const asks: number[] = [];
+  for (let t = 5, w = 5; t < 48 * 60; t += w, w = Math.min(w * 2, 60)) asks.push(t);
+  const collected = first.map((h) => asks.find((m) => m >= h * 60)! / 60);
+  const out = {
+    made: new Date().toISOString(),
+    note: 'NAMES loop 0b: the batch of results/names0/stamps.json, its proofs (proofs.json) against the calendars\' status pages and the blocks\' times. An anchor\'s size is the module\'s encoding (anchor.rs): its operations from the 32-byte digest to the Merkle root, the attestation and height (13 bytes). "shared": the anchors through one calendar transaction stored as one tree. Times in hours from the stamp: to its block\'s time, and to the block 5 after it (6 confirmations, when a calendar serves the proof). "later": calendar transactions mined (in a block timed after the stamp) before the one that carried it.',
+    span: { stamps: doc.stamps.length, from: doc.stamps[0].madeAt, to: doc.stamps[doc.stamps.length - 1].madeAt, blocks: `${lo} to ${hi}` },
+    sizes: {
+      anchor: sizesBy(() => true), alice: sizesBy((r) => r.pr.calendar === 'alice'), bob: sizesBy((r) => r.pr.calendar === 'bob'), finney: sizesBy((r) => r.pr.calendar === 'finney'),
+      transactions: trees, secondAnchorAdds: { madeApart: pairAdd(false), sameBurst: pairAdd(true) }, header: 80, blocks: new Set(heights).size,
+    },
+    times: {
+      perCalendar: per,
+      firstOfThree: { sixDeepHours: stats(first), byCalendar: Object.fromEntries(Object.keys(CALENDARS).map((c) => [c, firstWho.filter((x) => x === c).length])) },
+      agentCollectsHours: { asksAtMinutes: asks.slice(0, 9), firstOfThree: stats(collected), pastTwoHours: collected.filter((h) => h > 2).length },
+    },
+    pages: pageNotes, calendarTransactions: calTx,
+    blockTimes: Object.fromEntries([...blockTime.entries()].filter(([h]) => h >= lo && h <= hi).sort((a, b) => a[0] - b[0]).map(([h, t]) => [h, new Date(t * 1000).toISOString().slice(0, 19)])),
+    stamps: times,
+    requests: counts,
+  };
+  writeFileSync(`${ROOT}bench/net/results/names0/anchors.json`, JSON.stringify(out, null, 1) + '\n');
+  const { stamps: _s, calendarTransactions: _c, blockTimes: _b, ...brief } = out;
+  console.log(JSON.stringify(brief, null, 1));
+}
+
 if (import.meta.main) {
   const what = positionals[0];
   if (what === 'stamp') await stamp();
   else if (what === 'collect') await collect();
   else if (what === 'sizes') sizes();
-  else throw new Error('usage: ots-stamps.ts stamp|collect|sizes');
+  else if (what === 'anchors') await anchors();
+  else throw new Error('usage: ots-stamps.ts stamp|collect|sizes|anchors');
 }

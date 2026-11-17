@@ -1578,7 +1578,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
     zone for up to 10 minutes (sync then asks for it every round).
   - Headers are kept once an item, not once a registry: entries a calendar anchored in one block repeat its header
-    across names (80 bytes each). N6's sizes say whether it matters.
+    across names (80 bytes each, ~5.5% of an entry's 1.45 KB: N0b). Anchors through one calendar transaction likewise
+    repeat their common path (a second one made apart adds 304 to 713 bytes of its own, of ~1,185): a store of anchors
+    by transaction would save ~30% at 1,000 names, ~40% at 5,000 (room-names.md "Size, and where it stops"). N6's
+    sizes say whether it matters.
+  - **The agent collects a claim's anchor later than the dialog says** (N0b): it asks 5 minutes after stamping, then
+    5 minutes doubling to an hour (`RETRY_MS`, `PASS_MS`: at 5, 10, 20, 40, 80, 140, 200 minutes), so a proof the
+    calendars serve at 81 to 140 minutes (the first of the three's p90 is 1.7 to 2.3 hours) is collected at 140, past
+    `PUBLIC_IN_MS`'s 2 hours, and the page shows "public once this web app has been open a while" while open: 76 of
+    N0b's 80 stamps would have. Asks spaced around the expected proof (a first at an hour, then every 10 to 15 minutes
+    to 3 hours, then the doubling) make "about 2 hours" true for ~90%.
   - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
     round descends to them and lists them again (a request or two a range). N6 measures the bound's churn.
   - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
@@ -1693,7 +1702,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       - The last week's notice is a message bar notice that clears itself; a name past its term in grace says so in the
         menu only.
     - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
-      entries a month, 0.6 to 1.5 KB each with their anchors and headers (R1), and is put whole. Pruning dead branches and
+      entries a month, 1.17 to 1.52 KB each with their anchors and headers (R1; measured by N0b), and is put whole. Pruning dead branches and
       stale entries from the item (they never count again) would keep puts small.
     - The publisher waits up to 45 s for its answers and is made again at each publish: a page with many titles in one
       room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
@@ -1702,6 +1711,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - Review 2's fixes (N5a; NAMES-REVIEW-2.md), what they leave:
     - Done (R2): finding 3 (servers finish renewals, option A).
       Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
+      N0b measured what spreading must cover: stamps made within the same second are near-siblings in a calendar's tree
+      (under ~450 bytes of path apart, where stamps 10 s or more apart differ by 290 to 700), so a server sees which ids
+      were stamped together without guessing them; 1 to 10 s apart they partly do (291 to 641).
     - Answers rank by their chain's age (finding 2), so a Sybil needs registrations held as long as the honest
       servers', renewed all along: three months buys the top tier, and from there it is a lottery again. In a room
       younger than that servers rank by age among themselves, and rounds sample young ones rarely, so more questions

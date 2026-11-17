@@ -116,7 +116,10 @@ No record, message or stored registry holds a name in words. Three things do it:
 - **An owner key per name**, so a registry doesn't show that five ids are one person's.
 
 **What a server still learns:** how many names the room has; each id's owner key and the times of its entries (an
-owner's names renewed in one visit land in one block, which anyone who guesses those names sees in their `history`; the agent doesn't spread renewals yet, docs/backlog.md, but an `ids` answer's cover ends are rounded up to a week so that it doesn't group them); which ids are asked for,
+owner's names renewed in one visit land in one block, which anyone who guesses those names sees in their `history`;
+and their anchors show more than the block: stamps made within the same second or so are near-siblings in the
+calendar's tree, under ~450 bytes of path apart where stamps 10 seconds or more apart differ by 290 to 700 (N0b), so
+a server holding the ids sees them stamped together without guessing the names; the agent doesn't spread renewals yet, docs/backlog.md, but an `ids` answer's cover ends are rounded up to a week so that it doesn't group them); which ids are asked for,
 though not by whom (the names client's key is new each session); and **any name it can guess**: hashing a dictionary
 against the registry's ids is cheap, and a slow hash wouldn't change that by much (a million guesses at 0.1 s each is a
 day of one machine, and every resolver would pay the 0.1 s on each name a guest asks). So this hides names that aren't
@@ -271,9 +274,20 @@ once.
   `alice`, 1.1 at `bob` and 4.2 at `finney`, at worst 4, 5 and 12; the first of the three in 0.9 (p99 2.4, worst
   3.1). Through a year's samples, one coin of each calendar (so an upper bound): the first of the three within 1.9
   hours for 90% of stamps and 4.8 at worst; `finney` alone up to 14 hours, or 26 if a stamp misses the transaction
-  being mined (the batch of real stamps says which: N0b). No day of the year had fees that would have stalled the
-  calendars for long (blocks' 10th-percentile fee rate at most 5 sat/vB). **About 2 hours** is what the dialog can
-  say. A slow calendar costs only the wait: no window ties an anchor to when its entry was made.
+  being mined. No day of the year had fees that would have stalled the calendars for long (blocks' 10th-percentile
+  fee rate at most 5 sat/vB). **N0b (2026-11-17), the batch of 80 real stamps collected** (bench/net/REPORT.md
+  "NAMES loop 0b"): every one finished. A stamp goes into the calendar's next mined transaction unless it is made in
+  the ~10 minutes before the block that mines it (the 39 of 160 at `alice` and `bob` that missed one were made 1.4 to
+  9.1 minutes before its block; none missed two); a calendar serves the proof from the sixth confirmation (its status
+  page counts its transactions under 6 confirmations as waiting, and only those). N0a's model with that correction:
+  the first of the three in 1.0 hours (p90 1.7, p99 2.5, worst 3.2) over the last days, 1.3 (p90 2.1, worst 5.3) over
+  the year's samples; `finney` alone up to 15 hours (26 missing a transaction). The batch, one evening: the first of
+  the three 1.24 to 2.39 hours, median 1.48 (`alice` first for 78 of 80, `bob` for 2); `finney` 3.0 to 4.9. **About
+  2 hours** is what the dialog can say of the proof; the page collects it later than that while its asks are spaced
+  5 minutes doubling to an hour (at 80 and then 140 minutes: 76 of the batch's 80 would have shown the late line
+  with the page open: docs/backlog.md). A slow calendar costs only the wait: no window ties an anchor to when its
+  entry was made. Servers finishing a renewal (from 30 minutes on) ask a few times in vain before the sixth
+  confirmation, never sooner than 1.2 hours after the stamp in the batch.
 - **A header proves itself, and an anchor carries its block's one header** (R1, the user's decision of 2026-11-17 on
   [room-names-redesign.md](room-names-redesign.md)'s question 2). A verifier needs the anchor's block's 80-byte
   header, which travels with the entry. It checks the anchor against the header's Merkle root, the header's proof of
@@ -677,22 +691,31 @@ copies by nonce **and round** (the three rounds share a nonce).
 
 ### Size, and where it stops
 
-*Estimates*; N0 replaces them. An entry is 175 bytes; its anchor 300 to 1,250 (the one measured was ~1,240 whole; entries a calendar put in one block share
-the anchor's tail and its header; how much is N0's to measure) and 6 bytes of lengths and an index on the wire; its
-block's header 80, once for every entry anchored in that block (R1: before it, 80 for `ref` and 560 for the anchor's
-block and the six after it). Two entries a month: a name costs a server about 0.4 KB for its zone plus 1.1 to 3.0 KB
-a month it has been held (2.3 to 4.2 before R1).
+Measured over N0a's 240 real anchors (N0b, bench/net/REPORT.md "NAMES loop 0b"). An entry is 175 bytes; its anchor
+**905 to 1,256 bytes, median 1,185** (as anchor.rs encodes it: ~20 levels of a calendar's tree, its transaction, a
+block's path), and 6 bytes of lengths and an index in an item; its block's header 80, once an item, which for a name
+whose entries are two weeks apart is once an entry (R1: before it, 80 for `ref` and 560 for the anchor's block and
+the six after it). So **1.17 to 1.52 KB an entry (1.45 typical)**, and with two entries a month a name costs a server
+about 0.4 KB for its zone plus **2.3 to 3.0 KB a month it has been held** (2.9 typical; the estimate was 1.1 to 3.0,
+whose low end assumed anchors shared).
 
 | Names, held six months on average | A server keeps | A new server's first sync through DERP (0.6 to 3 Mbit/s measured on public relays) |
 |---|---|---|
-| 1,000 | 7 to 18 MB | under a minute to 4 minutes |
-| 5,000 | 35 to 92 MB | 2 to 20 minutes |
-| 20,000 | 140 to 370 MB | too much for a tab |
+| 1,000 | 14 to 19 MB | under a minute to 4 minutes |
+| 5,000 | 72 to 93 MB | 3 to 21 minutes |
+| 20,000 | 290 to 370 MB | too much for a tab |
+
+Anchors a calendar put in one transaction share their path's tail, and those in one block their header, but an item
+is one name's and carries neither across names. A store that kept a registry's anchors by calendar transaction
+(not built) would save what a second anchor in the same transaction doesn't add: one made at another moment adds
+304 to 713 bytes of its own (median 619). A room of N names stamps about N/360 entries an hour, ~N/300 to each of
+`alice`'s transactions: ~30% less at 1,000 names, ~40% at 5,000, headers included. A constant factor, not the shape.
 
 A member keeps a few KB. So what grows with a room is each **server's** copy, and every new owner pays the first sync,
 in the background, before it serves. Past a few thousand long-held names it needs one of: servers that hold a share of
 the id space each; owners syncing with each other directly (WebRTC, which shows an owner's IP address to other
-owners, so the user's call); fewer renewals a term. None is in v1; the first is the one to build.
+owners, so the user's call); fewer renewals a term. None is in v1; the first is the one to build. N0b's measured sizes confirm this: they raise the small rooms' figures
+(the low end was an estimate of shared anchors) and leave the large ones where they were.
 
 ## The resolver
 
@@ -927,7 +950,7 @@ names.
 ## Measure first (loop N0, no product code)
 
 Done in the cloud session of 2026-11-16 (N0a, bench/net/REPORT.md "NAMES loop 0"): items 1 to 3, and item 4's
-batch of stamps (collected by N0b). What it found is in "How long an anchor takes", "Records" and the parameters'
+batch of stamps, collected on 2026-11-17 (N0b, "NAMES loop 0b": items 1's check and 4). What it found is in "How long an anchor takes", "Records" and the parameters'
 table; times are a shared x86_64 host's, good for the choices, re-timed in the dev VM. The year of transactions in
 item 1 couldn't be read whole within a few hundred requests (a calendar's transactions are one request each:
 "How long an anchor takes"), so it is a complete record of the calendars' last days and samples through the year.
@@ -947,7 +970,7 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
 3. **Verification rate** in the module's wasm (BIP-340, an anchor's hashes, a header's): sets the slice a turn may
    spend.
 4. **Anchor sizes**, raw and with shared tails and headers, over a few hundred real stamps (item 1's batch): replaces
-   the size table.
+   the size table. (N0b: 240 anchors, 905 to 1,256 bytes; "Size, and where it stops".)
 5. **Through public DERP**: 5, 20 and 50 MB between two names clients, 8 in flight, a guest's ping running beside it;
    and what a second room client in the worker costs (memory, a DERP connection, idle CPU).
 6. **A cold first lookup** on the public relays: since R3, an ask and its replies through them (~1 s in a room asked

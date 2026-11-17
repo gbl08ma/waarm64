@@ -50,7 +50,7 @@ names client subscribes to once, when it starts:
 | nonce | 16 | the ask's |
 | server | 34 | the replier's names key and region, for a `fetch` |
 | since | 4 | the time of the first entry of the owning chain's run, as the server holds it; unchecked, used only to order a contest |
-| item | 0, or 0.6 to 2.7 KB | nothing: the server holds no owner for the id. Else the owning chain's last entry (175 bytes), its anchor (300 to 1,250) and header (80), and the zone (366, or 1,038 wide) |
+| item | 0, or 1.2 to 2.6 KB | nothing: the server holds no owner for the id. Else the owning chain's last entry (175 bytes), its anchor (905 to 1,256 measured: N0b) and header (80), and the zone (366, or 1,038 wide) |
 
 A reply with its item is 1.3 to 4.1 KB on the wire (base64 in an event). An item past `REPLY_MAX` (a parameter, set from what the default
 relays forward; 4 KiB to start) is left out and a flag says so: the member fetches it (below).

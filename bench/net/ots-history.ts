@@ -13,16 +13,19 @@
 //   blocks more: a calendar serves a proof once its block is 6 deep), usual and worst, per calendar and for the first
 //   of the three; and the time from `ref` (a block 6 deep when the entry is made) to the anchor's block, which
 //   `REF_WINDOW` must cover. Writes bench/net/results/names0/history.json.
-// Usage: node bench/net/ots-history.ts fetch|model [--windows 9] [--per alice=24,bob=18,finney=8]
+// Usage: node bench/net/ots-history.ts fetch|model [--windows 9] [--per alice=24,bob=18,finney=8] [--lead 600 --out <json>]
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const CACHE = `${ROOT}bench/results/local/names0/`;
 const OUT = `${ROOT}bench/net/results/names0/history.json`;
+// `--lead <s>`: a stamp misses a calendar transaction mined less than this after it (N0b: the batch's stamps made in
+// the ~10 minutes before the block that mined their calendar's transaction went into the one after; 600 models that).
+const lead = () => +o.lead!;
 const { values: o, positionals } = parseArgs({
   allowPositionals: true,
-  options: { windows: { type: 'string', default: '9' }, per: { type: 'string', default: 'alice=24,bob=18,finney=8' }, seed: { type: 'string', default: '1' } },
+  options: { lead: { type: 'string', default: '0' }, out: { type: 'string' }, windows: { type: 'string', default: '9' }, per: { type: 'string', default: 'alice=24,bob=18,finney=8' }, seed: { type: 'string', default: '1' } },
 });
 
 // From each calendar's status page (2026-11-16): the latest mined transaction it lists, and its donation address.
@@ -216,7 +219,7 @@ function model() {
     }
     // Stamps: a window chosen by its length in time, a uniform time between its first and its second-to-last block.
     const usable: Pt[][] = wins.filter((w) => w.length >= 3);
-    const lens = usable.map((w) => w[w.length - 2].status.block_time - w[0].status.block_time);
+    const lens = usable.map((w) => Math.max(0, w[w.length - 2].status.block_time - lead() - w[0].status.block_time));
     const total = lens.reduce((a, b) => a + b, 0);
     sim[name] = [];
     for (let k = 0; k < SAMPLES; k++) {
@@ -224,7 +227,7 @@ function model() {
       while (r > lens[wi]) r -= lens[wi++];
       const w = usable[wi];
       const s = w[0].status.block_time + r;
-      const i = w.findIndex((t) => t.status.block_time > s);
+      const i = w.findIndex((t) => t.status.block_time > s + lead());
       const a = w[i], b = w[Math.min(i + 1, w.length - 1)];
       sim[name].push({
         s, nextBlock: a.status.block_time - s, secondBlock: b.status.block_time - s,
@@ -263,7 +266,8 @@ function model() {
   out.recent = recent(fiveBlocks, h, refAge);
   out.note = 'Hours. Cloud session 2026-11-16. Sampled windows of consecutive calendar transactions (see bench/net/REPORT.md, NAMES loop 0); stamps drawn uniformly over the windows; five blocks to the sixth confirmation drawn as exponential intervals at the local mean. `next`: a stamp is in the first calendar transaction mined after it; `second`: in the one after that.';
   out.requests = existsSync(`${CACHE}requests-history.json`) ? JSON.parse(readFileSync(`${CACHE}requests-history.json`, 'utf8')) : {};
-  writeFileSync(OUT, JSON.stringify(out, null, 1) + '\n');
+  if (lead()) out.lead = `a stamp misses a calendar transaction mined less than ${lead()} s after it (N0b)`;
+  writeFileSync(o.out ?? OUT, JSON.stringify(out, null, 1) + '\n');
   console.log(JSON.stringify(out, null, 1));
 }
 
@@ -309,10 +313,10 @@ function recent(fiveBlocks: (h: number) => number, h: (xs: number[]) => unknown,
   const per: Record<string, { block: number[]; proof: number[]; second: number[] }> = {};
   const firstBlock: number[] = [], firstProof: number[] = [];
   for (const name of Object.keys(cals)) per[name] = { block: [], proof: [], second: [] };
-  for (let s = start; s < end; s += 60) {
+  for (let s = start; s < end - lead(); s += 60) {
     let fb = Infinity, fp = Infinity;
     for (const [name, c] of Object.entries(cals)) {
-      const i = c.times.findIndex((t) => t > s);
+      const i = c.times.findIndex((t) => t > s + lead());
       const block = c.times[i] - s, proof = block + fiveBlocks(c.heights[i]);
       per[name].block.push(block);
       per[name].proof.push(proof);
@@ -330,8 +334,8 @@ function recent(fiveBlocks: (h: number) => number, h: (xs: number[]) => unknown,
   // Each calendar on its own: its whole recent span (finney's is four weeks).
   for (const [name, c] of Object.entries(cals)) {
     const block: number[] = [], proof: number[] = [];
-    for (let s = c.times[0]; s < c.times[c.times.length - 1]; s += 60) {
-      const i = c.times.findIndex((t) => t > s);
+    for (let s = c.times[0]; s < c.times[c.times.length - 1] - lead(); s += 60) {
+      const i = c.times.findIndex((t) => t > s + lead());
       block.push(c.times[i] - s);
       proof.push(c.times[i] - s + fiveBlocks(c.heights[i]));
     }
