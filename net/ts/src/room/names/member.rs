@@ -285,6 +285,15 @@ impl Member {
         }
     }
 
+    /// The tests' view: lookups whose answers are being checked.
+    #[cfg(test)]
+    pub fn checking(&self) -> usize {
+        self.lookups
+            .values()
+            .filter(|l| l.checking.is_some())
+            .count()
+    }
+
     pub fn names(&self) -> &RoomNames {
         &self.names
     }
@@ -451,7 +460,8 @@ impl Member {
         let todo: Vec<([u8; 32], bool)> = self
             .lookups
             .iter()
-            .filter(|(_, l)| l.asked.is_empty())
+            // Not one whose answers are being checked: its `asked` is empty then too (review 2).
+            .filter(|(_, l)| l.asked.is_empty() && l.checking.is_none())
             .map(|(id, l)| (*id, l.history))
             .collect();
         for (id, history) in todo {
@@ -801,12 +811,17 @@ impl Member {
             return;
         };
         match (r, m) {
-            (Req::Get(id) | Req::History(id), Msg::Items(items)) => {
+            (r @ (Req::Get(id) | Req::History(id)), Msg::Items(items)) => {
                 let said = match items.into_iter().find(|i| i.id == id) {
                     Some(it) => Said::Item(Box::new(it)),
                     None => Said::Nothing,
                 };
-                if let Some(l) = self.lookups.get_mut(&id) {
+                // Only into a lookup asking in the same mode, and waiting for this server.
+                let history = matches!(r, Req::History(_));
+                if let Some(l) = self.lookups.get_mut(&id)
+                    && l.history == history
+                    && l.asked.contains_key(&from)
+                {
                     l.asked.insert(from, said);
                 }
                 self.settle(id, now, unix);

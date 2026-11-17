@@ -443,7 +443,9 @@ copies by nonce **and round** (the three rounds share a nonce).
   run and the zone), checks every entry, each once however often the answer repeats it, a slice a turn as a server
   does (a history may carry 1,024 entries: ~0.7 s of the room's worker in one turn otherwise; review 1); the first
   that fails refuses that server's run, so a junk history costs one check; and picks by "Who owns a name" over every
-  entry shown, which `Kept::offer` then takes or refuses. Last entries
+  entry shown, which `Kept::offer` then takes or refuses. A lookup being checked isn't asked again meanwhile, and an
+  answer goes only into a lookup asking that server in its own mode (review 2: stray owner answers sent while one was
+  checked filled the `history` lookup it started, deciding it on last entries). Last entries
   alone can't be compared (a renewal's time isn't its chain's seniority): an impostor claimed ten days ago beats the
   owner's renewal of four days ago until the owner's run shows its claim of twenty (`member_tests.rs`).
 - **What a member keeps**: each name it resolved, with its chain's last entry, the earliest entry time it ever verified

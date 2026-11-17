@@ -1089,3 +1089,44 @@ fn a_release_ends_a_kept_name_and_its_next_owner_is_taken() {
         "the next owner"
     );
 }
+
+/// Review 2's finding 9: a lookup whose answers are being checked (its `asked` emptied) isn't asked again by whatever
+/// else sends: stray owner answers would fill the `history` lookup it may start, deciding it on last entries.
+#[test]
+fn a_lookup_being_checked_isnt_asked_again() {
+    let mut b = Bitcoin::new(ROOM, 42);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    // The other server holds another chain of alpha, a long one: the servers disagree, and its history takes turns.
+    let renewals: Vec<u32> = (1..20).map(|k| 400 - 20 * k).collect();
+    let long = title(&mut b, 66, "alpha", 400, &renewals, [0x66; 32], [0x66; 32]);
+    let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&long]));
+    let mut bus = Bus::new(vec![s0, s1], member());
+    let (now, unix) = (bus.now, bus.unix());
+    bus.m.query("alpha", now, unix, true);
+    let mut seen = false;
+    for _ in 0..4000 {
+        bus.run();
+        if bus.m.stats.histories >= 2 && bus.m.checking() > 0 {
+            seen = true;
+            break;
+        }
+        // One turn each, not as many as it takes.
+        bus.now += Duration::from_millis(1);
+        let (now, unix) = (bus.now, bus.unix());
+        for s in &mut bus.s {
+            if s.deadline().is_some_and(|t| t <= now) {
+                s.tick(now, unix);
+            }
+        }
+        if bus.m.deadline().is_some_and(|t| t <= now) {
+            bus.m.tick(now, unix);
+        }
+    }
+    assert!(seen, "alpha's history being checked");
+    let asks = |m: &Member| m.stats.gets + m.stats.histories;
+    let before = asks(&bus.m);
+    let (now, unix) = (bus.now, bus.unix());
+    bus.m.query("beta", now, unix, true);
+    bus.run();
+    assert_eq!(asks(&bus.m), before + 2, "beta's gets alone");
+}
