@@ -36,6 +36,8 @@ export const RETRY_MS = 5 * 60 * 1000;
 const FETCH_MS = 15_000;
 /** Proof of work tries a call (production: ~0.5 ms each in a tab), so the worker answers between slices. */
 const MINE_SLICE = 256;
+/** A server takes a new zone for a name at most this often (net/ts room/names/store.rs `ZONE_EVERY`), and a minute. */
+const ZONE_AGAIN_MS = 11 * 60 * 1000;
 /** What the dialog says of a claim's wait for its anchor (room-names.md "How long an anchor takes"). */
 export const PUBLIC_IN_MS = 2 * 60 * 60 * 1000;
 
@@ -70,6 +72,8 @@ export type TitleRecord = {
   lost?: { at: number; by: string };
   /** Let go: a release was made. */
   released?: boolean;
+  /** A server didn't take the zone put (within its 10 minutes of the last, or behind the room's): put again then (ms). */
+  putAgain?: number;
   /** The item last published and taken (or shown as the title's own), and when. */
   published?: string;
   publishedAt?: number;
@@ -437,6 +441,7 @@ export class NamesAgent {
       for (const t of await this.store.titles()) {
         for (const c of Object.values(t.collect)) wait = Math.min(wait, c.next - Date.now());
         if (t.remake) wait = Math.min(wait, t.remake.next - Date.now());
+        if (t.putAgain) wait = Math.min(wait, t.putAgain - Date.now());
       }
       this.timer = setTimeout(() => void next(), Math.max(wait, 30_000));
     };
@@ -633,11 +638,12 @@ export class NamesAgent {
     return ((BigInt(t.zone.n) << 32n) | BigInt(t.zone.branch >>> 0)).toString();
   }
 
-  /** Item `item` of title `t` with a new zone sealed for `t.points`. */
-  private async sealed(t: TitleRecord, item: string): Promise<string> {
+  /** Item `item` of title `t` with a new zone sealed for `t.points`, its `seq` past the item's and `seen`. */
+  private async sealed(t: TitleRecord, item: string, seen?: string): Promise<string> {
     const secret = await this.store.secret(t.identityKey);
     const st = await this.b.op<TitleStatus>('status', { item, now: nowS() });
-    const seq = this.nextSeq(t, st.zone?.seq);
+    const held = st.zone?.seq;
+    const seq = this.nextSeq(t, seen !== undefined && (held === undefined || BigInt(seen) > BigInt(held)) ? seen : held);
     return (await this.b.op<{ item: string }>('zone', { room: t.room, secret, name: t.name, seq, points: t.points, item })).item;
   }
 
@@ -719,17 +725,42 @@ export class NamesAgent {
     let shown = false;
     let lost: string | undefined;
     const branches: string[] = [];
+    // A server that holds the title's chain but didn't take its zone (review 2): within its 10 minutes of the last
+    // (put again after them), or a zone of the room's at or past ours (another copy's: counted past it).
+    let zoneAgain = false;
+    let roomSeq: bigint | undefined;
     for (const a of answers) {
       if (a.result === 'taken') shown = true;
       if (a.result !== 'better' || !a.item) continue;
       try {
         const j = await this.b.op<Judged>('judge', { room: t.room, item, other: a.item, now: nowS() });
+        if (j.verdict === 'ours' || j.verdict === 'branch') {
+          const theirs = (await this.b.op<TitleStatus>('status', { item: a.item, now: nowS() })).zone?.seq;
+          const ours = st.zone?.seq;
+          if (ours !== undefined && theirs !== ours) {
+            zoneAgain = true;
+            if (theirs !== undefined && BigInt(theirs) >= BigInt(ours)) roomSeq = roomSeq !== undefined && roomSeq > BigInt(theirs) ? roomSeq : BigInt(theirs);
+          }
+        }
         if (j.verdict === 'ours') shown = true;
         else if (j.verdict === 'branch') branches.push(a.item);
         else if (j.verdict === 'lost') lost = j.by;
       } catch (err) {
         this.log(`${t.name}: a server's answer refused: ${String(err)}`);
       }
+    }
+    if (zoneAgain) {
+      shown = false; // not as put: put again
+
+      await this.locked(t, true, async () => {
+        const now = await this.mustGet(t.identityKey, t.room, t.name);
+        if (roomSeq !== undefined && now.item === item) {
+          now.item = await this.sealed(now, now.item, roomSeq.toString());
+          this.log(`${t.name}: the room holds another copy's zone: counted past it`);
+        }
+        now.putAgain = Date.now() + ZONE_AGAIN_MS;
+        await this.save(now);
+      });
     }
     if (!shown && !lost && !branches.length) {
       this.log(`${t.name}: not published (${answers.map((a) => a.result).join(', ') || 'no answer'}); next pass`);
@@ -753,6 +784,7 @@ export class NamesAgent {
       if (shown && now.item === item) {
         now.published = item;
         now.publishedAt = Date.now();
+        delete now.putAgain;
       }
       await this.save(now);
     });

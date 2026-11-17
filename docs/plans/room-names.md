@@ -530,7 +530,8 @@ copies by nonce **and round** (the three rounds share a nonce).
   server (N3: the answer that has one stands).
 - **Take from anyone**: `put` (an item, from an owner's agent or a member that holds a better chain than the server
   showed it), checked like anything else and settled; answered `taken` when the owning chain's last entry is the
-  put's, else `better` with the server's item (empty when it holds nothing of the name). Puts wait in a queue of their
+  put's and its zone, if any, was taken or is the one held, else `better` with the server's item (a zone refused, within
+  10 minutes of the last or not beating the one held, is `better` too: review 2) (empty when it holds nothing of the name). Puts wait in a queue of their
   own (4 a peer, 64 in all; past that refused), verified after what sync brought, a slice of one put at a time in
   turn.
 - **Verify** signatures, proof of work and anchors before keeping or serving, a slice each turn of the module (an
@@ -645,7 +646,10 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   headers, anchor; a forged one is refused and nothing is taken) and judged with the title's entries: the owner now is
   the title's own chain (`ours`: a renewal still pending shows so), **another branch of the title's own key** (a title
   forked between two browsers: its entries, and a newer zone of the same key, are taken into the title, and the next
-  renewal is made from the room's branch), or **another key's chain: the title is lost**, renewal stops and the page
+  renewal is made from the room's branch; either way, a server that holds the title's chain but answered `better`
+  over its zone didn't take it: one of the room's at or past the title's is counted past, by a new zone sealed with
+  `n` beyond it, and the title is put again 11 minutes on, `putAgain`, not called published until a server takes it:
+  review 2), or **another key's chain: the title is lost**, renewal stops and the page
   says so (`TitleView.state` `lost`, `lostTo`).
 - **When the connection's room runs**, the node is a server: the room's worker gives the module the connection's titles
   in its config (`room.names.titles`, each the owner key derived from the secret and the item) and again as they change

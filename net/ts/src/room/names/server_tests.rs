@@ -705,12 +705,12 @@ fn forged_anchors_headers_and_signatures_are_refused() {
     let (a, h) = b.anchor(&good.id(), (T + 3 * HOUR as u64) as u32);
     w.anchor = Some((a, h));
     refused(&mut bus, item(&b, w));
-    // The real one is taken; a zone signed by another key, or broken, isn't.
+    // The real one is taken; a zone signed by another key, or broken, isn't (the zone not taken: `better`).
     let other_key = b.key(2, "forged");
     let z = Zone::seal(&b.names, &other_key, "forged", 9, &[(None, [5; 32])], false).unwrap();
     let mut it = item(&b, WireEntry::of(&good));
     it.zone = Some(z);
-    assert_eq!(bus.put(1, 0, it), Msg::Taken);
+    assert!(matches!(bus.put(1, 0, it), Msg::Better(_)));
     assert_eq!(bus.s[0].reg.get(&id).unwrap().zone, None);
     let mut z = Zone::seal(&b.names, &k, "forged", 9, &[(None, [5; 32])], false).unwrap();
     z.sig[0] ^= 1;
@@ -1738,4 +1738,40 @@ fn a_peer_forgotten_and_met_again_gets_new_transfers() {
         deliver(&mut a, &mut b, b"three"),
         "dropped as a transfer done"
     );
+}
+
+/// Review 2's finding 10: a put whose zone the server doesn't take (within 10 minutes of the last, or not beating the
+/// one held) isn't answered `taken`: `better`, with the zone held, so the agent knows to put it again or count past it.
+#[test]
+fn a_zone_the_server_doesnt_take_isnt_answered_taken() {
+    let mut b = Bitcoin::new(ROOM, 47);
+    let (_, item) = b.title(1, "zoned", t(20), &[t(5)], [9; 32]);
+    let sk = b.key(1, "zoned");
+    let zone = |seq: u64, to: u8| {
+        Zone::seal(&b.names, &sk, "zoned", seq, &[(None, [to; 32])], false).unwrap()
+    };
+    let with = |z: Zone| Item {
+        zone: Some(z),
+        ..item.clone()
+    };
+    let mut bus = Bus::new(vec![
+        Server::new(ROOM, cfg(vec![]), T),
+        Server::new(ROOM, cfg(vec![]), T),
+    ]);
+    assert_eq!(bus.put(0, 1, item.clone()), Msg::Taken);
+    let (z2, z3) = (zone(2, 2), zone(3, 3));
+    assert!(
+        matches!(bus.put(0, 1, with(z2.clone())), Msg::Better(it) if it.zone.as_ref().map(|z| z.seq) == Some(1)),
+        "within 10 minutes"
+    );
+    bus.advance(Duration::from_secs(601));
+    assert_eq!(bus.put(0, 1, with(z2.clone())), Msg::Taken, "past them");
+    assert_eq!(bus.put(0, 1, with(z2)), Msg::Taken, "the zone held, again");
+    bus.advance(Duration::from_secs(601));
+    let older = zone(1, 7);
+    assert!(
+        matches!(bus.put(0, 1, with(older)), Msg::Better(it) if it.zone.as_ref().map(|z| z.seq) == Some(2)),
+        "a lower seq"
+    );
+    assert_eq!(bus.put(0, 1, with(z3)), Msg::Taken);
 }

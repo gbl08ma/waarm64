@@ -228,6 +228,51 @@ test('one export pasted into two browsers: each copy a branch of its own, so the
   assert.notEqual(seqs[0], seqs[1], 'never the same seq');
 });
 
+test('a zone the room\'s servers didn\'t take: counted past the room\'s and put again, not called published (review 2, finding 10)', { skip, timeout: 60_000 }, async () => {
+  // Two copies of one title: B's zone is further along (n 4), A's behind it.
+  const a = await testAgent({ publish: fakePublish() });
+  const ca = conn('conn-zone-a');
+  cal.mine(7);
+  await a.agent.register(ca, 'zoned', point());
+  cal.mine(7);
+  await a.agent.pass(ca.identityKey);
+  const b = await testAgent({ publish: fakePublish() });
+  const cb = conn('conn-zone-b');
+  await importNames(b.store, cb.identityKey, (await exportNames(a.store, ca.identityKey))!);
+  for (const k of ['11', '22', '33']) await b.agent.setZone(cb, 'zoned', point(k.repeat(32)));
+  const [tb] = await b.store.titles(cb.identityKey);
+  const roomSeq = BigInt((await statusOf(b.backend, tb)).zone!.seq);
+  // A saves new points; the room's servers hold B's zone and refuse A's (a lower seq): `better`, with B's item.
+  let answer: 'better' | 'taken' = 'better';
+  const pub = fakePublish(() => [{ id: '', server: 's1', result: answer, item: answer === 'better' ? tb.item : null }]);
+  const log: string[] = [];
+  const a2 = await testAgent({ store: a.store, publish: pub, log });
+  await a2.agent.setZone(ca, 'zoned', point('44'.repeat(32)));
+  assert.equal(pub.puts.length, 1);
+  const [ta] = await a.store.titles(ca.identityKey);
+  const seq = BigInt((await statusOf(a.backend, ta)).zone!.seq);
+  assert.ok(seq >> 32n > roomSeq >> 32n, `counted past the room's: ${seq >> 32n} against ${roomSeq >> 32n}\n${log.join('\n')}`);
+  assert.notEqual(ta.published, ta.item, 'not called published');
+  assert.ok(ta.putAgain, 'put again later');
+  // The next pass puts the new zone; taken, it is published.
+  answer = 'taken';
+  await a2.agent.pass(ca.identityKey);
+  assert.equal(pub.puts.at(-1), ta.item);
+  const [done] = await a.store.titles(ca.identityKey);
+  assert.equal(done.published, done.item);
+  assert.equal(done.putAgain, undefined);
+  // A second Save within the servers' 10 minutes: they keep the zone before (`better` with it), so it isn't called
+  // published, and it is put again later.
+  const before = done.item;
+  const pub2 = fakePublish(() => [{ id: '', server: 's1', result: 'better', item: before }]);
+  const a3 = await testAgent({ store: a.store, publish: pub2 });
+  await a3.agent.setZone(ca, 'zoned', point('55'.repeat(32)));
+  const [again] = await a.store.titles(ca.identityKey);
+  assert.notEqual(again.item, before);
+  assert.notEqual(again.published, again.item, 'the servers kept the zone before');
+  assert.ok(again.putAgain);
+});
+
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {
   // The calendars are the module's, in its order (anchor.rs `Calendar::url`: a pending anchor names one by index).
   const rust = readFileSync(new URL('../net/ts/src/room/names/anchor.rs', import.meta.url), 'utf8');

@@ -1696,13 +1696,17 @@ impl Server {
             h.name.insert(s, &self.params, unix);
         }
         h.settle(&self.params, unix);
+        // A zone put and not taken (within 10 minutes of the last, or not beating the one held), unless it is the one
+        // held: `better`, so that the agent puts it again later or counts past the room's (review 2).
+        let mut zone_refused = false;
         if let Some(z) = job.item.zone {
-            h.offer_zone(z, unix, true);
+            let held = h.zone.as_ref().is_some_and(|x| x.encode() == z.encode());
+            zone_refused = !h.offer_zone(z, unix, true) && !held;
             h.settle(&self.params, unix);
         }
         let changed = h.version != before || was_empty != h.is_empty();
         let answer = match &h.owner {
-            Some(o) if put_ids.contains(&o.last()) => Msg::Taken,
+            Some(o) if put_ids.contains(&o.last()) && !zone_refused => Msg::Taken,
             _ => Msg::Better(h.item()),
         };
         if !h.is_empty() {
