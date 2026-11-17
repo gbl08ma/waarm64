@@ -75,7 +75,7 @@
 <style>
   .banner {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--space-5);
     padding: var(--space-3) var(--space-5);
     border-bottom: 1px solid;
@@ -109,24 +109,20 @@
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--space-3) var(--space-5);
   }
+  /* The message's words beside its actions: the body sizes to its words (and can shrink so long words wrap instead of
+     overflowing), never grows to swallow the actions, and the actions always stay to its right on the same line. */
   .body {
     align-self: center;
-    flex: 1 1 480px;
+    flex: 0 1 auto;
     min-width: 0;
     max-height: 30vh;
     overflow: auto;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-  }
-  /* A card the size of its words: their own width, not a column's (a short line's buttons stay beside it; a line wider
-     than the bar takes it all, and its buttons go under it). */
-  .floating .body {
-    flex-basis: auto;
   }
   .actions {
     display: flex;

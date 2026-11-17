@@ -1,7 +1,8 @@
 <!--
   The message bar (web/app/areas/message-bar.svelte.ts, written by web/app/run/messages.ts; docs/frontend.md "Dialogs and
-  the message bar"): at the top, floating over the machine so its screen keeps its size; over the Machines page, which
-  has no screen, in the page's column.
+  the message bar"): at the top, floating over the machine so its screen keeps its size. Over the Machines page it is
+  not shown: that page's own error banner (MachinesPage.svelte, under its header) shows the message instead, so there is
+  never both a floating banner and the page's banner at once. The banner floats again when the machines section closes.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -65,18 +66,6 @@
     transform: translateX(-50%);
     width: max-content;
     max-width: calc(100% - 2 * var(--space-5));
-  }
-  /* The Machines page has no screen to keep its size: there the bar takes its room, not its panes' buttons (and none
-     while it's hidden). */
-  :global(body[data-page='machines']) .message.shown {
-    height: auto;
-    padding: var(--space-3) var(--space-5) 0;
-  }
-  :global(body[data-page='machines']) .message > :global(#message) {
-    position: static;
-    transform: none;
-    width: auto;
-    max-width: none;
   }
   /* Full screen with the status bar (Preferences): the page, without its toolbar and message bar. */
   :global(body:fullscreen) .message {

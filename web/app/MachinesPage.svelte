@@ -41,6 +41,7 @@
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
   import { page } from './page.ts';
+  import { messageBar } from './areas/message-bar.svelte.ts';
 
   type Props = { store: Store; net: PageNetwork; folders: PageFolders };
   let { store, net, folders }: Props = $props();
@@ -142,14 +143,25 @@
     <h2>{t('machines:MachinesPage.heading')}</h2>
     {#if runner.busy}<span class="busy">{t('machines:MachinesPage.busy', { what: runner.busy })}</span>{/if}
   </div>
-  {#if runner.error}
+  {#if messageBar.text || runner.error}
     <ErrorBanner
-      class="error"
-      role="alert"
+      class="machines-page"
+      tone={messageBar.text ? messageBar.kind : undefined}
+      role={messageBar.text ? (messageBar.kind === 'info' ? 'status' : 'alert') : 'alert'}
       dismissLabel={t('machines:MachinesPage.dismiss')}
-      ondismiss={() => runner.clear()}
+      ondismiss={() => (messageBar.text ? page.dismiss() : runner.clear())}
+      countdown={messageBar.text ? messageBar.countdown : undefined}
     >
-      <ErrorWords error={runner.error} />
+      {#snippet actions()}
+        {#each messageBar.actions as a (a)}<Button
+            onclick={(e: MouseEvent & { currentTarget: HTMLButtonElement }) => a.run(e.currentTarget)}>{a.label}</Button
+          >{/each}
+      {/snippet}
+      {#if messageBar.text}
+        <pre id="message-text">{messageBar.text}</pre>
+        {#if messageBar.details.length}<pre id="message-details">{messageBar.details.join('\n')}</pre>{/if}
+      {:else if runner.error}<ErrorWords error={runner.error} />
+      {/if}
     </ErrorBanner>
   {/if}
   <div class="panes">
@@ -245,5 +257,17 @@
     .panes {
       grid-template-columns: 1fr;
     }
+  }
+  #message-text {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  #message-text::first-line {
+    font-weight: var(--weight-bold);
+  }
+  #message-details {
+    opacity: 0.8;
   }
 </style>

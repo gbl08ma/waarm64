@@ -86,7 +86,7 @@
   onfullscreenchange={view.events.fullscreenChanged}
 />
 <Toolbar {audio} {net} {folders} />
-<MessageBar />
+{#if !machinesNav.open}<MessageBar />{/if}
 <main bind:this={main}>
   <div id="screen-view" bind:this={box}>
     <div id="screen-frame">
