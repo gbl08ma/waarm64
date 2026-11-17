@@ -19,7 +19,7 @@ use super::{
     Invalid,
     anchor::{Anchor, MAX_ANCHOR, Pending},
     arr,
-    entry::{Anchored, ENTRY_LEN, Entry, Stamped},
+    entry::{Anchored, ENTRY_LEN, Entry, Stamped, tagged},
     header::{HEADER_LEN, Header},
     zone::Zone,
 };
@@ -271,7 +271,8 @@ impl Question {
 pub enum AskMode {
     /// Servers in the share `spread` names reply, with the owning chain's last entry or with none.
     Share = 0,
-    /// Every server that holds an owner whose key doesn't start with `shown` (any owner: zeros) replies.
+    /// Every server that holds an owner whose [`shown`] (key, last entry, zone) isn't the ask's (any owner: zeros)
+    /// replies.
     Dissent = 1,
     /// The server whose names key starts with `shown` calls the asker back and sends the owning chain's whole run.
     Fetch = 2,
@@ -293,9 +294,28 @@ pub struct NameAsk {
     pub mode: AskMode,
     /// `Share`: the top bits of a server's rank that must be zero (as a question's).
     pub spread: u8,
-    /// `Dissent`: the first 8 bytes of the owner key the asker was shown (zeros: none). `Fetch`: of the names key of the
-    /// one server asked.
+    /// `Dissent`: what the asker was shown, as [`shown`] (zeros: none). `Fetch`: the first 8 bytes of the names key of
+    /// the one server asked.
     pub shown: [u8; 8],
+}
+
+/// What a `dissent` names (R3a, room-names-r3.md "As built"): 8 bytes of a hash over the owner key, the owning chain's
+/// last entry's id and the zone (none: nothing), so a server holding any of the three otherwise (another owner, a
+/// renewal, another zone) replies; the key alone let an attacker show the owner's own last entry with an old zone, or
+/// none, or an older entry, and silence every holder. All three are public records any asker can have.
+pub fn shown(owner: &[u8; 32], last: &[u8; 32], zone: Option<&Zone>) -> [u8; 8] {
+    let z = zone.map(|z| tagged("waarm64/names/zone-hash", &[&z.encode()]));
+    let h = tagged(
+        "waarm64/names/shown",
+        &[owner, last, z.as_ref().map_or(&[][..], |z| &z[..])],
+    );
+    let s: [u8; 8] = h[..8].try_into().unwrap();
+    // Zeros mean "none shown" (any owner dissents): a hash that is zeros (2^-64) names something.
+    if s == [0; 8] {
+        [1, 0, 0, 0, 0, 0, 0, 0]
+    } else {
+        s
+    }
 }
 
 pub const ASK_PLAIN: usize = 32 + 2 + 8 + 16 + 32 + 1 + 1 + 8;

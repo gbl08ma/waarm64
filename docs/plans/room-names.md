@@ -438,9 +438,14 @@ copies by nonce **and round** (the three rounds share a nonce).
      refuse the honest copy); a reply that fails a check is dropped and **counts for nothing**: only a reply that held
      (an item, none, or too big) is a reply. There is no limit on how many are let in, only the checks' budget a turn
      (24 units, as a server's) and the relays' (`LOOKUP_EVENTS_PER_SECOND` a relay).
-  3. **At the first reply**, unless its round asked everyone: one more ask, **`dissent`**, `shown` the first 8 bytes of
-     the owner key of the best item checked so far (zeros when every reply so far said none). Every server that holds
-     an owner for the id whose key doesn't start with `shown` (any owner, for zeros) replies, whatever the share.
+  3. **At the first reply**, unless its round asked everyone: one more ask, **`dissent`**, `shown` naming the best
+     item checked so far as it would be kept: 8 bytes of `SHA-256` (tagged `waarm64/names/shown`) over its owner key,
+     that key's latest last entry's id and its best zone's hash (nothing for none) (`wire::shown`; zeros when every
+     reply so far said none). Every server whose own (owner key, owning chain's last entry, zone) hashes otherwise
+     replies, whatever the share: another owner, a later entry of the owner's (a renewal), or another zone (R3a: the
+     key alone let a sample of liars show the owner's own last entry with an old zone, none, or an older entry in its
+     grace, and silence every holder). A server holding exactly what was shown stays silent; one holding something
+     older replies too, and the member keeps the latest entry and the best zone of everything shown.
   4. **0.7 s after that ask** (0.3 s after the first reply when everyone was asked), it decides:
      - one owner key shown: that owner, its **latest** last entry (a server a renewal behind, a title forked), with no
        history (one key, one owner); what is kept starts from that entry's time;
@@ -585,7 +590,7 @@ copies by nonce **and round** (the three rounds share a nonce).
   server (N3: the answer that has one stands).
 - **Asks** (R3, `Server::on_ask`), once its first sync is done: a `share` whose rank (the plain draw over its live
   names' owner keys; no live name: only "everyone") falls in the share, and a `dissent` when it holds an owner for the
-  id whose key doesn't start with `shown` (any owner for zeros), are replied: the owning chain's last entry with its
+  id and its (owner key, last entry, zone) isn't what `shown` names (any owner for zeros; R3a), are replied: the owning chain's last entry with its
   anchor and header, and the zone (`owner_answer`, nothing held), or none, or "too big" past `REPLY_MAX`; the reply
   counts the name as asked for. A reply proves nothing of the replier, so a server's share is its own to keep. Replies
   have **budgets of their own**: 2 a second (`REPLIES_PER_SECOND`), 16 a minute under one reply tag
@@ -875,7 +880,8 @@ names.
 | Tie a claim it somehow knew of | several claims in the same block | wins most ties: the tie-break can be ground. It needs the name before the claim is public |
 | Hash a dictionary against a server's ids | nothing: 256 `ids` requests from any session list every id (the dialog's check needs the request; review 2 corrected the cost from "one registration") | learns which guessable names exist (and, with a `get`, where they point); nothing about the others; the cover ends listed are a week coarse |
 | Be the whole sample of a first lookup, show its own younger chain or none | registrations (any age) | nothing, while one honest holder hears the `dissent` and its reply arrives: the member takes the owner by its run (R3; 128 and 1,280 junk registrations against one holder, `member_tests.rs`) |
-| Show the owner's own last entry in the sample, with an old zone or none | registrations | the dissent names the owner's key, so holders stay silent: the member keeps the owner with that zone (NXDOMAIN, or an old address) until its refresh 5 minutes on, whose servers are drawn ("Finding a server"); never another owner. Not in room-names-r3.md: docs/backlog.md |
+| Show the owner's own records in the sample, stale: its last entry with an old zone or none, or an entry a renewal behind | registrations | nothing, while one honest holder of the newest hears the `dissent`: `shown` names the entry and the zone with the key, so that holder differs and replies, and the member keeps the latest entry and the best zone (R3a, `the_owners_own_records_shown_stale_dont_silence_the_dissent`) |
+| Show the owner's last entry before its release (public, alive by its own time) | registrations | holders of the release hold no owner, so they don't dissent, and a reply can't carry a release: the member keeps the released owner, even against the name's next owner (whose dissent starts a contest the old run wins, the fetched runs carrying no release), until its refresh 5 minutes on ends it. docs/backlog.md |
 | Hold many younger claims on one name, each lying about `since` | a registration on that name each, every term | that name's first lookups run a contest: a `fetch` and a run's check a liar, 8 at a time; the owner still wins |
 | Junk replies under an asker's tag (it reads the tag's inputs in the ask) | events | a failed check each; no place taken from anyone |
 | Forged asks that make servers reply | one event | every holder replies once (a `dissent` with a made-up `shown`, a `share` at spread 0): bounded by 2 replies a second a server and 16 a minute a tag; with hundreds of servers, megabytes a second onto public relays (backlog) |
@@ -910,7 +916,10 @@ names.
   like `global`, which room). rooms.md says today that a relay "can't tell which room or address a tag stands for";
   for key lookups that stays true. The remedy rooms already name applies (one's own relays, or a VPN under them).
   Since R3 (the user, 2026-11-17), a relay that knows the room's ID also reads the name id of each first lookup (the
-  ask), and replies carry registry records through relays (ephemeral, stored nowhere).
+  ask), and replies carry registry records through relays (ephemeral, stored nowhere). A `dissent`'s `shown` (R3a: 8
+  bytes of a hash of the owner key, a last entry's id and a zone, all public records) tells such a relay and every
+  server which version of the name's records the asker was shown, which the replies before it carried anyway; before
+  R3a it named 8 bytes of the owner key, the same kind of thing. Nothing of the asker or the name in words.
 - **"Every 2 weeks"** (since the review), where the first draft said 3 (renewing at half a term, not a third, halves what
   servers carry).
 - **Reserved names** (since the review): the list in "Names".

@@ -64,6 +64,8 @@ struct Bus {
     /// The member's asks (mode, spread, shown, nonce) and the replies that reached it.
     asks: Vec<(AskMode, u8, [u8; 8], [u8; 16])>,
     replies: usize,
+    /// The nonces of the replies that reached it, in order.
+    reply_nonces: Vec<[u8; 16]>,
     /// Datagrams the member sent (a session's: none on a first lookup but a contest's or a fetch's).
     sends: usize,
     /// Server `i`'s replies reach the member this much later (a slow relay).
@@ -95,6 +97,7 @@ impl Bus {
             now,
             asks: Vec::new(),
             replies: 0,
+            reply_nonces: Vec::new(),
             sends: 0,
             delay: vec![Duration::ZERO; n],
             delayed: Vec::new(),
@@ -147,6 +150,7 @@ impl Bus {
             Cmd::Reply { to, data, .. } if to == self.mkey && self.up[i] => {
                 self.replies += 1;
                 let r = Reply::decode(&data).unwrap();
+                self.reply_nonces.push(r.nonce);
                 if self.delay[i] > Duration::ZERO {
                     self.delayed.push((now + self.delay[i], r));
                 } else {
@@ -1431,6 +1435,81 @@ fn junk_replies_take_no_place() {
     assert!(bus.m.stats.refused >= 300, "{}", bus.m.stats.refused);
     assert_eq!(bus.m.stats.fetches, 0, "no contest: junk shows no owner");
     assert_eq!(bus.m.kept[&alpha.id].zone, alpha.zone, "the owner's zone");
+}
+
+/// R3a: liars that are the whole of a first lookup's sample reply with the owner's own records, all public and valid,
+/// but not the newest: its last entry with an old zone, with none, or a renewal behind (in its grace, so it doesn't
+/// resolve). The dissent names what was shown, the entry and the zone with the key, so the one honest holder of the
+/// newest differs and replies, and the member keeps the newest. Before R3a it named the key alone, and every honest
+/// holder stayed silent.
+#[test]
+fn the_owners_own_records_shown_stale_dont_silence_the_dissent() {
+    let mut b = Bitcoin::new(ROOM, 48);
+    let key = b.key(1, "alpha");
+    let claim = b.at(Kind::Claim, &key, "alpha", [0; 32], t(40));
+    let r1 = b.at(Kind::Renew, &key, "alpha", claim.id(), t(32));
+    let r2 = b.at(Kind::Renew, &key, "alpha", r1.id(), t(1));
+    let old = Zone::seal(&b.names, &key, "alpha", 1, &[(None, [0x01; 32])], false).unwrap();
+    let new = Zone::seal(&b.names, &key, "alpha", 2, &[(None, [0xa1; 32])], false).unwrap();
+    let all = [claim.clone(), r1.clone(), r2.clone()];
+    let current = b.item("alpha", &all, Some(new.clone()));
+    let liars = [
+        ("an old zone", b.item("alpha", &all, Some(old))),
+        ("no zone", b.item("alpha", &all, None)),
+        (
+            "a renewal behind",
+            b.item("alpha", &[claim, r1], Some(new.clone())),
+        ),
+        // No liar: every holder holds what was shown, and the dissent draws no reply.
+        ("the newest everywhere", current.clone()),
+    ];
+    for (what, lie) in &liars {
+        let mut servers: Vec<Server> = (0..128).map(|k| junk_server(&mut b, k, &[lie])).collect();
+        servers.push(serving(&mut b, 1, &[&current]));
+        let mut bus = Bus::new(servers, member());
+        let (mut most, mut dissents) = (0, 0);
+        for k in 0..6u8 {
+            // A new names client each time, what it kept forgotten: each a first lookup.
+            bus.m.stop();
+            bus.m.kept.clear();
+            bus.advance(Duration::from_secs(2));
+            bus.mkey = [0x40 + k; 32];
+            let (mk, now) = (bus.mkey, bus.now);
+            bus.m.start(mk, now);
+            bus.m.ready(now);
+            let (r0, a0) = (bus.reply_nonces.len(), bus.asks.len());
+            let (a, _) = bus.resolve("alpha");
+            most = most.max(bus.reply_nonces.len() - r0);
+            let dissent: Vec<[u8; 16]> = (bus.asks[a0..].iter())
+                .filter(|a| a.0 == AskMode::Dissent)
+                .map(|a| a.3)
+                .collect();
+            dissents += (bus.reply_nonces[r0..].iter())
+                .filter(|n| dissent.contains(n))
+                .count();
+            assert_eq!(a, Answer::Node([0xa1; 32]), "{what}: lookup {k}");
+            let kept = &bus.m.kept[&current.id];
+            assert_eq!(
+                kept.last.id(),
+                r2.id(),
+                "{what}: lookup {k}, the latest entry"
+            );
+            assert_eq!(
+                kept.zone.as_ref(),
+                Some(&new),
+                "{what}: lookup {k}, the newest zone"
+            );
+        }
+        assert_eq!(bus.m.stats.fetches, 0, "{what}: one key, no contest");
+        eprintln!(
+            "{what}: at most {most} replies a lookup from 129 holders, {dissents} to dissents in six lookups"
+        );
+        if what.starts_with("the newest") {
+            assert_eq!(dissents, 0, "{what}: holders of what was shown dissented");
+        } else {
+            assert!(dissents >= 1, "{what}: the honest holder dissented");
+        }
+    }
 }
 
 /// One key's last entries from two servers, one a renewal behind: the latest is taken, and no history is needed.

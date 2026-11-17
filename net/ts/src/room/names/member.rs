@@ -8,7 +8,8 @@
 //!   this names client's reply tag with the owning chain's last entry and the zone, or none. Each reply is believed for
 //!   what it holds, which is checked (signature, proof of work, header, anchor, alive; the zone's signature), never for
 //!   who sent it: no session, no draw. At the first reply, unless everyone was asked, one more ask, mode `dissent`,
-//!   naming the owner key shown (zeros for none): every server holding another owner replies. 0.7 s after it (0.3 s
+//!   naming what was shown, the owner key, its last entry and the zone hashed (`wire::shown`; zeros for none): every
+//!   server holding anything else (another owner, a renewal, another zone) replies. 0.7 s after it (0.3 s
 //!   after the first reply when everyone was asked): one owner key, that owner (its latest last entry); only none,
 //!   NXDOMAIN for 60 s doubling to 10 minutes while the name stays unknown; two or more keys, or an item too big for an
 //!   event, a contest: `fetch` from one replier at a time per key (8 at once, the earliest `since` first), each
@@ -46,7 +47,7 @@ use super::{
         QUESTIONS_PER_SECOND, ROUND_AT, SPREADS, UNITS_PER_TURN, check_serve, random, room_in,
     },
     store::{anchor_tag, zone_tag},
-    wire::{AskMode, GetMode, Item, Msg, Rd, Reply, ReplyItem, Transfers, WireEntry},
+    wire::{AskMode, GetMode, Item, Msg, Rd, Reply, ReplyItem, Transfers, WireEntry, shown},
     zone::Zone,
 };
 
@@ -1804,14 +1805,24 @@ impl Member {
                 // Everyone was asked: nobody is left to dissent.
                 f.decide_at = Some(now + EVERYONE_WAIT);
             } else {
-                // The owner key of the best item so far, checked (zeros when every reply so far said none).
+                // The best item so far, checked (zeros when every reply so far said none): its owner key, that key's
+                // latest last entry and best zone, as they would be kept (R3a: the key alone let the owner's own
+                // entry with an old zone, or none, silence every holder).
                 let mut all = Name::new(id);
                 for (s, _) in f.keys.values() {
                     all.insert(s.clone());
                 }
-                let shown = all
-                    .owner(&self.params, unix)
-                    .map_or([0; 8], |c| c.owner[..8].try_into().unwrap());
+                let shown = all.owner(&self.params, unix).map_or([0; 8], |c| {
+                    let (last, zones) = &f.keys[&c.owner];
+                    let zone = zones.iter().fold(None, |b: Option<&Zone>, z| {
+                        if b.is_none_or(|b| z.beats(b)) {
+                            Some(z)
+                        } else {
+                            b
+                        }
+                    });
+                    shown(&c.owner, &last.id(), zone)
+                });
                 let d = random();
                 f.dissent = Some(d);
                 f.decide_at = Some(now + DISSENT_WAIT);

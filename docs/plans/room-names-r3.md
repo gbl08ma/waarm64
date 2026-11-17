@@ -40,7 +40,7 @@ Both are events of the rooms' kind, MAC'd and sealed with the room's lookup key 
 | name id | 32 | |
 | mode | 1 | `share`, `dissent` or `fetch` |
 | spread | 1 | `share`: a server answers when its rank's top `spread` bits are zero, as for "who serves?" |
-| shown | 8 | `dissent`: the first 8 bytes of the owner key the asker was shown, zeros for none. `fetch`: the first 8 bytes of the names key of the one server asked |
+| shown | 8 | `dissent`: what the asker was shown, zeros for none; since R3a 8 bytes of a hash of the owner key, its last entry's id and the zone ("As built"; it was the owner key's first 8 bytes). `fetch`: the first 8 bytes of the names key of the one server asked |
 
 **`reply`**, under the asker's reply tag, `BLAKE2s(tag salt, "names-reply", the asker's names key, hour)`, which its
 names client subscribes to once, when it starts:
@@ -57,8 +57,8 @@ relays forward; 4 KiB to start) is left out and a flag says so: the member fetch
 
 **A server** (`on_ask`), for an ask whose MAC holds, once it has synced:
 - `share`: in the share, it replies, with the item or with none. Out of it, nothing.
-- `dissent`: it replies only if it holds an owner for the id whose owner key doesn't start with `shown` (any owner,
-  when `shown` is zeros). Whatever the share.
+- `dissent`: it replies only if it holds an owner for the id and what it holds isn't what `shown` names (any owner,
+  when `shown` is zeros; since R3a the owner key, the last entry and the zone, "As built"). Whatever the share.
 - `fetch`: if `shown` names it, it calls the asker back and sends `history` for the id, as it does today.
 - It publishes a reply through the two relays that brought the ask first. Budget: replies have one of their own (2 a
   second, apart from call backs and from answers to "who serves?"), and one reply tag gets 16 a minute.
@@ -212,9 +212,44 @@ What this page left open, settled by its own reasoning:
 
 Found while building it, not in the design: **the owner's own last entry shown with an old zone or none.** An
 attacker in a first lookup's sample can reply with the owner's real last entry (public, valid) and no zone, or an old
-one; the dissent then names the owner's key, so honest holders stay silent, and the member keeps the owner with that
-zone until its refresh 5 minutes on (NXDOMAIN or an old address meanwhile). Never another owner. `shown` would have to
-cover the zone too (its `seq` and hash) to close it: a change to the ask, so docs/backlog.md and the user.
+one; the dissent then named the owner's key, so honest holders stayed silent, and the member kept the owner with that
+zone until its refresh 5 minutes on (NXDOMAIN or an old address meanwhile). **Closed in R3a (2026-11-17)**:
+
+- **`shown` covers the entry and the zone.** A `dissent`'s 8 bytes are `SHA-256` (BIP-340-style tagged,
+  `waarm64/names/shown`) over the owner key, the last entry's id, and the zone's own tagged hash (nothing for none),
+  truncated (`wire::shown`; a hash of zeros would read as "none" and is taken as `01 00 …`). The member hashes the
+  best item checked so far as it would keep it: the owner by the rule, that key's latest last entry, its best zone
+  (`Zone::beats`); a server hashes what it holds (the owning chain's last entry, its zone) and replies when the two
+  differ. So the honest holder of a newer zone, or of a renewal, replies. The `ask` is still **164 bytes** (100 in the
+  plain): the field stays 8 bytes, a hash in place of a key's prefix.
+- **What it costs**: a server holding something *older* than what was shown (a sync behind) replies too; the member
+  keeps the latest entry and the best zone of everything, as it did. In a room of 129 holders of one item, a lookup
+  drew at most 5 to 15 replies over six lookups (two runs), where every holder dissenting would be 129.
+- **What it reveals**: nothing new of the asker. The hash is of public records the replies before it carried, so a
+  server, or a relay that knows the room's ID, learns which version of the records the asker was shown; before, it
+  learnt the owner key's first 8 bytes. A 64-bit hash can't be steered by the attacker to match an honest holder's:
+  it chooses among the owner's genuine records, a few, never a value.
+- **Not covered, on purpose**: the anchor and its header (a valid anchor of the same entry from another calendar moves
+  the entry's time by the gap between their blocks, hours: the member keeps the later time, which only lengthens its
+  cover a little until the refresh; covering it would make every holder of another copy reply), `since` (it orders a
+  contest and is unchecked anyway), and the replier's key and region (a `fetch`'s).
+- **Not closed: an entry before a release.** An attacker can show the owner's last entry before its release (public,
+  alive by its own time). Holders of the release hold no owner, so they don't dissent, and a reply can't carry a
+  release (an item is one live entry): the member keeps the released owner until its refresh 5 minutes on, whose
+  `get` sends the release. If the name has a next owner, its holder does dissent, but the contest's fetched runs carry
+  no release (a `fetch` answers `history`, nothing held), so the old run wins it and the member keeps the released
+  owner over the next one for those 5 minutes (confirmed on the bus with 128 liars and one honest holder). Closing it
+  takes a reply and a fetched run that carry a release, and a member that takes one: docs/backlog.md.
+
+Tests (R3a): `the_owners_own_records_shown_stale_dont_silence_the_dissent` (member_tests.rs: 128 liars as the whole
+sample showing the owner's last entry with an old zone, with none, or a renewal behind in its grace; one honest holder
+of the newest; six first lookups each: the newest entry and zone every time, no contest; and with no liars, holders of
+what was shown stay silent); `a_server_replies_to_asks_by_their_mode` (server_tests.rs: silent for exactly what it
+holds, a reply for an old zone, none, an entry behind, or the key's bare prefix). It failed on R3's code at the first
+lookup of each kind (the old zone's `0x01…`, NXDOMAIN for the other two). Planted: the zone left out of the hash (both
+sides) and the entry left out (both sides): the member test and the server test; a server hashing its entry without
+its zone: the member test ("no zone") and the server test; a member hashing without the zone: the member test's
+silence check (every holder replied).
 
 Measured (cloud, 2026-11-17): on the bus (`member_tests.rs`) 128 and 1,280 junk registrations as the whole sample,
 showing their own younger chain or saying none, against one honest holder: the owner every time, up to 2.4 s (a

@@ -2856,14 +2856,37 @@ fn a_server_replies_to_asks_by_their_mode() {
         inside += replied as usize;
     }
     assert!((2..=20).contains(&inside), "{inside} of 64 at 1/8");
-    // A dissent: silent when it holds the owner shown, a reply when it holds another (or none was shown).
+    // A dissent: silent when it holds what was shown (the owner key, its last entry and the zone), a reply when it
+    // holds anything else (or none was shown).
     now += Duration::from_secs(1);
-    let shown: [u8; 8] = owner[..8].try_into().unwrap();
+    let last = alpha.entries[2].entry.id();
+    let shown = super::wire::shown(&owner, &last, alpha.zone.as_ref());
     assert!(
         ask_one(&mut s, ask(5, 100, AskMode::Dissent, 6, shown), now, T)
             .0
             .is_none()
     );
+    // R3a: the owner's own last entry with an old zone or none, or its entry a renewal behind, is another thing shown.
+    let key2 = b.key(2, "alpha");
+    let old = Zone::seal(&b.names, &key2, "alpha", 0, &[(None, [1; 32])], false).unwrap();
+    let before = alpha.entries[1].entry.id();
+    for (n, other) in [
+        (110, super::wire::shown(&owner, &last, Some(&old))),
+        (111, super::wire::shown(&owner, &last, None)),
+        (
+            112,
+            super::wire::shown(&owner, &before, alpha.zone.as_ref()),
+        ),
+        (113, owner[..8].try_into().unwrap()),
+    ] {
+        now += Duration::from_secs(1);
+        assert!(
+            ask_one(&mut s, ask(5, n, AskMode::Dissent, 6, other), now, T)
+                .0
+                .is_some(),
+            "{n}"
+        );
+    }
     assert!(
         ask_one(&mut s, ask(5, 101, AskMode::Dissent, 6, [1; 8]), now, T)
             .0

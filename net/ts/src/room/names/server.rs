@@ -43,7 +43,7 @@ use super::{
     store::{Held, Registry, read_record, zone_tag},
     wire::{
         AskMode, GetMode, Item, Msg, NameAsk, Proof, Question, REPLY_MAX, Range, Reply, ReplyItem,
-        SyncAnswer, Transfers, WireEntry,
+        SyncAnswer, Transfers, WireEntry, shown,
     },
     zone::Zone,
 };
@@ -1280,8 +1280,9 @@ impl Server {
                 }
             }
             AskMode::Dissent => {
-                let owner = self.owner_of(&a.id, unix);
-                if owner.is_some_and(|o| a.shown == [0; 8] || o[..8] != a.shown) {
+                // Another owner, or the owner's later entry or another zone (R3a): whatever differs from what was shown.
+                let held = self.shown_of(&a.id, unix);
+                if held.is_some_and(|h| a.shown == [0; 8] || h != a.shown) {
                     self.reply(&a, via, now, unix);
                 }
             }
@@ -1327,13 +1328,12 @@ impl Server {
         self.reg.items.get_mut(id)
     }
 
-    /// The owner key of the chain that owns `id` now, as held.
-    fn owner_of(&mut self, id: &[u8; 32], unix: u64) -> Option<[u8; 32]> {
+    /// What a `dissent` would name for what we hold of `id` ([`shown`]): the owner key, the owning chain's last entry
+    /// and the zone. None when no chain owns it now.
+    fn shown_of(&mut self, id: &[u8; 32], unix: u64) -> Option<[u8; 8]> {
         let h = self.settled(id, unix)?;
-        h.owner
-            .as_ref()
-            .filter(|o| o.covers(unix) && !o.released)
-            .map(|o| o.owner)
+        let o = h.owner.as_ref().filter(|o| o.covers(unix) && !o.released)?;
+        Some(shown(&o.owner, &o.last(), h.zone.as_ref()))
     }
 
     /// A name asked for (by a `get` or an ask): what the bound keeps longest, fetched again by sync if it was dropped.

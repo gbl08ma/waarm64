@@ -1601,10 +1601,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     meanwhile); a server that never answers a `get` but always answers "who serves?" is found again at each new
     question. N6 sees whether that matters at scale.
   - **A first lookup's loose ends** (R3, plans/room-names-r3.md "As built"):
-    - **The owner's own last entry shown with an old zone or none** silences the dissent (it names the owner's key), so
-      a sample that is all an attacker's makes a member keep the owner with that zone (NXDOMAIN or an old address)
-      until its refresh 5 minutes on, whose servers are drawn. Never another owner. Closing it takes `shown` covering
-      the zone too (its `seq` and 4 bytes of hash beside the key's): a change to the ask, the user's call.
+    - Done (R3a): **the owner's own last entry shown with an old zone or none** (or an entry a renewal behind) no longer
+      silences the dissent: `shown` is 8 bytes of a hash of the owner key, the last entry and the zone, so a holder of
+      anything newer replies (room-names-r3.md "As built"; the ask stays 164 bytes).
+    - **The owner's last entry before its release, shown by a sample that is all an attacker's** (R3a found it): holders
+      of the release hold no owner, so they don't dissent, and a reply carries only a live entry, so the member keeps
+      the released owner until its refresh 5 minutes on (whose `get` sends the release). With a next owner, its holder
+      dissents, but the contest's fetched runs carry no release, so the released run wins, for those 5 minutes too
+      (confirmed on the bus, not committed as a test). Closing it: a server holding a release replies to a `dissent`
+      with the release and the entry it follows, a `fetch` sends a tombstone run with the history, and the member's
+      check takes a release (ending that key's chain). A change to the reply's item and the member's checks.
     - **`REPLY_MAX` (4 KiB) is the user's starting value**: whether the six default relays forward an ephemeral event of
       that size, and how fast they rate-limit a server's replies, is a dev VM session's to measure (N0c/N6: about a
       hundred events, no public service touched in the cloud). Under a relay's limit, items come by `fetch` (a session).
