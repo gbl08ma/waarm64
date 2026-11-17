@@ -134,7 +134,6 @@ test('with no machine running: a claim public once anchored, and a renewal made 
   const { agent, store, backend } = await testAgent({ log });
   // A claim: held back while it waits for its anchor; once anchored, published, and a member resolves it.
   const c = { identityKey: 'conn-1', link };
-  cal.mine(7);
   await agent.register(c, 'charlie', point(servers[0].self().key.replace('nodekey:', '')));
   await resolves(member1, 'charlie', 3, 15_000);
   cal.mine(7);
@@ -183,7 +182,6 @@ test('a title renewed in two browsers: the fork is settled, both taking the room
   const renewA = (await statusOf(a.backend, tb)).entries.find((e) => e.kind === 'renew')!;
   const dropped = await b.backend.op<{ item: string }>('drop', { item: tb.item, ids: [renewA.id] });
   await b.store.put({ ...tb, item: dropped.item, stamps: {}, collect: {} });
-  cal.mine(7);
   await b.agent.pass(cb.identityKey); // B renews: a second renewal of the same claim
   cal.mine(7);
   await a.agent.pass(ca.identityKey);
@@ -213,7 +211,6 @@ test('a better chain shown by the servers makes a title lost: renewal stops', { 
   assert.equal(v.state, 'lost', log.join('\n'));
   const n = (await statusOf(backend, await titleOf(store, c))).entries.length;
   const posts = asked.posts;
-  cal.mine(7);
   await agent.pass(c.identityKey);
   assert.equal(asked.posts, posts, 'no stamp');
   assert.equal((await statusOf(backend, await titleOf(store, c))).entries.length, n);

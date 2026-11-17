@@ -1,7 +1,7 @@
 // The names agent (web/names.ts, docs/plans/room-names.md "The names agent") in Node, on the tests' module
 // (target/net/ts-test.wasm) and the pretend calendars and explorer (tests/net/ots-calendar.ts), its compiled services
-// routed there through `fetch` (tests/net/names-agent.ts): a claim held back until anchored, then published; an entry
-// whose anchor came past REF_WINDOW (or none in its window) made again; one Web Lock a title (two tabs make one entry);
+// routed there through `fetch` (tests/net/names-agent.ts): a claim held back until anchored, then published; an anchor
+// counted whenever it comes, and a renewal that can no longer link dropped; one Web Lock a title (two tabs make one entry);
 // a lost title not renewed; a zone's `seq` never shared by two copies of a title; nothing asked of any service but the
 // compiled ones; the dialog's check (as typed, by the page alone; at Register, its servers asked for one first byte, never the id) and the last week's notice. A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, roomOf, SERVICES, type TitleView } from '../web/names.ts';
 import type { IdsAnswer, NamesBackend } from '../web/names-ops.ts';
-import { aged, DAY, fakePublish, nowS, point, refAt, routeServices, statusOf, TEST_WASM, testAgent, type Asked } from './net/names-agent.ts';
+import { aged, DAY, fakePublish, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, type Asked } from './net/names-agent.ts';
 import { startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 
 const skip = existsSync(TEST_WASM) ? false : 'no target/net/ts-test.wasm (net/ts/build.sh --test-params)';
@@ -32,7 +32,6 @@ test('a claim is held back until anchored, then published; the next pass of the 
   const pub = fakePublish();
   const log: string[] = [];
   const { agent, store, backend } = await testAgent({ publish: pub, log });
-  cal.mine(7);
   const t0 = Date.now();
   const v = await agent.register(conn(), 'test123', point());
   assert.equal(v.state, 'reserved');
@@ -53,10 +52,7 @@ test('a claim is held back until anchored, then published; the next pass of the 
   await agent.pass();
   assert.equal(pub.puts.length, 0, 'five deep: the calendars still say pending');
   cal.mine();
-  await agent.pass();
-  assert.equal(pub.puts.length, 0, 'six deep: the proof is served, but the anchor needs the sixth header after its block');
-  cal.mine();
-  await agent.pass();
+  await agent.pass(); // six deep: the proof is served, and its block's header is all the anchor needs
   const [a] = await agent.titles();
   assert.equal(a.state, 'active', log.join('\n'));
   console.log(`# from register to public under the pretend calendar: ${Date.now() - t0} ms`);
@@ -79,58 +75,55 @@ test('a claim is held back until anchored, then published; the next pass of the 
   await assert.rejects(agent.register(conn(), 'wpad', point()), { code: 'Name' }); // i18n-ignore
 });
 
-test('an entry whose anchor came past REF_WINDOW, or none in its window, is made again', { skip, timeout: 60_000 }, async () => {
+test('an anchor counts whenever it comes; a renewal that can no longer link is dropped a week past its link end', { skip, timeout: 60_000 }, async () => {
   const log: string[] = [];
   const pub = fakePublish();
   const { agent, store, backend } = await testAgent({ publish: pub, log });
-  const c = conn('conn-window');
-  // The chain's block 6 deep is 49 hours old: the claim made after it is anchored past its 48-hour window.
-  refAt(cal, nowS() - 49 * 3600);
+  // A claim stamped 49 hours ago and anchored now: taken (no window ties an anchor to when its entry was made).
+  const c = conn('conn-late');
   const clock = Date.now;
-  Date.now = () => clock() - 60_000; // stamped a minute ago
+  Date.now = () => clock() - 49 * 3600_000;
   try {
     await agent.register(c, 'late', point());
   } finally {
     Date.now = clock;
   }
-  const first = (await statusOf(backend, (await store.titles(c.identityKey))[0])).entries[0].id;
-  const stamped = (await store.titles(c.identityKey))[0].stampedAt!;
-  cal.mine(7); // anchored now, and a recent block 6 deep for what is made again
+  const [claim] = (await statusOf(backend, (await store.titles(c.identityKey))[0])).entries;
+  assert.equal(claim.linkEnd, null, 'a claim can always link');
+  cal.mine(6);
   await agent.pass(c.identityKey);
-  assert.ok(log.some((l) => l.includes('refused for good (AnchorWindow)')), log.join('\n'));
-  assert.ok((await store.titles(c.identityKey))[0].stampedAt! > stamped, 'the claim made again: "public in about" counts from its stamp (review 2)');
   let st = await statusOf(backend, (await store.titles(c.identityKey))[0]);
-  assert.equal(st.entries.length, 1, 'made again');
-  assert.notEqual(st.entries[0].id, first);
-  assert.equal(st.entries[0].time, null);
-  cal.mine(7);
-  await agent.pass(c.identityKey);
+  assert.equal(st.entries.length, 1, `not made again: ${log.join('\n')}`);
+  assert.equal(st.entries[0].id, claim.id);
+  assert.ok(st.entries[0].time !== null && Math.abs(st.entries[0].time - nowS()) < 60, 'timed by its block, now');
   assert.equal((await agent.titles(c.identityKey))[0].state, 'active');
-  // A block 6 deep 53 hours old: the claim is past its window and the slack, unanchored. Another is made at the next
-  // pass; the first is kept and asked for (an anchor in its window may still come: review 2), and dropped a week
-  // past its window.
+  // A claim anchored 36 days ago: the pass that collects it renews it (due), and that renewal's proof never comes. Past
+  // the claim's `t + TERM + GRACE` (a day on) it can no longer link: stale, but kept and asked for (an anchor timed
+  // before then may still be served: review 2), and dropped a week past that.
   const d = conn('conn-stale');
-  refAt(cal, nowS() - 53 * 3600);
-  await agent.register(d, 'stale', point());
-  const old = (await statusOf(backend, (await store.titles(d.identityKey))[0])).entries[0];
-  assert.equal(old.stale, true);
-  cal.forget(); // its proof never comes
-  cal.mine(7);
-  await agent.pass(d.identityKey);
+  await aged(cal, agent, d, 'stale', nowS() - 36 * DAY);
+  cal.forget();
   st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
-  assert.equal(st.entries.length, 2, 'made again, the first kept');
-  const fresh = st.entries.find((e) => e.id !== old.id)!;
-  assert.equal(fresh.stale, false);
-  const real = Date.now;
-  Date.now = () => real() + 8 * DAY * 1000;
-  try {
-    await agent.pass(d.identityKey);
-  } finally {
-    Date.now = real;
-  }
-  st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
-  assert.ok(!st.entries.some((e) => e.id === old.id), 'dropped a week past its window');
-  assert.ok(log.some((l) => l.includes('never anchored in their window')));
+  const renewal = st.entries.find((e) => e.kind === 'renew')!;
+  assert.ok(renewal && renewal.time === null, log.join('\n'));
+  const anchored = st.entries.find((e) => e.kind === 'claim')!.time!;
+  assert.equal(renewal.linkEnd, anchored + 37 * DAY);
+  assert.equal(renewal.stale, false);
+  const at = async (days: number) => {
+    const real = Date.now;
+    Date.now = () => real() + days * DAY * 1000;
+    try {
+      await agent.pass(d.identityKey);
+      return await statusOf(backend, (await store.titles(d.identityKey))[0]);
+    } finally {
+      Date.now = real;
+    }
+  };
+  st = await at(2);
+  assert.equal(st.entries.find((e) => e.id === renewal.id)?.stale, true, 'kept, stale');
+  st = await at(9);
+  assert.ok(!st.entries.some((e) => e.id === renewal.id), 'dropped a week past its link end');
+  assert.ok(log.some((l) => l.includes('never anchored in time to link')), log.join('\n'));
 });
 
 test('one Web Lock a title: two tabs looking after it at once make one entry', { skip, timeout: 60_000 }, async () => {
@@ -138,7 +131,6 @@ test('one Web Lock a title: two tabs looking after it at once make one entry', {
   const a = await testAgent({ store });
   const b = await testAgent({ store });
   const c = conn('conn-locks');
-  cal.mine(7);
   // Every calendar down: the claim can't be stamped, and waits to be made again.
   for (const x of ['alice', 'bob', 'finney'] as const) cal.down.add(x);
   await a.agent.register(c, 'twotabs', point());
@@ -194,7 +186,6 @@ test('a better chain of another key\'s makes a title lost, and a lost title isn\
 test('a title exported to another browser: the two copies never share a zone\'s seq', { skip, timeout: 60_000 }, async () => {
   const a = await testAgent({ publish: fakePublish() });
   const ca = conn('conn-fork-a');
-  cal.mine(7);
   await a.agent.register(ca, 'forked', point());
   cal.mine(7);
   await a.agent.pass(ca.identityKey);
@@ -220,7 +211,6 @@ test('a title exported to another browser: the two copies never share a zone\'s 
 test('one export pasted into two browsers: each copy a branch of its own, so their zones never share a seq', { skip, timeout: 60_000 }, async () => {
   const a = await testAgent({ publish: fakePublish() });
   const ca = conn('conn-paste-a');
-  cal.mine(7);
   await a.agent.register(ca, 'pasted', point());
   cal.mine(7);
   await a.agent.pass(ca.identityKey);
@@ -251,7 +241,6 @@ test('a zone the room\'s servers didn\'t take: counted past the room\'s and put 
   // Two copies of one title: B's zone is further along (n 4), A's behind it.
   const a = await testAgent({ publish: fakePublish() });
   const ca = conn('conn-zone-a');
-  cal.mine(7);
   await a.agent.register(ca, 'zoned', point());
   cal.mine(7);
   await a.agent.pass(ca.identityKey);
@@ -318,10 +307,8 @@ test('a renewal collected late revives its chain: not dropped on one failed try,
     // renewal's anchor is collected.
     Date.now = () => real() - shift;
     const s = nowS();
-    refAt(cal, s - 36 * DAY);
     await agent.register(c, 'revived', point());
-    cal.mine(7, s - 36 * DAY + 3600);
-    refAt(cal, s);
+    cal.mine(7, s - 36 * DAY); // the claim's block
     await agent.pass(c.identityKey);
     const st = await statusOf(backend, (await store.titles(c.identityKey))[0]);
     assert.ok(st.entries.some((e) => e.kind === 'renew' && e.time === null), `a renewal waits: ${log.join('\n')}`);
@@ -352,12 +339,11 @@ test('a renewal collected late revives its chain: not dropped on one failed try,
   assert.equal(t.lost, undefined);
 });
 
-test('a calendar answering junk, or an explorer an inconsistent run, doesn\'t drop an entry: the others are tried (review 2, finding 4)', { skip, timeout: 60_000 }, async () => {
+test('a calendar answering junk, or an explorer another block\'s or a broken header, doesn\'t drop an entry: the others are tried (review 2, finding 4)', { skip, timeout: 60_000 }, async () => {
   const log: string[] = [];
   const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
   // The first calendar answers 200 with a page that isn't a timestamp.
   const c = conn('conn-junk-calendar');
-  cal.mine(7);
   await agent.register(c, 'junkcal', point());
   cal.mine(7);
   const restore = breakFetch((u) => (u.startsWith(`${CALENDARS[0]}/timestamp/`) ? new Response('<html>a proxy</html>', { status: 200 }) : undefined));
@@ -367,30 +353,37 @@ test('a calendar answering junk, or an explorer an inconsistent run, doesn\'t dr
     restore();
   }
   assert.equal((await agent.titles(c.identityKey))[0].state, 'active', log.join('\n'));
-  // The first explorer serves the block's header for every follower (a run that doesn't link): the second's is used.
-  const d = conn('conn-junk-explorer');
-  cal.mine(7);
-  await agent.register(d, 'junkexp', point());
-  cal.mine(7);
-  // Followers' headers at the first explorer: the block's own.
-  let first: string | undefined;
-  const real = globalThis.fetch;
-  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const m = /\/block\/([0-9a-f]{64})\/header$/.exec(url);
-    if (url.startsWith(EXPLORERS[0]) && m) {
-      if (!first) first = m[1];
-      else if (m[1] !== first) return real(`${EXPLORERS[0]}/block/${first}/header`, init);
-    }
-    return real(input, init);
+  // The first explorer serves another block's header (its Merkle root not the anchor's), then the right block's header
+  // with its time a day ahead (the module refuses it): each time, the second's is used.
+  const ahead = (h: string) => {
+    const b = Buffer.from(h, 'hex');
+    b.writeUInt32LE(b.readUInt32LE(68) + DAY, 68);
+    return b.toString('hex');
   };
-  try {
-    await agent.pass(d.identityKey);
-  } finally {
-    globalThis.fetch = real;
+  for (const [k, bad] of [['another', (_: string, genesis: string) => genesis], ['broken', (h: string) => ahead(h)]] as const) {
+    const d = conn(`conn-junk-explorer-${k}`);
+    await agent.register(d, `junkexp${k}`, point());
+    cal.mine(7);
+    const genesis = cal.blocks[0].header.toString('hex');
+    const real = globalThis.fetch;
+    let served = 0;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith(EXPLORERS[0]) && url.endsWith('/header')) {
+        served++;
+        return new Response(bad(await (await real(input, init)).text(), genesis));
+      }
+      return real(input, init);
+    };
+    try {
+      await agent.pass(d.identityKey);
+    } finally {
+      globalThis.fetch = real;
+    }
+    const st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
+    assert.ok(served > 0, k);
+    assert.ok(st.entries[0].time !== null, `${k}: anchored through the second explorer: ${log.join('\n')}`);
   }
-  const st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
-  assert.ok(st.entries[0].time !== null, `anchored through the second explorer: ${log.join('\n')}`);
 });
 
 test('Let it go while a renewal waits for its anchor: the renewal goes, and a release no calendar stamped is made again (review 2, finding 6)', { skip, timeout: 90_000 }, async () => {
@@ -438,16 +431,13 @@ test('an export pasted into a connection that has an owners\' secret already: it
   // Browser B's connection holds a name of its own, so it has a secret.
   const b = await testAgent({ publish: fakePublish(), log });
   const cb = conn('conn-has-secret');
-  cal.mine(7);
   await b.agent.register(cb, 'bsown', point());
   const before = await b.store.secret(cb.identityKey);
   // Browser A's title, claimed 16 days ago (its renewal due), exported before A collected it.
   const a = await testAgent({ publish: fakePublish() });
   const ca = conn('conn-a-export');
-  refAt(cal, nowS() - 16 * DAY);
   await a.agent.register(ca, 'moved', point());
-  cal.mine(7, nowS() - 16 * DAY + 3600);
-  cal.mine(7);
+  cal.mine(7, nowS() - 16 * DAY);
   await importNames(b.store, cb.identityKey, (await exportNames(a.store, ca.identityKey))!);
   assert.equal(await b.store.secret(cb.identityKey), before, 'the connection keeps its secret');
   await b.agent.pass(cb.identityKey);
@@ -465,7 +455,6 @@ test('a title publishes through its connection\'s link as it is now, not the one
   const { agent: agent2, store } = await testAgent({ publish: pub });
   const links = pub.links;
   const c = conn('conn-relink');
-  cal.mine(7);
   await agent2.register(c, 'relinked', point());
   cal.mine(7);
   await agent2.pass(c.identityKey);
@@ -485,7 +474,6 @@ test('a title publishes through its connection\'s link as it is now, not the one
 test('a zone of more than four points is sealed wide: sixteen slots (review 2, finding 17)', { skip, timeout: 60_000 }, async () => {
   const { agent, store, backend } = await testAgent({ publish: fakePublish() });
   const c = conn('conn-wide');
-  cal.mine(7);
   await agent.register(c, 'wide', point());
   const many = [{ label: null, key: '01'.repeat(32) }, ...['a', 'b', 'c', 'd', 'e'].map((l, i) => ({ label: l, key: `${i + 2}`.padStart(2, '0').repeat(32) }))];
   await agent.setZone(c, 'wide', many);
@@ -551,7 +539,6 @@ test('the dialog\'s check: as typed, the rules and this connection\'s own, askin
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'unknown' }, 'no server answered');
   assert.deepEqual(firsts, [first, first, first, first, first], 'one byte a check');
   // This connection's own already.
-  cal.mine(7);
   await agent.register(conn(), 'mybox', point());
   const n = firsts.length;
   assert.deepEqual(await agent.checkHere(conn(), 'mybox'), { state: 'yours' });

@@ -1,8 +1,7 @@
 // The names agent (docs/plans/room-names.md "The names agent"): the page's side of owning names in a room. It keeps the
-// owners' secret and the titles (the only place a name is kept in words), makes their entries (a `ref` block from two
-// explorers, proof of work, a signature, stamps at the three calendars), collects finished anchors with the headers
-// they need, renews when due, makes again an entry whose anchor came too late, and publishes each title to two of the
-// room's servers through a publisher (a names client alone: no machine, no key of the node's). A server that shows a
+// owners' secret and the titles (the only place a name is kept in words), makes their entries (proof of work, a
+// signature, stamps at the three calendars), collects finished anchors with their block's header from an explorer,
+// renews when due, and publishes each title to two of the room's servers through a publisher (a names client alone: no machine, no key of the node's). A server that shows a
 // better chain of another key's makes the title lost; another branch of the title's own chain is taken as its own.
 // The module does the work (web/names-ops.ts: `ts_names_*` in the names worker, web/names-worker.ts); this decides.
 //
@@ -25,7 +24,7 @@ export const CALENDARS = [
   'https://bob.btc.calendar.opentimestamps.org',
   'https://finney.calendar.eternitywall.com',
 ] as const;
-/** The explorers (Esplora's API): a `ref` block taken 6 deep where both agree, and an anchor's block's header and the six after it. */
+/** The explorers (Esplora's API): an anchor's block's header, from one (the other when it fails). */
 export const EXPLORERS = ['https://blockstream.info/api', 'https://mempool.space/api'] as const;
 /** Every service the agent talks to: nothing else is ever fetched (`get`). */
 export const SERVICES: readonly string[] = [...CALENDARS, ...EXPLORERS];
@@ -68,7 +67,7 @@ export type TitleRecord = {
   stamps: Record<string, string[]>;
   /** When an entry's proof is asked for again. */
   collect: Record<string, { next: number; tries: number }>;
-  /** When an entry may be made again (one that couldn't be stamped, or came too late). */
+  /** When an entry may be made again (one that no calendar stamped). */
   remake?: { next: number; tries: number };
   points: ZonePoint[];
   /** A zone's `seq` (64 bits) is `n << 32 | branch`: `n` counts up past every `seq` the title has seen, `branch` is
@@ -121,7 +120,9 @@ export type TitleView = {
 };
 
 type Chain = { ids: string[]; owner: string; seniority: number; resolveEnd: number; coverEnd: number; released: boolean };
-type EntryStatus = { id: string; kind: 'claim' | 'renew' | 'release'; prev: string; owner: string; time: number | null; refTime: number; windowEnd: number; stale: boolean; pending: boolean };
+/** `linkEnd`: until when an anchor can make the entry link (the entry before's `t + TERM + GRACE`; null for a claim);
+ * `stale`: unanchored and past it. */
+type EntryStatus = { id: string; kind: 'claim' | 'renew' | 'release'; prev: string; owner: string; time: number | null; linkEnd: number | null; stale: boolean; pending: boolean };
 /** `zone.seq` in decimal: 64 bits, past what a number holds. */
 export type TitleStatus = { id: string; entries: EntryStatus[]; owner: Chain | null; best: Chain | null; zone: { seq: string; owner: string } | null; term: number; grace: number };
 type Judged = { verdict: 'ours' | 'branch' | 'lost' | 'none'; item: string; by?: string; pending: boolean };
@@ -453,7 +454,7 @@ export class NamesAgent {
 
   /**
    * Looks after every title (or one connection's): each under its Web Lock (another tab doing it: skipped), finished
-   * anchors collected with their headers, an entry that can no longer count made again, a renewal made when due; then
+   * anchors collected with their headers, an entry that can no longer link dropped, a renewal made when due; then
    * each published (under no lock) when public and changed since, or not yet this visit.
    */
   pass(identityKey?: string): Promise<void> {
@@ -550,33 +551,27 @@ export class NamesAgent {
     let st = await this.status(t);
     // Finished anchors for the entries that wait for one.
     for (const e of st?.entries ?? []) {
-      // One past its window may still have an anchor in it (the page wasn't open): asked now, whatever the backoff.
+      // One past its link end may still have an anchor timed before it (the page wasn't open): asked now, whatever the
+      // backoff.
       if (e.time !== null || !t.stamps[e.id]?.length || (!e.stale && (t.collect[e.id]?.next ?? 0) > Date.now())) continue;
-      try {
-        const item = await this.collect(t, e.id);
-        if (item) {
-          t.item = item;
-          delete t.stamps[e.id];
-          delete t.collect[e.id];
-          this.log(`${t.name}: an anchor for ${e.kind} ${e.id.slice(0, 8)}`);
-        } else t.collect[e.id] = this.backoff(t.collect[e.id]);
-      } catch (err) {
-        if (!(err instanceof NamesError)) throw err;
-        // Its anchor came past REF_WINDOW: it can never count. Made again. (Only that: a calendar's junk, an explorer's
-        // odd run or a clock behind is asked again later, and another calendar or explorer may do: review 2.)
-        this.log(`${t.name}: ${e.kind} ${e.id.slice(0, 8)} refused for good (${err.code}); made again`);
-        await this.dropEntries(t, [e.id]);
-        t.remake = this.backoff(t.remake);
-      }
+      // A calendar's junk, an explorer's odd header or a clock behind is asked again later, and another calendar or
+      // explorer may do (review 2): no anchor is refused for good.
+      const item = await this.collect(t, e.id);
+      if (item) {
+        t.item = item;
+        delete t.stamps[e.id];
+        delete t.collect[e.id];
+        this.log(`${t.name}: an anchor for ${e.kind} ${e.id.slice(0, 8)}`);
+      } else t.collect[e.id] = this.backoff(t.collect[e.id]);
       changed = true;
     }
     st = await this.status(t);
-    // An entry unanchored past its window may still have an anchor in it, finished while no page was open (a renewal
-    // so collected can still link): it is kept and asked for, beside a new one where one is due, and dropped only a
-    // week past its window, when the calendars would long have served it (review 2).
-    const stale = (st?.entries ?? []).filter((e) => e.stale && nowS() > e.windowEnd + STALE_KEEP_S).map((e) => e.id);
+    // An entry unanchored past its link end may still have an anchor timed before it, finished while no page was open
+    // (a renewal so collected still links): it is kept and asked for, beside a new one where one is due, and dropped
+    // only a week past its link end, when the calendars would long have served it (review 2).
+    const stale = (st?.entries ?? []).filter((e) => e.stale && nowS() > (e.linkEnd ?? Infinity) + STALE_KEEP_S).map((e) => e.id);
     if (stale.length) {
-      this.log(`${t.name}: ${stale.length} entry(s) never anchored in their window; dropped`);
+      this.log(`${t.name}: ${stale.length} entry(s) never anchored in time to link; dropped`);
       await this.dropEntries(t, stale);
       st = await this.status(t);
       changed = true;
@@ -620,18 +615,8 @@ export class NamesAgent {
     }
   }
 
-  /** A `ref` block 6 deep where both explorers agree: its header and hash (the explorers' byte order). */
-  private async ref(): Promise<{ header: string; hash: string }> {
-    const tips = await Promise.all(EXPLORERS.map((e) => text(`${e}/blocks/tip/height`)));
-    const h = Math.min(...tips.map(Number)) - 6;
-    if (!Number.isSafeInteger(h) || h < 0) throw new Error('names: no block 6 deep');
-    const hashes = await Promise.all(EXPLORERS.map((e) => text(`${e}/block-height/${h}`)));
-    if (hashes.some((x) => x !== hashes[0]) || !/^[0-9a-f]{64}$/.test(hashes[0])) throw new Error('names: the explorers disagree');
-    return { header: await text(`${EXPLORERS[0]}/block/${hashes[0]}/header`), hash: hashes[0] };
-  }
-
   /**
-   * An entry of `kind` (after `prev`) made on title `t`: `ref`, proof of work in slices, the signature, checked into
+   * An entry of `kind` (after `prev`) made on title `t`: proof of work in slices, the signature, checked into
    * the title, stamped at the calendars (each receipt a pending anchor the owner key signs). With no receipt it can never
    * be anchored: dropped, made again later. A claim carries the title's zone.
    */
@@ -639,21 +624,14 @@ export class NamesAgent {
     const secret = t.secret ?? (await this.store.secret(t.identityKey));
     if (!secret) throw new NamesError('NoSecret');
     const base = { room: t.room, secret, name: t.name };
-    let r: { header: string; hash: string };
-    try {
-      r = await this.ref();
-    } catch (err) {
-      t.remake = this.backoff(t.remake);
-      throw err;
-    }
-    let { entry } = await this.b.op<{ entry: string }>('make', { ...base, kind, prev, ref: r.header, hash: r.hash });
+    let { entry } = await this.b.op<{ entry: string }>('make', { ...base, kind, prev });
     for (;;) {
       const m = await this.b.op<{ entry: string; done: boolean }>('mine', { entry, tries: MINE_SLICE });
       entry = m.entry;
       if (m.done) break;
     }
     ({ entry } = await this.b.op<{ entry: string }>('sign', { ...base, entry }));
-    const added = await this.b.op<{ item: string; id: string }>('add', { room: t.room, item: t.item || undefined, entry, ref: r.header, now: nowS() });
+    const added = await this.b.op<{ item: string; id: string }>('add', { room: t.room, item: t.item || undefined, entry, now: nowS() });
     let item = added.item;
     const id = added.id;
     if (kind === 'claim') item = await this.sealed(t, item);
@@ -711,11 +689,9 @@ export class NamesAgent {
     t.item = await this.sealed(t, t.item);
   }
 
-  /** A finished anchor for entry `id` of title `t`, with its block's header and the six after it: the title's item with
-   * it, or undefined while none is finished (a pending proof is a 404 without CORS: a failed fetch). A `NamesError`
-   * when the anchor can never count (its time past the window). */
+  /** A finished anchor for entry `id` of title `t`, with its block's header: the title's item with it, or undefined
+   * while none is finished (a pending proof is a 404 without CORS: a failed fetch) or none was taken. */
   private async collect(t: TitleRecord, id: string): Promise<string | undefined> {
-    let refused: NamesError | undefined;
     for (const p of t.stamps[id] ?? []) {
       let f: { anchors: { anchor: string; height: number; root: string }[] };
       try {
@@ -731,50 +707,29 @@ export class NamesAgent {
         continue;
       }
       for (const a of f.anchors) {
-        // Each explorer's run in turn: one may serve a run the module refuses, the other a good one.
-        for (const headers of await this.runs(a.height, a.root)) {
+        // One explorer, the other when it fails: one may serve a header the module refuses, the other a good one.
+        for (const e of EXPLORERS) {
+          const header = await this.header(e, a.height, a.root);
+          if (!header) continue;
           try {
-            return (await this.b.op<{ item: string }>('anchor', { item: t.item, id, anchor: a.anchor, headers, now: nowS() })).item;
+            return (await this.b.op<{ item: string }>('anchor', { item: t.item, id, anchor: a.anchor, header, now: nowS() })).item;
           } catch (err) {
             if (!(err instanceof NamesError)) throw err;
             this.log(`${t.name}: an anchor refused (${err.code})`);
-            if (err.code === 'AnchorWindow') refused = err;
           }
         }
       }
     }
-    if (refused) throw refused;
     return undefined;
   }
 
-  /** Block `height`'s header (its Merkle root `root`, as a header carries it) and the six after it, from each explorer
-   * that has them (none until six follow it). */
-  private async runs(height: number, root: string): Promise<string[][]> {
-    const out: string[][] = [];
-    for (const e of EXPLORERS) {
-      const r = await this.run(e, height, root);
-      if (r) out.push(r);
-    }
-    return out;
-  }
-
-  /** Block `height`'s header and the six after it from explorer `e`; undefined until six follow it, or when `e` has
-   * another block there (a reorganisation) or can't be reached. */
-  private async run(e: string, height: number, root: string): Promise<string[] | undefined> {
+  /** Block `height`'s header from explorer `e` (two GETs: its hash, then its header); undefined when `e` has another
+   * block there (a reorganisation: `root` is the anchor's, as a header carries it) or can't be reached. */
+  private async header(e: string, height: number, root: string): Promise<string | undefined> {
     try {
       const hash = await text(`${e}/block-height/${height}`);
       const header = await text(`${e}/block/${hash}/header`);
-      // Not that block at this explorer: the other's. (`root` is the anchor's, in header order.)
-      if (header.slice(72, 136) !== root) return undefined;
-      const out = [header];
-      let at = hash;
-      for (let k = 0; k < 6; k++) {
-        const s = JSON.parse(await text(`${e}/block/${at}/status`)) as { next_best?: string | null };
-        if (!s.next_best) return undefined;
-        at = s.next_best;
-        out.push(await text(`${e}/block/${at}/header`));
-      }
-      return out;
+      return header.slice(72, 136) === root ? header : undefined;
     } catch {
       return undefined;
     }

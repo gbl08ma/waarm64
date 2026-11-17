@@ -507,7 +507,6 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   assert.equal(await a.locator('#net-name-register').isDisabled(), true, 'taken: no Register');
   await a.fill('#net-name-input', 'mybox');
   await a.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'valid', null, { timeout: 10_000 });
-  cal.mine(7); // the explorers' block 6 deep: the claim's `ref`
   // Free: Register asks (a checker of its own: servers found again), registers and closes.
   await a.click('#net-name-register');
   await a.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 30_000 })

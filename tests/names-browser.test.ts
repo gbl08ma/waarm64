@@ -58,7 +58,6 @@ test('in the page: a claim held back until anchored, the title kept over a reloa
   const url = `${base}/tests/browser/names.html?${new URLSearchParams({ conn: 'conn-a', link: LINK })}`;
   await page.goto(url);
   await page.waitForFunction('window.harness');
-  cal.mine(7);
   const r = await page.evaluate('window.harness.register("browser1")') as { view: { state: string }; ms: number };
   console.log(`# a claim made in the page (the tests' proof of work), stamped: ${r.ms.toFixed(0)} ms`);
   assert.equal(r.view.state, 'reserved');

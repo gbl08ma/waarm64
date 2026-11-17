@@ -16,8 +16,8 @@ import { applyOps, EASY_BITS, readTimestamp, sha256d, startOtsCalendar, target, 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/ts.wasm`;
 const TEST_WASM = `${ROOT}target/net/ts-test.wasm`;
-/** Production's floor at its one point (room/names.rs `Params::PRODUCTION`): half of block 976,177's difficulty. */
-const PRODUCTION_FLOOR = 0x17042ce6;
+/** Production's floor (room/names.rs `Params::PRODUCTION`): 1/16 of block 976,177's difficulty. */
+const PRODUCTION_FLOOR = 0x17216730;
 
 let cal: OtsCalendar;
 before(async () => { cal = await startOtsCalendar({ depth: 6 }); });
@@ -69,57 +69,27 @@ test('the pretend calendars stamp, answer pending without CORS, then serve the f
   cal.down.clear();
 });
 
-test('the pretend explorer: the tip, block hashes by height and their headers, in the explorers\' byte order', async () => {
-  cal.mine(3);
-  const e = cal.explorer;
-  const height = Number(await (await get(`${e}/blocks/tip/height`)).text());
-  assert.equal(height, cal.blocks.length - 1);
-  const tip = await (await get(`${e}/blocks/tip/hash`)).text();
-  assert.equal(tip, Buffer.from(cal.blocks[height].hash).reverse().toString('hex'));
-  const six = await (await get(`${e}/block-height/${height - 6}`)).text();
-  const r = await get(`${e}/block/${six}/header`);
-  assert.equal(r.headers.get('access-control-allow-origin'), '*');
-  const header = Buffer.from(await r.text(), 'hex');
-  assert.equal(header.length, 80);
-  assert.equal(Buffer.from(sha256d(header)).reverse().toString('hex'), six);
-  assert.ok(header.subarray(4, 36).equals(cal.blocks[height - 7].hash), 'a chain: each header names the one before');
-  assert.equal((await get(`${e}/block/${'00'.repeat(32)}/header`)).status, 404);
-});
-
-test('the pretend explorer walks from an anchor\'s block to the six headers after it, each naming the one before', async () => {
-  // An anchor carries its block's header and the next six (room/names/header.rs `Run`): the agent finds them by
-  // `block/<hash>/status`'s `next_best`, as it would at an Esplora explorer.
-  const digest = createHash('sha256').update('six after').digest();
+test('the pretend explorer: block hashes by height and their headers, in the explorers\' byte order', async () => {
+  // What the agent asks for an anchor (web/names.ts `header`): the hash of the block at the proof's height, then its
+  // header, which an anchor carries alone.
+  const digest = createHash('sha256').update('one header').digest();
   await get(`${cal.calendars.alice}/digest`, { method: 'POST', body: digest });
   const [b] = cal.mine();
   const e = cal.explorer;
-  const display = (h: Buffer) => Buffer.from(h).reverse().toString('hex');
-  // While fewer than six follow it, the walk stops short.
-  cal.mine(4);
-  const walk = async () => {
-    const run: Buffer[] = [];
-    let at = display(b.hash);
-    for (let k = 0; k < 6; k++) {
-      const s = await (await get(`${e}/block/${at}/status`)).json() as { in_best_chain: boolean; height: number; next_best: string | null };
-      assert.equal(s.in_best_chain, true);
-      if (!s.next_best) break;
-      at = s.next_best;
-      run.push(Buffer.from(await (await get(`${e}/block/${at}/header`)).text(), 'hex'));
-    }
-    return run;
-  };
-  assert.equal((await walk()).length, 4);
-  cal.mine(2);
-  const run = await walk();
-  assert.equal(run.length, 6);
-  let prev = b.hash;
-  for (const h of run) {
-    assert.ok(h.subarray(4, 36).equals(prev), 'names the one before');
-    assert.ok(Buffer.from(sha256d(h)).reverse().compare(target(EASY_BITS)) <= 0, 'meets the tests\' floor');
-    prev = sha256d(h);
-  }
-  const s = await get(`${e}/block/${display(b.hash)}/status`);
-  assert.equal(s.headers.get('access-control-allow-origin'), '*');
+  const hash = await (await get(`${e}/block-height/${b.height}`)).text();
+  assert.equal(hash, Buffer.from(b.hash).reverse().toString('hex'));
+  const r = await get(`${e}/block/${hash}/header`);
+  assert.equal(r.headers.get('access-control-allow-origin'), '*');
+  const header = Buffer.from(await r.text(), 'hex');
+  assert.equal(header.length, 80);
+  assert.equal(Buffer.from(sha256d(header)).reverse().toString('hex'), hash);
+  assert.ok(header.subarray(4, 36).equals(cal.blocks[b.height - 1].hash), 'a chain: each header names the one before');
+  assert.ok(Buffer.from(sha256d(header)).reverse().compare(target(EASY_BITS)) <= 0, 'meets the tests\' floor');
+  assert.equal((await get(`${e}/block/${'00'.repeat(32)}/header`)).status, 404);
+  assert.equal((await get(`${e}/block-height/${b.height + 1}`)).status, 404);
+  // Nothing else of Esplora's: the agent asks for no tip and walks no chain.
+  assert.equal((await get(`${e}/blocks/tip/height`)).status, 404);
+  assert.equal((await get(`${e}/block/${hash}/status`)).status, 404);
 });
 
 /** A room client's `self` event in Node, from the module at `wasm` (its sockets stubbed: nothing connects). */

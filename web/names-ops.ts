@@ -8,7 +8,7 @@ import { TsClient, type NamesIds, type NamesOp, type NamesPut, type TsModule } f
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** Why an operation refused: an `Invalid`'s name from the module (`AnchorWindow`, `Signature`, `Name`, …) or a message. */
+/** Why an operation refused: an `Invalid`'s name from the module (`Signature`, `Name`, `HeaderFloor`, …) or a message. */
 export class NamesError extends Error {
   readonly code: string;
   constructor(code: string) {

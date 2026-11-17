@@ -11,10 +11,9 @@
 //   its height) once that block is `depth` deep.
 // - `mine(n)` mines blocks: each takes every commitment waiting (on every calendar) into its Merkle tree; `every`
 //   mines one on a timer. `down` holds calendars that answer 503.
-// - The explorer, at `explorer` (`…/api`): `blocks/tip/height`, `blocks/tip/hash`, `block-height/<h>`,
-//   `block/<hash>/header` (hex), `block/<hash>/status` (Esplora's `{ in_best_chain, height, next_best }`: how the agent
-//   walks to the six headers after an anchor's block, which an anchor carries), CORS open; hashes in the explorers'
-//   byte order (the reverse of the header's).
+// - The explorer, at `explorer` (`…/api`): `block-height/<h>` and `block/<hash>/header` (hex), how the agent fetches
+//   an anchor's block's header (the one an anchor carries), CORS open; hashes in the explorers' byte order (the reverse
+//   of the header's).
 //
 // The formats are OpenTimestamps' (ops 0x08 SHA-256, 0xf0 append, 0xf1 prepend; 0x00 and an 8-byte tag for an
 // attestation, its payload as varbytes), as net/ts/src/room/names/anchor.rs reads them.
@@ -109,8 +108,8 @@ export type OtsCalendar = {
   blocks: Block[];
   /** Calendars that answer 503. */
   down: Set<CalendarName>;
-  /** Mines `n` blocks (default 1) at the wall clock's time (or `time`, Unix seconds: a chain whose recent blocks are old,
-   * for an entry whose `ref` is); the commitments waiting go into the first. */
+  /** Mines `n` blocks (default 1) at the wall clock's time (or `time`, Unix seconds: an anchor timed in the past); the
+   * commitments waiting go into the first. */
   mine(n?: number, time?: number): Block[];
   /** Commitments waiting for a block. */
   waiting(): number;
@@ -197,18 +196,9 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
     if (parts[0] === 'explorer' && parts[1] === 'api') {
       cors(res);
       const display = (b: Block) => Buffer.from(b.hash).reverse().toString('hex');
-      const tip = blocks[blocks.length - 1];
-      const p = parts.slice(2).join('/');
-      if (p === 'blocks/tip/height') return res.end(String(tip.height));
-      if (p === 'blocks/tip/hash') return res.end(display(tip));
       if (parts[2] === 'block-height' && blocks[Number(parts[3])]) return res.end(display(blocks[Number(parts[3])]));
       const b = parts[2] === 'block' && blocks.find((x) => display(x) === parts[3]);
       if (b && parts[4] === 'header') return res.end(b.header.toString('hex'));
-      if (b && parts[4] === 'status') {
-        const next = blocks[b.height + 1];
-        res.setHeader('content-type', 'application/json');
-        return res.end(JSON.stringify({ in_best_chain: true, height: b.height, next_best: next ? display(next) : null }));
-      }
       return res.writeHead(404).end('Block not found');
     }
     const cal = parts[0] as CalendarName;

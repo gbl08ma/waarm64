@@ -74,21 +74,13 @@ export async function testAgent(o: { store?: NamesStore; publish?: ReturnType<ty
 
 export const point = (key = 'ab'.repeat(32)): ZonePoint[] => [{ label: null, key }];
 
-/** Mines 7 blocks at `time` (Unix seconds), so the explorers' block 6 deep, an entry's `ref`, is from then. */
-export function refAt(cal: OtsCalendar, time: number) {
-  cal.mine(7, time);
-}
-
 /**
- * Registers `name` with its claim anchored at about `time` (Unix seconds): the chain's `ref` then, the claim mined into a
- * block an hour after it and six more; then seven blocks now (so later entries' `ref` is recent) and a pass, which
- * collects the anchor (and renews, when that makes it due).
+ * Registers `name` with its claim anchored at `time` (Unix seconds): the claim mined into a block then and six more;
+ * then a pass, which collects the anchor (and renews, when that makes it due).
  */
 export async function aged(cal: OtsCalendar, agent: NamesAgent, c: NamesConn, name: string, time: number, points = point()) {
-  refAt(cal, time);
   await agent.register(c, name, points);
-  cal.mine(7, time + 3600);
-  cal.mine(7);
+  cal.mine(6, time);
   await agent.pass(c.identityKey);
 }
 
