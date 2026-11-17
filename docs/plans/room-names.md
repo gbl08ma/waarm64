@@ -8,7 +8,7 @@ changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/
 lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
 client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
 member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"), and
-the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time), and the names agent (N4c: "The names agent"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -108,8 +108,8 @@ No record, message or stored registry holds a name in words. Three things do it:
   name or version; the slots are sorted by their bytes, so their order says nothing. A zone has 4 or 16 slots, so a
   holder sees neither how many labels a name has nor where any points. Whoever knows the name opens its slot; the
   owner's signature is over the sealed bytes, so anyone can check a zone without reading it. Two zones of one title
-  with the same `seq` and different contents would reuse a key: the agent must never make two (a fork of a title, two
-  browsers changing a zone, could: docs/backlog.md).
+  with the same `seq` and different contents would reuse a key: the agent never makes two (a fork of a title, two
+  browsers changing a zone, could: each copy has a branch of its own in `seq`'s low byte, "The names agent").
 - **An owner key per name**, so a registry doesn't show that five ids are one person's.
 
 **What a server still learns:** how many names the room has; each id's owner key and the times of its entries (an
@@ -315,7 +315,8 @@ once.
   more). The tests' pretend explorer (tests/net/ots-calendar.ts) answers both.
 - **Who talks to a calendar**: the agent, to stamp and to collect; and servers, to finish a pending renewal they hold
   (each asks only with a chance set by a hash of the entry and its own key, and backs off, so a room's servers
-  together ask a calendar a few times an hour for an entry, not each every minute).
+  together ask a calendar a few times an hour for an entry, not each every minute). Not built yet (docs/backlog.md):
+  a renewal's anchor reaches the room when its owner's agent collects it at a later visit.
 - A block that was orphaned still passes (its work was real) and its time is as good; a stale tip in `ref` would
   cost a re-mine, hence 6 deep.
 - The OpenTimestamps libraries are LGPL: nothing is copied from them; the verifier is written from the format
@@ -571,27 +572,63 @@ were NXDOMAIN now answer, and some answers take seconds.
 
 ## The names agent (the page)
 
-`web/names.ts` with a worker (`web/names-worker.ts`, for proof of work; it instantiates `ts.wasm` for a few pure
-exports, `ts_names_*`: make, mine, sign and check an entry; no JavaScript crypto dependency). It owns the owners'
-secret and the titles, which are the only place a name is kept in words (IndexedDB `waarm64-room`, stores `owner` and
-`titles`, keyed as `identity` is, so names travel with a connection's key and are in its export). **A title is the
-only copy of ownership**: registering asks the browser for persistent storage (`navigator.storage.persist()`), and the
-dialog says to keep an export. It needs no running machine:
+(Built in N4c: web/names.ts, web/names-ops.ts, web/names-worker.ts; net/ts room/names/agent.rs and the publisher in
+room.rs.) The agent owns the owners' secret and the titles, which are the only place a name is kept in words: IndexedDB
+`waarm64-room` (version 3), store `owner` (the secret, 32 random bytes, under the connection's `identityKey`, as
+`identity` keeps its node key; made at the first registration) and store `titles` (a record a title under
+[identityKey, a hash of the room's ID, the name]: the room's ID and link, the title's item, the calendars' pending
+anchors of each unanchored entry, the zone's points and counter, the backoffs, lost or released). **A title is the only
+copy of ownership**: registering asks the browser for persistent storage (`navigator.storage.persist()`), and the dialog
+(N5) says to keep an export. **A connection's export carries its names**: `<node key>.<base64url of the secret and the
+titles>` (web/app/room-export.ts, web/names.ts `exportNames`, `parseRoomExport`), and a connection made from a pasted
+export takes them as its own (`importNames`). The module does the work (`ts_names_*`, pure: JSON in and out; make, mine
+in slices of 256 tries, sign and check an entry; a calendar's receipt made a pending anchor the owner key signs; the
+commitment to ask for and a finished proof's anchors; an anchor taken with its seven headers; a zone; a title's status;
+a server's better item judged), in a worker of its own for proof of work (production: 3 to 64 s an entry in Chromium,
+a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no running machine:
 
-- **On every page load**, and hourly while open, for each title (one Web Lock a title): fetch finished anchors for
-  pending entries and the headers they need; renew when due (a `ref` from the explorers, mine, sign, stamp); mark a
-  claim public once anchored. **An entry whose anchor came past `REF_WINDOW`**, or that has none once the window is
-  over, is invalid for good: the agent makes it again (a new `ref`, proof of work, stamp), with a backoff. Renewing
-  at half a term leaves more than two weeks for that; a claim just waits longer.
-- **Publishing** is a `put` to two servers through a names client, which needs no guest and no key of the node's, so
-  the page does it whether or not a machine runs, under no lock: when a claim becomes public, when a renewal is made
-  (with its pending anchor, which the servers finish, so one short visit is enough), when an anchor finishes, when a
-  zone changes. It pushes; it doesn't sync. With no server online there's nobody to push to (unless this node's
-  machine runs, and is one); the title is safe and the next visit tries again.
-- **When the connection's room runs**, the node is a server: the titles go to the module in its config and as they
-  change.
-- **Losing**: when a server shows a better chain for one of the titles, the agent stops renewing it and the page says
-  so; when it shows another branch of the title's own chain, the agent takes it.
+- **On every page load** (web/app/main.ts starts it when any title is kept; none, no worker), and hourly while open
+  (sooner when a backoff ends), for each title, under **one Web Lock a title** (`waarm64-names:<identityKey>:<room
+  hash>:<name>`, taken if free: another tab doing it is left to it): collect finished anchors (each calendar's pending
+  proof at its compiled URL; the 404 without CORS of a pending one is a failed fetch: asked again with a backoff, 5
+  minutes doubling to an hour; one past its window is asked at once whatever the backoff), with the block's header and
+  the six after it from an explorer (`block-height`, `block/<hash>/header`, `status`'s `next_best`; not yet six: later);
+  renew when the owning chain's last entry is `TERM / 2` old and no renewal waits for its anchor (`ref` from the two
+  explorers' block 6 deep, which must agree, its header checked against the agreed hash; proof of work; the signature;
+  stamped at the three calendars, each receipt a pending anchor the owner key signs, the lowest on the entry, all three
+  kept to collect from); make the claim of a title that has none. **An entry whose anchor came past `REF_WINDOW`** (the
+  module refuses it: `AnchorWindow`), or that is still unanchored once its window and the slack are over, is dropped
+  and made again (a new `ref`, proof of work, stamps), with the same backoff; an entry no calendar stamped likewise.
+- **Publishing** is a `put` through a **publisher**: a room client that is a names client alone (room.rs
+  `Config::publish`: a fresh key, relay only, nothing let in but its question's answers, no guest, no node), which asks
+  "who serves?", keeps two servers as a member does, and puts the title's item (every entry it holds, the zone) to each,
+  each answer a `names-put` event (`taken`, `better` with the server's item, `failed`, `nobody`). So the page does it
+  whether or not a machine runs, under no lock: once the claim is anchored (never before: "a claim held back"), and
+  whenever the item changed since a server last took it (a renewal made, with its signed pending anchor; an anchor
+  collected; a zone changed), and once a visit and an hour besides (so a room that was reset, or settled a fork the
+  other way, is seen within the hour). With no server online there's nobody to put to; the title is safe and the next
+  pass tries again.
+- **A server's better item** is checked whole (each entry the title doesn't hold as shown: signature, proof of work,
+  headers, anchor; a forged one is refused and nothing is taken) and judged with the title's entries: the owner now is
+  the title's own chain (`ours`: a renewal still pending shows so), **another branch of the title's own key** (a title
+  forked between two browsers: its entries, and a newer zone of the same key, are taken into the title, and the next
+  renewal is made from the room's branch), or **another key's chain: the title is lost**, renewal stops and the page
+  says so (`TitleView.state` `lost`, `lostTo`).
+- **When the connection's room runs**, the node is a server: the room's worker gives the module the connection's titles
+  in its config (`room.names.titles`, each the owner key derived from the secret and the item) and again as they change
+  (the agent's BroadcastChannel `waarm64-names`; `ts_room_names_titles`: a member given titles becomes a server).
+- **A zone's `seq`** is `n << 8 | branch`: `n` counts up past every `seq` the title has seen, `branch` is this copy's
+  byte; an export gives the copy a branch the title hasn't used and records it (`zone.given`), so two copies of one
+  title never make two zones with one `seq` (which would reuse a seal's key: "Names nobody lists").
+- **The services are compiled in** (web/names.ts `CALENDARS`, the module's order and URLs, and `EXPLORERS`,
+  blockstream.info's and mempool.space's Esplora APIs): the agent fetches nothing else (its `get` refuses another URL),
+  a pending anchor names its calendar by index, a receipt's own URI is never fetched, and no link, option or stored
+  value names a service. Tests route these URLs to the pretend ones (Node: `fetch`; Chromium: Playwright's routes).
+- **N5's API** (`NamesAgent`): `register(conn, name, points)` (a name the rules refuse: `NamesError` `Name`),
+  `setZone`, `release`, `titles(identityKey?)` (each title's `state`: `preparing`, `reserved` with `publicAbout`,
+  `active`, `grace`, `lapsed`, `released`, `lost`; and its dates: `claimedAt`, `keptUntil`, `renewAt`, `lapsesAt`),
+  `pass`; the page's agent is `namesAgent()`. Measured (tests/names-agent.test.ts, the pretend calendar and explorer):
+  register to public ~0.15 s once the blocks are there; collected and published through the rig's DERP 1.3 s.
 
 ## What the user sees
 
@@ -716,8 +753,9 @@ that module to `target/net/ts-test.wasm` (a target directory of its own), which 
 `self` event says which it runs on (`params`: `production` or `test`). Checked: `cargo test`'s
 `the_module_runs_on_production_parameters` (a pretend title's header is under the floor), and tests/room-names.test.ts
 (the shipped module says `production`, the tests' `test`). Titles for the page tests come from
-`net/ts/examples/names-title.rs` (the same feature), until the agent makes them (N4, which uses the pretend calendars
-and explorer of tests/net/ots-calendar.ts).
+`net/ts/examples/names-title.rs` (the same feature); the agent's tests (tests/names-agent.test.ts, names-room,
+names-browser) have the agent make its own on the pretend calendars and explorer of tests/net/ots-calendar.ts, at
+the times they choose (`mine(n, time)` puts a block 6 deep in the past).
 
 ## Open, to settle in the loops
 

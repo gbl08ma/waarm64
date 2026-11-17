@@ -148,7 +148,12 @@ test('a better chain of another key\'s makes a title lost, and a lost title isn\
   assert.equal(v.state, 'lost', log.join('\n'));
   const key = (await other.backend.op<{ owner: string }>('key', { room: roomOf(LINK), secret: await other.store.secret(theirs.identityKey), name: 'contested' })).owner;
   assert.equal(v.lostTo, key);
-  // The pass that collected the claim made the renewal (due) and then saw the better chain; after that, nothing.
+  // The pass that collected the claim made the renewal (due) and then saw the better chain; after that, nothing, even
+  // with that renewal gone (it is due again).
+  const [t0] = await mine.store.titles(c.identityKey);
+  const renewal = (await statusOf(mine.backend, t0)).entries.find((e) => e.kind === 'renew')!;
+  const { item } = await mine.backend.op<{ item: string }>('drop', { item: t0.item, ids: [renewal.id] });
+  await mine.store.put({ ...t0, item, stamps: {}, collect: {} });
   const [t] = await mine.store.titles(c.identityKey);
   const entries = (await statusOf(mine.backend, t)).entries.length;
   const posts = asked.posts;
@@ -208,7 +213,7 @@ test('production talks to the compiled calendars and explorers only: no link, ti
   const before = asked.urls.length;
   const pub = fakePublish();
   const { agent, store } = await testAgent({ publish: pub });
-  const c = { identityKey: 'conn-services', link: `${LINK}&calendar=${encodeURIComponent(`${cal.url}/alice`)}&explorer=https%3A%2F%2Fevil.example` };
+  const c = { identityKey: 'conn-services', link: `${LINK}&calendar=${encodeURIComponent('https://calendar.evil.example')}&explorer=https%3A%2F%2Fevil.example` };
   await aged(cal, agent, c, 'services', nowS() - 20 * DAY);
   const [t] = await store.titles(c.identityKey);
   await store.put({ ...t, link: `${t.link}&url=https://evil.example`, ...({ calendar: 'https://evil.example' } as object) });

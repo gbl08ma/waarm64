@@ -56,6 +56,13 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   are checked with (`params`: `production`; `test` only in the page tests' build, `net/ts/build.sh --test-params` →
   `target/net/ts-test.wasm`, never shipped: room-names.md "Tests' parameters"). The room's resolver answers registered
   names (room-names.md "The resolver") and logs each query for one (`resolver: …`).
+  With `room.publish` the client is a **publisher** (the page's names agent, web/names.ts): a names client alone, no
+  node and no guest, under a fresh key; `ts_room_names_put(h, item)` puts an item to the servers it finds, each answer a
+  `names-put` event (`taken`, `better` with the server's item, `failed`, `nobody`). `ts_room_names_titles(h, json)` gives
+  a running room node its titles as they change (a member given some becomes a server). The agent's operations are
+  pure exports, `ts_names_<op>(ptr, len)` (JSON in, the length of JSON out in `ts_buf()`, minus that of why not;
+  room/names/agent.rs): `key`, `make`, `mine`, `sign`, `add`, `pending`, `commitment`, `finish`, `anchor`, `zone`,
+  `status`, `judge`, `drop`.
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and

@@ -1566,14 +1566,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
     ~1,400 newer generic ones (`app`, `dev`, …): words people want as names, which a guest asks under the room's
     domain only after the name itself failed. Compile them if a guest turns out to ask them unprompted.
-  - A zone's slots are sealed with a key from the name id, the owner key, the full name and `seq` and a zero nonce: two
-    owners no longer share one (review 1), but two zones of one title with the same `seq` and different contents (a
-    title forked between two browsers, both changing its zone) would reuse it. The agent (N4) must make that impossible
-    (`seq` from the time and the branch), or a zone carries a random nonce.
+  - Done (N4c): a zone's `seq` is `n << 8 | branch`, each copy of a title a branch of its own (an export gives one out
+    and records it). Left: the same export text pasted into two browsers gives both one branch (the exporter gives a
+    fresh one each time the export is made, not each time it is pasted); copying it twice is the user's doing.
   - Servers keep one chain a name, the owner's (N2, room-names.md "Servers"), so a back-order (a younger chain alive
     beside the owner) isn't carried: when the holder lapses it owns the name by the rule, but servers have it only
-    once its owner's agent puts it again. The agent (N4) should put a title it holds whenever a server shows a chain
-    that no longer covers, not only at its renewals.
+    once its owner's agent puts it again. Done (N4c): the agent puts each public title once a visit and an hour, not
+    only at its changes, so a back-order or a reset room has it within the hour of a page being open.
   - A server's sync partners last one round (a new question every 5 minutes; idle sessions go after 3 minutes), where
     the spec's members hold theirs across questions. Holding servers' partners would save a question a round.
   - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
@@ -1586,14 +1585,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The module grew 92 KB Brotli (592 to 684, `net/ts/build.sh`, 2026-11-16) once the names code was linked (N1's
     records and rules were dead code until N2 used them). Not looked into: what dominates (Argon2, the anchor
     verifier, monomorphized collections), and whether it's worth trimming.
-  - Titles as they change (an export beside the config's `names.titles`) are N4's; the page's side of persistence and
-    the TypeScript config type for `names` came with N3.
+  - Done (N4c): titles as they change go to a running room (`ts_room_names_titles`, the room worker listening on the
+    agent's BroadcastChannel `waarm64-names`). Tested natively (room/tests/names.rs) and through the config in Node;
+    the BroadcastChannel path in a page isn't (N5's page test can: register while the room runs).
   - The `names` store in `waarm64-room` is kept by room and connection (review 1): deleting a connection leaves its
     records (a member's few KB, a server's registry) for good. A sweep at Delete of the connection's key in each room
     it named would clean them.
   - A member that holds a better chain than a server showed it (it kept the owner's after a reset) doesn't `put` it:
     it keeps only the chain's last entry, not the run a server needs to take it. The owner's agent puts it back at its
-    next visit (N4).
+    next visit, or within the hour while its page is open (N4c).
   - A member's resolver logs every query for a name that isn't a key to the worker's console, names in words
     included (the page tests read it to see what a guest asks on its own). Quieter (a count, or only in a debug
     mode) once N6 has its numbers.
@@ -1627,7 +1627,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A peer's proof is checked once a session (an Argon2id), a refused one not again; a new session is a new key and
       a new DERP connection.
     - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
-    - The agent (N4) must sign a renewal's pending anchor (`entry::sign_pending`): servers keep only signed ones.
+    - Done (N4c): the agent signs every pending anchor (`ts_names_pending`), and the rig test sees servers hold it.
+  - The names agent's loose ends (N4c, room-names.md "The names agent"):
+    - Servers don't finish pending renewals at the calendars (the spec's "Who talks to a calendar"): a renewal's anchor
+      reaches the room when its owner's agent collects it at a later visit. One short visit then isn't enough; two are
+      (renewing at half a term leaves two weeks for the second). Building it adds calendar fetches from servers' pages.
+    - Deleting a room connection leaves its owners' secret and titles in `waarm64-room` (`owner`, `titles`): a title is
+      the only copy of ownership, so nothing deletes one silently. Delete (N5) should say so and offer the export.
+    - An ephemeral room connection's titles go to IndexedDB all the same (under its id): register on one should be
+      refused, or say they go with the page (N5's dialog).
+    - The wizard's [The connection's key](ui:network:NetRoomStep.room.exportKey) shows the key alone; the export with
+      names is `Connections.exportKey` and a pasted one is read by `parseRoomExport` (web/names.ts). Wiring both into
+      the wizard is N5's.
+    - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
+      entries a month, ~1.5 KB each with their anchors and headers, and is put whole. Pruning dead branches and
+      stale entries from the item (they never count again) would keep puts small.
+    - The publisher waits up to 45 s for its answers and is made again at each publish: a page with many titles in one
+      room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
+    - The proof of work's time in Chromium (production, cloud x86_64, five entries): 3, 17, 51, 62 and 64 s (a draw, as
+      room-names.md says); the dev VM re-times it with N0's numbers.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

@@ -1860,6 +1860,11 @@ and the guest's default way out (below).
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
+  **Names** (docs/plans/room-names.md "The names agent"): web/names.ts is the names agent (titles and the owners'
+  secret in `waarm64-room`'s `owner` and `titles`; collecting, renewing and publishing, started at every load when a
+  title is kept, hourly while open, with no machine running), web/names-worker.ts its worker (the module's `ts_names_*`
+  operations and the publishers), web/names-ops.ts what both run; a running room's worker gives the module the
+  connection's titles; a room connection's export carries its names (web/app/room-export.ts). The dialog is to come.
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `waarm64-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
