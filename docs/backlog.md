@@ -1602,8 +1602,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     N6 sees whether that matters at scale.
   - **A forged header at the floor** (R1: an anchor is its proof and its block's one header, against one floor at 1/16
     of block 976,177's difficulty): one header mined in private, timed weeks back, anchors claims on any number of
-    names in every room. Servers asking an explorer about each block (R2, the user's decision 2026-11-17) refuse it at
-    a server; a member both of whose servers are the forger's still takes it (docs/plans/room-names-redesign.md).
+    names in every room. Servers asking an explorer about each block (R2, built) refuse it at a server; a member both of
+    whose servers are the forger's still takes it (docs/plans/room-names-redesign.md).
     N4b's run of seven headers and the floor's schedule are gone, and with them the schedule's upkeep.
   - The floor is one constant. Raising it at a release must stay under every block since the oldest anchor still
     alive (a term and a grace, 37 days), or entries alive then are refused; no release step does it yet, and nothing
@@ -1611,6 +1611,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A claim never goes stale (R1: an anchor at any time makes it a claim then), so the agent asks for a claim's proof
     hourly for as long as its calendars never finish it (all three lost the commitment), and never makes it again. A
     limit (made again after, say, a day with every calendar answering pending) would end that.
+  - What servers ask outside the room (R2, room-names.md "Servers", "Outside the room"):
+    - A server's count of the room's servers, which sets its chance of asking a calendar, comes from its own questions'
+      answers (times the round's share, at most 64). Junk registrations that answer questions raise it, so honest
+      servers ask a renewal's calendar less often (at worst 1/64 a slot each) and a renewal is finished later; the
+      owner's own visit still collects it. A room of many young or junk servers isn't measured: N6.
+    - The pace of block checks (one every 3 s a server, the newest first) and the asks' rates are the design's, not
+      measured against the public explorers and calendars: N6 measures what they tolerate from a page, and what a
+      server's first sync of thousands of blocks costs in time.
+    - A block is checked by its hash, so an explorer's 404 for an unknown block must carry its CORS header for a page
+      to see it as a denial: without it a forged block is never refused (it stays counted on its header's work, as
+      before R2), never a real one wrongly. Whether blockstream.info's and mempool.space's 404s do is unchecked (N6).
+    - A server finishes the one pending anchor it keeps an entry (the lower of two): if that calendar never finishes
+      (it lost the commitment), the servers ask it, ever more rarely, until the renewal goes stale; the owner's agent,
+      at its visit, tries all three of its calendars.
+    - The renewal made ahead is made after a pass's publish while the page stays open (proof of work: half a minute on
+      average); a page closed sooner leaves it to the next visit, which makes it then if a renewal is due (the slow
+      path, as before R2). The visit after a registration makes the first one.
+    - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each, even with the curve,
+      Argon2 and the hashes optimized in test builds (the root Cargo.toml's `profile.dev.package`).
   - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
     - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
       (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
@@ -1624,10 +1643,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
     - Done (N4c): the agent signs every pending anchor (`ts_names_pending`), and the rig test sees servers hold it.
   - The names agent's loose ends (N4c, room-names.md "The names agent"):
-    - Servers don't finish pending renewals at the calendars yet (N4d, the spec's "Who talks to a calendar"), so one
-      short visit isn't enough; two are. **Decided** (the user, 2026-11-17: option A, servers ask an explorer for the
-      header of a renewal they finished, and decision 4 widened to a check of each block): R2 builds it, with the
-      agent making the next renewal ahead of the visit that stamps it (possible since R1 removed `ref`).
+    - Done (R2): servers finish pending renewals at the calendar and an explorer, and the agent makes the next renewal
+      ahead of the visit that stamps it, so one short visit every 2 weeks keeps a name (room-names.md "Servers",
+      "Outside the room", and "The names agent").
     - Done (N5): deleting a room connection that holds names says so in its question, with the export to copy, and
       forgets them (room-names.md "What the user sees").
     - Done (N5): an ephemeral connection with a key of its own can't hold a name; the dialog says so.
@@ -1654,9 +1672,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - The proof of work's time in Chromium (production, cloud x86_64, five entries): 3, 17, 51, 62 and 64 s (a draw, as
       room-names.md says); the dev VM re-times it with N0's numbers.
   - Review 2's fixes (N5a; NAMES-REVIEW-2.md), what they leave:
-    - **Finding 3, decided** (the user, 2026-11-17: servers finishing renewals, option A): a renewal reaches the room
-      only at the visit after the one that made it, so visits every 2 weeks leave a name down for days each cycle,
-      until R2 (the agent's loose ends above).
+    - Done (R2): finding 3 (servers finish renewals, option A).
       Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
     - Answers rank by their chain's age (finding 2), so a Sybil needs registrations held as long as the honest
       servers', renewed all along: three months buys the top tier, and from there it is a lottery again. In a room

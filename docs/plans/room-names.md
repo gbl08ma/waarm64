@@ -8,7 +8,7 @@ changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/
 lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
 client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
 member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"), and
-the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time, which R1 undid: [room-names-redesign.md](room-names-redesign.md)), the records as the redesign has them (R1: no `ref`, an anchor's block's one header against one compiled floor), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time, which R1 undid: [room-names-redesign.md](room-names-redesign.md)), the records as the redesign has them (R1: no `ref`, an anchor's block's one header against one compiled floor), servers finishing renewals and checking blocks at the explorers, and renewals made ahead (R2: "Bitcoin as the clock", "Servers": "Outside the room", "The names agent"), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -276,28 +276,32 @@ once.
   [room-names-redesign.md](room-names-redesign.md)'s question 2). A verifier needs the anchor's block's 80-byte
   header, which travels with the entry. It checks the anchor against the header's Merkle root, the header's proof of
   work against its own target, that target against **the floor**, and that the header's time isn't past now by more
-  than 2 hours. Nothing else: no height, no explorer, no headers after it. Times, unlike heights, are in the header, so
+  than 2 hours. Nothing else: no height, no explorer, no headers after it (a server also asks an explorer about each
+  block, in the background: "Servers", "Outside the room"; an anchor counts until it is refused). Times, unlike heights, are in the header, so
   a header can't be passed off as an earlier block's.
 - **The floor** (`Params::floor`): one compiled target, 1/16 of the difficulty of block 976,177 (2026-11-16 19:25:21
   UTC, compact `0x17021673`): sixteen times its target, compact `0x17216730`, whatever a header's time. It keeps junk
   headers out and guards members, who ask no explorer: a header mined in private at the floor, timed weeks back with
   a Merkle root of its own, costs 1/16 of a block's work and would anchor claims on any number of names in every room
   at that time ("What an attacker can do"). Servers asking an explorer about each block (R2, decision 4 as the user
-  widened it on 2026-11-17) close that at servers; nothing closes it for a member both of whose servers are the
-  forger's. Sixteen times under a real block covers any fall in difficulty there has been (the largest in years,
+  widened it on 2026-11-17: "Servers", "Outside the room") close that at servers; nothing closes it for a member both
+  of whose servers are the forger's. Sixteen times under a real block covers any fall in difficulty there has been (the largest in years,
   mid-2021, was about 45%); a release may raise it, and a header that met it once may then be refused, so a raise
   must stay under every block since the oldest anchor still alive (a term and a grace: 37 days). The design's earlier
   run of seven headers and floor schedule (N4b) are gone, and with them `ref` and its window (the redesign document
   says why: neither did what it was added for).
-- **Who talks to an explorer**: only the agent, for the header of each of its own anchors: the hash of the block at
-  the proof's height (`block-height/<h>`) and that block's header (`block/<hash>/header`), two GETs, from one explorer
+- **Who talks to an explorer**: the agent, for the header of each of its own anchors: the hash of the block at the
+  proof's height (`block-height/<h>`) and that block's header (`block/<hash>/header`), two GETs, from one explorer
   (blockstream.info, then mempool.space when it fails or serves a header the module refuses). The header's Merkle root
-  must be the anchor's, or that explorer has another block there (a reorganisation): the other is asked. The tests'
-  pretend explorer (tests/net/ots-calendar.ts) answers both.
-- **Who talks to a calendar**: the agent, to stamp and to collect. Servers finishing a pending renewal they hold, with
-  the block's header from an explorer (the user's decision of 2026-11-17 on review 2's finding 3, option A), are
-  R2's ([room-names-redesign.md](room-names-redesign.md)), not built: until then a renewal's anchor reaches the room
-  when its owner's agent collects it at a later visit (renewal at half a term leaves two weeks for it).
+  must be the anchor's, or that explorer has another block there (a reorganisation): the other is asked. **Servers**
+  (R2, decision 4 as the user widened it on 2026-11-17): the same two GETs for a renewal they finish, and one GET a
+  distinct block their registry is anchored in, `block/<hash>/header` ("Servers", "Outside the room"). Members ask
+  none. The tests' pretend explorer (tests/net/ots-calendar.ts; for Rust tests, room/names/testkit.rs `Services`)
+  answers all three.
+- **Who talks to a calendar**: the agent, to stamp and to collect; servers, to finish a pending renewal they hold (R2,
+  the user's decision of 2026-11-17 on review 2's finding 3, option A: "Servers", "Outside the room"), at the calendar
+  its pending anchor names by its compiled index. So a renewal's anchor reaches the room hours after the visit that
+  stamped it, with no page open.
 - A block that was orphaned still passes (its work was real) and its time is as good.
 - The OpenTimestamps libraries are LGPL: nothing is copied from them; the verifier is written from the format
   (`THIRD_PARTY.json` gets a reference row).
@@ -543,7 +547,8 @@ copies by nonce **and round** (the three rounds share a nonce).
   asks: askers can't be told apart, so an attacker can keep its junk asked for and have honest names that are rarely
   asked dropped first. Not handled: N6 measures it). Proof of work alone can't bound the registry: a GPU makes
   100,000 claims for the price of a few hours (*estimate*), and one stamp covers them all.
-- **Persist** per name, binary, one record each (a version byte, when it was last asked for, the item): the module
+- **Persist** per name, binary, one record each (a version byte, when it was last asked for, the item), and per block
+  checked ("Outside the room", version 3): the module
   emits each as it changes (action 11, the name id and the record; none: delete it) and takes them back before its
   first tick (`ts_room_names_load`), trusted; a record is written again for being asked for only once that moved an
   hour. The node's own names aren't stored there (their titles are the agent's). A member's records (what it keeps, a
@@ -555,6 +560,42 @@ copies by nonce **and round** (the three rounds share a nonce).
   the module before its first tick; one the module doesn't take (another role's, a lapsed name's: a server's `load`
   says whether anything of the record is held) is deleted. Only a stored connection's (one with an `identityKey`): an
   ephemeral one keeps nothing.
+
+- **Outside the room** (R2, `names/outside.rs`; decision 4 as the user widened it on 2026-11-17: servers ask, members
+  never). The module asks, the page fetches: action 12, a GET whose URL the module builds only from the compiled
+  calendars (anchor.rs `Calendar::url`) and explorers (`EXPLORERS`, the agent's two), never from a record; the room's
+  worker fetches it through web/names.ts `serviceFetch`, which refuses any other URL, and gives back the status and
+  the body (`ts_room_names_fetched`; status 0: no answer). Four fetches out at once, 30 s each at most.
+  - **Renewals finished.** A renewal the server holds with a signed pending anchor (the owning chain's last entry's,
+    "Hold") is asked of that anchor's calendar (`/timestamp/<commitment>`) from 30 minutes after the server first held
+    it, then decided once a slot of 15 minutes: the server asks when 8 bytes of BLAKE2s over the entry's id, its own
+    names client's key and the slot fall under a chance of one over the room's servers as its questions counted them
+    (each question's answers times the round's share, plus itself, at most 64, averaged over questions), halved for
+    each 12 hours the renewal has waited, to an eighth. So a room's servers together ask about once a slot for an
+    entry, whatever their number, then fewer. With the finished proof: the block at its height and that block's header
+    (the agent's two GETs, the other explorer when one fails or its header isn't the anchor's), and the anchor is
+    taken as anything put is (checked, settled, stored, told to the servers it syncs with in `have`): the room has it
+    within minutes, and the block counts as checked. Measured (server_tests.rs, the pretend calendar and explorer):
+    twenty servers holding a renewal whose calendar never finishes it ask it 2 to 8 times an hour, 57 times in its
+    first 12 hours and 30 in the next 12; two servers over 60 days of three names, each renewal stamped at a visit
+    and finished two to three hours on: 33 calendar asks for 6 renewals (all finished by the servers) and 23 explorer
+    asks in all.
+  - **Blocks checked.** Each distinct block the registry's anchors are in (its own titles' included) is asked of an
+    explorer once, **by its hash** (`block/<hash>/header`: the same header back, checked). The redesign named
+    `block-height/<h>`; by hash instead, because the height an anchor carries is trusted for nothing ("Records"):
+    anyone relaying an honest entry with another height would have had its block refused, and an orphaned block,
+    which "passes", is at no height. Not found (404) at both explorers: the block is **refused**, every anchor in it
+    dropped from the registry (their entries count for nothing, so the chains they made settle again, stored and told
+    as any change), and remembered for a day, an anchor in it offered meanwhile refused at its check. One explorer's
+    word is enough: one denies and the other confirms, checked; one denies and the other can't be reached, asked again
+    after 5 minutes, doubling to 6 hours. **Until a block is checked its anchors count** on their header's work, as a
+    member's do, so names work with the explorers down. The pace: one check every 3 s at most (`Params::check_every_ms`),
+    the newest arrival first, so a new server's first sync (hundreds or thousands of blocks) takes a while and a new
+    arrival is checked within seconds; N6 measures what the explorers tolerate. Checks run from the module's ticks:
+    a lookup, a `get` or the resolver never waits for one. Each verdict is stored as a record of its own under the
+    block's hash (version 3: the verdict, its time, the hash), loaded back at the start (a refusal past its day isn't:
+    the page deletes it), and a check no anchor needs any more is forgotten (its record deleted) at the next minute's
+    settle.
 
 ### Size, and where it stops
 
@@ -621,7 +662,7 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   proof at its compiled URL; the 404 without CORS of a pending one is a failed fetch: asked again with a backoff, 5
   minutes doubling to an hour; one that can no longer link is asked at once whatever the backoff), with its block's
   header from an explorer ("Who talks to an explorer"); renew when the owning chain's last entry is `TERM / 2` old and
-  no renewal waits for its anchor (proof of work; the signature; stamped at the three calendars, each receipt a pending
+  no renewal waits for its anchor (the renewal made ahead, below, or else proof of work and the signature now; stamped at the three calendars, each receipt a pending
   anchor the owner key signs, the lowest on the entry, all three kept to collect from); make the claim of a title that
   has none. An entry no calendar stamped is dropped and made again, with the same backoff. Nothing else drops one
   (review 2's finding 4): every anchor counts whenever it comes, a calendar's answer that isn't a proof (a proxy's
@@ -630,6 +671,18 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   module's `linkEnd` and `stale`) may have an anchor timed before then that no open page collected: it is kept and
   asked for, and dropped only a week past its link end (a renewal so collected still links, and revives its chain). A
   claim never goes stale.
+  **The next renewal is made ahead** (R2; room-names-redesign.md §3: possible since R1 removed `ref`): once a pass has
+  published, the agent makes the renewal that will follow the title's newest entry of its own chain (the renewal
+  waiting for its anchor, else the owning chain's last entry, else the claim waiting for its own), proof of work and
+  signature, and keeps it unstamped in the title (`TitleRecord.ahead`: its `prev` and the entry). A visit that finds a
+  renewal due stamps that one (seconds: the three calendars' POSTs) and hands it to the servers with its signed pending
+  anchor, who finish it ("Servers", "Outside the room"); proof of work happens only after that, for the next. So a
+  visit of a few seconds every 2 weeks keeps a name: a renewal is stamped at a visit 15 to 29 days after the entry
+  before it, and the servers have its anchor hours later, before the 30 days end. Measured (tests/names-agent.test.ts,
+  the pretend calendars): a due visit's pass stamps and publishes with no proof of work before the publish; the
+  promise itself (server_tests.rs `visits_14_days_apart_and_seconds_long_…`): visits 14 days apart, each only stamping
+  and putting, the calendar finishing 2 to 3 hours after, the page closed between: the name resolves and is owned by
+  its chain at every hour of 60 days, at both servers. Let it go drops the one made ahead.
   **[Let it go](ui:network:NameEntry.release)** drops the title's renewals that wait for their anchors (one collected later would be a branch whose
   cover outlasts the release's, so the name would stay: review 2's finding 6) and makes the release on the owning
   chain's last entry; a release no calendar stamped, or one that never came, is made again at the next pass.
@@ -674,7 +727,8 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   would collide one pair in 256; one given out by the exporter can't tell two pastes of one export apart. The zone's
   version byte is 2, items' 3 and an export's names' `v` 2 since (pre-release: older ones are refused).
 - **The services are compiled in** (web/names.ts `CALENDARS`, the module's order and URLs, and `EXPLORERS`,
-  blockstream.info's and mempool.space's Esplora APIs): the agent fetches nothing else (its `get` refuses another URL),
+  blockstream.info's and mempool.space's Esplora APIs): the agent fetches nothing else (its `get` refuses another URL;
+  so does `serviceFetch`, through which a room's worker fetches what its server asks: "Outside the room"),
   a pending anchor names its calendar by index, a receipt's own URI is never fetched, and no link, option or stored
   value names a service. Tests route these URLs to the pretend ones (Node: `fetch`; Chromium: Playwright's routes).
 - **N5's API** (`NamesAgent`): `register(conn, name, points)` (a name the rules refuse: `NamesError` `Name`),
@@ -747,9 +801,10 @@ names.
 | Hash a dictionary against a server's ids | nothing: 256 `ids` requests from any session list every id (the dialog's check needs the request; review 2 corrected the cost from "one registration") | learns which guessable names exist (and, with a `get`, where they point); nothing about the others; the cover ends listed are a week coarse |
 | Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its chain's age and its owner key's hash, says otherwise; both servers the attacker's (registrations as old as the honest servers', renewed all along, ranking below them for that question; junk registrations made lately rank after every older server): the member sees what it shows (it can't forge) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |
-| Forge a Bitcoin header | one header at the floor: 1/16 of a block's work (about 0.2 BTC of mining revenue forgone, or hash power rented for that), once | the forger's header, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the header serves again for any number of claims. Servers asking an explorer about each block (R2: the user's decision of 2026-11-17) refuse it at a server within seconds of its arrival; until R2, and for a member both of whose servers are the forger's after it, it stands ([room-names-redesign.md](room-names-redesign.md) "Bitcoin beyond the proof") |
+| Forge a Bitcoin header | one header at the floor: 1/16 of a block's work (about 0.2 BTC of mining revenue forgone, or hash power rented for that), once | the forger's header, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the header serves again for any number of claims. Servers ask an explorer about each block (R2: the user's decision of 2026-11-17; "Servers", "Outside the room") and refuse it, with every anchor in it, once both explorers deny it: within seconds of its arrival at a server already synced, later while a new server's first sync's checks are paced. For a member both of whose servers are the forger's, and while the explorers can't be reached, it stands ([room-names-redesign.md](room-names-redesign.md) "Bitcoin beyond the proof") |
+| Lying explorers | one explorer that lies, or both | one alone can pass a forged header only together with the floor's work (as with none), and can't have a real block refused (the other confirms it); both together can have a real block refused at servers, its names unanchored there until the explorers answer truly (the owners' copies are untouched) |
 | Calendars all down | | no new claims or renewals; existing names resolve; `GRACE` is the margin |
-| Explorers all down | | claims and renewals are made and stamped; collecting their anchors waits (only the agent uses an explorer); existing names resolve |
+| Explorers all down | | claims and renewals are made and stamped; collecting and finishing their anchors waits; blocks stay unchecked, their anchors counting on their headers' work; existing names resolve |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held; a key named again and again (a victim's) 4 answers a minute from each server |
 | Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by age and hash (never the best two's) |
 | Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
@@ -761,7 +816,8 @@ names.
   (a registry of names, not of members, joins the protocol); a name's owner is discoverable and serves the registry.
 - **Guest-visible**: the resolver answers registered names. No step count moves (`tests/steps.txt` has no room).
 - **New outside services**: three calendars (a page that registers or renews, and servers finishing renewals: they
-  see an IP address and a hash) and two explorers (only a page that registers or renews). Their lists could go in a
+  see an IP address and a hash) and two explorers (a page that registers or renews; and, since R2, servers: the
+  block of a renewal they finish and each block their registry is anchored in, the user's decision of 2026-11-17). Their lists could go in a
   room's link later, as relays do.
 - **Parameters**: `TERM`, `GRACE`; the dialog's words.
 - **A dependency**, only if N0 picks it: `argon2` (RustCrypto, MIT/Apache-2.0).
@@ -833,7 +889,9 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
 Production's parameters need real Bitcoin work (a header at 1/16 of a real block's difficulty), so a test can't
 make a title they accept. The parameters are not configuration: the module runs on `Params::BUILT`, which is
 `Params::PRODUCTION` unless the crate is built with the `test-params` feature, which compiles in `Params::TEST` (the
-tests' pretend Bitcoin: regtest's floor, Argon2id of 8 KiB and 2 bits) instead. `net/ts/build.sh --test-params` builds
+tests' pretend Bitcoin: regtest's floor, Argon2id of 8 KiB and 2 bits, and servers that finish renewals and check
+blocks within seconds, for the Node rig's real-time tests; a Rust test of the asks' rates runs production's pace,
+`Params::TEST_PACED`) instead. `net/ts/build.sh --test-params` builds
 that module to `target/net/ts-test.wasm` (a target directory of its own), which the page tests serve in `ts.wasm`'s place
 (a Playwright route); `npm run dist` ships `ts.wasm` only, and no page, link or config can choose the other. A room's
 `self` event says which it runs on (`params`: `production` or `test`). Checked: `cargo test`'s

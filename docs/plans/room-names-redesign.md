@@ -9,7 +9,13 @@ user's to take; "Decisions for the user" at the end lists them.
 `ref`, Argon2id salted with the name id, an anchor with its block's one header against one compiled floor (1/16 of
 block 976,177's difficulty), items version 4; `Run`, the six headers, the floor's schedule, `REF_WINDOW` and the
 pending slack gone; a pending anchor dropped once its entry can no longer link; the agent asks an explorer for an
-anchor's one header and nothing else ([room-names.md](room-names.md) says what the code does). R2 and R3 are not.
+anchor's one header and nothing else ([room-names.md](room-names.md) says what the code does). **R2 is built**
+(2026-11-17): servers finish pending renewals at their calendar and an explorer, each a chance a slot set by a hash of
+the entry and the server's key, so a room's servers together ask about four times an hour; servers check each block at
+an explorer, in the background, paced, stored, refusing a block both deny with its anchors; the agent makes the next
+renewal ahead, so a visit of a few seconds stamps it; the promise tested over 60 days of visits 14 days apart. One
+change from §1's option C: a block is checked **by its hash** (`block/<hash>/header`), not by the anchor's height,
+which an anchor carries unauthenticated (room-names.md "Servers", "Outside the room", says why). R3 is not built.
 
 ## Summary
 
@@ -276,7 +282,7 @@ it is built and tested, and B's risk is too cheap to take on.
 | Loop | What | Needs |
 |---|---|---|
 | R1 | Records: `ref` and the window out, one header an anchor, the constant floor; the agent without `ref()`; tests' titles and vectors. **Built (2026-11-17)** | the user's go on question 2 (given) |
-| R2 | Servers finish renewals at the calendars (finding 3) and check blocks at the explorers; the agent makes the next renewal ahead; the visit notice's promise tested with visits 14 days apart and seconds long | decision 4 |
+| R2 | Servers finish renewals at the calendars (finding 3) and check blocks at the explorers; the agent makes the next renewal ahead; the visit notice's promise tested with visits 14 days apart and seconds long. **Built (2026-11-17)**; blocks checked by hash, not height | decision 4 (given) |
 | R3 | The tiers out, the dissent message in; review 2's finding 2 test rewritten: 128 and 1,280 junk registrations, one honest holder, the member gets the owner | decision 12 |
 | then | N0b, N0c, N6, the end, as queued. N6 adds: explorer requests a server's first sync makes and the pace they tolerate; a first lookup's time with the wait for dissent | |
 

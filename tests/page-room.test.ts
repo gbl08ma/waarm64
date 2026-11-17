@@ -152,7 +152,20 @@ function keyOfName(name: string): string {
 
 type Title = { name: string; key: string; items: string[] };
 /** Titles on the tests' pretend Bitcoin (net/ts/examples/names-title.rs): each name's chain with each of its zones. */
-const makeTitles = (spec: object): Title[] => JSON.parse(execFileSync(TITLE_TOOL, [JSON.stringify(spec)], { encoding: 'utf8', timeout: 60_000 }));
+const makeTitles = (spec: object): Title[] => {
+  const titles: Title[] = JSON.parse(execFileSync(TITLE_TOOL, [JSON.stringify(spec)], { encoding: 'utf8', timeout: 60_000 }));
+  // Their blocks, mined by the tool, are known to the pretend explorer (as real blocks are to a real one), so the
+  // servers' checks of them pass (docs/plans/room-names.md "Outside the room"). An item: version, id, the headers' count
+  // (2 bytes), the headers.
+  for (const t of titles) {
+    for (const it of t.items) {
+      const b = Buffer.from(it, 'hex');
+      const n = b.readUInt16LE(33);
+      for (let k = 0; k < n; k++) cal.adopt(b.subarray(35 + 80 * k, 35 + 80 * (k + 1)));
+    }
+  }
+  return titles;
+};
 
 /** Milliseconds a command takes on the guest, and its output. */
 async function timed(page: Page, cmd: string, ms = 60_000): Promise<{ ms: number; out: string }> {
@@ -522,6 +535,9 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   // 5 minutes after the pass at Register: its backoff ended now in the title's record), published.
   cal.mine(7);
   const before = await untouched(b);
+  // The agent's passes done first (the one after Register makes the next renewal ahead and saves the title: an edit of
+  // the record below made meanwhile would be written over).
+  await a.evaluate('import("/web/names.ts").then((n) => n.namesAgent().pass())');
   await a.evaluate(() => new Promise<void>((resolve, reject) => {
     const open = indexedDB.open('waarm64-room');
     open.onerror = () => reject(open.error);

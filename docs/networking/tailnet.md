@@ -55,7 +55,12 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   `roomNamesStore`; a stored connection's only, written before the worker is closed), and deletes what the module didn't take. The room's `self` event says which parameters names
   are checked with (`params`: `production`; `test` only in the page tests' build, `net/ts/build.sh --test-params` →
   `target/net/ts-test.wasm`, never shipped: room-names.md "Tests' parameters"). The room's resolver answers registered
-  names (room-names.md "The resolver") and logs each query for one (`resolver: …`).
+  names (room-names.md "The resolver") and logs each query for one (`resolver: …`). A server asks outside the room
+  (room-names.md "Servers", `room/names/outside.rs`): action 12 is a GET (the id, then the URL, always a compiled
+  calendar's or explorer's), whose answer goes back with `ts_room_names_fetched(h, id, status, ptr, len)` (the HTTP
+  status, 0 when the fetch failed, and the body); web/room-worker.ts makes it through web/names.ts `serviceFetch`, which
+  fetches nothing but the compiled services. A server stores each block's check as a record too (version 3, under the
+  block's hash). A member's node never emits action 12.
   With `room.publish` the client is a **publisher** (the page's names agent, web/names.ts): a names client alone, no
   node and no guest, under a fresh key; `ts_room_names_put(h, item)` puts an item to the servers it finds, each answer a
   `names-put` event (`taken`, `better` with the server's item, `failed`, `nobody`). `ts_room_names_titles(h, json)` gives

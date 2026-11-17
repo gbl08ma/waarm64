@@ -12,8 +12,9 @@
 // - `mine(n)` mines blocks: each takes every commitment waiting (on every calendar) into its Merkle tree; `every`
 //   mines one on a timer. `down` holds calendars that answer 503.
 // - The explorer, at `explorer` (`…/api`): `block-height/<h>` and `block/<hash>/header` (hex), how the agent fetches
-//   an anchor's block's header (the one an anchor carries), CORS open; hashes in the explorers' byte order (the reverse
-//   of the header's).
+//   an anchor's block's header (the one an anchor carries) and a room's server checks a block by its hash (a block it
+//   doesn't know: 404 "Block not found", CORS open as for the rest); hashes in the explorers' byte order (the reverse
+//   of the header's). `adopt` makes it know a header mined elsewhere (titles a test made offline).
 //
 // The formats are OpenTimestamps' (ops 0x08 SHA-256, 0xf0 append, 0xf1 prepend; 0x00 and an 8-byte tag for an
 // attestation, its payload as varbytes), as net/ts/src/room/names/anchor.rs reads them.
@@ -117,6 +118,9 @@ export type OtsCalendar = {
   forget(): void;
   /** Requests served, by path's first part (`alice`, `explorer`, …). */
   requests: Record<string, number>;
+  /** A header mined elsewhere (on the tests' pretend Bitcoin, outside this chain: net/ts/examples/names-title.rs's
+   * titles) that the explorer then knows by its hash, as a real one knows any block: a server's check of it passes. */
+  adopt(header: Buffer): void;
   close(): Promise<void>;
 };
 
@@ -147,6 +151,8 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
   let waiting: string[] = [];
   const down = new Set<CalendarName>();
   const requests: Record<string, number> = {};
+  /** Headers mined elsewhere, by their hash as explorers show it. */
+  const adopted = new Map<string, Buffer>();
 
   function mine(n = 1, at?: number): Block[] {
     const made: Block[] = [];
@@ -197,8 +203,8 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
       cors(res);
       const display = (b: Block) => Buffer.from(b.hash).reverse().toString('hex');
       if (parts[2] === 'block-height' && blocks[Number(parts[3])]) return res.end(display(blocks[Number(parts[3])]));
-      const b = parts[2] === 'block' && blocks.find((x) => display(x) === parts[3]);
-      if (b && parts[4] === 'header') return res.end(b.header.toString('hex'));
+      const b = parts[2] === 'block' && (blocks.find((x) => display(x) === parts[3])?.header ?? adopted.get(parts[3]));
+      if (b && parts[4] === 'header') return res.end(b.toString('hex'));
       return res.writeHead(404).end('Block not found');
     }
     const cal = parts[0] as CalendarName;
@@ -245,6 +251,7 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
     waiting: () => waiting.length,
     forget: () => { waiting = []; },
     requests,
+    adopt: (h) => { adopted.set(Buffer.from(sha256d(h)).reverse().toString('hex'), Buffer.from(h)); },
     close: () => { clearInterval(timer); return new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }); },
   };
 }
