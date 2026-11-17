@@ -1656,8 +1656,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
         offer it, or repoint them itself.
       - Name this machine… is shown only while the room is connected (the node key comes with the connection's start).
         A stored connection's key is in `waarm64-room` before that; reading it there would offer the dialog offline.
-      - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each dialog; a running room's own
-        names client could ask instead, sooner, when the machine is connected.
+      - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each press of Register (N5b), so
+        Register waits for servers to be found (a few seconds) before a free name registers. A running room's own
+        names client could ask sooner, but it would link one press to the next and to the node's own lookups.
       - "Taken until" is a server's word, unchecked: a lying server can make a free name look taken (Register is then
         disabled). Two servers are asked and the latest date wins; a check that showed both answers apart could say so.
       - The details' points take a member's name or key pasted; nothing lists the room's members to choose from.
@@ -1687,9 +1688,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A question's key proves nothing (finding 12): a server answers questions naming one key 4 times a minute, so a
       victim's node gets 4 call backs and `serve`s a minute from each server (1.3 trials a second with 20, of its 16). A
       proof needs a round trip the asker starts, which "who serves?" can't carry.
-    - Listing the registry's ids costs nothing (finding 13; the spec's table says so now), and the dialog's check takes
-      them all (finding 1): ~40 bytes a name, 800 KB at the bound, a minute's answer kept. Fine for the rooms N6 sizes;
-      a registry near the bound would want the check's answer in parts.
+    - Listing the registry's ids costs nothing (finding 13; the spec's table says so now). The dialog's check asks one
+      first byte a press of Register (finding 1, as the user decided in N5b; N5a's every-id form is gone): a server
+      that hashes a dictionary can tell a guessable name from the byte, and nothing more.
     - A sync run lasts 4 minutes at most (finding 14): a new server answers questions after its first run even when
       that run's partner held it up, with what it got so far; the next rounds fill in the rest.
     - A member's answer goes only into a lookup asking that server in the same mode (finding 9): a defence beside the

@@ -586,7 +586,7 @@ impl Msg {
                 };
                 let n = r.u8()? as usize;
                 let ok = match mode {
-                    GetMode::Ids => n <= 1, // a first byte, or none: every id
+                    GetMode::Ids => n == 1, // one first byte: never every id, never the id
                     GetMode::All => n == 8 || n == 32,
                     GetMode::Owner | GetMode::History => n == 32,
                 };

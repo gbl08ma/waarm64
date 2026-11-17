@@ -1,10 +1,12 @@
 <!--
   Name this machine… (docs/plans/room-names.md "What the user sees"): one dialog from a room adapter's section of the
-  Network menu. A field, checked as typed (free, taken until about a date, not a valid name, this connection's
-  already, or nobody in the room can say: web/names.ts `check`, which asks the room's servers for every id they hold,
-  never the name's id or a byte of it); the two notices, always shown, no boxes; Register, which closes it (the
-  adapter then shows the name as Preparing, Reserved, Active). **No key is shown or asked for**, and nothing is added
-  to this path (the kickoff's decision 6). A connection whose key is ephemeral can't hold a name: it says so instead.
+  Network menu. A field, checked as typed by this page alone (not a valid name, this connection's already: no server
+  asked); Register asks the room's servers (one first byte of the name's id a press, the user's decision 2026-11-17:
+  web/names-view.ts `NameForm`, web/names.ts `check`): free, it registers and closes (the adapter then shows the name
+  as Preparing, Reserved, Active); taken, it stays open and says until about when; nobody in the room can say, it says
+  so and Register pressed again registers. The two notices, always shown, no boxes. **No key is shown or asked for**,
+  and nothing is added to the path where the name is free (the kickoff's decision 6). A connection whose key is
+  ephemeral can't hold a name: it says so instead.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -15,23 +17,17 @@
   import type { PageNetwork } from './net-live.ts';
   import { network } from './areas/network.ts';
   import { pageNames, type NamesOf } from './areas/names.svelte.ts';
-  import { canRegister, checkWords, type CheckShown } from './names-view.ts';
+  import { canRegister, checkWords, NameForm, type CheckShown } from './names-view.ts';
   import { inBar } from './page.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
-
-  /** How long typing pauses before the name is checked. */
-  const CHECK_AFTER_MS = 300;
 
   let dialog = $state<{ open: () => void; close: () => void }>();
   let field = $state<HTMLInputElement>();
   let index = $state<number>();
   let typed = $state('');
   let check = $state<CheckShown>({ state: 'empty' });
-  /** The check under way: an answer to an older one is dropped. */
-  let serial = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const ad = $derived(index === undefined ? undefined : net.views()[index]);
   const room = $derived(ad?.connection?.room);
@@ -41,44 +37,33 @@
   );
   const name = $derived(typed.trim().toLowerCase());
   const said = $derived(checkWords(name, check));
-  const tone = $derived(check.state === 'free' ? 'ok' : check.state === 'checking' ? 'dim' : 'warn');
+  const tone = $derived(check.state === 'checking' ? 'dim' : 'warn');
+  const form = new NameForm(
+    {
+      here: (n) => (conn ? pageNames.checkHere(conn, n) : Promise.resolve({ state: 'invalid' })),
+      servers: (n) => (conn ? pageNames.check(conn, n) : Promise.resolve({ state: 'invalid' })),
+      register: (n) => {
+        const [c, k] = [conn, key];
+        if (!c || !k) return;
+        dialog?.close();
+        inBar(() => pageNames.register(c, n, k));
+      },
+    },
+    (c) => (check = c),
+  );
 
   $effect(() =>
     network.naming.handle((i) => {
-      [index, typed, check] = [i, '', { state: 'empty' }];
+      [index, typed] = [i, ''];
+      form.typed('');
       dialog?.open();
       queueMicrotask(() => field?.focus());
     }),
   );
 
-  function changed() {
-    clearTimeout(timer);
-    const n = name;
-    const c = conn;
-    const k = ++serial;
-    if (!n || !c) {
-      check = { state: 'empty' };
-      return;
-    }
-    check = { state: 'checking' };
-    timer = setTimeout(() => {
-      pageNames.check(c, n).then(
-        (r) => {
-          if (k === serial) check = r;
-        },
-        () => {
-          if (k === serial) check = { state: 'unknown' };
-        },
-      );
-    }, CHECK_AFTER_MS);
-  }
-
   function register(e: SubmitEvent) {
     e.preventDefault();
-    const [c, n, k] = [conn, name, key];
-    if (!c || !k || !canRegister(check)) return;
-    dialog?.close();
-    inBar(() => pageNames.register(c, n, k));
+    if (key && canRegister(check)) void form.press();
   }
 </script>
 
@@ -89,8 +74,7 @@
   title={t('network:NameDialog.title')}
   onsubmit={register}
   onclose={() => {
-    clearTimeout(timer);
-    serial++;
+    form.close();
     index = undefined;
   }}
 >
@@ -102,7 +86,7 @@
         id="net-name-input"
         bind:this={field}
         bind:value={typed}
-        oninput={changed}
+        oninput={() => form.typed(name)}
         autocomplete="off"
         spellcheck="false"
         maxlength="32"

@@ -8,10 +8,10 @@ use std::{
 
 use super::{
     entry::Kind,
-    member::{ALL_IDS, Answer, IdsDone, IdsResult, KEPT_REFRESH, Member},
+    member::{Answer, IdsDone, IdsResult, KEPT_REFRESH, Member},
     server::{Cmd, Config, Input, MAX_BYTES, MAX_NAMES, Server, Title},
     testkit::{Bitcoin, DAY, params},
-    wire::{Item, Question},
+    wire::{GetMode, Item, Msg, Question},
     zone::Zone,
 };
 
@@ -553,14 +553,14 @@ fn ids_by_first_byte() {
         .map(|i| s0.reg.get(&i.id).unwrap().asked)
         .collect();
     let mut bus = Bus::new(vec![s0], member());
-    let first = items[7].id[0] as u16;
+    let first = items[7].id[0];
     let now = bus.now;
     bus.m.ids(first, now);
     bus.advance(Duration::from_secs(4));
     let expect: BTreeSet<[u8; 32]> = items
         .iter()
         .map(|i| i.id)
-        .filter(|i| i[0] as u16 == first)
+        .filter(|i| i[0] == first)
         .collect();
     let got = &bus.m.ids_answers[&first];
     assert_eq!(got.keys().copied().collect::<BTreeSet<_>>(), expect);
@@ -580,13 +580,20 @@ fn ids_by_first_byte() {
         .map(|i| bus.s[0].reg.get(&i.id).unwrap().asked)
         .collect();
     assert_eq!(asked, after, "an ids check isn't a name asked for");
-    // Every id at once, the dialog's way (review 2: a first byte a prefix told the name as it was typed).
-    let now = bus.now;
-    bus.m.ids(ALL_IDS, now);
-    bus.advance(Duration::from_secs(4));
-    let all = &bus.m.ids_answers[&ALL_IDS];
-    let names: BTreeSet<[u8; 32]> = items.iter().map(|i| i.id).collect();
-    assert!(names.iter().all(|i| all.contains_key(i)), "every id");
+    // One first byte, never every id at once (the user's decision, 2026-11-17: the dialog asks one byte a press of
+    // Register, so nothing on the wire asks for the whole registry) and never the id.
+    for n in [0usize, 2, 32] {
+        let m = Msg::Get {
+            mode: GetMode::Ids,
+            id: vec![first; n],
+            zone: (0, [0; 4]),
+            held: vec![],
+        };
+        assert!(
+            Msg::decode(&m.encode(1)).is_err(),
+            "an ids get of {n} bytes"
+        );
+    }
 }
 
 /// The dialog's check with nobody serving: nobody can say, as an answer of its own.

@@ -462,7 +462,7 @@ async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: stri
 const untouched = (p: Page) => p.evaluate(() => [document.querySelectorAll('dialog[open]').length, document.getElementById('message-text')?.textContent ?? '']);
 
 /**
- * Name this machine… (docs/plans/room-names.md "What the user sees"), on A: the dialog's check as typed, its two notices
+ * Name this machine… (docs/plans/room-names.md "What the user sees"), on A: the dialog's check (as typed, the page alone; at Register, the room), its two notices
  * and no key, Register; the name Reserved, then Active once its anchor is collected; B's guest reaches it with nothing
  * done on B's page; a label added in A's details; on a load in its last week (the page's clock 24 days on) the notice.
  */
@@ -485,18 +485,33 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
   assert.match(dialog.text, words('network:NameDialog.notice.find'));
   assert.match(dialog.text, words('network:NameDialog.notice.visit'));
   for (const secret of [keyA, o.nameA.split('.')[0]]) assert.ok(!dialog.text.includes(secret) && !dialog.values.some((v) => v.includes(secret)), 'no key shown');
-  const checked = async (name: string, key: string, params: Record<string, string> = {}) => {
-    await a.fill('#net-name-input', name);
+  const says = async (key: string, params: Record<string, string> = {}) => {
     await a.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-name-check')?.textContent ?? ''), words(key, params).source, { timeout: 30_000, polling: 100 })
       .catch(async (e) => { throw new Error(`${e}; it says ${await text(a, '#net-name-check')}`); });
-    return a.locator('#net-name-register').isDisabled();
   };
-  assert.equal(await checked('wpad', 'network:names-view.check.invalid'), true, 'a reserved name: no Register');
-  assert.equal(await checked('test123', 'network:names-view.check.taken', { name: 'test123' }), true, 'taken: no Register');
-  assert.equal(await checked('mybox', 'network:names-view.check.free', { name: 'mybox' }), false, 'free: Register');
-  cal.mine(7); // the explorers' block 6 deep: the claim's `ref`
+  const isOpen = () => a.evaluate(() => (document.getElementById('net-name') as HTMLDialogElement).open);
+  // As typed, the page alone (the user's decision, 2026-11-17): a reserved name is refused at once; a valid one says
+  // nothing and offers Register, the room's servers not asked (a name they hold isn't said taken while it's typed).
+  await a.fill('#net-name-input', 'wpad');
+  await says('network:names-view.check.invalid');
+  assert.equal(await a.locator('#net-name-register').isDisabled(), true, 'a reserved name: no Register');
+  await a.fill('#net-name-input', 'test123');
+  await a.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'valid', null, { timeout: 10_000 });
+  await a.waitForTimeout(1500);
+  assert.equal(await a.evaluate(() => document.getElementById('net-name-check')?.dataset.check), 'valid', 'typing asks no server');
+  assert.equal(await a.locator('#net-name-register').isDisabled(), false, 'a valid name: Register');
+  // Register pressed: the room's servers asked; taken keeps the dialog open with the date.
   await a.click('#net-name-register');
-  await a.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  await says('network:names-view.check.taken', { name: 'test123' });
+  assert.equal(await isOpen(), true, 'taken: the dialog stays open');
+  assert.equal(await a.locator('#net-name-register').isDisabled(), true, 'taken: no Register');
+  await a.fill('#net-name-input', 'mybox');
+  await a.waitForFunction(() => document.getElementById('net-name-check')?.dataset.check === 'valid', null, { timeout: 10_000 });
+  cal.mine(7); // the explorers' block 6 deep: the claim's `ref`
+  // Free: Register asks (a checker of its own: servers found again), registers and closes.
+  await a.click('#net-name-register');
+  await a.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 30_000 })
+    .catch(async (e) => { throw new Error(`${e}; it says ${await text(a, '#net-name-check')}`); });
   await a.locator('#network summary').click();
   const stateOf = () => a.evaluate(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state'));
   await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'reserved', null, { timeout: 120_000, polling: 250 })

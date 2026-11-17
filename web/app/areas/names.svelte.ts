@@ -1,6 +1,6 @@
 // Registered names on the page (docs/plans/room-names.md "What the user sees"): the titles the names agent keeps
 // (web/names.ts), read into `$state` at load and again whenever the agent changes one (its BroadcastChannel, in any tab)
-// and every minute (a reserved name's "in about N hours"); the dialog's check, Register (the dialog has closed: the
+// and every minute (a reserved name's "in about N hours"); the dialog's checks (as typed, and at Register), Register (the dialog has closed: the
 // adapter shows Preparing until the title is stored), a name's zone and its release; and, at load, the notice of names
 // in their last week. The agent and its worker are loaded only when titles exist or the dialog is used.
 import { msg, MsgError, type Msg } from '../../i18n.ts';
@@ -58,7 +58,14 @@ class PageNames {
     await this.refresh();
   }
 
-  /** The dialog's check of `name` as typed (web/names.ts `NamesAgent.check`: servers asked for every id they hold). */
+  /** The dialog's check of `name` as typed: the rules and this connection's own, **no server asked**
+   * (web/names.ts `NamesAgent.checkHere`). */
+  async checkHere(c: NamesConn, name: string): Promise<NameCheck> {
+    return (await names()).namesAgent().checkHere(c, name);
+  }
+
+  /** The dialog's check of `name` when Register is pressed: the room's servers asked for one first byte
+   * (web/names.ts `NamesAgent.check`). */
   async check(c: NamesConn, name: string): Promise<NameCheck> {
     return (await names()).namesAgent().check(c, name);
   }

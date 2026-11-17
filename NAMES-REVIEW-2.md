@@ -29,14 +29,14 @@ clean). Line numbers are at `b54bc77`. Findings are ranked by severity.
 | 17 | Low | The page's words: "public in about 1 hour" for days; Add a label past 3 fails with a bare `Zone` |
 
 
-## Status (N5a, 2026-11-17)
+## Status (N5a and N5b, 2026-11-17)
 
 Each fix started with its test, failing first; each new rule has a planted bug the tests caught (NAMES-HANDOVER.md's
 N5a row). What a fix leaves: docs/backlog.md "Review 2's fixes".
 
 | # | Status | Test (net/ts/src/room/names/…, tests/…) |
 |---|---|---|
-| 1 | Fixed (fa6c561): the check asks for every id the servers hold (`ALL_IDS`), the answer kept a minute | names-agent.test.ts "the dialog's check: … every id at once"; member_tests.rs `ids_by_first_byte` |
+| 1 | Fixed (N5b, the user's decision 2026-11-17; N5a's every-id form, fa6c561, replaced and gone from the wire): the check runs when Register is pressed, not as typed: one first byte a press, through a checker made for that press; as typed, only the page's own checks (the rules, this connection's own). Free registers; taken keeps the dialog open with the date; nobody can say says so, and Register pressed again registers | names-agent.test.ts "the dialog's check: as typed … asking no server; at Register, one first byte …"; names-page.test.ts "the dialog: typing asks no server …", "… taken keeps it open …", "… nobody can say …"; member_tests.rs `ids_by_first_byte` (an `ids` get of 0, 2 or 32 bytes refused); page-room.test.ts's dialog steps |
 | 2 | Fixed (df84c2f) within the decisions: a `serve` shows its chain's run (8 entries at most), answers rank by the chain's age in half terms (6 tiers, 90 days) then the hash, rounds sample a young chain as rarely; the accept window keeps the best two | member_tests.rs `cheap_fresh_registrations_dont_buy_both_of_an_askers_servers` (both servers junk in 22 of 30 before, ≤ 1 of 40 after); server_tests.rs `served_keys_ranked_worst_make_room_but_the_best_two_stay`, `serve_is_a_live_names_…` |
 | 3 | **Waiting for the user** (the renewal rule, the visit notice and servers finishing renewals are theirs to decide) | — |
 | 4 | Fixed (f6466a2): only `AnchorWindow` drops an entry; a stale one is kept and asked for a week past its window; each calendar's answer and each explorer's run tried | names-agent.test.ts "a renewal collected late revives its chain …", "a calendar answering junk, or an explorer an inconsistent run …" |

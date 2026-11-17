@@ -20,12 +20,9 @@ export class NamesError extends Error {
 /** A server's answer to a put, without the event's type. */
 export type PutAnswer = Omit<NamesPut, 'type'>;
 
-/** The dialog's check (docs/plans/room-names.md "A member resolving a name"): the ids the room's servers hold (all, or under one
- * first byte), each with until when its owner holds it (Unix seconds, 0: nobody now); `nobody` when nobody serves the
- * room's names, `failed` when no server answered. */
-/** The dialog's check asks for every id at once (in place of a first byte, 0 to 255): the servers learn nothing of the
- * name being typed (review 2: each prefix's first byte told them the name a character at a time). */
-export const ALL_IDS = 256;
+/** The dialog's check (docs/plans/room-names.md "A member resolving a name"), one a press of Register: the ids the
+ * room's servers hold under one first byte, each with until when its owner holds it (Unix seconds, 0: nobody now);
+ * `nobody` when nobody serves the room's names, `failed` when no server answered. */
 export type IdsAnswer = { result: 'ids' | 'nobody' | 'failed'; ids: [string, number][] };
 
 /** What the agent asks of the module, wherever it runs. */
@@ -35,8 +32,8 @@ export type NamesBackend = {
   /** Puts `items` (hex) to the servers of the room with link `link`, through a publisher made for it: each item's
    * answers (by its name id), `nobody` when nobody serves, `failed` when the room couldn't be reached. */
   publish(link: string, items: { id: string; item: string }[]): Promise<Map<string, PutAnswer[]>>;
-  /** The dialog's check in the room with link `link`: every id under `first` (a first byte, or ALL_IDS: every id),
-   * through a checker kept open while the dialog asks (`CHECKER_IDLE_MS`). */
+  /** The dialog's check in the room with link `link`: every id under `first` (the name's id's first byte, never the
+   * id), through a checker of its own (`idsWith`). */
   ids(link: string, first: number): Promise<IdsAnswer>;
   close(): void;
 };
@@ -102,93 +99,53 @@ export function publishWith(m: TsModule, link: string, items: { id: string; item
   });
 }
 
-/** How long a checker stays open after its last check (the dialog asks again at each change of the name typed). */
-export const CHECKER_IDLE_MS = 60_000;
 /** A check's longest wait (finding servers, then their answers). */
 const CHECK_MS = 20_000;
 
-type Waiting = { answers: NamesIds[]; resolve(a: IdsAnswer): void; done: Promise<IdsAnswer>; second?: ReturnType<typeof setTimeout>; timer: ReturnType<typeof setTimeout> };
-
 /**
- * The dialog's checks in the room with link `link` (module `m`): a publisher (a names client alone, a fresh key, no
- * machine) made at the first check and kept while checks come, so the servers it found answer the next at once. A
- * check resolves once two servers answered, or one and SECOND_ANSWER_MS more, or nobody serves, or at CHECK_MS.
+ * The dialog's check in the room with link `link` (module `m`): every id under `first`, through a checker made for this
+ * one check and closed with its answer (a publisher: a names client alone, a key made new, no machine), so no server
+ * can link one press of Register to another. Resolves once two servers answered, or one and SECOND_ANSWER_MS more, or
+ * nobody serves, or at CHECK_MS: with the ids of every server that answered (the latest until of each).
  */
-export class Checker {
-  private client: TsClient | undefined;
-  private readonly waiting = new Map<number, Waiting>();
-  private idle: ReturnType<typeof setTimeout> | undefined;
-  private readonly m: TsModule;
-  private readonly link: string;
-  private readonly o: { derpMapURL?: string; log?: (s: string) => void; onIdle?: () => void };
-  constructor(m: TsModule, link: string, o: { derpMapURL?: string; log?: (s: string) => void; onIdle?: () => void } = {}) {
-    [this.m, this.link, this.o] = [m, link, o];
-  }
-
-  /** Every id under `first`; a check of the same byte still waiting is the same answer. */
-  ids(first: number): Promise<IdsAnswer> {
-    clearTimeout(this.idle);
-    const had = this.waiting.get(first);
-    if (had) return had.done;
-    let resolve: (a: IdsAnswer) => void = () => {};
-    const done = new Promise<IdsAnswer>((r) => (resolve = r));
-    this.waiting.set(first, { answers: [], resolve, done, timer: setTimeout(() => this.settle(first), CHECK_MS) });
+export function idsWith(m: TsModule, link: string, first: number, o: { derpMapURL?: string; log?: (s: string) => void } = {}): Promise<IdsAnswer> {
+  const answers: NamesIds[] = [];
+  return new Promise((resolve) => {
+    let client: TsClient | undefined;
+    let second: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(second);
+      client?.close();
+      client = undefined;
+      const said = answers.filter((a) => a.result === 'ids');
+      const until = new Map<string, number>();
+      for (const a of said) for (const [id, u] of a.ids ?? []) until.set(id, Math.max(until.get(id) ?? 0, u));
+      resolve({ result: said.length ? 'ids' : answers.some((a) => a.result === 'nobody') ? 'nobody' : 'failed', ids: [...until] });
+    };
+    const timer = setTimeout(done, CHECK_MS);
     try {
-      this.client ??= this.open();
-      if (!this.client.namesIds(first)) this.settle(first);
-    } catch (err) {
-      this.o.log?.(`no checker: ${String(err)}`);
-      this.client = undefined;
-      this.settle(first);
-    }
-    return done;
-  }
-
-  close() {
-    clearTimeout(this.idle);
-    for (const first of [...this.waiting.keys()]) this.settle(first);
-    this.client?.close();
-    this.client = undefined;
-  }
-
-  private open(): TsClient {
-    return new TsClient(this.m, { room: { link: this.link, publish: true }, ...(this.o.derpMapURL ? { derpMapURL: this.o.derpMapURL } : {}) }, {
-      packet() {},
-      event: (e) => {
-        if (e.type === 'log') return this.o.log?.(e.msg);
-        if (e.type === 'state' && e.state === 'Failed') {
+      client = new TsClient(m, { room: { link, publish: true }, ...(o.derpMapURL ? { derpMapURL: o.derpMapURL } : {}) }, {
+        packet() {},
+        event(e) {
+          if (e.type === 'log') return o.log?.(e.msg);
           // Not from inside the client's pump.
-          return queueMicrotask(() => { this.client?.close(); this.client = undefined; for (const f of [...this.waiting.keys()]) this.settle(f); });
-        }
-        if (e.type !== 'names-ids') return;
-        const w = this.waiting.get(e.first);
-        if (!w) return;
-        w.answers.push(e);
-        const ids = w.answers.filter((a) => a.result === 'ids').length;
-        if (e.result === 'nobody' || w.answers.length >= 2 || (e.result === 'failed' && !e.server)) return queueMicrotask(() => this.settle(e.first));
-        if (ids) w.second ??= setTimeout(() => this.settle(e.first), SECOND_ANSWER_MS);
-      },
-    });
-  }
-
-  /** Check `first` answered with what came: the ids of every server that answered (the latest until of each). */
-  private settle(first: number) {
-    const w = this.waiting.get(first);
-    if (!w) return;
-    this.waiting.delete(first);
-    clearTimeout(w.timer);
-    clearTimeout(w.second);
-    const said = w.answers.filter((a) => a.result === 'ids');
-    const until = new Map<string, number>();
-    for (const a of said) for (const [id, u] of a.ids ?? []) until.set(id, Math.max(until.get(id) ?? 0, u));
-    const result = said.length ? 'ids' : w.answers.some((a) => a.result === 'nobody') ? 'nobody' : 'failed';
-    w.resolve({ result, ids: [...until] });
-    if (!this.waiting.size) {
-      clearTimeout(this.idle);
-      this.idle = setTimeout(() => { this.close(); this.o.onIdle?.(); }, CHECKER_IDLE_MS);
-      (this.idle as { unref?: () => void }).unref?.();
+          if (e.type === 'state' && e.state === 'Failed') return queueMicrotask(done);
+          if (e.type !== 'names-ids' || e.first !== first) return;
+          answers.push(e);
+          if (e.result === 'nobody' || answers.length >= 2 || (e.result === 'failed' && !e.server)) return queueMicrotask(done);
+          if (e.result === 'ids') second ??= setTimeout(done, SECOND_ANSWER_MS);
+        },
+      });
+      if (!client.namesIds(first)) queueMicrotask(done);
+    } catch (err) {
+      o.log?.(`no checker: ${String(err)}`);
+      queueMicrotask(done);
     }
-  }
+  });
 }
 
 export function hexBytes(s: string): Uint8Array {
@@ -199,7 +156,6 @@ export function hexBytes(s: string): Uint8Array {
 
 /** The agent's backend on module `m` in this thread (the names worker's; the tests' in Node). */
 export function localBackend(m: TsModule, o: { derpMapURL?: string; log?: (s: string) => void } = {}): NamesBackend {
-  const checkers = new Map<string, Checker>();
   return {
     op: <T>(op: NamesOp, input: object) => {
       try {
@@ -209,18 +165,7 @@ export function localBackend(m: TsModule, o: { derpMapURL?: string; log?: (s: st
       }
     },
     publish: (link, items) => publishWith(m, link, items, o),
-    ids: (link, first) => {
-      let c = checkers.get(link);
-      if (!c) {
-        const made = new Checker(m, link, { ...o, onIdle: () => { if (checkers.get(link) === made) checkers.delete(link); } });
-        checkers.set(link, made);
-        c = made;
-      }
-      return c.ids(first);
-    },
-    close() {
-      for (const c of checkers.values()) c.close();
-      checkers.clear();
-    },
+    ids: (link, first) => idsWith(m, link, first, o),
+    close() {},
   };
 }

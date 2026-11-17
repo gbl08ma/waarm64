@@ -1,5 +1,5 @@
 // Registered names as the page says them (docs/plans/room-names.md "What the user sees"): a title's state in the
-// adapter's menu and details, the dialog's check as typed, the details' line of the registry, a stored machine's names on
+// adapter's menu and details, the dialog's check (as typed, and at Register), the details' line of the registry, a stored machine's names on
 // the Machines page, and where a name points in words (a member's name in the room) and back. Pure: the area
 // (web/app/areas/names.svelte.ts) and the components call these.
 import { msg, type Msg } from '../i18n.ts';
@@ -60,12 +60,15 @@ export function titleState(v: TitleView, now = Date.now()): Msg {
   }
 }
 
-/** What the dialog's check says under the field: `checking` while the servers are asked; nothing for an empty field. */
+/** What the dialog's check says under the field: `checking` while the servers are asked (Register pressed); nothing
+ * for an empty field or a valid name not asked about yet. */
 export type CheckShown = NameCheck | { state: 'checking' | 'empty' };
 
 export function checkWords(name: string, c: CheckShown): Msg | undefined {
   switch (c.state) {
     case 'empty':
+    case 'valid':
+    case 'free':
       return undefined;
     case 'checking':
       return msg('network:names-view.check.checking');
@@ -73,8 +76,6 @@ export function checkWords(name: string, c: CheckShown): Msg | undefined {
       return msg('network:names-view.check.invalid');
     case 'yours':
       return msg('network:names-view.check.yours', { name });
-    case 'free':
-      return msg('network:names-view.check.free', { name });
     case 'taken':
       return msg('network:names-view.check.taken', {
         name,
@@ -85,8 +86,81 @@ export function checkWords(name: string, c: CheckShown): Msg | undefined {
   }
 }
 
-/** Register is offered for a name the room's servers don't hold, or that nobody in the room can say about. */
-export const canRegister = (c: CheckShown) => c.state === 'free' || c.state === 'unknown';
+/** Register is offered for a valid name not asked about yet, and for one nobody in the room can say about (pressed
+ * again, it registers). */
+export const canRegister = (c: CheckShown) => c.state === 'valid' || c.state === 'free' || c.state === 'unknown';
+
+/** What the dialog asks of the names (web/app/areas/names.svelte.ts `pageNames`; the tests' fakes). */
+export type NameAsk = {
+  /** As typed: the rules and this connection's own, **asking no server** (`NamesAgent.checkHere`). */
+  here(name: string): Promise<NameCheck>;
+  /** At Register: the room's servers asked for one first byte (`NamesAgent.check`). */
+  servers(name: string): Promise<NameCheck>;
+  /** Registers it; the dialog closes. */
+  register(name: string): void;
+};
+
+/**
+ * The dialog's check (room-names.md "What the user sees"; the user's decision, 2026-11-17): **as typed, only what this
+ * page can say** (not a valid name, this connection's own); **the room's servers are asked when Register is pressed**,
+ * one first byte a press. Free: registered. Taken: the dialog stays open and says until about when. Nobody can say: it
+ * says so, and Register pressed again for the same name registers it (first come still holds; nothing added to the
+ * path where the name is free, the kickoff's decision 6).
+ */
+export class NameForm {
+  shown: CheckShown = { state: 'empty' };
+  #name = '';
+  /** The check under way: an answer to an older one (the name typed since, the dialog closed) is dropped. */
+  #serial = 0;
+  readonly #ask: NameAsk;
+  readonly #onShown: (c: CheckShown) => void;
+  constructor(ask: NameAsk, onShown: (c: CheckShown) => void) {
+    [this.#ask, this.#onShown] = [ask, onShown];
+  }
+
+  /** The field now says `name`: checked here, no server asked. */
+  typed(name: string) {
+    this.#name = name;
+    const k = ++this.#serial;
+    this.#show({ state: 'empty' });
+    if (!name) return;
+    this.#ask.here(name).then(
+      (r) => k === this.#serial && this.#show(r),
+      () => k === this.#serial && this.#show({ state: 'valid' }),
+    );
+  }
+
+  /** Register pressed: true when the name was registered (the dialog closes). */
+  async press(): Promise<boolean> {
+    const name = this.#name;
+    const s = this.shown.state;
+    if (!name || s === 'checking' || s === 'invalid' || s === 'yours' || s === 'taken') return false;
+    if (s === 'unknown') {
+      this.#ask.register(name);
+      return true;
+    }
+    const k = ++this.#serial;
+    this.#show({ state: 'checking' });
+    const r = await this.#ask.servers(name).catch((): NameCheck => ({ state: 'unknown' }));
+    if (k !== this.#serial) return false;
+    if (r.state === 'free') {
+      this.#ask.register(name);
+      return true;
+    }
+    this.#show(r);
+    return false;
+  }
+
+  /** The dialog closed: an answer still coming is dropped. */
+  close() {
+    this.#serial++;
+  }
+
+  #show(c: CheckShown) {
+    this.shown = c;
+    this.#onShown(c);
+  }
+}
 
 /** The details' line of the registry: a server's names held, or a member's resolved, and the servers. */
 export function namesLine(n: { serving: boolean; names: number; servers: number }): Msg {

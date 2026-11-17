@@ -1141,7 +1141,7 @@
   },
   "NameDialog.name": {
     "message": "Name",
-    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the label of the field the name is typed in; it is checked as typed (the line under it)."
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the label of the field the name is typed in. As typed, the line under it says only what this page can tell (not a valid name, this connection's already); the room is asked when Register is pressed."
   },
   "NameDialog.notice.find": {
     "message": "Members of this room who know the name can find this machine and see when it's online, and your machine helps other members look names up.",
@@ -1153,7 +1153,7 @@
   },
   "NameDialog.register": {
     "message": "Register",
-    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the main button. It closes the dialog; the adapter's section then shows the name with its state (Preparing, Reserved, Active)."
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the main button. It first asks the room whether the name is free: free, it registers the name and closes the dialog (the adapter's section then shows the name with its state: Preparing, Reserved, Active); taken, the dialog stays open and says until when; when nobody in the room can say, the dialog says so and pressing it again registers the name."
   },
   "NameDialog.cancel": {
     "message": "Cancel",
@@ -1165,7 +1165,7 @@
   },
   "names-view.check.checking": {
     "message": "Checking…",
-    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name while the room is asked whether the name is free."
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name after Register is pressed, while the room is asked whether the name is free."
   },
   "names-view.check.invalid": {
     "message": "Not a name that can be registered. A name is 1 to 32 lower-case letters, digits and hyphens, not starting or ending with a hyphen; some names, such as every two-letter one, are reserved.",
@@ -1175,17 +1175,13 @@
     "message": "This connection already holds {{name}}.",
     "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when this connection registered it already; {{name}} is the name typed."
   },
-  "names-view.check.free": {
-    "message": "{{name}} is free.",
-    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when the room's servers don't hold it; {{name}} is the name typed."
-  },
   "names-view.check.taken": {
     "message": "{{name}} is taken, until about {{when, date}} unless its owner renews it.",
-    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when another owner holds it; Register is disabled. {{name}} is the name typed, {{when}} when it lapses if not renewed."
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and another owner holds it: the dialog stays open and Register is disabled until the name changes. {{name}} is the name typed, {{when}} when it lapses if not renewed."
   },
   "names-view.check.unknown": {
-    "message": "Nobody in the room can say whether {{name}} is free right now: no machine that serves the room's names answered. You can register it all the same.",
-    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when no server of the room's names answered; Register stays enabled. {{name}} is the name typed."
+    "message": "Nobody in the room can say whether {{name}} is free right now: no machine that serves the room's names answered. Press Register again to register it all the same.",
+    "note": "Name this machine… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when Register was pressed and no server of the room's names answered: the dialog stays open, and Register pressed again (the name unchanged) registers it. {{name}} is the name typed."
   },
   "names-view.preparing": {
     "message": "Preparing",

@@ -164,7 +164,7 @@ struct View {
 enum Req {
     Get([u8; 32]),
     History([u8; 32]),
-    Ids(u16),
+    Ids(u8),
     Put([u8; 32]),
 }
 
@@ -190,10 +190,6 @@ pub struct PutDone {
     pub result: PutResult,
 }
 
-/// The dialog's check of every id at once (in place of a first byte): a server learns nothing of the name being typed
-/// (review 2: each prefix's first byte told it the name a character at a time).
-pub const ALL_IDS: u16 = 256;
-
 /// What a server said to the dialog's check ([`Member::ids`]): the ids it holds under the first byte asked, each
 /// with until when its owner holds it (Unix seconds, 0: nobody now).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -209,8 +205,7 @@ pub enum IdsResult {
 /// never went out), what it said.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdsDone {
-    /// The first byte asked, or [`ALL_IDS`].
-    pub first: u16,
+    pub first: u8,
     pub server: Option<[u8; 32]>,
     pub result: IdsResult,
 }
@@ -248,8 +243,8 @@ pub struct Member {
     negative: BTreeMap<[u8; 32], Instant>,
     lookups: BTreeMap<[u8; 32], Lookup>,
     /// The `ids` checks wanted (first bytes), and what came back: the ids servers hold under each.
-    ids_wanted: BTreeSet<u16>,
-    pub ids_answers: BTreeMap<u16, BTreeMap<[u8; 32], u64>>,
+    ids_wanted: BTreeSet<u8>,
+    pub ids_answers: BTreeMap<u8, BTreeMap<[u8; 32], u64>>,
     /// Each server's answer to an `ids` check as it comes (a publisher's are `names-ids` events).
     pub ids_done: VecDeque<IdsDone>,
     /// Items waiting for servers to be put to (a publisher's), and the answers that came.
@@ -432,12 +427,9 @@ impl Member {
         self.dispatch(now);
     }
 
-    /// The `ids` check for a name being typed: every id under `first` (a first byte, or [`ALL_IDS`]: every id), from
-    /// each server.
-    pub fn ids(&mut self, first: u16, now: Instant) {
-        if first > ALL_IDS {
-            return;
-        }
+    /// The dialog's `ids` check, one a press of Register (the user's decision, 2026-11-17): every id under `first` (the
+    /// name's id's first byte, never the id), from each server.
+    pub fn ids(&mut self, first: u8, now: Instant) {
         self.ids_answers.remove(&first);
         self.ids_wanted.insert(first);
         self.dispatch(now);
@@ -489,11 +481,7 @@ impl Member {
         for first in std::mem::take(&mut self.ids_wanted) {
             let m = Msg::Get {
                 mode: GetMode::Ids,
-                id: if first == ALL_IDS {
-                    Vec::new()
-                } else {
-                    vec![first as u8]
-                },
+                id: vec![first],
                 zone: (0, [0; 4]),
                 held: Vec::new(),
             };
@@ -852,9 +840,8 @@ impl Member {
                 });
             }
             (Req::Ids(first), Msg::Ids(ids)) => {
-                let ids: Vec<([u8; 32], u64)> = (ids.into_iter())
-                    .filter(|(i, _)| first == ALL_IDS || i[0] as u16 == first)
-                    .collect();
+                let ids: Vec<([u8; 32], u64)> =
+                    ids.into_iter().filter(|(i, _)| i[0] == first).collect();
                 let got = self.ids_answers.entry(first).or_default();
                 for (i, until) in &ids {
                     let u = got.entry(*i).or_default();
