@@ -43,7 +43,7 @@ test('a claim is held back until anchored, then published; the next pass of the 
   assert.equal(st.entries[0].kind, 'claim');
   assert.equal(t.stamps[st.entries[0].id].length, 3);
   assert.equal(st.entries[0].pending, true);
-  assert.ok(st.zone && (st.zone.seq & 0xff) === t.zone.branch, 'the zone\'s seq carries the title\'s branch');
+  assert.ok(st.zone && Number(BigInt(st.zone.seq) & 0xffffffffn) === t.zone.branch, 'the zone\'s seq carries the title\'s branch');
   // Not anchored: a pass collects nothing (the proof is a 404 without CORS: a failed fetch) and publishes nothing.
   await agent.pass();
   assert.equal((await agent.titles())[0].state, 'reserved');
@@ -188,17 +188,43 @@ test('a title exported to another browser: the two copies never share a zone\'s 
   const [tb] = await b.store.titles(cb.identityKey);
   assert.equal(tb.item, ta.item, 'the title travels');
   assert.notEqual(tb.zone.branch, ta.zone.branch);
-  assert.ok(ta.zone.given.includes(tb.zone.branch), 'the branch given out is recorded');
   // Both change the zone from the same state (each its own content): their seqs differ.
   await a.agent.setZone(ca, 'forked', [{ label: null, key: '11'.repeat(32) }]);
   await b.agent.setZone(cb, 'forked', [{ label: null, key: '22'.repeat(32) }]);
   const za = (await statusOf(a.backend, (await a.store.titles(ca.identityKey))[0])).zone!;
   const zb = (await statusOf(b.backend, (await b.store.titles(cb.identityKey))[0])).zone!;
-  assert.equal(za.seq >>> 8, zb.seq >>> 8, 'the same count');
+  assert.equal(BigInt(za.seq) >> 32n, BigInt(zb.seq) >> 32n, 'the same count');
   assert.notEqual(za.seq, zb.seq, 'never the same seq');
-  // Exported again: yet another branch.
-  const again = JSON.parse(Buffer.from((await exportNames(a.store, ca.identityKey))!, 'base64url').toString()) as { titles: { zone: { branch: number } }[] };
-  assert.ok(![ta.zone.branch, tb.zone.branch].includes(again.titles[0].zone.branch));
+});
+
+test('one export pasted into two browsers: each copy a branch of its own, so their zones never share a seq', { skip, timeout: 60_000 }, async () => {
+  const a = await testAgent({ publish: fakePublish() });
+  const ca = conn('conn-paste-a');
+  cal.mine(7);
+  await a.agent.register(ca, 'pasted', point());
+  cal.mine(7);
+  await a.agent.pass(ca.identityKey);
+  const bundle = (await exportNames(a.store, ca.identityKey))!;
+  // The same text pasted twice (two browsers), and once more into a third connection of the second.
+  const copies = [];
+  for (const k of ['conn-paste-b', 'conn-paste-c']) {
+    const x = await testAgent({ publish: fakePublish() });
+    await importNames(x.store, k, bundle);
+    copies.push({ ...x, c: conn(k) });
+  }
+  await importNames(copies[1].store, 'conn-paste-d', bundle);
+  const [ta] = await a.store.titles(ca.identityKey);
+  const branches = [ta.zone.branch];
+  for (const x of copies) branches.push((await x.store.titles(x.c.identityKey))[0].zone.branch);
+  branches.push((await copies[1].store.titles('conn-paste-d'))[0].zone.branch);
+  assert.equal(new Set(branches).size, branches.length, `every copy a branch of its own: ${branches.join(', ')}`);
+  // Both pasted copies change the zone from the same state, each its own content: their seqs differ.
+  const seqs: string[] = [];
+  for (const [i, x] of copies.entries()) {
+    await x.agent.setZone(x.c, 'pasted', [{ label: null, key: `${i + 1}`.repeat(64) }]);
+    seqs.push(String((await statusOf(x.backend, (await x.store.titles(x.c.identityKey))[0])).zone!.seq));
+  }
+  assert.notEqual(seqs[0], seqs[1], 'never the same seq');
 });
 
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {

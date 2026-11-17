@@ -48,7 +48,7 @@ pub fn anchor_tag(s: &Stamped) -> [u8; 4] {
     }
 }
 
-pub fn zone_tag(z: Option<&Zone>) -> (u32, [u8; 4]) {
+pub fn zone_tag(z: Option<&Zone>) -> (u64, [u8; 4]) {
     match z {
         Some(z) => (z.seq, Sha256::digest(z.encode())[..4].try_into().unwrap()),
         None => (0, [0; 4]),
@@ -211,7 +211,7 @@ impl Held {
 
     /// What a holder of `held` (and of a zone tagged `zone`) lacks: entries it hasn't, those whose
     /// anchor differs, the zone if ours differs.
-    pub fn lacking(&self, held: &[HeldTag], zone: (u32, [u8; 4])) -> Item {
+    pub fn lacking(&self, held: &[HeldTag], zone: (u64, [u8; 4])) -> Item {
         let theirs: BTreeMap<[u8; 8], [u8; 4]> = held.iter().copied().collect();
         let entries = self
             .name
@@ -236,7 +236,7 @@ impl Held {
     pub fn owner_answer(
         &self,
         held: &[HeldTag],
-        zone: (u32, [u8; 4]),
+        zone: (u64, [u8; 4]),
         history: bool,
     ) -> Option<Item> {
         let o = self.owner.as_ref()?;

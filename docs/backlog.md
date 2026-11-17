@@ -1566,9 +1566,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
     ~1,400 newer generic ones (`app`, `dev`, …): words people want as names, which a guest asks under the room's
     domain only after the name itself failed. Compile them if a guest turns out to ask them unprompted.
-  - Done (N4c): a zone's `seq` is `n << 8 | branch`, each copy of a title a branch of its own (an export gives one out
-    and records it). Left: the same export text pasted into two browsers gives both one branch (the exporter gives a
-    fresh one each time the export is made, not each time it is pasted); copying it twice is the user's doing.
+  - Done (N4c, N4d): a zone's `seq` is `n << 32 | branch`, each copy of a title a branch of its own, 32 random bits
+    drawn at registration and by every copy taken in from an export, so one export pasted twice gives two branches.
+    Titles kept with N4c's one-byte branch (and their items' 4-byte zones) are refused now: rooms are pre-release.
   - Servers keep one chain a name, the owner's (N2, room-names.md "Servers"), so a back-order (a younger chain alive
     beside the owner) isn't carried: when the holder lapses it owns the name by the rule, but servers have it only
     once its owner's agent puts it again. Done (N4c): the agent puts each public title once a visit and an hour, not
@@ -1629,9 +1629,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
     - Done (N4c): the agent signs every pending anchor (`ts_names_pending`), and the rig test sees servers hold it.
   - The names agent's loose ends (N4c, room-names.md "The names agent"):
-    - Servers don't finish pending renewals at the calendars (the spec's "Who talks to a calendar"): a renewal's anchor
-      reaches the room when its owner's agent collects it at a later visit. One short visit then isn't enough; two are
-      (renewing at half a term leaves two weeks for the second). Building it adds calendar fetches from servers' pages.
+    - **Servers don't finish pending renewals at the calendars, and that waits for the user** (N4d, the spec's "Who
+      talks to a calendar"): a renewal's anchor reaches the room when its owner's agent collects it at a later visit, so
+      one short visit isn't enough; two are (renewing at half a term leaves two weeks for the second). Why it wasn't
+      built: a calendar's finished proof is only the path to a block's Merkle root and a height; since N4b an anchor
+      counts only with its block's header and the six after it, which only an explorer serves, and decision 4 lets
+      servers ask calendars alone (members nothing; the agent an explorer, for its own anchors). So a server could
+      fetch the proof but not make it an anchor the room can check. The ways, for the user:
+      1. Servers (their page, through the room's worker) also ask an explorer, only after a calendar finished a
+         renewal they hold: the block by the proof's height (`block-height/<h>`, its header checked against the
+         proof's Merkle root) and the six after it, ~9 GETs a finished renewal for each server that asks, under the
+         same chance and backoff as the calendar's. The same new use of an explorer the forged-run spot checks above
+         need, so one decision could cover both.
+      2. Only what the room has: servers finish at the calendars and complete a proof from a run some item already
+         carries (another entry anchored in the same block: a calendar puts an hour's stamps in one transaction). Helps
+         busy rooms; in a quiet one it adds calendar traffic for nothing.
+      3. As now: the owner's agent at its next visit; the dialog (N5) says to open the page again within two weeks,
+         which decision 13 already asks.
     - Deleting a room connection leaves its owners' secret and titles in `waarm64-room` (`owner`, `titles`): a title is
       the only copy of ownership, so nothing deletes one silently. Delete (N5) should say so and offer the export.
     - An ephemeral room connection's titles go to IndexedDB all the same (under its id): register on one should be

@@ -213,7 +213,7 @@ test('rooms: a connection\'s export carries its names (the owners\' secret and t
   await a.names.addSecret(c.room!.identityKey, '5'.repeat(64));
   const title: TitleRecord = {
     identityKey: c.room!.identityKey, room: 'lobby', link, name: 'test123', item: '02aa', stamps: {}, collect: {},
-    points: [{ label: null, key: 'ab'.repeat(32) }], zone: { n: 3, branch: 9, given: [] }, made: 1,
+    points: [{ label: null, key: 'ab'.repeat(32) }], zone: { n: 3, branch: 9 }, made: 1,
   };
   await a.names.put(title);
   const exported = await a.conns.exportKey(c);
@@ -230,7 +230,7 @@ test('rooms: a connection\'s export carries its names (the owners\' secret and t
   assert.equal(got.item, title.item);
   assert.equal(got.name, 'test123');
   assert.notEqual(got.zone.branch, 9, 'a branch of its own');
-  assert.deepEqual((await a.names.titles())[0].zone.given, [got.zone.branch], 'given out by the one exported');
+  assert.equal((await a.names.titles())[0].zone.branch, 9, 'the exported one keeps its own');
   assert.equal(parseRoomExport('zz'), undefined);
   assert.deepEqual(parseRoomExport(` ${'AB'.repeat(32)} `), { key: 'ab'.repeat(32) });
 });

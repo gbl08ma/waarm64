@@ -168,7 +168,8 @@ struct In {
     anchor: Option<String>,
     #[serde(default)]
     headers: Vec<String>,
-    seq: Option<u32>,
+    /// A zone's `seq`, in decimal: it is 64 bits, past what a JavaScript number holds.
+    seq: Option<String>,
     #[serde(default)]
     points: Vec<Point>,
     #[serde(default)]
@@ -347,7 +348,9 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
                 &names,
                 &k,
                 i.name()?,
-                *need(&i.seq, "seq")?,
+                need(&i.seq, "seq")?
+                    .parse::<u64>()
+                    .map_err(|_| "seq".to_string())?,
                 &points,
                 i.wide,
             )
@@ -417,7 +420,7 @@ pub fn status(item: &Item, params: &Params, now: u64) -> Value {
         "entries": entries,
         "owner": owner.map(chain_json),
         "best": best.map(chain_json),
-        "zone": item.zone.as_ref().map(|z| json!({ "seq": z.seq, "owner": hex(&z.owner) })),
+        "zone": item.zone.as_ref().map(|z| json!({ "seq": z.seq.to_string(), "owner": hex(&z.owner) })),
         "term": params.term,
         "grace": params.grace,
         "refWindow": params.ref_window,
@@ -745,12 +748,12 @@ mod tests {
         let node = "ab".repeat(32);
         let z = ok(
             "zone",
-            json!({ "room": ROOM, "secret": secret, "name": "zoned", "seq": 0x1234_5601u32, "item": item,
+            json!({ "room": ROOM, "secret": secret, "name": "zoned", "seq": 0x1234_5678_9abc_def0u64.to_string(), "item": item,
                     "points": [{ "label": null, "key": node }, { "label": "git", "key": node }] }),
         );
         let it = read_item(z["item"].as_str().unwrap()).unwrap();
         let zone = it.zone.clone().unwrap();
-        assert_eq!(zone.seq, 0x1234_5601);
+        assert_eq!(zone.seq, 0x1234_5678_9abc_def0);
         let names = RoomNames::derive(ROOM);
         assert!(zone.verify(&names));
         assert_eq!(

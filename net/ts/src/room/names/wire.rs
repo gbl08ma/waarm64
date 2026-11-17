@@ -40,7 +40,7 @@ pub const MAX_MESSAGE: usize = 1 << 20;
 /// The most entries an item may carry.
 pub const MAX_ENTRIES: usize = 1024;
 /// 2: an anchor's block's header comes with the six after it.
-const ITEM_VERSION: u8 = 2;
+const ITEM_VERSION: u8 = 3;
 /// The most followers an anchor's block may list on the wire (a run is checked for exactly [`FOLLOWERS`]).
 const MAX_FOLLOWERS: usize = 2 * FOLLOWERS;
 
@@ -399,7 +399,7 @@ pub enum Msg {
         mode: GetMode,
         id: Vec<u8>,
         /// The asker's zone's `seq` and 4 bytes of its hash (zeros: none).
-        zone: (u32, [u8; 4]),
+        zone: (u64, [u8; 4]),
         held: Vec<Held>,
     },
     /// A `get`'s answer: what the asker lacks of each item asked (none: an empty list).
@@ -480,7 +480,7 @@ impl Msg {
                 o.push(*mode as u8);
                 o.push(id.len() as u8);
                 o.extend_from_slice(id);
-                w32(&mut o, zone.0);
+                o.extend_from_slice(&zone.0.to_le_bytes());
                 o.extend_from_slice(&zone.1);
                 w16(&mut o, held.len());
                 for (i, a) in held {
@@ -579,7 +579,7 @@ impl Msg {
                     return Err(Invalid::Encoding);
                 }
                 let id = r.take(n)?.to_vec();
-                let zone = (r.u32()?, r.a()?);
+                let zone = (r.u64()?, r.a()?);
                 let k = r.u16()? as usize;
                 let held = (0..k)
                     .map(|_| Ok((r.a()?, r.a()?)))

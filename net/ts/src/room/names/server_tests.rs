@@ -212,7 +212,7 @@ fn items_messages_and_transfers_round_trip() {
                 + 6 * 2
                 + 2)
             + 2
-            + 362
+            + 366
     );
     for m in [
         Msg::Put(item.clone()),

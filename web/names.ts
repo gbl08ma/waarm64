@@ -62,9 +62,10 @@ export type TitleRecord = {
   /** When an entry may be made again (one that couldn't be stamped, or came too late). */
   remake?: { next: number; tries: number };
   points: ZonePoint[];
-  /** A zone's `seq` is `n << 8 | branch`: `n` counts up in this browser, `branch` is this copy of the title's, never
-   * another's (an export takes a fresh one: `given`), so a title forked between two browsers never reuses a `seq`. */
-  zone: { n: number; branch: number; given: number[] };
+  /** A zone's `seq` (64 bits) is `n << 32 | branch`: `n` counts up past every `seq` the title has seen, `branch` is
+   * this copy's, 32 random bits drawn when the title was registered or taken in from an export (each paste draws its
+   * own), so two copies of a title, however made, share one with a chance of 2^-32 a pair. */
+  zone: { n: number; branch: number };
   /** A better chain of another key's owns the name (its owner key): renewal stops. */
   lost?: { at: number; by: string };
   /** Let go: a release was made. */
@@ -100,7 +101,8 @@ export type TitleView = {
 
 type Chain = { ids: string[]; owner: string; seniority: number; resolveEnd: number; coverEnd: number; released: boolean };
 type EntryStatus = { id: string; kind: 'claim' | 'renew' | 'release'; prev: string; owner: string; time: number | null; refTime: number; windowEnd: number; stale: boolean; pending: boolean };
-export type TitleStatus = { id: string; entries: EntryStatus[]; owner: Chain | null; best: Chain | null; zone: { seq: number; owner: string } | null; term: number; grace: number };
+/** `zone.seq` in decimal: 64 bits, past what a number holds. */
+export type TitleStatus = { id: string; entries: EntryStatus[]; owner: Chain | null; best: Chain | null; zone: { seq: string; owner: string } | null; term: number; grace: number };
 type Judged = { verdict: 'ours' | 'branch' | 'lost' | 'none'; item: string; by?: string; pending: boolean };
 
 // ---- Storage ----
@@ -292,7 +294,7 @@ export class NamesAgent {
     if (have && !have.lost && !have.released && (await this.view(have)).state !== 'lapsed') throw new NamesError('Held');
     const t: TitleRecord = {
       identityKey: c.identityKey, room, link: c.link, name, item: '', stamps: {}, collect: {}, points,
-      zone: { n: 0, branch: crypto.getRandomValues(new Uint8Array(1))[0], given: [] }, made: Date.now(),
+      zone: { n: 0, branch: newBranch() }, made: Date.now(),
     };
     await this.store.put(t);
     const k = titleKey(t);
@@ -392,8 +394,8 @@ export class NamesAgent {
 
   // ---- A connection's export ----
 
-  /** Connection `identityKey`'s owners' secret and titles, for its export (web/app/connections.ts): each title with a
-   * branch of its own (`zone`), so the copy made from it never reuses a zone's `seq` this one uses. */
+  /** Connection `identityKey`'s owners' secret and titles, for its export (web/app/connections.ts); each copy taken in
+   * from it draws a branch of its own (`importNames`), so no two reuse a zone's `seq`. */
   exportNames(identityKey: string): Promise<string | undefined> {
     return exportNames(this.store, identityKey);
   }
@@ -565,10 +567,10 @@ export class NamesAgent {
     this.log(`${t.name}: ${kind} ${id.slice(0, 8)} made, stamped at ${stamps.length} calendar(s)`);
   }
 
-  /** The next zone `seq` for title `t`: past every one it has seen, with its own branch in the low byte. */
-  private nextSeq(t: TitleRecord, seen: number | undefined): number {
-    t.zone.n = Math.max(t.zone.n, (seen ?? 0) >>> 8) + 1;
-    return ((t.zone.n << 8) | t.zone.branch) >>> 0;
+  /** The next zone `seq` for title `t` (decimal): past every one it has seen, with its own branch in the low half. */
+  private nextSeq(t: TitleRecord, seen: string | undefined): string {
+    t.zone.n = Math.max(t.zone.n, Number(BigInt(seen ?? 0) >> 32n)) + 1;
+    return ((BigInt(t.zone.n) << 32n) | BigInt(t.zone.branch >>> 0)).toString();
   }
 
   /** Item `item` of title `t` with a new zone sealed for `t.points`. */
@@ -728,7 +730,11 @@ export function roomOf(link: string): string {
 
 // ---- Export and import (with a room connection's key) ----
 
-type Bundle = { v: 1; secret: string; titles: Omit<TitleRecord, 'identityKey'>[] };
+/** An export's names. Version 2: zones' 64-bit `seq` (rooms are pre-release: a version 1 bundle is refused). */
+type Bundle = { v: 2; secret: string; titles: Omit<TitleRecord, 'identityKey'>[] };
+
+/** A copy's branch of a title's zone `seq`: 32 random bits. */
+export const newBranch = () => crypto.getRandomValues(new Uint32Array(1))[0];
 
 function b64url(b: Uint8Array): string {
   let s = '';
@@ -741,34 +747,32 @@ function unb64url(s: string): Uint8Array {
   return Uint8Array.from(t, (c) => c.charCodeAt(0));
 }
 
-/** Connection `identityKey`'s owners' secret and titles as text (base64url of JSON), or undefined without a secret. Each
- * title exported gets a branch for the copy (recorded in this one's `given`), so the two never share a zone's `seq`. */
+/** Connection `identityKey`'s owners' secret and titles as text (base64url of JSON), or undefined without a secret.
+ * Nothing is written: each copy made from the text draws a branch of its own when it is taken in (`importNames`). */
 export async function exportNames(store: NamesStore, identityKey: string): Promise<string | undefined> {
   const secret = await store.secret(identityKey);
   if (!secret) return undefined;
   const titles: Bundle['titles'] = [];
   for (const t of await store.titles(identityKey)) {
-    const used = new Set([t.zone.branch, ...t.zone.given]);
-    let branch = crypto.getRandomValues(new Uint8Array(1))[0];
-    for (let k = 0; used.has(branch) && k < 256; k++) branch = (branch + 1) & 255;
-    t.zone.given.push(branch);
-    await store.put(t);
-    const copy: Partial<TitleRecord> = { ...t, zone: { n: t.zone.n, branch, given: [...used, branch] } };
+    const copy: Partial<TitleRecord> = { ...t };
     delete copy.identityKey;
     titles.push(copy as Bundle['titles'][number]);
   }
-  return b64url(new TextEncoder().encode(JSON.stringify({ v: 1, secret, titles } satisfies Bundle)));
+  return b64url(new TextEncoder().encode(JSON.stringify({ v: 2, secret, titles } satisfies Bundle)));
 }
 
 /** Takes an export's secret and titles as connection `identityKey`'s (a title it holds already: the two merge as a
- * server would, by the module, at the next pass's publish; here the one kept stays). */
+ * server would, by the module, at the next pass's publish; here the one kept stays). Every title taken in is a copy of
+ * its own, so it draws a fresh branch: the same text pasted twice gives two branches, never the exporter's. */
 export async function importNames(store: NamesStore, identityKey: string, bundle: string): Promise<void> {
   const b = JSON.parse(new TextDecoder().decode(unb64url(bundle))) as Bundle;
-  if (b.v !== 1 || !/^[0-9a-f]{64}$/.test(b.secret)) throw new NamesError('Bundle');
+  if (b.v !== 2 || !/^[0-9a-f]{64}$/.test(b.secret)) throw new NamesError('Bundle');
   await store.addSecret(identityKey, b.secret);
   for (const t of b.titles) {
     if (await store.get(identityKey, t.room, t.name)) continue;
-    await store.put({ ...t, identityKey });
+    let branch = newBranch();
+    while (branch === t.zone.branch) branch = newBranch();
+    await store.put({ ...t, identityKey, zone: { n: t.zone.n, branch } });
   }
 }
 

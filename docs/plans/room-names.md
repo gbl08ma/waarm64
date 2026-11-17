@@ -109,7 +109,8 @@ No record, message or stored registry holds a name in words. Three things do it:
   holder sees neither how many labels a name has nor where any points. Whoever knows the name opens its slot; the
   owner's signature is over the sealed bytes, so anyone can check a zone without reading it. Two zones of one title
   with the same `seq` and different contents would reuse a key: the agent never makes two (a fork of a title, two
-  browsers changing a zone, could: each copy has a branch of its own in `seq`'s low byte, "The names agent").
+  browsers changing a zone, could: each copy has a branch of its own, 32 random bits in `seq`'s low half, "The names
+  agent").
 - **An owner key per name**, so a registry doesn't show that five ids are one person's.
 
 **What a server still learns:** how many names the room has; each id's owner key and the times of its entries (an
@@ -192,7 +193,7 @@ the entry is anchored, when an anchored entry follows it, and once its entry cou
 time plus `REF_WINDOW` plus 4 hours (a block's time can trail the moment it is mined, and a calendar serves the proof
 six blocks later), when the entry, still unanchored, is dropped too.
 
-**Zone** (362 bytes with 4 slots, 1,034 with 16): version, room, name id, owner, `seq` (4), the slots (56 each), a
+**Zone** (366 bytes with 4 slots, 1,038 with 16): version (2), room, name id, owner, `seq` (8), the slots (56 each), a
 signature. An address is computed from the node key a slot opens to, as today, and the resolver's answer teaches the
 module the key, so lookups to a named machine are sealed to it as lookups to a key name are. The highest `seq` wins
 (equal: the lower hash). A zone needs no anchor: only the owner can write it, so there is nothing to order. A server
@@ -313,10 +314,16 @@ once.
   block's and the six after it (Esplora's `block/<hash>/status` names the next block, `block/<hash>/header` gives a
   header; a calendar serves a proof at six confirmations, the block and five after it, so the sixth may take one block
   more). The tests' pretend explorer (tests/net/ots-calendar.ts) answers both.
-- **Who talks to a calendar**: the agent, to stamp and to collect; and servers, to finish a pending renewal they hold
-  (each asks only with a chance set by a hash of the entry and its own key, and backs off, so a room's servers
-  together ask a calendar a few times an hour for an entry, not each every minute). Not built yet (docs/backlog.md):
-  a renewal's anchor reaches the room when its owner's agent collects it at a later visit.
+- **Who talks to a calendar**: the agent, to stamp and to collect. Servers finishing a pending renewal they hold (each
+  asking only with a chance set by a hash of the entry and its own key, backing off) is **not built, and waits for the
+  user** (N4d): a calendar's finished proof reaches only the block's Merkle root and names a height, and since N4b an
+  anchor counts only with its block's header and the six after it, which a calendar doesn't serve and only an explorer
+  does; only the agent asks an explorer, for its own anchors (above; decision 4: servers use calendars alone, members
+  nothing). A server holding a finished proof could complete it only from a run some item in the room already carries
+  (another entry anchored in the same block), which a quiet room lacks; members may ask nobody; so every way that
+  makes one short visit enough has some page other than the owner's ask an explorer for another's anchor.
+  docs/backlog.md has the options. Until then a renewal's anchor reaches the room when its owner's agent collects it at
+  a later visit (renewal at half a term leaves two weeks for it).
 - A block that was orphaned still passes (its work was real) and its time is as good; a stale tip in `ref` would
   cost a re-mine, hence 6 deep.
 - The OpenTimestamps libraries are LGPL: nothing is copied from them; the verifier is written from the format
@@ -617,9 +624,13 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
 - **When the connection's room runs**, the node is a server: the room's worker gives the module the connection's titles
   in its config (`room.names.titles`, each the owner key derived from the secret and the item) and again as they change
   (the agent's BroadcastChannel `waarm64-names`; `ts_room_names_titles`: a member given titles becomes a server).
-- **A zone's `seq`** is `n << 8 | branch`: `n` counts up past every `seq` the title has seen, `branch` is this copy's
-  byte; an export gives the copy a branch the title hasn't used and records it (`zone.given`), so two copies of one
-  title never make two zones with one `seq` (which would reuse a seal's key: "Names nobody lists").
+- **A zone's `seq`** (64 bits) is `n << 32 | branch`: `n` counts up past every `seq` the title has seen, `branch` is
+  this copy's, 32 random bits drawn when the title is registered and again by **every copy taken in** from an export
+  (`importNames`; the export itself writes nothing), so the same text pasted into two browsers gives two branches. Two
+  copies share a branch with a chance of 2^-32 a pair, and only then could they make two zones with one `seq` (which
+  would reuse a seal's key: "Names nobody lists"). Why 32 bits (N4d): with N4c's one byte, a branch drawn at each paste
+  would collide one pair in 256; one given out by the exporter can't tell two pastes of one export apart. The zone's
+  version byte is 2, items' 3 and an export's names' `v` 2 since (pre-release: older ones are refused).
 - **The services are compiled in** (web/names.ts `CALENDARS`, the module's order and URLs, and `EXPLORERS`,
   blockstream.info's and mempool.space's Esplora APIs): the agent fetches nothing else (its `get` refuses another URL),
   a pending anchor names its calendar by index, a receipt's own URI is never fetched, and no link, option or stored

@@ -1,6 +1,6 @@
 //! Zones (room-names.md "Names nobody lists", "Records"): where a name points, a signed, numbered
-//! record replaced whole. Version, room, name id, owner, `seq` (4 bytes), 4 or 16 slots of 56
-//! bytes, a signature: 362 or 1,034 bytes.
+//! record replaced whole. Version (2), room, name id, owner, `seq` (8 bytes), 4 or 16 slots of 56
+//! bytes, a signature: 366 or 1,038 bytes.
 //!
 //! A slot is an 8-byte tag and a node key sealed with ChaCha20-Poly1305 (32 bytes and its 16-byte
 //! tag), the tag and the AEAD's key both derived from the room's seal key, the name id, the owner
@@ -20,20 +20,23 @@ use sha2::{Digest, Sha256};
 
 use super::{
     Invalid, arr,
-    entry::{VERSION, sign, tagged, verify},
+    entry::{sign, tagged, verify},
     id::{RoomNames, acceptable, keyed, split},
 };
 
 pub const SLOT_LEN: usize = 56;
+/// A zone's version byte: 2 since `seq` took 8 bytes (each copy of a title a 32-bit branch in its low half: the
+/// names agent).
+pub const ZONE_VERSION: u8 = 2;
 /// Version, room, name id, owner, `seq`.
-const HEAD_LEN: usize = 1 + 5 + 32 + 32 + 4;
+const HEAD_LEN: usize = 1 + 5 + 32 + 32 + 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Zone {
     pub room: [u8; 5],
     pub name: [u8; 32],
     pub owner: [u8; 32],
-    pub seq: u32,
+    pub seq: u64,
     pub slots: Vec<[u8; SLOT_LEN]>,
     pub sig: [u8; 64],
 }
@@ -46,7 +49,7 @@ fn slot_keys(
     full: &str,
     name: &[u8; 32],
     owner: &[u8; 32],
-    seq: u32,
+    seq: u64,
 ) -> ([u8; 8], [u8; 32]) {
     let s = seq.to_le_bytes();
     let tag = keyed(&names.seal, &[b"tag", name, owner, &s, full.as_bytes()]);
@@ -57,11 +60,11 @@ fn slot_keys(
 impl Zone {
     fn head(&self) -> [u8; HEAD_LEN] {
         let mut h = [0u8; HEAD_LEN];
-        h[0] = VERSION;
+        h[0] = ZONE_VERSION;
         h[1..6].copy_from_slice(&self.room);
         h[6..38].copy_from_slice(&self.name);
         h[38..70].copy_from_slice(&self.owner);
-        h[70..74].copy_from_slice(&self.seq.to_le_bytes());
+        h[70..78].copy_from_slice(&self.seq.to_le_bytes());
         h
     }
 
@@ -71,7 +74,7 @@ impl Zone {
         names: &RoomNames,
         key: &SigningKey,
         name: &str,
-        seq: u32,
+        seq: u64,
         points: &[(Option<&str>, [u8; 32])],
         wide: bool,
     ) -> Result<Zone, Invalid> {
@@ -175,14 +178,14 @@ impl Zone {
             Some((n @ (4 | 16), 0)) => n,
             _ => return Err(Invalid::Encoding),
         };
-        if b[0] != VERSION {
+        if b[0] != ZONE_VERSION {
             return Err(Invalid::Encoding);
         }
         Ok(Zone {
             room: arr(b, 1),
             name: arr(b, 6),
             owner: arr(b, 38),
-            seq: u32::from_le_bytes(arr(b, 70)),
+            seq: u64::from_le_bytes(arr(b, 70)),
             slots: (0..slots)
                 .map(|i| arr(b, HEAD_LEN + i * SLOT_LEN))
                 .collect(),
@@ -217,14 +220,14 @@ mod tests {
         )
         .unwrap();
         let b = z.encode();
-        assert_eq!(b.len(), 362);
+        assert_eq!(b.len(), 366);
         assert_eq!(Zone::decode(&b), Ok(z.clone()));
         assert!(z.verify(&names));
         assert_eq!(z.open(&names, "test123"), Some([0xaa; 32]));
         assert_eq!(z.open(&names, "git.test123"), Some([0xbb; 32]));
         assert_eq!(z.open(&names, "www.test123"), None);
         let w = Zone::seal(&names, &key, "test123", 8, &[(None, [0xaa; 32])], true).unwrap();
-        assert_eq!(w.encode().len(), 1034);
+        assert_eq!(w.encode().len(), 1038);
         assert_eq!(Zone::decode(&w.encode()), Ok(w.clone()));
         // Signed over the sealed bytes: a slot changed, the signature fails; another room's
         // value too.
@@ -234,7 +237,7 @@ mod tests {
         let mut other = RoomNames::derive("other");
         other.room = names.room;
         assert!(!z.verify(&other));
-        assert!(Zone::decode(&b[..361]).is_err());
+        assert!(Zone::decode(&b[..365]).is_err());
         assert!(
             Zone::decode(&[&b[..], &[0; 56]].concat()).is_err(),
             "5 slots"
@@ -292,6 +295,34 @@ mod tests {
         let mut later = z.clone();
         later.seq = 4;
         assert_eq!(later.open(&names, "alpha"), None);
+        // `seq` is 64 bits, a copy's branch in the low half: two branches at one count seal under different keys
+        // and tags (only the high half differing as well).
+        let at = |seq: u64| {
+            let x = Zone::seal(&names, &key, "alpha", seq, &[(None, [0xaa; 32])], false).unwrap();
+            (x.open(&names, "alpha"), x)
+        };
+        let (a, za) = at((5 << 32) | 0x8000_0001);
+        let (b, zb) = at((5 << 32) | 0x0000_0001);
+        let (c, zc) = at((6 << 32) | 0x8000_0001);
+        assert_eq!(
+            (a, b, c),
+            (Some([0xaa; 32]), Some([0xaa; 32]), Some([0xaa; 32]))
+        );
+        let tags = |z: &Zone| z.slots.iter().map(|s| s[..8].to_vec()).collect::<Vec<_>>();
+        for (x, y) in [(&za, &zb), (&za, &zc), (&zb, &zc)] {
+            assert!(
+                tags(x).iter().all(|t| !tags(y).contains(t)),
+                "a tag shared across seqs"
+            );
+        }
+        // A zone of the 4-byte `seq` (version 1, 362 bytes) is refused.
+        let mut old = z.encode();
+        old[0] = 1;
+        old.drain(74..78);
+        assert_eq!(Zone::decode(&old), Err(Invalid::Encoding));
+        let mut v1 = z.encode();
+        v1[0] = 1;
+        assert_eq!(Zone::decode(&v1), Err(Invalid::Encoding));
         let other = RoomNames::derive("another zone room");
         assert_eq!(z.open(&other, "alpha"), None);
         // The used slots look like the unused: no tag repeats across versions.

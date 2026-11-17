@@ -38,7 +38,7 @@ struct TitleSpec {
 
 #[derive(Deserialize)]
 struct ZoneSpec {
-    seq: u32,
+    seq: u64,
     points: Vec<Point>,
 }
 
