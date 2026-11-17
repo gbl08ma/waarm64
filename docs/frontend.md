@@ -1747,7 +1747,8 @@ comes back detached, saying so. Any machine can use a kept connection; one runni
 Lock, `waarm64-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:network-actions.useHere), takes it
 (the other disconnects and says it was taken). Two connections to one tailnet are two nodes.
 
-The toolbar's **Network** buttons (`Network.svelte`): where the toolbar keeps to one row with them, each adapter of the
+The toolbar's **Network** buttons (`Network.svelte`), shown once the machine has started (before that its adapters
+aren't known and the menu would be empty), like the other menus with nothing to show: where the toolbar keeps to one row with them, each adapter of the
 page's machine has its own, with its state's light and its number (1–4), and its menu holds that adapter alone (adapter
 1's is `#network`, adapter n's `#network-<n-1>`); where they'd take the toolbar onto a second row, one button's menu
 (`#network`) has a section per adapter. `Toolbar.svelte`'s `fits` decides from its children's widths (the adapters'

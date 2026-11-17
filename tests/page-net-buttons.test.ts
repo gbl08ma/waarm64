@@ -2,7 +2,7 @@
 // stored machine with four adapters and a blank disk (the firmware runs, no guest): a button per adapter, each with
 // its number, where the toolbar keeps to one row with them, its menu that adapter's alone; one button with every
 // adapter's section where they'd wrap; and a menu's panel that ends inside the window, scrolling its contents, the page
-// not scrolling.
+// not scrolling. Before a machine's first start (no disk: it waits) its adapters aren't known: no Network button.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -25,20 +25,20 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-/** A stored machine with four adapters and a blank disk, made through the page's own code. */
-function seed(page: Page): Promise<string> {
-  return page.evaluate(async (modules) => {
+/** A stored machine with four adapters and a blank disk (`disk` false: none), made through the page's own code. */
+function seed(page: Page, disk = true): Promise<string> {
+  return page.evaluate(async ([modules, disk]) => {
     const { Store } = await import(modules[0]) as typeof import('../web/app/store.ts');
     const { attach, createDisk, createMachine, updateMachine, withAdapter } = await import(modules[1]) as typeof import('../web/app/machines.ts');
     const store = await Store.open();
     let m = await createMachine(store, { name: 'Four adapters', ncpus: 1, ramMiB: 256, display: '2d', usb: false });
-    await attach(store, m, await createDisk(store, { kind: 'blank', size: 64 << 20, name: 'Four disk' }));
+    if (disk) await attach(store, m, await createDisk(store, { kind: 'blank', size: 64 << 20, name: 'Four disk' }));
     m = (await store.get('machines', m.id))!;
     for (let i = 0; i < 4; i++) m = withAdapter(m);
     await updateMachine(store, m);
     store.close();
     return m.id;
-  }, ['/web/app/store.ts', '/web/app/machines.ts']);
+  }, [['/web/app/store.ts', '/web/app/machines.ts'], disk] as const);
 }
 
 /** The toolbar's network menus: their ids, the number on their buttons, the adapters' sections each holds, and open. */
@@ -106,6 +106,19 @@ test('the Network buttons: one per adapter where they fit, one for all where the
   // Wide again: a button each.
   await page.setViewportSize({ width: 1800, height: 900 });
   await page.waitForFunction(() => document.querySelectorAll('header.toolbar > [data-net-menu]').length === 4, null, { timeout: 5_000 });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('no Network button before the machine first starts: its adapters are not known yet', { skip, timeout: 60_000 }, async () => {
+  const page = await browser.newPage({ viewport: { width: 1800, height: 900 } });
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(`${base}/web/app/`);
+  const id = await seed(page, false);
+  await page.goto(`${base}/web/app/?m=${id}`);
+  await page.waitForFunction(() => document.getElementById('state')?.dataset.state === 'idle', null, { timeout: 30_000 });
+  assert.equal(await page.locator('header.toolbar > [data-net-menu]').count(), 0, 'no Network button');
   assert.deepEqual(errors, []);
   await page.close();
 });

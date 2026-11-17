@@ -135,7 +135,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
   await answerAsks(page, (q) => { dialogs.push(q.text); });
   try {
     await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
-    assert.equal(await visible(page, '#network'), true, 'Debian can have a card');
+    await page.locator('#network').waitFor({ state: 'visible', timeout: 60_000 }); // Debian can have a card (once it starts)
     await page.locator('#network summary').click();
     assert.match(await text(page, '#net-status'), words('network:network-view.notConnected'));
     assert.equal(await text(page, '#net-setup'), t('network:NetAdapter.setup'));

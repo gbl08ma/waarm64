@@ -61,7 +61,10 @@
   let bar = $state<HTMLElement>();
   /** The adapters' buttons' widths together, as last measured, and how many they were. */
   let measured = { width: 0, count: 0 };
-  /** The adapters' buttons beside the single one's, in its place: none when there's one adapter. */
+  /**
+   * The machine's adapters, as buttons beside the single one's or sections in its menu. None before its first start (no
+   * adapter is known yet): no Network button then, like the other menus with nothing to show.
+   */
   const adapters = $derived(current.hasNetwork ? net.views().length : 0);
 
   /**
@@ -222,7 +225,7 @@
   />
   <span class="sep"></span>
   <Sound {audio} />
-  {#if current.hasNetwork}<Network {net} {split} />{/if}
+  {#if adapters}<Network {net} {split} />{/if}
   {#if usb.on}<UsbMenu />{/if}
   {#if folders.running}<FoldersMenu {folders} />{/if}
   {#if clipboard.on && running}<ClipboardMenu />{/if}
