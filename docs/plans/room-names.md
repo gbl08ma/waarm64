@@ -623,7 +623,10 @@ anchors of each unanchored entry, the zone's points and counter, the backoffs, l
 copy of ownership**: registering asks the browser for persistent storage (`navigator.storage.persist()`), and deleting
 the connection says so and shows its export (N5; the dialog doesn't: decision 6 allows it two notices). **A connection's export carries its names**: `<node key>.<base64url of the secret and the
 titles>` (web/app/room-export.ts, web/names.ts `exportNames`, `parseRoomExport`), and a connection made from a pasted
-export takes them as its own (`importNames`). The module does the work (`ts_names_*`, pure: JSON in and out; make, mine
+export takes them as its own (`importNames`); a connection that has an owners' secret already keeps it, and each title
+taken in keeps the bundle's with it (`TitleRecord.secret`), so that its renewals and zones are signed by its own owner
+key (review 2's finding 11: they were the connection's, which broke the chain), and the agent renews a chain only with
+the key its title's secret derives. The module does the work (`ts_names_*`, pure: JSON in and out; make, mine
 in slices of 256 tries, sign and check an entry; a calendar's receipt made a pending anchor the owner key signs; the
 commitment to ask for and a finished proof's anchors; an anchor taken with its seven headers; a zone; a title's status;
 a server's better item judged), in a worker of its own for proof of work (production: 3 to 64 s an entry in Chromium,

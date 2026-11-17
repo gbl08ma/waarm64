@@ -425,6 +425,33 @@ test('Let it go while a renewal waits for its anchor: the renewal goes, and a re
   assert.ok(r2 && t.stamps[r2.id]?.length, `made again: ${log.join('\n')}`);
 });
 
+test('an export pasted into a connection that has an owners\' secret already: its titles keep their own (review 2, finding 11)', { skip, timeout: 60_000 }, async () => {
+  const log: string[] = [];
+  // Browser B's connection holds a name of its own, so it has a secret.
+  const b = await testAgent({ publish: fakePublish(), log });
+  const cb = conn('conn-has-secret');
+  cal.mine(7);
+  await b.agent.register(cb, 'bsown', point());
+  const before = await b.store.secret(cb.identityKey);
+  // Browser A's title, claimed 16 days ago (its renewal due), exported before A collected it.
+  const a = await testAgent({ publish: fakePublish() });
+  const ca = conn('conn-a-export');
+  refAt(cal, nowS() - 16 * DAY);
+  await a.agent.register(ca, 'moved', point());
+  cal.mine(7, nowS() - 16 * DAY + 3600);
+  cal.mine(7);
+  await importNames(b.store, cb.identityKey, (await exportNames(a.store, ca.identityKey))!);
+  assert.equal(await b.store.secret(cb.identityKey), before, 'the connection keeps its secret');
+  await b.agent.pass(cb.identityKey);
+  const t = (await b.store.titles(cb.identityKey)).find((x) => x.name === 'moved')!;
+  const st = await statusOf(b.backend, t);
+  const claim = st.entries.find((e) => e.kind === 'claim')!;
+  const renewal = st.entries.find((e) => e.kind === 'renew');
+  assert.ok(renewal, log.join('\n'));
+  assert.equal(renewal.owner, claim.owner, 'renewed with the title\'s own key');
+  assert.equal((await b.agent.titles(cb.identityKey)).find((v) => v.name === 'moved')?.state, 'active');
+});
+
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {
   // The calendars are the module's, in its order (anchor.rs `Calendar::url`: a pending anchor names one by index).
   const rust = readFileSync(new URL('../net/ts/src/room/names/anchor.rs', import.meta.url), 'utf8');

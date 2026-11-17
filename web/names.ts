@@ -70,6 +70,10 @@ export type TitleRecord = {
    * this copy's, 32 random bits drawn when the title was registered or taken in from an export (each paste draws its
    * own), so two copies of a title, however made, share one with a chance of 2^-32 a pair. */
   zone: { n: number; branch: number };
+  /** The owners' secret of this title, when it isn't its connection's: one taken in from an export pasted into a
+   * connection that had a secret of its own already (review 2: renewals signed with the connection's would break the
+   * chain). */
+  secret?: string;
   /** A better chain of another key's owns the name (its owner key): renewal stops. */
   lost?: { at: number; by: string };
   /** Let go: a release was made. */
@@ -557,7 +561,10 @@ export class NamesAgent {
       return true;
     }
     if (!o || t.released || o.released) return changed;
-    const ownKey = st.entries.find((e) => e.id === o.ids[0])?.owner;
+    // The title's own key, from its secret: a chain of another key's (a secret that doesn't sign this title) isn't
+    // renewed with it.
+    const secret = t.secret ?? (await this.store.secret(t.identityKey));
+    const ownKey = secret ? (await this.b.op<{ owner: string }>('key', { room: t.room, secret, name: t.name })).owner : undefined;
     const last = o.ids.at(-1)!;
     const lastTime = st.entries.find((e) => e.id === last)?.time ?? 0;
     const due = nowS() >= lastTime + st.term / 2;
@@ -592,7 +599,7 @@ export class NamesAgent {
    * be anchored: dropped, made again later. A claim carries the title's zone.
    */
   private async makeEntry(t: TitleRecord, kind: 'claim' | 'renew' | 'release', prev?: string) {
-    const secret = await this.store.secret(t.identityKey);
+    const secret = t.secret ?? (await this.store.secret(t.identityKey));
     if (!secret) throw new NamesError('NoSecret');
     const base = { room: t.room, secret, name: t.name };
     let r: { header: string; hash: string };
@@ -653,7 +660,7 @@ export class NamesAgent {
 
   /** Item `item` of title `t` with a new zone sealed for `t.points`, its `seq` past the item's and `seen`. */
   private async sealed(t: TitleRecord, item: string, seen?: string): Promise<string> {
-    const secret = await this.store.secret(t.identityKey);
+    const secret = t.secret ?? (await this.store.secret(t.identityKey));
     const st = await this.b.op<TitleStatus>('status', { item, now: nowS() });
     const held = st.zone?.seq;
     const seq = this.nextSeq(t, seen !== undefined && (held === undefined || BigInt(seen) > BigInt(held)) ? seen : held);
@@ -899,12 +906,17 @@ export async function exportNames(store: NamesStore, identityKey: string): Promi
 export async function importNames(store: NamesStore, identityKey: string, bundle: string): Promise<void> {
   const b = JSON.parse(new TextDecoder().decode(unb64url(bundle))) as Bundle;
   if (b.v !== 2 || !/^[0-9a-f]{64}$/.test(b.secret)) throw new NamesError('Bundle');
-  await store.addSecret(identityKey, b.secret);
+  const kept = await store.addSecret(identityKey, b.secret);
   for (const t of b.titles) {
     if (await store.get(identityKey, t.room, t.name)) continue;
     let branch = newBranch();
     while (branch === t.zone.branch) branch = newBranch();
-    await store.put({ ...t, identityKey, zone: { n: t.zone.n, branch } });
+    // The bundle's secret signs its titles: kept with each where the connection has another (review 2).
+    const secret = t.secret ?? (b.secret !== kept ? b.secret : undefined);
+    const copy: TitleRecord = { ...t, identityKey, zone: { n: t.zone.n, branch } };
+    if (secret) copy.secret = secret;
+    else delete copy.secret;
+    await store.put(copy);
   }
 }
 
@@ -918,11 +930,11 @@ export { parseRoomExport, roomExport } from './room.ts';
  * owner key from the secret (by the room's own module `m`) and the item. Lost and empty titles aren't served.
  */
 export async function roomTitles(store: NamesStore, ops: (op: NamesOp, input: object) => Record<string, unknown>, identityKey: string, room: string): Promise<NamesTitle[]> {
-  const secret = await store.secret(identityKey);
-  if (!secret) return [];
+  const kept = await store.secret(identityKey);
   const out: NamesTitle[] = [];
   for (const t of await store.titles(identityKey)) {
-    if (t.room !== room || t.lost || !t.item) continue;
+    const secret = t.secret ?? kept;
+    if (t.room !== room || t.lost || !t.item || !secret) continue;
     try {
       out.push({ key: ops('key', { room, secret, name: t.name }).key as string, item: t.item });
     } catch { /* a name the rules refuse: not served */ }
