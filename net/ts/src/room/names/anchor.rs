@@ -319,6 +319,11 @@ impl Calendar {
     }
 }
 
+/// The explorers compiled in (Esplora's API; room-names.md "Bitcoin as the clock"): an anchor's block's header by its
+/// height (a renewal a server finishes), a block's header by its hash (a server's check of each block). The agent's
+/// list is web/names.ts `EXPLORERS`, in the same order.
+pub const EXPLORERS: [&str; 2] = ["https://blockstream.info/api", "https://mempool.space/api"];
+
 /// A pending anchor: which calendar, and the operations from the entry's id to its commitment
 /// (what `/timestamp/<commitment>` is asked for). Proves nothing.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

@@ -16,6 +16,7 @@
 //! | 9 send on its data channel | rtc | the message |
 //! | 10 close it | rtc | |
 //! | 11 store a room's registry record (room/names/store.rs) | 0 | the name id (32 bytes), then the record; none: delete it |
+//! | 12 a room's server's fetch (room/names/outside.rs) | id | the URL (GET; a compiled calendar's or explorer's): the answer to `ts_room_names_fetched` |
 //!
 //! `ts_new`'s JSON makes a tailcat client (`addr`, `serve`) or, with `control`, a Tailscale one
 //! (tailnet.rs) on the kept node `state` (the store's entries as the page keeps them: hex); with
@@ -351,6 +352,7 @@ pub extern "C" fn ts_poll(h: u32) -> u32 {
         Action::NamesStore { id, record } => {
             (11, 0, [&id[..], &record.unwrap_or_default()].concat())
         }
+        Action::NamesFetch { id, url } => (12, id, url.into_bytes()),
     };
     let mut b = Vec::with_capacity(5 + rest.len());
     b.push(kind);
@@ -502,6 +504,26 @@ pub unsafe extern "C" fn ts_room_names_load(h: u32, ptr: *mut u8, len: usize) ->
     let mut ok = false;
     with_room(h, |r, _| ok = r.names_load(&data));
     ok as u32
+}
+
+/// The page's answer to a room's server's fetch (action 12) `id`: the HTTP `status` (0: the fetch failed) and the body
+/// at `ptr` (room/names/outside.rs).
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_room_names_fetched(
+    h: u32,
+    id: u32,
+    status: u32,
+    ptr: *mut u8,
+    len: usize,
+) {
+    // SAFETY: the host passes a buffer from ts_alloc(len).
+    let body = unsafe { take(ptr, len) };
+    with_room(h, |r, now| {
+        r.names_fetched(id, status.min(u16::MAX as u32) as u16, &body, now)
+    });
 }
 
 /// A publisher's item to put (room/names/wire.rs, at `ptr`): 1 when it was taken to be put.

@@ -14,7 +14,7 @@ use super::{
         Title, UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
     },
     store::read_record,
-    testkit::{Bitcoin, DAY, HOUR, params},
+    testkit::{Bitcoin, DAY, HOUR, Services, params},
     wire::{GetMode, Item, Msg, Question, Range, SyncAnswer, Transfers, WireEntry},
     zone::Zone,
 };
@@ -44,6 +44,9 @@ struct Bus {
     sub: Vec<bool>,
     calls: Vec<Vec<[u8; 32]>>,
     stored: Vec<BTreeMap<[u8; 32], Option<Vec<u8>>>>,
+    /// What the servers fetch is answered by these (none: no answer); each fetch by server, in order.
+    svc: Option<Services>,
+    fetched: Vec<(usize, String)>,
     t0: Instant,
     now: Instant,
 }
@@ -64,6 +67,8 @@ impl Bus {
             sub: vec![false; n],
             calls: vec![Vec::new(); n],
             stored: vec![BTreeMap::new(); n],
+            svc: None,
+            fetched: Vec::new(),
             t0: now,
             now,
         };
@@ -121,6 +126,11 @@ impl Bus {
             Cmd::Subscribe(on) => self.sub[i] = on,
             Cmd::Store { id, record } => {
                 self.stored[i].insert(id, record);
+            }
+            Cmd::Fetch { id, url } => {
+                self.fetched.push((i, url.clone()));
+                let (status, body) = self.svc.as_mut().map_or((0, Vec::new()), |v| v.get(&url));
+                self.s[i].input(Input::Fetched { id, status, body }, now, unix);
             }
             Cmd::Accept { .. } | Cmd::Log(_) | Cmd::Served(..) => {}
         }
@@ -2006,4 +2016,649 @@ fn titles_are_verified_before_the_registry_holds_them() {
         s.tick(now, T);
     }
     assert!(s.reg.get(&own.id).is_some_and(|h| h.owner.is_some()));
+}
+
+// ---- Outside the room (outside.rs): renewals finished at a calendar, blocks checked at an explorer ----
+
+use super::{
+    Params,
+    anchor::{Calendar, EXPLORERS},
+    chain::Name,
+    member::Answer,
+    testkit::LATE,
+};
+
+fn cfg_with(params: Params, titles: Vec<Title>) -> Config {
+    Config {
+        params,
+        titles,
+        max_names: MAX_NAMES,
+        max_bytes: MAX_BYTES,
+    }
+}
+
+/// A name's owner as its page's agent keeps it (web/names.ts), on the pretend services: its entries, and the next
+/// renewal made ahead (proof of work and signature done, not stamped).
+struct Owner {
+    key: k256::schnorr::SigningKey,
+    name: String,
+    entries: Vec<Stamped>,
+    /// Its zone, sealed once (a seal draws fresh randomness: sealed again, the same `seq` would be another zone).
+    zone: super::zone::Zone,
+    ahead: Option<Stamped>,
+    /// Visits at which proof of work had to be done (a renewal due with none made ahead).
+    slow_visits: usize,
+}
+
+impl Owner {
+    /// A claim stamped at `alice` and anchored at `at` (six blocks on), its next renewal made ahead.
+    fn claimed(
+        b: &mut Bitcoin,
+        svc: &mut Services,
+        secret: u8,
+        name: &str,
+        at: u32,
+        node: [u8; 32],
+    ) -> Owner {
+        let key = b.key(secret, name);
+        let claim = b.entry(Kind::Claim, &key, name, [0; 32]);
+        let zone =
+            super::zone::Zone::seal(&b.names, &key, name, 1, &[(None, node)], false).unwrap();
+        let mut o = Owner {
+            key,
+            name: name.into(),
+            zone,
+            entries: vec![claim],
+            ahead: None,
+            slow_visits: 0,
+        };
+        o.stamp(b, svc, 0);
+        svc.mine(1, at);
+        svc.mine(6, at + 600);
+        o.collect(b, svc);
+        assert!(o.entries[0].time().is_some());
+        o.make_ahead(b);
+        o
+    }
+
+    fn stamp(&mut self, b: &Bitcoin, svc: &mut Services, k: usize) {
+        let id = self.entries[k].id();
+        let mut p = svc.stamp(&id, Calendar::Alice);
+        super::entry::sign_pending(&self.key, &b.names, &id, &mut p);
+        assert!(self.entries[k].offer_pending(p));
+    }
+
+    /// Finished anchors collected (the agent's visit does, as servers do).
+    fn collect(&mut self, b: &Bitcoin, svc: &Services) {
+        for e in &mut self.entries {
+            if e.time().is_none()
+                && let Some(p) = e.pending().cloned()
+                && let Some((a, h)) = svc.anchor_of(&e.id(), &p)
+            {
+                e.offer_anchor(a, h, &b.params, LATE).unwrap();
+            }
+        }
+    }
+
+    fn chain(&self, params: &Params, now: u64) -> Option<super::chain::Chain> {
+        let mut n = Name::new(self.entries[0].entry.name);
+        for e in &self.entries {
+            n.insert(e.clone());
+        }
+        n.owner(params, now)
+    }
+
+    /// The next renewal, after the newest entry (pending or not): proof of work and signature, kept for a later visit.
+    fn make_ahead(&mut self, b: &mut Bitcoin) {
+        let prev = self.entries.last().unwrap().id();
+        self.ahead = Some(b.entry(Kind::Renew, &self.key, &self.name, prev));
+    }
+
+    /// A visit at `now`: what is finished collected; a renewal due stamped from the one made ahead (a few seconds:
+    /// stamps), and the next made ahead after the item is handed over. The item to publish.
+    fn visit(&mut self, b: &mut Bitcoin, svc: &mut Services, now: u64) -> Item {
+        self.collect(b, svc);
+        let o = self
+            .chain(&b.params, now)
+            .expect("the name owned at the visit");
+        let last = *o.ids.last().unwrap();
+        let last_t = self
+            .entries
+            .iter()
+            .find(|e| e.id() == last)
+            .unwrap()
+            .time()
+            .unwrap() as u64;
+        let waiting = self
+            .entries
+            .iter()
+            .any(|e| e.time().is_none() && e.entry.prev == last);
+        if now >= last_t + b.params.term as u64 / 2 && !waiting {
+            let r = match self.ahead.take() {
+                Some(r) if r.entry.prev == last => r,
+                _ => {
+                    self.slow_visits += 1;
+                    b.entry(Kind::Renew, &self.key, &self.name, last)
+                }
+            };
+            self.entries.push(r);
+            let k = self.entries.len() - 1;
+            self.stamp(b, svc, k);
+        }
+        let item = b.item(&self.name, &self.entries, Some(self.zone.clone()));
+        if self
+            .ahead
+            .as_ref()
+            .is_none_or(|a| a.entry.prev != self.entries.last().unwrap().id())
+        {
+            self.make_ahead(b);
+        }
+        item
+    }
+}
+
+/// Every URL fetched is a compiled calendar's or explorer's.
+fn compiled_only(bus: &Bus) {
+    for (_, u) in &bus.fetched {
+        assert!(
+            Calendar::ALL
+                .iter()
+                .any(|c| u.starts_with(&format!("{}/", c.url())))
+                || EXPLORERS.iter().any(|e| u.starts_with(&format!("{e}/"))),
+            "not a compiled service: {u}"
+        );
+    }
+    assert!(bus.svc.as_ref().is_none_or(|s| s.foreign.is_empty()));
+}
+
+/// The redesign's promise (room-names-redesign.md §3, "Open this web app at least every 2 weeks"): an owner whose page
+/// opens for a few seconds every 14 days, closed between, keeps its name resolving and owned throughout. Each visit
+/// only stamps the renewal made ahead and hands it to a server; the calendar finishes it hours later, when no page is
+/// open, and the servers finish it themselves. The claim is 5 days old at the start, so each renewal is stamped at a
+/// visit 19 or 27 days after the entry before it: one learnt only at the next visit would come after the name lapsed
+/// (30 days). Two servers, their own names kept the same way.
+#[test]
+fn visits_14_days_apart_and_seconds_long_keep_a_name_resolving_and_owned() {
+    let params = Params::TEST_PACED;
+    let mut b = Bitcoin::new(ROOM, 70);
+    let mut svc = Services::new(70);
+    let node = [0x42; 32];
+    let mut owners = [
+        Owner::claimed(&mut b, &mut svc, 1, "alpha", t(20), [1; 32]),
+        Owner::claimed(&mut b, &mut svc, 2, "bravo", t(20), [2; 32]),
+        Owner::claimed(&mut b, &mut svc, 3, "promise", t(5), node),
+    ];
+    // The servers' own names renewed once already (at day -4), as a server's agent would have.
+    for o in owners.iter_mut().take(2) {
+        let it = o.visit(&mut b, &mut svc, t(5) as u64);
+        assert_eq!(it.entries.len(), 2);
+        svc.mine(1, t(4));
+        svc.mine(6, t(4) + 600);
+        o.collect(&b, &svc);
+    }
+    let title = |o: &mut Owner, b: &mut Bitcoin, svc: &mut Services, now: u64| Title {
+        key: o.key.to_bytes().into(),
+        item: o.visit(b, svc, now),
+    };
+    let s0 = Server::new(
+        ROOM,
+        cfg_with(
+            params.clone(),
+            vec![title(&mut owners[0], &mut b, &mut svc, T)],
+        ),
+        T,
+    );
+    let s1 = Server::new(
+        ROOM,
+        cfg_with(
+            params.clone(),
+            vec![title(&mut owners[1], &mut b, &mut svc, T)],
+        ),
+        T,
+    );
+    let mut bus = Bus::new(vec![s0, s1]);
+    bus.svc = Some(svc);
+    bus.advance(Duration::from_secs(60));
+    let unix = bus.unix();
+    let first = owners[2].visit(&mut b, bus.svc.as_mut().unwrap(), unix);
+    assert_eq!(bus.put(1, 0, first), Msg::Taken);
+    let id = b.names.name_id("promise");
+    let key: [u8; 32] = owners[2].key.verifying_key().to_bytes().into();
+    let mut visit_hour = None;
+    let mut finished_before_the_owner = 0;
+    // Visits at 14, 28, 42 and 56 days (two renewals, each stamped at a visit and finished by the servers); checked
+    // every hour to day 60.
+    for hour in 1..=60 * 24u32 {
+        bus.advance(Duration::from_secs(3600));
+        let unix = bus.unix();
+        // The calendars finish what was stamped at a visit: in a block two hours after it, six deep an hour later.
+        if visit_hour.is_some_and(|v| hour == v + 2) {
+            bus.svc.as_mut().unwrap().mine(1, unix as u32);
+        }
+        if visit_hour.is_some_and(|v| hour == v + 3) {
+            bus.svc.as_mut().unwrap().mine(6, unix as u32);
+        }
+        for (i, s) in bus.s.iter().enumerate() {
+            assert_eq!(
+                s.resolve("promise", "promise", unix),
+                Answer::Node(node),
+                "server {i}, hour {hour} (day {})",
+                hour / 24
+            );
+            let o = s.reg.get(&id).and_then(|h| h.owner.clone()).unwrap();
+            assert_eq!(o.owner, key, "owned by its key, server {i}, hour {hour}");
+            assert_eq!(
+                o.first(),
+                owners[2].entries[0].id(),
+                "one chain from its claim"
+            );
+        }
+        if hour % (14 * 24) == 0 {
+            // What the owner stamped at its last visit, the servers hold anchored before it comes back.
+            let held = bus.s[0].reg.get(&id).unwrap();
+            for e in owners[2].entries.iter().filter(|e| e.time().is_none()) {
+                assert!(
+                    held.name.get(&e.id()).is_some_and(|h| h.time().is_some()),
+                    "a renewal the servers didn't finish (hour {hour})"
+                );
+                finished_before_the_owner += 1;
+            }
+            // A visit: seconds long, the page closed right after.
+            let svc = bus.svc.as_mut().unwrap();
+            for i in 0..2 {
+                let t = title(&mut owners[i], &mut b, svc, unix);
+                bus.s[i].set_titles(vec![t], unix);
+            }
+            let item = owners[2].visit(&mut b, svc, unix);
+            assert_eq!(bus.put(1, 0, item), Msg::Taken);
+            visit_hour = Some(hour);
+        }
+    }
+    assert_eq!(
+        owners.iter().map(|o| o.slow_visits).sum::<usize>(),
+        0,
+        "every renewal stamped was one made ahead"
+    );
+    let chain = bus.s[0].reg.get(&id).unwrap().owner.clone().unwrap();
+    assert_eq!(
+        chain.ids.len(),
+        3,
+        "the claim and a renewal at every other visit"
+    );
+    assert!(
+        finished_before_the_owner >= 2,
+        "{finished_before_the_owner}"
+    );
+    compiled_only(&bus);
+    let (cal, exp) = bus.svc.as_ref().unwrap().counts();
+    let finished: usize = bus.s.iter().map(|s| s.stats.finished).sum();
+    eprintln!(
+        "# 60 days, 3 names, 2 servers: {cal} calendar asks, {exp} explorer asks, {finished} renewals finished by \
+         servers, {} blocks checked",
+        bus.s.iter().map(|s| s.stats.blocks_checked).sum::<usize>()
+    );
+}
+
+/// Twenty servers hold a renewal pending at a calendar that never finishes it: together they ask a few times an hour
+/// (a chance a slot of about one over the room's servers, each counting them from its questions), fewer as it waits.
+#[test]
+fn calendar_asks_stay_bounded_across_twenty_servers() {
+    let params = Params::TEST_PACED;
+    let mut b = Bitcoin::new(ROOM, 71);
+    let mut svc = Services::new(71);
+    let mut servers = Vec::new();
+    for k in 0..20u8 {
+        let mut o = Owner::claimed(
+            &mut b,
+            &mut svc,
+            k + 1,
+            &format!("server{k}"),
+            t(10),
+            [k; 32],
+        );
+        let item = o.visit(&mut b, &mut svc, T);
+        let title = Title {
+            key: o.key.to_bytes().into(),
+            item,
+        };
+        servers.push(Server::new(ROOM, cfg_with(params.clone(), vec![title]), T));
+    }
+    let mut owner = Owner::claimed(&mut b, &mut svc, 99, "waiting", t(16), [9; 32]);
+    let mut bus = Bus::new(servers);
+    bus.svc = Some(svc);
+    bus.advance(Duration::from_secs(20 * 60));
+    // Due: the renewal is stamped and put; its calendar never mines it.
+    let unix = bus.unix();
+    let item = owner.visit(&mut b, bus.svc.as_mut().unwrap(), unix);
+    assert_eq!(bus.put(1, 0, item), Msg::Taken);
+    let id = b.names.name_id("waiting");
+    bus.advance(Duration::from_secs(15 * 60));
+    let holding = (bus.s.iter())
+        .filter(|s| s.reg.get(&id).is_some_and(|h| h.name.len() == 2))
+        .count();
+    assert_eq!(holding, 20, "every server holds the renewal");
+    let ests: Vec<u32> = bus.s.iter().map(Server::room_servers).collect();
+    let asked = |bus: &Bus| {
+        bus.fetched
+            .iter()
+            .filter(|(_, u)| u.contains("/timestamp/"))
+            .count()
+    };
+    let mut by_hour = Vec::new();
+    for _ in 0..24 {
+        let before = asked(&bus);
+        bus.advance(Duration::from_secs(3600));
+        by_hour.push(asked(&bus) - before);
+    }
+    let first: usize = by_hour[..12].iter().sum();
+    let later: usize = by_hour[12..].iter().sum();
+    eprintln!(
+        "# twenty servers, one renewal its calendar never finishes: calendar asks by hour {by_hour:?} \
+         ({first} in the first 12 h, {later} in the next 12); the servers' counts of the room {ests:?}"
+    );
+    assert!(by_hour.iter().all(|n| *n <= 12), "{by_hour:?}");
+    assert!((10..=80).contains(&first), "{first}");
+    assert!(later <= first, "{later} after {first}");
+    assert!(
+        bus.fetched
+            .iter()
+            .filter(|(_, u)| u.contains("/timestamp/"))
+            .map(|(i, _)| i)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            > 5,
+        "spread over the servers"
+    );
+    compiled_only(&bus);
+}
+
+/// Two servers, each with a name of its own on the pretend services, and a third name forged on a header the services
+/// never mined (one at the tests' floor: what 1/16 of a block's work buys in production).
+fn forged_room(seed: u64, params: Params) -> (Bitcoin, Bus, Item, [u8; 32]) {
+    let mut b = Bitcoin::new(ROOM, seed);
+    let mut svc = Services::new(seed);
+    let mut servers = Vec::new();
+    for k in 0..2u8 {
+        let mut o = Owner::claimed(
+            &mut b,
+            &mut svc,
+            k + 1,
+            &format!("honest{k}"),
+            t(10),
+            [k; 32],
+        );
+        let item = o.visit(&mut b, &mut svc, T);
+        let title = Title {
+            key: o.key.to_bytes().into(),
+            item,
+        };
+        servers.push(Server::new(ROOM, cfg_with(params.clone(), vec![title]), T));
+    }
+    let (_, forged) = b.title(9, "forged", t(30), &[t(16)], [9; 32]);
+    let hash = forged.entries[1].anchor.as_ref().unwrap().1.hash();
+    let mut bus = Bus::new(servers);
+    bus.svc = Some(svc);
+    (b, bus, forged, hash)
+}
+
+#[test]
+fn a_block_both_explorers_deny_is_refused_with_its_anchors() {
+    let (b, mut bus, forged, hash) = forged_room(72, Params::TEST);
+    bus.advance(Duration::from_secs(60));
+    let id = forged.id;
+    // While the explorers can't be reached, the forged anchors count on their headers' work, as a member's do.
+    bus.svc.as_mut().unwrap().explorers_down = [true, true];
+    assert_eq!(bus.put(1, 0, forged.clone()), Msg::Taken);
+    bus.advance(Duration::from_secs(10));
+    assert_eq!(
+        bus.s[0].resolve("forged", "forged", bus.unix()),
+        Answer::Node([9; 32])
+    );
+    // Both explorers answer: neither knows the blocks. Refused, with every anchor in them: the name goes.
+    bus.svc.as_mut().unwrap().explorers_down = [false, false];
+    bus.advance(Duration::from_secs(20 * 60));
+    for (i, s) in bus.s.iter().enumerate() {
+        assert!(
+            s.reg.get(&id).is_none(),
+            "server {i} still holds the forged name"
+        );
+        assert_eq!(s.resolve("forged", "forged", bus.unix()), Answer::Nx);
+        assert!(s.stats.blocks_refused >= 1, "server {i}");
+    }
+    // The refusal is stored under the block's hash.
+    let r = bus.stored[0].get(&hash).cloned().flatten().expect("stored");
+    assert_eq!((r[0], r[1]), (super::server::BLOCK_RECORD, 2));
+    // The honest names' blocks were checked and kept.
+    for k in 0..2 {
+        assert_eq!(
+            bus.s[0].resolve(&format!("honest{k}"), &format!("honest{k}"), bus.unix()),
+            Answer::Node([k as u8; 32])
+        );
+    }
+    // Offered again within the day: its anchors are refused at once, nothing asked.
+    let asked = bus.fetched.len();
+    let back = bus.put(1, 0, forged.clone());
+    assert!(
+        matches!(back, Msg::Better(ref it) if it.entries.is_empty()),
+        "{back:?}"
+    );
+    assert!(bus.s[0].reg.get(&id).is_none());
+    assert_eq!(
+        bus.fetched.len(),
+        asked,
+        "a refused block isn't asked again within its day"
+    );
+    // A server started from the stored records refuses it too, the name's record loaded before the block's.
+    let mut s = Server::new(ROOM, cfg_with(Params::TEST, vec![]), bus.unix());
+    let name_record = record(&forged, bus.unix());
+    assert!(s.load(&name_record, bus.unix()));
+    assert!(s.reg.get(&id).is_some());
+    let refusals: Vec<Vec<u8>> = (bus.stored[0].values().flatten())
+        .filter(|r| r[..2] == [super::server::BLOCK_RECORD, 2])
+        .cloned()
+        .collect();
+    assert_eq!(refusals.len(), 2, "the claim's block and the renewal's");
+    for r in &refusals {
+        assert!(s.load(r, bus.unix()));
+    }
+    assert!(
+        s.reg.get(&id).is_none(),
+        "the loaded name's anchors in the refused blocks dropped"
+    );
+    // A day on, a refusal stored is let go at load (the page deletes it).
+    assert!(!s.load(&r, bus.unix() + 24 * 3600));
+    let _ = b;
+    compiled_only(&bus);
+}
+
+#[test]
+fn a_block_one_explorer_denies_counts_until_the_other_answers_and_is_kept_when_it_confirms() {
+    let (b, mut bus, _, _) = forged_room(73, Params::TEST);
+    let name = "honest1";
+    // Server 1's own name, as it checks it.
+    let header = {
+        let h = bus.s[1].reg.get(&b.names.name_id(name)).unwrap();
+        h.name.entries().next().unwrap().anchor().unwrap().header
+    };
+    let shown = super::testkit::shown(&header);
+    let asked = |bus: &Bus| {
+        (bus.fetched.iter())
+            .filter(|(i, u)| *i == 1 && u.contains(&shown))
+            .count()
+    };
+    // The first explorer denies its block; the second can't be reached: no verdict, asked again later, and the name
+    // counts meanwhile on its header's work.
+    bus.svc.as_mut().unwrap().denied[0].insert(header.hash());
+    bus.svc.as_mut().unwrap().explorers_down = [false, true];
+    bus.advance(Duration::from_secs(60));
+    assert_eq!(asked(&bus), 2, "asked of both explorers");
+    assert_eq!(bus.s[1].stats.blocks_refused, 0);
+    assert_eq!(
+        bus.s[1].resolve(name, name, bus.unix()),
+        Answer::Node([1; 32])
+    );
+    // The second explorer back: asked again after its wait (5 minutes); the first denies it, the second confirms it.
+    // Checked: one explorer's word for a block is enough.
+    bus.svc.as_mut().unwrap().explorers_down = [false, false];
+    bus.advance(Duration::from_secs(3 * 60));
+    assert_eq!(asked(&bus), 2, "not before its wait");
+    let checked = bus.s[1].stats.blocks_checked;
+    bus.advance(Duration::from_secs(3 * 60));
+    assert_eq!(asked(&bus), 4, "asked again of both");
+    assert_eq!(bus.s[1].stats.blocks_checked, checked + 1);
+    assert_eq!(bus.s[1].stats.blocks_refused, 0);
+    assert_eq!(
+        bus.s[1].resolve(name, name, bus.unix()),
+        Answer::Node([1; 32])
+    );
+    bus.advance(Duration::from_secs(60 * 60));
+    assert_eq!(asked(&bus), 4, "checked: not asked again");
+    compiled_only(&bus);
+}
+
+/// Checks run from the module's ticks: a lookup, a member's `get` and the resolver answer from what is held whatever
+/// the explorers do, and nothing is fetched to answer one.
+#[test]
+fn a_check_is_never_on_a_lookups_path() {
+    let mut b = Bitcoin::new(ROOM, 74);
+    let (key, item) = b.title(1, "alpha", t(20), &[t(4)], [1; 32]);
+    let mut s = Server::new(
+        ROOM,
+        cfg_with(
+            Params::TEST,
+            vec![Title {
+                key,
+                item: item.clone(),
+            }],
+        ),
+        T,
+    );
+    let now = Instant::now();
+    s.start([0x5a; 32], now);
+    // Nobody answers; nothing the page fetches comes back.
+    let mut fetches = 0;
+    for k in 0..40u64 {
+        let at = now + Duration::from_millis(100 * k);
+        s.tick(at, T + k / 10);
+        while let Some(c) = s.poll() {
+            fetches += matches!(c, Cmd::Fetch { .. }) as usize;
+        }
+    }
+    assert!(fetches >= 1, "its blocks are asked about");
+    let unix = T + 4;
+    let at = now + Duration::from_secs(4);
+    assert_eq!(s.resolve("alpha", "alpha", unix), Answer::Node([1; 32]));
+    let get = Msg::Get {
+        mode: GetMode::Owner,
+        id: item.id.to_vec(),
+        zone: (0, [0; 4]),
+        held: vec![],
+    };
+    let back = exchange(&mut s, [0xdd; 32], 1, &get, at, unix);
+    assert!(
+        matches!(back.first(), Some(Msg::Items(v)) if v.len() == 1 && !v[0].entries.is_empty()),
+        "{back:?}"
+    );
+    let mut more = 0;
+    while let Some(c) = s.poll() {
+        more += matches!(c, Cmd::Fetch { .. }) as usize;
+    }
+    assert_eq!(more, 0, "nothing fetched for a lookup");
+}
+
+/// A new server's first sync brings many blocks: checked one every `check_every_ms` at most, the newest arrival first.
+/// Checks are stored and loaded back: a server restarted asks nothing again.
+#[test]
+fn block_checks_are_paced_newest_first_and_load_back() {
+    let params = Params::TEST_PACED;
+    let mut b = Bitcoin::new(ROOM, 75);
+    let mut svc = Services::new(75);
+    let mut titles = Vec::new();
+    for k in 0..2u8 {
+        let mut o = Owner::claimed(
+            &mut b,
+            &mut svc,
+            k + 1,
+            &format!("server{k}"),
+            t(10),
+            [k; 32],
+        );
+        let item = o.visit(&mut b, &mut svc, T);
+        titles.push(Title {
+            key: o.key.to_bytes().into(),
+            item,
+        });
+    }
+    // Thirty names, each in a block of its own, loaded as a server's records.
+    let mut records = Vec::new();
+    for k in 0..30u8 {
+        let mut o = Owner::claimed(
+            &mut b,
+            &mut svc,
+            100 + k,
+            &format!("name{k}"),
+            t(5),
+            [k; 32],
+        );
+        records.push(record(&o.visit(&mut b, &mut svc, T), T - 3600));
+    }
+    let mut late = Owner::claimed(&mut b, &mut svc, 99, "late", t(2), [7; 32]);
+    let late_block = super::testkit::shown(&late.entries[0].anchor().unwrap().header);
+    let mut s0 = Server::new(ROOM, cfg_with(params.clone(), vec![titles.remove(0)]), T);
+    for r in &records {
+        assert!(s0.load(r, T));
+    }
+    let s1 = Server::new(ROOM, cfg_with(params.clone(), titles), T);
+    let mut bus = Bus::new(vec![s0, s1]);
+    bus.svc = Some(svc);
+    let checks = |bus: &Bus| -> Vec<String> {
+        (bus.fetched.iter())
+            .filter(|(i, u)| *i == 0 && u.contains("/block/"))
+            .map(|(_, u)| u.clone())
+            .collect()
+    };
+    bus.advance(Duration::from_secs(30));
+    let n = checks(&bus).len();
+    assert!((9..=11).contains(&n), "{n} checks in 30 s, one every 3 s");
+    // A new arrival goes first.
+    let unix = bus.unix();
+    let item = late.visit(&mut b, bus.svc.as_mut().unwrap(), unix);
+    bus.put(1, 0, item);
+    bus.advance(Duration::from_secs(3));
+    assert!(
+        checks(&bus)[n..].iter().any(|u| u.contains(&late_block)),
+        "the newest within one pace"
+    );
+    // All of them in time, then nothing more.
+    bus.advance(Duration::from_secs(3 * 40));
+    let all = checks(&bus).len();
+    assert_eq!(
+        bus.s[0].stats.blocks_checked, 33,
+        "30 loaded, the two servers' own, the late one"
+    );
+    bus.advance(Duration::from_secs(10 * 60));
+    assert_eq!(checks(&bus).len(), all, "each block once");
+    // Restarted from what it stored: nothing asked again.
+    let stored: Vec<Vec<u8>> = bus.stored[0].values().flatten().cloned().collect();
+    assert!(
+        stored
+            .iter()
+            .filter(|r| r[0] == super::server::BLOCK_RECORD)
+            .count()
+            >= 33
+    );
+    let mut again = Server::new(ROOM, cfg_with(params, vec![]), bus.unix());
+    for r in &stored {
+        again.load(r, bus.unix());
+    }
+    again.start([0x77; 32], bus.now);
+    let mut asked = 0;
+    for k in 0..100u64 {
+        again.tick(bus.now + Duration::from_secs(3 * k), bus.unix() + 3 * k);
+        while let Some(c) = again.poll() {
+            asked += matches!(c, Cmd::Fetch { ref url, .. } if url.contains("/block/")) as usize;
+        }
+    }
+    assert_eq!(asked, 0, "every block's check loaded back");
+    compiled_only(&bus);
 }

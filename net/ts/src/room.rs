@@ -3071,6 +3071,18 @@ impl Client {
             .is_some_and(|h| h.member.load(record, unix))
     }
 
+    /// The page's answer to a server's fetch ([`Action::NamesFetch`] `id`): the HTTP status (0: it failed) and the
+    /// body. Ignored by anything but a server.
+    pub fn names_fetched(&mut self, id: u32, status: u16, body: &[u8], now: Instant) {
+        let unix = self.unix(now);
+        if let Some(h) = self.names.as_mut() {
+            let body = body.to_vec();
+            h.server
+                .input(Input::Fetched { id, status, body }, now, unix);
+            self.pump_names(now);
+        }
+    }
+
     /// A publisher's item to put ([`Config::publish`]): to the two servers it finds, each answer a `names-put` event.
     /// False when it isn't a publisher, the item isn't one, or too many wait.
     pub fn names_put(&mut self, item: &[u8], now: Instant) -> bool {
@@ -3399,6 +3411,10 @@ impl Client {
                     Cmd::Store { id, record } => {
                         self.actions.push_back(Action::NamesStore { id, record })
                     }
+                    // Only a server's side asks (outside.rs); the page fetches.
+                    Cmd::Fetch { id, url } => {
+                        self.actions.push_back(Action::NamesFetch { id, url })
+                    }
                     Cmd::Log(s) => self.log(format!("names: {s}")),
                     c => {
                         if let Some(t) = transport.as_mut() {
@@ -3455,7 +3471,8 @@ impl Client {
                     }
                 }
             }
-            Cmd::Store { .. } | Cmd::Log(_) => {}
+            // A publisher's and a member's sides ask nothing outside the room.
+            Cmd::Store { .. } | Cmd::Log(_) | Cmd::Fetch { .. } => {}
         }
     }
 

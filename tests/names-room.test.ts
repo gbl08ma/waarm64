@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
-import { exportNames, importNames, roomTitles, type NamesConn, type TitleRecord } from '../web/names.ts';
+import { exportNames, importNames, roomTitles, serviceFetch, type NamesConn, type TitleRecord } from '../web/names.ts';
 import { namesOp } from '../web/names-ops.ts';
 import { TsClient, type TsEvent } from '../web/ts-client.ts';
 import { aged, DAY, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, testModule, type Asked } from './net/names-agent.ts';
@@ -28,6 +28,8 @@ const skip = process.env.WAARM64_TAILCAT !== '1' ? 'SKIPPED: set WAARM64_TAILCAT
 const script = `${ROOT}tests/net/tailcat.sh`;
 
 let cal: OtsCalendar;
+/** Every fetch a node asked of the page, and whether that node was a server. */
+const fetches: { url: string; server: boolean }[] = [];
 let nostr: NostrRelay;
 let asked: Asked;
 let restore = () => {};
@@ -60,13 +62,21 @@ async function node(link: string, titles: { key: string; item: string }[] = []):
   const replies: Uint8Array[] = [];
   let running!: () => void;
   const up = new Promise<void>((r) => { running = r; });
+  let me: TsClient | undefined;
   const c = new TsClient(m, { room: { link, relayOnly: true, ...(titles.length ? { names: { titles } } : {}) } }, {
+    // A server's asks outside the room, as the room's worker makes them (web/room-worker.ts), routed to the pretend
+    // services; a member's node never asks.
+    namesFetch: (id, url) => {
+      fetches.push({ url, server: titles.length > 0 });
+      void serviceFetch(url).then((r) => me?.namesFetched(id, r.status, r.body));
+    },
     packet: (p) => replies.push(p),
     event(e) {
       events.push(e);
       if (e.type === 'state' && e.state === 'Running') running(); // i18n-ignore
     },
   });
+  me = c;
   nodes.push(c);
   await Promise.race([up, new Promise((_, rej) => setTimeout(() => rej(new Error(`not Running: ${JSON.stringify(events.slice(-5))}`)), 20_000))]);
   const self = () => events.find((e): e is Extract<TsEvent, { type: 'self' }> => e.type === 'self')!;
@@ -126,7 +136,7 @@ before(async () => { if (!skip) await0 = await testModule(); });
 
 const titleOf = async (store: { titles(i?: string): Promise<TitleRecord[]> }, c: NamesConn) => (await store.titles(c.identityKey))[0];
 
-test('with no machine running: a claim public once anchored, and a renewal made in its grace that a second member then resolves', { skip, timeout: 240_000 }, async () => {
+test('with no machine running: a claim public once anchored, and a renewal made in its grace that the servers finish with the page closed, and a second member then resolves', { skip, timeout: 240_000 }, async () => {
   const id = `names room ${Math.random()}`;
   const { link, servers } = await room(id);
   const member1 = await node(link);
@@ -155,14 +165,23 @@ test('with no machine running: a claim public once anchored, and a renewal made 
   assert.ok(renewal && renewal.time === null && renewal.pending);
   assert.ok(t.publishedAt, log.join('\n'));
   await resolves(member2, 'delta', 3, 15_000);
-  // Its anchor finishes: collected and published at the next visit; a second member resolves it.
+  // Its anchor finishes at the calendar while no page is open: the servers finish it themselves (the calendar's proof,
+  // then the block's hash and header at an explorer) and a second member resolves it, the agent never asked.
+  const asked0 = fetches.length;
   cal.mine(7);
+  const t1 = Date.now();
+  const member3 = await node(link);
+  await resolves(member3, 'delta', 0, 60_000);
+  const mine = fetches.slice(asked0);
+  console.log(`# a renewal finished by the servers: ${Date.now() - t1} ms after its block; asks ${JSON.stringify(mine.map((f) => new URL(f.url).pathname.split('/').slice(0, 3).join('/')))}`);
+  assert.ok(mine.some((f) => f.url.includes('/timestamp/')) && mine.some((f) => f.url.includes('/block-height/')), 'the calendar and an explorer asked');
+  assert.ok(fetches.every((f) => f.server), 'only servers fetch: a member asks nothing outside the room');
+  assert.deepEqual(asked.foreign, [], 'the compiled services only');
+  // The next visit finds it anchored in the room.
   await agent.pass(d.identityKey);
   t = await titleOf(store, d);
   st = await statusOf(backend, t);
   assert.equal(st.owner?.ids.at(-1), renewal.id, 'the renewal anchored');
-  const member3 = await node(link);
-  await resolves(member3, 'delta', 0);
 });
 
 test('a title renewed in two browsers: the fork is settled, both taking the room\'s branch', { skip, timeout: 240_000 }, async () => {

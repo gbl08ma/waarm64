@@ -494,6 +494,20 @@ fn a_member_resolves_a_registered_name_through_a_names_client_of_its_own() {
         "the member's node key carried nothing"
     );
     assert_eq!(n.nodes[2].rtc_opens, 0);
+    // Decision 4 as amended: the servers ask the explorers about their blocks (the compiled ones only); the member
+    // asks nothing outside the room.
+    assert_eq!(n.nodes[2].fetches, Vec::<String>::new(), "a member fetched");
+    for (i, node) in n.nodes.iter().enumerate().take(2) {
+        assert!(!node.fetches.is_empty(), "server {i} checked no block");
+        for u in &node.fetches {
+            assert!(
+                crate::room::names::anchor::EXPLORERS
+                    .iter()
+                    .any(|e| u.starts_with(&format!("{e}/block/"))),
+                "{u}"
+            );
+        }
+    }
     // Kept, and stored.
     let records: Vec<Vec<u8>> = n.nodes[2].stored.values().cloned().collect();
     assert_eq!(records.len(), 1);

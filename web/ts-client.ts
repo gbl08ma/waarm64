@@ -36,6 +36,7 @@ type Exports = {
   ts_room_names_put(h: number, ptr: number, len: number): number;
   ts_room_names_ids(h: number, first: number): number;
   ts_room_names_titles(h: number, ptr: number, len: number): number;
+  ts_room_names_fetched(h: number, id: number, status: number, ptr: number, len: number): void;
 } & {
   /** The names agent's operations (net/ts/src/room/names/agent.rs): JSON in, the length of JSON out (minus: why not). */
   [K in `ts_names_${NamesOp}`]: (ptr: number, len: number) => number;
@@ -160,6 +161,11 @@ export type TsHandlers = {
   /** A room's registry record to keep (`record`) or delete (null), by its name id (32 bytes): action 11, streamed back with
    * `namesLoad` at the next start (docs/networking/tailnet.md "The module"). */
   namesStore?(id: Uint8Array, record: Uint8Array | null): void;
+  /** A room's server asks outside the room (net/ts/src/room/names/outside.rs): GET `url`, a compiled calendar's or
+   * explorer's (action 12); the answer goes back with `namesFetched(id, …)`. The room's worker does it through
+   * web/names.ts `serviceFetch`, which fetches nothing else. Without this handler nothing is fetched (a member's node
+   * never asks: only a server's). */
+  namesFetch?(id: number, url: string): void;
 };
 
 export type RtcHandlers = {
@@ -352,6 +358,14 @@ export class TsClient {
     return this.m.x.ts_room_names_load(this.h, ...this.m.put(record)) === 1;
   }
 
+  /** A room: the answer to a server's fetch `id` (`namesFetch`): the HTTP status (0: the fetch failed or was refused)
+   * and the body. */
+  namesFetched(id: number, status: number, body: Uint8Array) {
+    if (this.closed) return;
+    this.m.x.ts_room_names_fetched(this.h, id, status, ...this.m.put(body));
+    this.pump();
+  }
+
   /** A room's publisher: puts `item` (hex) to the room's servers; each answer is a `names-put` event. Whether it was taken
    * to be put. */
   namesPut(item: Uint8Array): boolean {
@@ -451,6 +465,9 @@ export class TsClient {
         }
         case 11:
           this.on.namesStore?.(rest.slice(0, 32), rest.length > 32 ? rest.slice(32) : null);
+          break;
+        case 12:
+          this.on.namesFetch?.(id, decoder.decode(rest));
           break;
       }
     }

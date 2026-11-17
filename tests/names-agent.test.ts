@@ -7,9 +7,9 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
-import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, roomOf, SERVICES, type TitleView } from '../web/names.ts';
-import type { IdsAnswer, NamesBackend } from '../web/names-ops.ts';
-import { aged, DAY, fakePublish, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, type Asked } from './net/names-agent.ts';
+import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, NamesAgent, roomOf, serviceFetch, SERVICES, type TitleView } from '../web/names.ts';
+import { localBackend, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
+import { aged, DAY, fakePublish, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, testModule, type Asked } from './net/names-agent.ts';
 import { startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 
 const skip = existsSync(TEST_WASM) ? false : 'no target/net/ts-test.wasm (net/ts/build.sh --test-params)';
@@ -559,4 +559,77 @@ test('on load the page says which names are in their last week: still resolving 
   ];
   assert.deepEqual(inLastWeek(views, now).map((x) => x.name), ['grace', 'sooner', 'soon']);
   assert.deepEqual(inLastWeek([v('edge', 'active', now + LAST_WEEK_S)], now), [], 'a week exactly: not yet');
+});
+
+test('the next renewal is made ahead: a visit that finds one due only stamps it and hands it over, and makes the one after once it has', { skip, timeout: 90_000 }, async () => {
+  const pub = fakePublish();
+  const store = memoryNamesStore();
+  const log: string[] = [];
+  /** The module's operations and the publishes, in order, of the agent made by `visit`. */
+  const did: string[] = [];
+  const visit = async () => {
+    const local = localBackend(await testModule());
+    const backend: NamesBackend = pub.wrap({
+      ...local,
+      op: (op, input) => { did.push(op); return local.op(op, input); },
+    });
+    const b2: NamesBackend = { ...backend, publish: (link, items) => { did.push('publish'); return backend.publish(link, items); } };
+    return { agent: new NamesAgent({ store, backend: b2, retryMs: 0, log: (x) => { log.push(x); } }), backend: b2 };
+  };
+  // A claim anchored 10 days ago: active, not due. The visit that collects it makes its first renewal ahead.
+  const v1 = await visit();
+  await aged(cal, v1.agent, conn(), 'ahead', nowS() - 10 * DAY);
+  let [t] = await store.titles();
+  let st = await statusOf(v1.backend, t);
+  assert.equal((await v1.agent.titles())[0].state, 'active');
+  assert.equal(st.entries.length, 1, 'nothing stamped: not due');
+  assert.equal(t.ahead?.prev, st.owner?.ids.at(-1), 'made ahead, after the claim');
+  // Six days on (16 after the claim): due. The page opens for a visit: it stamps the renewal made ahead (no proof of
+  // work before it is handed to the servers), then makes the next one ahead.
+  const real = Date.now;
+  Date.now = () => real() + 6 * DAY * 1000;
+  try {
+    const v2 = await visit();
+    did.length = 0;
+    const t0 = real();
+    await v2.agent.pass();
+    const ms = real() - t0;
+    const handed = did.indexOf('publish');
+    assert.ok(handed >= 0, did.join(' '));
+    assert.ok(!did.slice(0, handed).includes('mine'), `no proof of work before the renewal is handed over: ${did.join(' ')}`);
+    [t] = await store.titles();
+    st = await statusOf(v2.backend, t);
+    const renewal = st.entries.find((e) => e.kind === 'renew');
+    assert.ok(renewal && renewal.time === null && renewal.pending, 'stamped, its pending anchor signed');
+    assert.ok(pub.puts.at(-1) === t.item || pub.puts.includes(t.item), 'handed to the servers with it');
+    assert.equal(t.ahead?.prev, renewal.id, 'the next made ahead, after the renewal waiting for its anchor');
+    assert.ok(did.slice(handed).includes('mine'), 'once handed over');
+    console.log(`# a due visit through the pretend calendars: ${ms} ms, of which proof of work for the next: after the publish`);
+    // Another visit before that one is due: nothing new made or stamped.
+    did.length = 0;
+    await (await visit()).agent.pass();
+    assert.ok(!did.includes('mine') && !did.includes('make'), did.join(' '));
+  } finally {
+    Date.now = real;
+  }
+  // Let it go: the renewal made ahead goes with it.
+  await v1.agent.release(conn(), 'ahead');
+  assert.equal((await store.titles())[0].ahead, undefined);
+});
+
+test('a room\'s server fetches through the page only the compiled calendars and explorers (web/names.ts serviceFetch)', { skip, timeout: 30_000 }, async () => {
+  const before = asked.urls.length;
+  for (const url of ['https://evil.example/timestamp/00', 'http://127.0.0.1:9/api/block/00/header', `${EXPLORERS[0]}.evil.example/block/00/header`]) {
+    const r = await serviceFetch(url);
+    assert.equal(r.status, 0, url);
+  }
+  assert.equal(asked.urls.length, before, 'nothing fetched for a URL of no compiled service');
+  // A compiled one is fetched (routed here to the pretend explorer), its status and body given back as they are.
+  const hash = Buffer.from(cal.blocks[0].hash).reverse().toString('hex');
+  const ok = await serviceFetch(`${EXPLORERS[1]}/block/${hash}/header`);
+  assert.equal(ok.status, 200);
+  assert.equal(new TextDecoder().decode(ok.body), cal.blocks[0].header.toString('hex'));
+  const missing = await serviceFetch(`${EXPLORERS[0]}/block/${'00'.repeat(32)}/header`);
+  assert.equal(missing.status, 404, 'a block the explorer doesn\'t know: denied, not failed');
+  assert.deepEqual(asked.foreign, []);
 });

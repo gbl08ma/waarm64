@@ -61,6 +61,15 @@ pub struct Params {
     pub pow_p: u32,
     /// The leading zero bits an entry's proof of work needs.
     pub pow_bits: u32,
+    /// What a server asks outside the room (room-names.md "Servers": renewals finished at a calendar, blocks checked
+    /// at an explorer; server/outside.rs): a pending renewal is first asked for this long (seconds) after the server
+    /// first held it...
+    pub finish_after: u32,
+    /// ...then decided once a slot of this many seconds (a chance a slot, set by a hash of the entry and the server's
+    /// key, so that a room's servers together ask about once a slot).
+    pub finish_slot: u32,
+    /// One block checked at an explorer at most this often (milliseconds): a new server's first sync brings hundreds.
+    pub check_every_ms: u32,
 }
 
 const HOUR: u32 = 3600;
@@ -78,16 +87,33 @@ impl Params {
         pow_t: 1,
         pow_p: 1,
         pow_bits: 16,
+        finish_after: 30 * 60,
+        finish_slot: 15 * 60,
+        check_every_ms: 3000,
     };
 
     /// The tests' pretend Bitcoin: the spec's clock with cheap proof of work (8 KiB, 2 bits) and a floor any pretend
-    /// header meets (regtest's target). Compiled only into the tests and a `test-params` build.
+    /// header meets (regtest's target); servers finish renewals and check blocks within seconds (the Node rig's tests
+    /// run in real time: tests/names-room.test.ts), where production waits minutes. Compiled only into the tests and a
+    /// `test-params` build; a Rust test of the rates takes production's timings ([`Params::TEST_PACED`]).
     #[cfg(any(test, feature = "test-params"))]
     pub const TEST: Params = Params {
         floor: 0x207f_ffff,
         pow_m_kib: 8,
         pow_bits: 2,
+        finish_after: 0,
+        finish_slot: 2,
+        check_every_ms: 100,
         ..Params::PRODUCTION
+    };
+
+    /// The tests' pretend Bitcoin with production's pace outside the room: what a test of the asks' rates runs on.
+    #[cfg(test)]
+    pub const TEST_PACED: Params = Params {
+        finish_after: Params::PRODUCTION.finish_after,
+        finish_slot: Params::PRODUCTION.finish_slot,
+        check_every_ms: Params::PRODUCTION.check_every_ms,
+        ..Params::TEST
     };
 
     /// What the module runs on (wasm.rs): production's. A build with the `test-params` feature (the page tests' module,

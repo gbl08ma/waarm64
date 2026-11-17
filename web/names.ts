@@ -69,6 +69,10 @@ export type TitleRecord = {
   collect: Record<string, { next: number; tries: number }>;
   /** When an entry may be made again (one that no calendar stamped). */
   remake?: { next: number; tries: number };
+  /** The next renewal made ahead (room-names-redesign.md §3): its proof of work and signature done, after entry `prev`
+   * (the owning chain's last, or the renewal waiting on it), not stamped. A visit that finds a renewal due stamps this
+   * one, which takes seconds, and hands it to the servers, who finish it at its calendar: so a short visit keeps a name. */
+  ahead?: { prev: string; entry: string };
   points: ZonePoint[];
   /** A zone's `seq` (64 bits) is `n << 32 | branch`: `n` counts up past every `seq` the title has seen, `branch` is
    * this copy's, 32 random bits drawn when the title was registered or taken in from an export (each paste draws its
@@ -260,10 +264,28 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
 
 // ---- Fetching: the compiled services only ----
 
+/** Whether `url` is one of SERVICES': the only URLs the agent or a room's server fetches. */
+export const isService = (url: string) => SERVICES.some((s) => url.startsWith(`${s}/`));
+
 /** A GET or POST to one of SERVICES; anything else throws (no stored value or link can name another service). */
 async function get(url: string, init?: RequestInit): Promise<Response> {
-  if (!SERVICES.some((s) => url.startsWith(`${s}/`))) throw new Error(`names: not a compiled service: ${url}`);
+  if (!isService(url)) throw new Error(`names: not a compiled service: ${url}`);
   return fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_MS) });
+}
+
+/**
+ * A room's server's fetch (the module's action 12: net/ts/src/room/names/outside.rs, a renewal finished at a calendar,
+ * a block checked at an explorer), as the room's worker makes it: a GET of one of SERVICES, its status and body; status 0
+ * when it failed or `url` isn't a compiled service's (nothing is fetched then). The module builds its URLs from the same
+ * compiled lists (anchor.rs `Calendar`, `EXPLORERS`), never from a record; this holds the page to them too.
+ */
+export async function serviceFetch(url: string): Promise<{ status: number; body: Uint8Array }> {
+  try {
+    const r = await get(url);
+    return { status: r.status, body: new Uint8Array(await r.arrayBuffer()) };
+  } catch {
+    return { status: 0, body: new Uint8Array() };
+  }
 }
 
 async function text(url: string): Promise<string> {
@@ -392,6 +414,7 @@ export class NamesAgent {
       const st = await this.status(t);
       if (st?.owner && !t.lost && !st.owner.released) await this.makeEntry(t, 'release', st.owner.ids.at(-1));
       t.released = true;
+      delete t.ahead;
       await this.save(t);
     });
     const t = await this.mustGet(c.identityKey, room, name);
@@ -467,6 +490,12 @@ export class NamesAgent {
           });
           const t = await this.store.get(t0.identityKey, t0.room, t0.name);
           if (t) await this.publish(t);
+          // Once what was due is stamped and handed over: the next renewal, made ahead (proof of work) while the page
+          // stays open, so that the visit that finds it due needs only stamps.
+          await this.locked(t0, false, async () => {
+            const t = await this.store.get(t0.identityKey, t0.room, t0.name);
+            if (t && (await this.makeAhead(t))) await this.save(t);
+          });
         } catch (err) {
           this.log(`${t0.name}: ${String(err)}`);
         }
@@ -601,10 +630,39 @@ export class NamesAgent {
     const lastTime = st.entries.find((e) => e.id === last)?.time ?? 0;
     const due = nowS() >= lastTime + st.term / 2;
     if (o.owner === ownKey && due && !st.entries.some((e) => live(e) && e.prev === last)) {
-      await this.makeEntry(t, 'renew', last);
+      // The renewal made ahead, when it follows the last entry: stamped now, no proof of work at this visit.
+      const ahead = t.ahead?.prev === last ? t.ahead.entry : undefined;
+      if (!ahead) this.log(`${t.name}: no renewal made ahead; making one now`);
+      if (await this.makeEntry(t, 'renew', last, ahead)) delete t.ahead;
       changed = true;
     }
     return changed;
+  }
+
+  /**
+   * The next renewal of title `t` made ahead (proof of work and signature, not stamped) after its newest entry of its own
+   * chain: the renewal waiting for its anchor on the owning chain's last entry, else that last entry, else the claim
+   * waiting for its anchor. Not for a lost or released title, nor a chain of another key's. Whether one was made.
+   */
+  private async makeAhead(t: TitleRecord): Promise<boolean> {
+    if (t.lost || t.released || !t.item) return false;
+    const st = await this.status(t);
+    if (!st) return false;
+    const live = (e: EntryStatus) => e.time === null && !e.stale;
+    let prev: string | undefined;
+    if (st.owner) {
+      const secret = t.secret ?? (await this.store.secret(t.identityKey));
+      const ownKey = secret ? (await this.b.op<{ owner: string }>('key', { room: t.room, secret, name: t.name })).owner : undefined;
+      if (st.owner.released || st.owner.owner !== ownKey) return false;
+      const last = st.owner.ids.at(-1)!;
+      prev = st.entries.find((e) => live(e) && e.kind === 'renew' && e.prev === last)?.id ?? last;
+    } else if (!st.best) {
+      prev = st.entries.find((e) => live(e) && e.kind === 'claim')?.id;
+    }
+    if (!prev || t.ahead?.prev === prev) return false;
+    t.ahead = { prev, entry: await this.prepare(t, 'renew', prev) };
+    this.log(`${t.name}: the next renewal made ahead`);
+    return true;
   }
 
   private async dropEntries(t: TitleRecord, ids: string[]) {
@@ -620,17 +678,11 @@ export class NamesAgent {
    * the title, stamped at the calendars (each receipt a pending anchor the owner key signs). With no receipt it can never
    * be anchored: dropped, made again later. A claim carries the title's zone.
    */
-  private async makeEntry(t: TitleRecord, kind: 'claim' | 'renew' | 'release', prev?: string) {
+  private async makeEntry(t: TitleRecord, kind: 'claim' | 'renew' | 'release', prev?: string, made?: string): Promise<string | undefined> {
     const secret = t.secret ?? (await this.store.secret(t.identityKey));
     if (!secret) throw new NamesError('NoSecret');
     const base = { room: t.room, secret, name: t.name };
-    let { entry } = await this.b.op<{ entry: string }>('make', { ...base, kind, prev });
-    for (;;) {
-      const m = await this.b.op<{ entry: string; done: boolean }>('mine', { entry, tries: MINE_SLICE });
-      entry = m.entry;
-      if (m.done) break;
-    }
-    ({ entry } = await this.b.op<{ entry: string }>('sign', { ...base, entry }));
+    const entry = made ?? (await this.prepare(t, kind, prev));
     const added = await this.b.op<{ item: string; id: string }>('add', { room: t.room, item: t.item || undefined, entry, now: nowS() });
     let item = added.item;
     const id = added.id;
@@ -657,7 +709,7 @@ export class NamesAgent {
     if (!stamps.length) {
       this.log(`${t.name}: no calendar stamped the ${kind}; made again later`);
       t.remake = this.backoff(t.remake);
-      return;
+      return undefined;
     }
     t.item = item;
     t.stamps[id] = stamps;
@@ -666,6 +718,21 @@ export class NamesAgent {
     if (kind === 'claim' || t.stampedAt === undefined) t.stampedAt = Date.now();
     delete t.remake;
     this.log(`${t.name}: ${kind} ${id.slice(0, 8)} made, stamped at ${stamps.length} calendar(s)`);
+    return id;
+  }
+
+  /** An entry of `kind` after `prev` for title `t`, worked (proof of work in slices) and signed: hex, not stamped. */
+  private async prepare(t: TitleRecord, kind: 'claim' | 'renew' | 'release', prev?: string): Promise<string> {
+    const secret = t.secret ?? (await this.store.secret(t.identityKey));
+    if (!secret) throw new NamesError('NoSecret');
+    const base = { room: t.room, secret, name: t.name };
+    let { entry } = await this.b.op<{ entry: string }>('make', { ...base, kind, prev });
+    for (;;) {
+      const m = await this.b.op<{ entry: string; done: boolean }>('mine', { entry, tries: MINE_SLICE });
+      entry = m.entry;
+      if (m.done) break;
+    }
+    return (await this.b.op<{ entry: string }>('sign', { ...base, entry })).entry;
   }
 
   /** The next zone `seq` for title `t` (decimal): past every one it has seen, with its own branch in the low half. */

@@ -36,6 +36,8 @@ struct Node {
     stored: BTreeMap<[u8; 32], Vec<u8>>,
     /// WebRTC connections it asked for.
     rtc_opens: usize,
+    /// The URLs it asked the page to fetch (a room's server's: room/names/outside.rs).
+    fetches: Vec<String>,
 }
 
 /// One end of a fake WebRTC connection.
@@ -149,6 +151,7 @@ fn node(c: Client) -> Node {
         derp_packets: 0,
         rtc_packets: 0,
         stored: BTreeMap::new(),
+        fetches: Vec::new(),
         rtc_opens: 0,
     }
 }
@@ -404,6 +407,12 @@ impl Net {
             }
             Action::ToGuest(p) => self.nodes[i].guest.push(p),
             Action::Event(e) => self.nodes[i].events.push(serde_json::from_str(&e).unwrap()),
+            // Nothing answers a server's fetches here (room/tests/names.rs counts them): no answer, as a page with
+            // the services down would say.
+            Action::NamesFetch { id, url } => {
+                self.nodes[i].fetches.push(url);
+                self.nodes[i].c.names_fetched(id, 0, &[], now);
+            }
             Action::NamesStore { id, record } => match record {
                 Some(r) => {
                     self.nodes[i].stored.insert(id, r);

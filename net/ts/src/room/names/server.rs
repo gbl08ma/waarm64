@@ -19,6 +19,8 @@
 //!   was verified and is trusted at load.
 //! - **The bound**: [`Config::max_names`] and bytes; past either, the names nobody asked for
 //!   longest go first, never this node's own.
+//! - **Outside the room** ([`outside`]): renewals pending at a calendar finished, each block the registry is anchored
+//!   in checked at an explorer, through fetches the page makes ([`Cmd::Fetch`], [`Input::Fetched`]).
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -27,6 +29,10 @@ use std::{
 
 use blake2::{Blake2s256, Digest};
 use k256::schnorr::SigningKey;
+
+#[path = "outside.rs"]
+mod outside;
+pub use outside::{BLOCK_RECORD, FETCH_WAIT};
 
 use super::{
     Invalid, Params,
@@ -144,6 +150,8 @@ pub enum Input {
     Datagram { from: [u8; 32], data: Vec<u8> },
     /// The transport forgot that peer.
     Gone([u8; 32]),
+    /// The page's answer to [`Cmd::Fetch`] `id`: the HTTP status (0: no answer, the fetch failed) and the body.
+    Fetched { id: u32, status: u16, body: Vec<u8> },
 }
 
 /// What the registry asks the transport (or the page) to do.
@@ -172,7 +180,13 @@ pub enum Cmd {
     Forget([u8; 32]),
     /// Subscribe to the names tag (a server) or not.
     Subscribe(bool),
-    /// Store a name's record (None: delete it).
+    /// GET `url` (a compiled calendar's or explorer's, never one from a record: [`outside`]); the answer comes back as
+    /// [`Input::Fetched`] with this `id`. Only a server asks: a member asks nothing outside the room.
+    Fetch {
+        id: u32,
+        url: String,
+    },
+    /// Store a name's record (None: delete it); a block's check, under the block's hash ([`BLOCK_RECORD`]).
     Store {
         id: [u8; 32],
         record: Option<Vec<u8>>,
@@ -555,6 +569,8 @@ pub struct Server {
     last_unix: u64,
     /// The round's runs are over: synced once what they brought is verified.
     round_over: bool,
+    /// What it asks outside the room: blocks checked, renewals finished ([`outside`]).
+    out: outside::Outside,
     /// The tests' lying server: names it never keeps (so never lists or serves).
     #[cfg(test)]
     pub refuse: BTreeSet<[u8; 32]>,
@@ -562,6 +578,12 @@ pub struct Server {
 
 #[derive(Debug, Default, Clone)]
 pub struct Stats {
+    /// Fetches asked of the page: calendars, explorers ([`outside`]).
+    pub fetches: usize,
+    /// Renewals this server finished; blocks it checked, and refused.
+    pub finished: usize,
+    pub blocks_checked: usize,
+    pub blocks_refused: usize,
     pub answered: usize,
     pub refused: usize,
     pub rounds: usize,
@@ -620,6 +642,7 @@ impl Server {
             now: Instant::now(),
             last_unix: unix,
             round_over: false,
+            out: outside::Outside::default(),
             #[cfg(test)]
             refuse: BTreeSet::new(),
         };
@@ -668,6 +691,7 @@ impl Server {
             }
             if !h.is_empty() {
                 self.reg.put(h);
+                self.note(&id, unix);
             }
         }
     }
@@ -728,6 +752,7 @@ impl Server {
         self.proven.clear();
         self.proof_tried.clear();
         self.sync_spent.clear();
+        self.out.stop();
     }
 
     pub fn names(&self) -> &RoomNames {
@@ -750,6 +775,9 @@ impl Server {
     /// A stored record, streamed in at the start: verified when it was taken, so trusted. False when nothing of it is
     /// held (not a server's record, or a lapsed name's): the page deletes it.
     pub fn load(&mut self, record: &[u8], unix: u64) -> bool {
+        if record.first() == Some(&BLOCK_RECORD) {
+            return self.load_block(record, unix);
+        }
         let Some((asked, item)) = read_record(record) else {
             return false;
         };
@@ -777,7 +805,13 @@ impl Server {
         h.asked = h.asked.max(asked);
         for e in item.entries {
             if e.entry.name == id {
-                h.name.insert(e.trusted());
+                let mut s = e.trusted();
+                if s.anchor()
+                    .is_some_and(|a| self.out.refused(&a.header.hash()))
+                {
+                    s.drop_anchor();
+                }
+                h.name.insert(s);
             }
         }
         h.settle(&self.params, unix);
@@ -789,6 +823,7 @@ impl Server {
         h.settle(&self.params, unix);
         if !h.is_empty() {
             self.reg.put(h);
+            self.note(&id, asked.min(unix));
         }
     }
 
@@ -820,6 +855,7 @@ impl Server {
                 .min()
                 .map(|t| t + RUN_MAX),
             jobs,
+            self.outside_deadline(),
         ]
         .into_iter()
         .flatten()
@@ -843,6 +879,7 @@ impl Server {
         self.now = now;
         self.last_unix = unix;
         self.verify_slice(now, unix);
+        self.outside_tick(now, unix);
         let long: Vec<[u8; 32]> = (self.runs.iter())
             .filter(|(_, r)| r.started.is_some_and(|t| now >= t + RUN_MAX))
             .map(|(k, _)| *k)
@@ -915,6 +952,7 @@ impl Server {
                 self.stored(&id);
             }
             self.dropped.retain(|_, t| unix < *t + DROPPED_FOR);
+            self.outside_scan(unix);
         }
         self.flush();
     }
@@ -942,6 +980,7 @@ impl Server {
 
     fn nobody_answered(&mut self, now: Instant) {
         self.ask = None;
+        self.out.heard(0, 0);
         let wait = self
             .nobody
             .map_or(NOBODY_FIRST, |(_, w)| (w * 2).min(NOBODY_MAX));
@@ -1015,6 +1054,10 @@ impl Server {
     fn choose(&mut self, now: Instant, _unix: u64) {
         let a = self.ask.take().unwrap();
         self.nobody = None;
+        self.out.heard(
+            a.answers.len(),
+            SPREADS[a.round.clamp(1, SPREADS.len()) - 1],
+        );
         let (keep, rest) = a.choose();
         self.cmds.push_back(Cmd::Accept { until: now, max: 0 });
         for k in keep {
@@ -1172,6 +1215,7 @@ impl Server {
         match i {
             Input::Question { q, region } => self.on_question(q, region, now, unix),
             Input::Gone(k) => self.gone(k),
+            Input::Fetched { id, status, body } => self.fetched(id, status, &body, now, unix),
             Input::Datagram { from, data } => {
                 if let Some((xid, payload)) = self.xf.input(from, &data, now) {
                     match Msg::decode(&payload) {
@@ -1697,7 +1741,9 @@ impl Server {
         };
         if let Some((a, h)) = w.anchor {
             let better = s.anchor().is_none_or(|b| b.anchor != a || b.header != h);
-            if better {
+            if better && self.out.refused(&h.hash()) {
+                self.log("an anchor refused: both explorers denied its block".into());
+            } else if better {
                 cost += 1;
                 if let Err(e) = s.offer_anchor(a, h, &self.params, unix) {
                     self.log(format!("an anchor refused: {e:?}"));
@@ -1752,6 +1798,7 @@ impl Server {
         };
         if !h.is_empty() {
             self.reg.put(h);
+            self.note(&id, unix);
         }
         if let Some((peer, Some(xid))) = job.from {
             self.send(peer, &answer, xid, self.now);

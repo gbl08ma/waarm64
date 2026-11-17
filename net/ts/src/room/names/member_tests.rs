@@ -160,6 +160,8 @@ impl Bus {
                 self.stored.insert(id, record);
             }
             Cmd::Log(l) => eprintln!("member: {l}"),
+            // Decision 4 as amended: servers ask an explorer and a calendar, members nothing.
+            Cmd::Fetch { url, .. } => panic!("a member fetched {url}"),
             Cmd::Accept { .. } | Cmd::CallBack { .. } | Cmd::Subscribe(_) | Cmd::Served(..) => {}
         }
     }

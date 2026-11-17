@@ -7,7 +7,7 @@ import { batchSender, packetsOf } from './net.ts';
 import { failureOf, TsClient, TsModule, type RoomConfig } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
 import { parseRoomLink, roomIdentity, roomNamesStore, type FromRoom, type RoomNamesStore, type ToRoom } from './room.ts';
-import { idbNamesStore, NAMES_CHANNEL, roomTitles } from './names.ts';
+import { idbNamesStore, NAMES_CHANNEL, roomTitles, serviceFetch } from './names.ts';
 import { namesOp } from './names-ops.ts';
 
 const post = (m: FromRoom) => self.postMessage(m);
@@ -103,6 +103,11 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     names = store;
     client = new TsClient(mod, config, {
       namesStore: (k, record) => names?.write(k, record),
+      // A server's asks outside the room: the compiled calendars and explorers only (web/names.ts `serviceFetch`).
+      namesFetch: (fid, url) => {
+        const asker = client; // an answer that comes after a restart isn't the new client's
+        void serviceFetch(url).then((r) => { if (asker && client === asker) asker.namesFetched(fid, r.status, r.body); });
+      },
       packet: (p) => send?.(p),
       rtc: {
         open: (rtc, offer) => post({ type: 'rtc-open', rtc, offer }),

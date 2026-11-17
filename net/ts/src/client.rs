@@ -67,6 +67,12 @@ pub enum Action {
         id: [u8; 32],
         record: Option<Vec<u8>>,
     },
+    /// A room's server asks outside the room (room/names/outside.rs): GET `url`, a compiled calendar's or explorer's;
+    /// the status and body go to `names_fetched(id, …)`.
+    NamesFetch {
+        id: u32,
+        url: String,
+    },
 }
 
 /// The most a relay message carries when frames are joined (see [`queue_frames`]): about three

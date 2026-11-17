@@ -348,6 +348,12 @@ impl Stamped {
         true
     }
 
+    /// Drops the anchor (its block was denied by both explorers: server/outside.rs). The entry counts for nothing
+    /// until another anchor comes.
+    pub fn drop_anchor(&mut self) {
+        self.anchor = None;
+    }
+
     /// Drops the pending anchor (the chain's last entry is the only one that carries one).
     pub fn drop_pending(&mut self) {
         self.pending = None;

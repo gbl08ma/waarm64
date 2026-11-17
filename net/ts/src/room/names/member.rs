@@ -670,7 +670,8 @@ impl Member {
         }
         self.now = now;
         match i {
-            Input::Question { .. } => {} // a member answers nobody
+            // A member answers nobody, and asks nothing outside the room.
+            Input::Question { .. } | Input::Fetched { .. } => {}
             Input::Gone(k) => self.gone(k, now, unix),
             Input::Datagram { from, data } => {
                 if let Some((_, payload)) = self.xf.input(from, &data, now) {
