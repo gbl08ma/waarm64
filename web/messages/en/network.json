@@ -1024,7 +1024,7 @@
     "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter). A detail line."
   },
   "ts-client.tailnetLock": {
-    "message": "This tailnet uses Tailnet Lock, which this emulator doesn't support.",
+    "message": "This tailnet uses Tailnet Lock, which $t(common:product.name) doesn't support.",
     "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter): the tailnet has Tailnet Lock (Tailscale's feature's name) on. A detail line."
   },
   "ts-client.noExitNode": {

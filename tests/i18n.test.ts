@@ -118,6 +118,30 @@ test('checks: the docs quote the page in its words', () => {
   assert.match(fixed, /`Where\?` is code/);
 });
 
+test('references: a message says another\'s words ($t(ns:key)), rendered, checked and quoted as the page says them', () => {
+  // The catalog's own: the product's name, said once.
+  assert.equal(t('toolbar:Toolbar.name'), t('common:product.name'));
+  assert.match(t('common:ask.title'), /^[^$]+$/);
+  const cat: Catalogs = { x: {
+    'brand.name': { message: 'Acme', note: 'The product\'s name, which other messages say.' },
+    'Thing.acts': { message: 'At every boot, $t(x:brand.name) sets the clock.', note: 'A note that names the product.' },
+    'Thing.bad': { message: 'See $t(x:Thing.none) and $t(x:Thing.save).', note: 'References to nothing and to a parameter.' },
+    'Thing.save': { message: 'Save {{name}}', note: 'A button with a parameter.' },
+    'Thing.loop': { message: 'Again $t(x:Thing.loop)', note: 'A reference to itself.' },
+  } };
+  const said = checkSources(cat, [{ path: 'web/app/Thing.ts', text: `t('x:Thing.acts'); t('x:Thing.bad'); t('x:Thing.save', { name }); t('x:Thing.loop');` }]).map((p) => p.text).join('\n');
+  assert.match(said, /x:Thing\.bad: \$t\(x:Thing\.none\) names no message/);
+  assert.match(said, /x:Thing\.bad: \$t\(x:Thing\.save\) names a message with parameters/);
+  assert.match(said, /x:Thing\.loop: \$t\(x:Thing\.loop\) doesn't resolve/);
+  // Named only by messages, the name needs no source of its own.
+  assert.doesNotMatch(said, /brand\.name/);
+  // The docs quote the words as the page renders them.
+  const doc = 'It says [At every boot, Acme sets the clock.](ui:x:Thing.acts) and [At every boot, it sets the clock.](ui:x:Thing.acts)';
+  const r = checkDoc(cat, 'docs/a.md', doc);
+  assert.equal(r.problems.length, 1, r.problems.map((p) => p.text).join('\n'));
+  assert.match(r.problems[0].text, /the page says "At every boot, Acme sets the clock\."/);
+});
+
 test('checks: tests take the page\'s words from the catalog', () => {
   const cat: Catalogs = { x: {
     'Thing.retry': { message: 'Retry', note: 'A button.' },

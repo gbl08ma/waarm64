@@ -43,8 +43,12 @@
     "message": "Are you sure?",
     "note": "The title of a confirmation dialog (OK/Cancel) that doesn't give a title of its own."
   },
-  "ask.title": {
+  "product.name": {
     "message": "waarm64",
+    "note": "The product's name, written once: other messages say it through $t(common:product.name) (the toolbar's heading, a dialog's default title, sentences where it acts, such as “At every boot, waarm64 changes…”). Lower case, as the project writes it."
+  },
+  "ask.title": {
+    "message": "$t(common:product.name)",
     "note": "The title of a notice or a text prompt that doesn't give a title of its own: the product's name."
   },
   "ask.ok": {

@@ -29,6 +29,7 @@ import { parseSync } from 'vite';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expand, REF } from '../web/messages/en/index.ts';
 
 export type Entry = { message: string; note: string };
 export type Catalogs = Record<string, Record<string, Entry>>;
@@ -53,6 +54,11 @@ export function varsOf(message: string): Set<string> {
 
 /** The base key of a plural form (`Source.files_one` → `Source.files`). */
 const baseKey = (k: string) => k.replace(PLURAL, '');
+
+/** The catalogs with every message's references (`$t(ns:Source.name)`) resolved: the words the page renders. */
+export function expanded(catalogs: Catalogs): Catalogs {
+  return Object.fromEntries(Object.entries(catalogs).map(([ns, c]) => [ns, Object.fromEntries(Object.entries(c).map(([k, e]) => [k, typeof e?.message === 'string' ? { ...e, message: expand(e.message, catalogs) } : e]))]));
+}
 
 /** A file's stem as keys name it: `Disks.svelte` → `Disks`, `ask.svelte.ts` → `ask`, `qcow2-write.ts` → `qcow2-write`. */
 export const stemOf = (path: string) => basename(path).replace(/(\.svelte)?\.(ts|js|mjs|svelte)$/, '');
@@ -182,13 +188,15 @@ function waived(text: string, line: number) {
 }
 
 /** The checks on the catalog and the sources (everything but the docs and the workers' imports). */
-export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChecks?: (path: string) => boolean } = {}): Problem[] {
+export function checkSources(raw: Catalogs, sources: Source[], o: { copyChecks?: (path: string) => boolean } = {}): Problem[] {
   const problems: Problem[] = [];
+  const catalogs = expanded(raw);
+  const referenced = new Set<string>(); // keys a message says in its words (`$t(key)`)
   const say = (path: string, line: number, text: string) => problems.push({ path, line, text });
   const copyChecks = o.copyChecks ?? ((p: string) => /(^|\/)web\//.test(p));
 
   // The catalog itself.
-  for (const [ns, c] of Object.entries(catalogs)) {
+  for (const [ns, c] of Object.entries(raw)) {
     const file = `web/messages/en/${ns}.json`;
     for (const [k, e] of Object.entries(c)) {
       if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9_-]+)+$/.test(k)) say(file, 1, `${ns}:${k}: a key is <Source>.<name> (letters, digits, - and _)`);
@@ -197,7 +205,14 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
       const extra = Object.keys(e).filter((x) => x !== 'message' && x !== 'note');
       if (extra.length) say(file, 1, `${ns}:${k}: unknown fields ${extra.join(', ')}`);
       if (/\{\{[^}]*$|^[^{]*\}\}/.test(e.message)) say(file, 1, `${ns}:${k}: unbalanced {{ }} in its words`);
-      if (loneLine(e.message)) say(file, 1, `${ns}:${k}: a headline and a line under it in one message: the headline is a message, the line its cause (new MsgError(headline, …, { cause: new MsgError(…) }); docs/copy.md "The elements")`);
+      for (const m of e.message.matchAll(REF)) {
+        const ref = m[1], r = KEY_RE.exec(ref), to = r ? raw[r[1]]?.[r[2]] : undefined;
+        if (!to) { say(file, 1, `${ns}:${k}: ${m[0]} names no message (a reference is $t(ns:Source.name), a whole entry without options)`); continue; }
+        referenced.add(ref);
+        if (/\{\{/.test(to.message) || PLURAL.test(r![2])) say(file, 1, `${ns}:${k}: ${m[0]} names a message with parameters or plural forms: a reference says fixed words`);
+        if (expand(to.message, raw).includes('$t(')) say(file, 1, `${ns}:${k}: ${m[0]} doesn't resolve (a reference to itself, or deeper than 8)`);
+      }
+      if (loneLine(expand(e.message, raw))) say(file, 1, `${ns}:${k}: a headline and a line under it in one message: the headline is a message, the line its cause (new MsgError(headline, …, { cause: new MsgError(…) }); docs/copy.md "The elements")`);
     }
   }
 
@@ -464,6 +479,8 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
       const key = `${ns}:${k}`;
       const by = named.get(key);
       const want = k.split('.')[0];
+      // An entry other messages say (the product's name) needs no source of its own.
+      if (referenced.has(key) && (!by || by.has(want) || !stems.has(want))) continue;
       if (!by) say(`web/messages/en/${ns}.json`, 1, `${key}: named by no source`);
       else if (!by.has(want)) say(`web/messages/en/${ns}.json`, 1, `${key}: named in ${[...by].join(', ')}, not in ${want}${stems.has(want) ? '' : ` (no source named ${want})`}: a key starts with the stem of the file that uses it`);
     }
@@ -618,12 +635,21 @@ export function checkWorkers(root: string, sources: Source[]): Problem[] {
   return problems;
 }
 
+const expandedCache = new WeakMap<Catalogs, Catalogs>();
+/** `expanded(catalogs)`, once per catalogs (the docs are checked one by one). */
+function expandedOnce(catalogs: Catalogs): Catalogs {
+  let e = expandedCache.get(catalogs);
+  if (!e) expandedCache.set(catalogs, (e = expanded(catalogs)));
+  return e;
+}
+
 /** A UI quote in the docs, `[words](ui:key)`: its words may be broken across two lines (a paragraph's wrap). */
 const UI_QUOTE = () => /\[([^\]\n]+(?:\n[^\]\n]+)?)\]\(ui:([^)\s]+)\)/g;
 
 /** The docs' UI quotes against the catalog; with `fix`, the quotes' words rewritten (the new text, if any changed). */
-export function checkDoc(catalogs: Catalogs, path: string, text: string, fix = false): { problems: Problem[]; fixed?: string } {
+export function checkDoc(raw: Catalogs, path: string, text: string, fix = false): { problems: Problem[]; fixed?: string } {
   const problems: Problem[] = [];
+  const catalogs = expandedOnce(raw);
   // Every message's plain words, for quotes that aren't marked yet.
   const byWords = new Map<string, string>();
   for (const [ns, c] of Object.entries(catalogs)) for (const [k, e] of Object.entries(c)) if (!e.message.includes('{{')) byWords.set(plainWords(e.message), `${ns}:${k}`);
@@ -673,8 +699,9 @@ const WORDING_FILES = new Set(['tests/i18n.test.ts']);
  * lower-case word is most often a state's value in the code, not copy; a keyboard key's label is a key's name). A test named `wording: …` pins words on
  * purpose and is skipped, as is a line with `i18n-ignore` (data that reads like a message: a peer's state).
  */
-export function checkTests(catalogs: Catalogs, sources: Source[]): Problem[] {
+export function checkTests(raw: Catalogs, sources: Source[]): Problem[] {
   const problems: Problem[] = [];
+  const catalogs = expanded(raw);
   // Each message's words, a parameter as NUL (a quote never spans one).
   const messages: { key: string; words: string }[] = [];
   for (const [ns, c] of Object.entries(catalogs)) for (const [k, e] of Object.entries(c)) messages.push({ key: `${ns}:${baseKey(k)}`, words: plainWords(e.message).replace(/\{\{[^}]*\}\}/g, '\0') });

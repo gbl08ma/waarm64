@@ -141,7 +141,7 @@ test('shapes pinned: representative shapes\' hashes and what shapeDiff says of t
   ];
   const seen = await Promise.all(variants.map(async (v) => [await shapeHash(v), diffWords(base, v), diffWords(v, base)]));
   const digest = createHash('sha256').update(JSON.stringify(seen)).digest('hex');
-  assert.equal(digest, '4be58e34e2d2fef0b4784d199008fbefdfad3080050cabef6bd48873e6ace8f8', 'the shapes\' hashes or their diffs moved');
+  assert.equal(digest, 'a26bf6275aea04bf8d8fd33c6854583e085f48700d1330a4f54fe67ebf007472', 'the shapes\' hashes or their diffs moved');
 });
 
 test('network adapters in the shape: one at the default MAC is the card machines had before; more, or another MAC, move it', async () => {

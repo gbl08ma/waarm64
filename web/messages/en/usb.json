@@ -112,7 +112,7 @@
     "note": "A HID collection without a name of its own, placed in the problem \"The guest doesn't get the device's {{what}} part…\". {{usage}} is its usage page and usage in hex, e.g. 000c:0001."
   },
   "usb-problems.protectedInterface.hid": {
-    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use Add a device… › A HID device (WebHID) instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through this emulator anyway.",
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use Add a device… › A HID device (WebHID) instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
     "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-problems.class.*), read as a plural (\"audio interfaces\"). This variant is for a HID interface: it says where to go instead (the menu path is the Add a USB device wizard's words)."
   },
   "usb-problems.protectedInterface.disk": {
@@ -200,15 +200,15 @@
     "note": "A USB problem's text on a computer without a remedy of its own (ChromeOS, other): a driver or program holds an interface. {{interface}} is the interface number."
   },
   "usb-problems.protectedCollection.kept": {
-    "message": "The guest gets only the feature reports of the device's {{what}} part, the settings that tools such as VIA use. This browser keeps the rest of that part from web apps. Your keyboard and mouse reach the machine through this emulator anyway.",
+    "message": "The guest gets only the feature reports of the device's {{what}} part, the settings that tools such as VIA use. This browser keeps the rest of that part from web apps. Your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
     "note": "A problem under an attached WebHID device (Machines page's USB tab, USB menu's tooltip): one of its collections reaches the guest only through its feature reports. {{what}} is the collection's kind (usb-problems.usage.*)."
   },
   "usb-problems.protectedCollection": {
-    "message": "The guest doesn't get the device's {{what}} part, because this browser keeps it from web apps. Your keyboard and mouse reach the machine through this emulator anyway.",
+    "message": "The guest doesn't get the device's {{what}} part, because this browser keeps it from web apps. Your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
     "note": "A problem under an attached WebHID device (Machines page's USB tab, USB menu's tooltip): one of its collections doesn't reach the guest. {{what}} is the collection's kind (usb-problems.usage.*)."
   },
   "usb-problems.noCollections": {
-    "message": "None of this HID device reaches the guest. This browser keeps all of its parts from web apps, as it does with keyboards, mice, and security keys. Your keyboard and mouse reach the machine through this emulator anyway.",
+    "message": "None of this HID device reaches the guest. This browser keeps all of its parts from web apps, as it does with keyboards, mice, and security keys. Your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
     "note": "A problem under a WebHID device that couldn't be attached (an attach's error in the USB menu, Add a USB device, the Machines page): nothing of it reaches pages."
   },
   "usb-problems.openFailed.linux": {
@@ -596,7 +596,7 @@
     "note": "Title of the second choice in the Add a USB device wizard: a device built from what WebHID tells."
   },
   "AddUsb.hid.text": {
-    "message": "Game pads, joysticks and wheels, macro pads and Stream Decks, a keyboard's configuration interface (VIA), and UPSes, over USB or Bluetooth. The guest gets a USB HID device rebuilt from what this browser reports about it. A keyboard's keys and a mouse's pointer can't be passed through; your keyboard and mouse reach the machine through this emulator anyway.",
+    "message": "Game pads, joysticks and wheels, macro pads and Stream Decks, a keyboard's configuration interface (VIA), and UPSes, over USB or Bluetooth. The guest gets a USB HID device rebuilt from what this browser reports about it. A keyboard's keys and a mouse's pointer can't be passed through; your keyboard and mouse reach the machine through $t(common:product.name) anyway.",
     "note": "Explanation under A HID device (WebHID), the second choice in the Add a USB device wizard."
   },
   "AddUsb.title": {

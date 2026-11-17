@@ -184,7 +184,7 @@
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the shared folders device now, not then."
   },
   "shape-diff.version": {
-    "message": "it was made by another version of this emulator",
+    "message": "it was made by another version of $t(common:product.name)",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the snapshot's description of the machine is in another format, so nothing else can be compared."
   },
   "shape-diff.ncpus": {
@@ -732,7 +732,7 @@
     "note": "Machines page, Settings tab: the label of the box that has the page start its small program (the guest agent) in the guest at each boot, which sets the guest's clock after a restore and, if the box under it is ticked, shares the clipboard."
   },
   "DeviceSwitches.agent.title": {
-    "message": "At every boot, this emulator starts a small program of its own in the guest, which talks to the web app over the machine's vsock device.",
+    "message": "At every boot, $t(common:product.name) starts a small program of its own in the guest, which talks to the web app over the machine's vsock device.",
     "note": "Machines page, Settings tab: tooltip of Run the guest agent."
   },
   "DeviceSwitches.agent.on": {
@@ -1300,7 +1300,7 @@
     "note": "Machines page, Settings tab: the label of the JIT cache size slider."
   },
   "SettingsTab.jit.title": {
-    "message": "The most compiled guest code this emulator keeps before it starts over. The browser uses several times this much memory for it. A smaller cache saves memory; a larger one keeps more of a big program's code, such as a web browser's, compiled.",
+    "message": "The most compiled guest code $t(common:product.name) keeps before it starts over. The browser uses several times this much memory for it. A smaller cache saves memory; a larger one keeps more of a big program's code, such as a web browser's, compiled.",
     "note": "Machines page, Settings tab: tooltip of the JIT cache slider."
   },
   "SettingsTab.jit.default": {
@@ -1324,7 +1324,7 @@
     "note": "Machines page, Settings tab: the label of the keyboard layout menu."
   },
   "KeyboardField.keyboard.title": {
-    "message": "Choose your keyboard's layout, for this emulator to set in the guest.",
+    "message": "Choose your keyboard's layout, for $t(common:product.name) to set in the guest.",
     "note": "Machines page, Settings tab: tooltip of the Keyboard layout menu."
   },
   "KeyboardField.keyboard.follow": {
@@ -1344,15 +1344,15 @@
     "note": "Machines page, Settings tab: button beside the Keyboard layout menu that picks the layout the browser reports."
   },
   "KeyboardField.keyboard.followNote.now": {
-    "message": "At every boot, this emulator changes the guest's keyboard settings to the layout this browser reports, now {{layout}}, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with Don't set it.",
+    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to the layout this browser reports, now {{layout}}, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with Don't set it.",
     "note": "Machines page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports a layout. {{layout}}: that layout's name. Don't set it quotes the menu's first option."
   },
   "KeyboardField.keyboard.followNote": {
-    "message": "At every boot, this emulator changes the guest's keyboard settings to the layout this browser reports, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with Don't set it.",
+    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to the layout this browser reports, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Only Chromium-based browsers report a layout; without one, the guest keeps its last layout, as it does with Don't set it.",
     "note": "Machines page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports no layout now. Don't set it quotes the menu's first option."
   },
   "KeyboardField.keyboard.setNote": {
-    "message": "At every boot, this emulator changes the guest's keyboard settings to this layout, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Choosing Don't set it later leaves the last layout in place.",
+    "message": "At every boot, $t(common:product.name) changes the guest's keyboard settings to this layout, for the console, X11, and Wayland. The guest must be running systemd version 256 or above. Choosing Don't set it later leaves the last layout in place.",
     "note": "Machines page, Settings tab: note under the Keyboard layout menu when a layout is chosen. Don't set it quotes the menu's first option."
   },
   "SettingsTab.shape.note": {
@@ -1460,7 +1460,7 @@
     "note": "Machines page, Network tab: the note under the list of adapters. {{max}}: the most adapters (4)."
   },
   "NetworkTab.netConfig.title": {
-    "message": "At every boot, this emulator has the guest's systemd-networkd apply the settings each connection provides.",
+    "message": "At every boot, $t(common:product.name) has the guest's systemd-networkd apply the settings each connection provides.",
     "note": "Machines page, Network tab: tooltip of Take the connection's settings in the guest."
   },
   "NetworkTab.netConfig": {
@@ -1468,11 +1468,11 @@
     "note": "Machines page, Network tab: the label of a box under the adapters."
   },
   "NetworkTab.netConfig.on": {
-    "message": "At every boot, this emulator has the guest's systemd-networkd use each connection's MTU and search domain, such as MagicDNS's, and DHCP on adapters nothing else sets up. A tailnet's MTU is 1280; at the adapter's 1500, large packets can be lost. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk, so the settings last until the guest shuts down. NetworkManager applies them by itself.",
+    "message": "At every boot, $t(common:product.name) has the guest's systemd-networkd use each connection's MTU and search domain, such as MagicDNS's, and DHCP on adapters nothing else sets up. A tailnet's MTU is 1280; at the adapter's 1500, large packets can be lost. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk, so the settings last until the guest shuts down. NetworkManager applies them by itself.",
     "note": "Machines page, Network tab: the note under Take the connection's settings in the guest, while it is ticked."
   },
   "NetworkTab.netConfig.off": {
-    "message": "This emulator leaves the guest's network settings alone. The guest uses each connection's MTU and search domain only if it's set up to. From the next boot, none of this emulator's settings apply.",
+    "message": "$t(common:product.name) leaves the guest's network settings alone. The guest uses each connection's MTU and search domain only if it's set up to. From the next boot, none of $t(common:product.name)'s settings apply.",
     "note": "Machines page, Network tab: the note under Take the connection's settings in the guest, while it is unticked."
   },
   "FoldersTab.shares.title": {
@@ -1492,7 +1492,7 @@
     "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is unticked (not saved yet); only for a machine with snapshots."
   },
   "FoldersTab.sharesMount.title": {
-    "message": "At every boot, this emulator has the guest's systemd mount the shared folders, at their first access.",
+    "message": "At every boot, $t(common:product.name) has the guest's systemd mount the shared folders, at their first access.",
     "note": "Machines page, Shared folders tab: tooltip of Mount shared folders in the guest."
   },
   "FoldersTab.sharesMount": {

@@ -36,7 +36,7 @@
     "note": "The name of a status bar element (the state kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar-kinds.kind.state.about": {
-    "message": "Whether the machine is powered off, booting, or running, and what this emulator is doing.",
+    "message": "Whether the machine is powered off, booting, or running, and what $t(common:product.name) is doing.",
     "note": "What the Power state status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar-kinds.kind.os": {
@@ -84,7 +84,7 @@
     "note": "The name of a status bar element (the memory kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar-kinds.kind.memory.about": {
-    "message": "How much memory the machine's tab uses, as this emulator counts it.",
+    "message": "How much memory the machine's tab uses, as $t(common:product.name) counts it.",
     "note": "What the Tab memory status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar-kinds.kind.mips": {
@@ -624,7 +624,7 @@
     "note": "The Tab memory element in the status bar (the page's footer): {{size}} is what the machine costs its browser tab (a size in MiB or GiB)."
   },
   "statusbar-render.memory.title": {
-    "message": "The tab uses about {{size}}, as this emulator counts it.",
+    "message": "The tab uses about {{size}}, as $t(common:product.name) counts it.",
     "note": "Tooltip of the Tab memory element in the status bar (the page's footer): {{size}} is the tab's memory (a size in MiB or GiB)."
   },
   "statusbar-render.irqs": {

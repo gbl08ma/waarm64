@@ -40,7 +40,7 @@
     "note": "Tooltip and screen-reader name of the toolbar's view button that shows the screen and the serial terminal side by side."
   },
   "Toolbar.name": {
-    "message": "waarm64",
+    "message": "$t(common:product.name)",
     "note": "The product's name, at the toolbar's left end (the page's heading)."
   },
   "Toolbar.machines.title": {

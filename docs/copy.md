@@ -48,7 +48,8 @@ and the choices they made then; it grows as the user reviews more of the copy.
 | Word | Means | Not |
 |---|---|---|
 | **this web app** | the emulator as a thing in the browser: its storage, the browser's permissions, files and tabs ("stored in this web app", "This web app needs cross-origin isolation") | "the page", "this page", the product's name |
-| **this emulator** | the emulator as the machine's maker: what it offers the guest, starting, stopping, devices ("This emulator configures the guest's network at every boot") | "the page" |
+| **waarm64** | the emulator as the machine's maker, by its name: what it does to and offers the guest, starting, stopping, devices, what it counts ("At every boot, waarm64 changes the guest's keyboard settings…", "as waarm64 counts it"). Lower case, even at a sentence's start. In the catalog it's always the reference `$t(common:product.name)`, never written out ([i18n.md](i18n.md) "The catalog") | "this emulator", "the page" |
+| **the emulator** | the program as a component that can fail or that a file belongs to, where the name would read oddly ([The emulator stopped unexpectedly](ui:machine:runner.workerFailed), "the emulator's core") | |
 | **this browser** | where things are stored and what asks for permission ("remains stored in this browser") | "the browser's storage" when "this browser" says it |
 | **a browser limitation** | something the browser didn't allow or give this web app, when nothing is stored and no permission can change it ("or this web app ran into a browser limitation"): "this browser" is for storage and permissions, and a sentence about what failed reads better with this web app as its subject | "this browser didn't let this web app…" |
 | **reopen this web app** | the user coming back to its tab or window ("when you reopen this web app") | "come back to this page" |
@@ -74,7 +75,7 @@ and the choices they made then; it grows as the user reviews more of the copy.
 physical device **your computer** (never "machine"). "Host" isn't used in the copy: here it could mean the browser
 or the physical computer.
 
-**Self-reference**: when neither "this web app" nor "this emulator" fits, the sentence is usually better without an
+**Self-reference**: when neither "this web app" nor "waarm64" fits, the sentence is usually better without an
 actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 
 ## The elements
@@ -123,5 +124,5 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 
 ## Open
 
-To settle as the user reviews more: the product's name where it's still written out (the toolbar's name, the default dialog title, the snapshot file type: "waarm64" is provisional); how the emulator names itself inside the guest (its units' descriptions say "the emulator's machine settings"); how terse labels in dense places (the status bar, the Machines list) may be; the
+To settle as the user reviews more: how the emulator names itself inside the guest (its units' descriptions say "the emulator's machine settings"); how terse labels in dense places (the status bar, the Machines list) may be; the
 words for the network's kinds (tailnet, tailcat, local helper); whether long notes become collapsible help.

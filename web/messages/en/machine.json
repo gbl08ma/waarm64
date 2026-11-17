@@ -460,7 +460,7 @@
     "note": "Error in the message bar (under the toolbar) when the guest used something the emulator doesn't have (Show serial log and the like follow): the headline; why is the cause under it (machine:worker.stopped.unimplemented.cause); {{pc}} is the address, in hex."
   },
   "worker.stopped.unimplemented.cause": {
-    "message": "The guest used an instruction or register that this emulator doesn't implement (at pc 0x{{pc}}).",
+    "message": "The guest used an instruction or register that $t(common:product.name) doesn't implement (at pc 0x{{pc}}).",
     "note": "Error details: the cause under the headline machine:worker.stopped.unimplemented, on the line under it in the same place; what happened, and what the user can do if anything. {{pc}}: as that entry's note says."
   },
   "worker.stopped.exit": {
