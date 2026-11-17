@@ -444,9 +444,10 @@ pub fn judge(
         return Err(code(Invalid::Name));
     }
     let mine = name_of(title, params, now);
-    let owner_key = title
-        .entries
-        .first()
+    // The claim's key (any entry of the title is its key's, but the claim says so: review 2).
+    let owner_key = (title.entries.iter())
+        .find(|w| w.entry.kind == Kind::Claim)
+        .or(title.entries.first())
         .map(|w| w.entry.owner)
         .ok_or("an empty title")?;
     let mut all = mine.clone();

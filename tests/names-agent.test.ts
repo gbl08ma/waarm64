@@ -98,8 +98,9 @@ test('an entry whose anchor came past REF_WINDOW, or none in its window, is made
   cal.mine(7);
   await agent.pass(c.identityKey);
   assert.equal((await agent.titles(c.identityKey))[0].state, 'active');
-  // A block 6 deep 53 hours old: the claim can never be anchored in its window (now past it and the slack): dropped
-  // at the next pass and made again, with nothing collected.
+  // A block 6 deep 53 hours old: the claim is past its window and the slack, unanchored. Another is made at the next
+  // pass; the first is kept and asked for (an anchor in its window may still come: review 2), and dropped a week
+  // past its window.
   const d = conn('conn-stale');
   refAt(cal, nowS() - 53 * 3600);
   await agent.register(d, 'stale', point());
@@ -109,9 +110,18 @@ test('an entry whose anchor came past REF_WINDOW, or none in its window, is made
   cal.mine(7);
   await agent.pass(d.identityKey);
   st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
-  assert.equal(st.entries.length, 1);
-  assert.notEqual(st.entries[0].id, old.id);
-  assert.equal(st.entries[0].stale, false);
+  assert.equal(st.entries.length, 2, 'made again, the first kept');
+  const fresh = st.entries.find((e) => e.id !== old.id)!;
+  assert.equal(fresh.stale, false);
+  const real = Date.now;
+  Date.now = () => real() + 8 * DAY * 1000;
+  try {
+    await agent.pass(d.identityKey);
+  } finally {
+    Date.now = real;
+  }
+  st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
+  assert.ok(!st.entries.some((e) => e.id === old.id), 'dropped a week past its window');
   assert.ok(log.some((l) => l.includes('never anchored in their window')));
 });
 
@@ -163,7 +173,8 @@ test('a better chain of another key\'s makes a title lost, and a lost title isn\
   await mine.agent.pass(c.identityKey);
   assert.equal(asked.posts, posts, 'no stamp');
   assert.equal((await statusOf(mine.backend, (await mine.store.titles(c.identityKey))[0])).entries.length, entries, 'no entry made');
-  assert.equal(pub.puts.length, 1, 'not published again');
+  assert.ok(pub.puts.length > 1, 'put again, so that it is judged again (review 2)');
+  assert.equal((await mine.agent.titles(c.identityKey))[0].state, 'lost', 'and still lost');
   // A forged better chain changes nothing (the server lies): a fresh title shown a broken one stays its own.
   const forged = better.item.replace(/.{8}$/, (s) => (parseInt(s, 16) ^ 1).toString(16).padStart(8, '0'));
   const liar = await testAgent({ publish: fakePublish(() => [{ id: '', server: 's2', result: 'better', item: forged }]) });
@@ -271,6 +282,107 @@ test('a zone the room\'s servers didn\'t take: counted past the room\'s and put 
   assert.notEqual(again.item, before);
   assert.notEqual(again.published, again.item, 'the servers kept the zone before');
   assert.ok(again.putAgain);
+});
+
+/** `globalThis.fetch` failing the URLs `bad` names (or answering them as it says) until the restore. */
+function breakFetch(bad: (url: string) => Response | 'fail' | undefined): () => void {
+  const real = globalThis.fetch;
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const b = bad(url);
+    if (b === 'fail') return Promise.reject(new TypeError(`down: ${url}`));
+    if (b) return Promise.resolve(b);
+    return real(input, init);
+  };
+  return () => { globalThis.fetch = real; };
+}
+
+test('a renewal collected late revives its chain: not dropped on one failed try, and the title not lost meanwhile (review 2, findings 4 and 8)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const real = Date.now;
+  const shift = 4 * DAY * 1000;
+  let interloper = '';
+  const pub = fakePublish(() => [{ id: '', server: 's1', result: interloper ? 'better' : 'taken', item: interloper || null }]);
+  const { agent, store, backend } = await testAgent({ publish: pub, log });
+  const c = conn('conn-revived');
+  try {
+    // Four days ago: the claim (36 days old then) and its renewal, made and stamped; the page closes before the
+    // renewal's anchor is collected.
+    Date.now = () => real() - shift;
+    const s = nowS();
+    refAt(cal, s - 36 * DAY);
+    await agent.register(c, 'revived', point());
+    cal.mine(7, s - 36 * DAY + 3600);
+    refAt(cal, s);
+    await agent.pass(c.identityKey);
+    const st = await statusOf(backend, (await store.titles(c.identityKey))[0]);
+    assert.ok(st.entries.some((e) => e.kind === 'renew' && e.time === null), `a renewal waits: ${log.join('\n')}`);
+    cal.mine(7, s + 3600); // its block, an hour later
+  } finally {
+    Date.now = real;
+  }
+  // Now: the claim's chain alone has lapsed, and another key's claim of two days ago owns the name in the room.
+  const other = await testAgent({ publish: fakePublish() });
+  const oc = conn('conn-interloper');
+  await aged(cal, other.agent, oc, 'revived', nowS() - 2 * DAY);
+  interloper = (await other.store.titles(oc.identityKey))[0].item;
+  // The first pass of the visit can't reach the calendars: the renewal is kept, and the title isn't called lost.
+  const restore = breakFetch((u) => (u.includes('/timestamp/') ? 'fail' : undefined));
+  try {
+    await agent.pass(c.identityKey);
+  } finally {
+    restore();
+  }
+  let [t] = await store.titles(c.identityKey);
+  assert.ok((await statusOf(backend, t)).entries.some((e) => e.kind === 'renew'), `the renewal is kept: ${log.join('\n')}`);
+  assert.equal(t.lost, undefined, 'not lost while its own renewal waits');
+  // The next pass collects it: the chain is the claim's of 36 days ago, renewed, and beats the interloper's.
+  await agent.pass(c.identityKey);
+  [t] = await store.titles(c.identityKey);
+  const [v] = await agent.titles(c.identityKey);
+  assert.equal(v.state, 'active', log.join('\n'));
+  assert.equal(t.lost, undefined);
+});
+
+test('a calendar answering junk, or an explorer an inconsistent run, doesn\'t drop an entry: the others are tried (review 2, finding 4)', { skip, timeout: 60_000 }, async () => {
+  const log: string[] = [];
+  const { agent, store, backend } = await testAgent({ publish: fakePublish(), log });
+  // The first calendar answers 200 with a page that isn't a timestamp.
+  const c = conn('conn-junk-calendar');
+  cal.mine(7);
+  await agent.register(c, 'junkcal', point());
+  cal.mine(7);
+  const restore = breakFetch((u) => (u.startsWith(`${CALENDARS[0]}/timestamp/`) ? new Response('<html>a proxy</html>', { status: 200 }) : undefined));
+  try {
+    await agent.pass(c.identityKey);
+  } finally {
+    restore();
+  }
+  assert.equal((await agent.titles(c.identityKey))[0].state, 'active', log.join('\n'));
+  // The first explorer serves the block's header for every follower (a run that doesn't link): the second's is used.
+  const d = conn('conn-junk-explorer');
+  cal.mine(7);
+  await agent.register(d, 'junkexp', point());
+  cal.mine(7);
+  // Followers' headers at the first explorer: the block's own.
+  let first: string | undefined;
+  const real = globalThis.fetch;
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const m = /\/block\/([0-9a-f]{64})\/header$/.exec(url);
+    if (url.startsWith(EXPLORERS[0]) && m) {
+      if (!first) first = m[1];
+      else if (m[1] !== first) return real(`${EXPLORERS[0]}/block/${first}/header`, init);
+    }
+    return real(input, init);
+  };
+  try {
+    await agent.pass(d.identityKey);
+  } finally {
+    globalThis.fetch = real;
+  }
+  const st = await statusOf(backend, (await store.titles(d.identityKey))[0]);
+  assert.ok(st.entries[0].time !== null, `anchored through the second explorer: ${log.join('\n')}`);
 });
 
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {

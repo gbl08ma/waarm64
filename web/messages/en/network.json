@@ -1216,8 +1216,8 @@
     "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state after Let it go."
   },
   "names-view.lost": {
-    "message": "Lost: an older claim of another owner's holds it.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when a server showed another owner's chain that comes first (docs/plans/room-names.md \"Who owns a name\"); this web app no longer renews it."
+    "message": "Lost: another owner's claim holds it.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when a server showed another owner's chain that owns the name now (docs/plans/room-names.md \"Who owns a name\": an older claim, or a younger one once this name had lapsed); this web app no longer renews it."
   },
   "names-view.line.serving_one": {
     "message": "This machine serves the room's names: it holds 1, and synced with {{servers}} other servers lately.",

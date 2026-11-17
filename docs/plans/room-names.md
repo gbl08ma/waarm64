@@ -639,8 +639,12 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   explorers' block 6 deep, which must agree, its header checked against the agreed hash; proof of work; the signature;
   stamped at the three calendars, each receipt a pending anchor the owner key signs, the lowest on the entry, all three
   kept to collect from); make the claim of a title that has none. **An entry whose anchor came past `REF_WINDOW`** (the
-  module refuses it: `AnchorWindow`), or that is still unanchored once its window and the slack are over, is dropped
-  and made again (a new `ref`, proof of work, stamps), with the same backoff; an entry no calendar stamped likewise.
+  module refuses it: `AnchorWindow`) is dropped and made again (a new `ref`, proof of work, stamps), with the same
+  backoff; an entry no calendar stamped likewise. Nothing else drops one (review 2's finding 4): a calendar's answer
+  that isn't a proof (a proxy's page) moves on to the next calendar, a run one explorer serves that the module refuses
+  to the other's, a clock behind to a later try. An entry still unanchored once its window and the slack are over may
+  have an anchor in its window that no open page collected: it is kept and asked for, a new one is made beside it where
+  one is due, and it is dropped only a week past its window (a renewal so collected still links, and revives its chain).
 - **Publishing** is a `put` through a **publisher**: a room client that is a names client alone (room.rs
   `Config::publish`: a fresh key, relay only, nothing let in but its question's answers, no guest, no node), which asks
   "who serves?", keeps two servers as a member does, and puts the title's item (every entry it holds, the zone) to each,
@@ -658,7 +662,10 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   over its zone didn't take it: one of the room's at or past the title's is counted past, by a new zone sealed with
   `n` beyond it, and the title is put again 11 minutes on, `putAgain`, not called published until a server takes it:
   review 2), or **another key's chain: the title is lost**, renewal stops and the page
-  says so (`TitleView.state` `lost`, `lostTo`).
+  says so (`TitleView.state` `lost`, `lostTo`). Not while the title's own chain has lapsed as collected and an entry of
+  it waits for its anchor (collected, it may revive the chain, whose claim may be the elder), and a lost title is
+  still put once a visit and hourly, so that it is judged again: its chain owning the name again clears `lost` (review
+  2's finding 8). The title's key is its claim's.
 - **When the connection's room runs**, the node is a server: the room's worker gives the module the connection's titles
   in its config (`room.names.titles`, each the owner key derived from the secret and the item) and again as they change
   (the agent's BroadcastChannel `waarm64-names`; `ts_room_names_titles`: a member given titles becomes a server).

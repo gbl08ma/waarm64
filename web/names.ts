@@ -32,6 +32,8 @@ export const SERVICES: readonly string[] = [...CALENDARS, ...EXPLORERS];
 export const PASS_MS = 60 * 60 * 1000;
 /** The first wait before asking again (a pending proof, an entry to make again), doubling to PASS_MS. */
 export const RETRY_MS = 5 * 60 * 1000;
+/** An entry unanchored past its window is kept and asked for this long more (seconds). */
+const STALE_KEEP_S = 7 * 24 * 60 * 60;
 /** A fetch's longest wait. */
 const FETCH_MS = 15_000;
 /** Proof of work tries a call (production: ~0.5 ms each in a tab), so the worker answers between slices. */
@@ -515,7 +517,8 @@ export class NamesAgent {
         } else t.collect[e.id] = this.backoff(t.collect[e.id]);
       } catch (err) {
         if (!(err instanceof NamesError)) throw err;
-        // Its anchor came past REF_WINDOW (or doesn't hold): it can never count. Made again.
+        // Its anchor came past REF_WINDOW: it can never count. Made again. (Only that: a calendar's junk, an explorer's
+        // odd run or a clock behind is asked again later, and another calendar or explorer may do: review 2.)
         this.log(`${t.name}: ${e.kind} ${e.id.slice(0, 8)} refused for good (${err.code}); made again`);
         await this.dropEntries(t, [e.id]);
         t.remake = this.backoff(t.remake);
@@ -523,12 +526,13 @@ export class NamesAgent {
       changed = true;
     }
     st = await this.status(t);
-    // An entry still unanchored past its window can never count: dropped, made again.
-    const stale = (st?.entries ?? []).filter((e) => e.stale).map((e) => e.id);
+    // An entry unanchored past its window may still have an anchor in it, finished while no page was open (a renewal
+    // so collected can still link): it is kept and asked for, beside a new one where one is due, and dropped only a
+    // week past its window, when the calendars would long have served it (review 2).
+    const stale = (st?.entries ?? []).filter((e) => e.stale && nowS() > e.windowEnd + STALE_KEEP_S).map((e) => e.id);
     if (stale.length) {
-      this.log(`${t.name}: ${stale.length} entry(s) never anchored in their window; made again`);
+      this.log(`${t.name}: ${stale.length} entry(s) never anchored in their window; dropped`);
       await this.dropEntries(t, stale);
-      t.remake = this.backoff(t.remake);
       st = await this.status(t);
       changed = true;
     }
@@ -657,24 +661,29 @@ export class NamesAgent {
   private async collect(t: TitleRecord, id: string): Promise<string | undefined> {
     let refused: NamesError | undefined;
     for (const p of t.stamps[id] ?? []) {
-      const c = await this.b.op<{ commitment: string; calendar: number }>('commitment', { pending: p, id });
-      let proof: Uint8Array;
+      let f: { anchors: { anchor: string; height: number; root: string }[] };
       try {
+        const c = await this.b.op<{ commitment: string; calendar: number }>('commitment', { pending: p, id });
         const r = await get(`${CALENDARS[c.calendar]}/timestamp/${c.commitment}`);
         if (!r.ok) continue;
-        proof = new Uint8Array(await r.arrayBuffer());
-      } catch {
-        continue; // pending, or the calendar unreachable: later
+        const proof = new Uint8Array(await r.arrayBuffer());
+        f = await this.b.op('finish', { pending: p, id, proof: hex(proof) });
+      } catch (err) {
+        // Pending, the calendar unreachable, or its answer not a proof (a proxy's page, say): the next calendar, and
+        // this one later.
+        if (err instanceof NamesError) this.log(`${t.name}: a calendar's answer refused (${err.code})`);
+        continue;
       }
-      const f = await this.b.op<{ anchors: { anchor: string; height: number; root: string }[] }>('finish', { pending: p, id, proof: hex(proof) });
       for (const a of f.anchors) {
-        const headers = await this.run(a.height, a.root);
-        if (!headers) continue;
-        try {
-          return (await this.b.op<{ item: string }>('anchor', { item: t.item, id, anchor: a.anchor, headers, now: nowS() })).item;
-        } catch (err) {
-          if (err instanceof NamesError) refused = err;
-          else throw err;
+        // Each explorer's run in turn: one may serve a run the module refuses, the other a good one.
+        for (const headers of await this.runs(a.height, a.root)) {
+          try {
+            return (await this.b.op<{ item: string }>('anchor', { item: t.item, id, anchor: a.anchor, headers, now: nowS() })).item;
+          } catch (err) {
+            if (!(err instanceof NamesError)) throw err;
+            this.log(`${t.name}: an anchor refused (${err.code})`);
+            if (err.code === 'AnchorWindow') refused = err;
+          }
         }
       }
     }
@@ -682,29 +691,37 @@ export class NamesAgent {
     return undefined;
   }
 
-  /** Block `height`'s header (its Merkle root `root`, as a header carries it) and the six after it, from an explorer;
-   * undefined until six follow it. */
-  private async run(height: number, root: string): Promise<string[] | undefined> {
+  /** Block `height`'s header (its Merkle root `root`, as a header carries it) and the six after it, from each explorer
+   * that has them (none until six follow it). */
+  private async runs(height: number, root: string): Promise<string[][]> {
+    const out: string[][] = [];
     for (const e of EXPLORERS) {
-      try {
-        const hash = await text(`${e}/block-height/${height}`);
-        const header = await text(`${e}/block/${hash}/header`);
-        // Not that block at this explorer (a reorganisation): the other. (`root` is the anchor's, in header order.)
-        if (header.slice(72, 136) !== root) continue;
-        const out = [header];
-        let at = hash;
-        for (let k = 0; k < 6; k++) {
-          const s = JSON.parse(await text(`${e}/block/${at}/status`)) as { next_best?: string | null };
-          if (!s.next_best) return undefined;
-          at = s.next_best;
-          out.push(await text(`${e}/block/${at}/header`));
-        }
-        return out;
-      } catch {
-        // the other explorer
-      }
+      const r = await this.run(e, height, root);
+      if (r) out.push(r);
     }
-    return undefined;
+    return out;
+  }
+
+  /** Block `height`'s header and the six after it from explorer `e`; undefined until six follow it, or when `e` has
+   * another block there (a reorganisation) or can't be reached. */
+  private async run(e: string, height: number, root: string): Promise<string[] | undefined> {
+    try {
+      const hash = await text(`${e}/block-height/${height}`);
+      const header = await text(`${e}/block/${hash}/header`);
+      // Not that block at this explorer: the other's. (`root` is the anchor's, in header order.)
+      if (header.slice(72, 136) !== root) return undefined;
+      const out = [header];
+      let at = hash;
+      for (let k = 0; k < 6; k++) {
+        const s = JSON.parse(await text(`${e}/block/${at}/status`)) as { next_best?: string | null };
+        if (!s.next_best) return undefined;
+        at = s.next_best;
+        out.push(await text(`${e}/block/${at}/header`));
+      }
+      return out;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -713,7 +730,9 @@ export class NamesAgent {
    * own (nothing to do), another branch of it (taken into the title), another key's (the title is lost).
    */
   private async publish(t: TitleRecord): Promise<void> {
-    if (t.lost || !t.item) return;
+    // A lost title is put too, so that it is judged again: its own renewal, collected late, may have revived its chain
+    // (review 2).
+    if (!t.item) return;
     const st = await this.status(t);
     if (!st?.best) return; // a claim stays private until anchored
     const k = titleKey(t);
@@ -766,11 +785,23 @@ export class NamesAgent {
       this.log(`${t.name}: not published (${answers.map((a) => a.result).join(', ') || 'no answer'}); next pass`);
       return;
     }
+    // Not lost while the title's own chain has lapsed as collected but an entry of it waits for its anchor: collected,
+    // it may revive the chain (a renewal made in time and collected late), whose claim may be the elder (review 2). A
+    // chain alive and beaten stays beaten: a renewal doesn't change its seniority.
+    const waiting = !st.owner && st.entries.some((e) => e.time === null && (t.stamps[e.id]?.length ?? 0) > 0);
+    if (lost && waiting) {
+      this.log(`${t.name}: another key's chain owns it while an entry of ours waits for its anchor; judged again later`);
+      lost = undefined;
+      if (!shown && !branches.length) return;
+    }
     await this.locked(t, true, async () => {
       const now = await this.mustGet(t.identityKey, t.room, t.name);
       if (lost) {
+        if (!now.lost) this.log(`${t.name}: lost to a better chain (${lost.slice(0, 8)})`);
         now.lost = { at: Date.now(), by: lost };
-        this.log(`${t.name}: lost to a better chain (${lost.slice(0, 8)})`);
+      } else if (now.lost && (shown || branches.length)) {
+        delete now.lost;
+        this.log(`${t.name}: its own chain owns it again`);
       }
       for (const other of branches) {
         try {
