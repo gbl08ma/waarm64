@@ -23,13 +23,15 @@ import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
-import { answerAsks } from './page-ask.ts';
+import { answerAsks, type Question } from './page-ask.ts';
 import { startNostrRelay, type NostrRelay } from './net/nostr-relay.ts';
 import { RIG_RELAY } from './net/tailcat-cli.ts';
 import { t } from '../web/i18n.ts';
 import { parseRoomLink } from '../web/room.ts';
 import { keyPair, nameOf, roomPrefix } from './net/room-keys.ts';
 import { words } from './words.ts';
+import { CALENDARS, EXPLORERS } from '../web/names.ts';
+import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
@@ -47,6 +49,7 @@ const BOOT_MS = 300_000;
 
 let browser: Browser;
 let nostr: NostrRelay;
+let cal: OtsCalendar;
 let base: string;
 let closeServer: () => void;
 before(async () => {
@@ -56,6 +59,7 @@ before(async () => {
   execFileSync(`${ROOT}net/ts/build.sh`, ['--test-params'], { encoding: 'utf8', timeout: 600_000 });
   execFileSync('cargo', ['build', '-q', '-p', 'waarm64_ts', '--features', 'test-params', '--example', 'names-title'], { cwd: ROOT, encoding: 'utf8', timeout: 600_000 });
   nostr = await startNostrRelay();
+  cal = await startOtsCalendar({ depth: 6 });
   const server = await startServer();
   closeServer = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -65,6 +69,7 @@ after(async () => {
   await browser?.close();
   closeServer?.();
   await nostr?.close();
+  await cal?.close();
   if (!skip) spawnSync(script, ['down']);
 });
 
@@ -118,11 +123,19 @@ const rooms = (page: Page) => page.evaluate(() => new Promise<{ id: string; name
 
 /** The room's resolver's log lines (`resolver: <name> (type <n>): <answer>`), every page's: what the guests asked. */
 const resolverLog: string[] = [];
-/** Every page in `ctx` runs the page tests' module. */
-const testModule = (ctx: BrowserContext) => ctx.route(/\/target\/net\/ts\.wasm(\?.*)?$/, (r) => r.fulfill({ path: TEST_WASM, contentType: 'application/wasm' }));
+/** Every page in `ctx` runs the page tests' module, and its names agent's calendars and explorers are the pretend ones. */
+async function testModule(ctx: BrowserContext) {
+  await ctx.route(/\/target\/net\/ts\.wasm(\?.*)?$/, (r) => r.fulfill({ path: TEST_WASM, contentType: 'application/wasm' }));
+  const map: [string, string][] = [...CALENDARS.map((c, i): [string, string] => [c, cal.calendars[PRETEND[i]]]), ...EXPLORERS.map((e): [string, string] => [e, cal.explorer])];
+  await ctx.route((u) => map.some(([from]) => u.href.startsWith(`${from}/`)), async (r) => {
+    const url = r.request().url();
+    const [from, to] = map.find(([f]) => url.startsWith(`${f}/`))!;
+    await r.fulfill({ response: await r.fetch({ url: to + url.slice(from.length) }) });
+  });
+}
 const logOf = (n: number | string) => (m: { text(): string }) => {
   if (/room: resolver: /.test(m.text())) resolverLog.push(`${n}: ${m.text().replace(/^room: resolver: /, '')}`);
-  if (/rror|panic|room:/.test(m.text())) console.log(`# page ${n}: ${m.text().slice(0, 300)}`);
+  if (/rror|panic|room:|^names:/.test(m.text())) console.log(`# page ${n}: ${m.text().slice(0, 300)}`);
 };
 
 const B32 = 'abcdefghijklmnopqrstuvwxyz234567';
@@ -148,13 +161,20 @@ async function timed(page: Page, cmd: string, ms = 60_000): Promise<{ ms: number
   return { ms: Number(t), out: rest.join(' ') };
 }
 
+/** The pages' questions as they opened (web/app/ask.svelte.ts), answered OK unless `cancelling`. */
+const asked: Question[] = [];
+let cancelling = false;
+
 async function machine(contexts: BrowserContext[]): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, ignoreHTTPSErrors: true }); // the rig's derper has a self-signed certificate
   contexts.push(ctx);
   await testModule(ctx);
   const page = await ctx.newPage();
   page.on('console', logOf(contexts.length));
-  await answerAsks(page);
+  await answerAsks(page, (q) => {
+    asked.push(q);
+    return cancelling ? false : true;
+  });
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
   return page;
 }
@@ -267,6 +287,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
 
     await registeredNames({ a, b, nameA, nameB, a6, b6, roomId: parsed.room.id, contexts });
+    await namingThisMachine({ a, b, nameA, a6 });
     assert.equal(await a.locator('#net-room-link-copy').getAttribute('aria-label'), t('common:ValueField.copy'));
     // Where the clipboard refuses, the link is shown in its field and selected (not the machine's name).
     await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
@@ -312,6 +333,8 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await b.locator('#network summary').click();
     await b.waitForFunction((old) => { const v = (document.getElementById('net-room-name') as HTMLInputElement | null)?.value; return !!v && v !== old; }, nameB, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the name stayed ${await b.locator('#net-room-name').inputValue()}`); });
+
+    await namesKeptWithTheConnection(a, b);
   } finally {
     for (const c of contexts) await c.close();
   }
@@ -433,4 +456,138 @@ async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: stri
   const ours = /^(test123|git\.test123|wpad|com|localhost|isatap|a\.b\.test123) /;
   const own = [...new Set(resolverLog.map((l) => l.replace(/^[^:]+: /, '')).filter((l) => !ours.test(l)))];
   console.log(`# names: the guests asked on their own: ${own.length ? own.join('; ') : 'nothing'}`);
+}
+
+/** No dialog open and the message bar as it was: what reaching a name may not take (the kickoff's decision 6). */
+const untouched = (p: Page) => p.evaluate(() => [document.querySelectorAll('dialog[open]').length, document.getElementById('message-text')?.textContent ?? '']);
+
+/**
+ * Name this machine… (docs/plans/room-names.md "What the user sees"), on A: the dialog's check as typed, its two notices
+ * and no key, Register; the name Reserved, then Active once its anchor is collected; B's guest reaches it with nothing
+ * done on B's page; a label added in A's details; on a load in its last week (the page's clock 24 days on) the notice.
+ */
+async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: string }) {
+  const { a, b } = o;
+  const domain = o.nameA.split('.').slice(1).join('.');
+  const ipA = o.a6.split('/')[0];
+  const keyA = keyOfName(o.nameA);
+  if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
+  await a.click('#net-name-open');
+  await a.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  // Decision 6: one dialog, exactly the two notices, no box, no key shown or asked for; the field the only input.
+  const dialog = await a.evaluate(() => {
+    const d = document.getElementById('net-name')!;
+    return { notices: d.querySelectorAll('[data-notices] > *').length, boxes: d.querySelectorAll('input[type=checkbox], input[type=radio]').length, inputs: d.querySelectorAll('input, textarea, select').length, text: d.textContent ?? '', values: [...d.querySelectorAll('input')].map((i) => i.value) };
+  });
+  assert.equal(dialog.notices, 2, 'two notices');
+  assert.equal(dialog.boxes, 0, 'no boxes');
+  assert.equal(dialog.inputs, 1, 'the name\'s field alone');
+  assert.match(dialog.text, words('network:NameDialog.notice.find'));
+  assert.match(dialog.text, words('network:NameDialog.notice.visit'));
+  for (const secret of [keyA, o.nameA.split('.')[0]]) assert.ok(!dialog.text.includes(secret) && !dialog.values.some((v) => v.includes(secret)), 'no key shown');
+  const checked = async (name: string, key: string, params: Record<string, string> = {}) => {
+    await a.fill('#net-name-input', name);
+    await a.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-name-check')?.textContent ?? ''), words(key, params).source, { timeout: 30_000, polling: 100 })
+      .catch(async (e) => { throw new Error(`${e}; it says ${await text(a, '#net-name-check')}`); });
+    return a.locator('#net-name-register').isDisabled();
+  };
+  assert.equal(await checked('wpad', 'network:names-view.check.invalid'), true, 'a reserved name: no Register');
+  assert.equal(await checked('test123', 'network:names-view.check.taken', { name: 'test123' }), true, 'taken: no Register');
+  assert.equal(await checked('mybox', 'network:names-view.check.free', { name: 'mybox' }), false, 'free: Register');
+  cal.mine(7); // the explorers' block 6 deep: the claim's `ref`
+  await a.click('#net-name-register');
+  await a.waitForFunction(() => !(document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  await a.locator('#network summary').click();
+  const stateOf = () => a.evaluate(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state'));
+  await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'reserved', null, { timeout: 120_000, polling: 250 })
+    .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf()}; the bar says ${await untouched(a)}`); });
+  assert.match(await text(a, '#net-names [data-name="mybox"]'), words('network:names-view.reserved_other', {}));
+  // Its anchor: mined six deep, collected by a pass (the one the agent makes when its backoff on the pending proof ends,
+  // 5 minutes after the pass at Register: its backoff ended now in the title's record), published.
+  cal.mine(7);
+  const before = await untouched(b);
+  await a.evaluate(() => new Promise<void>((resolve, reject) => {
+    const open = indexedDB.open('waarm64-room');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const tx = open.result.transaction('titles', 'readwrite');
+      tx.objectStore('titles').openCursor().onsuccess = (e) => {
+        const c = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
+        if (!c) return;
+        const t = c.value as { collect: Record<string, { next: number }> };
+        for (const k of Object.keys(t.collect)) t.collect[k].next = 0;
+        c.update(t);
+        c.continue();
+      };
+      tx.oncomplete = () => { open.result.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  }));
+  await a.evaluate('import("/web/names.ts").then((n) => n.namesAgent().pass())');
+  await a.waitForFunction(() => document.querySelector('#net-names [data-name="mybox"]')?.getAttribute('data-state') === 'active', null, { timeout: 90_000, polling: 250 })
+    .catch(async (e) => { throw new Error(`${e}; its state ${await stateOf()}`); });
+  assert.match(await text(a, '#net-names [data-name="mybox"]'), words('network:names-view.active', {}));
+  // Decision 6: B's guest reaches it by name, with nothing done on B's page (no switch, notice or dialog).
+  let got = '';
+  for (let k = 0; k < 30 && !new RegExp(`^${ipA}\\s`).test(got); k++) {
+    got = await run(b, `getent ahosts mybox.${domain} | head -1`);
+    if (!new RegExp(`^${ipA}\\s`).test(got)) await b.waitForTimeout(2000);
+  }
+  assert.match(got, new RegExp(`^${ipA}\\s`), `B reaches A by the name A's dialog registered: ${got}`);
+  const ping = await run(b, `ping -6 -c 2 -W 10 mybox.${domain} | tail -2`, 60_000);
+  assert.match(ping, / 0% packet loss/, ping);
+  assert.deepEqual(await untouched(b), before, 'nothing on B\'s page');
+  // A's details: the registry's line, and a label added under the name (at this machine), which A's resolver answers.
+  await a.click('#net-details-open');
+  await a.waitForFunction(() => !!document.getElementById('net-details-names-line'), null, { timeout: 30_000 });
+  assert.match(await text(a, '#net-details-names-line'), words('network:names-view.line.serving_other', {}));
+  await a.click('#net-details [data-name="mybox"] [data-action="add-label"]');
+  await a.fill('#net-details [data-name="mybox"] [data-point=""] [data-field="label"] >> nth=0', 'web');
+  await a.click('#net-details [data-name="mybox"] [data-action="save-zone"]');
+  await a.click('#net-details-close');
+  let web = '';
+  for (let k = 0; k < 20 && !web; k++) {
+    web = await run(a, `getent ahosts web.mybox.${domain} | head -1`);
+    if (!web) await a.waitForTimeout(1000);
+  }
+  assert.match(web, new RegExp(`^${ipA}\\s`), `the label points at A: ${web}`);
+  // On load, a name in its last week is said (this browser's clock 24 days on: kept until 30 days after the claim).
+  const later = await a.context().newPage();
+  await later.clock.install({ time: Date.now() + 24 * 86400_000 });
+  await later.goto(`${base}/web/app/`);
+  await later.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('network:names.lastWeek_one', { names: 'mybox' }).source, { timeout: 60_000, polling: 250 })
+    .catch(async (e) => { throw new Error(`${e}; the bar says ${await later.evaluate(() => document.getElementById('message-text')?.textContent)}`); });
+  await later.close();
+}
+
+/** After the name: the wizard's key carries the names; Delete says so; B's connection, not kept, can't hold one. */
+async function namesKeptWithTheConnection(a: Page, b: Page) {
+  // The Machines page: the wizard's key carries the names; Delete says so.
+  await a.click('#machines-open');
+  await a.click('[data-machine="connections"]');
+  await a.click('li[data-connection] [data-action="edit-connection"] >> nth=0');
+  await a.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
+  await a.waitForFunction(() => /\./.test((document.getElementById('net-room-key-value') as HTMLInputElement).value), null, { timeout: 10_000 });
+  const exported = await a.locator('#net-room-key-value').inputValue();
+  assert.match(exported, /^[0-9a-f]{64}\.[A-Za-z0-9_-]+$/, 'the key, then its names');
+  await a.keyboard.press('Escape');
+  cancelling = true;
+  const n = asked.length;
+  await a.click('li[data-connection] [data-action="delete-connection"] >> nth=0');
+  for (let k = 0; k < 100 && asked.length === n; k++) await a.waitForTimeout(100);
+  cancelling = false;
+  const q = asked.at(-1);
+  assert.ok(asked.length > n && q, 'Delete asks');
+  assert.equal(q.kind, 'prompt', 'with a field');
+  assert.match(q.text, words('network:network-actions.delete.names.on_one', { names: 'mybox' }));
+  assert.equal(q.value, exported, 'the export to copy');
+  await a.waitForFunction(() => !(document.getElementById('ask') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  assert.equal((await rooms(a)).length, 1, 'Cancel: kept');
+  // B's connection isn't kept (its key is in the page's memory): it can't hold a name, and the dialog says so.
+  if (!(await b.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await b.locator('#network summary').click();
+  await b.click('#net-name-open');
+  await b.waitForFunction(() => (document.getElementById('net-name') as HTMLDialogElement).open, null, { timeout: 5_000 });
+  assert.match(await text(b, '#net-name-ephemeral'), words('network:NameDialog.ephemeral'));
+  assert.equal(await b.locator('#net-name-register').count(), 0, 'no Register');
+  assert.equal(await b.locator('#net-name-input').count(), 0, 'no field');
 }
