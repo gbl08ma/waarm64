@@ -7,6 +7,10 @@ import type { Connection, ConnectionState, NewConnection } from './connections.t
 const pageNames = {
   export: (k: string) => import('../names.ts').then((n) => n.exportNames(n.idbNamesStore(), k)),
   keep: (k: string, b: string) => import('../names.ts').then((n) => n.importNames(n.idbNamesStore(), k, b)),
+  // Without titles no worker is started: the agent (and its module) only when there is something to judge.
+  held: (k: string) =>
+    import('../names.ts').then(async (n) => ((await n.idbNamesStore().titles(k)).length ? n.namesAgent().held(k) : [])),
+  forget: (k: string) => import('../names.ts').then((n) => n.idbNamesStore().forget(k)),
 };
 
 /** Room connection `c`'s export: its key, then its names after a dot; '' before its first start made a key. */
@@ -22,4 +26,12 @@ export async function roomExportOf(state: ConnectionState, c: Connection): Promi
 export async function keepExported(state: ConnectionState, c: Connection, o: NewConnection) {
   const names = o.room?.names;
   if (names && c.room) await (state.keepNames ?? pageNames.keep)(c.room.identityKey, names);
+}
+
+/** The names this browser holds under connection key `identityKey` now (not let go, lost or lapsed). */
+export const heldRoomNames = (identityKey: string): Promise<string[]> => pageNames.held(identityKey);
+
+/** Forgets the owners' secret and titles kept under `identityKey` (its connection deleted). */
+export function forgetRoomNames(state: ConnectionState, identityKey: string): Promise<void> {
+  return (state.forgetNames ?? pageNames.forget)(identityKey);
 }

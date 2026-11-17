@@ -21,15 +21,18 @@ import { exportNames, importNames, memoryNamesStore, parseRoomExport, type Title
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
   const forgot: string[] = [];
+  /** The names kept under a key, forgotten with it (web/names.ts's stores: `heldNames`, `forgetNames`). */
+  const namesForgot: string[] = [];
   /** `waarm64-room`'s entries: what a room connection's first start keeps, and pasted keys. */
   const rooms = new Map<string, { key: string }>();
   return {
-    forgot, rooms,
+    forgot, rooms, namesForgot,
     state: {
       forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); },
       forgetRoom: async (k: string) => { forgot.push(`room:${k}`); rooms.delete(k); },
       readRoom: async (k: string) => rooms.get(k), keepRoom: async (k: string, i: { key: string }) => { rooms.set(k, i); },
       roomIdentity: async (k: string) => { if (!rooms.has(k)) rooms.set(k, newRoomIdentity()); return rooms.get(k)!; },
+      forgetNames: async (k: string) => { namesForgot.push(k); },
     },
   };
 };
@@ -79,7 +82,7 @@ test('connections: stored and ephemeral, their names and state keys, deleted wit
 
 test('rooms: named by the room, a key of their own or another connection\'s, forgotten when no other connection shares it', async () => {
   const s = store();
-  const { forgot, state } = fakeState();
+  const { forgot, namesForgot, state } = fakeState();
   const conns = new Connections(s, state);
   const link = 'waarm64-room:gabriel-lan';
   const pub = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
@@ -107,6 +110,8 @@ test('rooms: named by the room, a key of their own or another connection\'s, for
   await conns.delete(priv.id);
   await conns.delete(eph.id);
   assert.deepEqual(forgot, [`room:${pub.id}`, `room:${priv.id}`], 'a key of its own is forgotten; an ephemeral one\'s own is in memory');
+  // The names kept under a key go with it, at the same time (the delete said so first: web/app/areas/network-actions.ts).
+  assert.deepEqual(namesForgot, [pub.id, priv.id, eph.id], 'names: with the last one that uses their key');
 });
 
 test("rooms: another tab's ephemeral connection on a stored one's key keeps it through Delete and New name", async () => {

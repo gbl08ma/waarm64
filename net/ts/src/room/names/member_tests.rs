@@ -8,7 +8,7 @@ use std::{
 
 use super::{
     entry::Kind,
-    member::{Answer, KEPT_REFRESH, Member},
+    member::{Answer, IdsDone, IdsResult, KEPT_REFRESH, Member},
     server::{Cmd, Config, Input, MAX_BYTES, MAX_NAMES, Server, Title},
     testkit::{Bitcoin, DAY, params},
     wire::{Item, Question},
@@ -562,12 +562,46 @@ fn ids_by_first_byte() {
         .map(|i| i.id)
         .filter(|i| i[0] == first)
         .collect();
-    assert_eq!(bus.m.ids_answers[&first], expect);
+    let got = &bus.m.ids_answers[&first];
+    assert_eq!(got.keys().copied().collect::<BTreeSet<_>>(), expect);
+    // Each with until when its owner holds it: claimed 20 days ago, renewed 4 days ago, so a term and the grace after
+    // the renewal, in the future.
+    let unix = bus.unix();
+    for (id, until) in got {
+        assert!(*until > unix, "{} held until {until}, now {unix}", id[0]);
+    }
+    // The answer as it came, for the page (a publisher's `names-ids` event).
+    let done: Vec<_> = bus.m.ids_done.drain(..).collect();
+    assert_eq!(done.len(), 1, "one server, one answer");
+    assert!(matches!(&done[0].result, IdsResult::Ids(v) if v.len() == expect.len()));
+    assert_eq!(done[0].first, first);
     let after: Vec<u64> = refs
         .iter()
         .map(|i| bus.s[0].reg.get(&i.id).unwrap().asked)
         .collect();
     assert_eq!(asked, after, "an ids check isn't a name asked for");
+}
+
+/// The dialog's check with nobody serving: nobody can say, as an answer of its own.
+#[test]
+fn ids_with_nobody_serving() {
+    let mut b = Bitcoin::new(ROOM, 12);
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let s0 = serving(&mut b, 1, &[&alpha]);
+    let mut bus = Bus::new(vec![s0], member());
+    bus.up[0] = false;
+    let now = bus.now;
+    bus.m.ids(7, now);
+    bus.advance(Duration::from_secs(4));
+    let done: Vec<_> = bus.m.ids_done.drain(..).collect();
+    assert_eq!(
+        done,
+        [IdsDone {
+            first: 7,
+            server: None,
+            result: IdsResult::Nobody
+        }]
+    );
 }
 
 /// A server's answer that doesn't hold up is refused: here a zone whose signature was altered (in the server's

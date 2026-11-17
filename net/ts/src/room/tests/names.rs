@@ -677,6 +677,57 @@ fn a_publisher_puts_a_title_to_two_servers_with_no_node_of_its_own() {
     let ids =
         |it: &Item| -> BTreeSet<[u8; 32]> { it.entries.iter().map(|w| w.entry.id()).collect() };
     assert_eq!(ids(&shown), ids(&ta.1), "the owner's chain");
+    // The dialog's check: alpha's first byte, never its id; each server answers with the ids under it, each with
+    // until when its owner holds it.
+    let first = ta.1.id[0];
+    let now = n.now;
+    assert!(n.nodes[2].c.names_ids(first, now));
+    let start = n.now;
+    while n.id_events(2).len() < 2 {
+        assert!(
+            n.now - start < Duration::from_secs(20),
+            "{:?}",
+            n.id_events(2)
+        );
+        n.advance(Duration::from_millis(100));
+    }
+    let unix = n.nodes[2].c.unix(n.now);
+    for e in n.id_events(2) {
+        assert_eq!(e["result"], "ids", "{e}");
+        assert_eq!(e["first"], first as u64);
+        let held: Vec<(String, u64)> = (e["ids"].as_array().unwrap().iter())
+            .map(|x| (x[0].as_str().unwrap().to_string(), x[1].as_u64().unwrap()))
+            .collect();
+        let alpha = held
+            .iter()
+            .find(|(i, _)| unhex(i) == ta.1.id)
+            .expect("alpha's id under its byte");
+        assert!(alpha.1 > unix, "held until {} (now {unix})", alpha.1);
+        assert!(
+            held.iter()
+                .all(|(i, _)| i.starts_with(&format!("{first:02x}")))
+        );
+    }
+    // Not a publisher: refused. The servers tell the page their names line (`names`): serving, names held.
+    assert!(!n.nodes[0].c.names_ids(first, now));
+    let told = (n.nodes[0].events.iter())
+        .rfind(|e| e["type"] == "names")
+        .unwrap();
+    assert_eq!(
+        (told["serving"].as_bool(), told["names"].as_u64()),
+        (Some(true), Some(3)),
+        "{told}"
+    );
+}
+
+impl Net {
+    /// Node `i`'s `names-ids` events so far.
+    fn id_events(&self, i: usize) -> Vec<serde_json::Value> {
+        (self.nodes[i].events.iter())
+            .filter(|e| e["type"] == "names-ids")
+            .cloned()
+            .collect()
+    }
 }
 
 #[test]
@@ -689,6 +740,16 @@ fn a_publisher_with_nobody_serving_says_so() {
     assert!(n.nodes[1].c.names_put(&it.encode(), now));
     n.puts_answered(1, 1, Duration::from_secs(10));
     assert_eq!(n.put_events(1)[0].2, "nobody");
+    // The dialog's check: nobody can say.
+    let now = n.now;
+    assert!(n.nodes[1].c.names_ids(it.id[0], now));
+    let start = n.now;
+    while n.id_events(1).is_empty() {
+        assert!(n.now - start < Duration::from_secs(10));
+        n.advance(Duration::from_millis(100));
+    }
+    assert_eq!(n.id_events(1)[0]["result"], "nobody");
+    let now = n.now;
     // Not a publisher, or not an item: refused.
     assert!(!n.nodes[0].c.names_put(&it.encode(), now));
     assert!(!n.nodes[1].c.names_put(b"junk", now));

@@ -6,6 +6,7 @@ import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '.
 import { keptProfiles } from '../../tailscale-state.ts';
 import { ask } from '../ask.svelte.ts';
 import { connectionLock, migrateLegacy, type Connection } from '../connections.ts';
+import { heldRoomNames } from '../room-export.ts';
 import { detachEverywhere, isRunning, setAdapterConnection } from '../machines.ts';
 import { HeldError } from '../net-claims.ts';
 import type { PageNetwork } from '../net-live.ts';
@@ -151,6 +152,35 @@ export class NetworkActions {
       .filter((m) => m.adapters?.some((a) => a.connection === c.id))
       .map((m) => m.name);
     if (settings().transientNet === c.id) on.push(text(spec.title));
+    // A key another connection shares keeps its names with it.
+    const names = c.room && !(await this.#net.conns.sharesKey(c)) ? await heldRoomNames(c.room.identityKey) : [];
+    if (names.length) {
+      // The names' titles are the only copy of their ownership: say so, and give the export to keep them.
+      if (!(await this.#deleteNames(c, names, on))) return;
+    } else if (!(await this.#confirmDelete(c, on))) return;
+    const stranded = await this.#net.remove(c);
+    await detachEverywhere(store, c.id);
+    if (settings().transientNet === c.id) remember({ transientNet: undefined });
+    await this.#m.rereadRecord();
+    await this.#net.refresh();
+    if (stranded) throw new MsgError('network:network-actions.stranded', { name: c.name });
+  }
+
+  /**
+   * The question before deleting room connection `c` that holds `names`: they go with it unless kept, so it shows the
+   * connection's export (its key and its names, to paste as a room connection's key) to copy first.
+   */
+  async #deleteNames(c: Connection, names: string[], on: string[]) {
+    const exported = await this.#net.conns.exportKey(c);
+    const question = on.length
+      ? t('network:network-actions.delete.names.on', { name: c.name, names, count: names.length, machines: on })
+      : t('network:network-actions.delete.names', { name: c.name, names, count: names.length });
+    const ok = t('network:network-actions.delete.ok');
+    const title = t('network:network-actions.delete.title');
+    return (await ask.prompt(question, exported, { title, ok, danger: true })) !== undefined;
+  }
+
+  async #confirmDelete(c: Connection, on: string[]) {
     const what = await this.#deleteWhat(c);
     const question = what
       ? on.length
@@ -160,13 +190,7 @@ export class NetworkActions {
         ? t('network:network-actions.delete.confirm.on', { name: c.name, machines: on })
         : t('network:network-actions.delete.confirm', { name: c.name });
     const ok = t('network:network-actions.delete.ok');
-    if (!(await ask.confirm(question, { title: t('network:network-actions.delete.title'), ok, danger: true }))) return;
-    const stranded = await this.#net.remove(c);
-    await detachEverywhere(store, c.id);
-    if (settings().transientNet === c.id) remember({ transientNet: undefined });
-    await this.#m.rereadRecord();
-    await this.#net.refresh();
-    if (stranded) throw new MsgError('network:network-actions.stranded', { name: c.name });
+    return ask.confirm(question, { title: t('network:network-actions.delete.title'), ok, danger: true });
   }
 
   /** Logs out the node of connection `c`, running or not; one another tab's machine has is taken from it after asking. */

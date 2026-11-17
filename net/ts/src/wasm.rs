@@ -517,6 +517,15 @@ pub unsafe extern "C" fn ts_room_names_put(h: u32, ptr: *mut u8, len: usize) -> 
     ok as u32
 }
 
+/// A publisher's check for the dialog (room-names.md "A member resolving a name"): every id the room's servers hold
+/// whose first byte is `first`, each server's answer a `names-ids` event. 1 when it was taken to be asked.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_room_names_ids(h: u32, first: u32) -> u32 {
+    let mut ok = false;
+    with_room(h, |r, now| ok = r.names_ids(first as u8, now));
+    ok as u32
+}
+
 /// A room node's titles as they change (JSON: `[{key, item}]`, as the config's `names.titles`): 1 when taken.
 ///
 /// # Safety

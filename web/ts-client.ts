@@ -34,6 +34,7 @@ type Exports = {
   ts_rtc_blocked(h: number, blocked: number): void;
   ts_room_names_load(h: number, ptr: number, len: number): number;
   ts_room_names_put(h: number, ptr: number, len: number): number;
+  ts_room_names_ids(h: number, first: number): number;
   ts_room_names_titles(h: number, ptr: number, len: number): number;
 } & {
   /** The names agent's operations (net/ts/src/room/names/agent.rs): JSON in, the length of JSON out (minus: why not). */
@@ -79,6 +80,14 @@ export type NamesTitle = { key: string; item: string };
 /** What a server said to an item a publisher put: `taken`, `better` (with the server's item, hex), `failed` (no answer), or
  * `nobody` (nobody serves the room's names; no server). */
 export type NamesPut = { type: 'names-put'; id: string; server: string | null; result: 'taken' | 'better' | 'failed' | 'nobody'; item: string | null };
+
+/** A server's answer to a publisher's check for the dialog (`namesIds`): the ids it holds under the first byte asked, each
+ * with until when its owner holds it (Unix seconds, 0: nobody now); `failed` (no answer) or `nobody` (no server). */
+export type NamesIds = { type: 'names-ids'; first: number; server: string | null; result: 'ids' | 'failed' | 'nobody'; ids: [string, number][] | null };
+
+/** A room node's names line, when it changes: a server's names held and the servers it synced with lately (`serving`),
+ * or a member's names resolved and servers held now. */
+export type NamesLine = { type: 'names'; serving: boolean; names: number; servers: number };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
 export type TailcatConfig = {
@@ -137,7 +146,9 @@ export type TsEvent =
   /** The answer to `setExitNode`: no `code` when it took, else why not (`no-exit-node`: no peer `id` offers to be one). */
   | ({ type: 'exitnode'; id?: string } & TsFailure)
   /** A room's publisher: a server's answer to an item put (`TsClient.namesPut`). */
-  | NamesPut;
+  | NamesPut
+  | NamesIds
+  | NamesLine;
 
 export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
@@ -346,6 +357,15 @@ export class TsClient {
   namesPut(item: Uint8Array): boolean {
     if (this.closed) return false;
     const ok = this.m.x.ts_room_names_put(this.h, ...this.m.put(item)) === 1;
+    this.pump();
+    return ok;
+  }
+
+  /** A room's publisher: asks the room's servers for every id under `first` (a name id's first byte; the dialog's check,
+   * which never names the id); each answer is a `names-ids` event. Whether it was taken to be asked. */
+  namesIds(first: number): boolean {
+    if (this.closed) return false;
+    const ok = this.m.x.ts_room_names_ids(this.h, first) === 1;
     this.pump();
     return ok;
   }

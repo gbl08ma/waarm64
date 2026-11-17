@@ -1087,6 +1087,22 @@
     "message": "Delete the connection {{name}}? It will be detached from {{machines}}. {{what}}",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs, {{what}} what deleting it does."
   },
+  "network-actions.delete.names_one": {
+    "message": "Delete the connection {{name}}? It holds the name {{names}} in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds a registered name (docs/plans/room-names.md); its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the name it holds."
+  },
+  "network-actions.delete.names_other": {
+    "message": "Delete the connection {{name}}? It holds the names {{names}} in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds several registered names; its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the names it holds, {{count}} how many."
+  },
+  "network-actions.delete.names.on_one": {
+    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. It holds the name {{names}} in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds a registered name and machines have it attached; its field below holds the connection's export to copy. {{name}} is the connection's name, {{machines}} the machines', {{names}} the name it holds."
+  },
+  "network-actions.delete.names.on_other": {
+    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. It holds the names {{names}} in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, names included, and paste it as a room connection's key.",
+    "note": "Text of the question asked by a room connection's Delete when it holds several registered names and machines have it attached; its field below holds the connection's export to copy. {{name}} is the connection's name, {{machines}} the machines', {{names}} the names, {{count}} how many."
+  },
   "network-actions.delete.title": {
     "message": "Delete the connection",
     "note": "Title of the question asked by a connection's Delete."

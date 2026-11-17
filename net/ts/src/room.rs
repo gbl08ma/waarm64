@@ -724,6 +724,8 @@ pub struct Client {
     pub member: Option<Box<MemberHost>>,
     /// A publisher's side ([`Config::publish`]): this client is its own names client.
     pub publisher: Option<Box<Member>>,
+    /// The names line last told the page (`names` event): serving, names resolved or held, servers held.
+    names_told: Option<(bool, usize, usize)>,
     dns_waiting: Vec<DnsWait>,
     flows: BTreeMap<Flow, Instant>,
     next_conn: u32,
@@ -921,6 +923,7 @@ impl Client {
             names,
             member: None,
             publisher: None,
+            names_told: None,
             dns_waiting: Vec::new(),
             flows: BTreeMap::new(),
             next_conn: 1,
@@ -3082,6 +3085,17 @@ impl Client {
         ok
     }
 
+    /// A publisher's check for the dialog: every id under `first` (a name id's first byte) the servers it finds hold,
+    /// each answer a `names-ids` event (the name id itself never leaves the page). False when it isn't a publisher.
+    pub fn names_ids(&mut self, first: u8, now: Instant) -> bool {
+        let Some(p) = self.publisher.as_mut() else {
+            return false;
+        };
+        p.ids(first, now);
+        self.pump_publisher(now);
+        true
+    }
+
     /// The node's titles as they change (the page's names agent): a server's are replaced; a member with titles now
     /// becomes a server (its member side and names client go), its names client made at once if the node runs.
     pub fn set_titles(&mut self, titles: Vec<names::server::Title>, now: Instant) {
@@ -3165,6 +3179,24 @@ impl Client {
             self.event(json!({
                 "type": "names-put", "id": hex(&d.id), "server": d.server.map(|k| hex(&k)),
                 "result": result, "item": item,
+            }));
+        }
+        while let Some(d) = p.ids_done.pop_front() {
+            let (result, ids) = match d.result {
+                member::IdsResult::Ids(v) => (
+                    "ids",
+                    Some(
+                        v.iter()
+                            .map(|(i, u)| json!([hex(i), u]))
+                            .collect::<Vec<_>>(),
+                    ),
+                ),
+                member::IdsResult::Failed => ("failed", None),
+                member::IdsResult::Nobody => ("nobody", None),
+            };
+            self.event(json!({
+                "type": "names-ids", "first": d.first, "server": d.server.map(|k| hex(&k)),
+                "result": result, "ids": ids,
             }));
         }
         self.publisher = Some(p);
@@ -3324,7 +3356,24 @@ impl Client {
             }
             self.member = Some(h);
         }
+        self.tell_names();
         self.answer_waiting(now);
+    }
+
+    /// The adapter's details' names line, when it changed: a server's names held and the servers it synced with
+    /// lately, or a member's names resolved (kept) and servers held now.
+    fn tell_names(&mut self) {
+        let now = match (self.names.as_ref(), self.member.as_ref()) {
+            (Some(h), _) => (true, h.server.reg.len(), h.server.partners()),
+            (None, Some(h)) => (false, h.member.kept.len(), h.member.servers().len()),
+            (None, None) => return,
+        };
+        if self.names_told != Some(now) {
+            self.names_told = Some(now);
+            self.event(json!({
+                "type": "names", "serving": now.0, "names": now.1, "servers": now.2,
+            }));
+        }
     }
 
     /// One side's commands to its names client and its events back, until neither moves; the names client's actions

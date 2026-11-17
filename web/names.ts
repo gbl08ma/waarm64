@@ -12,7 +12,7 @@
 //
 // N5's API: `NamesAgent.register`, `setZone`, `release`, `titles` (each title's state and dates), `pass`; the
 // connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key).
-import { NamesError, type NamesBackend, type PutAnswer } from './names-ops.ts';
+import { NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
 import type { FromNames, ToNames } from './names-worker.ts';
 import { openIdb } from './room.ts';
 import type { NamesTitle, NamesOp } from './ts-client.ts';
@@ -78,12 +78,17 @@ export type TitleRecord = {
   made: number;
 };
 
+/** The dialog's check of a name as typed (`NamesAgent.check`): `until` in Unix seconds. */
+export type NameCheck = { state: 'invalid' | 'yours' | 'free' | 'unknown' } | { state: 'taken'; until: number };
+
 /** What a title is now, for the page (N5's dialog and the adapter's states). */
 export type TitleState = 'preparing' | 'reserved' | 'active' | 'grace' | 'lapsed' | 'released' | 'lost';
 
 export type TitleView = {
   identityKey: string;
   room: string;
+  /** The room's link (the connection's when the title was registered): which connection's adapter shows it. */
+  link: string;
   name: string;
   state: TitleState;
   /** Unix seconds: the chain's first entry's time; until when it resolves; when its cover ends; when renewal is due. */
@@ -117,6 +122,8 @@ export type NamesStore = {
   get(identityKey: string, room: string, name: string): Promise<TitleRecord | undefined>;
   put(t: TitleRecord): Promise<void>;
   delete(identityKey: string, room: string, name: string): Promise<void>;
+  /** Connection `identityKey`'s secret and every title of it gone (its connection deleted, after saying so). */
+  forget(identityKey: string): Promise<void>;
 };
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
@@ -143,6 +150,11 @@ export function memoryNamesStore(): NamesStore {
     get: (i, r, n) => Promise.resolve(structuredClone(titles.get(k(i, r, n)))),
     put: (t) => { titles.set(k(t.identityKey, t.room, t.name), structuredClone(t)); return Promise.resolve(); },
     delete: (i, r, n) => { titles.delete(k(i, r, n)); return Promise.resolve(); },
+    forget: (i) => {
+      secrets.delete(i);
+      for (const [key, t] of titles) if (t.identityKey === i) titles.delete(key);
+      return Promise.resolve();
+    },
   };
 }
 
@@ -192,6 +204,10 @@ export function idbNamesStore(): NamesStore {
       const k = await key({ identityKey: i, room: r, name: n });
       await tx(['titles'], 'readwrite', (t) => req(t.objectStore('titles').delete(k)));
     },
+    forget: (i) => tx(['owner', 'titles'], 'readwrite', async (t) => {
+      await req(t.objectStore('owner').delete(i));
+      await req(t.objectStore('titles').delete(IDBKeyRange.bound([i], [i, []])));
+    }),
   };
 }
 
@@ -211,7 +227,8 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
   };
   const post = (m: ToNames) => worker.postMessage(m);
   post({ type: 'start', wasm });
-  const ask = <T>(m: { type: 'op'; op: NamesOp; input: object } | { type: 'publish'; link: string; items: { id: string; item: string }[] }) => new Promise<T>((resolve, reject) => {
+  type Ask = { type: 'op'; op: NamesOp; input: object } | { type: 'publish'; link: string; items: { id: string; item: string }[] } | { type: 'ids'; link: string; first: number };
+  const ask = <T>(m: Ask) => new Promise<T>((resolve, reject) => {
     const k = ++n;
     waiting.set(k, { resolve: (v) => resolve(v as T), reject });
     post({ ...m, n: k } as ToNames);
@@ -219,6 +236,7 @@ export function workerBackend(wasm = new URL('../target/net/ts.wasm', import.met
   return {
     op: <T>(op: NamesOp, input: object) => ask<T>({ type: 'op', op, input }),
     publish: (link, items) => ask<Record<string, PutAnswer[]>>({ type: 'publish', link, items }).then((r) => new Map(Object.entries(r))),
+    ids: (link, first) => ask<IdsAnswer>({ type: 'ids', link, first }),
     close: () => worker.terminate(),
   };
 }
@@ -264,6 +282,7 @@ export class NamesAgent {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private channel: BroadcastChannel | undefined;
   private passing: Promise<void> | undefined;
+  private started: Promise<void> | undefined;
 
   constructor(o: AgentOptions) {
     this.store = o.store;
@@ -340,6 +359,42 @@ export class NamesAgent {
     return this.view(t);
   }
 
+  /**
+   * The dialog's check of `name` in connection `c`'s room, as typed: not a valid name (the rules), this connection's
+   * own already, or what the room's servers say through a checker: free, taken (until about when, Unix seconds), or
+   * nobody can say. **The servers are asked for every id under the name's id's first byte, never the id** (a server
+   * that learnt which id is about to be claimed could guess the name and stamp first): the id is looked for here.
+   */
+  async check(c: NamesConn, name: string): Promise<NameCheck> {
+    const room = roomOf(c.link);
+    let id: string;
+    try {
+      // The id doesn't depend on the secret: any will do, so the check makes none.
+      id = (await this.b.op<{ id: string }>('key', { room, secret: '00'.repeat(32), name })).id;
+    } catch (err) {
+      if (err instanceof NamesError && err.code === 'Name') return { state: 'invalid' };
+      throw err;
+    }
+    const have = await this.store.get(c.identityKey, room, name);
+    if (have && !have.lost && !have.released && !['lapsed', 'released', 'lost'].includes((await this.view(have)).state)) return { state: 'yours' };
+    const a = await this.b.ids(c.link, parseInt(id.slice(0, 2), 16));
+    if (a.result !== 'ids') return { state: 'unknown' };
+    const until = a.ids.find(([i]) => i === id)?.[1] ?? 0;
+    return until > nowS() ? { state: 'taken', until } : { state: 'free' };
+  }
+
+  /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose. */
+  async held(identityKey: string): Promise<string[]> {
+    const live = (await this.titles(identityKey)).filter((v) => !['released', 'lost', 'lapsed'].includes(v.state));
+    return [...new Set(live.map((v) => v.name))].sort();
+  }
+
+  /** Connection `identityKey`'s owners' secret and titles forgotten (its connection deleted, after the page said so). */
+  async forget(identityKey: string): Promise<void> {
+    await this.store.forget(identityKey);
+    this.channel?.postMessage({ identityKey });
+  }
+
   /** The titles (of one connection, or all), with their states and dates. */
   async titles(identityKey?: string): Promise<TitleView[]> {
     return Promise.all((await this.store.titles(identityKey)).map((t) => this.view(t)));
@@ -371,10 +426,13 @@ export class NamesAgent {
     return p;
   }
 
-  /** A pass now (the page's load) and hourly, sooner when a title waits for less. */
-  start() {
+  /** A pass now (the page's load) and hourly, sooner when a title waits for less; once a page (the first pass's end). */
+  start(): Promise<void> {
+    if (this.started) return this.started;
+    let first = () => {};
+    this.started = new Promise<void>((resolve) => (first = resolve));
     const next = async () => {
-      await this.pass();
+      await this.pass().finally(first);
       let wait = PASS_MS;
       for (const t of await this.store.titles()) {
         for (const c of Object.values(t.collect)) wait = Math.min(wait, c.next - Date.now());
@@ -383,9 +441,11 @@ export class NamesAgent {
       this.timer = setTimeout(() => void next(), Math.max(wait, 30_000));
     };
     void next();
+    return this.started;
   }
 
   stop() {
+    this.started = undefined;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.channel?.close();
@@ -701,7 +761,7 @@ export class NamesAgent {
 
   private async view(t: TitleRecord): Promise<TitleView> {
     const st = await this.status(t);
-    const base = { identityKey: t.identityKey, room: t.room, name: t.name, points: t.points, publishedAt: t.publishedAt };
+    const base = { identityKey: t.identityKey, room: t.room, link: t.link, name: t.name, points: t.points, publishedAt: t.publishedAt };
     if (t.lost) return { ...base, state: 'lost', lostTo: t.lost.by };
     const o = st?.owner;
     const now = nowS();
@@ -821,6 +881,17 @@ export async function startNamesAgent(o: { wasm?: string } = {}): Promise<NamesA
   const have = await idbNamesStore().titles().catch(() => []);
   if (!have.length) return undefined;
   const a = namesAgent(o);
-  a.start();
+  await a.start();
   return a;
+}
+
+/** A week: the page says so, on load, when a name is kept for less (web/app/areas/names.svelte.ts). */
+export const LAST_WEEK_S = 7 * 24 * 60 * 60;
+
+/** The titles in their last week at `now` (Unix seconds): still resolving or in their grace, kept until less than a week
+ * from now; the soonest first. */
+export function inLastWeek(views: TitleView[], now: number): TitleView[] {
+  return views
+    .filter((v) => (v.state === 'active' || v.state === 'grace') && v.keptUntil !== undefined && v.keptUntil - now < LAST_WEEK_S)
+    .sort((a, b) => (a.keptUntil ?? 0) - (b.keptUntil ?? 0));
 }

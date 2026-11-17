@@ -411,8 +411,10 @@ pub enum Msg {
     Better(Item),
     /// Items that changed: the receiver `get`s what it lacks.
     Have(Vec<[u8; 32]>),
-    /// A `get` in [`GetMode::Ids`]'s answer: the ids held under its first byte.
-    Ids(Vec<[u8; 32]>),
+    /// A `get` in [`GetMode::Ids`]'s answer: the ids held under its first byte, each with until when its owning chain
+    /// resolves (Unix seconds; 0: no chain owns it now), so the dialog can say "taken until about" without a `get` that
+    /// names the id.
+    Ids(Vec<([u8; 32], u64)>),
     Sync {
         range: Range,
         fp: Fp,
@@ -498,10 +500,17 @@ impl Msg {
             }
             Msg::Put(it) | Msg::Better(it) => o.extend(it.encode()),
             Msg::Taken => {}
-            Msg::Have(ids) | Msg::Ids(ids) => {
+            Msg::Have(ids) => {
                 w16(&mut o, ids.len());
                 for i in ids {
                     o.extend_from_slice(i);
+                }
+            }
+            Msg::Ids(ids) => {
+                w16(&mut o, ids.len());
+                for (i, until) in ids {
+                    o.extend_from_slice(i);
+                    o.extend_from_slice(&until.to_le_bytes());
                 }
             }
             Msg::Sync { range, fp, proof } => {
@@ -603,14 +612,17 @@ impl Msg {
             4 => Msg::Put(Item::read(&mut r)?),
             5 => Msg::Taken,
             6 => Msg::Better(Item::read(&mut r)?),
-            7 | 10 => {
+            7 => {
                 let n = r.u16()? as usize;
-                let ids = (0..n).map(|_| r.a()).collect::<Result<_, _>>()?;
-                if ty == 7 {
-                    Msg::Have(ids)
-                } else {
-                    Msg::Ids(ids)
-                }
+                Msg::Have((0..n).map(|_| r.a()).collect::<Result<_, _>>()?)
+            }
+            10 => {
+                let n = r.u16()? as usize;
+                Msg::Ids(
+                    (0..n)
+                        .map(|_| Ok((r.a()?, r.u64()?)))
+                        .collect::<Result<_, _>>()?,
+                )
             }
             8 => {
                 let range = Range {

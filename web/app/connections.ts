@@ -8,7 +8,7 @@
 import { t } from '../i18n.ts';
 import { newTailcatIdentity, type TailcatIdentity } from '../tailcat.ts';
 import { RoomEntries } from './room-entries.ts';
-import { keepExported, roomExportOf } from './room-export.ts';
+import { forgetRoomNames, keepExported, roomExportOf } from './room-export.ts';
 import { newRoomIdentity, parseRoomLink, roomName, type RoomIdentity } from '../room.ts';
 import { DEFAULT_CONTROL, parseControlURL, type NetworkSettings } from './network.ts';
 import { newId, uniqueName } from './shape.ts';
@@ -114,6 +114,8 @@ export type ConnectionState = {
    * `exportNames`), and one pasted taken there (`importNames`); the page's own when absent (web/app/room-export.ts). */
   exportNames?(identityKey: string): Promise<string | undefined>;
   keepNames?(identityKey: string, names: string): Promise<void>;
+  /** Forgets the names kept under `identityKey` (its connection deleted, after saying so). */
+  forgetNames?(identityKey: string): Promise<void>;
 };
 
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
@@ -193,6 +195,7 @@ export function memoryState(): ConnectionState {
     },
     exportNames: (k) => Promise.resolve(names.get(k)),
     keepNames: (k, n) => Promise.resolve(void names.set(k, n)),
+    forgetNames: (k) => Promise.resolve(void names.delete(k)),
   };
 }
 
@@ -324,8 +327,7 @@ export class Connections {
       this.memory.delete(id);
       this.entries.release(id);
       // An ephemeral room connection may use a stored one's kept key: the last to go forgets it.
-      if (eph.room && !eph.room.identity && !(await this.sharesKey(eph)))
-        await this.state.forgetRoom(eph.room.identityKey);
+      if (eph.room && !(await this.sharesKey(eph))) await this.#forgetKey(eph.room);
       return;
     }
     const c = await this.store.get('connections', id);
@@ -333,7 +335,13 @@ export class Connections {
     await this.store.forget('connections', id);
     if (c.tailnet) await this.state.forgetTailnet(c.tailnet.stateKey);
     if (c.tailcat) await this.state.forgetTailcat(c.tailcat.identityKey);
-    if (c.room && !c.room.identity && !(await this.sharesKey(c))) await this.state.forgetRoom(c.room.identityKey);
+    if (c.room && !(await this.sharesKey(c))) await this.#forgetKey(c.room);
+  }
+
+  /** A room key no connection uses any more: its entry (a stored one's) and its names (the delete said so). */
+  async #forgetKey(r: RoomConnection) {
+    if (!r.identity) await this.state.forgetRoom(r.identityKey);
+    await forgetRoomNames(this.state, r.identityKey);
   }
 
   /**

@@ -636,6 +636,11 @@ impl Server {
         &self.names
     }
 
+    /// The servers it synced with lately (the page's details: "servers held").
+    pub fn partners(&self) -> usize {
+        self.synced_with.len()
+    }
+
     pub fn poll(&mut self) -> Option<Cmd> {
         self.cmds.pop_front()
     }
@@ -1108,7 +1113,17 @@ impl Server {
                 id,
                 ..
             } => {
-                let ids = self.reg.matching(&id);
+                // Each with until when its owner holds it (its cover's end; 0: nobody does now), for the dialog's
+                // "taken until about".
+                let ids = (self.reg.matching(&id).into_iter())
+                    .map(|i| {
+                        let owner = self.reg.get(&i).and_then(|h| h.owner.as_ref());
+                        let until = owner
+                            .filter(|o| !o.released && o.covers(unix))
+                            .map_or(0, |o| o.cover_end);
+                        (i, until)
+                    })
+                    .collect();
                 self.send(from, &Msg::Ids(ids), xid, now);
             }
             Msg::Get {

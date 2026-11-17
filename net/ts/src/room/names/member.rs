@@ -187,6 +187,26 @@ pub struct PutDone {
     pub result: PutResult,
 }
 
+/// What a server said to the dialog's check ([`Member::ids`]): the ids it holds under the first byte asked, each
+/// with until when its owner holds it (Unix seconds, 0: nobody now).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdsResult {
+    Ids(Vec<([u8; 32], u64)>),
+    /// No answer (its transfer failed, or the wait ran out, or the names client stopped).
+    Failed,
+    /// Nobody serves the registry: nobody can say.
+    Nobody,
+}
+
+/// An answer to the dialog's check: the first byte asked, the server (none: [`IdsResult::Nobody`], or a check that
+/// never went out), what it said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdsDone {
+    pub first: u8,
+    pub server: Option<[u8; 32]>,
+    pub result: IdsResult,
+}
+
 /// The most items waiting to be put at once.
 pub const MAX_PUTS: usize = 64;
 
@@ -221,7 +241,9 @@ pub struct Member {
     lookups: BTreeMap<[u8; 32], Lookup>,
     /// The `ids` checks wanted (first bytes), and what came back: the ids servers hold under each.
     ids_wanted: BTreeSet<u8>,
-    pub ids_answers: BTreeMap<u8, BTreeSet<[u8; 32]>>,
+    pub ids_answers: BTreeMap<u8, BTreeMap<[u8; 32], u64>>,
+    /// Each server's answer to an `ids` check as it comes (a publisher's are `names-ids` events).
+    pub ids_done: VecDeque<IdsDone>,
     /// Items waiting for servers to be put to (a publisher's), and the answers that came.
     puts: BTreeMap<[u8; 32], Item>,
     pub put_done: VecDeque<PutDone>,
@@ -251,6 +273,7 @@ impl Member {
             lookups: BTreeMap::new(),
             ids_wanted: BTreeSet::new(),
             ids_answers: BTreeMap::new(),
+            ids_done: VecDeque::new(),
             puts: BTreeMap::new(),
             put_done: VecDeque::new(),
             cmds: VecDeque::new(),
@@ -518,12 +541,25 @@ impl Member {
                     result: PutResult::Failed,
                 });
             }
+            if let Req::Ids(first) = r {
+                self.ids_done.push_back(IdsDone {
+                    first,
+                    server: Some(k),
+                    result: IdsResult::Failed,
+                });
+            }
         }
         self.ask = None;
         self.servers.clear();
         self.servers_until = None;
         self.lookups.clear();
-        self.ids_wanted.clear();
+        for first in std::mem::take(&mut self.ids_wanted) {
+            self.ids_done.push_back(IdsDone {
+                first,
+                server: None,
+                result: IdsResult::Failed,
+            });
+        }
         self.next_question = None;
         for (id, _) in std::mem::take(&mut self.puts) {
             self.put_done.push_back(PutDone {
@@ -666,9 +702,16 @@ impl Member {
             "nobody serves the registry; NXDOMAIN for {} s",
             wait.as_secs()
         ));
-        // The queries that waited get NXDOMAIN now (`query` says so while it is remembered); puts, nobody to put to.
+        // The queries that waited get NXDOMAIN now (`query` says so while it is remembered); puts, nobody to put to;
+        // checks, nobody can say.
         self.lookups.clear();
-        self.ids_wanted.clear();
+        for first in std::mem::take(&mut self.ids_wanted) {
+            self.ids_done.push_back(IdsDone {
+                first,
+                server: None,
+                result: IdsResult::Nobody,
+            });
+        }
         for (id, _) in std::mem::take(&mut self.puts) {
             self.put_done.push_back(PutDone {
                 id,
@@ -763,16 +806,30 @@ impl Member {
                 });
             }
             (Req::Ids(first), Msg::Ids(ids)) => {
+                let ids: Vec<([u8; 32], u64)> =
+                    ids.into_iter().filter(|(i, _)| i[0] == first).collect();
                 let got = self.ids_answers.entry(first).or_default();
-                got.extend(ids.into_iter().filter(|i| i[0] == first));
+                for (i, until) in &ids {
+                    let u = got.entry(*i).or_default();
+                    *u = (*u).max(*until);
+                }
+                self.ids_done.push_back(IdsDone {
+                    first,
+                    server: Some(from),
+                    result: IdsResult::Ids(ids),
+                });
             }
+            (Req::Ids(first), _) => self.ids_done.push_back(IdsDone {
+                first,
+                server: Some(from),
+                result: IdsResult::Failed,
+            }),
             (Req::Get(id) | Req::History(id), _) => {
                 if let Some(l) = self.lookups.get_mut(&id) {
                     l.asked.insert(from, Said::Failed);
                 }
                 self.settle(id, now, unix);
             }
-            _ => {}
         }
     }
 
@@ -786,6 +843,13 @@ impl Member {
                 id,
                 server: Some(k),
                 result: PutResult::Failed,
+            });
+        }
+        if let Req::Ids(first) = r {
+            self.ids_done.push_back(IdsDone {
+                first,
+                server: Some(k),
+                result: IdsResult::Failed,
             });
         }
         if let Req::Get(id) | Req::History(id) = r {

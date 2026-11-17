@@ -117,7 +117,7 @@ export const ask = {
       close: () => takeDown(q),
     };
   },
-  /** A line of text, or undefined if cancelled. */
+  /** A line of text, or undefined if cancelled (`danger`: OK does what can't be undone; the text is one to copy first). */
   prompt: (text: string, value = '', o: Options = {}) =>
     show({
       kind: 'prompt',
@@ -125,7 +125,7 @@ export const ask = {
       text,
       ok: o.ok ?? t('common:ask.ok'),
       cancel: o.cancel ?? t('common:ask.cancel'),
-      danger: false,
+      danger: o.danger ?? false,
       value,
     }) as Promise<string | undefined>,
 };
