@@ -573,7 +573,7 @@ fn a_servers_own_name_not_public_yet_answers_its_own_address() {
     use crate::room::names::entry::Kind;
     let mut b = Bitcoin::new(ROOM, 9);
     let key = b.key(1, "mine");
-    let claim = b.entry(Kind::Claim, &key, "mine", [0; 32], day(0) - 3600); // no anchor yet
+    let claim = b.entry(Kind::Claim, &key, "mine", [0; 32]); // no anchor yet
     let item = b.item("mine", &[claim], None);
     let mut n = Net::new(vec![
         server_config(1, vec![(key.to_bytes().into(), item)]),

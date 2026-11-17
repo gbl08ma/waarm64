@@ -328,12 +328,12 @@ pub fn check_serve(
     }
     let mut name = Name::new(first.entry.name);
     for w in entries {
-        let mut s = Stamped::check(w.entry.clone(), w.ref_header, names, params, pow, unix)?;
+        let mut s = Stamped::check(w.entry.clone(), names, pow)?;
         let Some((a, h)) = w.anchor.clone() else {
             return Err(Invalid::AnchorRoot);
         };
         s.offer_anchor(a, h, params, unix)?;
-        if s.entry.owner != owner || !name.insert(s, params, unix) {
+        if s.entry.owner != owner || !name.insert(s) {
             return Err(Invalid::Encoding);
         }
     }
@@ -341,7 +341,7 @@ pub fn check_serve(
     let Some(c) =
         (name.chains(params).into_iter()).find(|c| c.covers(unix) && c.ids.len() == entries.len())
     else {
-        return Err(Invalid::AnchorWindow); // a dead name's key, or entries off the run
+        return Err(Invalid::Dead); // a dead name's key, or entries off the run
     };
     Ok((owner, name.id, tier(params, c.seniority, unix)))
 }
@@ -357,23 +357,16 @@ fn check_live(
     sig: &[u8; 64],
     unix: u64,
 ) -> Result<([u8; 32], [u8; 32]), Invalid> {
-    let mut s = Stamped::check(
-        entry.entry.clone(),
-        entry.ref_header,
-        names,
-        params,
-        pow,
-        unix,
-    )?;
+    let mut s = Stamped::check(entry.entry.clone(), names, pow)?;
     let Some((a, h)) = entry.anchor.clone() else {
         return Err(Invalid::AnchorRoot);
     };
     s.offer_anchor(a, h, params, unix)?;
     let mut n = Name::new(s.entry.name);
     let owner = s.entry.owner;
-    n.insert(s, params, unix);
+    n.insert(s);
     if !n.chains(params).iter().any(|c| c.covers(unix)) {
-        return Err(Invalid::AnchorWindow); // a dead name's key
+        return Err(Invalid::Dead);
     }
     if !verify(&owner, msg, sig) {
         return Err(Invalid::Signature);
@@ -540,7 +533,7 @@ pub struct Server {
     /// Entry ids that failed a check only a forgery fails, lately: not checked again.
     refused: BTreeSet<[u8; 32]>,
     refused_order: VecDeque<[u8; 32]>,
-    /// Entries checked whole lately (signature, proof of work, `ref` header), without their anchors: a valid entry put
+    /// Entries checked whole lately (signature, proof of work), without their anchors: a valid entry put
     /// again (a dead chain's, say) costs only its anchor's check (review 2).
     verified: BTreeMap<[u8; 32], Stamped>,
     verified_order: VecDeque<[u8; 32]>,
@@ -666,7 +659,7 @@ impl Server {
             let mut h = self.reg.take(&id).unwrap_or_else(|| Held::new(id, unix));
             h.asked = h.asked.max(unix);
             for e in job.checked {
-                h.name.insert(e, &self.params, unix);
+                h.name.insert(e);
             }
             h.settle(&self.params, unix);
             if let Some(z) = zone {
@@ -784,7 +777,7 @@ impl Server {
         h.asked = h.asked.max(asked);
         for e in item.entries {
             if e.entry.name == id {
-                h.name.insert(e.trusted(), &self.params, unix);
+                h.name.insert(e.trusted());
             }
         }
         h.settle(&self.params, unix);
@@ -1660,26 +1653,14 @@ impl Server {
     }
 
     /// An entry checked whole (counted).
-    fn check_whole(
-        &mut self,
-        e: super::entry::Entry,
-        ref_header: super::header::Header,
-        unix: u64,
-    ) -> Result<Stamped, Invalid> {
+    fn check_whole(&mut self, e: super::entry::Entry) -> Result<Stamped, Invalid> {
         self.stats.checked += 1;
-        Stamped::check(
-            e,
-            ref_header,
-            &self.names,
-            &self.params,
-            &mut self.pow,
-            unix,
-        )
+        Stamped::check(e, &self.names, &mut self.pow)
     }
 
     /// Checks one entry of a job (or only its anchor, when the entry is held): its cost. An entry that fails a check
-    /// only a forgery fails (all but a `ref` header from the future, which a clock behind can make) marks the job
-    /// forged: the rest of it isn't checked, and nothing of it is kept.
+    /// (only a forgery fails one: the entry's own bytes decide them all) marks the job forged: the rest of it isn't
+    /// checked, and nothing of it is kept.
     fn check_entry(&mut self, job: &mut Job, w: WireEntry, unix: u64) -> u32 {
         let id = job.item.id;
         if w.entry.name != id {
@@ -1698,35 +1679,24 @@ impl Server {
             .and_then(|h| h.name.get(&eid))
             .cloned()
             .or_else(|| job.checked.iter().find(|s| s.id() == eid).cloned())
-            .or_else(|| {
-                (self.verified.get(&eid))
-                    .filter(|v| v.ref_header == w.ref_header)
-                    .cloned()
-            });
+            .or_else(|| self.verified.get(&eid).cloned());
         let (mut s, mut cost) = match held {
             Some(s) => (s, 0),
-            None => match self.check_whole(w.entry, w.ref_header, unix) {
+            None => match self.check_whole(w.entry) {
                 Ok(s) => {
                     self.remember_verified(&s);
                     (s, 4)
                 }
                 Err(e) => {
                     self.log(format!("an entry refused: {e:?}"));
-                    // Remembered only for what the entry's own bytes decide (not its `ref` header, which travels
-                    // beside it: anyone could otherwise send an honest entry with a broken header to have it refused).
-                    if matches!(
-                        e,
-                        Invalid::Prev | Invalid::Room | Invalid::Signature | Invalid::Work
-                    ) {
-                        self.refuse(eid);
-                    }
-                    job.forged |= e != Invalid::HeaderFuture;
+                    self.refuse(eid);
+                    job.forged = true;
                     return 4;
                 }
             },
         };
         if let Some((a, h)) = w.anchor {
-            let better = s.anchor().is_none_or(|b| b.anchor != a || b.run != h);
+            let better = s.anchor().is_none_or(|b| b.anchor != a || b.header != h);
             if better {
                 cost += 1;
                 if let Err(e) = s.offer_anchor(a, h, &self.params, unix) {
@@ -1737,7 +1707,7 @@ impl Server {
         if let Some(p) = w.pending {
             // Only the owner says which pending anchor a server is to finish: anyone's would replace it.
             if pending_ok(&self.names, &s.entry.owner, &eid, &p) {
-                s.offer_pending(p, &self.params, unix);
+                s.offer_pending(p);
             } else {
                 self.log("a pending anchor refused: not the owner's".into());
             }
@@ -1764,7 +1734,7 @@ impl Server {
             job.item.zone = None;
         }
         for s in job.checked {
-            h.name.insert(s, &self.params, unix);
+            h.name.insert(s);
         }
         h.settle(&self.params, unix);
         // A zone put and not taken (within 10 minutes of the last, or not beating the one held), unless it is the one

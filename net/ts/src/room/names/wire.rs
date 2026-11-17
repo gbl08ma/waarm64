@@ -1,9 +1,8 @@
 //! What the registry sends (room-names.md "The registry"): binary, integers little-endian.
 //!
-//! - **An item**: a name's record as a server holds and sends it: its id, the headers its entries
-//!   need (once each), its entries (each with its `ref` header, its anchor with its block's header
-//!   and the six after it, or a pending anchor) and its zone. Also what a server stores, one record
-//!   a name.
+//! - **An item**: a name's record as a server holds and sends it: its id, the headers its entries'
+//!   anchors need (once each), its entries (each with its anchor and its block's header, or a
+//!   pending anchor) and its zone. Also what a server stores, one record a name.
 //! - **The question**, "who serves the registry?": a lookup's body (the names client's key, its
 //!   region, the time, a nonce) and one byte more, `spread`, sealed and MAC'd as a lookup to a bare
 //!   address is (lookup.rs) under the room's names tag.
@@ -21,7 +20,7 @@ use super::{
     anchor::{Anchor, MAX_ANCHOR, Pending},
     arr,
     entry::{Anchored, ENTRY_LEN, Entry, Stamped},
-    header::{FOLLOWERS, HEADER_LEN, Header, Run},
+    header::{HEADER_LEN, Header},
     zone::Zone,
 };
 
@@ -39,10 +38,8 @@ pub const IN_FLIGHT: usize = 8;
 pub const MAX_MESSAGE: usize = 1 << 20;
 /// The most entries an item may carry.
 pub const MAX_ENTRIES: usize = 1024;
-/// 2: an anchor's block's header comes with the six after it.
-const ITEM_VERSION: u8 = 3;
-/// The most followers an anchor's block may list on the wire (a run is checked for exactly [`FOLLOWERS`]).
-const MAX_FOLLOWERS: usize = 2 * FOLLOWERS;
+/// 4: entries without `ref` (version 2), an anchor with its block's header alone.
+const ITEM_VERSION: u8 = 4;
 
 /// A little-endian reader that fails on short input.
 pub(super) struct Rd<'a> {
@@ -101,8 +98,7 @@ impl<'a> Rd<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WireEntry {
     pub entry: Entry,
-    pub ref_header: Header,
-    pub anchor: Option<(Anchor, Run)>,
+    pub anchor: Option<(Anchor, Header)>,
     pub pending: Option<Pending>,
 }
 
@@ -110,8 +106,7 @@ impl WireEntry {
     pub fn of(s: &Stamped) -> WireEntry {
         WireEntry {
             entry: s.entry.clone(),
-            ref_header: s.ref_header,
-            anchor: s.anchor().map(|a| (a.anchor.clone(), a.run.clone())),
+            anchor: s.anchor().map(|a| (a.anchor.clone(), a.header)),
             pending: s.pending().cloned(),
         }
     }
@@ -120,8 +115,8 @@ impl WireEntry {
     pub fn trusted(self) -> Stamped {
         Stamped::trusted(
             self.entry,
-            self.ref_header,
-            self.anchor.map(|(anchor, run)| Anchored { anchor, run }),
+            self.anchor
+                .map(|(anchor, header)| Anchored { anchor, header }),
             self.pending,
         )
     }
@@ -150,17 +145,12 @@ impl Item {
         let mut es = Vec::new();
         for e in &self.entries {
             es.extend_from_slice(&e.entry.encode());
-            es.extend_from_slice(&index(&e.ref_header, &mut headers).to_le_bytes());
             match &e.anchor {
-                Some((a, run)) => {
+                Some((a, h)) => {
                     let b = a.encode();
                     es.extend_from_slice(&(b.len() as u16).to_le_bytes());
                     es.extend_from_slice(&b);
-                    es.extend_from_slice(&index(&run.block, &mut headers).to_le_bytes());
-                    es.push(run.next.len() as u8);
-                    for h in &run.next {
-                        es.extend_from_slice(&index(h, &mut headers).to_le_bytes());
-                    }
+                    es.extend_from_slice(&index(h, &mut headers).to_le_bytes());
                 }
                 None => es.extend_from_slice(&0u16.to_le_bytes()),
             }
@@ -206,21 +196,12 @@ impl Item {
         let mut entries = Vec::with_capacity(ne);
         for _ in 0..ne {
             let entry = Entry::decode(r.take(ENTRY_LEN)?)?;
-            let ref_header = hdr(r.u16()?)?;
             let al = r.u16()? as usize;
             let anchor = match al {
                 0 => None,
                 n if n <= MAX_ANCHOR => {
                     let a = Anchor::decode(r.take(n)?).map_err(|_| Invalid::AnchorFormat)?;
-                    let block = hdr(r.u16()?)?;
-                    let k = r.u8()? as usize;
-                    if k > MAX_FOLLOWERS {
-                        return Err(Invalid::Encoding);
-                    }
-                    let next = (0..k)
-                        .map(|_| hdr(r.u16()?))
-                        .collect::<Result<Vec<_>, Invalid>>()?;
-                    Some((a, Run { block, next }))
+                    Some((a, hdr(r.u16()?)?))
                 }
                 _ => return Err(Invalid::AnchorFormat),
             };
@@ -231,7 +212,6 @@ impl Item {
             };
             entries.push(WireEntry {
                 entry,
-                ref_header,
                 anchor,
                 pending,
             });

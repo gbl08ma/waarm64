@@ -14,7 +14,7 @@ use super::{
         Title, UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
     },
     store::read_record,
-    testkit::{Bitcoin, DAY, EASY, HOUR, header, params},
+    testkit::{Bitcoin, DAY, HOUR, params},
     wire::{GetMode, Item, Msg, Question, Range, SyncAnswer, Transfers, WireEntry},
     zone::Zone,
 };
@@ -195,22 +195,15 @@ fn items_messages_and_transfers_round_trip() {
     let (_, item) = b.title(1, "test123", t(20), &[t(5)], [9; 32]);
     let enc = item.encode();
     assert_eq!(Item::decode(&enc), Ok(item.clone()));
-    // Two entries, sixteen headers (each `ref`, each anchor's block and the six after it), one zone: headers once
-    // each. An anchor adds 13 bytes for its followers (a count and six indices), a distinct block 480 (six headers).
+    // Two entries, two headers (each anchor's block), one zone: headers once each. An entry is 175 bytes and its
+    // anchor's block one header.
     assert_eq!(
         enc.len(),
         1 + 32
             + 2
-            + (2 + 2 * 7) * 80
+            + 2 * 80
             + 2
-            + 2 * (207
-                + 2
-                + 2
-                + item.entries[0].anchor.as_ref().unwrap().0.encode().len()
-                + 2
-                + 1
-                + 6 * 2
-                + 2)
+            + 2 * (175 + 2 + item.entries[0].anchor.as_ref().unwrap().0.encode().len() + 2 + 2)
             + 2
             + 366
     );
@@ -599,14 +592,14 @@ fn a_worse_chain_is_refused_and_a_better_one_taken() {
     // A renewal waiting for its anchor, on the owner's last entry: kept, and a later anchor for it.
     let k4 = b.key(4, "contested");
     let last = c0.entries.last().unwrap().entry.id();
-    let mut r = b.entry(Kind::Renew, &k4, "contested", last, t(1));
+    let mut r = b.entry(Kind::Renew, &k4, "contested", last);
     let mut pend = super::anchor::Pending {
         calendar: super::anchor::Calendar::Alice,
         ops: vec![super::anchor::Op::Sha256],
         sig: [0; 64],
     };
     super::entry::sign_pending(&k4, &b.names, &r.id(), &mut pend);
-    assert!(r.offer_pending(pend, &b.params, T));
+    assert!(r.offer_pending(pend));
     let it = b.item("contested", &[r.clone()], None);
     assert!(
         matches!(bus.put(1, 0, it), Msg::Better(_)),
@@ -660,14 +653,7 @@ fn forged_anchors_headers_and_signatures_are_refused() {
     w.entry.sig[3] ^= 1;
     refused(&mut bus, item(&b, w));
     // Signed, but its proof of work short.
-    let mut e = Entry::new(
-        &b.names,
-        Kind::Claim,
-        id,
-        good.entry.owner,
-        [0; 32],
-        good.entry.refb,
-    );
+    let mut e = Entry::new(&b.names, Kind::Claim, id, good.entry.owner, [0; 32]);
     e.nonce = (0..)
         .find(|n| {
             let mut x = e.clone();
@@ -685,21 +671,13 @@ fn forged_anchors_headers_and_signatures_are_refused() {
     let mut x = other.at(Kind::Claim, &ok, "forged", [0; 32], t(10));
     x.entry.name = id;
     refused(&mut bus, item(&b, WireEntry::of(&x)));
-    // `ref`'s header not `ref`'s block.
+    // An anchor header whose work is broken; one that doesn't reach the root: the entry is
+    // unanchored, a claim without a time, so nothing is kept.
     let mut w = WireEntry::of(&good);
-    w.ref_header = header(&mut b.rng, t(10), [0; 32], EASY);
-    refused(&mut bus, item(&b, w));
-    // An anchor header whose work is broken; one that doesn't reach the root; one past the
-    // window: the entry is unanchored, a claim without a time, so nothing is kept.
-    let mut w = WireEntry::of(&good);
-    w.anchor.as_mut().unwrap().1.block.0[40] ^= 1;
+    w.anchor.as_mut().unwrap().1.0[40] ^= 1;
     refused(&mut bus, item(&b, w));
     let mut w = WireEntry::of(&good);
     w.anchor.as_mut().unwrap().0.ops[0] = super::anchor::Op::Append(vec![0; 16]);
-    refused(&mut bus, item(&b, w));
-    let mut w = WireEntry::of(&good);
-    let (a, h) = b.anchor(&good.id(), t(10) + 50 * HOUR);
-    w.anchor = Some((a, h));
     refused(&mut bus, item(&b, w));
     // A header from the future.
     let mut w = WireEntry::of(&good);
@@ -961,7 +939,7 @@ fn servers_sync_and_a_server_that_leaves_names_out() {
 fn an_entry_held_takes_a_new_anchor_only_when_earlier() {
     let mut b = Bitcoin::new(ROOM, 13);
     let k = b.key(1, "anchors");
-    let mut late = b.entry(Kind::Claim, &k, "anchors", [0; 32], t(10));
+    let mut late = b.entry(Kind::Claim, &k, "anchors", [0; 32]);
     let id = late.id();
     let mut early = late.clone();
     let (a, h) = b.anchor(&id, t(10) + 3 * HOUR);
@@ -1490,7 +1468,7 @@ fn a_put_of_one_junk_entry_many_times_costs_one_check() {
     let mut b = Bitcoin::new(ROOM, 45);
     let k = b.key(1, "junk");
     let good = b.at(Kind::Claim, &k, "junk", [0; 32], t(10));
-    // Signed with the sender's own key, a real `ref` header, no work.
+    // Signed with the sender's own key, no work.
     let mut e = good.entry.clone();
     e.nonce = (0..)
         .find(|n| {
@@ -1617,7 +1595,7 @@ fn a_pending_anchor_not_signed_by_the_owner_is_refused() {
     let key = k256::schnorr::SigningKey::from_bytes(&key).unwrap();
     assert_eq!(bus.put(1, 0, c0.clone()), Msg::Taken);
     let last = c0.entries.last().unwrap().entry.id();
-    let r = b.entry(Kind::Renew, &key, "pending", last, t(1));
+    let r = b.entry(Kind::Renew, &key, "pending", last);
     let mut good = Pending {
         calendar: Calendar::Bob,
         ops: vec![Op::Sha256],
@@ -1626,7 +1604,7 @@ fn a_pending_anchor_not_signed_by_the_owner_is_refused() {
     super::entry::sign_pending(&key, &b.names, &r.id(), &mut good);
     let with = |p: &Pending| {
         let mut s = r.clone();
-        assert!(s.offer_pending(p.clone(), &b.params, T));
+        assert!(s.offer_pending(p.clone()));
         b.item("pending", &[s], None)
     };
     bus.put(1, 0, with(&good));

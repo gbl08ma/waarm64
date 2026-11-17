@@ -647,15 +647,15 @@ fn the_module_runs_on_production_parameters() {
     let key = b.key(1, "alpha");
     let s = b.at(Kind::Claim, &key, "alpha", [0; 32], t(20));
     let mut pow = super::entry::Pow::new(&Params::BUILT);
-    let r = Stamped::check(
-        s.entry.clone(),
-        s.ref_header,
-        &b.names,
-        &Params::BUILT,
-        &mut pow,
-        LATE,
+    // The tests' proof of work is short of production's, and their headers under its floor.
+    let r = Stamped::check(s.entry.clone(), &b.names, &mut pow);
+    assert_eq!(r, Err(Invalid::Work));
+    let a = s.anchor().unwrap();
+    let mut bare = Stamped::trusted(s.entry.clone(), None, None);
+    assert_eq!(
+        bare.offer_anchor(a.anchor.clone(), a.header, &Params::BUILT, LATE),
+        Err(Invalid::HeaderFloor)
     );
-    assert_eq!(r, Err(Invalid::HeaderFloor));
 }
 
 // ---- Review 1's findings (NAMES-REVIEW-1.md, deleted once all were fixed: git history has it) ----

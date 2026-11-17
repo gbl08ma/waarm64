@@ -1,21 +1,21 @@
 //! The names agent's operations (room-names.md "The names agent"): what the page's agent (web/names.ts) asks of the
 //! module to make and keep a title, as pure functions over a title's item (wire.rs `Item`: every entry of the title,
-//! each with its `ref` header, its anchor or a pending one, and the zone). No state: the page keeps the title and the
+//! each with its anchor (and its block's header) or a pending one, and the zone). No state: the page keeps the title and the
 //! owners' secret. The wasm exports (`ts_names_*`, wasm.rs) take and give JSON through [`call`], bytes in hex.
 //!
 //! - `key`: a name's owner key and id from the owners' secret.
-//! - `make`, `mine`, `sign`: an entry made after a `ref` block, its proof of work (in slices of tries, so a worker
-//!   stays responsive), its signature.
-//! - `add`: an entry checked (form, room, signature, proof of work, `ref`'s header) and added to the title.
+//! - `make`, `mine`, `sign`: an entry made, its proof of work (in slices of tries, so a worker stays responsive), its
+//!   signature.
+//! - `add`: an entry checked (form, room, signature, proof of work) and added to the title.
 //! - `pending`: a calendar's receipt made a pending anchor, signed by the owner key (servers keep only signed ones) and
 //!   offered to the title's entry; `commitment` and `finish`: what to ask the calendar for, and the anchors its finished
-//!   proof gives; `anchor`: one checked with its block's header and the six after it and taken.
+//!   proof gives; `anchor`: one checked with its block's header and taken.
 //! - `zone`: a zone sealed and signed, put on the title.
 //! - `status`: the title's entries, its chains and the owner now, for the agent's decisions.
 //! - `judge`: what a server showed (a `better` answer to a put), checked whole, against the title: the title's own
 //!   chain (`ours`), another branch of it (`branch`: taken into the title), or a better chain of another key's
 //!   (`lost`).
-//! - `drop`: entries taken out of the title (one that can no longer be anchored).
+//! - `drop`: entries taken out of the title (one that can no longer link).
 
 use std::{cell::RefCell, collections::BTreeSet};
 
@@ -27,7 +27,7 @@ use super::{
     anchor::{Anchor, Calendar, Pending},
     chain::{Chain, Name, order},
     entry::{Entry, Kind, Pow, Stamped, sign_pending},
-    header::{FOLLOWERS, Header, Run},
+    header::Header,
     id::{RoomNames, acceptable, owner_key},
     wire::{Item, WireEntry},
     zone::Zone,
@@ -99,10 +99,10 @@ fn kind_name(k: Kind) -> &'static str {
 }
 
 /// A title's item as entries (each as stored: the agent checked it when it took it).
-fn name_of(item: &Item, params: &Params, now: u64) -> Name {
+fn name_of(item: &Item) -> Name {
     let mut n = Name::new(item.id);
     for w in &item.entries {
-        n.insert(w.clone().trusted(), params, now);
+        n.insert(w.clone().trusted());
     }
     n
 }
@@ -130,19 +130,9 @@ fn chain_json(c: &Chain) -> Value {
     })
 }
 
-/// The pretend Bitcoin's run of headers from the hex the agent fetched: the block's and the six after it.
-fn run_of(headers: &[String]) -> Result<Run, String> {
-    if headers.len() != FOLLOWERS + 1 {
-        return Err(code(Invalid::HeaderRun));
-    }
-    let hs = headers
-        .iter()
-        .map(|h| Header::from_bytes(&unhex(h)?).ok_or_else(|| code(Invalid::Encoding)))
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(Run {
-        block: hs[0],
-        next: hs[1..].to_vec(),
-    })
+/// An anchor's block's header from the hex the agent fetched.
+fn header_of(h: &str) -> Result<Header, String> {
+    Header::from_bytes(&unhex(h)?).ok_or_else(|| code(Invalid::Encoding))
 }
 
 #[derive(Deserialize)]
@@ -153,9 +143,6 @@ struct In {
     name: Option<String>,
     kind: Option<String>,
     prev: Option<String>,
-    #[serde(rename = "ref")]
-    refh: Option<String>,
-    hash: Option<String>,
     entry: Option<String>,
     tries: Option<u64>,
     item: Option<String>,
@@ -166,8 +153,7 @@ struct In {
     pending: Option<String>,
     proof: Option<String>,
     anchor: Option<String>,
-    #[serde(default)]
-    headers: Vec<String>,
+    header: Option<String>,
     /// A zone's `seq`, in decimal: it is 64 bits, past what a JavaScript number holds.
     seq: Option<String>,
     #[serde(default)]
@@ -233,22 +219,12 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
                 Some(p) => unhex32(p)?,
                 None => [0; 32],
             };
-            let r = Header::from_bytes(&unhex(need(&i.refh, "ref")?)?)
-                .ok_or_else(|| code(Invalid::RefHeader))?;
-            // The block hash the explorers agreed on (in their byte order): this header's.
-            if let Some(h) = &i.hash {
-                let mut x = r.hash();
-                x.reverse();
-                if hex(&x) != *h {
-                    return Err(code(Invalid::RefHeader));
-                }
-            }
             let owner: [u8; 32] = k.verifying_key().to_bytes().into();
-            let mut e = Entry::new(&names, kind, id, owner, prev, r.hash());
+            let mut e = Entry::new(&names, kind, id, owner, prev);
             let mut n = [0u8; 8];
             let _ = getrandom::fill(&mut n);
             e.nonce = u64::from_le_bytes(n);
-            Ok(json!({ "entry": hex(&e.encode()), "refTime": r.time() }))
+            Ok(json!({ "entry": hex(&e.encode()) }))
         }
         "mine" => {
             let mut e = i.entry()?;
@@ -267,10 +243,7 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
         "add" => {
             // Checking an entry: everything but its anchor, as a server would.
             let e = i.entry()?;
-            let r = Header::from_bytes(&unhex(need(&i.refh, "ref")?)?)
-                .ok_or_else(|| code(Invalid::RefHeader))?;
-            let s = with_pow(params, |p| Stamped::check(e, r, &names, params, p, i.now))
-                .map_err(code)?;
+            let s = with_pow(params, |p| Stamped::check(e, &names, p)).map_err(code)?;
             let item = match &i.item {
                 Some(h) => read_item(h)?,
                 None => Item {
@@ -282,8 +255,8 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
                 return Err(code(Invalid::Name));
             }
             let id = s.id();
-            let mut n = name_of(&item, params, i.now);
-            n.insert(s, params, i.now);
+            let mut n = name_of(&item);
+            n.insert(s);
             Ok(json!({ "item": hex(&item_of(&n, item.zone).encode()), "id": hex(&id) }))
         }
         "pending" => {
@@ -296,9 +269,9 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
             let mut p = Pending::from_receipt(cal, &unhex(need(&i.receipt, "receipt")?)?, &id)
                 .map_err(code)?;
             sign_pending(&k, &names, &id, &mut p);
-            let mut n = name_of(&item, params, i.now);
+            let mut n = name_of(&item);
             let s = n.get_mut(&id).ok_or("no such entry")?;
-            s.offer_pending(p.clone(), params, i.now);
+            s.offer_pending(p.clone());
             Ok(
                 json!({ "item": hex(&item_of(&n, item.zone).encode()), "pending": hex(&p.encode()) }),
             )
@@ -330,10 +303,10 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
             let item = i.item()?;
             let id = i.id()?;
             let a = Anchor::decode(&unhex(need(&i.anchor, "anchor")?)?).map_err(code)?;
-            let run = run_of(&i.headers)?;
-            let mut n = name_of(&item, params, i.now);
+            let h = header_of(need(&i.header, "header")?)?;
+            let mut n = name_of(&item);
             let s = n.get_mut(&id).ok_or("no such entry")?;
-            s.offer_anchor(a, run, params, i.now).map_err(code)?;
+            s.offer_anchor(a, h, params, i.now).map_err(code)?;
             let time = s.time();
             Ok(json!({ "item": hex(&item_of(&n, item.zone).encode()), "time": time }))
         }
@@ -378,7 +351,7 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
             let item = i.item()?;
             let ids: BTreeSet<[u8; 32]> =
                 i.ids.iter().map(|s| unhex32(s)).collect::<Result<_, _>>()?;
-            let mut n = name_of(&item, params, i.now);
+            let mut n = name_of(&item);
             n.retain(|id, _| !ids.contains(id));
             Ok(json!({ "item": hex(&item_of(&n, item.zone).encode()) }))
         }
@@ -386,25 +359,24 @@ pub fn call(op: &str, input: &[u8], params: &Params) -> Result<Value, String> {
     }
 }
 
-/// The title as the agent decides by it: each entry (its kind, time, window, whether it can still be anchored), the
-/// chain that owns the name now among the title's own, the best chain of them whether or not it covers now, and the
-/// zone's `seq`.
+/// The title as the agent decides by it: each entry (its kind, its time, until when it can link, whether it no longer
+/// can), the chain that owns the name now among the title's own, the best chain of them whether or not it covers now,
+/// and the zone's `seq`.
 pub fn status(item: &Item, params: &Params, now: u64) -> Value {
-    let n = name_of(item, params, now);
+    let n = name_of(item);
     let entries: Vec<Value> = n
         .entries()
         .map(|s| {
-            let (_, hi) = s.window(params);
             json!({
                 "id": hex(&s.id()),
                 "kind": kind_name(s.entry.kind),
                 "prev": hex(&s.entry.prev),
                 "owner": hex(&s.entry.owner),
                 "time": s.time(),
-                "refTime": s.ref_header.time(),
-                "windowEnd": hi,
-                // Unanchored and past its window (and the calendars' slack): it can never count.
-                "stale": s.time().is_none() && s.pending_stale(params, now),
+                // Until when an anchor can make it link: the entry before's `t + TERM + GRACE` (none for a claim).
+                "linkEnd": n.link_end(s, params),
+                // Unanchored and past that: it can never count.
+                "stale": s.time().is_none() && n.stale(s, params, now),
                 "pending": s.pending().is_some(),
             })
         })
@@ -423,13 +395,12 @@ pub fn status(item: &Item, params: &Params, now: u64) -> Value {
         "zone": item.zone.as_ref().map(|z| json!({ "seq": z.seq.to_string(), "owner": hex(&z.owner) })),
         "term": params.term,
         "grace": params.grace,
-        "refWindow": params.ref_window,
         "drift": params.drift,
     })
 }
 
 /// What a server showed for the title's name, checked whole (each entry the title doesn't hold as shown: signature,
-/// proof of work, `ref` header, anchor), against the title. `ours`: the owner now is the title's own chain as held;
+/// proof of work, anchor), against the title. `ours`: the owner now is the title's own chain as held;
 /// `branch`: another branch of the title's own key owns it (a title forked between two browsers): its entries are
 /// taken into the title, as is a newer zone of the title's key; `lost`: another key's chain owns it; `none`: no chain
 /// covers now. A forged answer is an error (the server lies: nothing is taken).
@@ -443,7 +414,7 @@ pub fn judge(
     if other.id != title.id && !other.entries.is_empty() {
         return Err(code(Invalid::Name));
     }
-    let mine = name_of(title, params, now);
+    let mine = name_of(title);
     // The claim's key (any entry of the title is its key's, but the claim says so: review 2).
     let owner_key = (title.entries.iter())
         .find(|w| w.entry.kind == Kind::Claim)
@@ -460,16 +431,14 @@ pub fn judge(
         let s = match held {
             Some(h)
                 if w.anchor.as_ref().is_none_or(|(a, r)| {
-                    h.anchor().is_some_and(|b| b.anchor == *a && b.run == *r)
+                    h.anchor().is_some_and(|b| b.anchor == *a && b.header == *r)
                 }) =>
             {
                 h.clone()
             }
             _ => {
-                let mut s = with_pow(params, |p| {
-                    Stamped::check(w.entry.clone(), w.ref_header, names, params, p, now)
-                })
-                .map_err(code)?;
+                let mut s = with_pow(params, |p| Stamped::check(w.entry.clone(), names, p))
+                    .map_err(code)?;
                 if let Some((a, r)) = w.anchor.clone() {
                     s.offer_anchor(a, r, params, now).map_err(code)?;
                 }
@@ -477,7 +446,7 @@ pub fn judge(
             }
         };
         shown.push(s.clone());
-        all.insert(s, params, now);
+        all.insert(s);
     }
     if let Some(z) = &other.zone
         && (z.name != title.id || !z.verify(names))
@@ -500,7 +469,7 @@ pub fn judge(
     let branch = o.ids.iter().any(|id| !have.contains(id));
     let mut merged = mine;
     for s in shown.into_iter().filter(|s| s.entry.owner == owner_key) {
-        merged.insert(s, params, now);
+        merged.insert(s);
     }
     let mut zone = title.zone.clone();
     if let Some(z) = &other.zone
@@ -521,7 +490,7 @@ pub fn judge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::room::names::testkit::{Bitcoin, DAY, HOUR, params};
+    use crate::room::names::testkit::{Bitcoin, DAY, params};
 
     const ROOM: &str = "agent room";
 
@@ -539,19 +508,18 @@ mod tests {
             .to_string()
     }
 
-    /// A claim made, mined and signed through the operations, added to a new title.
-    fn claim(
-        b: &mut Bitcoin,
+    /// An entry made, mined and signed through the operations, added to title `item` (a new one when None).
+    fn make(
         secret: &str,
         name: &str,
-        ref_time: u32,
+        kind: &str,
+        prev: Option<&str>,
+        item: Option<&str>,
         now: u64,
     ) -> (String, String) {
-        let r = crate::room::names::testkit::header(&mut b.rng, ref_time, [7; 32], 0x207f_ffff);
-        let refh = hex(&r.0);
         let m = ok(
             "make",
-            json!({ "room": ROOM, "secret": secret, "name": name, "kind": "claim", "ref": refh }),
+            json!({ "room": ROOM, "secret": secret, "name": name, "kind": kind, "prev": prev }),
         );
         let mut e = s(&m, "entry");
         loop {
@@ -565,7 +533,7 @@ mod tests {
         assert_eq!(
             run(
                 "add",
-                json!({ "room": ROOM, "entry": e, "ref": refh, "now": now })
+                json!({ "room": ROOM, "entry": e, "item": item, "now": now })
             ),
             Err("Signature".into())
         );
@@ -578,60 +546,92 @@ mod tests {
         );
         let a = ok(
             "add",
-            json!({ "room": ROOM, "entry": e, "ref": refh, "now": now }),
+            json!({ "room": ROOM, "entry": e, "item": item, "now": now }),
         );
         (s(&a, "item"), s(&a, "id"))
     }
 
-    /// An anchor for entry `id` in a pretend block at `time`, as the agent would collect it: the anchor's hex and the
-    /// seven headers.
-    fn anchor_for(b: &mut Bitcoin, id: &str, time: u32) -> (String, Vec<String>) {
-        let (a, r) = b.anchor(&unhex32(id).unwrap(), time);
-        let mut hs = vec![hex(&r.block.0)];
-        hs.extend(r.next.iter().map(|h| hex(&h.0)));
-        (hex(&a.encode()), hs)
+    /// A claim made through the operations, on a new title.
+    fn claim(secret: &str, name: &str, now: u64) -> (String, String) {
+        make(secret, name, "claim", None, None, now)
+    }
+
+    /// An anchor for entry `id` in a pretend block at `time`, as the agent would collect it: the anchor's hex and its
+    /// block's header.
+    fn anchor_for(b: &mut Bitcoin, id: &str, time: u32) -> (String, String) {
+        let (a, h) = b.anchor(&unhex32(id).unwrap(), time);
+        (hex(&a.encode()), hex(&h.0))
     }
 
     #[test]
-    fn a_title_is_made_through_the_operations_and_anchored_in_its_window() {
+    fn a_title_is_made_through_the_operations_and_anchored() {
         let mut b = Bitcoin::new(ROOM, 1);
         let secret = "11".repeat(32);
         let now = 1_800_000_000u64;
-        let (item, id) = claim(&mut b, &secret, "test123", now as u32 - HOUR, now);
+        let (item, id) = claim(&secret, "test123", now);
         let st = ok("status", json!({ "item": item, "now": now }));
         assert_eq!(st["owner"], Value::Null, "not anchored: no chain");
+        // A claim can always link: never stale, however long it waits.
         assert_eq!(st["entries"][0]["stale"], false);
-        // Past its window and slack, unanchored: stale (the agent makes it again).
-        let late = now + 3 * DAY as u64;
+        assert_eq!(st["entries"][0]["linkEnd"], Value::Null);
+        let late = now + 400 * DAY as u64;
         assert_eq!(
             ok("status", json!({ "item": item, "now": late }))["entries"][0]["stale"],
-            true
+            false
         );
-        // An anchor past REF_WINDOW from ref's block is refused for good.
-        let (a, hs) = anchor_for(&mut b, &id, now as u32 + 2 * DAY);
+        // An anchor any time after it was made is taken (no window); a header from the future, or none, isn't.
+        let (a, h) = anchor_for(&mut b, &id, now as u32 + 3 * DAY);
         assert_eq!(
             run(
                 "anchor",
-                json!({ "item": item, "id": id, "anchor": a, "headers": hs, "now": now + 3 * DAY as u64 })
+                json!({ "item": item, "id": id, "anchor": a, "header": h, "now": now })
             ),
-            Err("AnchorWindow".into())
+            Err("HeaderFuture".into())
         );
-        let (a, hs) = anchor_for(&mut b, &id, now as u32);
+        assert_eq!(
+            run(
+                "anchor",
+                json!({ "item": item, "id": id, "anchor": a, "now": now + 3 * DAY as u64 })
+            ),
+            Err("no header".into())
+        );
         let x = ok(
             "anchor",
-            json!({ "item": item, "id": id, "anchor": a, "headers": hs, "now": now + 3600 }),
+            json!({ "item": item, "id": id, "anchor": a, "header": h, "now": now + 3 * DAY as u64 }),
         );
-        assert_eq!(x["time"], now);
+        assert_eq!(x["time"], now + 3 * DAY as u64);
+        let (a, h) = anchor_for(&mut b, &id, now as u32);
+        let x = ok(
+            "anchor",
+            json!({ "item": s(&x, "item"), "id": id, "anchor": a, "header": h, "now": now + 3600 }),
+        );
+        assert_eq!(x["time"], now, "the earlier anchor");
         let item = s(&x, "item");
         let st = ok("status", json!({ "item": item, "now": now + 3600 }));
         assert_eq!(st["owner"]["ids"][0], id.as_str());
         assert_eq!(st["owner"]["seniority"], now);
+        // A renewal links until the claim's `t + TERM + GRACE`: stale past it.
+        let p = params();
+        let (item, rid) = make(&secret, "test123", "renew", Some(&id), Some(&item), now);
+        let end = now + p.term as u64 + p.grace as u64;
+        let st = ok("status", json!({ "item": item, "now": end }));
+        let r = (st["entries"].as_array().unwrap().iter())
+            .find(|e| e["id"] == rid.as_str())
+            .unwrap();
+        assert_eq!(r["linkEnd"], end);
+        assert_eq!(r["stale"], false);
+        let st = ok("status", json!({ "item": item, "now": end + 1 }));
+        let r = (st["entries"].as_array().unwrap().iter())
+            .find(|e| e["id"] == rid.as_str())
+            .unwrap();
+        assert_eq!(r["stale"], true);
         // The key: the owner key's public half is the entry's.
         let k = ok(
             "key",
             json!({ "room": ROOM, "secret": secret, "name": "test123" }),
         );
-        assert_eq!(st["owner"]["owner"], k["owner"]);
+        assert_eq!(st["owner"], Value::Null, "past the cover");
+        assert_eq!(st["best"]["owner"], k["owner"]);
         assert_eq!(
             run(
                 "key",
@@ -647,10 +647,9 @@ mod tests {
             anchor::{Op, leaves},
             entry::pending_ok,
         };
-        let mut b = Bitcoin::new(ROOM, 2);
         let secret = "22".repeat(32);
         let now = 1_800_000_000u64;
-        let (item, id) = claim(&mut b, &secret, "mine", now as u32 - HOUR, now);
+        let (item, id) = claim(&secret, "mine", now);
         // A receipt as a calendar gives it: append, SHA-256, then a pending attestation.
         let mut receipt = vec![0xf0, 16];
         receipt.extend([9u8; 16]);
@@ -742,10 +741,9 @@ mod tests {
 
     #[test]
     fn a_zone_is_sealed_with_its_seq_and_put_on_the_title() {
-        let mut b = Bitcoin::new(ROOM, 4);
         let secret = "44".repeat(32);
         let now = 1_800_000_000u64;
-        let (item, _) = claim(&mut b, &secret, "zoned", now as u32 - HOUR, now);
+        let (item, _) = claim(&secret, "zoned", now);
         let node = "ab".repeat(32);
         let z = ok(
             "zone",

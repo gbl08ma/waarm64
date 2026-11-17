@@ -221,7 +221,7 @@ pub struct MemberStats {
     pub histories: usize,
     /// Answers refused (a forged or broken entry or zone, a dead chain).
     pub refused: usize,
-    /// Entries checked whole (signature, proof of work, headers, anchor).
+    /// Entries checked whole (signature, proof of work, anchor and its header).
     pub checked: usize,
 }
 
@@ -345,7 +345,7 @@ impl Member {
             return false;
         }
         let mut name = Name::new(item.id);
-        name.insert(last.clone(), &self.params, unix);
+        name.insert(last.clone());
         let Some(chain) = name.owner(&self.params, unix) else {
             return false;
         };
@@ -957,7 +957,7 @@ impl Member {
                     // means the server's last is the one kept). A history is taken as shown: what is kept judges it.
                     if let Some(k) = kept_last.clone().filter(|_| !history) {
                         last = Some(k.id());
-                        name.insert(k, &self.params, unix);
+                        name.insert(k);
                     }
                     c.left.push_back(Check {
                         server,
@@ -1043,23 +1043,16 @@ impl Member {
         }
     }
 
-    /// One entry of a server's item: checked whole (signature, proof of work, headers, anchor).
+    /// One entry of a server's item: checked whole (signature, proof of work, anchor and its header).
     fn check_one(&mut self, check: &mut Check, w: WireEntry, unix: u64) -> Result<(), Invalid> {
         if w.entry.name != check.name.id {
             return Err(Invalid::Name);
         }
-        let mut s = Stamped::check(
-            w.entry,
-            w.ref_header,
-            &self.names,
-            &self.params,
-            &mut self.pow,
-            unix,
-        )?;
+        let mut s = Stamped::check(w.entry, &self.names, &mut self.pow)?;
         let (a, h) = w.anchor.ok_or(Invalid::AnchorRoot)?;
         s.offer_anchor(a, h, &self.params, unix)?;
         check.last = Some(s.id());
-        check.name.insert(s, &self.params, unix);
+        check.name.insert(s);
         Ok(())
     }
 
@@ -1167,7 +1160,7 @@ impl Member {
         let mut zones = Vec::new();
         for (_, v) in views {
             for e in v.name.entries() {
-                all.insert(e.clone(), &self.params, unix);
+                all.insert(e.clone());
             }
             zones.extend(v.zone);
         }

@@ -31,17 +31,13 @@ pub const MAX_TOMBSTONES: usize = 2;
 pub const ZONE_EVERY: u64 = 600;
 const RECORD_VERSION: u8 = 1;
 
-/// 4 bytes of an entry's anchor's digest (its block, its operations, the six headers after the block; zeros:
-/// unanchored): what a `get` says it holds.
+/// 4 bytes of an entry's anchor's digest (its block, its operations; zeros: unanchored): what a `get` says it holds.
 pub fn anchor_tag(s: &Stamped) -> [u8; 4] {
     match s.anchor() {
         Some(a) => {
             let mut h = Sha256::new();
-            h.update(a.run.block.hash());
+            h.update(a.header.hash());
             h.update(a.anchor.encode());
-            for f in a.run.next_hashes() {
-                h.update(f);
-            }
             h.finalize()[..4].try_into().unwrap()
         }
         None => [0; 4],
@@ -109,7 +105,8 @@ impl Held {
         if let Some(o) = owner {
             keep.extend(o.ids.iter().copied());
             next = next.min(o.cover_end);
-            // Renewals on its last entry waiting for their anchors.
+            // Renewals on its last entry waiting for their anchors: they can link until its cover ends, so as long as
+            // it owns the name (chain.rs `Name::stale`).
             let mut pending: Vec<&Stamped> = self
                 .name
                 .entries()
@@ -118,13 +115,11 @@ impl Held {
                         && e.entry.kind != Kind::Claim
                         && e.entry.prev == o.last()
                         && e.entry.owner == o.owner
-                        && !e.pending_stale(params, now)
                 })
                 .collect();
             pending.sort_by_key(|e| e.id());
             for e in pending.into_iter().take(MAX_PENDING) {
                 keep.insert(e.id());
-                next = next.min(e.window(params).1 + params.pending_slack as u64 + 1);
             }
         }
         // Tombstones: released chains, until their cover would have ended, that would beat the

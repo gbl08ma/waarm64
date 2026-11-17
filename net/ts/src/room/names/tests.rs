@@ -9,7 +9,7 @@ use super::{
     anchor::{Anchor, Calendar, Op, Pending, apply},
     chain::{Chain, Kept, Name, order},
     entry::{Entry, Kind, Pow, Stamped},
-    header::{FOLLOWERS, Header, Run, target},
+    header::{Header, target},
     id::{RoomNames, owner_key},
 };
 
@@ -62,11 +62,6 @@ impl Rng {
 /// A header at `time` over `root`, mined to its own `bits`, after a made-up block.
 fn header(rng: &mut Rng, time: u32, root: [u8; 32], bits: u32) -> Header {
     let prev = rng.bytes::<32>();
-    after(prev, time, root, bits)
-}
-
-/// A header at `time` over `root` naming block `prev`, mined to its own `bits`.
-fn after(prev: [u8; 32], time: u32, root: [u8; 32], bits: u32) -> Header {
     let t = target(bits).unwrap();
     let mut h = [0u8; 80];
     h[..4].copy_from_slice(&0x2000_0000u32.to_le_bytes());
@@ -111,34 +106,18 @@ impl World {
         owner_key(&[secret; 32], &self.names, name)
     }
 
-    /// An entry made after a `ref` block at `ref_time`, worked and signed, checked; no anchor.
-    fn entry(
-        &mut self,
-        kind: Kind,
-        key: &SigningKey,
-        name: &str,
-        prev: [u8; 32],
-        ref_time: u32,
-    ) -> Stamped {
-        let root = self.rng.bytes();
-        let r = header(&mut self.rng, ref_time, root, EASY);
+    /// An entry worked and signed, checked; no anchor.
+    fn entry(&mut self, kind: Kind, key: &SigningKey, name: &str, prev: [u8; 32]) -> Stamped {
         let owner = key.verifying_key().to_bytes().into();
-        let mut e = Entry::new(
-            &self.names,
-            kind,
-            self.names.name_id(name),
-            owner,
-            prev,
-            r.hash(),
-        );
+        let mut e = Entry::new(&self.names, kind, self.names.name_id(name), owner, prev);
         e.nonce = self.rng.next();
         assert!(self.pow.mine(&mut e, 1 << 20));
         e.sign(key, &self.names);
-        Stamped::check(e, r, &self.names, &self.params, &mut self.pow, LATE).unwrap()
+        Stamped::check(e, &self.names, &mut self.pow).unwrap()
     }
 
     /// An anchor for `id` in a block at `time`: a calendar's kind of path to a made-up root.
-    fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Run) {
+    fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Header) {
         let ops = vec![
             Op::Append(self.rng.bytes::<16>().to_vec()),
             Op::Sha256,
@@ -151,25 +130,11 @@ impl World {
                 ops,
                 height: 900_000,
             },
-            self.run(time, root),
+            header(&mut self.rng, time, root, EASY),
         )
     }
 
-    /// A block at `time` over `root` and the six after it, ten minutes apart, each naming the one before.
-    fn run(&mut self, time: u32, root: [u8; 32]) -> Run {
-        let block = header(&mut self.rng, time, root, EASY);
-        let mut next = Vec::new();
-        let mut prev = block.hash();
-        for k in 1..=FOLLOWERS as u32 {
-            let root = self.rng.bytes();
-            let h = after(prev, time + 600 * k, root, EASY);
-            prev = h.hash();
-            next.push(h);
-        }
-        Run { block, next }
-    }
-
-    /// An entry anchored at `time` (its `ref` an hour before).
+    /// An entry anchored at `time`.
     fn at(
         &mut self,
         kind: Kind,
@@ -178,7 +143,7 @@ impl World {
         prev: [u8; 32],
         time: u32,
     ) -> Stamped {
-        let mut s = self.entry(kind, key, name, prev, time - HOUR);
+        let mut s = self.entry(kind, key, name, prev);
         let (a, h) = self.anchor(&s.id(), time);
         assert_eq!(s.offer_anchor(a, h, &self.params, LATE), Ok(true));
         s
@@ -187,7 +152,7 @@ impl World {
     fn name(&self, name: &str, entries: &[&Stamped]) -> Name {
         let mut n = Name::new(self.names.name_id(name));
         for e in entries {
-            n.insert((*e).clone(), &self.params, T0 as u64);
+            n.insert((*e).clone());
         }
         n
     }
@@ -265,7 +230,7 @@ fn headers_and_the_floor() {
     let h = header(&mut rng, T0, [1; 32], EASY);
     assert_eq!(h.check(&p, T0 as u64), Ok(()));
     // The floor raised (a harder target): the same header is under it.
-    p.floor = &[(0, 0x1f00_ffff)];
+    p.floor = 0x1f00_ffff;
     assert_eq!(h.check(&p, T0 as u64), Err(Invalid::HeaderFloor));
     let h2 = header(&mut rng, T0, [1; 32], 0x1f00_ffff);
     assert_eq!(h2.check(&p, T0 as u64), Ok(()));
@@ -296,35 +261,31 @@ fn headers_and_the_floor() {
 fn an_entry_is_checked_whole() {
     let mut w = World::new(3);
     let key = w.key(1, "test123");
-    let good = w.entry(Kind::Claim, &key, "test123", [0; 32], T0);
-    let (e, r) = (good.entry.clone(), good.ref_header);
-    let (names, params) = (w.names.clone(), w.params.clone());
-    let mut check =
-        |e: Entry, r: Header| Stamped::check(e, r, &names, &params, &mut w.pow, LATE).map(|_| ());
-    assert_eq!(check(e.clone(), r), Ok(()));
+    let good = w.entry(Kind::Claim, &key, "test123", [0; 32]);
+    let e = good.entry.clone();
+    let names = w.names.clone();
+    let mut check = |e: Entry| Stamped::check(e, &names, &mut w.pow).map(|_| ());
+    assert_eq!(check(e.clone()), Ok(()));
     // Another key's signature, a field changed after signing.
     let mut x = e.clone();
     x.sign(&owner_key(&[9; 32], &w.names, "test123"), &w.names);
-    assert_eq!(check(x, r), Err(Invalid::Signature));
+    assert_eq!(check(x), Err(Invalid::Signature));
     let mut x = e.clone();
     x.name[0] ^= 1;
-    assert_eq!(check(x, r), Err(Invalid::Signature));
+    assert_eq!(check(x), Err(Invalid::Signature));
     // Another room's record.
     let mut x = e.clone();
     x.room[0] ^= 1;
-    assert_eq!(check(x, r), Err(Invalid::Room));
+    assert_eq!(check(x), Err(Invalid::Room));
     // A claim naming an entry before it; a renewal naming none.
     let mut x = e.clone();
     x.prev = [1; 32];
     x.sign(&key, &w.names);
-    assert_eq!(check(x, r), Err(Invalid::Prev));
+    assert_eq!(check(x), Err(Invalid::Prev));
     let mut x = e.clone();
     x.kind = Kind::Renew;
     x.sign(&key, &w.names);
-    assert_eq!(check(x, r), Err(Invalid::Prev));
-    // `ref`'s header must be `ref`'s block, and prove itself.
-    let other = header(&mut Rng(4), T0, [2; 32], EASY);
-    assert_eq!(check(e.clone(), other), Err(Invalid::RefHeader));
+    assert_eq!(check(x), Err(Invalid::Prev));
     // A nonce whose work falls short.
     let mut pow = Pow::new(&w.params);
     let mut x = e.clone();
@@ -332,41 +293,32 @@ fn an_entry_is_checked_whole() {
         x.nonce += 1;
     }
     x.sign(&key, &w.names);
-    assert_eq!(check(x, r), Err(Invalid::Work));
+    assert_eq!(check(x), Err(Invalid::Work));
 }
 
 #[test]
-fn an_anchor_must_fall_in_its_refs_window() {
+fn an_anchor_reaches_its_header_and_times_the_entry() {
     let mut w = World::new(5);
     let key = w.key(1, "test123");
     let p = w.params.clone();
-    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0);
-    let rt = s.ref_header.time();
-    for (dt, ok) in [
-        (0i64, true),
-        (p.ref_window as i64, true),
-        (p.ref_window as i64 + 1, false),
-        (-(p.drift as i64), true),
-        (-(p.drift as i64) - 1, false),
-    ] {
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32]);
+    // Any time: no window ties an entry's anchor to when the entry was made.
+    for t in [T0 - 400 * DAY, T0, T0 + 400 * DAY] {
         let mut s = s.clone();
-        let (a, h) = w.anchor(&s.id(), (rt as i64 + dt) as u32);
-        let r = s.offer_anchor(a, h, &p, LATE);
-        assert_eq!(r.is_ok(), ok, "{dt}: {r:?}");
-        if !ok {
-            assert_eq!(r, Err(Invalid::AnchorWindow));
-            assert_eq!(s.time(), None);
-        }
+        let (a, h) = w.anchor(&s.id(), t);
+        assert_eq!(s.offer_anchor(a, h, &p, LATE), Ok(true));
+        assert_eq!(s.time(), Some(t));
     }
     // An anchor for another entry; a header in the future.
     let mut s2 = s.clone();
-    let (a, h) = w.anchor(&[7; 32], rt);
+    let (a, h) = w.anchor(&[7; 32], T0);
     assert_eq!(s2.offer_anchor(a, h, &p, LATE), Err(Invalid::AnchorRoot));
-    let (a, h) = w.anchor(&s.id(), rt + HOUR);
+    let (a, h) = w.anchor(&s.id(), T0 + HOUR);
     assert_eq!(
-        s2.offer_anchor(a, h, &p, rt as u64 - 2 * HOUR as u64),
+        s2.offer_anchor(a, h, &p, T0 as u64 - HOUR as u64 - 1),
         Err(Invalid::HeaderFuture)
     );
+    assert_eq!(s2.time(), None);
 }
 
 #[test]
@@ -374,38 +326,26 @@ fn the_earliest_anchor_is_kept_whatever_the_order() {
     let mut w = World::new(6);
     let key = w.key(1, "test123");
     let p = w.params.clone();
-    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0);
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32]);
     let early = w.anchor(&s.id(), T0 + HOUR);
     let late = w.anchor(&s.id(), T0 + 3 * HOUR);
     let mut a = s.clone();
-    assert_eq!(
-        a.offer_anchor(late.0.clone(), late.1.clone(), &p, LATE),
-        Ok(true)
-    );
-    assert_eq!(
-        a.offer_anchor(early.0.clone(), early.1.clone(), &p, LATE),
-        Ok(true)
-    );
+    assert_eq!(a.offer_anchor(late.0.clone(), late.1, &p, LATE), Ok(true));
+    assert_eq!(a.offer_anchor(early.0.clone(), early.1, &p, LATE), Ok(true));
     let mut b = s.clone();
-    assert_eq!(
-        b.offer_anchor(early.0.clone(), early.1.clone(), &p, LATE),
-        Ok(true)
-    );
-    assert_eq!(
-        b.offer_anchor(late.0.clone(), late.1.clone(), &p, LATE),
-        Ok(false)
-    );
+    assert_eq!(b.offer_anchor(early.0.clone(), early.1, &p, LATE), Ok(true));
+    assert_eq!(b.offer_anchor(late.0.clone(), late.1, &p, LATE), Ok(false));
     assert_eq!(a, b);
     assert_eq!(a.time(), Some(T0 + HOUR));
     // The same through merging copies.
     let mut c = s.clone();
     c.offer_anchor(late.0, late.1, &p, LATE).unwrap();
     let mut d = s.clone();
-    d.merge(c.clone(), &p, LATE);
-    d.merge(b.clone(), &p, LATE);
+    d.merge(c.clone());
+    d.merge(b.clone());
     let mut e = s.clone();
-    e.merge(b, &p, LATE);
-    e.merge(c, &p, LATE);
+    e.merge(b);
+    e.merge(c);
     assert_eq!(d, e);
     assert_eq!(d.time(), Some(T0 + HOUR));
 }
@@ -417,25 +357,25 @@ fn a_pending_anchor_proves_nothing() {
     let b = w.key(2, "test123");
     let p = w.params.clone();
     // B's claim is earlier but only pending; A's is anchored: A owns.
-    let mut held_back = w.entry(Kind::Claim, &b, "test123", [0; 32], T0 - DAY);
+    let mut held_back = w.entry(Kind::Claim, &b, "test123", [0; 32]);
     let pending = Pending {
         calendar: Calendar::Bob,
         ops: vec![Op::Append(vec![1; 8]), Op::Sha256],
         sig: [0; 64],
     };
-    assert!(held_back.offer_pending(pending.clone(), &p, T0 as u64));
+    assert!(held_back.offer_pending(pending.clone()));
     assert_eq!(held_back.time(), None);
     let claim = w.at(Kind::Claim, &a, "test123", [0; 32], T0);
     let n = w.name("test123", &[&held_back, &claim]);
     let o = n.owner(&p, T0 as u64 + DAY as u64).unwrap();
     assert_eq!(o.ids, vec![claim.id()]);
     assert_eq!(n.chains(&p).len(), 1);
-    // Once it has an anchor (in its window), it counts, and its pending goes.
+    // Once it has an anchor, it counts, and its pending goes.
     let (an, h) = w.anchor(&held_back.id(), T0 - DAY);
     held_back.offer_anchor(an, h, &p, LATE).unwrap();
     assert_eq!(held_back.pending(), None);
     assert!(
-        !held_back.offer_pending(pending.clone(), &p, T0 as u64),
+        !held_back.offer_pending(pending.clone()),
         "not on an anchored entry"
     );
     let n = w.name("test123", &[&held_back, &claim]);
@@ -443,25 +383,33 @@ fn a_pending_anchor_proves_nothing() {
         n.owner(&p, T0 as u64 + DAY as u64).unwrap().ids,
         vec![held_back.id()]
     );
-    // A pending is dropped once its entry could no longer be anchored in its window.
-    let mut s = w.entry(Kind::Claim, &a, "test123", [0; 32], T0);
-    let stale = T0 as u64 + p.ref_window as u64 + p.pending_slack as u64;
-    assert!(s.offer_pending(pending.clone(), &p, stale));
-    assert!(!s.clone().offer_pending(pending.clone(), &p, stale + 1));
+    // An unanchored claim can always link (an anchor at any time makes it a claim then): kept.
+    let mut s = w.entry(Kind::Claim, &a, "test123", [0; 32]);
+    assert!(s.offer_pending(pending.clone()));
     let mut n = w.name("test123", &[&s]);
-    n.prune(&p, stale);
+    assert_eq!(n.link_end(&s, &p), None);
+    n.prune(&p, LATE);
     assert!(n.get(&s.id()).unwrap().pending().is_some());
-    n.prune(&p, stale + 1);
-    assert!(
-        n.is_empty(),
-        "an entry that can't be anchored any more goes"
-    );
+    // A renewal is dropped, with its pending, once it can no longer link: past the entry before's
+    // `t + TERM + GRACE`.
+    let c0 = w.at(Kind::Claim, &a, "test123", [0; 32], T0);
+    let mut r0 = w.entry(Kind::Renew, &a, "test123", c0.id());
+    assert!(r0.offer_pending(pending.clone()));
+    let end = T0 as u64 + p.term as u64 + p.grace as u64;
+    let mut n = w.name("test123", &[&c0, &r0]);
+    assert_eq!(n.link_end(&r0, &p), Some(end));
+    assert!(!n.stale(&r0, &p, end));
+    assert!(n.stale(&r0, &p, end + 1));
+    n.prune(&p, end);
+    assert!(n.get(&r0.id()).unwrap().pending().is_some());
+    n.prune(&p, end + 1);
+    assert!(n.is_empty(), "a renewal that can't link any more goes");
     // On a chain's last entry only: an anchored entry takes none, and an unanchored one keeps
     // its pending only while nothing anchored follows it.
     let c = w.at(Kind::Claim, &a, "test123", [0; 32], T0);
-    assert!(!c.clone().offer_pending(pending.clone(), &p, T0 as u64));
-    let mut r = w.entry(Kind::Renew, &a, "test123", c.id(), T0 + 14 * DAY);
-    assert!(r.offer_pending(pending.clone(), &p, T0 as u64));
+    assert!(!c.clone().offer_pending(pending.clone()));
+    let mut r = w.entry(Kind::Renew, &a, "test123", c.id());
+    assert!(r.offer_pending(pending.clone()));
     let mut n = w.name("test123", &[&c, &r]);
     n.prune(&p, T0 as u64 + 14 * DAY as u64);
     assert!(n.get(&r.id()).unwrap().pending().is_some());
@@ -515,13 +463,7 @@ fn renewals_must_come_in_time_and_not_before() {
     );
     // A renewal anchored before the entry it names (one stamped early and held) breaks too.
     let claim2 = w.at(Kind::Claim, &a, "test123", [0; 32], T0 + 10 * DAY);
-    let mut early = w.entry(
-        Kind::Renew,
-        &a,
-        "test123",
-        claim2.id(),
-        T0 + 10 * DAY - HOUR,
-    );
+    let mut early = w.entry(Kind::Renew, &a, "test123", claim2.id());
     let (an, h) = w.anchor(&early.id(), T0 + 10 * DAY - 1);
     early.offer_anchor(an, h, &p, LATE).unwrap();
     let n = w.name("test123", &[&claim2, &early]);
@@ -628,7 +570,7 @@ fn forks_and_releases() {
     assert_eq!(n.owner(&p, after).unwrap().ids, vec![bc.id(), br.id()]);
     // Nothing follows a release.
     let zombie = w.at(Kind::Renew, &a, "test123", rel2.id(), T0 + 33 * DAY);
-    n.insert(zombie.clone(), &p, T0 as u64);
+    n.insert(zombie.clone());
     assert_eq!(
         n.owner(&p, T0 as u64 + 34 * DAY as u64).unwrap().ids,
         vec![bc.id(), br.id()]
@@ -726,7 +668,7 @@ fn a_member_keeps_what_it_verified() {
 /// One entry of a scenario and the anchors it may get (two calendars' blocks, say).
 struct Made {
     bare: Stamped,
-    anchors: Vec<(Anchor, Run)>,
+    anchors: Vec<(Anchor, Header)>,
 }
 
 /// A name's history: A's title (renewed, sometimes broken by a late renewal, sometimes forked
@@ -737,7 +679,7 @@ fn scenario(w: &mut World, rng: &mut Rng) -> Vec<Made> {
     let mut made: Vec<Made> = Vec::new();
     let mut add =
         |w: &mut World, rng: &mut Rng, kind: Kind, k: usize, prev: [u8; 32], t: u32| -> [u8; 32] {
-            let bare = w.entry(kind, &keys[k], "prop", prev, t - HOUR);
+            let bare = w.entry(kind, &keys[k], "prop", prev);
             let mut anchors = vec![w.anchor(&bare.id(), t)];
             if rng.chance(0.5) {
                 // A second calendar's block, a little later (or, rarely, the same time).
@@ -810,7 +752,7 @@ fn copy(made: &[Made], rng: &mut Rng, p: &Params) -> Vec<Stamped> {
         let mut s = m.bare.clone();
         for (a, h) in &m.anchors {
             if rng.chance(0.6) {
-                s.offer_anchor(a.clone(), h.clone(), p, LATE).unwrap();
+                s.offer_anchor(a.clone(), *h, p, LATE).unwrap();
             }
         }
         if rng.chance(0.2) {
@@ -819,7 +761,7 @@ fn copy(made: &[Made], rng: &mut Rng, p: &Params) -> Vec<Stamped> {
                 ops: vec![Op::Append(vec![rng.below(4) as u8; 4])],
                 sig: [0; 64],
             };
-            s.offer_pending(pending, p, T0 as u64);
+            s.offer_pending(pending);
         }
         out.push(s);
     }
@@ -842,7 +784,7 @@ fn any_merge_order_gives_the_same_owner() {
             let mut n = Name::new(id);
             for &i in order_ {
                 for s in &copies[i] {
-                    n.insert(s.clone(), &p, T0 as u64);
+                    n.insert(s.clone());
                 }
             }
             n
@@ -863,7 +805,7 @@ fn any_merge_order_gives_the_same_owner() {
             rng.shuffle(&mut flat);
             let mut n = Name::new(id);
             for s in flat {
-                n.insert(s, &p, T0 as u64);
+                n.insert(s);
             }
             assert_eq!(n, reference, "case {case}: the same state");
             for (now, o) in nows.iter().zip(&owners) {
@@ -912,9 +854,9 @@ fn the_order_is_total() {
         for m in &made {
             let mut s = m.bare.clone();
             for (a, h) in &m.anchors {
-                s.offer_anchor(a.clone(), h.clone(), &p, LATE).unwrap();
+                s.offer_anchor(a.clone(), *h, &p, LATE).unwrap();
             }
-            n.insert(s, &p, T0 as u64);
+            n.insert(s);
         }
         let cs = n.chains(&p);
         for a in &cs {
@@ -926,333 +868,138 @@ fn the_order_is_total() {
     }
 }
 
-// ---- An anchor's block and the six after it; the floor by header time (review 1, finding 6).
+// ---- An anchor's block's one header, against the one floor.
 
-/// The block after 976,177 (bench/net/results/names0/proofs.json): it names 976,177.
-const HEADER_976178: &str = "00000020e8cbc8ae276bfcffdd868d63126d613eb8dea47cdf8a000000000000000000003e711f9fec3134bd040b3f5e1960bf3f2c8b9024e8eda0740502e90a1cb287e59d5bfb6a73160217706d51ab";
-/// A target 12 bits under the top (about 4,096 hashes a header): the schedules' points below.
+/// A target 12 bits under the top (about 4,096 hashes a header): the floor below.
 const HARD: u32 = 0x1f0f_ffff;
-/// Exactly twice [`HARD`]'s target.
+/// Exactly twice [`HARD`]'s target: half its work.
 const HALF_HARD: u32 = 0x1f1f_fffe;
 
-/// A run at `time` over `root`, the six after it mined to `bits` with `dt` seconds between them.
-fn run_of(rng: &mut Rng, time: u32, root: [u8; 32], bits: u32, dt: u32) -> Run {
-    let block = after(rng.bytes(), time, root, bits);
-    let mut next = Vec::new();
-    let mut prev = block.hash();
-    for k in 1..=FOLLOWERS as u32 {
-        let h = after(prev, time + dt * k, rng.bytes(), bits);
-        prev = h.hash();
-        next.push(h);
-    }
-    Run { block, next }
-}
-
 #[test]
-fn a_lone_header_at_the_floor_backdates_nothing() {
-    // Review 1, finding 6: a header mined in private at the floor, timed 36 days back, its Merkle root the forger's,
-    // anchors a claim that beats a chain claimed since and renewed with a real stamp today. Now an anchor's block
-    // needs the six headers after it, each naming the one before: a lone header anchors nothing.
+fn a_lone_header_at_the_floor_anchors_and_one_under_it_doesnt() {
+    // An anchor is its proof and its block's header alone (docs/plans/room-names-redesign.md): a header whose target
+    // is the floor's anchors; one whose target is easier (less work than the floor) anchors nothing.
     let mut w = World::new(40);
-    let p = w.params.clone();
-    let honest = w.key(1, "test123");
-    let forger = w.key(2, "test123");
-    let now = T0 + 30 * DAY;
-    let claim = w.at(Kind::Claim, &honest, "test123", [0; 32], T0);
-    let back = now - 36 * DAY;
-    let mut forged = w.entry(Kind::Claim, &forger, "test123", [0; 32], back - HOUR);
-    let (a, mut run) = w.anchor(&forged.id(), back);
-    run.next.clear();
-    let r = forged.offer_anchor(a, run, &p, now as u64);
-    let renew = {
-        let mut s = w.entry(Kind::Renew, &forger, "test123", forged.id(), now - HOUR);
-        let (a, h) = w.anchor(&s.id(), now);
-        let _ = s.offer_anchor(a, h, &p, now as u64);
-        s
+    let p = Params {
+        floor: HARD,
+        ..w.params.clone()
     };
-    let n = w.name("test123", &[&claim, &forged, &renew]);
-    let o = n.owner(&p, now as u64).unwrap();
-    assert_eq!(r, Err(Invalid::HeaderRun), "a lone header anchors nothing");
-    assert_eq!(forged.time(), None);
-    assert_eq!(o.ids, vec![claim.id()], "the honest claim still owns");
+    assert_eq!(target(HALF_HARD).unwrap()[..4], [0, 0x1f, 0xff, 0xfe]);
+    let key = w.key(1, "test123");
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32]);
+    let (a, _) = w.anchor(&s.id(), T0);
+    let root = a.root(&s.id()).unwrap();
+    let at = header(&mut w.rng, T0, root, HARD);
+    let mut x = s.clone();
+    assert_eq!(x.offer_anchor(a.clone(), at, &p, T0 as u64), Ok(true));
+    assert_eq!(x.time(), Some(T0));
+    let under = header(&mut w.rng, T0, root, HALF_HARD);
+    let mut y = s.clone();
+    assert_eq!(
+        y.offer_anchor(a.clone(), under, &p, LATE),
+        Err(Invalid::HeaderFloor)
+    );
+    assert_eq!(y.time(), None);
+    // The floor is one number whatever the header's time: the same at any time, ahead of now by `drift` at most.
+    for t in [0, T0 - 400 * DAY, T0 + 400 * DAY] {
+        assert_eq!(header(&mut w.rng, t, root, HARD).check(&p, LATE), Ok(()));
+        assert_eq!(
+            header(&mut w.rng, t, root, HALF_HARD).check(&p, LATE),
+            Err(Invalid::HeaderFloor)
+        );
+    }
 }
 
 #[test]
-fn an_anchors_block_comes_with_the_six_after_it() {
+fn an_entry_without_ref_round_trips() {
+    // An entry is 175 bytes and carries no `ref`; on the wire and in a store, an item carries it with its anchor and
+    // the one header of its block, once for every entry anchored in that block.
     let mut w = World::new(41);
-    let p = w.params.clone();
     let key = w.key(1, "test123");
-    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 - HOUR);
-    let (a, good) = w.anchor(&s.id(), T0);
-    let offer = |run: Run, now: u64| s.clone().offer_anchor(a.clone(), run, &p, now);
-    assert_eq!(offer(good.clone(), LATE), Ok(true));
-    assert_eq!(good.check(&p, LATE), Ok(()));
-    // Fewer than six, or more.
-    for k in 0..FOLLOWERS {
-        let mut r = good.clone();
-        r.next.truncate(k);
-        assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "{k}");
-    }
-    let mut r = good.clone();
-    let last = *r.next.last().unwrap();
-    r.next.push(after(last.hash(), T0 + 4200, [3; 32], EASY));
-    assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "seven");
-    // A link broken: one of the six names another block (its own work fine).
-    for k in 0..FOLLOWERS {
-        let mut r = good.clone();
-        let h = r.next[k];
-        r.next[k] = after([7; 32], h.time(), h.merkle_root(), EASY);
-        assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "link {k}");
-    }
-    // Six that follow another block, linked among themselves.
-    let other = w.run(T0, [5; 32]);
-    let r = Run {
-        block: good.block,
-        next: other.next.clone(),
+    let claim = w.at(Kind::Claim, &key, "test123", [0; 32], T0);
+    let e = &claim.entry;
+    let b = e.encode();
+    assert_eq!(b.len(), 175);
+    assert_eq!(Entry::decode(&b), Ok(e.clone()));
+    assert_eq!(e.id(), claim.id());
+    assert_eq!(
+        Stamped::check(e.clone(), &w.names, &mut w.pow).map(|s| s.id()),
+        Ok(claim.id())
+    );
+    // Two renewals anchored in one block (a Merkle pair of their ids), and a third waiting with a pending anchor.
+    let mut r1 = w.entry(Kind::Renew, &key, "test123", claim.id());
+    let mut r2 = w.entry(Kind::Renew, &key, "test123", claim.id());
+    let (i1, i2) = (r1.id(), r2.id());
+    let root: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest([i1, i2].concat()).into();
+    let h = header(&mut w.rng, T0 + 10 * DAY, root, EASY);
+    let a1 = Anchor {
+        ops: vec![Op::Append(i2.to_vec()), Op::Sha256],
+        height: 1,
     };
-    assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "another block's");
-    // In another order.
-    let mut r = good.clone();
-    r.next.swap(2, 3);
-    assert_eq!(offer(r, LATE), Err(Invalid::HeaderRun), "out of order");
-    // Timed where the block can't be followed: before it by more than `drift`, or past it by more than `run_span`.
-    let mut rng = Rng(42);
-    let span = |first: u32, dt: u32, rng: &mut Rng| {
-        let mut prev = good.block.hash();
-        let next = (0..FOLLOWERS as u32)
-            .map(|k| {
-                let h = after(prev, first + dt * k, rng.bytes(), EASY);
-                prev = h.hash();
-                h
-            })
-            .collect();
-        Run {
-            block: good.block,
-            next,
-        }
+    let a2 = Anchor {
+        ops: vec![Op::Prepend(i1.to_vec()), Op::Sha256],
+        height: 1,
     };
-    assert_eq!(offer(span(T0 - p.drift, 0, &mut rng), LATE), Ok(true));
-    assert_eq!(
-        offer(span(T0 - p.drift - 1, 0, &mut rng), LATE),
-        Err(Invalid::HeaderRun)
-    );
-    assert_eq!(
-        offer(span(T0 + 600, (p.run_span - 600) / 5, &mut rng), LATE),
-        Ok(true)
-    );
-    assert_eq!(
-        offer(span(T0 + 601, (p.run_span - 600) / 5, &mut rng), LATE),
-        Err(Invalid::HeaderRun)
-    );
-    // Each of the six proves itself: its own work, and no further past now than `drift`.
-    let mut r = good.clone();
-    let mut x = r.next[4];
-    loop {
-        x.0[76] = x.0[76].wrapping_add(1);
-        let mut v = x.hash();
-        v.reverse();
-        if v > target(EASY).unwrap() {
-            break;
-        }
-    }
-    r.next[4] = x;
-    r.next[5] = after(x.hash(), r.next[5].time(), r.next[5].merkle_root(), EASY);
-    assert_eq!(offer(r, LATE), Err(Invalid::HeaderWork));
-    let latest = good.next.iter().map(Header::time).max().unwrap();
-    assert_eq!(offer(good.clone(), (latest - p.drift) as u64), Ok(true));
-    assert_eq!(
-        offer(good.clone(), (latest - p.drift) as u64 - 1),
-        Err(Invalid::HeaderFuture)
-    );
-    // Through the wire: an item whose anchor lists five decodes, and is refused when checked.
-    let mut st = s.clone();
-    st.offer_anchor(a.clone(), good.clone(), &p, LATE).unwrap();
-    let mut we = super::wire::WireEntry::of(&st);
-    we.anchor.as_mut().unwrap().1.next.pop();
+    assert_eq!(r1.offer_anchor(a1.clone(), h, &w.params, LATE), Ok(true));
+    assert_eq!(r2.offer_anchor(a2.clone(), h, &w.params, LATE), Ok(true));
+    let mut r3 = w.entry(Kind::Renew, &key, "test123", r1.id());
+    let pending = Pending {
+        calendar: Calendar::Alice,
+        ops: vec![Op::Append(vec![1; 8]), Op::Sha256],
+        sig: [0; 64],
+    };
+    assert!(r3.offer_pending(pending.clone()));
+    let all = [&claim, &r1, &r2, &r3];
     let item = super::wire::Item {
-        id: st.entry.name,
-        entries: vec![we],
+        id: w.names.name_id("test123"),
+        entries: all.iter().map(|s| super::wire::WireEntry::of(s)).collect(),
         zone: None,
     };
-    let back = super::wire::Item::decode(&item.encode()).unwrap();
-    let (a2, r2) = back.entries[0].anchor.clone().unwrap();
-    assert_eq!(r2.next.len(), 5);
-    assert_eq!(
-        s.clone().offer_anchor(a2, r2, &p, LATE),
-        Err(Invalid::HeaderRun)
-    );
+    let bytes = item.encode();
+    let back = super::wire::Item::decode(&bytes).unwrap();
+    assert_eq!(back, item);
+    for (x, s) in back.entries.into_iter().zip(all) {
+        assert_eq!(&x.trusted(), s);
+    }
+    // The sizes: version, id, two headers (the claim's block and the pair's), four entries (175 bytes, an anchor's
+    // length and bytes, its header's index, a pending anchor's length and bytes), no zone.
+    let anchor = |s: &Stamped| s.anchor().map_or(0, |a| a.anchor.encode().len() + 2);
+    let want = 1
+        + 32
+        + 2
+        + 2 * 80
+        + 2
+        + all
+            .iter()
+            .map(|s| 175 + 2 + anchor(s) + 2 + s.pending().map_or(0, |p| p.encode().len()))
+            .sum::<usize>()
+        + 2;
+    assert_eq!(bytes.len(), want);
+    // An item of the format before (version 3: entries with `ref`) is refused.
+    let mut old = bytes.clone();
+    old[0] = 3;
+    assert!(super::wire::Item::decode(&old).is_err());
 }
 
 #[test]
-fn the_floor_is_the_schedules_at_each_headers_time() {
-    // A schedule of one point at T0, its target HARD, doubling every 21 days five times at most.
-    let mut p = params();
-    p.floor = &[(T0, HARD)];
-    let step = p.floor_step;
-    let mut rng = Rng(43);
-    let at = |t: u32, bits: u32, rng: &mut Rng| after(rng.bytes(), t, [1; 32], bits);
-    // At the point, a header of half its difficulty is under the floor; one at it passes.
-    assert_eq!(at(T0, HARD, &mut rng).check(&p, LATE), Ok(()));
-    assert_eq!(
-        at(T0, HALF_HARD, &mut rng).check(&p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    // A step past the point, half the difficulty passes; not a second before.
-    assert_eq!(
-        at(T0 + step - 1, HALF_HARD, &mut rng).check(&p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    assert_eq!(at(T0 + step, HALF_HARD, &mut rng).check(&p, LATE), Ok(()));
-    // Older than the schedule covers: the first point's floor, not none.
-    assert_eq!(at(T0 - 400 * DAY, HARD, &mut rng).check(&p, LATE), Ok(()));
-    assert_eq!(
-        at(T0 - 400 * DAY, HALF_HARD, &mut rng).check(&p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    assert_eq!(
-        at(1, EASY, &mut rng).check(&p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    // Past the last point: future times keep working, down to 1/32 of the point's difficulty and no lower.
-    let far = T0 + 1000 * DAY;
-    let thirty_second = 0x2001_ffff; // HARD's target times 32, rounded down to a compact target
-    assert_eq!(at(far, thirty_second, &mut rng).check(&p, LATE), Ok(()));
-    assert_eq!(
-        at(far, 0x2003_ffff, &mut rng).check(&p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    assert_eq!(
-        at(T0 + 4 * step, thirty_second, &mut rng).check(&p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    assert_eq!(
-        at(T0 + 5 * step, thirty_second, &mut rng).check(&p, LATE),
-        Ok(())
-    );
-    // An anchor's run is held to the floor at each header's own time, the block's included: a run of half the
-    // difficulty fails at the point and passes a step later, its followers too.
-    let mut w = World::new(44);
-    let key = w.key(1, "test123");
-    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 + step);
-    let root = |s: &Stamped, a: &Anchor| -> [u8; 32] { a.root(&s.id()).unwrap() };
-    let (a, _) = w.anchor(&s.id(), T0 + step);
-    let r = run_of(&mut rng, T0 + step + HOUR, root(&s, &a), HALF_HARD, 600);
-    assert_eq!(s.clone().offer_anchor(a.clone(), r, &p, LATE), Ok(true));
-    // The block meets the floor, one follower doesn't: refused.
-    let mut r = run_of(&mut rng, T0 + step + HOUR, root(&s, &a), HALF_HARD, 600);
-    let h3 = r.next[3];
-    r.next[3] = after(r.next[2].hash(), h3.time(), h3.merkle_root(), 0x1f3f_fffc);
-    for k in 4..FOLLOWERS {
-        let h = r.next[k];
-        r.next[k] = after(r.next[k - 1].hash(), h.time(), h.merkle_root(), HALF_HARD);
-    }
-    assert_eq!(
-        s.clone().offer_anchor(a.clone(), r, &p, LATE),
-        Err(Invalid::HeaderFloor)
-    );
-    // Each of the six at the floor of its own time: a block just before a step at the point's difficulty, its six
-    // past the step at half of it.
-    let s2 = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 + step - HOUR);
-    let (a2, _) = w.anchor(&s2.id(), T0 + step - 60);
-    let block = after(rng.bytes(), T0 + step - 60, root(&s2, &a2), HARD);
-    let mut next = Vec::new();
-    let mut prev = block.hash();
-    for k in 1..=FOLLOWERS as u32 {
-        let h = after(prev, T0 + step - 60 + 600 * k, rng.bytes(), HALF_HARD);
-        prev = h.hash();
-        next.push(h);
-    }
-    let r = Run { block, next };
-    assert_eq!(s2.clone().offer_anchor(a2, r, &p, LATE), Ok(true));
-    // A schedule raised in a later release (a point appended) leaves this run as it was.
-    let mut q = p.clone();
-    q.floor = &[(T0, HARD), (T0 + 100 * DAY, 0x1e0f_ffff)];
-    let r = run_of(&mut rng, T0 + step + HOUR, root(&s, &a), HALF_HARD, 600);
-    assert_eq!(
-        s.clone().offer_anchor(a.clone(), r.clone(), &q, LATE),
-        Ok(true)
-    );
-    // Past the new point the floor is the new point's.
-    let late = at(T0 + 100 * DAY, HALF_HARD, &mut rng);
-    assert_eq!(late.check(&p, LATE), Ok(()));
-    assert_eq!(late.check(&q, LATE), Err(Invalid::HeaderFloor));
-}
-
-#[test]
-fn the_real_block_and_the_one_after_it() {
-    // proofs.json holds blocks 976,177 and 976,178 only, not the five after those: the real pair is checked here,
-    // the rest of a run is pretend (and so can't meet production's floor).
-    let p = Params::PRODUCTION;
-    let b = Header::from_bytes(&unhex(HEADER)).unwrap();
-    let f = Header::from_bytes(&unhex(HEADER_976178)).unwrap();
-    assert_eq!(f.prev(), b.hash(), "976,178 names 976,177");
-    assert!(f.time() > b.time() && f.time() - b.time() < p.run_span);
-    assert_eq!(f.check(&p, LATE), Ok(()));
-    assert_eq!(b.check(&p, LATE), Ok(()));
-    // Both meet production's floor at their time, with room: half of 976,177's difficulty.
-    assert_eq!(
-        super::header::floor(&p, b.time()),
-        {
-            let mut t = target(0x1702_1673).unwrap();
-            let mut c = 0;
-            for x in t.iter_mut().rev() {
-                let n = *x >> 7;
-                *x = (*x << 1) | c;
-                c = n;
-            }
-            t
-        },
-        "twice its target"
-    );
-    // A run of the real two and five pretend: the link and spans hold (checked against a floor pretend headers
-    // meet); against production's, the first pretend one is under the floor.
-    let mut rng = Rng(45);
-    let mut next = vec![f];
-    let mut prev = f.hash();
-    for k in 1..FOLLOWERS as u32 {
-        let h = after(prev, f.time() + 600 * k, rng.bytes(), EASY);
-        prev = h.hash();
-        next.push(h);
-    }
-    let run = Run { block: b, next };
-    assert_eq!(run.check(&params(), LATE), Ok(()));
-    assert_eq!(run.check(&p, LATE), Err(Invalid::HeaderFloor));
-    // The real block alone, as an anchor once was: refused.
-    let lone = Run {
-        block: b,
-        next: vec![f],
+fn work_for_one_name_serves_no_other() {
+    // Argon2id is salted with the name id (docs/plans/room-names-redesign.md): a nonce found for one name's entry, the
+    // fields otherwise the same, falls short under another name. 8 bits, so that a nonce passing both by chance is rare
+    // (1/256 an entry; the seeds below are fixed).
+    let p = Params {
+        pow_bits: 8,
+        ..params()
     };
-    assert_eq!(lone.check(&p, LATE), Err(Invalid::HeaderRun));
-}
-
-#[test]
-fn two_runs_of_one_block_settle_on_the_same() {
-    // One block, two sets of six after it (a fork among its followers): every node keeps the same, whatever came first.
-    let mut w = World::new(46);
-    let p = w.params.clone();
-    let key = w.key(1, "test123");
-    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 - HOUR);
-    let (a, r1) = w.anchor(&s.id(), T0);
-    let mut r2 = r1.clone();
-    let mut prev = r2.block.hash();
-    for h in r2.next.iter_mut() {
-        *h = after(prev, h.time(), [9; 32], EASY);
-        prev = h.hash();
+    let names = RoomNames::derive("names test room");
+    let mut pow = Pow::new(&p);
+    let mut short = 0;
+    for k in 0..16u8 {
+        let mut e = Entry::new(&names, Kind::Claim, [k; 32], [4; 32], [0; 32]);
+        e.nonce = k as u64 * 1_000_003;
+        assert!(pow.mine(&mut e, 1 << 16));
+        let mut f = e.clone();
+        f.name = [k ^ 0x80; 32];
+        short += !pow.ok(&f) as u32;
     }
-    assert_ne!(r1, r2);
-    let mut x = s.clone();
-    x.offer_anchor(a.clone(), r1.clone(), &p, LATE).unwrap();
-    x.offer_anchor(a.clone(), r2.clone(), &p, LATE).unwrap();
-    let mut y = s.clone();
-    y.offer_anchor(a.clone(), r2.clone(), &p, LATE).unwrap();
-    let only2 = y.clone();
-    y.offer_anchor(a.clone(), r1.clone(), &p, LATE).unwrap();
-    assert_eq!(x, y);
-    // What a `get` says it holds tells the two apart, so servers holding one each exchange them.
-    let mut only1 = s.clone();
-    only1.offer_anchor(a, r1, &p, LATE).unwrap();
-    assert_ne!(
-        super::store::anchor_tag(&only1),
-        super::store::anchor_tag(&only2)
-    );
+    assert!(short >= 15, "{short} of 16 fell short under another name");
 }

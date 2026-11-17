@@ -104,12 +104,12 @@ impl Name {
 
     /// Adds an entry checked elsewhere, or merges it into the copy held (its anchor if earlier,
     /// its pending). False when it is another name's or adds nothing.
-    pub fn insert(&mut self, s: Stamped, params: &Params, now: u64) -> bool {
+    pub fn insert(&mut self, s: Stamped) -> bool {
         if s.entry.name != self.id {
             return false;
         }
         match self.entries.get_mut(&s.id()) {
-            Some(held) => held.merge(s, params, now),
+            Some(held) => held.merge(s),
             None => {
                 self.entries.insert(s.id(), s);
                 true
@@ -195,10 +195,27 @@ impl Name {
         run
     }
 
+    /// Until when unanchored entry `s` could still link: the entry before it's `t + TERM + GRACE`, when that entry is
+    /// held and anchored. None for a claim (an anchor at any time makes it a claim then), or while the entry before
+    /// isn't known.
+    pub fn link_end(&self, s: &Stamped, params: &Params) -> Option<u64> {
+        if s.entry.kind == Kind::Claim {
+            return None;
+        }
+        let t = self.entries.get(&s.entry.prev)?.time()?;
+        Some(t as u64 + params.term as u64 + params.grace as u64)
+    }
+
+    /// Whether unanchored entry `s` can no longer link at `now`: past [`Name::link_end`] (room-names.md "Records": a
+    /// pending anchor is dropped then). An anchor in a block timed before it, collected late, still links.
+    pub fn stale(&self, s: &Stamped, params: &Params, now: u64) -> bool {
+        self.link_end(s, params).is_some_and(|end| now > end)
+    }
+
     /// Drops what can no longer change an answer: the entries of chains that are dead at `now`
     /// (a released one kept as a tombstone until its cover would have ended), unanchored entries
-    /// that can no longer be anchored in their window, and pending anchors that aren't on a
-    /// chain's last entry or can no longer finish. A chain dead as held comes back only with a
+    /// that can no longer link ([`Name::stale`], or the entry before is gone), and pending anchors that aren't on a chain's
+    /// last entry or whose entry can no longer link. A chain dead as held comes back only with a
     /// later renewal, which arrives with its run (the owner's title carries it).
     pub fn prune(&mut self, params: &Params, now: u64) {
         let chains = self.chains(params);
@@ -208,11 +225,20 @@ impl Name {
             .flat_map(|c| c.ids.iter().copied())
             .collect();
         let lasts: BTreeSet<[u8; 32]> = chains.iter().map(Chain::last).collect();
+        // An unanchored renewal whose entry before is gone (dead, dropped by an earlier prune) can't link here either.
+        let stale: BTreeSet<[u8; 32]> = (self.entries.values())
+            .filter(|e| {
+                e.time().is_none()
+                    && (self.stale(e, params, now)
+                        || e.entry.kind != Kind::Claim && !self.entries.contains_key(&e.entry.prev))
+            })
+            .map(Stamped::id)
+            .collect();
         self.entries.retain(|id, e| {
             if e.time().is_some() {
                 live.contains(id)
             } else {
-                !e.pending_stale(params, now)
+                !stale.contains(id)
             }
         });
         // An unanchored entry is its run's last as long as nothing anchored follows it.
@@ -223,7 +249,7 @@ impl Name {
             } else {
                 !followed.contains(id)
             };
-            if !last || e.pending_stale(params, now) {
+            if !last {
                 e.drop_pending();
             }
         }
@@ -262,7 +288,7 @@ fn chain(run: &[&Stamped], params: &Params) -> Chain {
         (end, t(last) + term, end)
     };
     let mut tie = Sha256::new();
-    tie.update(first.anchor().unwrap().run.block.hash());
+    tie.update(first.anchor().unwrap().header.hash());
     tie.update(first.id());
     Chain {
         ids: run.iter().map(|s| s.id()).collect(),

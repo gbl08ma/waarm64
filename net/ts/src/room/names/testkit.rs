@@ -8,7 +8,7 @@ use super::{
     Params,
     anchor::{Anchor, Op, apply},
     entry::{Entry, Kind, Pow, Stamped},
-    header::{FOLLOWERS, Header, Run, target},
+    header::{Header, target},
     id::{RoomNames, owner_key},
     wire::{Item, WireEntry},
     zone::Zone,
@@ -49,11 +49,6 @@ impl Rng {
 /// A header at `time` over `root`, mined to its own `bits`, after a made-up block.
 pub fn header(rng: &mut Rng, time: u32, root: [u8; 32], bits: u32) -> Header {
     let prev = rng.bytes::<32>();
-    after(prev, time, root, bits)
-}
-
-/// A header at `time` over `root` naming block `prev`, mined to its own `bits`.
-pub fn after(prev: [u8; 32], time: u32, root: [u8; 32], bits: u32) -> Header {
     let t = target(bits).unwrap();
     let mut h = [0u8; 80];
     h[..4].copy_from_slice(&0x2000_0000u32.to_le_bytes());
@@ -97,34 +92,18 @@ impl Bitcoin {
         owner_key(&[secret; 32], &self.names, name)
     }
 
-    /// An entry made after a `ref` block at `ref_time`, worked and signed; no anchor.
-    pub fn entry(
-        &mut self,
-        kind: Kind,
-        key: &SigningKey,
-        name: &str,
-        prev: [u8; 32],
-        ref_time: u32,
-    ) -> Stamped {
-        let root = self.rng.bytes();
-        let r = header(&mut self.rng, ref_time, root, EASY);
+    /// An entry worked and signed; no anchor.
+    pub fn entry(&mut self, kind: Kind, key: &SigningKey, name: &str, prev: [u8; 32]) -> Stamped {
         let owner = key.verifying_key().to_bytes().into();
-        let mut e = Entry::new(
-            &self.names,
-            kind,
-            self.names.name_id(name),
-            owner,
-            prev,
-            r.hash(),
-        );
+        let mut e = Entry::new(&self.names, kind, self.names.name_id(name), owner, prev);
         e.nonce = self.rng.next();
         assert!(self.pow.mine(&mut e, 1 << 20));
         e.sign(key, &self.names);
-        Stamped::check(e, r, &self.names, &self.params, &mut self.pow, LATE).unwrap()
+        Stamped::check(e, &self.names, &mut self.pow).unwrap()
     }
 
     /// An anchor for `id` in a block at `time`: a calendar's kind of path to a made-up root.
-    pub fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Run) {
+    pub fn anchor(&mut self, id: &[u8; 32], time: u32) -> (Anchor, Header) {
         let ops = vec![
             Op::Append(self.rng.bytes::<16>().to_vec()),
             Op::Sha256,
@@ -137,25 +116,11 @@ impl Bitcoin {
                 ops,
                 height: 900_000,
             },
-            self.run(time, root),
+            header(&mut self.rng, time, root, EASY),
         )
     }
 
-    /// A block at `time` over `root` and the six after it, ten minutes apart, each naming the one before.
-    pub fn run(&mut self, time: u32, root: [u8; 32]) -> Run {
-        let block = header(&mut self.rng, time, root, EASY);
-        let mut next = Vec::new();
-        let mut prev = block.hash();
-        for k in 1..=FOLLOWERS as u32 {
-            let root = self.rng.bytes();
-            let h = after(prev, time + 600 * k, root, EASY);
-            prev = h.hash();
-            next.push(h);
-        }
-        Run { block, next }
-    }
-
-    /// An entry anchored at `time` (its `ref` an hour before).
+    /// An entry anchored at `time`.
     pub fn at(
         &mut self,
         kind: Kind,
@@ -164,7 +129,7 @@ impl Bitcoin {
         prev: [u8; 32],
         time: u32,
     ) -> Stamped {
-        let mut s = self.entry(kind, key, name, prev, time - HOUR);
+        let mut s = self.entry(kind, key, name, prev);
         let (a, h) = self.anchor(&s.id(), time);
         assert_eq!(s.offer_anchor(a, h, &self.params, LATE), Ok(true));
         s
