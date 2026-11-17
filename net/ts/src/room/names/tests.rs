@@ -1003,3 +1003,29 @@ fn work_for_one_name_serves_no_other() {
     }
     assert!(short >= 15, "{short} of 16 fell short under another name");
 }
+
+#[test]
+fn two_headers_over_one_root_settle_on_the_same() {
+    // One path to one Merkle root under two headers (another block's time, or one forged at the floor): every node keeps
+    // the earlier, whatever came first, and what a `get` says it holds tells the two apart, so servers holding one each
+    // exchange them.
+    let mut w = World::new(46);
+    let p = w.params.clone();
+    let key = w.key(1, "test123");
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32]);
+    let (a, h1) = w.anchor(&s.id(), T0);
+    let h2 = header(&mut w.rng, T0 + 600, h1.merkle_root(), EASY);
+    let (mut x, mut y) = (s.clone(), s.clone());
+    x.offer_anchor(a.clone(), h1, &p, LATE).unwrap();
+    let only1 = x.clone();
+    x.offer_anchor(a.clone(), h2, &p, LATE).unwrap();
+    y.offer_anchor(a.clone(), h2, &p, LATE).unwrap();
+    let only2 = y.clone();
+    y.offer_anchor(a, h1, &p, LATE).unwrap();
+    assert_eq!(x, y);
+    assert_eq!(x.time(), Some(T0));
+    assert_ne!(
+        super::store::anchor_tag(&only1),
+        super::store::anchor_tag(&only2)
+    );
+}
