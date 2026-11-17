@@ -49,10 +49,10 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   connections are numbered from `0x40000000` (`room::NAMES_CONN`), so the worker opens, feeds and closes them as any
   other, and of its events only its log comes out (marked `names client:`). Action 11 stores a name's record (the
   name id, 32 bytes, then the record; the id alone: delete it), a server's (version 1) or a member's (version 2);
-  `ts_room_names_load(h, ptr, len)` takes one back (1 when taken; a record of the other role's, or a member's whose
+  `ts_room_names_load(h, ptr, len)` takes one back (1 when taken; a record of the other role's, or one whose
   chain lapsed, isn't), and the worker streams them all in before the first `ts_tick`: web/room-worker.ts keeps them
-  in IndexedDB `waarm64-room`, store `names`, under the room and the id (web/room.ts `roomNamesStore`; a stored
-  connection's only), and deletes what the module didn't take. The room's `self` event says which parameters names
+  in IndexedDB `waarm64-room`, store `names`, under the room and the connection and the id (web/room.ts
+  `roomNamesStore`; a stored connection's only, written before the worker is closed), and deletes what the module didn't take. The room's `self` event says which parameters names
   are checked with (`params`: `production`; `test` only in the page tests' build, `net/ts/build.sh --test-params` →
   `target/net/ts-test.wasm`, never shipped: room-names.md "Tests' parameters"). The room's resolver answers registered
   names (room-names.md "The resolver") and logs each query for one (`resolver: …`).

@@ -3,27 +3,30 @@
 Scope: `net/ts/src/room/names.rs`, `net/ts/src/room/names/*`, and the names code in `net/ts/src/room.rs`,
 `net/ts/src/wasm.rs`, `web/room.ts`, `web/room-worker.ts`, `web/ts-client.ts`, read against
 `docs/plans/room-names.md` and `docs/networking/rooms.md`. Static review. Throwaway tests (since removed) confirmed
-the findings marked "test". Ranked by severity.
+the findings marked "test". Ranked by severity. Loop N4a (2026-11-17) fixed all but 6, which waits for the user; this
+file goes once 6 is settled.
 
-| # | Severity | Finding |
-|---|---|---|
-| 1 | High | A sync partner can crash any server: `Range::child` panics at depth 64 |
-| 2 | High | Anyone can pick a member's or a server's two servers: answers aren't held to the share, one registration signs for unlimited keys, and any member can fill the accept window |
-| 3 | Medium | Any member can hold all 32 asker slots of every server: nobody finds a server |
-| 4 | Medium | Any peer with a session can make a server do unbounded work and queue unbounded memory (`put`, `sync`, `have`, listings) |
-| 5 | Medium | A peer can make a server or member buffer 16 MiB of incomplete transfers, not the spec's 2 MiB |
-| 6 | Medium (spec) | One header forged at the floor backdates any number of entries in every room, for good |
-| 7 | Medium-Low | Pending anchors aren't authenticated and "the lower wins": anyone can replace an owner's pending with junk |
-| 8 | Low-Medium | A member checks a `history` answer synchronously and without deduplication: about 0.7 s of stall per answer |
-| 9 | Low | A server's lapsed records are "taken" at load, so the page never deletes them |
-| 10 | Low | A chain whose first anchor is ahead of the server's clock is dropped, though the comment says it is kept |
-| 11 | Low | Zone slot keys don't take the owner: two owners of one name at the same `seq` reuse ChaCha20-Poly1305 keys and nonces |
-| 12 | Low | Registry records are keyed by room only, and the last batch can be lost when the worker stops |
-| 13 | Low (latent) | `anchor::leaves` turns 8 KB of input into about 200 MB of allocations |
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| 1 | High | A sync partner can crash any server: `Range::child` panics at depth 64 | fixed |
+| 2 | High | Anyone can pick a member's or a server's two servers: answers aren't held to the share, one registration signs for unlimited keys, and any member can fill the accept window | fixed |
+| 3 | Medium | Any member can hold all 32 asker slots of every server: nobody finds a server | fixed |
+| 4 | Medium | Any peer with a session can make a server do unbounded work and queue unbounded memory (`put`, `sync`, `have`, listings) | fixed |
+| 5 | Medium | A peer can make a server or member buffer 16 MiB of incomplete transfers, not the spec's 2 MiB | fixed |
+| 6 | Medium (spec) | One header forged at the floor backdates any number of entries in every room, for good | waiting for the user |
+| 7 | Medium-Low | Pending anchors aren't authenticated and "the lower wins": anyone can replace an owner's pending with junk | fixed |
+| 8 | Low-Medium | A member checks a `history` answer synchronously and without deduplication: about 0.7 s of stall per answer | fixed |
+| 9 | Low | A server's lapsed records are "taken" at load, so the page never deletes them | fixed |
+| 10 | Low | A chain whose first anchor is ahead of the server's clock is dropped, though the comment says it is kept | fixed |
+| 11 | Low | Zone slot keys don't take the owner: two owners of one name at the same `seq` reuse ChaCha20-Poly1305 keys and nonces | fixed |
+| 12 | Low | Registry records are keyed by room only, and the last batch can be lost when the worker stops | fixed |
+| 13 | Low (latent) | `anchor::leaves` turns 8 KB of input into about 200 MB of allocations | fixed |
 
 ---
 
 ## 1. High: a sync partner can crash any server (panic at depth 64)
+
+- **Status:** **Fixed** (N4a, f00329c): sixteenths of a range at depth ≥ 63, or a listing past `LIST_MAX`, end the run; a run sends at most `MAX_RUN_SYNCS` (8,192) syncs and `max_names + 64` gets, the listed gets from a work list `SYNC_PARALLEL` at a time; `Range::child` of a whole id is itself. Tests (server_tests.rs): `a_partner_answering_children_past_the_last_nibble_ends_the_run` (failed first: the panic at wire.rs:326), `a_partner_whose_ranges_never_stop_differing_is_bounded`, `a_listing_longer_than_a_listing_may_be_ends_the_run` (failed first: 5,000 gets).
 
 - **Where:** `net/ts/src/room/names/wire.rs:322-335` (`Range::child`, `p[b]` with `b = depth / 2`), reached from
   `net/ts/src/room/names/server.rs:929-942` (`on_sync_answer`, `SyncAnswer::Children`).
@@ -43,6 +46,8 @@ the findings marked "test". Ranked by severity.
   bound a run's total requests.
 
 ## 2. High: anyone can choose a member's (and a server's) two servers
+
+- **Status:** **Fixed** (N4a, 320a75d), a little differently from the suggestion: the share and the choice go by `BLAKE2s(nonce, owner key)` of the live name served with, not the names client's key (which the attacker can grind after it sees the nonce, so a share or a rank by it buys nothing); an answer outside the share of every round sent is refused; one answer a name (owner key or name id); the accept window lets a newcomer in in place of a key that has had a second and never served (`AcceptWindow`, `Cmd::Served`), rather than admitting by share (a key in a share of 1/64 is 64 tries away). Tests: member_tests.rs `a_serve_outside_the_share_sent_isnt_counted` (failed first: everyone asked at 0.3 s), `keys_ground_for_a_low_hash_win_nothing` and `one_name_answering_from_many_keys_counts_once` (failed first as one test: the ground keys held, the honest server not), server_tests.rs `junk_handshakes_dont_shut_servers_out_of_a_questions_window` (failed first on the window as it was), `the_answer_rules_counts` (each server its own name now). Left: the eviction is tested on `AcceptWindow`, not through room.rs (docs/backlog.md "Room names' loose ends", "Review 1's fixes").
 
 - **Where:**
   - `net/ts/src/room/names/member.rs:582-626` and `server.rs:634-680` (`on_serve`, `choose`);
@@ -82,6 +87,8 @@ the findings marked "test". Ranked by severity.
 
 ## 3. Medium: any member can hold every server's 32 asker slots
 
+- **Status:** **Fixed** (N4a, 320a75d): an asker is kept only by requests (a message decoded), for 10 minutes at most; with every place taken, a newcomer takes the place of the one held longest (never a sync partner's). Test: server_tests.rs `junk_doesnt_keep_an_asker_and_a_full_server_still_answers` (failed first: "junk kept nobody").
+
 - **Where:** `server.rs:696-698` (`MAX_ASKERS`), `server.rs:759-761` (any datagram refreshes an asker),
   `server.rs:558-569` (idle after 60 s).
 - **What's wrong:** a server answers only while it holds fewer than 32 askers. Any datagram from an asker resets that
@@ -98,6 +105,8 @@ the findings marked "test". Ranked by severity.
   - Under pressure, evict the oldest asker rather than refusing new ones.
 
 ## 4. Medium: unbounded work and memory from any peer with a session
+
+- **Status:** **Fixed** (N4a, 320a75d): `sync`, `have` and `get all` only from a server that proved a live name (the servers our question chose; a run's first `sync` carries a proof: the owner key's signature over both names clients' keys, checked once a session); a sync budget per peer (16 registries' fingerprints a round); `have` ≤ 32 ids, ≤ 64 gets from haves at once; puts in a queue of their own (4 a peer, 64 in all), verified after what sync brought, so `synced` doesn't wait for them; a job ends at its first entry only a forgery fails, and such entry ids (own-bytes failures) are remembered; listings bounded (finding 1); ≤ 8 MiB queued to a peer. Tests (server_tests.rs): `only_a_server_that_proved_a_live_name_is_answered_sync_have_and_get_all` (failed first: "no sync"), `a_put_of_one_junk_entry_many_times_costs_one_check` (failed first: 171 turns), `a_new_server_counts_as_synced_without_waiting_for_puts` (failed first), `a_peer_that_never_acknowledges_gets_a_bounded_queue` (failed first: 20 MB queued), `a_runs_first_sync_carries_a_proof`. What one registration still buys: docs/backlog.md "Review 1's fixes".
 
 Any key a server called back (any asker: finding 3) can send any registry message. Nothing restricts `put`,
 `sync`, `have` or `get all` to sync partners, or rate-limits them per peer.
@@ -128,6 +137,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 
 ## 5. Medium: the inbound transfer budget is checked only on a transfer's first part
 
+- **Status:** **Fixed** (N4a, f00329c): every new part counts against the 2 MiB; an incomplete transfer is dropped 10 s after its last new part. Test: server_tests.rs `a_peers_incomplete_transfers_hold_at_most_their_budget` (failed first: 16,750,224 bytes buffered).
+
 - **Where:** `net/ts/src/room/names/wire.rs:763-779`.
 - **What's wrong:** `MAX_BUFFERED` (2 MiB) is compared only when a transfer is new. Later parts of an admitted
   transfer are buffered without a check. A peer can open 16 transfers with one small part each, then fill each one to
@@ -141,6 +152,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
   transfers after a timeout.
 
 ## 6. Medium (the spec): one forged header is a reusable backdating oracle
+
+- **Status:** **Waiting for the user** (a spec decision: NAMES-HANDOVER.md "Open questions"). The spec's "What an attacker can do" row now states the cost (a sixteenth of a block's work, once) and the effect (a reusable backdating oracle for any number of names and rooms).
 
 - **Where:**
   - `net/ts/src/room/names/header.rs:81-96`;
@@ -167,6 +180,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 
 ## 7. Medium-Low: pending anchors are unauthenticated, and "the lower wins"
 
+- **Status:** **Fixed** (N4a, 320a75d): a pending anchor carries the entry's owner key's signature (`waarm64/names/pending`, over the room's value, the entry id and the pending's calendar and operations); a server keeps only a signed one. Test: server_tests.rs `a_pending_anchor_not_signed_by_the_owner_is_refused` (failed first: the unsigned lower pending replaced the owner's). The agent (N4) signs with `entry::sign_pending` (docs/backlog.md).
+
 - **Where:** `net/ts/src/room/names/entry.rs:363-372` (`offer_pending`), `server.rs:1125-1127`, `store.rs:109-124`.
 - **What's wrong:** a pending anchor (a calendar index and ops) can't be checked until it finishes, and nothing signs
   it. Among two, the lower is kept, so anyone who `put`s the owner's unanchored renewal with
@@ -181,6 +196,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 
 ## 8. Low-Medium: `history` answers are verified synchronously and without deduplication
 
+- **Status:** **Fixed** (N4a, 320a75d): a member checks what servers said a slice a turn (`UNITS_PER_TURN`, as a server), each entry once however often an answer repeats it. Test: member_tests.rs `a_history_is_checked_once_an_entry_in_slices` (failed first: 1,001 entries checked).
+
 - **Where:** `net/ts/src/room/names/member.rs:697-726` (`view`), called from `settle` inside `on_msg`.
 - **What's wrong:** a `history` item may carry 1,024 entries (`wire.rs:40`). The member runs `Stamped::check` (BIP-340
   and Argon2id) on each entry inline, in one turn, with no `job.checked`-style deduplication.
@@ -193,6 +210,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 
 ## 9. Low: lapsed server records are reported as taken, so never deleted
 
+- **Status:** **Fixed** (N4a, f00329c): `Server::load` says whether anything of the record is held. Test: server_tests.rs `a_lapsed_record_isnt_taken_at_load` (failed first).
+
 - **Where:** `net/ts/src/room/names/server.rs:432-439` (`load` returns true unconditionally),
   `server.rs:453-472` (`take_trusted` drops an item that settles empty), `web/room-worker.ts:98`.
 - **What's wrong:** the page deletes records the module doesn't take. That covers "a lapsed name's" (web/ts-client.ts
@@ -203,6 +222,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 - **Fix:** return whether the item is held after `take_trusted` (or emit a delete for it).
 
 ## 10. Low: a chain whose first time is ahead of the clock is dropped, not kept for later
+
+- **Status:** **Fixed** (N4a, f00329c), by the second suggestion: a chain covers from its first entry's time less `drift` (`Chain::cover_start`), so the member and `check_serve` take it too. Test: server_tests.rs `a_chain_whose_first_time_is_a_little_ahead_is_kept` (failed first: `Better` with nothing); tests.rs's "nothing covers before" now at the time less `drift`.
 
 - **Where:** `net/ts/src/room/names/store.rs:141-147`, and `chain.rs:53-55` (`covers` needs seniority ≤ now).
 - **What's wrong:** `settle` notes that "a chain whose first entry's time is still ahead … may own later" and
@@ -215,6 +236,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 - **Fix:** keep chains whose seniority is within `drift` of now in the kept set, or let `covers` allow `seniority ≤ now + drift`.
 
 ## 11. Low: zone slot keys don't take the owner, so keys and nonces repeat across owners
+
+- **Status:** **Fixed** (N4a, f00329c): slot keys and tags take the name id and the owner key. Test: zone.rs `two_owners_of_one_name_at_one_seq_share_no_key_or_tag` (failed first). A fork of one title at one `seq` still could reuse them: docs/backlog.md (as before).
 
 - **Where:** `net/ts/src/room/names/zone.rs:41-46` (`slot_keys` over the seal key, `seq` and the full name only),
   with a zero nonce (zone.rs:92-99).
@@ -229,6 +252,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 
 ## 12. Low: registry records are keyed by room only; the last batch can be lost
 
+- **Status:** **Fixed** (N4a, 5f580f9): records under a hash of the room's ID and the connection's `identityKey`; detach awaits the store's flush before `detached`; close asks the worker to close and flush and terminates it on `closed` (3 s at most). Test: tests/room-names.test.ts's IndexedDB case, two new checks (another connection's records apart; a delete waiting for its batch written though the room closes at once), both failed first.
+
 - **Where:** `web/room.ts:358-388` (keys `[room, id]`), `web/room-worker.ts:75-98`; `room-worker.ts:55-57` and
   `web/room.ts:253-266` (`flush` isn't awaited before `detached`, and `close` terminates the worker).
 - **What's wrong:**
@@ -242,6 +267,8 @@ Any key a server called back (any asker: finding 3) can send any registry messag
 - **Fix:** key records by `[room, identityKey, id]`, and await `flush()` before posting `detached` or terminating.
 
 ## 13. Low (latent): `anchor::leaves` amplifies 8 KB into about 200 MB
+
+- **Status:** **Fixed** (N4a, f00329c): `leaves` copies at most 64 KiB (messages and operations) for its forks and leaves. Test: anchor.rs `a_deep_fork_isnt_copied_out_of_proportion` (failed first: a valid tree of 681 leaves was returned).
 
 - **Where:** `net/ts/src/room/names/anchor.rs:233-266`.
 - **What's wrong:** each `0xff` fork pushes a clone of the whole operation list so far. An input of `ff 08` repeated

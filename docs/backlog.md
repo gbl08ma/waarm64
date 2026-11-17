@@ -1566,9 +1566,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The reserved list has the old generic top-level domains, every two-letter label and the special-use names, not the
     ~1,400 newer generic ones (`app`, `dev`, …): words people want as names, which a guest asks under the room's
     domain only after the name itself failed. Compile them if a guest turns out to ask them unprompted.
-  - A zone's slots are sealed with a key from the name and `seq` and a zero nonce: two zones of one title with the
-    same `seq` and different contents (a title forked between two browsers, both changing its zone) would reuse it.
-    The agent (N4) must make that impossible (`seq` from the time and the branch), or a zone carries a random nonce.
+  - A zone's slots are sealed with a key from the name id, the owner key, the full name and `seq` and a zero nonce: two
+    owners no longer share one (review 1), but two zones of one title with the same `seq` and different contents (a
+    title forked between two browsers, both changing its zone) would reuse it. The agent (N4) must make that impossible
+    (`seq` from the time and the branch), or a zone carries a random nonce.
   - Servers keep one chain a name, the owner's (N2, room-names.md "Servers"), so a back-order (a younger chain alive
     beside the owner) isn't carried: when the holder lapses it owns the name by the rule, but servers have it only
     once its owner's agent puts it again. The agent (N4) should put a title it holds whenever a server shows a chain
@@ -1587,10 +1588,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     verifier, monomorphized collections), and whether it's worth trimming.
   - Titles as they change (an export beside the config's `names.titles`) are N4's; the page's side of persistence and
     the TypeScript config type for `names` came with N3.
-  - The `names` store in `waarm64-room` is kept by room, not by connection: deleting a connection leaves the room's
-    records (a member's few KB, a server's registry) until another connection to that room starts and the module
-    refuses what lapsed. Records of a room nobody joins again stay. A per-room sweep at Delete (when no other
-    connection names the room) would clean them.
+  - The `names` store in `waarm64-room` is kept by room and connection (review 1): deleting a connection leaves its
+    records (a member's few KB, a server's registry) for good. A sweep at Delete of the connection's key in each room
+    it named would clean them.
   - A member that holds a better chain than a server showed it (it kept the owner's after a reset) doesn't `put` it:
     it keeps only the chain's last entry, not the run a server needs to take it. The owner's agent puts it back at its
     next visit (N4).
@@ -1601,6 +1601,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     at 4 s); a server that never answers a `get` but always answers "who serves?" is found again at each new question.
     N6 sees whether that matters at scale.
   - The header floor is 1/16 of block 976,177's difficulty: revisit if Bitcoin's difficulty ever falls far.
+  - Review 1's fixes (N4a), what they leave:
+    - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
+      (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
+    - A server none of whose names is alive can't prove one, so the servers it asks refuse its `sync`s: it keeps what
+      it holds and syncs nothing until its agent renews (it answers no question either).
+    - One registration still buys a server's work: its `sync`s may make another fingerprint 16 times its registry a
+      round, its `have`s 64 `get`s at once; any session `put`s 4 at a time (a junk one costs one check, an Argon2id).
+      N6 measures what that costs a server at 5,000 names.
+    - A peer's proof is checked once a session (an Argon2id), a refused one not again; a new session is a new key and
+      a new DERP connection.
+    - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
+    - The agent (N4) must sign a renewal's pending anchor (`entry::sign_pending`): servers keep only signed ones.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer
