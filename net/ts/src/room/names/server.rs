@@ -650,7 +650,32 @@ impl Server {
             if let Some(z) = t.item.zone.clone() {
                 self.title_zones.insert(id, z);
             }
-            self.take_trusted(t.item, unix, unix);
+            // Verified as anything from outside is, now (a title is a few entries): it may have come in a pasted
+            // export, which anyone can craft (review 2). Entries held already, or checked lately, cost nothing.
+            let mut job = Job::new(None, t.item);
+            while !job.forged && job.next < job.item.entries.len() {
+                let w = job.item.entries[job.next].clone();
+                job.next += 1;
+                self.check_entry(&mut job, w, unix);
+            }
+            if job.forged {
+                self.log("a title refused: an entry doesn't hold".into());
+                continue;
+            }
+            let zone = job.item.zone.take().filter(|z| z.verify(&self.names));
+            let mut h = self.reg.take(&id).unwrap_or_else(|| Held::new(id, unix));
+            h.asked = h.asked.max(unix);
+            for e in job.checked {
+                h.name.insert(e, &self.params, unix);
+            }
+            h.settle(&self.params, unix);
+            if let Some(z) = zone {
+                h.offer_zone(z, unix, false);
+                h.settle(&self.params, unix);
+            }
+            if !h.is_empty() {
+                self.reg.put(h);
+            }
         }
     }
 

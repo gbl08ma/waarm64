@@ -662,6 +662,10 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
 - **When the connection's room runs**, the node is a server: the room's worker gives the module the connection's titles
   in its config (`room.names.titles`, each the owner key derived from the secret and the item) and again as they change
   (the agent's BroadcastChannel `waarm64-names`; `ts_room_names_titles`: a member given titles becomes a server).
+  The server checks each title's entries and zone as it checks anything from outside (at once: a title is a few
+  entries, and those it holds or checked lately cost nothing), and a title with an entry that doesn't hold is refused
+  whole: titles can come from a pasted export, which anyone can craft (review 2's finding 15: a forged senior chain
+  would have displaced the real owner's in the node's own registry).
 - **A zone's `seq`** (64 bits) is `n << 32 | branch`: `n` counts up past every `seq` the title has seen, `branch` is
   this copy's, 32 random bits drawn when the title is registered and again by **every copy taken in** from an export
   (`importNames`; the export itself writes nothing), so the same text pasted into two browsers gives two branches. Two

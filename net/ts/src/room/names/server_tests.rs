@@ -1721,7 +1721,7 @@ fn a_peer_forgotten_and_met_again_gets_new_transfers() {
     let now = Instant::now();
     let (ka, kb) = ([1u8; 32], [2u8; 32]);
     let (mut a, mut b) = (Transfers::default(), Transfers::default());
-    let mut deliver = |a: &mut Transfers, b: &mut Transfers, payload: &[u8]| -> bool {
+    let deliver = |a: &mut Transfers, b: &mut Transfers, payload: &[u8]| -> bool {
         a.send(kb, payload, now);
         let mut got = false;
         for (_, d) in std::mem::take(&mut a.out) {
@@ -1980,4 +1980,52 @@ fn a_slow_partner_doesnt_keep_a_server_unsynced() {
     );
     assert!(v.synced, "still unsynced after {took:?}");
     assert!(took <= Duration::from_secs(270), "{took:?}");
+}
+
+/// Review 2's finding 15: titles taken in from a pasted export reach the node's server through `set_titles`, and a
+/// crafted export can carry forged entries: they are verified as anything from outside is, so a forged senior chain
+/// doesn't displace the real owner's.
+#[test]
+fn titles_are_verified_before_the_registry_holds_them() {
+    let mut b = Bitcoin::new(ROOM, 51);
+    let (_, real) = b.title(1, "bank", t(20), &[t(5)], [1; 32]);
+    // The crafted title: a claim "40 days ago" whose signature doesn't hold, renewed.
+    let (key, mut forged) = b.title(2, "bank", t(30), &[t(10)], [2; 32]);
+    forged.entries[0].entry.sig[3] ^= 1;
+    let mut s = Server::new(ROOM, cfg(vec![]), T);
+    assert!(s.load(&record(&real, T), T));
+    let real_owner = real.entries[0].entry.owner;
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    s.set_titles(
+        vec![Title {
+            key,
+            item: forged.clone(),
+        }],
+        T,
+    );
+    let mut ticks = 0;
+    while s.busy() && ticks < 1000 {
+        s.tick(now, T);
+        ticks += 1;
+    }
+    let h = s.reg.get(&real.id).unwrap();
+    assert_eq!(
+        h.owner.as_ref().map(|o| o.owner),
+        Some(real_owner),
+        "the real owner stands"
+    );
+    // An honest title is taken (once checked).
+    let (key, own) = b.title(3, "mine", t(20), &[t(5)], [3; 32]);
+    s.set_titles(
+        vec![Title {
+            key,
+            item: own.clone(),
+        }],
+        T,
+    );
+    while s.busy() {
+        s.tick(now, T);
+    }
+    assert!(s.reg.get(&own.id).is_some_and(|h| h.owner.is_some()));
 }
