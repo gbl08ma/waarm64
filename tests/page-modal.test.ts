@@ -532,7 +532,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   await context.close();
 });
 
-test('a disk\'s read-only box on a running machine: powered off after asking, then saved; Visualize beside RAM while it runs', async () => {
+test('a disk\'s read-only box on a running machine: powered off after asking, then saved; Visualize beside RAM while it runs; no gap over the Machines page', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -554,6 +554,9 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await page.click('#machines-open');
   // Its Settings tab: Visualize beside RAM opens the RAM's map over the page, once it has RAM (booting or running).
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+  // No message: the message bar takes no room over the Machines page (it does while it shows one).
+  assert.equal(await page.locator('#message').isHidden(), true, await page.locator('#message').evaluate((e) => e.outerHTML.slice(0, 400)));
+  assert.equal(await page.evaluate(() => document.querySelector('#message')!.parentElement!.getBoundingClientRect().height), 0, 'no gap over the Machines page');
   await m.locator('[data-tab=settings]').click();
   await m.locator('[data-action=ram-open]').click();
   await page.locator('#ram-window').waitFor({ timeout: 10_000 });

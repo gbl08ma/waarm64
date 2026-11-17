@@ -13,7 +13,7 @@
 
 <!-- Its own wrapper, of no height: the bar floats over the machine (whose screen keeps its size), and the page in full
      screen hides it. -->
-<div class="message">
+<div class="message" class:shown={!!messageBar.text}>
   <ErrorBanner
     id="message"
     role={messageBar.kind === 'info' ? 'status' : 'alert'}
@@ -66,8 +66,9 @@
     width: max-content;
     max-width: calc(100% - 2 * var(--space-5));
   }
-  /* The Machines page has no screen to keep its size: there the bar takes its room, not its panes' buttons. */
-  :global(body[data-page='machines']) .message {
+  /* The Machines page has no screen to keep its size: there the bar takes its room, not its panes' buttons (and none
+     while it's hidden). */
+  :global(body[data-page='machines']) .message.shown {
     height: auto;
     padding: var(--space-3) var(--space-5) 0;
   }
