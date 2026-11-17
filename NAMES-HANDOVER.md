@@ -31,6 +31,7 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 | Review 2 | Out-of-context review of the whole area after N5 (`net/ts/src/room/names/`, the names code in `room.rs`/`wasm.rs`, `web/names*.ts`, the page's names parts) → `NAMES-REVIEW-2.md`; run in the cloud ahead of N6 so its fixes land before the dev VM's scale runs; the track's end still has a final review after N6 | done (2026-11-17): fixes in N5a; finding 3 waits |
 | N5a | Review 2's findings (2026-11-17, cloud; df84c2f to fa6c561, one commit a finding): 16 of 17 fixed, each with its test failing first (NAMES-REVIEW-2.md "Status"); finding 3 waits for the user. Spec changes: answers rank by their chain's age (a `serve` carries the run's tail, 8 entries at most; 6 tiers of half a term; rounds sample a young chain 2^-tier as often; the accept window keeps the best two) — finding 2 within the decisions, no new service or pinning; the dialog's check asks for every id (`ALL_IDS`, kept a minute); a tombstone's release shown to a member that keeps the chain; entries verified lately remembered (16,384); a zone not taken answered `better`, the agent counting past the room's; one key answered 4 times a minute; `ids` cover ends to a week; sync runs 4 minutes at most; titles verified by `set_titles`; only `AnchorWindow` drops an entry, stale ones kept a week, each calendar and explorer tried; not lost while a lapsed chain's entry waits, lost judged again; Let it go drops waiting renewals, a release remade; a title's own secret on import; titles by room ID, `relink`; late reserved words, wide zones. Also fixed: transfer ids restarted per peer after a forget. 33 planted bugs, all caught in the end: two first tries weren't (the transfer-id plant didn't model the bug, and got a test and a plant of its own; a refused zone called published wasn't, until the test gained the second Save within 10 minutes). Wire changed (Serve, ids with no byte), pre-release. Loose ends: docs/backlog.md "Review 2's fixes" | done |
 | N5b | Review 2's finding 1 as the user decided (2026-11-17, cloud): **the dialog's check runs when Register is pressed, not as typed**. As typed, only the page's own checks (the agent's `checkHere`: the rules, this connection's own; no server asked); Register asks the room's servers for one first byte of the name's id a press, through a checker made for that press and closed with its answer (`idsWith`; no cache). Free: registered, the dialog closes; taken: it stays open with the date, Register offered again once the name changes; nobody can say: it says so ("… Press Register again to register it all the same."), and a second press of the same name registers (no button, box or question added; nothing on the free path). The dialog's logic is `NameForm` (web/app/names-view.ts). N5a's all-ids form removed everywhere (member, room.rs, wasm.rs, wire): nothing else used it, and an `ids` get of any length but one byte is refused. The catalog's `check.free` gone (the dialog closes). Tests: names-page (+4: typing asks nothing, one ask and free registers, taken stays open, nobody then a second press, an answer dropped on close), names-agent (one first byte at Register, none as typed), member_tests `ids_by_first_byte` (0/2/32-byte gets refused; failed first under N5a's wire), page-room's dialog steps (typed: no taken said; Register: taken stays open; free closes; 218 s alone). 5 planted bugs, all caught: a server asked as typed (in the form; in the agent), two bytes asked, registering when taken, a third notice (page-room) | done |
+| Design | A Fable agent reviews the Bitcoin dependency past OpenTimestamps and finding 2's fix, decides or lays out alternatives (open questions above) → `docs/plans/room-names-redesign.md` | running (2026-11-17) |
 | N0c | N0's items 5 and 6 (public DERP transfer, cold lookup) and the GPU figure | *dev VM* |
 | N6 | Scale and abuse; days on the public services | *dev VM* |
 | End | Final review, full scripts, docs, deletions | partly *dev VM* |
@@ -43,22 +44,18 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Open questions
 
-- **Review 2's finding 3 (N5a left it): the user's call.** "Open this web app at least every 2 weeks" doesn't keep a
-  name resolving: a renewal is made at the first visit past half a term and its anchor reaches the room only when a
-  page collects it, an hour or two later with the page open or at the next visit, so with visits every 14 days a name
-  is down about 12 days in 28 (NAMES-REVIEW-2.md). The ways: renew earlier (at the first visit past `TERM − 2 × the
-  promised interval`, about day 2 for two weeks: four entries a month a name instead of two, which servers carry);
-  keep the page collecting before it says Active (the dialog's two notices unchanged, a visit's wait longer); servers
-  finishing renewals (the open question below: needs an explorer for servers); or words that promise what holds (about
-  every week). Spreading an owner's renewals over visits (finding 13) waits on the same choice.
-
-- **Servers finishing pending renewals (N4d): the user's call.** The spec's "Who talks to a calendar" has servers
-  fetch a renewal's finished proof, but since N4b an anchor needs its block's header and the six after it, which only
-  an explorer serves; decision 4 lets servers ask calendars alone. Every way that makes one short visit enough has a
-  page other than the owner's ask an explorer for another's anchor. The ways (docs/backlog.md, the agent's loose
-  ends): servers also ask an explorer after a calendar finished (~9 GETs a finished renewal an asking server; the
-  same permission the forged-run spot checks need), servers complete only from runs the room already holds (busy
-  rooms only), or as now (the owner's next visit, within the two weeks decision 13 asks).
+- **The user, 2026-11-17, on review 2's finding 3 and N4d's open question: option A**, servers finish pending
+  renewals and ask an explorer for the anchor's headers once a calendar has finished (the user: the page will
+  eventually need explorers to tell that headers belong to the chain anyway). **Not built yet**: it waits on the design
+  review below, which may change how headers are checked.
+- **The user, 2026-11-17, on the Bitcoin dependency and finding 2's fix: a design review first.** The user accepts
+  OpenTimestamps (and so Bitcoin) as the timestamp, but not everything added after it as gaps were found: seven
+  headers an anchor, a floor schedule by header time, `ref` and its window, explorers for headers, chains ranked by
+  age for the choice of servers (N5a's fix of finding 2, whose trade-off the user doesn't like: long-held names'
+  servers answer more, young rooms ask everyone more often, a `serve` up to ~16 KB). A Fable design agent weighs
+  alternatives and may propose deep redesigns that throw away much of what's built; **if it finds one is needed, it is
+  written here and the track stops for the user's decision** (the user may continue in a fresh session). The user also
+  plans a loop at the end to rely less on Bitcoin.
 
 - **Review 1, finding 6: done (N4b), as the user decided 2026-11-17**: seven linked headers an anchor, the floor by
   header time. What's left, a forged run of seven reusable (~3.5 blocks' work), is filed in docs/backlog.md with the
