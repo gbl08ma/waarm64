@@ -33,7 +33,15 @@ type Exports = {
   ts_rtc_closed(h: number, rtc: number): void;
   ts_rtc_blocked(h: number, blocked: number): void;
   ts_room_names_load(h: number, ptr: number, len: number): number;
+  ts_room_names_put(h: number, ptr: number, len: number): number;
+  ts_room_names_titles(h: number, ptr: number, len: number): number;
+} & {
+  /** The names agent's operations (net/ts/src/room/names/agent.rs): JSON in, the length of JSON out (minus: why not). */
+  [K in `ts_names_${NamesOp}`]: (ptr: number, len: number) => number;
 };
+
+/** The names agent's operations (web/names-ops.ts calls them). */
+export type NamesOp = 'key' | 'make' | 'mine' | 'sign' | 'add' | 'pending' | 'commitment' | 'finish' | 'anchor' | 'zone' | 'status' | 'judge' | 'drop';
 
 /** A room's member (net/ts/src/room.rs, docs/networking/rooms.md). */
 /** The most messages a WebSocket holds before it opens (a room's lookups while a Nostr relay connects, say). */
@@ -55,12 +63,22 @@ export type RoomConfig = {
     unixTime?: number;
     /** The node's titles (docs/plans/room-names.md "The registry"): each a name's owner key and its item (hex,
      * net/ts/src/room/names/wire.rs). With them the node serves the room's names; without, it is a member that asks. */
-    names?: { titles: { key: string; item: string }[]; maxNames?: number; maxBytes?: number };
+    names?: { titles: NamesTitle[]; maxNames?: number; maxBytes?: number };
+    /** A publisher (docs/plans/room-names.md "The names agent"): no node, no guest, a names client alone under a fresh
+     * key that puts what `namesPut` gives it to the room's servers, each answer a `names-put` event. */
+    publish?: boolean;
   };
   derpMapURL?: string;
   /** The node's private key, 64 hex digits. */
   key?: string;
 };
+
+/** A title as the module takes it: the name's owner key (its secret, 64 hex digits) and its item (hex). */
+export type NamesTitle = { key: string; item: string };
+
+/** What a server said to an item a publisher put: `taken`, `better` (with the server's item, hex), `failed` (no answer), or
+ * `nobody` (nobody serves the room's names; no server). */
+export type NamesPut = { type: 'names-put'; id: string; server: string | null; result: 'taken' | 'better' | 'failed' | 'nobody'; item: string | null };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
 export type TailcatConfig = {
@@ -117,7 +135,9 @@ export type TsEvent =
   | { type: 'login'; url: string }
   | { type: 'loggedout' }
   /** The answer to `setExitNode`: no `code` when it took, else why not (`no-exit-node`: no peer `id` offers to be one). */
-  | ({ type: 'exitnode'; id?: string } & TsFailure);
+  | ({ type: 'exitnode'; id?: string } & TsFailure)
+  /** A room's publisher: a server's answer to an item put (`TsClient.namesPut`). */
+  | NamesPut;
 
 export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
@@ -319,6 +339,23 @@ export class TsClient {
   namesLoad(record: Uint8Array): boolean {
     if (this.closed) return false;
     return this.m.x.ts_room_names_load(this.h, ...this.m.put(record)) === 1;
+  }
+
+  /** A room's publisher: puts `item` (hex) to the room's servers; each answer is a `names-put` event. Whether it was taken
+   * to be put. */
+  namesPut(item: Uint8Array): boolean {
+    if (this.closed) return false;
+    const ok = this.m.x.ts_room_names_put(this.h, ...this.m.put(item)) === 1;
+    this.pump();
+    return ok;
+  }
+
+  /** A room: the node's titles as they change (the page's names agent): a member given titles becomes a server. */
+  namesTitles(titles: NamesTitle[]): boolean {
+    if (this.closed) return false;
+    const ok = this.m.x.ts_room_names_titles(this.h, ...this.m.put(encoder.encode(JSON.stringify(titles)))) === 1;
+    this.pump();
+    return ok;
   }
 
   /** A room: whether this browser makes no direct paths now (web/room.ts), or does again. */

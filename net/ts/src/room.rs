@@ -384,6 +384,10 @@ pub struct Config {
     pub names: Option<names::server::Config>,
     /// The clock's and proof of work's parameters a member checks names with (the module's: [`Params::BUILT`]).
     pub params: Params,
+    /// A publisher (room-names.md "The names agent"): not a node but a names client alone, under this fresh key, relay
+    /// only, no guest, that finds servers and puts the items the page gives it ([`Client::names_put`]). The page's
+    /// names agent publishes titles through one with no machine running.
+    pub publish: bool,
 }
 
 /// A node's registry: the server's logic and the names client that carries it (made once the
@@ -718,6 +722,8 @@ pub struct Client {
     pub names: Option<Box<NamesHost>>,
     /// A member's side, when it holds none.
     pub member: Option<Box<MemberHost>>,
+    /// A publisher's side ([`Config::publish`]): this client is its own names client.
+    pub publisher: Option<Box<Member>>,
     dns_waiting: Vec<DnsWait>,
     flows: BTreeMap<Flow, Instant>,
     next_conn: u32,
@@ -740,9 +746,21 @@ fn b64() -> base64::engine::GeneralPurpose {
 }
 
 impl Client {
-    pub fn new(cfg: Config, now: Instant) -> Result<Self, String> {
+    pub fn new(mut cfg: Config, now: Instant) -> Result<Self, String> {
+        if cfg.publish {
+            // A names client alone: a key of its own, relay only, nothing let in but its question's answers.
+            cfg.key = None;
+            cfg.relay_only = true;
+            cfg.incoming = false;
+            cfg.names = None;
+            cfg.known.clear();
+        }
         let mut c = Client::build(cfg, now)?;
-        if c.names.is_none() {
+        if c.cfg.publish {
+            c.names = None;
+            c.names_mode = true;
+            c.publisher = Some(Box::new(Member::new(&c.cfg.link.id, c.cfg.params.clone())));
+        } else if c.names.is_none() {
             c.member = Some(Box::new(MemberHost {
                 member: Member::new(&c.cfg.link.id, c.cfg.params.clone()),
                 transport: None,
@@ -795,6 +813,7 @@ impl Client {
             unix_time: self.cfg.unix_time.map(|_| self.unix(now)),
             names: None,
             params: self.cfg.params.clone(),
+            publish: false,
         };
         let mut c = Client::build(cfg, now)?;
         c.names_mode = true;
@@ -901,6 +920,7 @@ impl Client {
             names_events: VecDeque::new(),
             names,
             member: None,
+            publisher: None,
             dns_waiting: Vec::new(),
             flows: BTreeMap::new(),
             next_conn: 1,
@@ -1260,6 +1280,11 @@ impl Client {
     // ---- WebSockets ----
 
     pub fn ws_closed(&mut self, conn: u32, now: Instant) {
+        self.ws_closed_in(conn, now);
+        self.pump_publisher(now);
+    }
+
+    fn ws_closed_in(&mut self, conn: u32, now: Instant) {
         if self.state == State::Failed {
             return;
         }
@@ -1311,6 +1336,11 @@ impl Client {
     }
 
     pub fn ws_message(&mut self, conn: u32, data: &[u8], now: Instant) {
+        self.ws_message_in(conn, data, now);
+        self.pump_publisher(now);
+    }
+
+    fn ws_message_in(&mut self, conn: u32, data: &[u8], now: Instant) {
         if self.state == State::Failed {
             return;
         }
@@ -2767,6 +2797,17 @@ impl Client {
     }
 
     pub fn tick(&mut self, now: Instant) {
+        self.tick_in(now);
+        let unix = self.unix(now);
+        if let Some(p) = self.publisher.as_mut()
+            && p.deadline().is_some_and(|d| d <= now)
+        {
+            p.tick(now, unix);
+        }
+        self.pump_publisher(now);
+    }
+
+    fn tick_in(&mut self, now: Instant) {
         #[cfg(test)]
         self.check_rtcs();
         if self.state == State::Failed {
@@ -2986,7 +3027,9 @@ impl Client {
             .min()
         });
         let waiting = self.dns_waiting.iter().map(|w| w.until).min();
+        let publisher = self.publisher.as_ref().and_then(|p| p.deadline());
         [
+            publisher,
             self.wg.next_event().map(|r| r.start()),
             calls,
             self.probe_until,
@@ -3023,6 +3066,108 @@ impl Client {
         self.member
             .as_mut()
             .is_some_and(|h| h.member.load(record, unix))
+    }
+
+    /// A publisher's item to put ([`Config::publish`]): to the two servers it finds, each answer a `names-put` event.
+    /// False when it isn't a publisher, the item isn't one, or too many wait.
+    pub fn names_put(&mut self, item: &[u8], now: Instant) -> bool {
+        let Ok(item) = names::wire::Item::decode(item) else {
+            return false;
+        };
+        let Some(p) = self.publisher.as_mut() else {
+            return false;
+        };
+        let ok = p.put(item, now);
+        self.pump_publisher(now);
+        ok
+    }
+
+    /// The node's titles as they change (the page's names agent): a server's are replaced; a member with titles now
+    /// becomes a server (its member side and names client go), its names client made at once if the node runs.
+    pub fn set_titles(&mut self, titles: Vec<names::server::Title>, now: Instant) {
+        if self.names_mode || self.publisher.is_some() {
+            return;
+        }
+        let unix = self.unix(now);
+        if let Some(h) = self.names.as_mut() {
+            h.server.set_titles(titles, unix);
+            return self.pump_names(now);
+        }
+        if titles.is_empty() {
+            return;
+        }
+        if let Some(mut m) = self.member.take() {
+            m.member.stop();
+            if let Some(mut t) = m.transport.take() {
+                t.close();
+                while let Some(a) = t.poll() {
+                    if !matches!(a, Action::Event(_)) {
+                        self.actions.push_back(a);
+                    }
+                }
+            }
+        }
+        self.names = Some(Box::new(NamesHost {
+            server: Server::new(
+                &self.cfg.link.id,
+                names::server::Config {
+                    params: self.cfg.params.clone(),
+                    titles,
+                    max_names: names::server::MAX_NAMES,
+                    max_bytes: names::server::MAX_BYTES,
+                },
+                unix,
+            ),
+            transport: None,
+            retry_at: None,
+        }));
+        self.log("names: titles given: this node serves the room's names".into());
+        self.start_names(now);
+    }
+
+    /// A publisher's side and its transport (this client) talk; its answers go out as `names-put` events.
+    fn pump_publisher(&mut self, now: Instant) {
+        let Some(mut p) = self.publisher.take() else {
+            return;
+        };
+        let unix = self.unix(now);
+        if self.state == State::Running && !p.running() {
+            p.start(self.public, now);
+        }
+        if self.state == State::Failed && p.running() {
+            p.stop();
+        }
+        loop {
+            let mut moved = false;
+            while let Some(i) = self.names_events.pop_front() {
+                p.input(i, now, unix);
+                moved = true;
+            }
+            while let Some(c) = p.poll() {
+                moved = true;
+                match c {
+                    Cmd::Log(s) => self.log(format!("names: {s}")),
+                    Cmd::Store { .. } => {}
+                    c => self.names_cmd(c, now),
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        while let Some(d) = p.put_done.pop_front() {
+            let (result, item) = match d.result {
+                member::PutResult::Taken => ("taken", None),
+                member::PutResult::Better(it) => ("better", Some(hex(&it.encode()))),
+                member::PutResult::Failed => ("failed", None),
+                member::PutResult::Nobody => ("nobody", None),
+            };
+            self.event(json!({
+                "type": "names-put", "id": hex(&d.id), "server": d.server.map(|k| hex(&k)),
+                "result": result, "item": item,
+            }));
+        }
+        self.publisher = Some(p);
     }
 
     /// The names client that carries this node's registry side, if it runs.

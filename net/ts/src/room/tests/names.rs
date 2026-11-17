@@ -586,3 +586,155 @@ fn a_servers_own_name_not_public_yet_answers_its_own_address() {
     // Nobody else sees it: it isn't public.
     assert_eq!(n.ask(1, "mine", dns::AAAA).0, nx());
 }
+
+// ---- The names agent's publisher (room-names.md "The names agent") and titles as they change ----
+
+fn publisher(seed: u8) -> Config {
+    let mut c = config(seed);
+    c.publish = true;
+    c
+}
+
+impl Net {
+    /// Node `i`'s `names-put` events so far: (id, server, result, item).
+    fn put_events(&self, i: usize) -> Vec<(String, Option<String>, String, Option<String>)> {
+        (self.nodes[i].events.iter())
+            .filter(|e| e["type"] == "names-put")
+            .map(|e| {
+                (
+                    e["id"].as_str().unwrap().to_string(),
+                    e["server"].as_str().map(str::to_string),
+                    e["result"].as_str().unwrap().to_string(),
+                    e["item"].as_str().map(str::to_string),
+                )
+            })
+            .collect()
+    }
+
+    /// Runs until node `i` has `n` `names-put` events, for at most `limit`.
+    fn puts_answered(&mut self, i: usize, n: usize, limit: Duration) {
+        let start = self.now;
+        while self.put_events(i).len() < n {
+            assert!(self.now - start < limit, "{:?}", self.put_events(i));
+            self.advance(Duration::from_millis(100));
+        }
+    }
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn a_publisher_puts_a_title_to_two_servers_with_no_node_of_its_own() {
+    let mut b = Bitcoin::new(ROOM, 10);
+    let (ta, tb) = (title(&mut b, 1, "alpha"), title(&mut b, 2, "bravo"));
+    let mut n = Net::new(vec![
+        server_config(1, vec![ta.clone()]),
+        server_config(2, vec![tb.clone()]),
+    ]);
+    n.converge(
+        &[0, 1],
+        &[ta.1.id, tb.1.id].into(),
+        Duration::from_secs(120),
+    );
+    // The page's agent, no machine running: a publisher, a names client alone.
+    n.nodes
+        .push(node(Client::new(publisher(3), n.now).unwrap()));
+    n.run();
+    n.advance(Duration::from_secs(1));
+    let (_, charlie) = title(&mut b, 9, "charlie");
+    let now = n.now;
+    assert!(n.nodes[2].c.names_put(&charlie.encode(), now));
+    n.puts_answered(2, 2, Duration::from_secs(20));
+    let puts = n.put_events(2);
+    assert!(puts.iter().all(|p| p.2 == "taken"), "{puts:?}");
+    let servers: BTreeSet<Option<String>> = puts.iter().map(|p| p.1.clone()).collect();
+    assert_eq!(servers.len(), 2, "two servers");
+    for i in [0, 1] {
+        assert!(
+            n.server(i).reg.get(&charlie.id).is_some(),
+            "server {i} holds it"
+        );
+    }
+    // Its key is a fresh one, never the node key of its seed, and it opened no WebRTC.
+    let me = public(3);
+    assert!(n.by_keys.keys().all(|(s, d)| *s != me && *d != me));
+    assert_eq!(n.nodes[2].rtc_opens, 0);
+    // A worse chain (a younger claim of alpha's by another key): the server's better item comes back.
+    use crate::room::names::entry::Kind;
+    let other = b.key(8, "alpha");
+    let young = b.at(Kind::Claim, &other, "alpha", [0; 32], day(1));
+    let worse = b.item("alpha", &[young], None);
+    let now = n.now;
+    assert!(n.nodes[2].c.names_put(&worse.encode(), now));
+    n.puts_answered(2, 4, Duration::from_secs(20));
+    let better: Vec<_> = n.put_events(2).into_iter().skip(2).collect();
+    assert!(better.iter().all(|p| p.2 == "better"), "{better:?}");
+    let shown = Item::decode(&unhex(better[0].3.as_ref().unwrap())).unwrap();
+    let ids =
+        |it: &Item| -> BTreeSet<[u8; 32]> { it.entries.iter().map(|w| w.entry.id()).collect() };
+    assert_eq!(ids(&shown), ids(&ta.1), "the owner's chain");
+}
+
+#[test]
+fn a_publisher_with_nobody_serving_says_so() {
+    let mut b = Bitcoin::new(ROOM, 11);
+    let mut n = Net::new(vec![config(1), publisher(2)]);
+    n.advance(Duration::from_secs(1));
+    let (_, it) = title(&mut b, 9, "lonely");
+    let now = n.now;
+    assert!(n.nodes[1].c.names_put(&it.encode(), now));
+    n.puts_answered(1, 1, Duration::from_secs(10));
+    assert_eq!(n.put_events(1)[0].2, "nobody");
+    // Not a publisher, or not an item: refused.
+    assert!(!n.nodes[0].c.names_put(&it.encode(), now));
+    assert!(!n.nodes[1].c.names_put(b"junk", now));
+}
+
+#[test]
+fn titles_given_while_the_room_runs_make_a_member_a_server_and_change_its_registry() {
+    let mut b = Bitcoin::new(ROOM, 12);
+    let alpha = title_to(&mut b, 1, "alpha", public(1), public(1));
+    let mut n = Net::new(vec![config(1), config(2)]);
+    n.advance(Duration::from_secs(2));
+    assert!(n.nodes[0].c.names.is_none(), "a member");
+    let now = n.now;
+    n.nodes[0].c.set_titles(
+        vec![Title {
+            key: alpha.0,
+            item: alpha.1.clone(),
+        }],
+        now,
+    );
+    assert!(
+        n.nodes[0].c.member.is_none() && n.nodes[0].c.names.is_some(),
+        "a server"
+    );
+    n.advance(Duration::from_secs(4));
+    let (a, _) = n.ask(1, "alpha", dns::AAAA);
+    assert_eq!(a, aaaa(n.addr(0)));
+    // The title renewed elsewhere (the agent's): the server's registry follows.
+    use crate::room::names::entry::Kind;
+    let key = b.key(1, "alpha");
+    let last = alpha.1.entries.last().unwrap().entry.id();
+    let renew = b.at(Kind::Renew, &key, "alpha", last, day(0) - 3600);
+    let mut item = alpha.1.clone();
+    item.entries
+        .push(crate::room::names::wire::WireEntry::of(&renew));
+    let now = n.now;
+    n.nodes[0]
+        .c
+        .set_titles(vec![Title { key: alpha.0, item }], now);
+    let o = n
+        .server(0)
+        .reg
+        .get(&alpha.1.id)
+        .unwrap()
+        .owner
+        .clone()
+        .unwrap();
+    assert_eq!(o.last(), renew.id());
+}

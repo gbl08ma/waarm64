@@ -550,19 +550,28 @@ impl Server {
             #[cfg(test)]
             refuse: BTreeSet::new(),
         };
-        for t in cfg.titles {
+        s.set_titles(cfg.titles, unix);
+        s
+    }
+
+    /// This node's titles (the page's names agent keeps them): those given replace those held, each taken as stored
+    /// (the agent made and checked it), so a title's renewals, anchors and zone reach the registry as they change.
+    pub fn set_titles(&mut self, titles: Vec<Title>, unix: u64) {
+        self.titles.clear();
+        self.own.clear();
+        self.title_zones.clear();
+        for t in titles {
             let Ok(key) = SigningKey::from_bytes(&t.key) else {
                 continue;
             };
             let id = t.item.id;
-            s.titles.push((key, id));
-            s.own.insert(id);
+            self.titles.push((key, id));
+            self.own.insert(id);
             if let Some(z) = t.item.zone.clone() {
-                s.title_zones.insert(id, z);
+                self.title_zones.insert(id, z);
             }
-            s.take_trusted(t.item, unix, unix);
+            self.take_trusted(t.item, unix, unix);
         }
-        s
     }
 
     /// What the resolver answers on a server's node for `full` (relative to the room's domain, passed the rules),

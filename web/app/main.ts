@@ -118,6 +118,7 @@ await network
   .migrate()
   .catch((e: unknown) => console.warn('the network settings could not be made into connections:', e));
 void net.refresh();
+void import('../names.ts').then((n) => n.startNamesAgent()).catch((e: unknown) => console.warn('names agent:', e));
 const audio = new PageAudio();
 sound.follow(audio);
 const folders = new PageFolders({ store, me: () => machineTitle(machine) });

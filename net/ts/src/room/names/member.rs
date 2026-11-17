@@ -162,7 +162,33 @@ enum Req {
     Get([u8; 32]),
     History([u8; 32]),
     Ids(u8),
+    Put([u8; 32]),
 }
+
+/// What a server said to an item put (an owner's agent publishing its title through a names client of its own: the
+/// page's publisher, room.rs `Config::publish`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PutResult {
+    /// The server's owning chain ends at the put's entry.
+    Taken,
+    /// The server holds a better chain: its item (empty when it holds nothing of the name).
+    Better(Box<Item>),
+    /// No answer (its transfer failed, or the wait ran out).
+    Failed,
+    /// Nobody serves the registry: there was nobody to put to.
+    Nobody,
+}
+
+/// An answer to a put: the name id, the server (none for [`PutResult::Nobody`]) and what it said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PutDone {
+    pub id: [u8; 32],
+    pub server: Option<[u8; 32]>,
+    pub result: PutResult,
+}
+
+/// The most items waiting to be put at once.
+pub const MAX_PUTS: usize = 64;
 
 #[derive(Debug, Default, Clone)]
 pub struct MemberStats {
@@ -196,6 +222,9 @@ pub struct Member {
     /// The `ids` checks wanted (first bytes), and what came back: the ids servers hold under each.
     ids_wanted: BTreeSet<u8>,
     pub ids_answers: BTreeMap<u8, BTreeSet<[u8; 32]>>,
+    /// Items waiting for servers to be put to (a publisher's), and the answers that came.
+    puts: BTreeMap<[u8; 32], Item>,
+    pub put_done: VecDeque<PutDone>,
     cmds: VecDeque<Cmd>,
     pub stats: MemberStats,
     /// The clock as the last tick or input gave it.
@@ -222,6 +251,8 @@ impl Member {
             lookups: BTreeMap::new(),
             ids_wanted: BTreeSet::new(),
             ids_answers: BTreeMap::new(),
+            puts: BTreeMap::new(),
+            put_done: VecDeque::new(),
             cmds: VecDeque::new(),
             stats: MemberStats::default(),
             now: Instant::now(),
@@ -255,9 +286,13 @@ impl Member {
         self.nobody.map(|(t, _)| t)
     }
 
-    /// Whether it needs its names client: a lookup or a question under way, or an `ids` check.
+    /// Whether it needs its names client: a lookup or a question under way, an `ids` check, or a put.
     pub fn busy(&self) -> bool {
-        !self.lookups.is_empty() || self.ask.is_some() || !self.ids_wanted.is_empty()
+        !self.lookups.is_empty()
+            || self.ask.is_some()
+            || !self.ids_wanted.is_empty()
+            || !self.puts.is_empty()
+            || self.reqs.values().any(|(r, _)| matches!(r, Req::Put(_)))
     }
 
     /// A stored record (a member's, version 2), streamed in at the start: verified when it was taken, so trusted. False
@@ -364,6 +399,18 @@ impl Member {
         self.dispatch(now);
     }
 
+    /// Puts `item` to the servers held (or found): each answer comes in [`Member::put_done`]. An item of the same name
+    /// waiting replaces it. False when too many wait.
+    pub fn put(&mut self, item: Item, now: Instant) -> bool {
+        if self.puts.len() >= MAX_PUTS && !self.puts.contains_key(&item.id) {
+            return false;
+        }
+        self.puts.insert(item.id, item);
+        self.dispatch(now);
+        self.flush();
+        true
+    }
+
     /// Sends what waits for servers, or asks for servers.
     fn dispatch(&mut self, now: Instant) {
         if self.key.is_none() {
@@ -384,6 +431,14 @@ impl Member {
         for (id, history) in todo {
             for s in self.servers.clone() {
                 self.send_get(id, s, history, now);
+            }
+        }
+        for (id, item) in std::mem::take(&mut self.puts) {
+            let m = Msg::Put(item).encode(0);
+            for s in self.servers.clone() {
+                let x = self.xf.send(s, &m, now);
+                self.reqs
+                    .insert((s, x), (Req::Put(id), now + REQUEST_TIMEOUT));
             }
         }
         for first in std::mem::take(&mut self.ids_wanted) {
@@ -455,13 +510,28 @@ impl Member {
     pub fn stop(&mut self) {
         self.key = None;
         self.xf = Transfers::default();
-        self.reqs.clear();
+        for ((k, _), (r, _)) in std::mem::take(&mut self.reqs) {
+            if let Req::Put(id) = r {
+                self.put_done.push_back(PutDone {
+                    id,
+                    server: Some(k),
+                    result: PutResult::Failed,
+                });
+            }
+        }
         self.ask = None;
         self.servers.clear();
         self.servers_until = None;
         self.lookups.clear();
         self.ids_wanted.clear();
         self.next_question = None;
+        for (id, _) in std::mem::take(&mut self.puts) {
+            self.put_done.push_back(PutDone {
+                id,
+                server: None,
+                result: PutResult::Failed,
+            });
+        }
     }
 
     pub fn deadline(&self) -> Option<Instant> {
@@ -596,9 +666,16 @@ impl Member {
             "nobody serves the registry; NXDOMAIN for {} s",
             wait.as_secs()
         ));
-        // The queries that waited get NXDOMAIN now (`query` says so while it is remembered).
+        // The queries that waited get NXDOMAIN now (`query` says so while it is remembered); puts, nobody to put to.
         self.lookups.clear();
         self.ids_wanted.clear();
+        for (id, _) in std::mem::take(&mut self.puts) {
+            self.put_done.push_back(PutDone {
+                id,
+                server: None,
+                result: PutResult::Nobody,
+            });
+        }
     }
 
     fn on_serve(&mut self, from: [u8; 32], m: Msg, now: Instant, unix: u64) {
@@ -673,6 +750,18 @@ impl Member {
                 }
                 self.settle(id, now, unix);
             }
+            (Req::Put(id), m) => {
+                let result = match m {
+                    Msg::Taken => PutResult::Taken,
+                    Msg::Better(it) => PutResult::Better(Box::new(it)),
+                    _ => PutResult::Failed,
+                };
+                self.put_done.push_back(PutDone {
+                    id,
+                    server: Some(from),
+                    result,
+                });
+            }
             (Req::Ids(first), Msg::Ids(ids)) => {
                 let got = self.ids_answers.entry(first).or_default();
                 got.extend(ids.into_iter().filter(|i| i[0] == first));
@@ -692,6 +781,13 @@ impl Member {
             return;
         };
         self.drop_server(k);
+        if let Req::Put(id) = r {
+            self.put_done.push_back(PutDone {
+                id,
+                server: Some(k),
+                result: PutResult::Failed,
+            });
+        }
         if let Req::Get(id) | Req::History(id) = r {
             if let Some(l) = self.lookups.get_mut(&id) {
                 l.asked.insert(k, Said::Failed);

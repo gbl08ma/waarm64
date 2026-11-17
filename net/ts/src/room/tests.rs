@@ -132,6 +132,7 @@ fn config(seed: u8) -> Config {
         unix_time: Some(T0),
         names: None,
         params: Params::TEST,
+        publish: false,
     }
 }
 

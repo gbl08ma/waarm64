@@ -279,16 +279,16 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
 /** A room connection's node key (64 hex digits), kept in this origin's IndexedDB `waarm64-room` (docs/networking/adapters.md §2.1). */
 export type RoomIdentity = { key: string };
 const IDB = 'waarm64-room';
-/** Version 2 added `names` (the room's registry records). */
-const IDB_VERSION = 2;
+/** Version 2 added `names` (the room's registry records); 3, `owner` and `titles` (the names agent's, web/names.ts). */
+const IDB_VERSION = 3;
 
-function openIdb(): Promise<IDBDatabase> {
+/** `waarm64-room`, opened at its version (web/names.ts keeps its stores here too). */
+export function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const open = indexedDB.open(IDB, IDB_VERSION);
     open.onupgradeneeded = () => {
       const db = open.result;
-      if (!db.objectStoreNames.contains('identity')) db.createObjectStore('identity');
-      if (!db.objectStoreNames.contains('names')) db.createObjectStore('names');
+      for (const s of ['identity', 'names', 'owner', 'titles']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
     };
     open.onerror = () => reject(open.error);
     open.onsuccess = () => resolve(open.result);

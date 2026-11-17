@@ -16,6 +16,7 @@ import { Store } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
 import { profilesOf } from '../web/tailscale-state.ts';
 import { t } from '../web/i18n.ts';
+import { exportNames, importNames, memoryNamesStore, parseRoomExport, type TitleRecord } from '../web/names.ts';
 
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
@@ -192,6 +193,46 @@ test("rooms: a stored connection made with an ephemeral one's key keeps it in wa
     assert.notEqual(await used(renamed), key, 'New name: a new key');
     assert.equal(await used((await conns.get(eph.id))!), key, 'the ephemeral one keeps its own');
   }
+});
+
+test('rooms: a connection\'s export carries its names (the owners\' secret and titles), which the connection made from it in another browser holds', async () => {
+  // Two browsers: each its connections, its waarm64-room (keys, and the names agent's stores).
+  const browser = () => {
+    const { state, rooms } = fakeState();
+    const names = memoryNamesStore();
+    return { rooms, names, conns: new Connections(store(), { ...state, exportNames: (k) => exportNames(names, k), keepNames: (k, b) => importNames(names, k, b) }) };
+  };
+  const a = browser();
+  const link = 'waarm64-room:lobby';
+  const c = await a.conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  assert.equal(await a.conns.exportKey(c), '', 'no key before its first start');
+  const key = (await a.rooms.get(c.id)) ?? { key: '7'.repeat(64) };
+  a.rooms.set(c.id, key);
+  assert.equal(await a.conns.exportKey(c), key.key, 'no names: the key alone');
+  // A title registered (the agent's record, as web/names.ts keeps it).
+  await a.names.addSecret(c.room!.identityKey, '5'.repeat(64));
+  const title: TitleRecord = {
+    identityKey: c.room!.identityKey, room: 'lobby', link, name: 'test123', item: '02aa', stamps: {}, collect: {},
+    points: [{ label: null, key: 'ab'.repeat(32) }], zone: { n: 3, branch: 9, given: [] }, made: 1,
+  };
+  await a.names.put(title);
+  const exported = await a.conns.exportKey(c);
+  const parsed = parseRoomExport(exported);
+  assert.equal(parsed?.key, key.key);
+  assert.ok(parsed?.names);
+  // Pasted in another browser: the key, the owners' secret and the title are the new connection's.
+  const b = browser();
+  const d = await b.conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false, key: parsed.key, names: parsed.names } });
+  assert.deepEqual(b.rooms.get(d.id), key);
+  assert.equal(Object.hasOwn(d.room!, 'names'), false, 'not in the record');
+  assert.equal(await b.names.secret(d.room!.identityKey), '5'.repeat(64));
+  const [got] = await b.names.titles(d.room!.identityKey);
+  assert.equal(got.item, title.item);
+  assert.equal(got.name, 'test123');
+  assert.notEqual(got.zone.branch, 9, 'a branch of its own');
+  assert.deepEqual((await a.names.titles())[0].zone.given, [got.zone.branch], 'given out by the one exported');
+  assert.equal(parseRoomExport('zz'), undefined);
+  assert.deepEqual(parseRoomExport(` ${'AB'.repeat(32)} `), { key: 'ab'.repeat(32) });
 });
 
 test('pasted room keys: 64 hex digits, spaces around them ignored, lower case', () => {

@@ -21,7 +21,11 @@
 //! (tailnet.rs) on the kept node `state` (the store's entries as the page keeps them: hex); with
 //! `room`, a room's (room.rs), whose WebRTC connections come back through `ts_rtc_*`; with
 //! `room.names`, a server of the room's registry, whose stored records come back through
-//! `ts_room_names_load` before the first tick.
+//! `ts_room_names_load` before the first tick; with `room.publish`, a publisher (a names client alone, no guest: the
+//! page's names agent puts titles through it with `ts_room_names_put`, each answer a `names-put` event).
+//!
+//! The names agent's operations (`ts_names_*`, room/names/agent.rs) are pure: JSON in at `ptr`, JSON out in `ts_buf()`
+//! (its length), or minus the length of why not.
 
 use std::{cell::RefCell, collections::BTreeMap, time::Instant};
 
@@ -104,6 +108,9 @@ struct JsRoom {
     unix_time: Option<u64>,
     /// The node's titles: it serves the room's registry (room/names/server.rs).
     names: Option<JsNames>,
+    /// A publisher (room.rs `Config::publish`): a names client alone that puts the page's titles.
+    #[serde(default)]
+    publish: bool,
 }
 
 #[derive(Deserialize)]
@@ -266,6 +273,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                     unix_time: r.unix_time,
                     names: r.names.map(names_config).transpose()?,
                     params: room::names::Params::BUILT,
+                    publish: r.publish,
                 };
                 return room::Client::new(cfg, Instant::now()).map(|r| Any::Room(Box::new(r)));
             }
@@ -458,9 +466,8 @@ pub extern "C" fn ts_accept_routes(h: u32, on: u32) {
     });
 }
 
-fn names_config(n: JsNames) -> Result<room::names::server::Config, String> {
-    let titles = n
-        .titles
+fn titles_of(titles: &[JsTitle]) -> Result<Vec<room::names::server::Title>, String> {
+    titles
         .iter()
         .map(|t| {
             let item = room::names::wire::Item::decode(&unhex(&t.item)?)
@@ -470,7 +477,11 @@ fn names_config(n: JsNames) -> Result<room::names::server::Config, String> {
                 item,
             })
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, String>>()
+}
+
+fn names_config(n: JsNames) -> Result<room::names::server::Config, String> {
+    let titles = titles_of(&n.titles)?;
     Ok(room::names::server::Config {
         params: room::names::Params::BUILT,
         titles,
@@ -491,6 +502,81 @@ pub unsafe extern "C" fn ts_room_names_load(h: u32, ptr: *mut u8, len: usize) ->
     let mut ok = false;
     with_room(h, |r, _| ok = r.names_load(&data));
     ok as u32
+}
+
+/// A publisher's item to put (room/names/wire.rs, at `ptr`): 1 when it was taken to be put.
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_room_names_put(h: u32, ptr: *mut u8, len: usize) -> u32 {
+    // SAFETY: the host passes a buffer from ts_alloc(len).
+    let data = unsafe { take(ptr, len) };
+    let mut ok = false;
+    with_room(h, |r, now| ok = r.names_put(&data, now));
+    ok as u32
+}
+
+/// A room node's titles as they change (JSON: `[{key, item}]`, as the config's `names.titles`): 1 when taken.
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_room_names_titles(h: u32, ptr: *mut u8, len: usize) -> u32 {
+    // SAFETY: the host passes a buffer from ts_alloc(len).
+    let data = unsafe { take(ptr, len) };
+    let Ok(titles) = serde_json::from_slice::<Vec<JsTitle>>(&data)
+        .map_err(|e| e.to_string())
+        .and_then(|t| titles_of(&t))
+    else {
+        return 0;
+    };
+    with_room(h, |r, now| r.set_titles(titles, now));
+    1
+}
+
+/// One of the names agent's operations on the JSON at `ptr`: the length of its JSON answer in `ts_buf()`, or minus the
+/// length of why not.
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+unsafe fn names_op(op: &str, ptr: *mut u8, len: usize) -> i32 {
+    // SAFETY: the caller passes a buffer from ts_alloc(len).
+    let input = unsafe { take(ptr, len) };
+    match room::names::agent::call(op, &input, &room::names::Params::BUILT) {
+        Ok(v) => set_buf(v.to_string().into_bytes()) as i32,
+        Err(e) => -(set_buf(e.into_bytes()) as i32),
+    }
+}
+
+macro_rules! names_ops {
+    ($($export:ident => $op:literal),* $(,)?) => {$(
+        /// The names agent's operation of this name (room/names/agent.rs).
+        ///
+        /// # Safety
+        /// `ptr` and `len` as for `take`.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $export(ptr: *mut u8, len: usize) -> i32 {
+            // SAFETY: the host passes a buffer from ts_alloc(len).
+            unsafe { names_op($op, ptr, len) }
+        }
+    )*};
+}
+
+names_ops! {
+    ts_names_key => "key",
+    ts_names_make => "make",
+    ts_names_mine => "mine",
+    ts_names_sign => "sign",
+    ts_names_add => "add",
+    ts_names_pending => "pending",
+    ts_names_commitment => "commitment",
+    ts_names_finish => "finish",
+    ts_names_anchor => "anchor",
+    ts_names_zone => "zone",
+    ts_names_status => "status",
+    ts_names_judge => "judge",
+    ts_names_drop => "drop",
 }
 
 fn with_room(h: u32, f: impl FnOnce(&mut room::Client, Instant)) {

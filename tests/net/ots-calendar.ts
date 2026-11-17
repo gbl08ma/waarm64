@@ -109,10 +109,13 @@ export type OtsCalendar = {
   blocks: Block[];
   /** Calendars that answer 503. */
   down: Set<CalendarName>;
-  /** Mines `n` blocks (default 1) at the wall clock's time; the commitments waiting go into the first. */
-  mine(n?: number): Block[];
+  /** Mines `n` blocks (default 1) at the wall clock's time (or `time`, Unix seconds: a chain whose recent blocks are old,
+   * for an entry whose `ref` is); the commitments waiting go into the first. */
+  mine(n?: number, time?: number): Block[];
   /** Commitments waiting for a block. */
   waiting(): number;
+  /** The calendars lose the commitments waiting (never mined: their proofs stay pending for good). */
+  forget(): void;
   /** Requests served, by path's first part (`alice`, `explorer`, …). */
   requests: Record<string, number>;
   close(): Promise<void>;
@@ -146,7 +149,7 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
   const down = new Set<CalendarName>();
   const requests: Record<string, number> = {};
 
-  function mine(n = 1): Block[] {
+  function mine(n = 1, at?: number): Block[] {
     const made: Block[] = [];
     for (let k = 0; k < n; k++) {
       const leaves = waiting.map((h) => Buffer.from(h, 'hex'));
@@ -169,7 +172,7 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
       if (leaves.length === 1) paths[0].push({ op: 'append', arg: Buffer.alloc(0) }, { op: 'sha256' });
       const root = leaves.length === 1 ? sha256(leaves[0]) : level[0].m;
       const prev = blocks.length ? blocks[blocks.length - 1].hash : Buffer.alloc(32);
-      const time = Math.floor(Date.now() / 1000);
+      const time = at ?? Math.floor(Date.now() / 1000);
       const header = mineHeader(prev, root, time);
       const b = { height: blocks.length, header, hash: sha256d(header), time };
       blocks.push(b);
@@ -250,6 +253,7 @@ export async function startOtsCalendar(o: { port?: number; depth?: number; every
     down,
     mine,
     waiting: () => waiting.length,
+    forget: () => { waiting = []; },
     requests,
     close: () => { clearInterval(timer); return new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }); },
   };

@@ -141,7 +141,7 @@ async function selfOf(wasm: string): Promise<Extract<TsEvent, { type: 'self' }>>
   }
 }
 
-test('the shipped module runs on production\'s parameters; only the page tests\' build on the tests\'', { skip: existsSync(WASM) ? false : 'net/ts/build.sh' }, async () => {
+test('the shipped module runs on production\'s parameters; only the page tests\' build on the tests\'', { skip: existsSync(WASM) ? false : 'net/ts/build.sh' }, async () => { // i18n-ignore
   assert.equal((await selfOf(WASM)).params, 'production');
   if (!existsSync(TEST_WASM)) return console.log('# no target/net/ts-test.wasm (net/ts/build.sh --test-params): only the shipped module checked');
   assert.equal((await selfOf(TEST_WASM)).params, 'test');
@@ -150,7 +150,7 @@ test('the shipped module runs on production\'s parameters; only the page tests\'
 let browser: Browser | undefined;
 let base = '';
 let closeServer = () => {};
-const chromiumSkip = !existsSync(WASM) ? 'net/ts/build.sh' : !existsSync(process.env.CHROMIUM ?? '/usr/bin/chromium') ? 'no Chromium' : false;
+const chromiumSkip = !existsSync(WASM) ? 'net/ts/build.sh' : !existsSync(process.env.CHROMIUM ?? '/usr/bin/chromium') ? 'no Chromium' : false; // i18n-ignore
 
 test('a room\'s registry records in IndexedDB: kept by room and connection in batches, the old database upgraded, streamed into the module at the start, written before the worker goes', { skip: chromiumSkip, timeout: 60_000 }, async () => {
   const server = await startServer();

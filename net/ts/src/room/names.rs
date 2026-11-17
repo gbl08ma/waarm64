@@ -20,6 +20,7 @@
 //! Times are Unix seconds: an entry's is its anchor's block header's; `now` is the caller's
 //! clock.
 
+pub mod agent;
 pub mod anchor;
 pub mod chain;
 pub mod entry;
