@@ -530,7 +530,8 @@ fn liars_since_cost_a_fetch_each_and_lose() {
     let mut b = Bitcoin::new(ROOM, 15);
     let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
     let mut servers = vec![serving(&mut b, 1, &[&alpha])];
-    for k in 0..3u8 {
+    // More liars than a contest fetches at once: the owner's run comes only once theirs are checked.
+    for k in 0..10u8 {
         let fake = title(&mut b, 70 + k, "alpha", 2, &[], [0x66; 32], [0x66; 32]);
         let mut s = serving(&mut b, 10 + k, &[&fake]);
         s.lie_since = Some(t(300) + k as u32);
@@ -538,9 +539,10 @@ fn liars_since_cost_a_fetch_each_and_lose() {
     }
     let mut bus = Bus::new(servers, member());
     let (a, took) = bus.resolve("alpha");
-    eprintln!("three liars: {took:?}, {} fetches", bus.m.stats.fetches);
+    eprintln!("ten liars: {took:?}, {} fetches", bus.m.stats.fetches);
     assert_eq!(a, Answer::Node([0xa1; 32]));
-    assert_eq!(bus.m.stats.fetches, 4, "each liar, then the owner's");
+    assert_eq!(bus.m.stats.fetches, 11, "each liar, then the owner's");
+    assert_eq!(bus.m.kept[&alpha.id].kept.earliest, t(20));
 }
 
 /// In a room of two servers a member holds both ("who serves?", for the dialog's check here): a round that brings one
