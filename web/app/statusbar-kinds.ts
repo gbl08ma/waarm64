@@ -107,6 +107,13 @@ export const KINDS = {
     look: 'text',
     about: 'statusbar:statusbar-kinds.kind.irqs.about',
   },
+  tlb: {
+    name: 'statusbar:statusbar-kinds.kind.tlb',
+    group: 'cpu',
+    icon: 'transform',
+    look: 'text',
+    about: 'statusbar:statusbar-kinds.kind.tlb.about',
+  },
   blocks: {
     name: 'statusbar:statusbar-kinds.kind.blocks',
     group: 'cpu',

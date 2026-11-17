@@ -162,6 +162,7 @@
   }
   /* An icon alone in a frame: a square of a control's height. */
   .square:is(.plain, .bordered, .primary, .danger) {
+    justify-content: center;
     min-width: var(--control-h);
     min-height: var(--control-h);
     padding: 0;

@@ -606,5 +606,137 @@
   "power-actions.shuttingDown.refused": {
     "message": "The guest didn't shut down (the message bar says why). Power off the machine now, like pulling the plug? Unsaved work in the guest will be lost. Cancel keeps it running, and the change isn't made.",
     "note": "Question asked before a change on the Machines page (a disk's export, new settings, another machine opened, an edit that needs the machine off) when the guest was asked to shut down and refused or didn't answer."
+  },
+  "RamWindow.title": {
+    "message": "RAM",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). The window's title."
+  },
+  "RamWindow.reading": {
+    "message": "Looking at the RAM…",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). In place of the map until the first look at the RAM is done; and the line under the map while another run's RAM is looked at, the map before dimmed meanwhile."
+  },
+  "RamWindow.scale": {
+    "message": "1 square = {{size}}",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). Over the map: how much of the RAM each square is. {{size}} is a size (4 MiB, 16 MiB, 1 GiB): a larger window has smaller squares."
+  },
+  "RamWindow.live_one": {
+    "message": "Updated every second",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). Over the map, beside a green light: how often the map looks at the RAM again ({{count}} seconds, at least 1). A larger RAM takes longer to look at, so it is looked at less often."
+  },
+  "RamWindow.live_other": {
+    "message": "Updated every {{count}} seconds",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). Over the map, beside a green light: how often the map looks at the RAM again ({{count}} seconds). A larger RAM takes longer to look at, so it is looked at less often."
+  },
+  "RamWindow.live.title": {
+    "message": "The map looks at the RAM again and again while the machine runs, as often as it can while taking little of the computer's time. It doesn't show the guest's reads and writes, only what changed between two looks.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). The tooltip of the \"Updated every … seconds\" sign over the map."
+  },
+  "RamWindow.map": {
+    "message": "Map of the machine's RAM",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it). The spoken name of the map (a grid of squares; the arrow keys move between them, Enter pins one)."
+  },
+  "RamWindow.pinned": {
+    "message": "Pinned square",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the pinned square's details, in a small window of its own beside the map after a click on a square. The window's title."
+  },
+  "RamDetails.prev": {
+    "message": "Previous 4 MiB",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the pinned square's details, in a small window of its own beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the left arrow button that shows the range before."
+  },
+  "RamDetails.next": {
+    "message": "Next 4 MiB",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the pinned square's details, in a small window of its own beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the right arrow button that shows the range after."
+  },
+  "RamDetails.step": {
+    "message": "{{at}} of {{count}}",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the pinned square's details, in a small window of its own beside the map after a click on a square. A square that covers several ranges of 4 MiB: between the arrow buttons, which of the square's {{count}} ranges is shown ({{at}}, from 1)."
+  },
+  "RamDetails.pages": {
+    "message": "Pages of 4 KiB in this range",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the pinned square's details, in a small window of its own beside the map after a click on a square. The spoken name of the small map of the range's 1,024 pages of 4 KiB (32 by 32)."
+  },
+  "ram-source.notRunning": {
+    "message": "The RAM map shows the RAM of a machine running in this tab. Start the machine to see it.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it), in place of the map: no machine runs in this tab (it stopped, or hasn't started)."
+  },
+  "ram-source.noAnswer": {
+    "message": "Looking at the RAM took too long.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it), in place of the map: the running machine didn't answer in time. The map asks again."
+  },
+  "ram-look.legend.zero": {
+    "message": "All zeros",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the legend under the map, beside a square drawn as the map draws it. A square whose part of the RAM holds only zeros: memory the guest never wrote, or gave back."
+  },
+  "ram-look.legend.some": {
+    "message": "Some data",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the legend under the map, beside a square drawn as the map draws it. A square with some pages that hold data (anything but zeros: the faintest of four shades, any page at all)."
+  },
+  "ram-look.legend.full": {
+    "message": "Full",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the legend under the map, beside a square drawn as the map draws it. A square whose every page holds data (the strongest shade)."
+  },
+  "ram-look.legend.changed": {
+    "message": "Changed since the last look",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the legend under the map, beside a square drawn as the map draws it. A square with an inner square: pages there changed between the map's last two looks at the RAM (in four shades of how many)."
+  },
+  "ram-look.legend.cleared": {
+    "message": "Cleared since the last look",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the legend under the map, beside a square drawn as the map draws it. A square with a hollow inner square: pages there held data at the look before and only zeros now (memory the guest freed and gave back, or zeroed), and none changed otherwise."
+  },
+  "ram-look.at": {
+    "message": "Guest physical addresses {{from}} to {{to}}.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. Where the square (or the range) is in the guest's physical address space: {{from}} and {{to}} are hexadecimal addresses (0x4000_0000), {{to}} the address just past its end."
+  },
+  "ram-look.data_one": {
+    "message": "{{data}} of its page holds data.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. How many of its {{count}} pages of 4 KiB hold anything but zeros ({{data}}). Used only for a single page."
+  },
+  "ram-look.data_other": {
+    "message": "{{data}} of its {{count}} pages hold data.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. How many of its {{count}} pages of 4 KiB hold anything but zeros ({{data}})."
+  },
+  "ram-look.zero_one": {
+    "message": "Its page holds only zeros.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. None of its pages of 4 KiB holds data. Used only for a single page."
+  },
+  "ram-look.zero_other": {
+    "message": "All its {{count}} pages hold only zeros.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. None of its {{count}} pages of 4 KiB holds data: memory the guest never wrote, or gave back."
+  },
+  "ram-look.unchanged": {
+    "message": "Nothing changed since the last look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. From the map's second look at the RAM on: none of its pages changed between the last two looks."
+  },
+  "ram-look.changed_one": {
+    "message": "1 page changed since the last look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. From the map's second look at the RAM on: how many of its pages ({{count}}) hold other data than at the look before."
+  },
+  "ram-look.changed_other": {
+    "message": "{{count}} pages changed since the last look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. From the map's second look at the RAM on: how many of its pages ({{count}}) hold other data than at the look before."
+  },
+  "ram-look.cleared_one": {
+    "message": "1 page was cleared since the last look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. From the map's second look at the RAM on: how many of its pages ({{count}}) held data at the look before and only zeros now (memory the guest freed and gave back, or zeroed)."
+  },
+  "ram-look.cleared_other": {
+    "message": "{{count}} pages were cleared since the last look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; also the first sentences of the pinned square's details (one range of 4 MiB, page by page). One of its sentences. From the map's second look at the RAM on: how many of its pages ({{count}}) held data at the look before and only zeros now (memory the guest freed and gave back, or zeroed)."
+  },
+  "ram-look.whole": {
+    "message": "{{size, bytes}} of {{total, bytes}} hold data.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer is on no square, which tells what the RAM holds as a whole. One of its sentences. {{size}} is how much of the RAM's pages hold anything but zeros, {{total}} the RAM's size. Memory the guest frees keeps its data until the guest gives it back."
+  },
+  "ram-look.wholeChanged": {
+    "message": "{{size, bytes}} changed and {{cleared, bytes}} were cleared since the last look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer is on no square, which tells what the RAM holds as a whole. One of its sentences. From the map's second look on: {{size}} is how much of the RAM holds other data than at the look before, {{cleared}} how much held data then and only zeros now."
+  },
+  "ram-look.firstLook": {
+    "message": "Changes show from the next look.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer is on no square, which tells what the RAM holds as a whole. One of its sentences. Only after the map's first look at the RAM: what changed is known from the second."
+  },
+  "ram-look.hint": {
+    "message": "Point at a square to see what it holds. Click it to see its pages.",
+    "note": "The RAM map (a floating window opened by clicking RAM in the status bar while the machine runs in this tab: the running machine's RAM as a grid of squares, each a part of it): the line under the map while the pointer is on no square, which tells what the RAM holds as a whole. One of its sentences. Its last sentence: how to use the map."
   }
 }

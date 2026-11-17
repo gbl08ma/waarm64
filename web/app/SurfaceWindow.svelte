@@ -3,10 +3,11 @@
   one. In its title bar the overlay laid over the disk ("the disk alone" or one of the disk's overlays: opened from a
   machine's Disks tab it starts on that attachment's); under it the scale ("1 square = 16 MiB"), whether the map is live
   (the machine on this page runs with the disk so) or read from this browser's storage (Refresh), the grid
-  (BlockGrid.svelte), the legend (SurfaceLegend.svelte), a line with the numbers of the square pointed at, and the
-  square clicked (SurfaceDetails.svelte). The numbers come from web/app/surface-source.ts, asked by
-  web/app/surface-poll.svelte.ts; the looks from web/app/surface-look.ts. Mounted by App.svelte while
-  `surfaceWindow.open` says (web/app/areas/surface.svelte.ts).
+  (BlockGrid.svelte), the legend (SurfaceLegend.svelte) and a line with the numbers of the square pointed at; the square
+  clicked opens in a window of its own beside it (SurfaceDetails.svelte), so the map keeps its room and its scale (a
+  click on another square shows that one there; on the same one, or its window's Close, unpins it). The numbers come
+  from web/app/surface-source.ts, asked by web/app/surface-poll.svelte.ts; the looks from web/app/surface-look.ts.
+  Mounted by App.svelte while `surfaceWindow.open` says (web/app/areas/surface.svelte.ts).
 -->
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
@@ -84,6 +85,16 @@
   /** The squares' sizes: the room is counted at 10 px (so the scale), and a small disk's few squares grow to 24 px. */
   const SIZES = { min: 10, max: 24, gap: 1 };
   const kind = $derived(viewOf(surface, disk?.kind, !!chosen, poll.live));
+  let mapWindow = $state<HTMLElement>();
+  /** The pinned square's window opens beside the map's: on its right if there's room, else on its left, else over it. */
+  function besideMap(s: { w: number; h: number }) {
+    const r = mapWindow?.getBoundingClientRect();
+    if (!r) return { x: innerWidth - s.w, y: 0 };
+    const GAP = 8;
+    const x =
+      r.right + GAP + s.w <= innerWidth ? r.right + GAP : r.left - GAP - s.w >= 0 ? r.left - GAP - s.w : r.right - s.w;
+    return { x, y: r.top };
+  }
 
   let hover = $state<number>();
   /** The square pinned, by its first byte (so it stays where it was when the squares get larger or smaller). */
@@ -158,6 +169,7 @@
   min={{ w: 360, h: 300 }}
   size={{ w: 720, h: 520 }}
   onclose={() => surfaceWindow.close()}
+  bind:ref={mapWindow}
 >
   {#snippet head()}
     <select
@@ -195,41 +207,48 @@
       >
     {/if}
   </div>
-  <div class="main">
-    <div class="map" data-stale={poll.stale ? '' : undefined}>
-      <BlockGrid
-        cells={look?.cells ?? 0}
-        sizes={SIZES}
-        rim={look?.rim ?? EMPTY}
-        core={look?.core ?? EMPTY}
-        flash={look?.flash}
-        tick={look?.tick}
-        mark={look?.mark}
-        {pinned}
-        label={t('disks:SurfaceWindow.map', { name: title })}
-        onroom={room}
-        onhover={(i: number | undefined) => (hover = i)}
-        onpick={(i: number) => {
-          if (surface) pinnedAt = pinned === i ? undefined : i * surface.cellBytes;
-        }}
-      />
-      {#if !surface && (poll.why !== undefined || poll.asking)}
-        <div class="why" data-field="surface-why">
-          {poll.why ? text(poll.why) : t('disks:SurfaceWindow.reading')}
-        </div>
-      {/if}
-    </div>
-    {#if surface && pinned !== undefined && !poll.stale}
-      <!-- A new one for another square or another source: its first range, asked again. -->
-      {#key `${String(pinned)} ${choiceKey(choice, disk)}`}
-        <SurfaceDetails {surface} cell={pinned} {kind} {poll} onclose={() => (pinnedAt = undefined)} />
-      {/key}
+  <div class="map" data-stale={poll.stale ? '' : undefined}>
+    <BlockGrid
+      cells={look?.cells ?? 0}
+      sizes={SIZES}
+      rim={look?.rim ?? EMPTY}
+      core={look?.core ?? EMPTY}
+      flash={look?.flash}
+      tick={look?.tick}
+      mark={look?.mark}
+      {pinned}
+      label={t('disks:SurfaceWindow.map', { name: title })}
+      onroom={room}
+      onhover={(i: number | undefined) => (hover = i)}
+      onpick={(i: number) => {
+        if (surface) pinnedAt = pinned === i ? undefined : i * surface.cellBytes;
+      }}
+    />
+    {#if !surface && (poll.why !== undefined || poll.asking)}
+      <div class="why" data-field="surface-why">
+        {poll.why ? text(poll.why) : t('disks:SurfaceWindow.reading')}
+      </div>
     {/if}
   </div>
   {#if surface}<SurfaceLegend {kind} />{/if}
   <div class="line" data-field="surface-line">{line}</div>
   <div class="sr" aria-live="polite">{spoken}</div>
 </FloatingWindow>
+{#if surface && pinned !== undefined && !poll.stale}
+  <FloatingWindow
+    id="surface-square"
+    title={t('disks:SurfaceWindow.pinned')}
+    fit
+    size={{ w: 230, h: 420 }}
+    at={besideMap}
+    onclose={() => (pinnedAt = undefined)}
+  >
+    <!-- A new one for another square or another source: its first range, asked again. -->
+    {#key `${String(pinned)} ${choiceKey(choice, disk)}`}
+      <SurfaceDetails {surface} cell={pinned} {kind} {poll} />
+    {/key}
+  </FloatingWindow>
+{/if}
 
 <style>
   .status {
@@ -248,16 +267,9 @@
     align-items: center;
     gap: var(--space-2);
   }
-  .main {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    gap: var(--space-4);
-  }
   .map {
     position: relative;
     flex: 1;
-    min-width: 0;
     min-height: 0;
   }
   /* The source before's picture, until the new one's first answer: dimmed, so it isn't read as this view. */

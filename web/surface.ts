@@ -8,7 +8,7 @@ import type { MapLeaves } from './overlay.ts';
 import type { Msg } from './msg.ts';
 import type { Allocation } from './qcow2.ts';
 
-/** A surface: something made of equal units (a disk's 4 KiB blocks, later RAM's pages), seen as `cells` cells. */
+/** A surface: something made of equal units (a disk's 4 KiB blocks, RAM's pages: web/ram-scan.ts), seen as `cells` cells. */
 export type Surface = {
   /** Bytes spanned (the largest layer's), a cell's bytes (the last may be short) and a unit's. */
   size: number;
@@ -67,10 +67,19 @@ export type RangeDetail = {
 };
 export type InspectQuery =
   | { kind: 'disk-surface'; disk: number; cells: number; activity?: boolean }
-  | { kind: 'disk-range'; disk: number; range: number; content?: boolean };
+  | { kind: 'disk-range'; disk: number; range: number; content?: boolean }
+  /** The guest's RAM (web/ram-scan.ts): a new pass, seen in at most `cells` cells; a range of the last pass. */
+  | { kind: 'ram-surface'; cells: number }
+  | { kind: 'ram-range'; range: number };
+/** Where RAM's map offsets are in the guest's physical address space: `size` bytes from map offset `off` at `pa`. */
+export type RamPlace = { off: number; pa: number; size: number };
 export type InspectAnswer =
   | { kind: 'disk-surface'; surface: Surface }
   | { kind: 'disk-range'; detail: RangeDetail }
+  /** RAM's: layers `ram` (pages with data) and, from the second pass, `changed` (web/ram-scan.ts `RamScan.surface`). */
+  | { kind: 'ram-surface'; surface: Surface; layout: RamPlace[] }
+  /** RAM's: `blocks` per page as web/ram-scan.ts `RAM_PAGE` says. */
+  | { kind: 'ram-range'; detail: RangeDetail }
   | { kind: 'none'; why?: Msg };
 
 /** A unit: a disk's block. */
@@ -481,10 +490,10 @@ export function carryActivity(prev: Pick<Surface, 'activity' | 'cellBytes'>, s: 
 export function answerBuffers(a: InspectAnswer): ArrayBuffer[] {
   const out = new Set<ArrayBuffer>();
   const add = (x: Uint8Array | Uint32Array | undefined) => { if (x && x.buffer instanceof ArrayBuffer && x.byteLength === x.buffer.byteLength) out.add(x.buffer); };
-  if (a.kind === 'disk-surface') {
+  if (a.kind === 'disk-surface' || a.kind === 'ram-surface') {
     add(a.surface.activity);
     for (const l of a.surface.layers) [l.held, l.zero, l.unknown, l.kept].forEach(add);
-  } else if (a.kind === 'disk-range') [a.detail.blocks, a.detail.kept].forEach(add);
+  } else if (a.kind === 'disk-range' || a.kind === 'ram-range') [a.detail.blocks, a.detail.kept].forEach(add);
   return [...out];
 }
 

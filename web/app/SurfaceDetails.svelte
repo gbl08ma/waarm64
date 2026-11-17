@@ -1,5 +1,6 @@
 <!--
-  A disk surface window's pinned square (SurfaceWindow.svelte): one 4 MiB range of it block by block (its 1,024 blocks of
+  A disk surface window's pinned square, in a window of its own beside the map (SurfaceWindow.svelte), so the map keeps
+  its room and its scale: one 4 MiB range of it block by block (its 1,024 blocks of
   4 KiB as a 32 × 32 map: the disk's, not examined, the overlay's, zeroed, past the end, a remote image's blocks kept in
   this browser ticked), a stepper through the ranges when the square
   covers several, what they hold and in how many runs their store keeps them (its fragmentation), and Check contents,
@@ -15,8 +16,8 @@
   import type { RangeDetail, Surface } from '../surface.ts';
   import { text, t, type Msg } from '../i18n.ts';
 
-  type Props = { surface: Surface; cell: number; kind: ViewKind; poll: SurfacePoll; onclose: () => void };
-  let { surface, cell, kind, poll, onclose }: Props = $props();
+  type Props = { surface: Surface; cell: number; kind: ViewKind; poll: SurfacePoll };
+  let { surface, cell, kind, poll }: Props = $props();
 
   /** A block is 5 px with a 1 px gap: 32 of them in a row. */
   const SIZES = { min: 5, max: 5, gap: 1 };
@@ -49,19 +50,6 @@
 </script>
 
 <section class="details" data-range={range} data-loaded={detail ? '' : undefined}>
-  <div class="bar">
-    <strong>{t('disks:SurfaceDetails.title')}</strong>
-    <span class="grow"></span>
-    <Button
-      variant="plain"
-      icon="x"
-      iconSize={14}
-      data-action="surface-unpin"
-      aria-label={t('disks:SurfaceDetails.close')}
-      title={t('disks:SurfaceDetails.close')}
-      onclick={onclose}
-    />
-  </div>
   {#if ranges.count > 1}
     <div class="stepper">
       <Button
@@ -122,29 +110,18 @@
 </section>
 
 <style>
+  /* As wide as the block map: its window takes its size from it, and the words wrap to the map's width. */
   .details {
-    flex: none;
-    width: 204px;
+    width: 196px;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    min-height: 0;
-    overflow-y: auto;
     font-size: var(--text-sm);
   }
-  .bar,
   .stepper {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-  }
-  .bar strong {
-    font-size: var(--text-sm);
-  }
-  .grow {
-    flex: 1;
-  }
-  .stepper {
     color: var(--text-dim);
   }
   /* 32 blocks of 5 px, 31 gaps of 1 px, the grid's 2 px margin each side, and a pixel to spare (a box measured a hair

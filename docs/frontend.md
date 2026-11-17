@@ -13,7 +13,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/theme/tokens.css`, `web/app/theme/base.css` | the design tokens (colors, space, text, radii, shadows, control heights, by role) and the element defaults (the reset, form controls, `.sr`): the page's only global styles ([frontend-code.md](frontend-code.md) §1) |
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Step`/`Steps`, `Disclosure`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
-| `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
+| `web/app/App.svelte`, `MessageBar.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
 | `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-shape.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
@@ -254,7 +254,7 @@ from the working directory).
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
 overlays, kept snapshots, three connections, a folder), then captures each state that needs no guest as
 `bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
-machine can have shown through its areas' state), the message bar (warn, error), the Machines page's panes and a machine's tabs
+machine can have shown through its areas' state), the message bar (warn, error, info), the Machines page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
 page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
 page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
@@ -358,8 +358,9 @@ the network's, disks' and USB's in `statusbar-traffic.ts`, with the received and
 a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#state[data-state]` stays, hidden, for the
 tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor (a chip of its bar `StatusChip.svelte`, its palette `StatusPalette.svelte`, its chosen chip's settings `StatusOptions.svelte`, its drags `status-drag.svelte.ts`); what both draw besides the statuses (the power state, the mouse and keys, the adapters' states) is `areas/status-live.ts` `liveNow`.
 - **Elements:** power state, [Guest OS](ui:statusbar:statusbar-kinds.kind.os) (the guest's os-release's name, once its
-  agent named it: devices.md "The guest's OS"), vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
-  IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
+  agent named it: devices.md "The guest's OS"), vCPUs, RAM (a link to the RAM map while a machine runs in this tab:
+  "RAM's map"), uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
+  IRQ/s, the TLB (its misses and flushes a second, all vCPUs, a process switch's drop of its translations a flush too: the counters of docs/abi.md, `statusbar-mmu.ts`), blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
   in and out as the guest sees them, counted as the xHCI's transfers complete, `web/usb.ts`); the renderer (3D or 2D,
   WebGL2 or a canvas, amber when WebGL2 is software; [Framebuffer](ui:statusbar:statusbar-graphics.gpu.framebuffer) on a machine
@@ -404,11 +405,16 @@ Svelte's proxy of it and never equals it (compared with it, a closed wait stayed
 Clicking OK is a user activation, so a file picker or a permission
 request after it still works. Tests answer them by clicking (`tests/page-ask.ts` `answerAsks`).
 
-**The message bar** (under the toolbar) says what stops a machine (below, "Errors") and what happened: it has a close
-button, and a notice or error that leaves the machine as it was (a snapshot kept or saved, or not; a disk saved or not
-from another machine; changes loaded into a machine that's off) clears itself after 30 s (`notify`). A problem that
-keeps the machine from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it
-gives way to it again, with its actions, when it clears.
+**The message bar** (at the top, under the toolbar) says what stops a machine (below, "Errors") and what happened. It
+floats over the machine rather than taking a row of the page: the screen keeps its size while it shows (a bar that
+pushed the screen down made a guest that follows its display's size resize twice, and one that doesn't scaled and
+blurred). Over the Machines page, which has no screen, it takes its row again (floating, it hid the panes' buttons). It has a close button. A notice that leaves the machine as it was (`notify`) is `info` when something was
+done (a snapshot kept or saved; a disk saved from another machine; changes loaded into a machine that's off; a disk
+grown; the guest asleep): green, it closes itself after 15 s, which a ring around the close button runs down (paused
+while the pointer is on the bar, and in a hidden tab, CSS animations being). A notice that's a warning or an error (a
+save that failed, the guest that refused a soft power-off) stays until it's closed. A problem that keeps the machine
+from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it gives way to it
+again, with its actions, when it closes.
 
 ## The Machines page
 
@@ -553,8 +559,11 @@ was (on the screen).
   answer (`SurfacePoll.stale`). **The overlay picker**
   says what each overlay holds from its record, but the one shown live from the answer (its blocks with data × 4 KiB):
   the record keeps the numbers of the run before until the machine stops.
-- **A click pins a square** (`SurfaceDetails.svelte`): one 4 MiB range of it block by block (its 1,024 blocks as a
-  32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
+- **A click pins a square** (`SurfaceDetails.svelte`), in a small window of its own
+  ([Pinned square](ui:disks:SurfaceWindow.pinned), a `fit` `ui/FloatingWindow.svelte`: sized by its content, its place
+  not remembered), opened beside the map's (on its right if there's room, else on its left), so the map keeps its room
+  and its scale; a click on another square shows that one in it, on the same square or its Close unpins it. It shows
+  one 4 MiB range of the square block by block (its 1,024 blocks as a 32 × 32 map), arrows through the ranges of a square that covers several, what they hold and in how many pieces of
   consecutive blocks this browser's storage keeps them (the runs of slots of web/surface.ts `RangeDetail`: how
   fragmented it is there; blocks under a qcow2's table not read yet hatched, not examined, and a remote image's blocks
   kept in this browser ticked), and **[Check contents](ui:disks:SurfaceDetails.check)**, which reads the range's blocks of
@@ -598,6 +607,44 @@ was (on the screen).
   after the machine on this page stopped, a refusal that the files are in use is asked again for a few seconds (the
   device worker lets them go late). The grid's room is asked for again once a resize settles (150 ms).
 - `window.__surface` is the tests' view of it (web/app/hooks.ts).
+
+### RAM's map
+
+While a machine runs in this tab, the status bar's RAM element is a link (`StatusBar.svelte`; a press leaves the
+keyboard's focus on the screen) that opens the running machine's RAM as a block map in a floating window
+(`RamWindow.svelte`, the disk surface window's pieces: `ui/FloatingWindow.svelte`, its place remembered under
+`windows.ram`, `ui/BlockGrid.svelte`, `SurfaceLegend.svelte`, `surface-poll.svelte.ts`). It is open independently of a
+disk's window; `areas/ram.svelte.ts` says whether it is, and `App.svelte` mounts it beside the disk's, so it stays
+over the machine and the Machines page.
+
+- **What it shows**: all of RAM (memory 0's, then each spill memory's, one after another), a square 4 MiB times the
+  smallest power of two for which it fits the window's room, as for a disk. A square's **rim** is how many of its 4 KiB
+  pages hold anything but zeros ([All zeros](ui:machine:ram-look.legend.zero), four shades to
+  [Full](ui:machine:ram-look.legend.full)); its **core**, from the second look on, how many changed since the look
+  before (other data, or written from zeros), hollow where pages were only cleared (data then, zeros now). The
+  balloon's free page reporting zeroes the memory the guest gives back (devices.md "balloon"), so a page with data is
+  roughly memory in use, plus freed memory not given back yet. The line under the map says how much holds data and
+  changed as a whole, or the pointed square's guest physical addresses (`0x4000_0000`) and counts
+  (`ram-look.ts`); a click pins a square in a window of its own (`RamDetails.svelte`): one 4 MiB range page by page
+  (32 × 32), asked again after each look. Words in the `machine` catalog (`RamWindow`, `RamDetails`, `ram-look`,
+  `ram-source`).
+- **No reads and writes** are shown, unlike a disk's: compiled code touches RAM directly, and a hook on that path
+  would cost every access. The map looks at RAM itself instead, pass after pass: nothing runs while it's closed.
+- **Where the numbers come from**: `inspect` with `ram-surface {cells}` (a new pass) or `ram-range {range}` (the last
+  pass's) to the run's worker (`ram-source.ts`), which sends them to a scanner worker of its own
+  (`worker-ram.ts`, `ram-scan-worker.ts`): started at the first such query and handed the machine's RAM where it lies
+  (its shared buffers and `Vm.layout`, the parts' guest addresses), ended after 20 s without one, at the machine's
+  stop, or for another machine. A pass (web/ram-scan.ts `RamScan`) reads every page: a zero page whole, a page with
+  data whole for its fingerprint (four lanes of sums and sums of sums, 4 bytes a page kept for the next pass). Its
+  cost is the reading: ~0.1 s a GiB never written (untouched memory reads the host's zero page and isn't committed by
+  being read: docs/backlog.md's measurement), ~0.35 s a GiB with data (Node on a cloud container's x86_64; a Debian
+  guest's 1 GiB took ~0.2 s). Nothing touches the vCPUs, the machine worker or the devices.
+- **When it asks**: once a second at most, stretched so the passes take under 1/8 of the time (`ramDelay`: the next
+  ask ≥ 8 × the pass's `cost`), only while the page is visible; the window says how often ([Updated every 2
+  seconds](ui:machine:RamWindow.live_other)). A 4 GiB RAM full of data looks every ~12 s. While no machine runs here,
+  the window says so ([The RAM map shows the RAM of a machine running in this tab. Start the machine to see
+  it.](ui:machine:ram-source.notRunning)) and RAM isn't a link.
+- `window.__ram` is the tests' view of it (web/app/hooks.ts).
 
 ### About
 
@@ -667,8 +714,8 @@ Page → worker:
 - `inspect {id, query}`: a question about the running machine's surfaces (web/surface.ts `InspectQuery`; the disk
   surface visualizer, docs/plans/surface.md). The worker sends it to whoever answers its kind: a `disk-*` query to the
   disk's device in the device worker (`Vm.inspect`: `query.disk` is the disk's place among the machine's disks, slot
-  order), which answers from the maps it has in memory; any other kind, or no machine, is answered `{kind: 'none'}`.
-  Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
+  order), which answers from the maps it has in memory; a `ram-*` query to the RAM map's scanner worker ("RAM's map":
+  `worker-ram.ts`); any other kind, or no machine, is answered `{kind: 'none'}`. Answered by `inspected {id, answer}` (its arrays transferred). A `disk-surface` query with `activity` puts the
   device's activity wrapper on for ~3 s (devices.md "blk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
@@ -743,7 +790,7 @@ prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3:
 
 ## Errors
 
-What stops a machine is said in the message bar under the toolbar: what happened, why, and what to do, with
+What stops a machine is said in the message bar at the top: what happened, why, and what to do, with
 buttons for the actions that apply. Checked on the page before a worker starts:
 
 - **No cross-origin isolation** (`crossOriginIsolated` false: served without COOP/COEP, or from

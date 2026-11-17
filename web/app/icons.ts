@@ -5,6 +5,7 @@ import IconArrowLeft from '@tabler/icons-svelte-runes/icons/arrow-left';
 import IconArrowUp from '@tabler/icons-svelte-runes/icons/arrow-up';
 import IconAspectRatio from '@tabler/icons-svelte-runes/icons/aspect-ratio';
 import IconBolt from '@tabler/icons-svelte-runes/icons/bolt';
+import IconTransform from '@tabler/icons-svelte-runes/icons/transform';
 import IconCheck from '@tabler/icons-svelte-runes/icons/check';
 import IconChevronDown from '@tabler/icons-svelte-runes/icons/chevron-down';
 import IconClipboard from '@tabler/icons-svelte-runes/icons/clipboard';
@@ -75,6 +76,7 @@ export const ICONS = {
   'arrow-up': IconArrowUp,
   'aspect-ratio': IconAspectRatio,
   bolt: IconBolt,
+  transform: IconTransform,
   check: IconCheck,
   'chevron-down': IconChevronDown,
   clipboard: IconClipboard,

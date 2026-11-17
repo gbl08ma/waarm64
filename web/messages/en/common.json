@@ -1,5 +1,5 @@
 {
-  "App.message.close": {
+  "MessageBar.close": {
     "message": "Close",
     "note": "Tooltip and screen-reader name of the × button at the right of the message bar (under the toolbar): it dismisses the message shown."
   },

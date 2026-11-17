@@ -160,25 +160,32 @@ test('finding 7: a kept snapshot restored during a save says to wait, and asks n
   await page.close();
 });
 
-test("finding 8: a notice's end brings back the stopped machine's error and its actions", { timeout: 60_000 }, async () => {
+test("finding 8: a notice's end (an info notice's countdown, or closing an error's) brings back the stopped machine's error and its actions", { timeout: 60_000 }, async () => {
   const page = await browser.newPage();
-  await page.clock.install();
   await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
-  await page.evaluate(async () => {
+  const bars = await page.evaluate(async () => {
     const { Messages } = await import('/web/app/run/messages.ts' as string);
     const { messageBar } = await import('/web/app/areas/message-bar.svelte.ts' as string);
     const messages = new Messages({ spec: {} }, () => undefined);
+    const bar = () => ({ text: messageBar.text, actions: messageBar.actions.map((a: { label: string }) => a.label), kind: messageBar.kind, counts: !!messageBar.countdown });
     const retry = { label: 'action-1', run() {} };
     messages.setState('failed', 'failure-1', [retry]);
-    messages.notify('notice-1', 'error');
-    (window as unknown as { __bar: unknown }).__bar = messageBar;
+    messages.notify('notice-1');
+    const info = bar();
+    messageBar.countdown.end(); // the bar's ring ran down
+    const afterInfo = bar();
+    messages.notify('notice-2', 'error');
+    const error = bar();
+    messages.dismiss();
+    return { info, afterInfo, error, afterError: bar() };
   });
-  await page.clock.runFor(31_000);
-  const bar = await page.evaluate(() => {
-    const b = (window as unknown as { __bar: { text: string; actions: { label: string }[]; kind: string } }).__bar;
-    return { text: b.text, actions: b.actions.map((a) => a.label), kind: b.kind };
+  const failed = { text: 'failure-1', actions: ['action-1'], kind: 'error', counts: false };
+  assert.deepEqual(bars, {
+    info: { text: 'notice-1', actions: [], kind: 'info', counts: true },
+    afterInfo: failed,
+    error: { text: 'notice-2', actions: [], kind: 'error', counts: false },
+    afterError: failed,
   });
-  assert.deepEqual(bar, { text: 'failure-1', actions: ['action-1'], kind: 'error' });
   await page.close();
 });
 

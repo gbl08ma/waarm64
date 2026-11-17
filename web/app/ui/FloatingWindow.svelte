@@ -3,8 +3,10 @@
   the caller's controls (`head`) and Close; the caller's content under it (`children`, given the window's size, in a
   column that fills the window: a child that should fill the rest takes `flex: 1` in its own wrapper); a grip that
   resizes it. Kept in the browser's window (when that shrinks too), and its place and size remembered under `place` (a
-  key of settings.ts `windows`), `size` the first time (where `at` says, else centred); never smaller than `min` unless
-  the window is (floating-frame.svelte.ts).
+  key of settings.ts `windows`; none: it opens afresh each time), `size` the first time (where `at` says, else centred);
+  never smaller than `min` unless the window is (floating-frame.svelte.ts).
+  - With `fit`, its size is its content's (a pinned square's details): no grip, nothing to remember but its place, and
+    no larger than the browser's window (its content scrolls then).
   - Its size is free by default, the grip at the bottom right corner. With `aspect` (its height for a width) the height
     follows the width, and the grip is a ↔ in the bar, left of Close. `sizeKey` names the shape it has now: a window
     whose shape changes (the keyboard's layouts) keeps a size for each.
@@ -25,8 +27,8 @@
   type Props = {
     /** The window's id (a test's hook). */
     id?: string;
-    /** The settings key its place is remembered under. */
-    place: string;
+    /** The settings key its place is remembered under (none: not remembered). */
+    place?: string;
     title: string;
     titleMin?: number;
     min?: Size;
@@ -34,6 +36,7 @@
     aspect?: (w: number) => number;
     sizeKey?: string;
     at?: (s: Size) => Point;
+    fit?: boolean;
     tool?: boolean;
     barHeight?: number;
     head?: Snippet;
@@ -52,6 +55,7 @@
     aspect,
     sizeKey,
     at,
+    fit = false,
     tool = false,
     barHeight,
     head,
@@ -64,7 +68,7 @@
   const titleId = $props.id();
   // The place is read once, when it opens (a new key is a new window); the shape as it changes.
   // svelte-ignore state_referenced_locally
-  const frame = new FloatingFrame(place, () => ({ min, size, aspect, sizeKey, at }));
+  const frame = new FloatingFrame(place, () => ({ min, size, aspect, sizeKey, at, fit }));
   const px = (n: number | undefined) => (n === undefined ? undefined : `${String(n)}px`);
   // Kept in the window when it opens and in each new shape (the keyboard's compact layout is taller for its width).
   $effect(() => {
@@ -81,6 +85,12 @@
   const noMenu = (e: MouseEvent) => {
     if (tool) e.preventDefault();
   };
+  // A `fit` window's size, as its content makes it.
+  let fitW = $state(0);
+  let fitH = $state(0);
+  $effect(() => {
+    if (fit && fitW > 0) frame.measured({ w: fitW, h: fitH });
+  });
   const titleShown = $derived(frame.w > titleMin);
   const words = $derived(aspect ? t('common:FloatingWindow.resizeWidth') : t('common:FloatingWindow.resize'));
 </script>
@@ -91,14 +101,16 @@
   {id}
   {...data}
   bind:this={ref}
-  class={['window', { tool }]}
+  class={['window', { tool, fit }]}
   role="dialog"
   tabindex="-1"
   aria-labelledby={titleId}
   style:left={px(frame.x)}
   style:top={px(frame.y)}
-  style:width={px(frame.w)}
-  style:height={px(frame.h)}
+  style:width={fit ? undefined : px(frame.w)}
+  style:height={fit ? undefined : px(frame.h)}
+  bind:offsetWidth={fitW}
+  bind:offsetHeight={fitH}
   onmousedown={keepFocus}
   oncontextmenu={noMenu}
 >
@@ -138,7 +150,7 @@
     />
   </div>
   <div class="body">{@render children({ w: frame.w, h: frame.h })}</div>
-  {#if !aspect}
+  {#if !aspect && !fit}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="grip corner"
@@ -162,6 +174,14 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-menu);
     overflow: hidden;
+  }
+  /* Its content's size, no larger than the browser's window: past that, its content scrolls. */
+  .window.fit {
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+  .fit .body {
+    overflow: auto;
   }
   /* A tool's: see-through a little, its content 8 px in (TOOL_PAD) (no top padding: the bar), nothing selected or scrolled. */
   .window.tool {

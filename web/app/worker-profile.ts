@@ -7,6 +7,7 @@ import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import type { ToWorker } from './protocol.ts';
 import { answerBuffers, type InspectAnswer, type InspectQuery } from '../surface.ts';
 import { post } from './worker-post.ts';
+import { inspectRam } from './worker-ram.ts';
 
 /** Answers `m` if it is one of these asks (a profiler on or off, the heap, the compaction, a surface). */
 export function asked(vm: Vm | undefined, m: ToWorker) {
@@ -30,9 +31,10 @@ export function asked(vm: Vm | undefined, m: ToWorker) {
 
 /**
  * Who answers a surface's query, by its kind: a disk's (`disk-*`) the machine's devices (web/vm.ts `Vm.inspect`, the
- * device worker); anything else (a RAM view's kinds, later) nothing yet.
+ * device worker); RAM's (`ram-*`) the RAM map's scanner (web/app/worker-ram.ts).
  */
 function inspect(vm: Vm | undefined, query: InspectQuery): Promise<InspectAnswer> {
+  if (query.kind.startsWith('ram-')) return inspectRam(vm, query);
   if (vm && query.kind.startsWith('disk-')) return vm.inspect(query);
   return Promise.resolve({ kind: 'none' });
 }
