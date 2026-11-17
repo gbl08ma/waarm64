@@ -192,7 +192,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the checkbox (on by default) that makes the new room private: a random suffix is added to its name."
   },
   "NetRoomStep.room.private.note": {
-    "message": "A random suffix is added to the room's name, so only those you give the room's link to can join. Anyone who has had the link can join for as long as the room is in use.",
+    "message": "A random suffix is added to the room's name, so only those who are given the room's link can join. Anyone who has had the link can join for as long as the room is in use.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it is ticked."
   },
   "NetRoomStep.room.public.note": {

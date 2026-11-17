@@ -588,7 +588,7 @@
     "note": "Title of the first choice in the Add a USB device wizard: a device passed through over WebUSB."
   },
   "AddUsb.usb.text": {
-    "message": "Developer and maker hardware, passed through as it is: microcontroller boards and debug probes, Android phones (adb, fastboot), USB-serial adapters, logic analysers, SDRs, and printers. Keyboards, mice, disks, webcams, headsets, and Bluetooth adapters can't be passed through, nor can an interface a driver on your computer holds. If a device has such parts, you will be told which, and what to do.",
+    "message": "Developer and maker hardware, passed through as it is: microcontroller boards and debug probes, Android phones (adb, fastboot), USB-serial adapters, logic analyzers, SDRs, and printers. Keyboards, mice, disks, webcams, headsets, and Bluetooth adapters can't be passed through, nor can an interface a driver on your computer holds. If a device has such parts, you will be told which, and what to do.",
     "note": "Explanation under A USB device (WebUSB), the first choice in the Add a USB device wizard."
   },
   "AddUsb.hid": {

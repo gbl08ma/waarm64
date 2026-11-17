@@ -136,7 +136,7 @@
     "note": "Button under the attached folders (Machines page, Folders tab): opens the Folder wizard."
   },
   "Folders.note": {
-    "message": "Folders are attached and detached at once, whether the machine is running or not. The guest finds each folder under the mount point, by its name.",
+    "message": "Folders are attached and detached immediately, whether the machine is running or not. The guest finds each folder under the mount point, by its name.",
     "note": "Note at the bottom of the Machines page's Folders tab."
   },
   "FoldersMenu.state.permission": {

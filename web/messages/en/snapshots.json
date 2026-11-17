@@ -120,7 +120,7 @@
     "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab), when the machine is open on this page: picks a snapshot file and restores it at once."
   },
   "Snapshots.restoreFile.title": {
-    "message": "Restore this machine from a snapshot file (.waarm64snap) at once, without storing the file in this browser.",
+    "message": "Restore this machine from a snapshot file (.waarm64snap) immediately, without storing the file in this browser.",
     "note": "Tooltip of the Restore from a file… button."
   },
   "Snapshots.import": {
@@ -480,11 +480,11 @@
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
   "snapshot-restore.restore.confirm.running": {
-    "message": "Restore {{name}}? This will power off the machine at once, like pulling the plug, and it will continue from where the snapshot was taken.",
+    "message": "Restore {{name}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs and the snapshot has no date: {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm.takenRunning": {
-    "message": "Restore {{name}}, taken {{when}}? This will power off the machine at once, like pulling the plug, and it will continue from where the snapshot was taken.",
+    "message": "Restore {{name}}, taken {{when}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
     "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
   "snapshot-restore.restore.kept": {
@@ -588,7 +588,7 @@
     "note": "What a snapshot file holds, in the question asked before it's loaded, when it doesn't say its vCPUs: {{label}} is its machine's name, {{when}} when it was taken, {{size}} the file's size."
   },
   "snapshot-restore.load.replaces.running": {
-    "message": "This will power off this machine at once, like pulling the plug, and the snapshot's machine will take its place, continuing from where it was saved.",
+    "message": "This will power off this machine immediately, like pulling the plug, and the snapshot's machine will take its place, continuing from where it was saved.",
     "note": "What happens to the machine, in the question asked before a snapshot file is loaded while it runs."
   },
   "snapshot-restore.load.replaces": {

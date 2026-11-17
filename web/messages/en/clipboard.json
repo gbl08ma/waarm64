@@ -12,7 +12,7 @@
     "note": "Tooltip of the toolbar's clipboard button while the user paused the sharing (its icon crossed out). The pause lasts until the machine starts again."
   },
   "ClipboardMenu.title.waiting": {
-    "message": "Clipboard sharing is waiting for this emulator's program in the guest. It starts once the guest has booted, if the guest is running systemd version 256 or above.",
+    "message": "Clipboard sharing is waiting for this emulator's guest agent. It starts once the guest has booted, if the guest is running systemd version 256 or above.",
     "note": "Tooltip of the toolbar's clipboard button, and a note in its menu, while the guest's program isn't there: before it started, or since it stopped."
   },
   "ClipboardMenu.allow": {

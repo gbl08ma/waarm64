@@ -800,7 +800,7 @@
     "note": "Machines page: button under the list of machines that makes a machine with the default settings and no disks."
   },
   "MachinesNav.fromImage.title": {
-    "message": "Create a machine for a disk image on your computer (qcow2, raw, or an ISO) and start it at once. Dropping the file on this web app does the same.",
+    "message": "Create a machine for a disk image on your computer (qcow2, raw, or an ISO) and start it immediately. Dropping the file on this web app does the same.",
     "note": "Machines page: tooltip of From a disk image…."
   },
   "MachinesNav.fromImage": {
@@ -972,7 +972,7 @@
     "note": "Machines page, About, Third-party software: under a table, a link to a license file served beside the web app. {{file}} is the file's name (EDK2-LICENSES.txt, VENUS-LICENSES.txt, THIRD-PARTY-LICENSES.md)."
   },
   "PreferencesPane.leaveWarning.note": {
-    "message": "Leaving this web app (closing the tab, reloading it, or going elsewhere) powers off its machine at once, like pulling the plug, and unsaved work in the guest is lost. With this on, the browser asks first, in its own words. To come back to a machine later, suspend it.",
+    "message": "Leaving this web app (closing the tab, reloading it, or going elsewhere) powers off its machine immediately, like pulling the plug, and unsaved work in the guest is lost. With this on, the browser asks first, in its own words. To come back to a machine later, suspend it.",
     "note": "Machines page, Preferences: the note under Ask before leaving this web app while a machine runs."
   },
   "PreferencesPane.leaveWarning": {

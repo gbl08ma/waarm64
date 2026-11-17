@@ -24,7 +24,7 @@
     "note": "Tooltip of the toolbar's Restart button: a reset without the guest's shutdown."
   },
   "Toolbar.restart.soft.title": {
-    "message": "Restart the guest: it is asked to shut down and start again, as its own restart does. Click again while it restarts to restart the machine at once.",
+    "message": "Restart the guest: it is asked to shut down and start again, as its own restart does. Click again while it restarts to restart the machine immediately.",
     "note": "Tooltip of the toolbar's Restart button while the machine runs and the guest's agent (the page's program in the guest) can restart it cleanly."
   },
   "Toolbar.view.screen": {
@@ -60,7 +60,7 @@
     "note": "Tooltip of the toolbar's Power off button (a stop icon)."
   },
   "Toolbar.powerOff.soft.title": {
-    "message": "Shut down the guest: it is asked to power off, as its own shutdown does. Click again while it shuts down to power off at once.",
+    "message": "Shut down the guest: it is asked to power off, as its own shutdown does. Click again while it shuts down to power off immediately.",
     "note": "Tooltip of the toolbar's Power off button (a stop icon) while the guest's agent (the page's program in the guest) can shut it down cleanly."
   },
   "Toolbar.powerOff.now.title": {
@@ -148,7 +148,7 @@
     "note": "Checkbox in the toolbar's Screen menu: the screen in device pixels."
   },
   "ScreenMenu.screen.hint": {
-    "message": "A text console (fbcon) keeps the size it started with. A new size takes effect at the next boot, and the console is centred until then. A desktop takes the size when it starts; whether it follows a later change depends on its compositor (sway doesn't).",
+    "message": "A text console (fbcon) keeps the size it started with. A new size takes effect at the next boot, and the console is centered until then. A desktop takes the size when it starts; whether it follows a later change depends on its compositor (sway doesn't).",
     "note": "Fine print at the foot of the toolbar's Screen menu: when a new size takes effect."
   },
   "KeysMenu.keys.title": {

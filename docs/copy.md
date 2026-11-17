@@ -25,6 +25,11 @@ and the choices they made then; it grows as the user reviews more of the copy.
 - **Contractions are fine** (can't, isn't, doesn't), as in speech.
 - **Parentheses sparingly**: for a unit, an abbreviation or a command (`fstrim`), not for a second thought; a second
   thought is a sentence.
+- **'Immediately,' not 'at once'.** Say what happens right away with 'immediately' ('This will power it off
+  immediately'), never 'at once'. 'At once' only means simultaneously ('several keys held at once').
+- **Passive for recipients.** When a sentence gives something to people, say 'those who are given X' or 'only those
+  who are given X can join,' not 'those you give X to can join.'
+- **American spelling.** American English spellings: center, color, gray, analyze, realize, organize, program (never centre, colour, grey, analyse, realise, organise, programme).
 
 ## Detail
 

@@ -228,7 +228,7 @@
     "note": "The name of a status bar element (the pointer kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar-kinds.kind.pointer.about": {
-    "message": "Whether the screen holds the mouse (green), will take it on a click (grey), or the mouse lock is off (dim).",
+    "message": "Whether the screen holds the mouse (green), will take it on a click (gray), or the mouse lock is off (dim).",
     "note": "What the Mouse lock status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar-kinds.kind.keyboard": {

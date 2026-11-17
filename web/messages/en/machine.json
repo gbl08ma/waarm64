@@ -224,11 +224,11 @@
     "note": "Button in the message bar (under the toolbar) after “Couldn't open the machine”: it opens the Machines page."
   },
   "power-actions.restart.confirm": {
-    "message": "Restart the machine? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "message": "Restart the machine? This will power it off immediately, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked by the toolbar's Restart while the machine runs."
   },
   "power-actions.restart.now": {
-    "message": "The guest is shutting down or restarting. Restart the machine now? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "message": "The guest is shutting down or restarting. Restart the machine now? This will power it off immediately, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked by the toolbar's Restart when the guest was already asked to shut down or restart (a second click)."
   },
   "power-actions.restart.title": {
@@ -240,11 +240,11 @@
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Restart."
   },
   "power-actions.powerOff.confirm": {
-    "message": "Power off the machine? This will stop it at once, like pulling the plug, and unsaved work in the guest will be lost. To stop it cleanly, shut down the guest first, for example with the poweroff command.",
+    "message": "Power off the machine? This will stop it immediately, like pulling the plug, and unsaved work in the guest will be lost. To stop it cleanly, shut down the guest first, for example with the poweroff command.",
     "note": "Text of the question asked by the toolbar's Power off."
   },
   "power-actions.powerOff.now": {
-    "message": "The guest is shutting down or restarting. Power off the machine now? This will stop it at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "message": "The guest is shutting down or restarting. Power off the machine now? This will stop it immediately, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked by the toolbar's Power off when the guest was already asked to shut down or restart (a second click)."
   },
   "power-actions.powerOff.title": {
@@ -264,7 +264,7 @@
     "note": "Button in the message bar (under the toolbar) on a first visit (the page's machine has no disk yet): it opens the browser's file picker for a disk image."
   },
   "disk-actions.switch.confirm": {
-    "message": "Open the other machine? This will power off this one at once, like pulling the plug, and unsaved work in its guest will be lost.",
+    "message": "Open the other machine? This will power off this one immediately, like pulling the plug, and unsaved work in its guest will be lost.",
     "note": "Text of the question asked when another machine is opened (the Machines page's Open, a disk file opened or dropped) while the one on the page runs."
   },
   "disk-actions.switch.title": {
@@ -340,7 +340,7 @@
     "note": "Text of the question asked when a size is chosen in the toolbar's Machine menu while the machine isn't running; {{size}} is the size chosen (vCPUs, RAM, graphics)."
   },
   "size-actions.size.confirm.running": {
-    "message": "Restart with {{size}}? This will power off the machine at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "message": "Restart with {{size}}? This will power off the machine immediately, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when a size is chosen in the toolbar's Machine menu while the machine runs; {{size}} is the size chosen (vCPUs, RAM, graphics)."
   },
   "size-actions.size.title": {
@@ -352,7 +352,7 @@
     "note": "The confirm button of the question asked when a size is chosen in the toolbar's Machine menu."
   },
   "size-actions.settings.confirm": {
-    "message": "Restart {{name}} with its new settings? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
+    "message": "Restart {{name}} with its new settings? This will power it off immediately, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when the Machines page's Settings tab saves new settings for the machine running on the page; {{name}} is the machine's name."
   },
   "size-actions.settings.title": {
