@@ -610,7 +610,7 @@ fn the_module_runs_on_production_parameters() {
     assert_eq!(r, Err(Invalid::HeaderFloor));
 }
 
-// ---- Review 1's findings (NAMES-REVIEW-1.md) ----
+// ---- Review 1's findings (NAMES-REVIEW-1.md, deleted once all were fixed: git history has it) ----
 
 /// A server the tests play by hand: its names client's key, the live name it serves with, its transfers.
 struct Fake {

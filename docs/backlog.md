@@ -1579,7 +1579,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
     zone for up to 10 minutes (sync then asks for it every round).
   - Headers are kept once an item, not once a registry: entries a calendar anchored in one block repeat its header
-    across names (80 bytes each). N6's sizes say whether it matters.
+    and the six after it across names (560 bytes each). N6's sizes say whether it matters.
   - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
     round descends to them and lists them again (a request or two a range). N6 measures the bound's churn.
   - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
@@ -1600,8 +1600,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A member's lookup that two servers left unanswered is tried once more and then given up (the query gets SERVFAIL
     at 4 s); a server that never answers a `get` but always answers "who serves?" is found again at each new question.
     N6 sees whether that matters at scale.
-  - The header floor is 1/16 of block 976,177's difficulty: revisit if Bitcoin's difficulty ever falls far.
-  - Review 1's fixes (N4a), what they leave:
+  - **A forged run of headers is still reusable** (review 1's finding 6, the user's decision 2026-11-17; N4b): an
+    anchor carries its block's header and the six after it, linked, each at the floor of its time (half of the
+    difficulty at the schedule's point, room-names.md "Bitcoin as the clock"), so backdating costs about 3.5 blocks'
+    work instead of a sixteenth of one; but nothing ties the run to Bitcoin's chain, so one run mined in private, timed
+    weeks back, still anchors claims on any number of names in every room, for good. The user's ideas for servers
+    checking later, **each adding an outside service for servers (an explorer), so they come back to the user before
+    they're built**: random spot checks of block hashes at the explorers (a server asks now and then whether an
+    anchor's block is on the chain, so a forged run is found and refused room-wide); checks only for new claims, none
+    at a first sync (so a new server's sync of thousands of names asks nothing, and only what arrives later is
+    checked).
+  - The floor's schedule has one point (block 976,177). A release adds one (rules: room-names.md "The floor by header
+    time"): past 21 days without one the floor halves, and from 105 days it rests at 1/64 of the point's difficulty
+    (seven headers there cost 0.11 of a block). Who adds points, and how often, is open: a step in the release routine
+    (the difficulty from two explorers, checked against every block since the point's time) would do.
+  - An anchor's six headers are kept whole (480 bytes a distinct block); a follower's prev-hash is the hash of the one
+    before, so leaving it out would save 192 of them (a header table of its own for runs).
+  - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
     - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
       (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
     - A server none of whose names is alive can't prove one, so the servers it asks refuse its `sync`s: it keeps what

@@ -1150,6 +1150,20 @@ fn the_floor_is_the_schedules_at_each_headers_time() {
         s.clone().offer_anchor(a.clone(), r, &p, LATE),
         Err(Invalid::HeaderFloor)
     );
+    // Each of the six at the floor of its own time: a block just before a step at the point's difficulty, its six
+    // past the step at half of it.
+    let s2 = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 + step - HOUR);
+    let (a2, _) = w.anchor(&s2.id(), T0 + step - 60);
+    let block = after(rng.bytes(), T0 + step - 60, root(&s2, &a2), HARD);
+    let mut next = Vec::new();
+    let mut prev = block.hash();
+    for k in 1..=FOLLOWERS as u32 {
+        let h = after(prev, T0 + step - 60 + 600 * k, rng.bytes(), HALF_HARD);
+        prev = h.hash();
+        next.push(h);
+    }
+    let r = Run { block, next };
+    assert_eq!(s2.clone().offer_anchor(a2, r, &p, LATE), Ok(true));
     // A schedule raised in a later release (a point appended) leaves this run as it was.
     let mut q = p.clone();
     q.floor = &[(T0, HARD), (T0 + 100 * DAY, 0x1e0f_ffff)];
@@ -1209,4 +1223,36 @@ fn the_real_block_and_the_one_after_it() {
         next: vec![f],
     };
     assert_eq!(lone.check(&p, LATE), Err(Invalid::HeaderRun));
+}
+
+#[test]
+fn two_runs_of_one_block_settle_on_the_same() {
+    // One block, two sets of six after it (a fork among its followers): every node keeps the same, whatever came first.
+    let mut w = World::new(46);
+    let p = w.params.clone();
+    let key = w.key(1, "test123");
+    let s = w.entry(Kind::Claim, &key, "test123", [0; 32], T0 - HOUR);
+    let (a, r1) = w.anchor(&s.id(), T0);
+    let mut r2 = r1.clone();
+    let mut prev = r2.block.hash();
+    for h in r2.next.iter_mut() {
+        *h = after(prev, h.time(), [9; 32], EASY);
+        prev = h.hash();
+    }
+    assert_ne!(r1, r2);
+    let mut x = s.clone();
+    x.offer_anchor(a.clone(), r1.clone(), &p, LATE).unwrap();
+    x.offer_anchor(a.clone(), r2.clone(), &p, LATE).unwrap();
+    let mut y = s.clone();
+    y.offer_anchor(a.clone(), r2.clone(), &p, LATE).unwrap();
+    let only2 = y.clone();
+    y.offer_anchor(a.clone(), r1.clone(), &p, LATE).unwrap();
+    assert_eq!(x, y);
+    // What a `get` says it holds tells the two apart, so servers holding one each exchange them.
+    let mut only1 = s.clone();
+    only1.offer_anchor(a, r1, &p, LATE).unwrap();
+    assert_ne!(
+        super::store::anchor_tag(&only1),
+        super::store::anchor_tag(&only2)
+    );
 }

@@ -8,7 +8,7 @@ changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/
 lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
 client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
 member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"), and
-the fixes of the out-of-context review of N1 to N3 (N4a: NAMES-REVIEW-1.md, its finding 6 open); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -173,13 +173,15 @@ A claim's `prev` is zeros and a renewal's or release's isn't: anything else is i
   `ref`'s block and proves itself ("Bitcoin as the clock"), and it has an anchor whose block's time `t` is within
   `ref`'s block's time minus 2 hours (block times aren't ordered to the minute) and plus `REF_WINDOW`.
 
-**Anchor**: OpenTimestamps operations from the entry's id to a block's Merkle root, and that block's header. It is
+**Anchor**: OpenTimestamps operations from the entry's id to a block's Merkle root, that block's header and the 6
+headers after it (a *run*, "Bitcoin as the clock"; on the wire, indices into the item's headers, which an item holds
+once each: 13 bytes an anchor, 480 a distinct block). It is
 one path in the format's own serialization (the operations, then the Bitcoin attestation with the block's height,
 which nothing trusts: the header gives the time): the calendar's receipt (id to its commitment) and its finished proof
 (commitment to the root) joined. The verifier handles the three operations the calendars emit (append, prepend,
 SHA-256) and the Bitcoin attestation; anything else, a fork in the path, or a message past the format's 4 KiB is an
 invalid anchor; 4 KiB at most. **One anchor an entry is kept**, the one with the earliest time (equal: the lower block
-hash, then the lower bytes); a node offered an earlier one for an entry it holds takes it, so an entry's time only
+hash, then the lower bytes, then the lower six after it); a node offered an earlier one for an entry it holds takes it, so an entry's time only
 ever moves back, and every node that has seen the same anchors has the same time. A *pending* anchor (which of the
 compiled calendars, by index, and the operations to its commitment: never a URL) proves nothing and is carried only on
 a chain's last entry, one at most (of two, the lower), so that a server can fetch the finished one; it carries the
@@ -267,16 +269,50 @@ once.
   being mined (the batch of real stamps says which: N0b). No day of the year had fees that would have stalled the
   calendars for long (blocks' 10th-percentile fee rate at most 5 sat/vB). **About 2 hours** is what the dialog can
   say; `REF_WINDOW` covers the worst.
-- **Headers prove themselves.** A verifier needs the 80-byte header of an anchor's block and of `ref`'s block; both
-  travel with the entry. It checks the header's hash against `ref`, its Merkle root against the anchor, its proof of
-  work against its own target, that target against a floor compiled in (**1/16 of the difficulty of block 976,177,
-  2026-11-16**: sixteen times its target, compact `0x17216730`; so a forged header costs a sixteenth of a real block's
-  work, and Bitcoin's difficulty would have to fall sixteenfold before real blocks failed it), and that its time isn't
-  past now by more than 2 hours. Nothing else: no height, no chain
-  of headers, **no block explorer**. Times, unlike heights, are in the header, so a header can't be passed off as an
-  earlier block's.
+- **Headers prove themselves, and an anchor's block comes with the six after it.** A verifier needs the 80-byte header
+  of `ref`'s block, and of an anchor's block **and the next 6** (a *run*); all travel with the entry. It checks the
+  `ref` header's hash against `ref`, the anchor against its block's Merkle root, and of every header its proof of work
+  against its own target, that target against **the floor at the header's own time** (below), and that its time isn't
+  past now by more than 2 hours; of the run, that there are exactly six after the block, each naming the one before
+  by its prev-hash, each timed from the block's time less 2 hours (Bitcoin orders block times only by the median of
+  the eleven before) to the block's time plus 12 hours (`run_span`: six blocks have taken that long only in 2009 and
+  2010; it keeps a forger from timing the six where the floor is lowest). Nothing else: no height, no explorer.
+  Times, unlike heights, are in the header, so a header can't be passed off as an earlier block's. **Why six more**
+  (review 1's finding 6, the user's decision 2026-11-17): a header proves its own work and nothing else, so a lone
+  header mined in private at the floor, timed weeks back, with a Merkle root of the forger's, would anchor claims on
+  any number of names in every room at that time (renewed with real stamps, they beat every chain claimed since, for
+  good). Seven linked headers at about half of the difficulty cost about 3.5 blocks' work; still reusable
+  ("What an attacker can do"; docs/backlog.md).
+- **The floor by header time** (`Params::floor`, header.rs `floor`): a compiled schedule of points, each a time and
+  the easiest target a header of that time may claim. The floor at a time is the latest point at or before it, its
+  target doubled every 21 days past the point, five times at most; a time before the first point takes the first
+  point's (no honest anchor is older than the release, so an old time buys a forger nothing). **The schedule now**: one
+  point, block 976,177 (2026-11-16 19:25:21 UTC, compact `0x17021673`) at half of its difficulty (twice its target,
+  compact `0x17042ce6`); so 1/2 of that difficulty for 21 days past it, then 1/4, … down to 1/64 from 105 days on.
+  Why so, from the facts:
+  - *Half*, not the whole: a real fall in difficulty mustn't fail honest headers. The largest fall in years, mid-2021,
+    was about 45% over two retargets; half covers it from a point's time with room.
+  - *Halving every 21 days past a point*: Bitcoin's retarget moves difficulty at most 4x per 2,016 blocks, and a fall
+    by a factor `f` means those blocks took `f` times two weeks, so difficulty can fall at most about e-fold every 5.4
+    weeks however hashrate goes (the product of the falls, for a given total time, is largest at e each). From a point at
+    half, a floor that halves every 3 weeks stays under that bound at every time: future times keep working with no
+    release, whatever the hashrate does, while the floor holds the full half for the first three weeks.
+  - *Five times at most*: past 105 days the floor stays at 1/64 of the point's difficulty, so a release left unrenewed
+    is never cheaper to forge than the lone header at 1/16 was (seven headers at 1/64 are 0.11 blocks). Difficulty
+    falling 64-fold would take at least ~22 weeks of hashrate leaving at the worst rate and never happened; if it did,
+    new entries would be refused until a release lowered the schedule, which is always safe.
+  - *Growth doesn't cheapen the floor* only as far as releases add points: between them the floor is the last
+    point's, decaying, while difficulty usually rises.
+  - **Adding a point** (a later release): its time is past, its target twice that of the lowest difficulty since that
+    time (so every real header since meets it), and taken while blocks aren't running slow (a retarget due to fall
+    already would fall within the step's first weeks). Points are only appended, and a point changes the floor only
+    from its own time on, so the headers old entries carry keep the floor they met (header.rs's test). Lowering the
+    schedule never invalidates anything.
 - **Who talks to an explorer**: only the agent, when it makes an entry, for a block hash to put in `ref` (one 6 deep,
-  taken when two explorers, blockstream.info and mempool.space, agree) and for the headers of its own anchors.
+  taken when two explorers, blockstream.info and mempool.space, agree) and for the headers of its own anchors: the
+  block's and the six after it (Esplora's `block/<hash>/status` names the next block, `block/<hash>/header` gives a
+  header; a calendar serves a proof at six confirmations, the block and five after it, so the sixth may take one block
+  more). The tests' pretend explorer (tests/net/ots-calendar.ts) answers both.
 - **Who talks to a calendar**: the agent, to stamp and to collect; and servers, to finish a pending renewal they hold
   (each asks only with a chance set by a hash of the entry and its own key, and backs off, so a room's servers
   together ask a calendar a few times an hour for an entry, not each every minute).
@@ -498,14 +534,15 @@ copies by nonce **and round** (the three rounds share a nonce).
 ### Size, and where it stops
 
 *Estimates*; N0 replaces them. An entry is 207 bytes; its anchor 300 to 1,250 (the one measured was ~1,240 whole; entries a calendar put in one block share
-the anchor's tail and its header; how much is N0's to measure). Two entries a month: a name costs a server about 0.4 KB
-for its zone plus 1 to 3 KB a month it has been held.
+the anchor's tail and its header; how much is N0's to measure); its headers 80 for `ref` and 560 for the anchor's
+block and the six after it (N4b: 480 of those and 13 bytes of indices came with the six). Two entries a month: a name
+costs a server about 0.4 KB for its zone plus 2.3 to 4.2 KB a month it has been held (1 to 3 before the six).
 
 | Names, held six months on average | A server keeps | A new server's first sync through DERP (0.6 to 3 Mbit/s measured on public relays) |
 |---|---|---|
-| 1,000 | 7 to 18 MB | under a minute to 4 minutes |
-| 5,000 | 35 to 90 MB | 2 to 20 minutes |
-| 20,000 | 140 to 360 MB | too much for a tab |
+| 1,000 | 14 to 26 MB | under a minute to 6 minutes |
+| 5,000 | 70 to 130 MB | 3 to 30 minutes |
+| 20,000 | 290 to 510 MB | too much for a tab |
 
 A member keeps a few KB. So what grows with a room is each **server's** copy, and every new owner pays the first sync,
 in the background, before it serves. Past a few thousand long-held names it needs one of: servers that hold a share of
@@ -587,7 +624,7 @@ load, when one is inside its last week. All words go in `web/messages/en/network
 | Hash a dictionary against a server's ids | one registration, then cheap | learns which guessable names exist and where they point; nothing about the others |
 | Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its owner key's hash, says otherwise; both servers the attacker's (two registrations, both ranking below every honest server's for that question): the member sees what it shows (it can't forge) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |
-| Forge a Bitcoin header | a sixteenth of a real block's work (the floor), once | **open (review 1, finding 6; the user's question)**: a header proves only its own work, its time may be any past time, and its Merkle root is the forger's, so one header mined at the floor, timed (say) 36 days back, anchors claims on any number of names in every room at that time; renewed with real stamps today, they beat every chain claimed since, for good, and one more header for each 37 days of history takes any name. Not one false time but a reusable backdating oracle |
+| Forge a Bitcoin header | seven linked headers at the floor of their time: about 3.5 blocks' work at the schedule's half (0.11 of a block at its 1/64, a release unrenewed for 15 weeks), once | the forger's run, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the run serves again for any number of claims: **accepted for now** (the user, 2026-11-17: review 1's finding 6). Ideas for servers to check later, which would make servers ask an outside service and need the user's OK: docs/backlog.md |
 | Calendars all down | | no new claims or renewals; existing names resolve; `GRACE` is the margin |
 | Explorers all down | | the same: only the agent uses them |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held |
@@ -670,7 +707,7 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
 
 ## Tests' parameters
 
-Production's parameters need real Bitcoin work (a header at a sixteenth of a real block's difficulty), so a test can't
+Production's parameters need real Bitcoin work (seven linked headers at half of a real block's difficulty), so a test can't
 make a title they accept. The parameters are not configuration: the module runs on `Params::BUILT`, which is
 `Params::PRODUCTION` unless the crate is built with the `test-params` feature, which compiles in `Params::TEST` (the
 tests' pretend Bitcoin: regtest's floor, Argon2id of 8 KiB and 2 bits) instead. `net/ts/build.sh --test-params` builds

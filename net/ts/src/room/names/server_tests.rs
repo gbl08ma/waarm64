@@ -955,7 +955,7 @@ fn an_entry_held_takes_a_new_anchor_only_when_earlier() {
     );
 }
 
-// ---- Review 1's findings (NAMES-REVIEW-1.md) ----
+// ---- Review 1's findings (NAMES-REVIEW-1.md, deleted once all were fixed: git history has it) ----
 
 /// A server with nothing of its own (`victim`) asks; a fake partner serves its question with a live name, then
 /// answers each of its `sync`s with `answer(range)`, at most `max` of them, and nothing else. The victim, the syncs
