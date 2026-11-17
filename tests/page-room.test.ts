@@ -269,7 +269,9 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
       throw new Error(`no room address: ${await run(p, 'ip -br addr; networkctl status 2>&1 | tail -5')}`);
     };
     const [a6, b6] = await Promise.all([addr6(a), addr6(b)]);
-    assert.equal(a6.slice(0, 14), b6.slice(0, 14), `one room, one /48: ${a6}, ${b6}`);
+    // The /48: three groups (as text, a group's leading zeros are dropped, so a fixed length of characters isn't it).
+    const p48 = (x: string) => x.split(':').slice(0, 3).join(':');
+    assert.equal(p48(a6), p48(b6), `one room, one /48: ${a6}, ${b6}`);
     // The room's resolver itself, asked directly (a raw AAAA query over bash's /dev/udp), apart from the guest's resolver.
     const dns6 = `${a6.split(':').slice(0, 3).join(':')}::53`;
     const q = ['\\x12\\x34\\x01\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00', ...nameA.split('.').map((l) => `\\x${l.length.toString(16).padStart(2, '0')}${l}`), '\\x00\\x00\\x1c\\x00\\x01'].join('');
