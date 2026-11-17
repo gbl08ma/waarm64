@@ -58,7 +58,7 @@ class PageNames {
     await this.refresh();
   }
 
-  /** The dialog's check of `name` as typed (web/names.ts `NamesAgent.check`: servers asked for its id's first byte). */
+  /** The dialog's check of `name` as typed (web/names.ts `NamesAgent.check`: servers asked for every id they hold). */
   async check(c: NamesConn, name: string): Promise<NameCheck> {
     return (await names()).namesAgent().check(c, name);
   }

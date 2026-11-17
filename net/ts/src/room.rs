@@ -3085,9 +3085,10 @@ impl Client {
         ok
     }
 
-    /// A publisher's check for the dialog: every id under `first` (a name id's first byte) the servers it finds hold,
-    /// each answer a `names-ids` event (the name id itself never leaves the page). False when it isn't a publisher.
-    pub fn names_ids(&mut self, first: u8, now: Instant) -> bool {
+    /// A publisher's check for the dialog: every id under `first` (a name id's first byte, or 256: every id) the
+    /// servers it finds hold, each answer a `names-ids` event (the name itself never leaves the page). False when it
+    /// isn't a publisher.
+    pub fn names_ids(&mut self, first: u16, now: Instant) -> bool {
         let Some(p) = self.publisher.as_mut() else {
             return false;
         };

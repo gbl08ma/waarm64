@@ -3,12 +3,12 @@
 // routed there through `fetch` (tests/net/names-agent.ts): a claim held back until anchored, then published; an entry
 // whose anchor came past REF_WINDOW (or none in its window) made again; one Web Lock a title (two tabs make one entry);
 // a lost title not renewed; a zone's `seq` never shared by two copies of a title; nothing asked of any service but the
-// compiled ones; the dialog's check (its servers asked for a first byte, never the id) and the last week's notice. A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
+// compiled ones; the dialog's check (its servers asked for every id, never a byte of the name's) and the last week's notice. A room's servers (the publisher through DERP) are tests/names-room.test.ts's.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, roomOf, SERVICES, type TitleView } from '../web/names.ts';
-import type { IdsAnswer, NamesBackend } from '../web/names-ops.ts';
+import { ALL_IDS, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
 import { aged, DAY, fakePublish, nowS, point, refAt, routeServices, statusOf, TEST_WASM, testAgent, type Asked } from './net/names-agent.ts';
 import { startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 
@@ -519,36 +519,45 @@ test('production talks to the compiled calendars and explorers only: no link, ti
   for (const u of urls) assert.ok(SERVICES.some((s) => u.startsWith(`${s}/`)), u);
 });
 
-test('the dialog\'s check: the rules, this connection\'s own, and what servers hold under the id\'s first byte (never the id)', { skip, timeout: 60_000 }, async () => {
+test('the dialog\'s check: the rules, this connection\'s own, and what servers hold, asked for every id at once (never a byte of the name\'s)', { skip, timeout: 60_000 }, async () => {
   const { agent, backend } = await testAgent();
   const firsts: number[] = [];
-  let answer: (first: number) => Promise<IdsAnswer> = () => Promise.resolve({ result: 'nobody', ids: [] });
-  // The servers' answers as the test says; what the agent asked recorded (a first byte, nothing else).
-  (backend as { ids: NamesBackend['ids'] }).ids = (_link, first) => { firsts.push(first); return answer(first); };
+  let answer: () => Promise<IdsAnswer> = () => Promise.resolve({ result: 'nobody', ids: [] });
+  // The servers' answers as the test says; what the agent asked recorded.
+  (backend as { ids: NamesBackend['ids'] }).ids = (_link, first) => { firsts.push(first); return answer(); };
   for (const bad of ['', 'Wpad', 'wpad', 'com', 'ab', 'xn--abc', '-ab', 'x'.repeat(33), 'has.dot']) {
     assert.deepEqual(await agent.check(conn(), bad), { state: 'invalid' }, bad);
   }
   assert.deepEqual(firsts, [], 'a name the rules refuse asks nobody');
   const { id } = await backend.op<{ id: string }>('key', { room: roomOf(LINK), secret: '11'.repeat(32), name: 'mybox' });
-  const first = parseInt(id.slice(0, 2), 16);
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'unknown' }, 'nobody serves: nobody can say');
-  assert.deepEqual(firsts, [first], 'the id\'s first byte alone');
+  assert.deepEqual(firsts, [ALL_IDS], 'every id, not the name\'s first byte');
+  agent.forgetChecks();
   const other = `${id.slice(0, 2)}${'0'.repeat(62)}`;
   answer = () => Promise.resolve({ result: 'ids', ids: [[other, nowS() + DAY]] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'free' }, 'another name under its byte');
+  agent.forgetChecks();
   const until = nowS() + 20 * DAY;
   answer = () => Promise.resolve({ result: 'ids', ids: [[other, 0], [id, until]] });
+  // Typed a letter at a time: the servers are asked once, whatever the prefixes (review 2, finding 1: each prefix's
+  // first byte told a server the name a character at a time).
+  const asked = firsts.length;
+  for (const typed of ['m', 'my', 'myb', 'mybo']) await agent.check(conn(), typed);
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'taken', until });
+  assert.equal(firsts.length, asked + 1, 'one question for the dialog\'s minute');
+  assert.ok(firsts.every((f) => f === ALL_IDS));
+  agent.forgetChecks();
   answer = () => Promise.resolve({ result: 'ids', ids: [[id, 0]] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'free' }, 'held, but nobody owns it now');
+  agent.forgetChecks();
   answer = () => Promise.resolve({ result: 'failed', ids: [] });
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'unknown' }, 'no server answered');
   // This connection's own already.
   cal.mine(7);
   await agent.register(conn(), 'mybox', point());
-  const asked = firsts.length;
+  const n = firsts.length;
   assert.deepEqual(await agent.check(conn(), 'mybox'), { state: 'yours' });
-  assert.equal(firsts.length, asked, 'its own: nobody asked');
+  assert.equal(firsts.length, n, 'its own: nobody asked');
   assert.deepEqual(await agent.held('conn-a'), ['mybox'], 'what deleting the connection would lose');
   await agent.forget('conn-a');
   assert.deepEqual(await agent.titles('conn-a'), []);

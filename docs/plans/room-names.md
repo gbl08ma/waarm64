@@ -478,9 +478,14 @@ copies by nonce **and round** (the three rounds share a nonce).
   answers (both transfers given up): asked once more, with servers found again if need be; the query meanwhile gets
   the resolver's SERVFAIL.
 - **The dialog's check** for a name being typed must not tell a server which id someone is about to claim (it could
-  guess the name and stamp too): it asks for `ids` (a `get` mode with the id's first byte only), every id in the 1/256 of
-  the registry that shares it, each with when its owner's hold ends rounded up to a week (0: nobody's now), and looks for its own there
-  (`Member::ids`, `ids_done`; not counted as the name being asked for). The page asks through a publisher
+  guess the name and stamp too): it asks for `ids` (a `get` mode with no id: every id the server holds, `ALL_IDS`;
+  with one byte, the ids under it), each with when its owner's hold ends rounded up to a week (0: nobody's now), and
+  looks for its own there (`Member::ids`, `ids_done`; not counted as the name being asked for). **Every id, not the
+  id's first byte** (review 2's finding 1): checked as typed, `a`, `al`, …, `alice` asked for each prefix's first byte
+  from the same names client, and with the room's key any server can hash names, so of the 37 next characters about
+  one passed each byte, and the name could be read off as it was typed. Asking for everything tells a server only
+  that a dialog is open; it costs ~40 bytes a name held (20,000 names, the bound: 800 KB, one message), once a minute
+  while the dialog checks (the agent keeps the answer that long). The page asks through a publisher
   (`ts_room_names_ids`): "What the user sees".
 
 ### Servers
@@ -533,7 +538,7 @@ copies by nonce **and round** (the three rounds share a nonce).
   in 40 s. (The tests' entries carry one 4-operation pretend anchor each, so bytes are small against real anchors'.)
 - **`get`** has three more modes, a member's: `owner` (the owning chain's last entry and the zone, those the member
   lacks; nothing when no chain owns the name now; a tombstone's release when the member's last entry is on it) and `history` (the owning chain's whole run and the zone), each
-  counting as the name being asked for; and `ids` (every id held under one first byte, answered `ids`; not counted). A server that leaves names out (or lies) is outvoted in sync by
+  counting as the name being asked for; and `ids` (every id held, or those under one first byte, answered `ids`; not counted). A server that leaves names out (or lies) is outvoted in sync by
   any other server holding them, and a member asking it for one gets nothing from it and the name from its other
   server (N3: the answer that has one stands).
 - **Take from anyone**: `put` (an item, from an owner's agent or a member that holds a better chain than the server
@@ -716,8 +721,8 @@ and the servers it synced with lately (the module's `names` event, sent when the
 1. A field. Under it, as typed (300 ms after the last key): not a valid name (the rules, by the module), this
    connection's already, free, taken until about a date, or, where no server answers, that nobody in the room can say
    (Register stays offered: first come still holds, and the claim is private until anchored). **The check doesn't tell
-   a server which id is about to be claimed**: the agent hashes the name and asks the room's servers for every id
-   under its first byte (`ids`), through a checker, a publisher kept open for a minute after the dialog's last check so
+   a server which id is about to be claimed, nor a byte of it**: the agent hashes the name and asks the room's servers
+   for every id they hold (`ids`, `ALL_IDS`; the answer kept a minute, so typing asks once), through a checker, a publisher kept open for a minute after the dialog's last check so
    the servers it found answer the next at once (`ts_room_names_ids`, `names-ids` events); since N5 a server's `ids`
    answer carries each id's cover end (when the owning chain's hold ends, 0 when nobody owns it now), so "taken until"
    needs no `get` naming the id. Nothing lists a room's names, here or anywhere: the registry couldn't.
@@ -751,7 +756,7 @@ names.
 |---|---|---|
 | Register many names | proof of work each, again every term | squatting; the names lapse when it stops paying. Servers drop the unasked-for first; members never see them |
 | Stamp a dictionary and hold it back | the same work, every term, for as long as it waits | takes a name later registered by someone else: accepted |
-| Race a new registration | none | nothing: a claim is public only once anchored, and the dialog's check doesn't name the id |
+| Race a new registration | none | nothing: a claim is public only once anchored, and the dialog's check asks for every id, so neither the id nor a byte of it (review 2: a byte a prefix, as typed, spelled the name out) |
 | Tie a claim it somehow knew of | several claims in the same block | wins most ties: the tie-break can be ground. It needs the name before the claim is public |
 | Hash a dictionary against a server's ids | nothing: 256 `ids` requests from any session list every id (the dialog's check needs them; review 2 corrected the cost from "one registration") | learns which guessable names exist (and, with a `get`, where they point); nothing about the others; the cover ends listed are a week coarse |
 | Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its chain's age and its owner key's hash, says otherwise; both servers the attacker's (registrations as old as the honest servers', renewed all along, ranking below them for that question; junk registrations made lately rank after every older server): the member sees what it shows (it can't forge) |

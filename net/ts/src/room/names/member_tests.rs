@@ -8,7 +8,7 @@ use std::{
 
 use super::{
     entry::Kind,
-    member::{Answer, IdsDone, IdsResult, KEPT_REFRESH, Member},
+    member::{ALL_IDS, Answer, IdsDone, IdsResult, KEPT_REFRESH, Member},
     server::{Cmd, Config, Input, MAX_BYTES, MAX_NAMES, Server, Title},
     testkit::{Bitcoin, DAY, params},
     wire::{Item, Question},
@@ -553,14 +553,14 @@ fn ids_by_first_byte() {
         .map(|i| s0.reg.get(&i.id).unwrap().asked)
         .collect();
     let mut bus = Bus::new(vec![s0], member());
-    let first = items[7].id[0];
+    let first = items[7].id[0] as u16;
     let now = bus.now;
     bus.m.ids(first, now);
     bus.advance(Duration::from_secs(4));
     let expect: BTreeSet<[u8; 32]> = items
         .iter()
         .map(|i| i.id)
-        .filter(|i| i[0] == first)
+        .filter(|i| i[0] as u16 == first)
         .collect();
     let got = &bus.m.ids_answers[&first];
     assert_eq!(got.keys().copied().collect::<BTreeSet<_>>(), expect);
@@ -580,6 +580,13 @@ fn ids_by_first_byte() {
         .map(|i| bus.s[0].reg.get(&i.id).unwrap().asked)
         .collect();
     assert_eq!(asked, after, "an ids check isn't a name asked for");
+    // Every id at once, the dialog's way (review 2: a first byte a prefix told the name as it was typed).
+    let now = bus.now;
+    bus.m.ids(ALL_IDS, now);
+    bus.advance(Duration::from_secs(4));
+    let all = &bus.m.ids_answers[&ALL_IDS];
+    let names: BTreeSet<[u8; 32]> = items.iter().map(|i| i.id).collect();
+    assert!(names.iter().all(|i| all.contains_key(i)), "every id");
 }
 
 /// The dialog's check with nobody serving: nobody can say, as an answer of its own.

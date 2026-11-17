@@ -12,7 +12,7 @@
 //
 // N5's API: `NamesAgent.register`, `setZone`, `release`, `titles` (each title's state and dates), `pass`; the
 // connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key).
-import { NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
+import { ALL_IDS, NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
 import type { FromNames, ToNames } from './names-worker.ts';
 import { openIdb, roomOf } from './room.ts';
 
@@ -39,6 +39,8 @@ export const RETRY_MS = 5 * 60 * 1000;
 const ZONE_NARROW = 4;
 /** An entry unanchored past its window is kept and asked for this long more (seconds). */
 const STALE_KEEP_S = 7 * 24 * 60 * 60;
+/** How long the dialog's checks use one answer of the servers' (every id they hold). */
+const CHECK_KEEP_MS = 60_000;
 /** A fetch's longest wait. */
 const FETCH_MS = 15_000;
 /** Proof of work tries a call (production: ~0.5 ms each in a tab), so the worker answers between slices. */
@@ -292,6 +294,8 @@ export class NamesAgent {
   private readonly log: (s: string) => void;
   /** Titles published by this agent since the page loaded (each is put once a visit, at least). */
   private readonly session = new Set<string>();
+  /** The dialog's checks' answers lately, by link: every id the room's servers hold. */
+  private readonly checks = new Map<string, { at: number; answer: IdsAnswer }>();
   /** Titles whose first entry is being made here (proof of work). */
   private readonly making = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -400,8 +404,9 @@ export class NamesAgent {
   /**
    * The dialog's check of `name` in connection `c`'s room, as typed: not a valid name (the rules), this connection's
    * own already, or what the room's servers say through a checker: free, taken (until about when, Unix seconds), or
-   * nobody can say. **The servers are asked for every id under the name's id's first byte, never the id** (a server
-   * that learnt which id is about to be claimed could guess the name and stamp first): the id is looked for here.
+   * nobody can say. **The servers are asked for every id they hold, never the id or a byte of it** (a server that
+   * learnt which id is about to be claimed could guess the name and stamp first; one byte of each prefix's id, as typed,
+   * told it the name a character at a time: review 2): the id is looked for here, in an answer kept a minute.
    */
   async check(c: NamesConn, name: string): Promise<NameCheck> {
     const room = roomOf(c.link);
@@ -415,10 +420,23 @@ export class NamesAgent {
     }
     const have = await this.store.get(c.identityKey, room, name);
     if (have && !have.lost && !have.released && !['lapsed', 'released', 'lost'].includes((await this.view(have)).state)) return { state: 'yours' };
-    const a = await this.b.ids(c.link, parseInt(id.slice(0, 2), 16));
+    // Every id the servers hold, once a minute at most: they learn nothing of the name typed, however many prefixes
+    // are checked on the way to it (review 2).
+    const cached = this.checks.get(c.link);
+    let a: IdsAnswer;
+    if (cached && Date.now() - cached.at < CHECK_KEEP_MS) a = cached.answer;
+    else {
+      a = await this.b.ids(c.link, ALL_IDS);
+      if (a.result === 'ids') this.checks.set(c.link, { at: Date.now(), answer: a });
+    }
     if (a.result !== 'ids') return { state: 'unknown' };
     const until = a.ids.find(([i]) => i === id)?.[1] ?? 0;
     return until > nowS() ? { state: 'taken', until } : { state: 'free' };
+  }
+
+  /** The dialog's checks ask the servers again (a dialog opened afresh; the tests'). */
+  forgetChecks() {
+    this.checks.clear();
   }
 
   /** The names connection `identityKey` holds now (not let go, lost or lapsed), by name: what deleting it would lose. */

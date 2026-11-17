@@ -1871,8 +1871,8 @@ and the guest's default way out (below).
   hours, Active, kept until about a date, in its grace, [Lapsed: anyone can register it now.](ui:network:names-view.lapsed),
   [Let go](ui:network:names-view.released), lost) and [Name this machine…](ui:network:NetNames.name), which opens one
   dialog (`NameDialog.svelte`): the name's field, checked as typed (the agent's `check`: the rules, this connection's
-  own, then the room's servers asked through a checker, a publisher kept open while the dialog asks, for the ids under
-  the name's id's first byte, never the id, each with when its owner's hold ends: free, taken until about a date, or
+  own, then the room's servers asked through a checker, a publisher kept open while the dialog asks, for every id they
+  hold, never the name's id or a byte of it (the answer kept a minute), each with when its owner's hold ends: free, taken until about a date, or
   nobody in the room can say, when Register stays offered); the two notices, always shown, no boxes
   ([Members of this room who know the name can find this machine and see when it's online, and your machine helps other
   members look names up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to keep the

@@ -1,8 +1,8 @@
 <!--
   Name this machine… (docs/plans/room-names.md "What the user sees"): one dialog from a room adapter's section of the
   Network menu. A field, checked as typed (free, taken until about a date, not a valid name, this connection's
-  already, or nobody in the room can say: web/names.ts `check`, which asks the room's servers for the ids under the
-  name's id's first byte, never the id); the two notices, always shown, no boxes; Register, which closes it (the
+  already, or nobody in the room can say: web/names.ts `check`, which asks the room's servers for every id they hold,
+  never the name's id or a byte of it); the two notices, always shown, no boxes; Register, which closes it (the
   adapter then shows the name as Preparing, Reserved, Active). **No key is shown or asked for**, and nothing is added
   to this path (the kickoff's decision 6). A connection whose key is ephemeral can't hold a name: it says so instead.
 -->

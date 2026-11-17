@@ -20,9 +20,12 @@ export class NamesError extends Error {
 /** A server's answer to a put, without the event's type. */
 export type PutAnswer = Omit<NamesPut, 'type'>;
 
-/** The dialog's check (docs/plans/room-names.md "A member resolving a name"): the ids the room's servers hold under one
- * first byte, each with until when its owner holds it (Unix seconds, 0: nobody now); `nobody` when nobody serves the
+/** The dialog's check (docs/plans/room-names.md "A member resolving a name"): the ids the room's servers hold (all, or under one
+ * first byte), each with until when its owner holds it (Unix seconds, 0: nobody now); `nobody` when nobody serves the
  * room's names, `failed` when no server answered. */
+/** The dialog's check asks for every id at once (in place of a first byte, 0 to 255): the servers learn nothing of the
+ * name being typed (review 2: each prefix's first byte told them the name a character at a time). */
+export const ALL_IDS = 256;
 export type IdsAnswer = { result: 'ids' | 'nobody' | 'failed'; ids: [string, number][] };
 
 /** What the agent asks of the module, wherever it runs. */
@@ -32,7 +35,7 @@ export type NamesBackend = {
   /** Puts `items` (hex) to the servers of the room with link `link`, through a publisher made for it: each item's
    * answers (by its name id), `nobody` when nobody serves, `failed` when the room couldn't be reached. */
   publish(link: string, items: { id: string; item: string }[]): Promise<Map<string, PutAnswer[]>>;
-  /** The dialog's check in the room with link `link`: every id under `first` (a name id's first byte, never the id),
+  /** The dialog's check in the room with link `link`: every id under `first` (a first byte, or ALL_IDS: every id),
    * through a checker kept open while the dialog asks (`CHECKER_IDLE_MS`). */
   ids(link: string, first: number): Promise<IdsAnswer>;
   close(): void;

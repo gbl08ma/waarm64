@@ -679,7 +679,7 @@ fn a_publisher_puts_a_title_to_two_servers_with_no_node_of_its_own() {
     assert_eq!(ids(&shown), ids(&ta.1), "the owner's chain");
     // The dialog's check: alpha's first byte, never its id; each server answers with the ids under it, each with
     // until when its owner holds it.
-    let first = ta.1.id[0];
+    let first = ta.1.id[0] as u16;
     let now = n.now;
     assert!(n.nodes[2].c.names_ids(first, now));
     let start = n.now;
@@ -742,7 +742,7 @@ fn a_publisher_with_nobody_serving_says_so() {
     assert_eq!(n.put_events(1)[0].2, "nobody");
     // The dialog's check: nobody can say.
     let now = n.now;
-    assert!(n.nodes[1].c.names_ids(it.id[0], now));
+    assert!(n.nodes[1].c.names_ids(it.id[0] as u16, now));
     let start = n.now;
     while n.id_events(1).is_empty() {
         assert!(n.now - start < Duration::from_secs(10));

@@ -518,11 +518,14 @@ pub unsafe extern "C" fn ts_room_names_put(h: u32, ptr: *mut u8, len: usize) -> 
 }
 
 /// A publisher's check for the dialog (room-names.md "A member resolving a name"): every id the room's servers hold
-/// whose first byte is `first`, each server's answer a `names-ids` event. 1 when it was taken to be asked.
+/// whose first byte is `first` (256: every id, the dialog's way), each server's answer a `names-ids` event. 1 when it was
+/// taken to be asked.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_room_names_ids(h: u32, first: u32) -> u32 {
     let mut ok = false;
-    with_room(h, |r, now| ok = r.names_ids(first as u8, now));
+    with_room(h, |r, now| {
+        ok = first <= 256 && r.names_ids(first as u16, now)
+    });
     ok as u32
 }
 
