@@ -647,7 +647,7 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
 the names client finds servers and asks; the answer comes within the resolver's wait or on the guest's own retry. The
 adapter's details gain one line (names resolved, servers held), for the curious.
 
-**Naming a machine.** In the Network menu of a room's adapter, **Name this machine…** opens one dialog:
+**Naming a machine.** In the Network menu of a room's adapter, **[Name this machine…](ui:network:NetNames.name)** opens one dialog:
 
 1. A field. Under it, as typed: free, taken (until about a date), not a valid name, or, where no server answers,
    that nobody in the room can say. Nothing lists a room's names, here or anywhere: the registry couldn't.

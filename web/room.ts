@@ -331,6 +331,16 @@ export function parseRoomKey(s: string): string | undefined {
   return /^[0-9a-f]{64}$/.test(k) ? k : undefined;
 }
 
+/** A room connection's key as it is exported: the node key (64 hex digits), and its names after a dot when it has some
+ * (web/names.ts `exportNames`). */
+export const roomExport = (key: string, names?: string) => (names ? `${key}.${names}` : key);
+
+/** An export pasted (`roomExport`'s): the key, lower case, and the names; undefined if it isn't one. */
+export function parseRoomExport(s: string): { key: string; names?: string } | undefined {
+  const m = /^([0-9a-fA-F]{64})(?:\.([A-Za-z0-9_-]+))?$/.exec(s.trim());
+  return m ? { key: m[1].toLowerCase(), ...(m[2] ? { names: m[2] } : {}) } : undefined;
+}
+
 /** Whether there's an identity kept under `key`. */
 export const hasRoomIdentity = (key: string) => idb<number>('readonly', (s) => s.count(key)).then((n) => n > 0, () => false);
 
@@ -546,7 +556,8 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
   let state = '';
   let netmap: NetMap | undefined;
   let lease: Lease | null = null;
-  let me: { name?: string; link?: string; address6: number[] } | undefined;
+  let me: { key?: string; name?: string; link?: string; address6: number[] } | undefined;
+  let names: { serving: boolean; names: number; servers: number } | undefined;
   let directBlocked = false;
   const peers = new Map<string, { name: string; address6: number[] }>();
   /** The peers whose packets take a direct path (a `path` event may come before the peer's `peer`). */
@@ -565,6 +576,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       room: {
         name: me.name ?? '', link: me.link ?? c.link, incoming: c.incoming !== false, relayOnly: !!c.relayOnly, directBlocked,
         directFailed: relayedFor('failed'), peersBlocked: relayedFor('blocked'),
+        ...(me.key ? { key: me.key.replace(/^nodekey:/, '') } : {}), ...(names ? { names } : {}),
       },
     };
   };
@@ -601,6 +613,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
         direct.delete(ev.key);
         why.delete(ev.key);
       } else if (ev.type === 'direct') directBlocked = ev.blocked;
+      else if (ev.type === 'names') names = { serving: ev.serving, names: ev.names, servers: ev.servers };
       else return;
       changed();
     },

@@ -60,10 +60,20 @@
     openAt = undefined;
     network.openDetails(i);
   }
+  function naming(i: number) {
+    openAt = undefined;
+    network.openNaming(i);
+  }
 </script>
 
 {#snippet section(a: (typeof views)[number])}
-  <NetAdapter {a} heading={views.length > 1} onwizard={() => wizard(a.index)} ondetails={() => details(a.index)} />
+  <NetAdapter
+    {a}
+    heading={views.length > 1}
+    onwizard={() => wizard(a.index)}
+    ondetails={() => details(a.index)}
+    onname={() => naming(a.index)}
+  />
 {/snippet}
 
 {#if apart}

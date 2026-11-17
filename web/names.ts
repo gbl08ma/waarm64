@@ -836,14 +836,8 @@ export async function importNames(store: NamesStore, identityKey: string, bundle
   }
 }
 
-/** A room connection's key as it is exported: the node key (64 hex digits), and its names after a dot when it has some. */
-export const roomExport = (key: string, names?: string) => (names ? `${key}.${names}` : key);
-
-/** An export pasted (`roomExport`'s): the key, lower case, and the names; undefined if it isn't one. */
-export function parseRoomExport(s: string): { key: string; names?: string } | undefined {
-  const m = /^([0-9a-fA-F]{64})(?:\.([A-Za-z0-9_-]+))?$/.exec(s.trim());
-  return m ? { key: m[1].toLowerCase(), ...(m[2] ? { names: m[2] } : {}) } : undefined;
-}
+// A room connection's key as it is exported, and an export pasted: web/room.ts (the wizard's, without the agent).
+export { parseRoomExport, roomExport } from './room.ts';
 
 // ---- The room's worker: the titles a running room serves ----
 

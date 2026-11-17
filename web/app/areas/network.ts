@@ -1,5 +1,6 @@
 // The network's commands (docs/networking/adapters.md §3): the toolbar's Network menu (web/app/Network.svelte), the Network
-// wizard (web/app/NetWizard.svelte) and an adapter's details (web/app/NetDetails.svelte) open themselves when called;
+// wizard (web/app/NetWizard.svelte), an adapter's details (web/app/NetDetails.svelte) and Name this machine…
+// (web/app/NameDialog.svelte) open themselves when called;
 // the page's live network is web/app/net-live.ts.
 import { Command } from '../command.ts';
 import type { Opened } from '../net-wizard.ts';
@@ -9,12 +10,18 @@ class Network {
   readonly menu = new Command<[number | undefined]>();
   readonly wizard = new Command<[Opened]>();
   readonly details = new Command<[number]>();
+  /** Answered by Name this machine…'s dialog (web/app/NameDialog.svelte). */
+  readonly naming = new Command<[number]>();
   /** Opens the Network menu (a connection was just attached to `adapter` here: it shows how it goes). */
   openMenu(adapter?: number) {
     this.menu.call(adapter);
   }
   openWizard(o: Opened) {
     this.wizard.call(o);
+  }
+  /** Opens Name this machine… for adapter `adapter` (a room's): one dialog, a name checked as typed and Register. */
+  openNaming(adapter: number) {
+    this.naming.call(adapter);
   }
   /** Opens adapter `adapter`'s details: its connection, what it lets in and how to use it. */
   openDetails(adapter: number) {

@@ -22,6 +22,8 @@
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
   import { page } from './page.ts';
+  import { pageNames } from './areas/names.svelte.ts';
+  import { machineNames } from './names-view.ts';
 
   type Props = {
     edit: Editing;
@@ -57,6 +59,11 @@
     return parts.join(' · ');
   });
 
+  /** A room connection's names, each with the date it stops resolving unless renewed. */
+  const names = $derived(
+    c?.room ? machineNames(pageNames.of({ identityKey: c.room.identityKey, link: c.room.link })) : [],
+  );
+
   async function setAtStart(conn: Connection, on: boolean) {
     await net.conns.put({ ...conn, connectAtStart: on });
     await net.refresh();
@@ -71,6 +78,9 @@
       <strong>{t('machines:AdapterCard.adapter', { n: index + 1 })}</strong>
       <Note inline class="meta">{t('machines:AdapterCard.adapter.mac', { mac: adapter.mac })}</Note>
       <Note inline class="meta" data-connection-name>{line}</Note>
+      {#if names.length}<Note inline class="meta" data-names
+          >{t('machines:AdapterCard.adapter.names', { names, count: names.length })}</Note
+        >{/if}
       {#if here?.note}<Note inline tone="warn" class="meta">{said(here.note).headline}</Note>{/if}
     </div>
   </div>

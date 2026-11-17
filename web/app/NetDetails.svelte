@@ -13,8 +13,11 @@
   import Note from './ui/Note.svelte';
   import ValueField from './ui/ValueField.svelte';
   import NetLocalInstall from './NetLocalInstall.svelte';
+  import NameEntry from './NameEntry.svelte';
+  import { pageNames } from './areas/names.svelte.ts';
+  import { namesLine } from './names-view.ts';
   import T from './T.svelte';
-  import { t } from '../i18n.ts';
+  import { t, text } from '../i18n.ts';
   import { SOURCE } from '../local-release.ts';
   import type { PageNetwork } from './net-live.ts';
   import { network } from './areas/network.ts';
@@ -32,6 +35,9 @@
   const v = $derived(ad?.view);
   /** The connection can be edited (the browser has it). */
   const editable = $derived(!!c && net.connections.some((x) => x.id === c.id));
+  const roomNames = $derived(c?.room ? pageNames.of({ identityKey: c.room.identityKey, link: c.room.link }) : []);
+  /** The room's domain (`<tag>.p2p.internal`): a member's name is its key's label under it. */
+  const domain = $derived(v?.room?.name.split('.').slice(1).join('.') ?? '');
   const allow = $derived(v?.tailcatKey ? `tailcat serve --allow=${v.tailcatKey} exit-node` : '');
 
   $effect(() =>
@@ -190,6 +196,12 @@
         <Note size="md" tone="warn" id="net-details-room-failed"
           >{t('network:NetDetails.room.directFailed', { count: v.room.failed })}</Note
         >
+      {/if}
+      {#if v.room?.names}<Note size="md" id="net-details-names-line">{text(namesLine(v.room.names))}</Note>{/if}
+      {#if v.room?.key && domain}
+        {#each roomNames as n (n.name)}
+          <NameEntry v={n} conn={{ identityKey: c.room.identityKey, link: c.room.link }} {domain} here={v.room.key} />
+        {/each}
       {/if}
     {/if}
   {/if}
