@@ -1572,16 +1572,16 @@
     "note": "Machines page: the browser's storage, in the bar at the page's bottom. Tooltip of Free unused disk space."
   },
   "PreferencesPane.shaderBudget": {
-    "message": "Space for Vulkan's shaders",
+    "message": "Vulkan shader cache size",
     "note": "Machines page, Preferences: the label of a list of sizes (MiB), the most that Vulkan's translated shaders may take in the browser's storage."
   },
   "PreferencesPane.shaderBudget.default": {
     "message": "Default ({{n}} MiB)",
-    "note": "Machines page, Preferences: the default choice of Space for Vulkan's shaders. {{n}}: the size in MiB."
+    "note": "Machines page, Preferences: the default choice of Vulkan shader cache size. {{n}}: the size in MiB."
   },
   "PreferencesPane.shaderBudget.note": {
-    "message": "Machines with Vulkan keep the shaders they translate, so that a program's next start, on any machine, translates nothing again. When the space is full, those used least recently go first. In use, they take about this much memory too. A change takes effect at the next start of a machine.",
-    "note": "Machines page, Preferences: the note under Space for Vulkan's shaders."
+    "message": "Translated Vulkan shaders are kept in this browser's storage so they don't need to be re-translated when any machine uses them again. When this limit is reached, the least recently used shaders are evicted first. When in use, they take about this much memory. Changes apply from the next machine start.",
+    "note": "Machines page, Preferences: the note under Vulkan shader cache size."
   },
   "MachinesPage.powerOff.confirm.soft": {
     "message": "Shut {{name}} down to make this change? Its guest will be asked to shut down first; you will be able to power it off forcibly, if needed.",
