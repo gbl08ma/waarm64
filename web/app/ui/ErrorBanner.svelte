@@ -11,6 +11,7 @@
   import type { Snippet } from 'svelte';
   import Button from './Button.svelte';
   import type { Countdown } from '../areas/message-bar.svelte.ts';
+  import { send, receive } from './crossfade.ts';
 
   type Props = {
     tone?: 'error' | 'warn' | 'info';
@@ -44,7 +45,12 @@
   const ringStyle = $derived(countdown && `--ring-ms: ${countdown.ms}ms`);
 </script>
 
-<div class={['banner', tone, floating && 'floating', cls]} {...rest}>
+<div
+  class={['banner', tone, floating && 'floating', cls]}
+  {...rest}
+  in:receive={{ key: 'ErrorBanner' }}
+  out:send={{ key: 'ErrorBanner' }}
+>
   <!-- Its words and buttons wrap among themselves; the close button stays beside them, at the top right. -->
   <div class="main">
     <div class="body" id={bodyId}>{@render children()}</div>
