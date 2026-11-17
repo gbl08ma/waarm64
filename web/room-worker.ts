@@ -46,18 +46,30 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     case 'rtc-signal': return client?.rtcSignal(m.rtc, m.json);
     case 'rtc-closed': return client?.rtcClosed(m.rtc);
     case 'rtc-blocked': return client?.rtcBlocked(m.blocked);
-    case 'detach':
+    case 'detach': {
       lease = null;
       ip?.postMessage({ type: 'lease', lease: null });
       if (ip) ip.onmessage = null;
       client?.close();
       client = undefined;
-      void names?.flush();
+      // What waits for the names store is written before the page goes on (it may close the worker next).
+      const store = names;
       names = undefined;
-      self.postMessage({ type: 'detached', ip } satisfies FromRoom, ip ? [ip] : []);
+      const port = ip;
       ip = undefined;
       send = undefined;
+      await store?.flush();
+      self.postMessage({ type: 'detached', ip: port } satisfies FromRoom, port ? [port] : []);
       return;
+    }
+    case 'close': {
+      client?.close();
+      client = undefined;
+      const store = names;
+      names = undefined;
+      await store?.flush();
+      return post({ type: 'closed' });
+    }
     case 'start':
       break;
   }
@@ -72,7 +84,7 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     const config = id ? { ...m.config, key: id.key } : m.config;
     // The room's registry records, streamed in before the first tick (docs/networking/tailnet.md "The module").
     const parsed = parseRoomLink(m.config.room.link);
-    const store = m.identityKey !== undefined && 'room' in parsed ? await roomNamesStore(parsed.room.id).catch(() => undefined) : undefined;
+    const store = m.identityKey !== undefined && 'room' in parsed ? await roomNamesStore(parsed.room.id, m.identityKey).catch(() => undefined) : undefined;
     const records = (await store?.load().catch(() => undefined)) ?? [];
     if (!ip) return; // detached meanwhile
     names = store;

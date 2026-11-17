@@ -116,7 +116,7 @@ let base = '';
 let closeServer = () => {};
 const chromiumSkip = !existsSync(WASM) ? 'net/ts/build.sh' : !existsSync(process.env.CHROMIUM ?? '/usr/bin/chromium') ? 'no Chromium' : false;
 
-test('a room\'s registry records in IndexedDB: kept by room in batches, the old database upgraded, streamed into the module at the start', { skip: chromiumSkip, timeout: 60_000 }, async () => {
+test('a room\'s registry records in IndexedDB: kept by room and connection in batches, the old database upgraded, streamed into the module at the start, written before the worker goes', { skip: chromiumSkip, timeout: 60_000 }, async () => {
   const server = await startServer();
   closeServer = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -128,19 +128,23 @@ test('a room\'s registry records in IndexedDB: kept by room in batches, the old 
     await page.waitForFunction('window.harness');
     await page.evaluate('window.harness.old()');
     type Rec = [string, number[]];
-    const r = await page.evaluate('window.harness.store()') as { identity: { key: string }; before: number; first: Rec[]; second: Rec[]; other: Rec[]; key: string; keyB: string };
+    const r = await page.evaluate('window.harness.store()') as { identity: { key: string }; before: number; first: Rec[]; second: Rec[]; other: Rec[]; otherConn: Rec[]; key: string; keyB: string; keyConn: string };
     assert.deepEqual(r.identity, { key: 'ab'.repeat(32) }, 'the identity kept before the names store is there');
     assert.equal(r.before, 0, 'written in a batch, not at once');
     const id = (k: number) => k.toString(16).padStart(2, '0').repeat(32);
     assert.deepEqual(r.first, [[id(1), [2, 1]], [id(2), [2, 22]], [id(3), [2, 3]]]);
     assert.deepEqual(r.second, [[id(1), [2, 1]], [id(2), [2, 22]]], 'deleted');
     assert.deepEqual(r.other, [[id(1), [2, 9]]], 'another room\'s apart');
+    assert.deepEqual(r.otherConn, [[id(1), [2, 42]]], 'another connection\'s in the same room apart');
     assert.match(r.key, /^[0-9a-f]{32}$/);
     assert.notEqual(r.key, r.keyB);
+    assert.notEqual(r.key, r.keyConn);
     const w = await page.evaluate(`window.harness.worker(${JSON.stringify(`${base}/target/net/ts.wasm`)})`) as { stored: number; left: number; self: { params: string } };
     assert.equal(w.stored, 1);
     assert.equal(w.self.params, 'production');
     assert.equal(w.left, 0, 'a record the module refused is deleted');
+    const c = await page.evaluate(`window.harness.closed(${JSON.stringify(`${base}/target/net/ts.wasm`)})`) as { left: number };
+    assert.equal(c.left, 0, 'the delete waiting for its batch is written before the worker goes');
   } finally {
     await browser.close();
     closeServer();

@@ -33,6 +33,7 @@ export type ToRoom =
   | { type: 'attach'; ip: MessagePort }
   | { type: 'primary'; primary: boolean; rank?: number; primary6?: boolean }
   | { type: 'detach' }
+  | { type: 'close' }
   | { type: 'rtc-channel'; rtc: number; channel: RTCDataChannel }
   | { type: 'rtc-signal'; rtc: number; json: string }
   | { type: 'rtc-closed'; rtc: number }
@@ -45,6 +46,7 @@ export type FromRoom =
   | { type: 'rtc-signal'; rtc: number; json: string }
   | { type: 'rtc-close'; rtc: number }
   | { type: 'detached'; ip?: MessagePort }
+  | { type: 'closed' }
   | { type: 'error'; error: WireError };
 
 export type RoomPeer = { key: string; address6: number[]; path: 'direct' | 'relay' };
@@ -210,6 +212,10 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
     worker.onerror = (e) => reject(new Error(e.message));
     worker.onmessage = (e: MessageEvent<FromRoom>) => {
       const m = e.data;
+      if (closed) {
+        if (m.type === 'closed') worker.terminate();
+        return;
+      }
       switch (m.type) {
         case 'loaded': timings.loadMs = m.ms; break;
         case 'rtc-open': void open(m.rtc, m.offer); break;
@@ -263,7 +269,9 @@ export function startRoom(config: StartRoom, onEvent: (e: RoomEvent) => void = (
       netInfo?.removeEventListener('change', reprobe);
       for (const { pc } of conns.values()) pc.close();
       conns.clear();
-      worker.terminate();
+      // The worker closes its client and writes what waits for the names store first (NAMES_WRITE_MS's batch).
+      post({ type: 'close' });
+      setTimeout(() => worker.terminate(), CLOSE_WAIT_MS);
     },
   };
 }
@@ -332,7 +340,7 @@ export const forgetRoomIdentity = (key: string) => idb('readwrite', (s) => s.del
 /**
  * A room's registry records (docs/plans/room-names.md "Servers" "Persist", "A member resolving a name"), in `waarm64-room`'s
  * `names` store: what a server holds of each name, or what a member keeps of each name it resolved, one record a name id,
- * keyed by the room (a hash of its ID: `roomNamesKey`) and the id in hex. The module emits them (action 11) and takes them
+ * keyed by the room and the connection (a hash of the room's ID and the `identityKey`: `roomNamesKey`) and the id in hex. The module emits them (action 11) and takes them
  * back at the start (`TsClient.namesLoad`), so a member answers names it knew before it asks anyone. Only a stored
  * connection's (one with an `identityKey`): an ephemeral one keeps nothing.
  */
@@ -345,18 +353,24 @@ export type RoomNamesStore = {
   flush(): Promise<void>;
 };
 
-/** The key a room's records are kept under: 16 bytes of SHA-256 over the room's ID, in hex (the ID itself is a private room's secret). */
-export async function roomNamesKey(id: string): Promise<string> {
-  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`waarm64 room names\n${id}`));
+/**
+ * The key a room connection's records are kept under: 16 bytes of SHA-256 over the room's ID and the connection's
+ * `identityKey`, in hex (the ID itself is a private room's secret; two stored connections in one room, a server and a
+ * member, keep theirs apart).
+ */
+export async function roomNamesKey(id: string, identityKey: string): Promise<string> {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`waarm64 room names\n${id}\n${identityKey}`));
   return hex(new Uint8Array(h).subarray(0, 16));
 }
 
 /** How long writes wait to go in one transaction (a server's sync changes many names at once). */
 export const NAMES_WRITE_MS = 1000;
+/** How long a closed room's worker may take to write what waits before it is terminated. */
+const CLOSE_WAIT_MS = 3000;
 
-/** The records of the room with ID `id`. */
-export async function roomNamesStore(id: string): Promise<RoomNamesStore> {
-  const room = await roomNamesKey(id);
+/** The records of the stored connection `identityKey` in the room with ID `id`. */
+export async function roomNamesStore(id: string, identityKey: string): Promise<RoomNamesStore> {
+  const room = await roomNamesKey(id, identityKey);
   const waiting = new Map<string, Uint8Array | null>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last: Promise<void> = Promise.resolve();

@@ -25,8 +25,12 @@
     },
     async store() {
       const identity = await readRoomIdentity('old');
-      const a = await roomNamesStore('room a');
-      const b = await roomNamesStore('room b');
+      const a = await roomNamesStore('room a', 'conn 1');
+      const b = await roomNamesStore('room b', 'conn 1');
+      // Another stored connection in room a (two machines on one page): its records apart.
+      const a2 = await roomNamesStore('room a', 'conn 2');
+      a2.write(new Uint8Array(32).fill(1), new Uint8Array([2, 42]));
+      await a2.flush();
       const id = (k) => new Uint8Array(32).fill(k);
       a.write(id(1), new Uint8Array([2, 1]));
       a.write(id(2), new Uint8Array([2, 2]));
@@ -40,12 +44,16 @@
       await a.flush();
       const second = (await a.load()).map((r) => [r.id, Array.from(r.record)]);
       const other = (await b.load()).map((r) => [r.id, Array.from(r.record)]);
-      return { identity, before, first, second, other, key: await roomNamesKey('room a'), keyB: await roomNamesKey('room b') };
+      const otherConn = (await a2.load()).map((r) => [r.id, Array.from(r.record)]);
+      return {
+        identity, before, first, second, other, otherConn,
+        key: await roomNamesKey('room a', 'conn 1'), keyB: await roomNamesKey('room b', 'conn 1'), keyConn: await roomNamesKey('room a', 'conn 2'),
+      };
     },
     /** A stored connection's room started with a record stored that the module refuses (another version's): deleted. */
     async worker(wasm) {
       const id = 'room c';
-      const s = await roomNamesStore(id);
+      const s = await roomNamesStore(id, 'names-test');
       s.write(new Uint8Array(32).fill(7), new Uint8Array([9, 9, 9]));
       await s.flush();
       const stored = (await s.load()).length;
@@ -56,6 +64,19 @@
       const left = (await s.load()).length;
       room.close();
       return { stored, left, self: events.find((e) => e.type === 'self') };
+    },
+    /** The same, closed as soon as it runs: the delete waiting for its batch is written before the worker goes. */
+    async closed(wasm) {
+      const id = 'room d';
+      const s = await roomNamesStore(id, 'names-test');
+      s.write(new Uint8Array(32).fill(7), new Uint8Array([9, 9, 9]));
+      await s.flush();
+      const events = [];
+      const room = startRoom({ room: { link: `waarm64-room:${encodeURIComponent(id)}?nostr=${encodeURIComponent('ws://127.0.0.1:9')}&derp=127.0.0.1%3A9` }, identityKey: 'names-test', wasm }, (e) => events.push(e));
+      for (let k = 0; k < 100 && !events.some((e) => e.type === 'self'); k++) await sleep(50);
+      room.close();
+      await sleep(NAMES_WRITE_MS + 1000);
+      return { left: (await s.load()).length };
     },
   };
 </script>
