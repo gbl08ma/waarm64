@@ -1712,3 +1712,30 @@ fn valid_entries_put_again_are_checked_once() {
     assert!(s.reg.is_empty(), "nothing of a dead chain is kept");
     assert_eq!(checked, vec![40, 40, 40], "checked whole once each");
 }
+
+/// A peer forgotten on our side only (its session ended here, not there) and met again: our new transfers aren't ones
+/// it remembers as done and drops (found while fixing review 2's finding 5: a member asking the same server again).
+#[test]
+fn a_peer_forgotten_and_met_again_gets_new_transfers() {
+    let now = Instant::now();
+    let (ka, kb) = ([1u8; 32], [2u8; 32]);
+    let (mut a, mut b) = (Transfers::default(), Transfers::default());
+    let mut deliver = |a: &mut Transfers, b: &mut Transfers, payload: &[u8]| -> bool {
+        a.send(kb, payload, now);
+        let mut got = false;
+        for (_, d) in std::mem::take(&mut a.out) {
+            got |= b.input(ka, &d, now).is_some_and(|(_, p)| p == payload);
+        }
+        for (_, d) in std::mem::take(&mut b.out) {
+            a.input(kb, &d, now);
+        }
+        got
+    };
+    assert!(deliver(&mut a, &mut b, b"one"));
+    assert!(deliver(&mut a, &mut b, b"two"));
+    a.forget(&kb);
+    assert!(
+        deliver(&mut a, &mut b, b"three"),
+        "dropped as a transfer done"
+    );
+}

@@ -1240,7 +1240,7 @@ impl Server {
                         GetMode::Ids => {}
                         GetMode::Owner | GetMode::History => {
                             let history = mode == GetMode::History;
-                            items.extend(h.owner_answer(&held, zone, history));
+                            items.extend(h.owner_answer(&held, zone, history, &self.params));
                             let moved = unix.saturating_sub(h.asked) >= ASKED_STORE;
                             h.asked = h.asked.max(unix);
                             if moved {

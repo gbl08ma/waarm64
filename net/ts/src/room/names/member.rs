@@ -27,11 +27,12 @@ use std::{
 use super::{
     Invalid, Params,
     chain::{Chain, Kept, Name},
-    entry::{Pow, Stamped},
+    entry::{Kind, Pow, Stamped},
     id::{RoomNames, split},
     server::{
         ACCEPT_MAX, Ask, CHOOSE_AFTER, Cmd, GIVE_UP, Input, NOBODY_FIRST, NOBODY_MAX,
-        QUESTIONS_PER_SECOND, ROUND_AT, SPREADS, UNITS_PER_TURN, check_serve, random, room_in,
+        QUESTIONS_PER_SECOND, ROUND_AT, SERVE_RUN, SPREADS, UNITS_PER_TURN, check_serve, random,
+        room_in,
     },
     store::{anchor_tag, zone_tag},
     wire::{GetMode, Item, Msg, Rd, Transfers, WireEntry},
@@ -156,6 +157,8 @@ struct View {
     name: Name,
     chain: Chain,
     zone: Option<Zone>,
+    /// The chain is the one kept, ended by its owner's release.
+    released: bool,
 }
 
 enum Req {
@@ -916,8 +919,15 @@ impl Member {
             match said {
                 Said::Nothing => c.nothing += 1,
                 Said::Item(it) => {
-                    // A member checks the last entry only, unless it asked for the run.
-                    if (!history && it.entries.len() > 1) || it.id != id {
+                    // A member checks the last entry only, unless it asked for the run, or the server shows the kept
+                    // chain's release (and what leads to it from the kept last entry).
+                    let release = kept_last.is_some()
+                        && it.entries.len() <= SERVE_RUN
+                        && it
+                            .entries
+                            .last()
+                            .is_some_and(|w| w.entry.kind == Kind::Release);
+                    if (!history && it.entries.len() > 1 && !release) || it.id != id {
                         refused += 1;
                         continue;
                     }
@@ -1047,12 +1057,25 @@ impl Member {
             Some(z) if z.name != id || !z.verify(&self.names) => return Err(Invalid::Zone),
             z => z,
         };
-        let chain = (check.name.chains(&self.params).into_iter())
-            .find(|c| c.last() == last && c.covers(unix));
+        let chains = check.name.chains(&self.params);
+        // The kept chain released: it holds the kept last entry and ends at the server's.
+        let kept = self.kept.get(&id).map(|k| k.last.id());
+        if let Some(c) = (chains.iter())
+            .find(|c| c.released && c.last() == last && kept.is_some_and(|k| c.ids.contains(&k)))
+        {
+            return Ok(Some(View {
+                chain: c.clone(),
+                name: check.name,
+                zone: None,
+                released: true,
+            }));
+        }
+        let chain = (chains.into_iter()).find(|c| c.last() == last && c.covers(unix));
         Ok(chain.map(|chain| View {
             name: check.name,
             chain,
             zone,
+            released: false,
         }))
     }
 
@@ -1068,6 +1091,18 @@ impl Member {
         now: Instant,
         unix: u64,
     ) {
+        // A server showed the kept chain's release: what is kept ends there (the release is the owner's own, signed and
+        // anchored, so one server's word is enough), and the name is asked for again, holding nothing.
+        if views.iter().any(|(_, v)| v.released) {
+            if self.kept.remove(&id).is_some() {
+                self.log("a kept name was let go by its owner".into());
+                self.cmds.push_back(Cmd::Store { id, record: None });
+            }
+            self.lookups
+                .insert(id, Lookup::new(BTreeMap::new(), false, true));
+            self.dispatch(now);
+            return;
+        }
         if views.is_empty() {
             if nothing == 0 {
                 // Nobody answered: once more, with servers found again if need be.

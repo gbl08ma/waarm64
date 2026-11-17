@@ -232,18 +232,45 @@ impl Held {
     }
 
     /// A member's `get`: the owning chain's last entry (`history`: its whole run) and the zone, those the asker lacks;
-    /// None when no chain owns the name now (the member hears "none").
+    /// None when no chain owns the name now (the member hears "none"). Unless the member's last entry (in `held`) is
+    /// on a released chain kept as a tombstone, off the owning one: then the release and what leads to it from that
+    /// entry, so that the member ends what it keeps (review 2: a kept chain without its release covers for weeks, and
+    /// the member refuses the next owner meanwhile).
     pub fn owner_answer(
         &self,
         held: &[HeldTag],
         zone: (u64, [u8; 4]),
         history: bool,
+        params: &Params,
     ) -> Option<Item> {
-        let o = self.owner.as_ref()?;
         let mut it = Item {
             id: self.id(),
             ..Item::default()
         };
+        let has = |id: &[u8; 32]| {
+            let k: [u8; 8] = id[..8].try_into().unwrap();
+            let e = self.name.get(id);
+            held.iter()
+                .any(|(i, a)| *i == k && e.is_some_and(|e| *a == anchor_tag(e)))
+        };
+        if !history {
+            let on_owner = |id: &[u8; 32]| self.owner.as_ref().is_some_and(|o| o.ids.contains(id));
+            let tomb = (self.name.chains(params).into_iter())
+                .filter(|c| c.released)
+                .find_map(|c| {
+                    let at = c.ids.iter().position(|id| has(id) && !on_owner(id))?;
+                    Some(c.ids[at + 1..].to_vec())
+                });
+            if let Some(ids) = tomb {
+                it.entries = ids
+                    .iter()
+                    .filter_map(|id| self.name.get(id))
+                    .map(WireEntry::of)
+                    .collect();
+                return Some(it);
+            }
+        }
+        let o = self.owner.as_ref()?;
         let ids = if history {
             &o.ids[..]
         } else {
@@ -251,8 +278,7 @@ impl Held {
         };
         for id in ids {
             let e = self.name.get(id)?;
-            let k: [u8; 8] = id[..8].try_into().unwrap();
-            if !held.iter().any(|(i, a)| *i == k && *a == anchor_tag(e)) {
+            if !has(id) {
                 it.entries.push(WireEntry::of(e));
             }
         }

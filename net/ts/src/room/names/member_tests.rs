@@ -1050,3 +1050,42 @@ fn cheap_fresh_registrations_dont_buy_both_of_an_askers_servers() {
         "both junk: {both_junk} of {asked}"
     );
 }
+
+/// Review 2's finding 5: a release the servers hold ends what a member keeps (the servers show it, continuing the
+/// kept last entry), and the name's next owner is taken then.
+#[test]
+fn a_release_ends_a_kept_name_and_its_next_owner_is_taken() {
+    let mut b = Bitcoin::new(ROOM, 41);
+    let key = b.key(1, "alpha");
+    let claim = b.at(Kind::Claim, &key, "alpha", [0; 32], t(20));
+    let renew = b.at(Kind::Renew, &key, "alpha", claim.id(), t(4));
+    let zone = Zone::seal(&b.names, &key, "alpha", 1, &[(None, [0xa1; 32])], false).unwrap();
+    let alpha = b.item("alpha", &[claim.clone(), renew.clone()], Some(zone));
+    let (s0, s1) = (serving(&mut b, 1, &[&alpha]), serving(&mut b, 2, &[&alpha]));
+    let mut bus = Bus::new(vec![s0, s1], member());
+    assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
+    // The owner lets it go: both servers hold the release.
+    let release = b.at(Kind::Release, &key, "alpha", renew.id(), t(1));
+    let gone = b.item("alpha", &[claim, renew, release], None);
+    let unix = bus.unix();
+    for s in &mut bus.s {
+        assert!(s.load(&record(&gone, unix), unix));
+    }
+    bus.advance(Duration::from_secs(KEPT_REFRESH + 1));
+    bus.resolve("alpha"); // from what is kept, asked again in the background
+    bus.advance(Duration::from_secs(2));
+    assert_eq!(bus.resolve("alpha").0, Answer::Nx, "released: kept no more");
+    assert!(!bus.m.kept.contains_key(&alpha.id));
+    // Someone registers it: both servers hold the new claim, and the member takes it.
+    let newcomer = title(&mut b, 9, "alpha", 0, &[], [0x99; 32], [0x99; 32]);
+    let unix = bus.unix();
+    for s in &mut bus.s {
+        assert!(s.load(&record(&newcomer, unix), unix));
+    }
+    bus.advance(Duration::from_secs(61));
+    assert_eq!(
+        bus.resolve("alpha").0,
+        Answer::Node([0x99; 32]),
+        "the next owner"
+    );
+}

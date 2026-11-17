@@ -712,7 +712,6 @@ struct In {
 /// A peer's transfers both ways.
 #[derive(Default)]
 struct Peer {
-    next: u32,
     out: Vec<Out>,
     inbound: BTreeMap<u32, In>,
     /// Transfers received whole lately (a resent part is acknowledged again, nothing more).
@@ -732,6 +731,9 @@ const DONE_KEPT: usize = 256;
 #[derive(Default)]
 pub struct Transfers {
     peers: BTreeMap<[u8; 32], Peer>,
+    /// The last transfer's id, across peers: a peer forgotten and met again (its session ended on our side only) gets
+    /// new ids, not ones it remembers as done and would drop.
+    next: u32,
     /// Datagrams to send: (peer, bytes).
     pub out: Vec<([u8; 32], Vec<u8>)>,
     /// Sends there was no room for: failed at the next tick (the time it was refused).
@@ -746,9 +748,9 @@ pub const MAX_QUEUED: usize = 8 * MAX_MESSAGE;
 impl Transfers {
     /// Sends `payload` to `to`: its transfer's id.
     pub fn send(&mut self, to: [u8; 32], payload: &[u8], now: std::time::Instant) -> u32 {
+        self.next = self.next.wrapping_add(1).max(1);
+        let id = self.next;
         let p = self.peers.entry(to).or_default();
-        p.next = p.next.wrapping_add(1).max(1);
-        let id = p.next;
         let queued: usize = p.out.iter().flat_map(|o| &o.parts).map(Vec::len).sum();
         if queued + payload.len() > MAX_QUEUED {
             self.refused.push((to, id));

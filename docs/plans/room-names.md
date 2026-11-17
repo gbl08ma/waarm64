@@ -354,7 +354,8 @@ unacknowledged at once (a derper queues 32 packets a client and drops the oldest
 1 MiB at most, and a peer may have 16 incomplete, 2 MiB, held at once (every new part counts; an incomplete transfer
 is dropped 10 s after its last new part); at most 8 MiB is queued to a peer unacknowledged, past which a send fails
 (a peer that asks much and acknowledges nothing can't make us hold all we would answer). A message is a type, the
-transfer it answers (0: none) and a body.
+transfer it answers (0: none) and a body. Transfer ids count up across a client's peers, so a peer forgotten on one
+side and met again doesn't take new transfers for ones it remembers as done.
 
 ### Finding a server
 
@@ -459,7 +460,11 @@ copies by nonce **and round** (the three rounds share a nonce).
   waits on a server; the price is that a zone change or a lost name shows one query late (measured on the bus: the
   query at 5 minutes gets the old zone, the next the new). In its grace a kept name is NXDOMAIN while it was confirmed
   in the last 5 minutes, and waits for a renewal the servers may hold after that. Both servers saying none doesn't
-  drop a kept chain that still covers (a server that lost it says nothing against it).
+  drop a kept chain that still covers (a server that lost it says nothing against it). **A release does** (review 2's
+  finding 5): a server whose tombstone holds the member's last entry, off the owning chain, answers its `get` with the
+  release and what leads to it from that entry (8 entries at most), and the member, having checked them, ends what it
+  keeps and asks again holding nothing, so it takes the name's next owner at once rather than refusing it for the
+  weeks the kept chain would have covered. One server is enough: the release is the owner's own, signed and anchored.
 - Both say none: NXDOMAIN, kept 60 s. One says none: the other's answer stands (but still goes through `Kept::offer`:
   one server's chain against a contesting kept one is asked for `history` and refused, `member_tests.rs`). Neither
   answers (both transfers given up): asked once more, with servers found again if need be; the query meanwhile gets
@@ -517,7 +522,7 @@ copies by nonce **and round** (the three rounds share a nonce).
   minutes (8,900 DERP packets in all, a 51 KB registry each); after a reset, three owners' names are back everywhere
   in 40 s. (The tests' entries carry one 4-operation pretend anchor each, so bytes are small against real anchors'.)
 - **`get`** has three more modes, a member's: `owner` (the owning chain's last entry and the zone, those the member
-  lacks; nothing when no chain owns the name now) and `history` (the owning chain's whole run and the zone), each
+  lacks; nothing when no chain owns the name now; a tombstone's release when the member's last entry is on it) and `history` (the owning chain's whole run and the zone), each
   counting as the name being asked for; and `ids` (every id held under one first byte, answered `ids`; not counted). A server that leaves names out (or lies) is outvoted in sync by
   any other server holding them, and a member asking it for one gets nothing from it and the name from its other
   server (N3: the answer that has one stands).
