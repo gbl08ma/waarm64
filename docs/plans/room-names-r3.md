@@ -3,8 +3,11 @@
 This replaces "R3" and option C of question 2 in [room-names-redesign.md](room-names-redesign.md). The user accepted
 (2026-11-17) that a first lookup shows its name id to every server in the room and to a relay that knows the room's
 ID. Given that, a first lookup no longer finds servers and then asks them: **it asks the room for the name, and the
-answers come back through the relays too.** Nothing here is built. The numbers marked *estimate* are from the P2P
-track's R4 table (bench/net/REPORT.md "Rooms on public servers"), not measurements of this design.
+answers come back through the relays too.** **Built in R3 (2026-11-17)**, with the user's answers to the four points at
+the end (records through relays: yes; names that don't exist announced again: yes; `REPLY_MAX` 4 KiB, the relays
+measured in a dev VM session; no publisher `ask`): room-names.md "Finding a server", "A member resolving a name" and
+"Servers" say what the code does, and "As built" below what this page left open. The numbers marked *estimate* are
+from the P2P track's R4 table (bench/net/REPORT.md "Rooms on public servers"), not measurements of this design.
 
 ## Summary
 
@@ -167,3 +170,55 @@ ID, from a key new each session. Two things follow from the shape that are worth
 4. **Optional, not in the plan above**: a publisher could check that the room has its last entry by an ordinary `ask`
    for its own name, and put again through a fresh draw when it hasn't. That announces the id from the owner's
    address (as any member's lookup would look), which answer 3 didn't cover. Left out unless wanted.
+
+## As built (R3, 2026-11-17)
+
+What this page left open, settled by its own reasoning:
+
+- **Rounds**: always three, at 0, 0.4 and 1 s: the start, 3 bits wider, everyone. A room found at "everyone" asks
+  everyone again at 0.4 and 1 s while nothing counts, so a server whose reply budget was spent (a guest asking several
+  names at once in a small room) or a relay that lost the ask is asked again; servers reply to a nonce once. Past eight
+  replies the next lookup starts 3 bits narrower (to 15 at most).
+- **What counts as a reply**: one whose item held its checks, or one that said none or too big. A junk reply counts for
+  nothing: it neither sets off the dissent nor the decision. `shown` is the owner key of the best item **checked** so
+  far: an unchecked item bearing the owner's key would otherwise silence every holder.
+- **Checks**: an entry checked whole once a lookup, by its id; its anchor with each copy, so a forged anchor on a copy
+  of a real entry can't get the real one refused. A reply's item must be exactly one entry of the name, alive, with
+  the owner's zone for the name if any.
+- **Silence** after a reply counted in the last minute isn't "nobody serves": the query gets SERVFAIL and the next asks
+  again (budgets spent, not an empty room).
+- **NXDOMAIN's doubling** is kept while the name stays unknown: forgotten once its wait has passed as long again with
+  the name unasked.
+- **A contest** runs over repliers, not keys: each `(since, server)` in order, 8 fetches at once, a replier skipped when
+  its key already has a run checked at least as old as it claims; it ends once nothing is in flight and the best run is
+  older than every `since` left (a liar fetched first loses; a truncated run shown for the owner's key doesn't stop
+  the owner's honest replier being fetched). An item too big is a replier of unknown key in the same list. A contest
+  with no run that held gives no answer; the next query asks again.
+- **A late reply** (3 s) with another key starts a contest; one that brings an owner to a name decided none is taken.
+- **`fetch`**: the server's call back comes from its answers' budget (4 a second) and a key's 4 a minute, as a
+  question's answer does (it calls a key the ask names, which proves nothing), not from the replies' budget; it then
+  sends `items` unasked (transfer 0). The member sends a `fetch` only once its home region is up; `share` and
+  `dissent` go at once, before it.
+- **Two relays**: the reply goes through the relay that brought the ask and the one whose copy came next; with no copy
+  1 s after the reply, through another connected relay.
+- **The reply tag** is subscribed to before the names client's first ask (at its first lookup, not at its start), so a
+  publisher, which never asks, never subscribes to one.
+- **A reply's region** is the replier's names client's home region, filled in by the transport.
+- **`REPLY_MAX`** bounds the item's encoded bytes (4,096); a member drops unread a sealed reply longer than the head,
+  4 KiB and the seal; `Server::reply_max` lets the tests lower it.
+- **A server with no live name** is in no share but "everyone".
+- **An ask counts the name as asked for** at a server (the bound keeps it), as a member's `get` does.
+- **The 15-minute redraw** waits for the requests in flight to the servers held.
+
+Found while building it, not in the design: **the owner's own last entry shown with an old zone or none.** An
+attacker in a first lookup's sample can reply with the owner's real last entry (public, valid) and no zone, or an old
+one; the dissent then names the owner's key, so honest holders stay silent, and the member keeps the owner with that
+zone until its refresh 5 minutes on (NXDOMAIN or an old address meanwhile). Never another owner. `shown` would have to
+cover the zone too (its `seq` and hash) to close it: a change to the ask, so docs/backlog.md and the user.
+
+Measured (cloud, 2026-11-17): on the bus (`member_tests.rs`) 128 and 1,280 junk registrations as the whole sample,
+showing their own younger chain or saying none, against one honest holder: the owner every time, up to 2.4 s (a
+contest of 4 to 5 fetches) or ~1.1 s (no contest), 6 to 26 replies a lookup; through the fake DERP and relay
+(room/tests/names.rs) a first lookup in a room of two servers 1.3 s with no DERP packet to or from the member's names
+client, the next 0.3 s, a contested one 1.3 s with each reply through two relays; forged asks (`server_tests.rs`):
+2,000 from 200 keys over 10 s, 20 replies; one tag's 120 over 2 minutes, 32.

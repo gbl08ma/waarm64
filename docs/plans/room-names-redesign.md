@@ -15,7 +15,7 @@ the entry and the server's key, so a room's servers together ask about four time
 an explorer, in the background, paced, stored, refusing a block both deny with its anchors; the agent makes the next
 renewal ahead, so a visit of a few seconds stamps it; the promise tested over 60 days of visits 14 days apart. One
 change from §1's option C: a block is checked **by its hash** (`block/<hash>/header`), not by the anchor's height,
-which an anchor carries unauthenticated (room-names.md "Servers", "Outside the room", says why). R3 is not built.
+which an anchor carries unauthenticated (room-names.md "Servers", "Outside the room", says why). R3 is built (2026-11-17), as [room-names-r3.md](room-names-r3.md) redid it.
 
 ## Summary
 
@@ -283,7 +283,7 @@ it is built and tested, and B's risk is too cheap to take on.
 |---|---|---|
 | R1 | Records: `ref` and the window out, one header an anchor, the constant floor; the agent without `ref()`; tests' titles and vectors. **Built (2026-11-17)** | the user's go on question 2 (given) |
 | R2 | Servers finish renewals at the calendars (finding 3) and check blocks at the explorers; the agent makes the next renewal ahead; the visit notice's promise tested with visits 14 days apart and seconds long. **Built (2026-11-17)**; blocks checked by hash, not height | decision 4 (given) |
-| R3 | The tiers out, the dissent message in; review 2's finding 2 test rewritten: 128 and 1,280 junk registrations, one honest holder, the member gets the owner | decision 12 |
+| R3 | The tiers out, the dissent message in; review 2's finding 2 test rewritten: 128 and 1,280 junk registrations, one honest holder, the member gets the owner. **Built (2026-11-17)** as [room-names-r3.md](room-names-r3.md) redid it: a first lookup asks the room through the relays, dissent folded in | decision 12 (given, widened) |
 | then | N0b, N0c, N6, the end, as queued. N6 adds: explorer requests a server's first sync makes and the pace they tolerate; a first lookup's time with the wait for dissent | |
 
 R1 and R2 are the "rely less on Bitcoin" loop the user planned for the end, brought forward so that N6 measures what

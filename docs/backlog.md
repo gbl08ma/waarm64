@@ -1597,13 +1597,35 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A member's resolver logs every query for a name that isn't a key to the worker's console, names in words
     included (the page tests read it to see what a guest asks on its own). Quieter (a count, or only in a debug
     mode) once N6 has its numbers.
-  - A member's lookup that two servers left unanswered is tried once more and then given up (the query gets SERVFAIL
-    at 4 s); a server that never answers a `get` but always answers "who serves?" is found again at each new question.
-    N6 sees whether that matters at scale.
+  - A member's refresh that two servers left unanswered is tried once more and then given up (what is kept answers
+    meanwhile); a server that never answers a `get` but always answers "who serves?" is found again at each new
+    question. N6 sees whether that matters at scale.
+  - **A first lookup's loose ends** (R3, plans/room-names-r3.md "As built"):
+    - **The owner's own last entry shown with an old zone or none** silences the dissent (it names the owner's key), so
+      a sample that is all an attacker's makes a member keep the owner with that zone (NXDOMAIN or an old address)
+      until its refresh 5 minutes on, whose servers are drawn. Never another owner. Closing it takes `shown` covering
+      the zone too (its `seq` and 4 bytes of hash beside the key's): a change to the ask, the user's call.
+    - **`REPLY_MAX` (4 KiB) is the user's starting value**: whether the six default relays forward an ephemeral event of
+      that size, and how fast they rate-limit a server's replies, is a dev VM session's to measure (N0c/N6: about a
+      hundred events, no public service touched in the cloud). Under a relay's limit, items come by `fetch` (a session).
+    - **Forged asks in a room of hundreds of servers**: each holder replies once to a made-up `dissent` (up to 4.1 KB
+      through two relays), bounded only by 2 a second a server and 16 a minute a tag: megabytes a second onto public
+      relays. The design's remedy (servers answering on one relay, thinning replies by the room's size) isn't built:
+      N6 measures it.
+    - **Reply budgets spent by one guest**: in a room of a few servers, a guest asking many names at once meets the
+      servers' 2 replies a second; the rounds repeat "everyone" and silence soon after a reply is SERVFAIL rather than
+      "nobody serves", so the guest's resolver retries. Not measured with real guests.
+    - **A name in its grace resolved first while its renewal is pending** is kept and NXDOMAIN for 5 minutes, as any
+      kept name in its grace (room-names.md "A member resolving a name"); a first lookup now comes sooner than the
+      servers finish a renewal, which the rig's test had to wait out. A shorter freshness for a kept name in its grace
+      would end it.
+    - The first lookup's time on public relays (~1 s in a room asked before, ~2 s the first time: *estimates*) is
+      N0c's item 6.
   - **A forged header at the floor** (R1: an anchor is its proof and its block's one header, against one floor at 1/16
     of block 976,177's difficulty): one header mined in private, timed weeks back, anchors claims on any number of
-    names in every room. Servers asking an explorer about each block (R2, built) refuse it at a server; a member both of
-    whose servers are the forger's still takes it (docs/plans/room-names-redesign.md).
+    names in every room. Servers asking an explorer about each block (R2, built) refuse it at a server; a member, which
+    asks no explorer, still takes it from any server that shows it (since R3 a first lookup's reply or a contest's
+    run: its older run wins the contest; docs/plans/room-names-redesign.md).
     N4b's run of seven headers and the floor's schedule are gone, and with them the schedule's upkeep.
   - The floor is one constant. Raising it at a release must stay under every block since the oldest anchor still
     alive (a term and a grace, 37 days), or entries alive then are refused; no release step does it yet, and nothing

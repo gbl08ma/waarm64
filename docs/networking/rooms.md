@@ -354,6 +354,8 @@ called back, a peer made again on one side, both dialing at once, a lost call ba
 copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
 cases; BIP-340's first vector; and the registry of room names, plans/room-names.md: servers' names clients finding each other,
 syncing two and twenty, a reset, a flood of "who serves?" beside the node's own lookups, nothing under the node's key,
+a member's first lookup asking the room through the relays (no DERP packet), a contested one fetching through sessions
+with each reply through two relays,
 in `room/tests/names.rs`, and the registry's logic against a bus in `room/names/server_tests.rs`); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
 NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
 RFC 6455 server, no dependency; a message past 1 MiB closes the connection, `events` keeps the last 65,536); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room

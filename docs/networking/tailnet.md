@@ -43,9 +43,12 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   (`web/ts-client.ts` `failureOf`, docs/i18n.md), with any technical `detail` beside it. Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
 - **A room's registry** (docs/plans/room-names.md "The registry"): a room's config with `names` (`titles`: each a
   name's owner key, 64 hex digits, and its item, hex: `room/names/wire.rs`; `maxNames`, `maxBytes`) makes the node a
-  server of the room's names; without it the node is a member, which asks servers for the names its guest wants
-  (`room/names/member.rs`). Either's names client is a second room client inside the same handle (a member's only
-  from its guest's first query for a name that isn't a key until 10 minutes after the last): its WebSocket
+  server of the room's names; without it the node is a member, which asks the room for the names its guest wants
+  (`room/names/member.rs`: a first lookup is an ask under the room's names tag, answered by servers' replies under the
+  member's names client's own reply tag, both through the Nostr relays; a refresh of a name it keeps goes to servers
+  found by "who serves?"). Either's names client is a second room client inside the same handle (a member's only
+  from its guest's first query for a name that isn't a key until 10 minutes after the last; it asks through its relays
+  before its home region is up): its WebSocket
   connections are numbered from `0x40000000` (`room::NAMES_CONN`), so the worker opens, feeds and closes them as any
   other, and of its events only its log comes out (marked `names client:`). Action 11 stores a name's record (the
   name id, 32 bytes, then the record; the id alone: delete it), a server's (version 1) or a member's (version 2);

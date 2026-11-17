@@ -8,7 +8,7 @@ changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/
 lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
 client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
 member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"), and
-the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time, which R1 undid: [room-names-redesign.md](room-names-redesign.md)), the records as the redesign has them (R1: no `ref`, an anchor's block's one header against one compiled floor), servers finishing renewals and checking blocks at the explorers, and renewals made ahead (R2: "Bitcoin as the clock", "Servers": "Outside the room", "The names agent"), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time, which R1 undid: [room-names-redesign.md](room-names-redesign.md)), the records as the redesign has them (R1: no `ref`, an anchor's block's one header against one compiled floor), servers finishing renewals and checking blocks at the explorers, and renewals made ahead (R2: "Bitcoin as the clock", "Servers": "Outside the room", "The names agent"), a first lookup that asks the room through the relays and "who serves?" back to the plain draw (R3, [room-names-r3.md](room-names-r3.md): "Finding a server", "A member resolving a name", "Servers": "Asks"), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -17,7 +17,7 @@ A name's owner is whoever holds the oldest unbroken chain of **timestamped claim
 stamped through OpenTimestamps, so that a Bitcoin block proves it existed by that block's time; a name is held for a
 term (about 30 days) and kept by renewing, each renewal stamped the same way. Every claim proves its own place in line,
 so **the owner's copy is the title**. The room's registry is a cache of such chains: **name owners hold all of it and
-serve it; everyone else asks a server for the one name it wants** and checks the answer itself. A room that loses the
+serve it; everyone else asks the room for the one name it wants** and checks the answers itself. A room that loses the
 registry (everyone left) gets it back as owners return. Nothing is stored on a relay, there is no room key and no
 server of anyone's; Bitcoin is used only as a clock (no coin, fee or wallet).
 
@@ -32,6 +32,8 @@ server of anyone's; Bitcoin is used only as a clock (no coin, fee or wallet).
 - **Short terms**, renewed by the page on the user's behalf whenever it is open: "visit this page every N days".
 - **Name owners serve the registry** and are found by an ephemeral "who serves the registry?" message; nothing about
   the sender goes in a room's link. Members who only use names announce nothing beyond what rooms.md already says.
+  (Widened by the user on 2026-11-17, R3: a lookup of a name a member doesn't keep shows the name's id to the room's
+  servers and to a relay that knows the room's ID, from a key new each session; "A member resolving a name".)
 - **OpenTimestamps is acceptable** as the clock.
 - **The page may reach a room without a guest** to publish names ("The names agent").
 - **The registry never holds a name in words**: names are looked up by a hash, and where a name points is sealed
@@ -316,13 +318,15 @@ node key made new each session**, relay only, no guest, no signalling, its own D
 worker's connection numbers from `NAMES_CONN`, 0x40000000, are its), and **incoming handshakes only while its own
 question is open** (2.5 s, at most 32 at once: the servers answering it; a key let in that hasn't served a second
 after its handshake makes room for a newcomer, so junk handshakes from anyone who read the question can't shut the
-servers out: review 1); a server it calls back is one it answers. So a
+servers out: review 1), **or from the servers a member's `fetch` named** (by key, while it waits: R3); a server it
+calls back is one it answers. So a
 server never learns which node asked (not its key, so not its address or name; not its IP address, which only DERP
 sees), and the question below can be sealed with the room's key without listing anyone. The node's own key carries
 none of it: the guest's UDP on port 2 between members is the guest's, untouched. A server's names client starts when
 the node runs (and again a minute after it fails) and runs while the room does; a member's (`names/member.rs`, room.rs
-`MemberHost`) starts at the guest's first query for a name that isn't a key (its question waits until its home region
-is up, so the servers' call backs reach it) and closes after 10 minutes without one (a minute's wait after it fails;
+`MemberHost`) starts at the guest's first query for a name that isn't a key (a first lookup asks the room through its
+relays at once; "who serves?" and a contest's `fetch` wait until its home region is up, so the servers' call backs
+reach it) and closes after 10 minutes without one (a minute's wait after it fails;
 the next query then starts it again). Registry messages are UDP between two
 names clients' room addresses, port 2 both ends (`NAMES_PORT`), binary, 1,200 bytes a datagram at most (`wire.rs`):
 a message goes in numbered parts (kind, transfer, part, parts: 9 bytes, then up to 1,191 of the message), each
@@ -336,7 +340,9 @@ side and met again doesn't take new transfers for ones it remembers as done.
 
 ### Finding a server
 
-"Who serves the registry?" is an ephemeral event like a lookup (the same kind, MAC and seal with the room's lookup
+"Who serves the registry?" is for what must not name an id (R3): the refresh of names a member keeps, the dialog's
+check, a publisher's `put`s, and servers' sync partners. A first lookup asks the room instead ("A member resolving a
+name"). It is an ephemeral event like a lookup (the same kind, MAC and seal with the room's lookup
 key: `lookup::seal_bare`) under a tag of the room's own, `BLAKE2s(tag salt, "names", hour)` (`Room::names_tag`), its
 body a lookup's (the names client's key, its region, the time, a nonce) and one byte more, `spread`: 123 bytes.
 Servers subscribe to that tag (their names client does), and drop a question as they drop a lookup (the MAC first,
@@ -344,9 +350,8 @@ copies through other relays, the relay's budget, an hour off the clock, our own 
 copies by nonce **and round** (the three rounds share a nonce).
 
 - **Who answers.** A server answers when its answer's **rank** falls in the share: the top 64 bits of `BLAKE2s(nonce,
-  owner key)`, doubled once for each **tier** its name's chain is short of the top (a tier is a half term of the
-  chain's age, from the first entry of the run its `serve` shows, six at most: 90 days), must have their top `spread`
-  bits zero; for the owner key of one of its live names (it serves the one with the lowest rank), it has synced, and its budget
+  owner key)` must have their top `spread` bits zero; for the owner key of one of its live names (it serves the one
+  with the lowest rank), it has synced, and its budget
   allows (4 a second, **apart from** the node's call backs and trials: a budget of the names client's own, in a client
   of its own, so a flood of questions can't keep a server's own lookups out). The hash is over the owner key, not the
   names client's: an owner key costs a registration, a names client's key nothing, so keys made after the nonce is
@@ -354,7 +359,7 @@ copies by nonce **and round** (the three rounds share a nonce).
   a part of a message, doesn't count), or 10 minutes after it came whatever it sends, and with every place taken a
   newcomer takes the place of the one held longest (but never a sync partner's). The asker sends `spread` 6 (1/64),
   then 3 (1/8) after 0.4 s, then 0 (everyone) after 1 s, and stops at the first round that brings an answer. Measured
-  (`server_tests.rs`, 200 questions each, each server its own name held for the top tier): one server answers in the third round (176 of
+  (`server_tests.rs`, 200 questions each, each server its own name): one server answers in the third round (176 of
   200; 2 in the first, 22 in the second); twenty in the second (137; 44 in the first, by 1.1 servers, 19 in the
   third); 500 in the first, every time, by 7.6 servers on average. (A forged question can still ask everyone at once: each server spends one
   handshake from that separate budget. rooms.md "Spam".)
@@ -362,36 +367,33 @@ copies by nonce **and round** (the three rounds share a nonce).
   servers asking at once would each start a handshake to the other, and crossed handshakes both fail (rooms.md
   "Finding a peer"); by then the lower key's call back carries both ways.
 - **The answer** is a call back to the asker's region (none when a session with it is up), then a `serve` message:
-  the tail of the owning chain of a live name of the server's, its last entry and the run before it back to the first
-  entry 90 days old (the top tier's age) or the claim, 8 entries at most (`SERVE_RUN`: a name renewed at half a term
-  needs 7), each with its anchor and headers, and a BIP-340 signature by that name's owner key over the tagged hash
-  (`waarm64/names/serve`) of the room's value, the asker's nonce and the server's names key. The asker checks every
-  entry whole (signature, proof of work, headers, anchor), that they make one unbroken run with nothing off it and
-  that it covers now, and takes the tier from the run's first entry (`check_serve`; a second `serve` of a name that
-  answered already is refused before it is checked). So only a node that holds a live name's secret can serve, which
-  costs a registration, and only one that has held it for months ranks at the top, which costs time.
+  the last entry of the owning chain of a live name of the server's, with its anchor and header, and a BIP-340
+  signature by that name's owner key over the tagged hash (`waarm64/names/serve`) of the room's value, the asker's
+  nonce and the server's names key. The asker checks the signature, then the entry whole (proof of work, header,
+  anchor) and that its chain covers now (`check_serve`; one entry exactly; a second `serve` of a name that answered
+  already is refused before it is checked). So only a node that holds a live name's secret can serve, which costs a
+  registration.
 - **The choice.** An answer counts when its owner key's hash falls in the share of a round already sent (an honest
   server answers only so), and once a name: a second `serve` with an owner key or a name id that answered already is
   refused, so one registration answering from many names-client keys is one answer. The asker waits 0.3 s from the
-  first answer, then keeps two: **the older tier first, then the lower `BLAKE2s(nonce, owner key)`** (`choice`): not
-  the two fastest, which an attacker could always be, nor the lowest names-client keys, which it could grind for; the
-  others are let go. **Why the tier** (review 2's finding 2): a claim on a junk id costs a minute of proof of work and
-  a share of one stamp, so with the hash alone 128 junk registrations, an hour of a core a term, were both servers of
-  ~93% of questions against five honest ones; ranked by age, a registration made yesterday wins a place only against
-  servers as young as it is, and rounds sample it 1/64 as often, so a Sybil needs registrations held for three months
-  and renewed all along (`member_tests.rs`: 128 two-day-old claims against five 120-day-old servers, both servers the
-  attacker's in at most 1 of 40 questions, 22 of 30 before). In a room younger than that, servers rank by age among
-  themselves: rounds sample young ones as rarely, so more questions reach the last round (everyone). The accept window
-  does the same: once full of keys that served, a newcomer takes the place of the last by that order, never of the best
-  two, so junk answering first can't fill it. Both of a member's servers are an attacker's only when its registrations
-  are as old as the honest servers' and rank below them. A
+  first answer, then keeps the two with the lowest `BLAKE2s(nonce, owner key)` (the plain draw): not the two fastest,
+  which an attacker could always be, nor the lowest names-client keys, which it could grind for; the others are let
+  go. The accept window does the same: once full of keys that served, a newcomer takes the place of the last by that
+  hash, never of the best two, so junk answering first can't fill it. Registrations buy places in this draw (128 junk
+  ones are both servers of most questions against five honest ones): what it is used for is what that can't hurt
+  much. A refresh's servers can show a stale zone or hide a release, never another owner (a kept chain yields only to
+  an older run), and the member redraws them every 15 minutes; a `put` or a sync round draws afresh each time. **Why
+  not the tiers** (N5a's answer to review 2's finding 2, out since R3): ranking answers by their chain's age only
+  delayed an attacker by the three months it took its registrations to age, at costs that didn't end (old names'
+  servers answered more, young rooms reached the last round more, a `serve` carried up to eight entries); a first
+  lookup now asks the room and believes content, not a draw ([room-names-redesign.md](room-names-redesign.md) "2. An
+  attacker as a member's servers", [room-names-r3.md](room-names-r3.md)). A
   member that has only one answer by then asks everyone at once (the last round, and 0.3 s again), so it holds two where the
   room has two: a lone server could leave a name out or show a younger chain unseen (N3: in a room of two servers, a
   quarter of questions stopped at one). A member holds its servers while it asks and for 3 minutes after the last
-  `get`; one that fails (a transfer given up, its session gone) is let go, and with none left the next lookup asks
-  again, so a new question draws both afresh (the first draft replaced one of the two at each round; a fresh nonce
-  already redraws them, and a member that asks rarely asks anew anyway). A server holds them for its sync round (below),
-  and asks afresh each round.
+  request, and **redraws them 15 minutes after they were drawn** (R3), so a pair that serves a stale zone isn't kept for
+  as long as the guest goes on asking; one that fails (a transfer given up, its session gone) is let go, and with
+  none left the next refresh asks again. A server holds them for its sync round (below), and asks afresh each round.
 - **Nobody answered** within 1.5 s of the third round (2.5 s from the first): the queries that waited get NXDOMAIN
   then (measured through the fake DERP and relay: 2.5 s), and the fact is remembered, for 30 s the first time and twice as long each time after, to 10 minutes; during
   it, names that aren't keys get NXDOMAIN at once and no question goes out. The next query after it asks again, so a
@@ -411,16 +413,72 @@ copies by nonce **and round** (the three rounds share a nonce).
 
 ### A member resolving a name
 
-(`names/member.rs`, `member_tests.rs`; through the resolver, room/tests/names.rs.)
+(`names/member.rs`, `member_tests.rs`; through the resolver, room/tests/names.rs. R3, as
+[room-names-r3.md](room-names-r3.md) designed it, the user having widened decision 12 on 2026-11-17.)
 
-- `get` (owner mode: the name id, and the last entry and zone the member keeps, if any) goes to both servers; each
-  answers with what the member lacks of the owning chain's last entry (its anchor and headers) and the zone, or "none"
-  (an empty answer: the server has no chain that owns the name now).
+- **A first lookup** (a name the member doesn't keep: never resolved, or what it kept has ended) **asks the room
+  through the relays**: no server is found first, no session is opened, nothing is drawn. An **`ask`** is an ephemeral
+  event under the room's names tag, sealed and MAC'd as "who serves?" is (164 bytes: a lookup's body, the name id, the
+  mode, `spread`, and 8 bytes `shown`); a **`reply`** comes back under the asker's **reply tag**, `BLAKE2s(tag salt,
+  "names-reply", names key, hour)` (`Room::reply_tag`), which the names client subscribes to (the previous, current
+  and next hour's) before its first ask goes out (a publisher never asks, so never subscribes). A reply carries the
+  ask's nonce, the replier's names key and region, `since` (the first entry's time of the owning chain's run as the
+  server holds it; unchecked, it only orders a contest), and an item: none (it holds no owner for the id), the owning
+  chain's last entry with its anchor and header and the zone, or "too big" (past `REPLY_MAX`, 4 KiB of item: the user's
+  value until a dev VM session measures what the default relays forward; the replies are 1.3 to 4.1 KB on the wire,
+  *estimate*).
+  1. **`share`**, at the spread that last brought one to eight replies in this room (6 the first time; past eight, 3
+     bits narrower next time, up to 15), then 3 bits wider at 0.4 s, then everyone at 1 s, while nothing counts.
+     Three rounds whatever the start: a room found at "everyone" sends "everyone" again at 0.4 and 1 s, which a server
+     whose reply budget was spent, or a relay that lost the ask, answers. The rounds share a nonce; a server replies
+     to a nonce once.
+  2. **Each reply is checked for what it holds** (the entry: signature, proof of work, its header and anchor, its chain
+     covering now; the zone: the owner's, this name's, its signature), never for who sent it. An entry is checked whole
+     once a lookup however many replies carry it; its anchor with each copy (a forged anchor on a copied entry mustn't
+     refuse the honest copy); a reply that fails a check is dropped and **counts for nothing**: only a reply that held
+     (an item, none, or too big) is a reply. There is no limit on how many are let in, only the checks' budget a turn
+     (24 units, as a server's) and the relays' (`LOOKUP_EVENTS_PER_SECOND` a relay).
+  3. **At the first reply**, unless its round asked everyone: one more ask, **`dissent`**, `shown` the first 8 bytes of
+     the owner key of the best item checked so far (zeros when every reply so far said none). Every server that holds
+     an owner for the id whose key doesn't start with `shown` (any owner, for zeros) replies, whatever the share.
+  4. **0.7 s after that ask** (0.3 s after the first reply when everyone was asked), it decides:
+     - one owner key shown: that owner, its **latest** last entry (a server a renewal behind, a title forked), with no
+       history (one key, one owner); what is kept starts from that entry's time;
+     - none, from at least one server: **NXDOMAIN, 60 s, twice as long each time after while the name stays unknown,
+       to 10 minutes** (forgotten once its wait has passed as long again unasked);
+     - two or more owner keys, or an item too big: a **contest**. Every replier is listed by its `since`; the member
+       sends **`fetch`** (`shown` the first 8 bytes of one replier's names key) to the earliest, 8 at a time, a replier
+       whose key already has a run checked as old as it claims skipped, and lets in handshakes from those names keys
+       only. The server named calls back and sends the owning chain's whole run (`items`, as `history`), checked as
+       a `history` is, a slice a turn. It stops once nothing is in flight and the best run checked (by "Who owns a
+       name" over every run that held) is older than every `since` left; the owner is that best. A liar about `since`
+       costs a fetch and loses (`liars_since_cost_a_fetch_each_and_lose`); a contest with no run that held gives no
+       answer (the next query asks again).
+     - silence through the last round, 2.5 s after the first: **nobody serves** (30 s, doubling to 10 minutes, reset
+       by a reply), unless a reply counted in the last minute (the room's reply budgets were spent: a guest asking
+       many names at once): then the query gets the resolver's SERVFAIL, and the next asks again.
+  5. **A reply up to 3 s after the decision** is still checked: another owner key (or an item too big) starts a
+     contest, and what is kept changes if the newcomer's run is older (`Kept::offer`); a name decided none takes an
+     owner that comes late.
+  Asks go out at 4 a second at most (rounds, dissents, fetches). Measured on the bus (`member_tests.rs`): 128 and
+  1,280 junk registrations as the whole sample, showing their own younger chain of the name or saying none, against
+  one honest holder: the owner every time; ~1.1 s when the junk said none, up to 2.4 s with its younger chain (a
+  contest, 4 to 5 fetches); 6 to 26 replies a lookup. Through the fake DERP and relay (room/tests/names.rs), a first
+  lookup in a room of two servers took 1.3 s (the rounds down to everyone) with no DERP packet to or from the member's
+  names client, and the next 0.3 s; a contested one 1.3 s, with two fetches through sessions the servers opened, each
+  reply through two relays.
+- **What a first lookup shows**: the name id, to every server of the room and to a relay that knows the room's ID,
+  from a key new each session; a name that doesn't exist is announced again each time its negative answer runs out.
+  Registry records pass through relays as replies (ephemeral: nothing is stored). Both are the user's (2026-11-17).
+- **A refresh** (a name kept, confirmed more than 5 minutes ago, or in its grace and not confirmed lately) **never
+  sends an `ask`**: that would tell the room how long a name stays in use. It goes to the two servers "who serves?"
+  drew: `get` (owner mode: the name id, and the last entry and zone the member keeps) to both; each answers with what
+  the member lacks of the owning chain's last entry (its anchor and headers) and the zone, or "none" (an empty
+  answer: the server has no chain that owns the name now).
 - **The member checks the last entry only** (signature, proof of work, its headers, its anchor, alive by its clock),
   with the last entry it keeps, if the server's continues it, and checks the zone's signature; the chain the server
-  says owns the name is the one ending at that entry. One alive chain is the owner whatever its history, since nothing
-  contests it; a server can leave a better chain out, which is why there are two, chosen as above. An answer that
-  doesn't hold up (a forged entry, anchor, header or zone, a dead chain) counts as none from that server.
+  says owns the name is the one ending at that entry. An answer that doesn't hold up (a forged entry, anchor, header
+  or zone, a dead chain) counts as none from that server.
 - **The servers disagree** (their chains end at different entries) or **an answer contests what the member keeps**
   (`Kept::offer` would refuse it): the member asks each for `history` (a `get` mode: the owning chain's whole unbroken
   run and the zone), checks every entry, each once however often the answer repeats it, a slice a turn as a server
@@ -439,21 +497,23 @@ copies by nonce **and round** (the three rounds share a nonce).
   the lower; a copy of the kept chain cut short is nothing new; another branch of the same owner key starting no later
   replaces it, as a fork of one title is settled by the order; a run that holds neither, such as a renewal shown alone,
   is refused while the kept chain covers, and the member asks for `history`.) The same chain shown again (its last entry
-  the one kept) takes the newer zone, if any.
+  the one kept) takes the newer zone, if any; a run shown whole lowers the earliest time kept.
 - **A kept answer answers at once**, for as long as its chain resolves; one confirmed more than 5 minutes ago is also
-  asked again in the background, and the next query gets what came back. So only a name this member never resolved
-  waits on a server; the price is that a zone change or a lost name shows one query late (measured on the bus: the
-  query at 5 minutes gets the old zone, the next the new). In its grace a kept name is NXDOMAIN while it was confirmed
-  in the last 5 minutes, and waits for a renewal the servers may hold after that. Both servers saying none doesn't
-  drop a kept chain that still covers (a server that lost it says nothing against it). **A release does** (review 2's
-  finding 5): a server whose tombstone holds the member's last entry, off the owning chain, answers its `get` with the
-  release and what leads to it from that entry (8 entries at most), and the member, having checked them, ends what it
-  keeps and asks again holding nothing, so it takes the name's next owner at once rather than refusing it for the
-  weeks the kept chain would have covered. One server is enough: the release is the owner's own, signed and anchored.
-- Both say none: NXDOMAIN, kept 60 s. One says none: the other's answer stands (but still goes through `Kept::offer`:
-  one server's chain against a contesting kept one is asked for `history` and refused, `member_tests.rs`). Neither
-  answers (both transfers given up): asked once more, with servers found again if need be; the query meanwhile gets
-  the resolver's SERVFAIL.
+  refreshed in the background, and the next query gets what came back. So only a name this member doesn't keep
+  waits; the price is that a zone change or a lost name shows one query late (measured on the bus: the query at 5
+  minutes gets the old zone, the next the new). In its grace a kept name is NXDOMAIN while it was confirmed in the last
+  5 minutes, and waits for a renewal the servers may hold after that (so a first lookup made while a renewal is still
+  pending keeps the name NXDOMAIN for 5 minutes: tests/names-room.test.ts waits for the servers first). Both servers
+  saying none doesn't drop a kept chain that still covers (a server that lost it says nothing against it). **A release
+  does** (review 2's finding 5): a server whose tombstone holds the member's last entry, off the owning chain, answers
+  its `get` with the release and what leads to it from that entry (8 entries at most), and the member, having checked
+  them, ends what it keeps and asks again as a first lookup, so it takes the name's next owner at once rather than
+  refusing it for the weeks the kept chain would have covered. One server is enough: the release is the owner's own,
+  signed and anchored.
+- A refresh both servers answer none: what is kept stands while it covers. One says none: the other's answer stands
+  (but still goes through `Kept::offer`: one server's chain against a contesting kept one is asked for `history` and
+  refused, `member_tests.rs`). Neither answers (both transfers given up): asked once more, with servers found again if
+  need be.
 - **The dialog's check** must not tell a server which id someone is about to claim (it could guess the name and stamp
   too). **It runs when Register is pressed, not as the name is typed: one first byte a press** (the user's decision,
   2026-11-17). Register asks for `ids` (a `get` mode with one byte: every id the server holds under it), each with when
@@ -523,6 +583,19 @@ copies by nonce **and round** (the three rounds share a nonce).
   counting as the name being asked for; and `ids` (every id held under one first byte, answered `ids`; not counted). A server that leaves names out (or lies) is outvoted in sync by
   any other server holding them, and a member asking it for one gets nothing from it and the name from its other
   server (N3: the answer that has one stands).
+- **Asks** (R3, `Server::on_ask`), once its first sync is done: a `share` whose rank (the plain draw over its live
+  names' owner keys; no live name: only "everyone") falls in the share, and a `dissent` when it holds an owner for the
+  id whose key doesn't start with `shown` (any owner for zeros), are replied: the owning chain's last entry with its
+  anchor and header, and the zone (`owner_answer`, nothing held), or none, or "too big" past `REPLY_MAX`; the reply
+  counts the name as asked for. A reply proves nothing of the replier, so a server's share is its own to keep. Replies
+  have **budgets of their own**: 2 a second (`REPLIES_PER_SECOND`), 16 a minute under one reply tag
+  (`REPLIES_PER_TAG`), once a nonce, apart from "who serves?"'s answers and the call backs, so neither starves the
+  other (measured: 2,000 forged asks from 200 keys over 10 s make 20 replies, and questions are answered meanwhile;
+  one tag's 120 asks over 2 minutes 32). A reply goes through the relay that brought the ask and the one whose copy came
+  next (another after 1 s without one: `REPLY_SECOND_WAIT`), so one relay that drops replies doesn't silence it. A
+  `fetch` naming this server's names key is a call back, from the answers' budget (4 a second) and a key's few a minute,
+  as a question's answer is, then `items` with the owning chain's whole run and the zone, unasked (the transfer it
+  answers is 0).
 - **Take from anyone**: `put` (an item, from an owner's agent or a member that holds a better chain than the server
   showed it), checked like anything else and settled; answered `taken` when the owning chain's last entry is the
   put's and its zone, if any, was taken or is the one held, else `better` with the server's item (a zone refused, within
@@ -626,11 +699,13 @@ it) that passes "Names"' rules:
   name before its registration is public); a name not held waits while the first sync isn't over, else NXDOMAIN;
 - on a member's, a name it keeps, its chain alive: AAAA from the slot the name asked opens (none opens: NXDOMAIN), TTL
   60; the module learns the key (and asks again in the background when what it keeps is older than 5 minutes);
-- otherwise the query waits while the names client asks: answered when the answer comes; SERVFAIL after 4 s
-  (`DNS_WAIT`; 64 queries wait at most, past that SERVFAIL at once; a first query that must also find servers took 1.3 s
-  through the fake DERP and relay and 1.4 s on the page test's rig (tests/page-room.test.ts, a cloud session); a guest's resolver retries);
-- NXDOMAIN at once for a reserved or ill-formed name, a name both servers don't have (for 60 s), and any name not kept
-  while the member remembers that nobody answered "who serves?" ("Finding a server": 30 s to 10 minutes).
+- otherwise the query waits while the names client asks the room: answered when the answer comes; SERVFAIL after 4 s
+  (`DNS_WAIT`; 64 queries wait at most, past that SERVFAIL at once; a contest still going on then goes on, and the
+  next query has the answer; a first lookup took 1.3 s through the fake DERP and relay in a room of two, 0.3 s once
+  the room's spread was known; a guest's resolver retries);
+- NXDOMAIN at once for a reserved or ill-formed name, a name the replies said none for (60 s, doubling to 10 minutes),
+  and any name not kept while the member remembers that nobody serves ("A member resolving a name": 30 s to 10
+  minutes).
 
 Every type is answered alike (AAAA has the address, A and the rest an empty answer). Each query for a name that isn't a
 key is logged (`resolver: <name> (type <n>): <answer>`), to the worker's console only. Guest-visible, in that names that
@@ -799,16 +874,22 @@ names.
 | Race a new registration | none | a guessable name, at best: a claim is public only once anchored, and the dialog's check sends one byte of the id a press of Register (the user's decision, 2026-11-17), never the id; a byte a prefix, as typed, spelled the name out (review 2) |
 | Tie a claim it somehow knew of | several claims in the same block | wins most ties: the tie-break can be ground. It needs the name before the claim is public |
 | Hash a dictionary against a server's ids | nothing: 256 `ids` requests from any session list every id (the dialog's check needs the request; review 2 corrected the cost from "one registration") | learns which guessable names exist (and, with a `get`, where they point); nothing about the others; the cover ends listed are a week coarse |
-| Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its chain's age and its owner key's hash, says otherwise; both servers the attacker's (registrations as old as the honest servers', renewed all along, ranking below them for that question; junk registrations made lately rank after every older server): the member sees what it shows (it can't forge) |
+| Be the whole sample of a first lookup, show its own younger chain or none | registrations (any age) | nothing, while one honest holder hears the `dissent` and its reply arrives: the member takes the owner by its run (R3; 128 and 1,280 junk registrations against one holder, `member_tests.rs`) |
+| Show the owner's own last entry in the sample, with an old zone or none | registrations | the dissent names the owner's key, so holders stay silent: the member keeps the owner with that zone (NXDOMAIN, or an old address) until its refresh 5 minutes on, whose servers are drawn ("Finding a server"); never another owner. Not in room-names-r3.md: docs/backlog.md |
+| Hold many younger claims on one name, each lying about `since` | a registration on that name each, every term | that name's first lookups run a contest: a `fetch` and a run's check a liar, 8 at a time; the owner still wins |
+| Junk replies under an asker's tag (it reads the tag's inputs in the ask) | events | a failed check each; no place taken from anyone |
+| Forged asks that make servers reply | one event | every holder replies once (a `dissent` with a made-up `shown`, a `share` at spread 0): bounded by 2 replies a second a server and 16 a minute a tag; with hundreds of servers, megabytes a second onto public relays (backlog) |
+| Keep honest dissent away by spending servers' reply budgets | forged asks at every server's 2 a second, sustained | members take what the attacker shows for names they don't keep, while it lasts. Loud; the budget is apart from "who serves?"'s |
+| Serve a member's refresh, and leave names out or serve an old zone | registrations (the plain draw) | a stale zone or a release unseen for 15 minutes at most, before the member redraws; never another owner (a kept chain yields only to an older run) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |
-| Forge a Bitcoin header | one header at the floor: 1/16 of a block's work (about 0.2 BTC of mining revenue forgone, or hash power rented for that), once | the forger's header, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the header serves again for any number of claims. Servers ask an explorer about each block (R2: the user's decision of 2026-11-17; "Servers", "Outside the room") and refuse it, with every anchor in it, once both explorers deny it: within seconds of its arrival at a server already synced, later while a new server's first sync's checks are paced. For a member both of whose servers are the forger's, and while the explorers can't be reached, it stands ([room-names-redesign.md](room-names-redesign.md) "Bitcoin beyond the proof") |
+| Forge a Bitcoin header | one header at the floor: 1/16 of a block's work (about 0.2 BTC of mining revenue forgone, or hash power rented for that), once | the forger's header, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the header serves again for any number of claims. Servers ask an explorer about each block (R2: the user's decision of 2026-11-17; "Servers", "Outside the room") and refuse it, with every anchor in it, once both explorers deny it: within seconds of its arrival at a server already synced, later while a new server's first sync's checks are paced. A member asks no explorer: a reply or a fetched run from a server that shows the forged chain (the forger's own, since R3 any in a first lookup's sample or contest) wins there, as it does at servers while the explorers can't be reached ([room-names-redesign.md](room-names-redesign.md) "Bitcoin beyond the proof") |
 | Lying explorers | one explorer that lies, or both | one alone can pass a forged header only together with the floor's work (as with none), and can't have a real block refused (the other confirms it); both together can have a real block refused at servers, its names unanchored there until the explorers answer truly (the owners' copies are untouched) |
 | Calendars all down | | no new claims or renewals; existing names resolve; `GRACE` is the margin |
 | Explorers all down | | claims and renewals are made and stamped; collecting and finishing their anchors waits; blocks stay unchecked, their anchors counting on their headers' work; existing names resolve |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held; a key named again and again (a victim's) 4 answers a minute from each server |
-| Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by age and hash (never the best two's) |
+| Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by hash (never the best two's). A member's `fetch` lets in the servers it named only |
 | Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
-| Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below |
+| Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below. One that knows the room's ID also reads which name ids are looked up first (R3) |
 
 ## What changes that needed the user's OK (given 2026-11-15, all of it)
 
@@ -828,6 +909,8 @@ names.
   so a relay learns which IP addresses serve names and which ask for them in one room (and, for an ID it can guess,
   like `global`, which room). rooms.md says today that a relay "can't tell which room or address a tag stands for";
   for key lookups that stays true. The remedy rooms already name applies (one's own relays, or a VPN under them).
+  Since R3 (the user, 2026-11-17), a relay that knows the room's ID also reads the name id of each first lookup (the
+  ask), and replies carry registry records through relays (ephemeral, stored nowhere).
 - **"Every 2 weeks"** (since the review), where the first draft said 3 (renewing at half a term, not a third, halves what
   servers carry).
 - **Reserved names** (since the review): the list in "Names".
@@ -858,7 +941,9 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
    the size table.
 5. **Through public DERP**: 5, 20 and 50 MB between two names clients, 8 in flight, a guest's ping running beside it;
    and what a second room client in the worker costs (memory, a DERP connection, idle CPU).
-6. **A cold first lookup** on the public relays: question, call back, `serve`, `get`, to the answer.
+6. **A cold first lookup** on the public relays: since R3, an ask and its replies through them (~1 s in a room asked
+   before, ~2 s the first time: room-names-r3.md, *estimate*); and whether the default relays forward a 4 KiB
+   ephemeral event, which sets `REPLY_MAX`.
 
 ## The loops
 
