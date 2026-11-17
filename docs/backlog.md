@@ -1646,13 +1646,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
          busy rooms; in a quiet one it adds calendar traffic for nothing.
       3. As now: the owner's agent at its next visit; the dialog (N5) says to open the page again within two weeks,
          which decision 13 already asks.
-    - Deleting a room connection leaves its owners' secret and titles in `waarm64-room` (`owner`, `titles`): a title is
-      the only copy of ownership, so nothing deletes one silently. Delete (N5) should say so and offer the export.
-    - An ephemeral room connection's titles go to IndexedDB all the same (under its id): register on one should be
-      refused, or say they go with the page (N5's dialog).
-    - The wizard's [The connection's key](ui:network:NetRoomStep.room.exportKey) shows the key alone; the export with
-      names is `Connections.exportKey` and a pasted one is read by `parseRoomExport` (web/names.ts). Wiring both into
-      the wizard is N5's.
+    - Done (N5): deleting a room connection that holds names says so in its question, with the export to copy, and
+      forgets them (room-names.md "What the user sees").
+    - Done (N5): an ephemeral connection with a key of its own can't hold a name; the dialog says so.
+    - Done (N5): the wizard's key field is the export with names, and a pasted one brings them.
+    - The page's loose ends (N5):
+      - New name on a room connection that holds names keeps its titles (under the same entry) pointing at the old
+        key: the details' [Point all at this machine](ui:network:NameEntry.pointHere) fixes it by hand. New name could
+        offer it, or repoint them itself.
+      - Name this machine… is shown only while the room is connected (the node key comes with the connection's start).
+        A stored connection's key is in `waarm64-room` before that; reading it there would offer the dialog offline.
+      - The dialog's check opens a checker (a publisher: a new key, "who serves?") for each dialog; a running room's own
+        names client could ask instead, sooner, when the machine is connected.
+      - "Taken until" is a server's word, unchecked: a lying server can make a free name look taken (Register is then
+        disabled). Two servers are asked and the latest date wins; a check that showed both answers apart could say so.
+      - The details' points take a member's name or key pasted; nothing lists the room's members to choose from.
+      - The last week's notice is a message bar notice that clears itself; a name past its term in grace says so in the
+        menu only.
     - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
       entries a month, ~1.5 KB each with their anchors and headers, and is put whole. Pruning dead branches and
       stale entries from the item (they never count again) would keep puts small.

@@ -8,7 +8,7 @@ changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/
 lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
 client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
 member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"), and
-the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time), and the names agent (N4c: "The names agent"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -451,8 +451,9 @@ copies by nonce **and round** (the three rounds share a nonce).
   the resolver's SERVFAIL.
 - **The dialog's check** for a name being typed must not tell a server which id someone is about to claim (it could
   guess the name and stamp too): it asks for `ids` (a `get` mode with the id's first byte only), every id in the 1/256 of
-  the registry that shares it, and looks for its own there (`Member::ids`; not counted as the name being asked for). The
-  dialog is N5's.
+  the registry that shares it, each with when its owner's hold ends (0: nobody's now), and looks for its own there
+  (`Member::ids`, `ids_done`; not counted as the name being asked for). The page asks through a publisher
+  (`ts_room_names_ids`): "What the user sees".
 
 ### Servers
 
@@ -585,8 +586,8 @@ room.rs.) The agent owns the owners' secret and the titles, which are the only p
 `identity` keeps its node key; made at the first registration) and store `titles` (a record a title under
 [identityKey, a hash of the room's ID, the name]: the room's ID and link, the title's item, the calendars' pending
 anchors of each unanchored entry, the zone's points and counter, the backoffs, lost or released). **A title is the only
-copy of ownership**: registering asks the browser for persistent storage (`navigator.storage.persist()`), and the dialog
-(N5) says to keep an export. **A connection's export carries its names**: `<node key>.<base64url of the secret and the
+copy of ownership**: registering asks the browser for persistent storage (`navigator.storage.persist()`), and deleting
+the connection says so and shows its export (N5; the dialog doesn't: decision 6 allows it two notices). **A connection's export carries its names**: `<node key>.<base64url of the secret and the
 titles>` (web/app/room-export.ts, web/names.ts `exportNames`, `parseRoomExport`), and a connection made from a pasted
 export takes them as its own (`importNames`). The module does the work (`ts_names_*`, pure: JSON in and out; make, mine
 in slices of 256 tries, sign and check an entry; a calendar's receipt made a pending anchor the owner key signs; the
@@ -643,23 +644,44 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
 
 ## What the user sees
 
+(Built in N5: web/app/NameDialog.svelte, NetNames.svelte, NameEntry.svelte, areas/names.svelte.ts, names-view.ts;
+docs/frontend.md "Network" says how.)
+
 **Reaching someone's name: nothing.** No switch, no notice. The first time a guest asks for a name that isn't a key,
 the names client finds servers and asks; the answer comes within the resolver's wait or on the guest's own retry. The
-adapter's details gain one line (names resolved, servers held), for the curious.
+adapter's details gain one line, for the curious: a member's names resolved and servers held, or a server's names held
+and the servers it synced with lately (the module's `names` event, sent when the numbers change).
 
-**Naming a machine.** In the Network menu of a room's adapter, **[Name this machine…](ui:network:NetNames.name)** opens one dialog:
+**Naming a machine.** In the Network menu of a connected room adapter, **[Name this machine…](ui:network:NetNames.name)** opens one dialog:
 
-1. A field. Under it, as typed: free, taken (until about a date), not a valid name, or, where no server answers,
-   that nobody in the room can say. Nothing lists a room's names, here or anywhere: the registry couldn't.
-2. Two notices, always shown, no boxes: *members of this room who know the name can find this machine and see when it
-   is online, and your machine helps other members look names up*; *open this page at least every 2 weeks to keep the
-   name*.
-3. **Register.** The dialog closes; the adapter shows the name with its state: *Preparing* (proof of work), *Reserved,
-   public in about N hours; it already works on this machine*, then *Active, kept until about <date> unless you visit*.
+1. A field. Under it, as typed (300 ms after the last key): not a valid name (the rules, by the module), this
+   connection's already, free, taken until about a date, or, where no server answers, that nobody in the room can say
+   (Register stays offered: first come still holds, and the claim is private until anchored). **The check doesn't tell
+   a server which id is about to be claimed**: the agent hashes the name and asks the room's servers for every id
+   under its first byte (`ids`), through a checker, a publisher kept open for a minute after the dialog's last check so
+   the servers it found answer the next at once (`ts_room_names_ids`, `names-ids` events); since N5 a server's `ids`
+   answer carries each id's cover end (when the owning chain's hold ends, 0 when nobody owns it now), so "taken until"
+   needs no `get` naming the id. Nothing lists a room's names, here or anywhere: the registry couldn't.
+2. Two notices, always shown, no boxes: [Members of this room who know the name can find this machine and see when it's online, and your machine helps other members look names up.](ui:network:NameDialog.notice.find); [Open this web app at least every 2 weeks to keep the name.](ui:network:NameDialog.notice.visit) ("this web app" is the page's word for itself, docs/copy.md).
+3. **[Register](ui:network:NameDialog.register).** The dialog closes; the adapter shows the name with its state:
+   [Preparing](ui:network:names-view.preparing) (proof of work), *Reserved, public in about N hours; it already works on
+   this machine*, then *Active, kept until about <date> unless you visit*; in its grace, lapsed, let go and lost as the
+   agent reports them.
 
-No key is shown or asked for. Changing where a name points, adding a label under it and letting it go are in the
-adapter's details. The Machines page shows a stored machine's names with the date each lapses, and the page says, on
-load, when one is inside its last week. All words go in `web/messages/en/network.json`.
+No key is shown or asked for. Changing where a name points (a member's name in the room, or a key, pasted), adding a
+label under it and letting it go are in the adapter's details. The Machines page shows a stored machine's names (its
+Network tab, each room adapter's) with the date each stops resolving unless renewed, and the page says, on load, after
+the agent's first pass, when one is inside its last week (kept until less than 7 days on). All words are in
+`web/messages/en/network.json` (the Machines page's line in `machines.json`).
+
+**An ephemeral connection can't hold a name** (N5's choice): one whose key lives in the page's memory is gone when the
+page closes, while a title lives in IndexedDB for weeks and is renewed at every load, pointing at a key nobody holds.
+Saying "the names go with the page" would be untrue for the title and useless for the name, so the dialog says the
+connection can't hold one and offers no Register (an ephemeral connection that shares a stored one's key can: the key
+and its titles last). **Deleting a room connection that holds names** (its key no other connection's) asks in a question
+of its own that names them and shows the connection's export (the key, then its names) in a field to copy; deleting it
+then forgets the owners' secret and the titles. **The wizard's key field** is that export, and a pasted one brings its
+names.
 
 ## What an attacker can do
 
