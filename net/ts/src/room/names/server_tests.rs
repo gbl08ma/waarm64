@@ -311,8 +311,9 @@ fn the_answer_rules_counts() {
         const QUESTIONS: usize = 200;
         let (mut at_round, mut counts) = ([0usize; 3], [0usize; 3]);
         let mut silent = 0;
-        let asker = [0xee; 32];
         for k in 0..QUESTIONS {
+            let mut asker = [0xee; 32]; // a names client asks rarely: each question another's
+            asker[..8].copy_from_slice(&(k as u64).to_le_bytes());
             let nonce: [u8; 16] = std::array::from_fn(|i| (k * 31 + i * 7) as u8 ^ (k >> 3) as u8);
             bus.now += Duration::from_secs(1); // the budget refills between questions
             let (now, unix) = (bus.now, bus.unix());
@@ -1774,4 +1775,49 @@ fn a_zone_the_server_doesnt_take_isnt_answered_taken() {
         "a lower seq"
     );
     assert_eq!(bus.put(0, 1, with(z3)), Msg::Taken);
+}
+
+/// Review 2's finding 12: the asker's key in a question proves nothing, so questions naming a victim's key would have
+/// every server call it back (spending its incoming trials) and send it a `serve` on port 2, again and again. A server
+/// calls back one key a few times a minute at most.
+#[test]
+fn questions_naming_one_key_get_few_call_backs() {
+    let mut b = Bitcoin::new(ROOM, 48);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let mut bus = Bus::new(vec![Server::new(ROOM, cfg(vec![Title { key, item }]), T)]);
+    bus.s[0].synced = true;
+    while bus.s[0].poll().is_some() {}
+    let victim = [0x66; 32];
+    let mut calls = 0;
+    for k in 0..30u8 {
+        bus.now += Duration::from_secs(2); // the server's budget refills between questions
+        let (now, unix) = (bus.now, bus.unix());
+        let q = Question {
+            key: victim,
+            region: 0,
+            time: unix,
+            nonce: [k; 16],
+            spread: 0,
+        };
+        bus.s[0].input(Input::Question { q, region: 0 }, now, unix);
+        while let Some(c) = bus.s[0].poll() {
+            calls += matches!(c, Cmd::CallBack { key, .. } if key == victim) as usize;
+        }
+    }
+    assert!(calls <= 4, "{calls} call backs to one key in a minute");
+    // Another key is answered meanwhile.
+    let (now, unix) = (bus.now, bus.unix());
+    let q = Question {
+        key: [0x67; 32],
+        region: 0,
+        time: unix,
+        nonce: [99; 16],
+        spread: 0,
+    };
+    bus.s[0].input(Input::Question { q, region: 0 }, now, unix);
+    let mut other = false;
+    while let Some(c) = bus.s[0].poll() {
+        other |= matches!(c, Cmd::CallBack { .. });
+    }
+    assert!(other);
 }

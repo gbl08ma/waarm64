@@ -76,6 +76,9 @@ struct Asker {
 /// backs and trials, so a flood of questions can't keep the node's own lookups out.
 pub const ANSWERS_PER_SECOND: usize = 4;
 pub(super) const QUESTIONS_PER_SECOND: usize = 1;
+/// Answers to questions naming one key, a minute (an honest asker asks a question a second at most, and rarely).
+pub const ANSWERS_PER_KEY: usize = 4;
+const ANSWERS_PER_KEY_WINDOW: Duration = Duration::from_secs(60);
 pub const SYNC_EVERY: Duration = Duration::from_secs(300);
 const SYNC_JITTER_MS: u64 = 30_000;
 /// A range this small (on the answering side) is listed.
@@ -511,6 +514,9 @@ pub struct Server {
     nobody: Option<(Instant, Duration)>,
     questions: VecDeque<Instant>,
     answers: VecDeque<Instant>,
+    /// Answers lately by the key a question named: a question's key proves nothing, so a key is called back
+    /// [`ANSWERS_PER_KEY`] times a minute at most (review 2: questions naming a victim's key).
+    answered_keys: BTreeMap<[u8; 32], VecDeque<Instant>>,
     askers: BTreeMap<[u8; 32], Asker>,
     /// Call backs waiting out [`CROSSED_WAIT`].
     deferred: Vec<(Instant, [u8; 32], usize)>,
@@ -589,6 +595,7 @@ impl Server {
             nobody: None,
             questions: VecDeque::new(),
             answers: VecDeque::new(),
+            answered_keys: BTreeMap::new(),
             askers: BTreeMap::new(),
             deferred: Vec::new(),
             synced: false,
@@ -1061,6 +1068,22 @@ impl Server {
             }
             return;
         }
+        self.answered_keys.retain(|_, w| {
+            w.back()
+                .is_some_and(|t| now.saturating_duration_since(*t) < ANSWERS_PER_KEY_WINDOW)
+        });
+        let w = self.answered_keys.entry(q.key).or_default();
+        while w
+            .front()
+            .is_some_and(|t| now.saturating_duration_since(*t) >= ANSWERS_PER_KEY_WINDOW)
+        {
+            w.pop_front();
+        }
+        if w.len() >= ANSWERS_PER_KEY {
+            self.stats.refused += 1;
+            return;
+        }
+        w.push_back(now);
         // Every asker's place taken: the one held longest goes (junk can't keep them all for good), but never a sync
         // partner of this round.
         if self.askers.len() >= MAX_ASKERS && !self.askers.contains_key(&q.key) {

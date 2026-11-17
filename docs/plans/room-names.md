@@ -424,7 +424,13 @@ copies by nonce **and round** (the three rounds share a nonce).
   the member already holds answer throughout: they don't need a server. A server nobody answered is alone: it counts
   as synced (there is nothing to sync with) and asks again after the same wait (5 minutes at most), with a fifth of it
   at random on top, so servers that started together don't ask together again.
-- Questions have a rate of their own (1 a second), not the guest's lookups'.
+- Questions have a rate of their own (1 a second), not the guest's lookups'. **A question's key proves nothing** (it
+  is the asker's names client's, which can't sign, and no secret of the room tells one key's owner from another
+  member), so questions naming a victim's node key would have every server call it back, spending its incoming trials,
+  and send it `serve`s on port 2: a server answers questions naming one key 4 times a minute at most (review 2's
+  finding 12; an honest names client asks rarely). With 20 servers that is 1.3 call backs a second at a victim, of its
+  16 trials. A proof of the key would need a round trip before the call back (the asker initiating), which the
+  question can't carry: docs/backlog.md.
 
 ### A member resolving a name
 
@@ -726,7 +732,7 @@ names.
 | Forge a Bitcoin header | seven linked headers at the floor of their time: about 3.5 blocks' work at the schedule's half (0.11 of a block at its 1/64, a release unrenewed for 15 weeks), once | the forger's run, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the run serves again for any number of claims: **accepted for now** (the user, 2026-11-17: review 1's finding 6). Ideas for servers to check later, which would make servers ask an outside service and need the user's OK: docs/backlog.md |
 | Calendars all down | | no new claims or renewals; existing names resolve; `GRACE` is the margin |
 | Explorers all down | | the same: only the agent uses them |
-| Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held |
+| Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held; a key named again and again (a victim's) 4 answers a minute from each server |
 | Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by age and hash (never the best two's) |
 | Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
 | Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below |
