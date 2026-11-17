@@ -355,6 +355,10 @@ export class NamesAgent {
     const room = roomOf(c.link);
     await this.locked({ identityKey: c.identityKey, room, name }, true, async () => {
       const t = await this.mustGet(c.identityKey, room, name);
+      // Renewals waiting for their anchors go: one collected later would be a branch whose cover outlasts the
+      // release's, and the name would stay (review 2).
+      const waiting = (await this.status(t))?.entries.filter((e) => e.kind === 'renew' && e.time === null).map((e) => e.id) ?? [];
+      if (waiting.length) await this.dropEntries(t, waiting);
       const st = await this.status(t);
       if (st?.owner && !t.lost && !st.owner.released) await this.makeEntry(t, 'release', st.owner.ids.at(-1));
       t.released = true;
@@ -547,6 +551,11 @@ export class NamesAgent {
       return changed;
     }
     const o = st.owner;
+    // Let go, but the release wasn't stamped (or never came): made again.
+    if (t.released && o && !o.released && !st.entries.some((e) => e.kind === 'release' && !e.stale)) {
+      await this.makeEntry(t, 'release', o.ids.at(-1));
+      return true;
+    }
     if (!o || t.released || o.released) return changed;
     const ownKey = st.entries.find((e) => e.id === o.ids[0])?.owner;
     const last = o.ids.at(-1)!;

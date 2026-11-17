@@ -385,6 +385,46 @@ test('a calendar answering junk, or an explorer an inconsistent run, doesn\'t dr
   assert.ok(st.entries[0].time !== null, `anchored through the second explorer: ${log.join('\n')}`);
 });
 
+test('Let it go while a renewal waits for its anchor: the renewal goes, and a release no calendar stamped is made again (review 2, finding 6)', { skip, timeout: 90_000 }, async () => {
+  const log: string[] = [];
+  const pub = fakePublish();
+  const { agent, store, backend } = await testAgent({ publish: pub, log });
+  const c = conn('conn-letgo');
+  // Claimed 20 days ago: the pass that collects the claim renews it, and the renewal waits for its anchor.
+  await aged(cal, agent, c, 'letgo', nowS() - 20 * DAY);
+  let st = await statusOf(backend, (await store.titles(c.identityKey))[0]);
+  const renewal = st.entries.find((e) => e.kind === 'renew' && e.time === null);
+  assert.ok(renewal, log.join('\n'));
+  await agent.release(c, 'letgo');
+  let [t] = await store.titles(c.identityKey);
+  st = await statusOf(backend, t);
+  assert.ok(!st.entries.some((e) => e.id === renewal.id), 'the waiting renewal is dropped: it would outlive the release');
+  assert.equal(t.stamps[renewal.id], undefined);
+  const release = st.entries.find((e) => e.kind === 'release');
+  assert.ok(release && t.stamps[release.id]?.length, 'the release made and stamped');
+  // Collected: the chain ends in the release.
+  cal.mine(7);
+  await agent.pass(c.identityKey);
+  st = await statusOf(backend, (await store.titles(c.identityKey))[0]);
+  assert.ok(st.best?.released, 'the chain ends in the release');
+  // Another name let go while no calendar answers: made again at the next pass.
+  const d = conn('conn-letgo2');
+  await aged(cal, agent, d, 'letgo2', nowS() - 5 * DAY);
+  const restore = breakFetch((u) => (u.endsWith('/digest') ? 'fail' : undefined));
+  try {
+    await agent.release(d, 'letgo2');
+  } finally {
+    restore();
+  }
+  [t] = await store.titles(d.identityKey);
+  assert.ok(!(await statusOf(backend, t)).entries.some((e) => e.kind === 'release'), 'not stamped: not kept');
+  cal.mine(7);
+  await agent.pass(d.identityKey);
+  [t] = await store.titles(d.identityKey);
+  const r2 = (await statusOf(backend, t)).entries.find((e) => e.kind === 'release');
+  assert.ok(r2 && t.stamps[r2.id]?.length, `made again: ${log.join('\n')}`);
+});
+
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {
   // The calendars are the module's, in its order (anchor.rs `Calendar::url`: a pending anchor names one by index).
   const rust = readFileSync(new URL('../net/ts/src/room/names/anchor.rs', import.meta.url), 'utf8');

@@ -645,6 +645,9 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   to the other's, a clock behind to a later try. An entry still unanchored once its window and the slack are over may
   have an anchor in its window that no open page collected: it is kept and asked for, a new one is made beside it where
   one is due, and it is dropped only a week past its window (a renewal so collected still links, and revives its chain).
+  **Let it go** drops the title's renewals that wait for their anchors (one collected later would be a branch whose
+  cover outlasts the release's, so the name would stay: review 2's finding 6) and makes the release on the owning
+  chain's last entry; a release no calendar stamped, or one that never came, is made again at the next pass.
 - **Publishing** is a `put` through a **publisher**: a room client that is a names client alone (room.rs
   `Config::publish`: a fresh key, relay only, nothing let in but its question's answers, no guest, no node), which asks
   "who serves?", keeps two servers as a member does, and puts the title's item (every entry it holds, the zone) to each,
