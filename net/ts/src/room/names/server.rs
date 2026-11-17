@@ -100,6 +100,10 @@ const REFUSED_KEPT: usize = 4096;
 const VERIFIED_KEPT: usize = 16_384;
 /// The most `sync`s a run sends: a registry of 20,000 names each differing takes ~4,400 (1 + 16 + 256 + 4,096 ranges).
 pub const MAX_RUN_SYNCS: usize = 8192;
+/// A run's longest time (review 2: a partner answering each request just before it times out could stretch a run's
+/// 8,192 requests to hours, the new server answering nobody meanwhile): under a round's 5 minutes, so one round's
+/// run never meets the next's.
+pub const RUN_MAX: Duration = Duration::from_secs(240);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Verification a turn: an entry costs 4 (Argon2id dominates, ~0.66 ms in Chromium's wasm), an
 /// anchor or a zone 1: ~6 entries, ~4 ms.
@@ -466,6 +470,8 @@ struct Run {
     got: usize,
     /// Ids the partner lacks or holds otherwise: told `have` at the end.
     have: BTreeSet<[u8; 32]>,
+    /// When it started: a run ends [`RUN_MAX`] after, whatever is left (the next round goes on from what came).
+    started: Option<Instant>,
 }
 
 /// Something taken to be verified: where it came from, the item, how far it got.
@@ -790,6 +796,11 @@ impl Server {
                 .min(),
             self.settle_at,
             self.deferred.iter().map(|(t, _, _)| *t).min(),
+            self.runs
+                .values()
+                .filter_map(|r| r.started)
+                .min()
+                .map(|t| t + RUN_MAX),
             jobs,
         ]
         .into_iter()
@@ -814,6 +825,13 @@ impl Server {
         self.now = now;
         self.last_unix = unix;
         self.verify_slice(now, unix);
+        let long: Vec<[u8; 32]> = (self.runs.iter())
+            .filter(|(_, r)| r.started.is_some_and(|t| now >= t + RUN_MAX))
+            .map(|(k, _)| *k)
+            .collect();
+        for k in long {
+            self.end_run(k, "a run past its time");
+        }
         if self.round_over && self.jobs.is_empty() {
             self.round_over = false;
             if !self.synced {
@@ -1450,6 +1468,7 @@ impl Server {
             partner,
             Run {
                 stack: vec![Range::ALL],
+                started: Some(now),
                 ..Run::default()
             },
         );

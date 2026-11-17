@@ -520,7 +520,9 @@ copies by nonce **and round** (the three rounds share a nonce).
   both names clients' keys; checked once a session). A run is bounded: sixteenths of a range of 63 nibbles or more, or
   a listing past 64 names, end it (an honest partner lists those; at depth 64 a range is one id), and it sends at
   most 8,192 `sync`s (20,000 names each differing take ~4,400) and as many `get`s as the bound holds names, the
-  listed ones from a work list 4 at a time. A peer's `sync`s may make the server fingerprint 16 times its registry a
+  listed ones from a work list 4 at a time, and lasts 4 minutes at most (`RUN_MAX`, under a round's 5; review 2: a
+  partner answering each request just before its 15 s could stretch a run to hours while the new server answered
+  nobody): a run that ends by its time ends the round as any other does, and the next round goes on from what came. A peer's `sync`s may make the server fingerprint 16 times its registry a
   sync round; a `have` names 32 ids at most, and what `have`s make it ask a peer waits 64 at once. Both settle a range before they
   summarize it, so time has done the same to both. A changed name (a `put`, a sync) is told in `have` to the servers
   of this round and those that synced with this one in the last 10 minutes, but the one it came from. A server

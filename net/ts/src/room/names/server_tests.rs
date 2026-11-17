@@ -1887,3 +1887,97 @@ fn ids_answers_round_cover_ends_to_a_week() {
         assert!(*u % WEEK == 0 && *u >= *e && *u < *e + WEEK, "{u} for {e}");
     }
 }
+
+/// Review 2's finding 14: a sync partner that answers each request just before it times out, with sixteenths that
+/// always differ, can't keep a new server unsynced for hours: a run is bounded by time too, and one ended by it ends
+/// the round.
+#[test]
+fn a_slow_partner_doesnt_keep_a_server_unsynced() {
+    let mut b = Bitcoin::new(ROOM, 50);
+    let (key, item) = b.title(1, "partner", t(20), &[t(5)], [9; 32]);
+    let sk = k256::schnorr::SigningKey::from_bytes(&key).unwrap();
+    let last = item.entries.last().unwrap().clone();
+    let mut v = Server::new(ROOM, cfg(vec![]), T);
+    let (vk, pk) = ([0x11; 32], [0x22; 32]);
+    let t0 = Instant::now();
+    let mut now = t0;
+    v.start(vk, now);
+    let mut x = Transfers::default();
+    let mut differ = [super::wire::Fp::default(); 16];
+    for (k, f) in differ.iter_mut().enumerate() {
+        *f = super::wire::Fp {
+            hash: [k as u8 + 1; 8],
+            count: 1000,
+        };
+    }
+    // Answers the partner holds back: (when, transfer, answer).
+    let mut later: Vec<(Instant, u32, Msg)> = Vec::new();
+    let mut syncs = 0;
+    while now < t0 + Duration::from_secs(3 * 3600) && !v.synced {
+        let unix = T + now.duration_since(t0).as_secs();
+        while let Some(c) = v.poll() {
+            match c {
+                Cmd::Publish { nonce, spread: 0 } => {
+                    let h =
+                        super::entry::tagged("waarm64/names/serve", &[&b.names.value, &nonce, &pk]);
+                    let m = Msg::Serve {
+                        nonce,
+                        entries: vec![last.clone()],
+                        sig: super::entry::sign(&sk, &h),
+                    };
+                    x.send(vk, &m.encode(0), now);
+                }
+                Cmd::Send { to, data } if to == pk => {
+                    if let Some((xid, m)) = x.input(vk, &data, now)
+                        && let Msg::Sync { range, .. } = Msg::decode(&m).unwrap().0
+                    {
+                        syncs += 1;
+                        // Every sixteenth differs, three nibbles deep: 4,096 ranges, each answered late.
+                        let a = if range.depth < 3 {
+                            SyncAnswer::Children(differ)
+                        } else {
+                            SyncAnswer::Same
+                        };
+                        later.push((now + Duration::from_secs(8), xid, Msg::SyncAnswer(a)));
+                    }
+                }
+                Cmd::Log(l) => eprintln!("DBG {:?} {l}", now - t0),
+                _ => {}
+            }
+        }
+        let (due, wait): (Vec<_>, Vec<_>) = later.drain(..).partition(|(t, _, _)| *t <= now);
+        later = wait;
+        for (_, xid, m) in due {
+            x.send(vk, &m.encode(xid), now);
+        }
+        x.tick(now);
+        let out = std::mem::take(&mut x.out);
+        for (_, d) in &out {
+            v.input(
+                Input::Datagram {
+                    from: pk,
+                    data: d.clone(),
+                },
+                now,
+                unix,
+            );
+        }
+        if out.is_empty() {
+            let next = [v.deadline(), later.iter().map(|l| l.0).min()]
+                .into_iter()
+                .flatten()
+                .min();
+            now = next.map_or(now + Duration::from_millis(100), |d| {
+                d.max(now + Duration::from_millis(1))
+            });
+            v.tick(now, T + now.duration_since(t0).as_secs());
+        }
+    }
+    let took = now - t0;
+    eprintln!(
+        "a slow partner: synced after {took:?}, {syncs} syncs, {} runs",
+        v.stats.syncs
+    );
+    assert!(v.synced, "still unsynced after {took:?}");
+    assert!(took <= Duration::from_secs(270), "{took:?}");
+}
