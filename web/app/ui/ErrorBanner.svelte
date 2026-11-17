@@ -45,8 +45,11 @@
 </script>
 
 <div class={['banner', tone, floating && 'floating', cls]} {...rest}>
-  <div class="body" id={bodyId}>{@render children()}</div>
-  {#if actions}<div class="actions" id={actionsId}>{@render actions()}</div>{/if}
+  <!-- Its words and buttons wrap among themselves; the close button stays beside them, at the top right. -->
+  <div class="main">
+    <div class="body" id={bodyId}>{@render children()}</div>
+    {#if actions}<div class="actions" id={actionsId}>{@render actions()}</div>{/if}
+  </div>
   {#if ondismiss}
     <span class="dismiss-at">
       {#if countdown}{#key countdown.id}<svg
@@ -72,9 +75,8 @@
 <style>
   .banner {
     display: flex;
-    flex-wrap: wrap;
     align-items: flex-start;
-    gap: var(--space-3) var(--space-5);
+    gap: var(--space-5);
     padding: var(--space-3) var(--space-5);
     border-bottom: 1px solid;
     /* Its buttons take the bar's color: the frame of a bordered one too. */
@@ -103,6 +105,14 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-menu);
   }
+  .main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3) var(--space-5);
+  }
   .body {
     align-self: center;
     flex: 1 1 480px;
@@ -113,6 +123,11 @@
     flex-direction: column;
     gap: var(--space-2);
   }
+  /* A card the size of its words: their own width, not a column's (a short line's buttons stay beside it; a line wider
+     than the bar takes it all, and its buttons go under it). */
+  .floating .body {
+    flex-basis: auto;
+  }
   .actions {
     display: flex;
     flex-wrap: wrap;
@@ -122,7 +137,7 @@
   .dismiss-at {
     position: relative;
     display: flex;
-    margin-left: auto;
+    flex: none;
   }
   /* A notice's time left: the ring empties clockwise from the top, around the close button. */
   .ring {

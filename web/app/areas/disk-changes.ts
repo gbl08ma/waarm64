@@ -160,11 +160,6 @@ export class DiskChanges {
     }
     if (wasOn || start) runner.start();
     else if (into.m)
-      messages.setState(
-        'off',
-        msg('disks:disk-changes.changes.loaded', { name: file.name, disk: into.disk.name }),
-        [],
-        'warn',
-      );
+      messages.notify(msg('disks:disk-changes.changes.loaded', { name: file.name, disk: into.disk.name }));
   }
 }

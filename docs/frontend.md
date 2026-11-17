@@ -408,9 +408,9 @@ request after it still works. Tests answer them by clicking (`tests/page-ask.ts`
 **The message bar** (at the top, under the toolbar) says what stops a machine (below, "Errors") and what happened. It
 floats over the machine rather than taking a row of the page: the screen keeps its size while it shows (a bar that
 pushed the screen down made a guest that follows its display's size resize twice, and one that doesn't scaled and
-blurred). Over the Machines page, which has no screen, it takes its row again (floating, it hid the panes' buttons). It has a close button. A notice that leaves the machine as it was (`notify`) is `info` when something was
-done (a snapshot kept or saved; a disk saved from another machine; changes loaded into a machine that's off; a disk
-grown; the guest asleep): green, it closes itself after 15 s, which a ring around the close button runs down (paused
+blurred). Over the Machines page, which has no screen, it takes its row again (floating, it hid the panes' buttons). It has a close button, beside its words (which wrap with its actions) at the top right. A notice that leaves the machine as it was (`notify`) is `info` when something was
+done (a snapshot kept or saved; a suspended machine resumed; a disk saved, from this machine or another; changes
+loaded into a machine that's off; a disk grown; the guest asleep): green, it closes itself after 15 s, which a ring around the close button runs down (paused
 while the pointer is on the bar, and in a hidden tab, CSS animations being). A notice that's a warning or an error (a
 save that failed, the guest that refused a soft power-off) stays until it's closed. A problem that keeps the machine
 from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it gives way to it

@@ -336,6 +336,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await running(page);
   console.log(`# suspend (buildroot): resumed ${((performance.now() - t0) / 1000).toFixed(2)} s after the reload`);
   assert.match((await message(page))!, words('machine:worker.resumed', {}, { start: true }));
+  assert.equal(await page.getAttribute('#message', 'data-kind'), 'info', 'a resume is a notice that closes itself');
   await page.waitForFunction(() => !!document.getElementById('message')?.dataset.load, null, { timeout: 10_000 });
   checkLoad(await page.evaluate(() => document.getElementById('message')?.dataset.load));
   assert.equal(await suspendFile(), undefined, 'a resumed machine has no suspended copy');

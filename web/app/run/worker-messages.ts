@@ -90,10 +90,13 @@ function stateChanged(x: Runner, r: Run, m: StateMessage) {
 function state(x: Runner, r: Run, m: StateMessage) {
   if (m.state === 'suspended') power.saving = false;
   const problems = x.d.later.problems();
-  // A message without a problem is a note (resumed, suspended, a suspended copy that couldn't be resumed), not an error.
+  // A message without a problem is a note (suspended, a suspended copy that couldn't be resumed), not an error; a running
+  // machine's (resumed) says something done: a notice that closes itself.
   const actions = m.problem ? problems.table[m.problem] : m.state === 'suspended' ? problems.suspended : [];
   const error = !!m.problem || m.state === 'crashed' || m.state === 'failed';
-  x.d.messages.setState(m.state, m.error ?? m.note, actions, error ? 'error' : 'warn');
+  const done = !error && m.state === 'running' ? m.note : undefined;
+  x.d.messages.setState(m.state, done ? undefined : (m.error ?? m.note), actions, error ? 'error' : 'warn');
+  if (done) x.d.messages.notify(done);
   stateChanged(x, r, m);
 }
 

@@ -193,7 +193,9 @@ export class DiskExport {
       messages.setState('off');
       messages.stateText(msg('disks:disk-export.saving'));
       try {
-        messages.setState('off', await write(), [], 'warn');
+        const saved = await write();
+        messages.setState('off');
+        messages.notify(saved);
       } catch (e) {
         messages.setState(
           'failed',

@@ -453,7 +453,7 @@
   },
   "worker.resumed": {
     "message": "Resumed the suspended machine.",
-    "note": "Note in the message bar (under the toolbar) once a suspended machine was resumed."
+    "note": "Notice in the message bar (under the toolbar) once a suspended machine was resumed; it closes itself after a while."
   },
   "worker.stopped.unimplemented": {
     "message": "The emulator stopped",
