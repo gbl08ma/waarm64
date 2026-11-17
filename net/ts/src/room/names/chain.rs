@@ -29,6 +29,9 @@ pub struct Chain {
     pub owner: [u8; 32],
     /// The time of the first entry of the run.
     pub seniority: u32,
+    /// The cover's start: the seniority less `drift`, as a block's time may run that far ahead of a node's clock (a
+    /// chain anchored in such a block is alive as soon as it can be checked).
+    pub cover_start: u64,
     /// SHA-256 of the first entry's anchor block's hash and its id: the tie-break.
     pub tie: [u8; 32],
     /// The cover's end: the last entry's `t + TERM + GRACE`, or a release's own time.
@@ -51,7 +54,7 @@ impl Chain {
     }
 
     pub fn covers(&self, now: u64) -> bool {
-        self.seniority as u64 <= now && now < self.cover_end
+        self.cover_start <= now && now < self.cover_end
     }
 
     /// Whether the name resolves to this chain's zone at `now` (the chain owning it): in the
@@ -265,6 +268,7 @@ fn chain(run: &[&Stamped], params: &Params) -> Chain {
         ids: run.iter().map(|s| s.id()).collect(),
         owner: first.entry.owner,
         seniority: t(first) as u32,
+        cover_start: t(first).saturating_sub(params.drift as u64),
         tie: tie.finalize().into(),
         cover_end,
         resolve_end,

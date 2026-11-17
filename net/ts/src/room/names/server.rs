@@ -72,6 +72,8 @@ const SYNC_JITTER_MS: u64 = 30_000;
 pub const LIST_MAX: u32 = 64;
 /// Sync requests in flight to one partner.
 const SYNC_PARALLEL: usize = 4;
+/// The most `sync`s a run sends: a registry of 20,000 names each differing takes ~4,400 (1 + 16 + 256 + 4,096 ranges).
+pub const MAX_RUN_SYNCS: usize = 8192;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Verification a turn: an entry costs 4 (Argon2id dominates, ~0.66 ms in Chromium's wasm), an
 /// anchor or a zone 1: ~6 entries, ~4 ms.
@@ -234,7 +236,12 @@ enum Req {
 #[derive(Default)]
 struct Run {
     stack: Vec<Range>,
+    /// The listed ids to `get` (8 bytes each), sent as the stack's ranges are, [`SYNC_PARALLEL`] at once.
+    gets: VecDeque<[u8; 8]>,
     outstanding: usize,
+    /// Requests sent: `sync`s and `get`s (each bounded).
+    syncs: usize,
+    got: usize,
     /// Ids the partner lacks or holds otherwise: told `have` at the end.
     have: BTreeSet<[u8; 32]>,
 }
@@ -428,14 +435,16 @@ impl Server {
         self.cmds.push_back(Cmd::Log(s));
     }
 
-    /// A stored record, streamed in at the start: verified when it was taken, so trusted.
+    /// A stored record, streamed in at the start: verified when it was taken, so trusted. False when nothing of it is
+    /// held (not a server's record, or a lapsed name's): the page deletes it.
     pub fn load(&mut self, record: &[u8], unix: u64) -> bool {
         let Some((asked, item)) = read_record(record) else {
             return false;
         };
+        let id = item.id;
         self.take_trusted(item, asked, unix);
         self.bound(unix);
-        true
+        self.reg.get(&id).is_some()
     }
 
     /// The bound: what it drops is deleted from the store and not fetched again by sync for a
@@ -790,7 +799,7 @@ impl Server {
             let Some((r, _)) = self.reqs.remove(&(from, reply)) else {
                 return;
             };
-            return self.on_answer(from, r, m, now, unix);
+            return self.on_answer(from, r, m, now);
         }
         match m {
             m @ Msg::Serve { .. } => self.on_serve(from, m, now, unix),
@@ -885,10 +894,10 @@ impl Server {
         }
     }
 
-    fn on_answer(&mut self, from: [u8; 32], r: Req, m: Msg, now: Instant, unix: u64) {
+    fn on_answer(&mut self, from: [u8; 32], r: Req, m: Msg, now: Instant) {
         match (r, m) {
             (Req::Sync(range), Msg::SyncAnswer(a)) => {
-                self.on_sync_answer(from, range, a, now, unix);
+                self.on_sync_answer(from, range, a);
                 self.run_done(from, now);
             }
             (Req::Get(in_run), Msg::Items(items)) => {
@@ -913,19 +922,19 @@ impl Server {
         }
     }
 
-    fn on_sync_answer(
-        &mut self,
-        from: [u8; 32],
-        range: Range,
-        a: SyncAnswer,
-        now: Instant,
-        unix: u64,
-    ) {
+    fn on_sync_answer(&mut self, from: [u8; 32], range: Range, a: SyncAnswer) {
         let Some(run) = self.runs.get_mut(&from) else {
             return;
         };
         match a {
             SyncAnswer::Same => {}
+            // A range of 63 nibbles holds at most 16 ids, which an honest partner lists.
+            SyncAnswer::Children(_) if range.depth >= 63 => {
+                self.end_run(from, "sixteenths of a range past the last nibble")
+            }
+            SyncAnswer::Listing(l) if l.len() > LIST_MAX as usize => {
+                self.end_run(from, "a listing longer than a listing may be")
+            }
             SyncAnswer::Children(theirs) => {
                 for (k, t) in theirs.iter().enumerate() {
                     let c = range.child(k as u8);
@@ -943,7 +952,6 @@ impl Server {
                 }
             }
             SyncAnswer::Listing(theirs) => {
-                let _ = unix;
                 let (lo, hi) = range.bounds();
                 let mine: BTreeMap<[u8; 8], ([u8; 32], [u8; 8])> = self
                     .reg
@@ -965,12 +973,16 @@ impl Server {
                         run.have.insert(*id);
                     }
                 }
-                for i in gets {
-                    let get = self.get_for(&i);
-                    self.request(from, &get, Req::Get(true), now);
-                    self.runs.get_mut(&from).unwrap().outstanding += 1;
-                }
+                run.gets.extend(gets);
             }
+        }
+    }
+
+    /// A partner that broke the protocol: the round with it ends (what it sent so far stays, checked as anything is).
+    fn end_run(&mut self, partner: [u8; 32], why: &str) {
+        self.log(format!("a sync partner refused: {why}"));
+        if self.runs.remove(&partner).is_some() && self.runs.is_empty() {
+            self.round_over = true;
         }
     }
 
@@ -996,11 +1008,25 @@ impl Server {
         };
         run.outstanding = run.outstanding.saturating_sub(1);
         let mut send = Vec::new();
-        while run.outstanding < SYNC_PARALLEL
-            && let Some(r) = run.stack.pop()
-        {
+        let mut gets = Vec::new();
+        while run.outstanding < SYNC_PARALLEL {
+            if let Some(i) = run.gets.pop_front() {
+                run.got += 1;
+                gets.push(i);
+            } else if let Some(r) = run.stack.pop() {
+                run.syncs += 1;
+                send.push(r);
+            } else {
+                break;
+            }
             run.outstanding += 1;
-            send.push(r);
+        }
+        if run.syncs > MAX_RUN_SYNCS || run.got > self.max_names + LIST_MAX as usize {
+            return self.end_run(partner, "a run past its bound");
+        }
+        for i in gets {
+            let get = self.get_for(&i);
+            self.request(partner, &get, Req::Get(true), now);
         }
         for range in send {
             // Settled first, so both sides compare what time has made of the same entries.

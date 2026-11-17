@@ -318,10 +318,13 @@ impl Range {
         (lo, hi)
     }
 
-    /// Its `k`th sixteenth.
+    /// Its `k`th sixteenth. A range of all 64 nibbles is one id and has none: itself.
     pub fn child(&self, k: u8) -> Range {
         let mut p = self.bounds().0;
         let d = self.depth as usize;
+        if d >= 64 {
+            return *self;
+        }
         let b = d / 2;
         p[b] |= if d.is_multiple_of(2) {
             k << 4
@@ -634,6 +637,8 @@ struct Out {
 struct In {
     parts: Vec<Option<Vec<u8>>>,
     got: usize,
+    /// When its last new part came: an incomplete transfer is dropped [`INBOUND_IDLE`] after it.
+    last: std::time::Instant,
 }
 
 /// A peer's transfers both ways.
@@ -648,9 +653,11 @@ struct Peer {
     buffered: usize,
 }
 
-/// The most transfers of a peer's held incomplete, and their bytes.
+/// The most transfers of a peer's held incomplete, and their bytes (every new part counts).
 const MAX_INBOUND: usize = 16;
-const MAX_BUFFERED: usize = 2 * MAX_MESSAGE;
+pub const MAX_BUFFERED: usize = 2 * MAX_MESSAGE;
+/// An incomplete transfer that got no new part this long is dropped (its sender gives up a part after 5.5 s).
+const INBOUND_IDLE: std::time::Duration = std::time::Duration::from_secs(10);
 const DONE_KEPT: usize = 256;
 
 /// Every peer's transfers: messages in, datagrams out.
@@ -760,14 +767,20 @@ impl Transfers {
             self.out.push((from, ack));
             return None;
         }
-        if !p.inbound.contains_key(&id)
-            && (p.inbound.len() >= MAX_INBOUND || p.buffered + data.len() > MAX_BUFFERED)
+        let new = p
+            .inbound
+            .get(&id)
+            .is_none_or(|t| t.parts.get(part).is_some_and(Option::is_none));
+        if new
+            && ((!p.inbound.contains_key(&id) && p.inbound.len() >= MAX_INBOUND)
+                || p.buffered + data.len() > MAX_BUFFERED)
         {
             return None; // no room: unacknowledged, so it comes again
         }
         let t = p.inbound.entry(id).or_insert_with(|| In {
             parts: vec![None; n],
             got: 0,
+            last: now,
         });
         if t.parts.len() != n {
             return None;
@@ -775,6 +788,7 @@ impl Transfers {
         if t.parts[part].is_none() {
             t.parts[part] = Some(data.to_vec());
             t.got += 1;
+            t.last = now;
             p.buffered += data.len();
         }
         self.out.push((from, ack));
@@ -799,6 +813,14 @@ impl Transfers {
         let keys: Vec<[u8; 32]> = self.peers.keys().copied().collect();
         for k in keys {
             let p = self.peers.get_mut(&k).unwrap();
+            let buffered = &mut p.buffered;
+            p.inbound.retain(|_, t| {
+                let keep = now.saturating_duration_since(t.last) < INBOUND_IDLE;
+                if !keep {
+                    *buffered -= t.parts.iter().flatten().map(Vec::len).sum::<usize>();
+                }
+                keep
+            });
             for o in &mut p.out {
                 let mut lost = false;
                 for (i, s) in o.state.iter_mut().enumerate() {
@@ -831,15 +853,21 @@ impl Transfers {
     }
 
     pub fn deadline(&self) -> Option<std::time::Instant> {
-        self.peers
+        let out = self
+            .peers
             .values()
             .flat_map(|p| &p.out)
             .flat_map(|o| &o.state)
             .filter_map(|s| match s {
                 Part::Flying { at, .. } => Some(*at),
                 _ => None,
-            })
-            .min()
+            });
+        let stale = self
+            .peers
+            .values()
+            .flat_map(|p| p.inbound.values())
+            .map(|t| t.last + INBOUND_IDLE);
+        out.chain(stale).min()
     }
 
     /// Forgets a peer (its session ended).

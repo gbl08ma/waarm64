@@ -523,9 +523,10 @@ fn the_earlier_claim_wins() {
         let after = T0 as u64 + (p.term + p.grace) as u64;
         assert_eq!(n.owner(&p, after).unwrap().ids, vec![second.id()]);
     }
-    // Before the first claim's time, nothing covers.
+    // Before the first claim's time less `drift` (a block's time may run that far ahead), nothing covers.
     let n = w.name("test123", &[&first]);
-    assert_eq!(n.owner(&p, T0 as u64 - 1), None);
+    assert_eq!(n.owner(&p, (T0 - p.drift) as u64 - 1), None);
+    assert!(n.owner(&p, (T0 - p.drift) as u64).is_some());
     // Equal times: the lower SHA-256 of the anchor block's hash and the id, whichever came first.
     let c1 = w.at(Kind::Claim, &a, "test123", [0; 32], T0);
     let c2 = w.at(Kind::Claim, &b, "test123", [0; 32], T0);

@@ -930,3 +930,190 @@ fn an_entry_held_takes_a_new_anchor_only_when_earlier() {
         "a later one changes nothing"
     );
 }
+
+// ---- Review 1's findings (NAMES-REVIEW-1.md) ----
+
+/// A server with nothing of its own (`victim`) asks; a fake partner serves its question with a live name, then
+/// answers each of its `sync`s with `answer(range)`, at most `max` of them, and nothing else. The victim, the syncs
+/// and the `get`s the partner was sent.
+fn partner_answers(answer: impl Fn(&Range) -> SyncAnswer, max: usize) -> (Server, usize, usize) {
+    let mut b = Bitcoin::new(ROOM, 40);
+    let (key, item) = b.title(1, "partner", t(20), &[t(5)], [9; 32]);
+    let sk = k256::schnorr::SigningKey::from_bytes(&key).unwrap();
+    let last = item.entries.last().unwrap().clone();
+    let mut v = Server::new(ROOM, cfg(vec![]), T);
+    let (vk, pk) = ([0x11; 32], [0x22; 32]);
+    let t0 = Instant::now();
+    let mut now = t0;
+    v.start(vk, now);
+    let mut x = Transfers::default();
+    let (mut syncs, mut gets) = (0, 0);
+    for _ in 0..(4 * max + 2000) {
+        let unix = T + now.duration_since(t0).as_secs();
+        let mut moved = false;
+        while let Some(c) = v.poll() {
+            moved = true;
+            match c {
+                Cmd::Publish { nonce, spread: 0 } => {
+                    let h =
+                        super::entry::tagged("waarm64/names/serve", &[&b.names.value, &nonce, &pk]);
+                    let m = Msg::Serve {
+                        nonce,
+                        entry: Box::new(last.clone()),
+                        sig: super::entry::sign(&sk, &h),
+                    };
+                    x.send(vk, &m.encode(0), now);
+                }
+                Cmd::Send { to, data } if to == pk => {
+                    if let Some((xid, m)) = x.input(vk, &data, now) {
+                        match Msg::decode(&m).unwrap().0 {
+                            Msg::Sync { range, .. } => {
+                                syncs += 1;
+                                if syncs <= max {
+                                    x.send(vk, &Msg::SyncAnswer(answer(&range)).encode(xid), now);
+                                }
+                            }
+                            Msg::Get { .. } => gets += 1,
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (_, d) in std::mem::take(&mut x.out) {
+            moved = true;
+            v.input(Input::Datagram { from: pk, data: d }, now, unix);
+        }
+        if syncs > max || v.synced {
+            break;
+        }
+        if !moved {
+            now = v
+                .deadline()
+                .map_or(now + Duration::from_millis(100), |d| d.max(now));
+            v.tick(now, T + now.duration_since(t0).as_secs());
+        }
+    }
+    (v, syncs, gets)
+}
+
+#[test]
+fn a_partner_answering_children_past_the_last_nibble_ends_the_run() {
+    // One path down: the first sixteenth differs, the rest are empty as the victim's are. At depth 64 a range is one id
+    // and has no sixteenths.
+    let mut one = [super::wire::Fp::default(); 16];
+    one[0] = super::wire::Fp {
+        hash: [1; 8],
+        count: 1,
+    };
+    let (v, syncs, _) = partner_answers(|_| SyncAnswer::Children(one), 200);
+    assert!(syncs <= 64, "{syncs} syncs");
+    let leaf = Range {
+        depth: 64,
+        prefix: [0xab; 32],
+    };
+    assert_eq!(leaf.child(3), leaf, "one id: no sixteenths");
+    assert!(v.synced, "the round with it ended");
+}
+
+#[test]
+fn a_partner_whose_ranges_never_stop_differing_is_bounded() {
+    let all = [super::wire::Fp {
+        hash: [1; 8],
+        count: 1,
+    }; 16];
+    // Every sixteenth differs down to depth 4 (69,905 ranges), then the same.
+    let answer = |r: &Range| {
+        if r.depth < 4 {
+            SyncAnswer::Children(all)
+        } else {
+            SyncAnswer::Same
+        }
+    };
+    let (v, syncs, _) = partner_answers(answer, 20_000);
+    assert!(syncs < 10_000, "{syncs} syncs");
+    assert!(v.synced, "the round with it ended");
+}
+
+#[test]
+fn a_listing_longer_than_a_listing_may_be_ends_the_run() {
+    let long: Vec<([u8; 8], [u8; 8])> = (0..5000u64).map(|k| (k.to_be_bytes(), [1; 8])).collect();
+    let (v, _, gets) = partner_answers(|_| SyncAnswer::Listing(long.clone()), 10);
+    assert_eq!(gets, 0, "no gets for it");
+    assert!(v.synced, "the round with it ended");
+}
+
+#[test]
+fn a_peers_incomplete_transfers_hold_at_most_their_budget() {
+    // 16 transfers of ~1 MiB each opened with one part, then filled: what is acknowledged (so buffered) stays within
+    // 2 MiB and a bit.
+    let mut z = Transfers::default();
+    let from = [3u8; 32];
+    let now = Instant::now();
+    let parts = super::wire::MAX_MESSAGE / super::wire::PART_DATA;
+    let part = |id: u32, k: usize| {
+        let mut d = vec![0u8];
+        d.extend_from_slice(&id.to_le_bytes());
+        d.extend_from_slice(&(k as u16).to_le_bytes());
+        d.extend_from_slice(&(parts as u16).to_le_bytes());
+        d.extend_from_slice(&[7u8; super::wire::PART_DATA]);
+        d
+    };
+    fn feed(z: &mut Transfers, from: [u8; 32], d: &[u8], now: Instant) -> usize {
+        z.input(from, d, now);
+        std::mem::take(&mut z.out).len()
+    }
+    let mut acked = 0usize;
+    for id in 1..=16 {
+        acked += feed(&mut z, from, &part(id, 0), now);
+    }
+    for id in 1..=16 {
+        for k in 1..parts - 1 {
+            acked += feed(&mut z, from, &part(id, k), now);
+        }
+    }
+    let bytes = acked * super::wire::PART_DATA;
+    assert!(
+        bytes <= 2 * super::wire::MAX_MESSAGE + super::wire::PART_DATA,
+        "{bytes} bytes buffered"
+    );
+    // Incomplete transfers expire: a minute later a new one is taken again.
+    let later = now + Duration::from_secs(60);
+    z.tick(later);
+    assert_eq!(
+        feed(&mut z, from, &part(100, 0), later),
+        1,
+        "room again once the stale ones expired"
+    );
+}
+
+#[test]
+fn a_lapsed_record_isnt_taken_at_load() {
+    let mut b = Bitcoin::new(ROOM, 41);
+    let (_, old) = b.title(1, "lapsed", t(200), &[], [1; 32]);
+    let (_, live) = b.title(2, "alive", t(20), &[t(4)], [2; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![]), T);
+    assert!(
+        !s.load(&record(&old, T), T),
+        "nothing of it is held, so the page deletes it"
+    );
+    assert!(s.load(&record(&live, T), T));
+    assert_eq!(s.reg.len(), 1);
+}
+
+#[test]
+fn a_chain_whose_first_time_is_a_little_ahead_is_kept() {
+    // A block's time may run up to `drift` past now: a claim anchored 30 minutes ahead of the server's clock.
+    let mut b = Bitcoin::new(ROOM, 42);
+    let mut bus = Bus::new(vec![
+        Server::new(ROOM, cfg(vec![]), T),
+        Server::new(ROOM, cfg(vec![]), T),
+    ]);
+    let k = b.key(1, "early");
+    let ahead = b.at(Kind::Claim, &k, "early", [0; 32], T as u32 + 1800);
+    let it = b.item("early", std::slice::from_ref(&ahead), None);
+    assert_eq!(bus.put(1, 0, it), Msg::Taken);
+    let h = bus.s[0].reg.get(&b.names.name_id("early")).unwrap();
+    assert_eq!(h.owner.as_ref().map(|o| o.last()), Some(ahead.id()));
+}

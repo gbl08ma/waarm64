@@ -26,6 +26,10 @@ pub const MAX_ANCHOR: usize = 4096;
 const MAX_MSG: usize = 4096;
 /// The most bytes [`leaves`] reads of a calendar's answer.
 const MAX_TIMESTAMP: usize = 8192;
+/// The most [`leaves`] copies, in messages and operations (an operation counted as its encoded size), for the forks
+/// and the leaves it returns: a calendar's answer forks a few times, but a tree of forks whose paths share their
+/// prefixes would otherwise copy its 8 KiB into hundreds of megabytes.
+const MAX_COPIED: usize = 64 * 1024;
 const BITCOIN: [u8; 8] = [0x05, 0x88, 0x96, 0x0d, 0x73, 0xd7, 0x19, 0x01];
 const PENDING: [u8; 8] = [0x83, 0xdf, 0xe3, 0x0d, 0x2e, 0xf9, 0x0c, 0x8e];
 
@@ -80,6 +84,14 @@ fn varuint(out: &mut Vec<u8>, mut v: u64) {
             return;
         }
         out.push(b | 0x80);
+    }
+}
+
+/// An operation's encoded size.
+fn op_size(op: &Op) -> usize {
+    match op {
+        Op::Sha256 => 1,
+        Op::Append(a) | Op::Prepend(a) => 3 + a.len(),
     }
 }
 
@@ -228,16 +240,25 @@ pub fn leaves(b: &[u8], msg: &[u8]) -> Result<Vec<Leaf>, Invalid> {
     }
     let mut r = Reader { b, i: 0 };
     let mut out = Vec::new();
-    // Each pending item: the message it starts from and the operations that made it. A tree's
-    // depth is bounded by its bytes, so an explicit stack rather than recursion.
-    let mut stack: Vec<(Vec<u8>, Vec<Op>)> = vec![(msg.to_vec(), Vec::new())];
-    while let Some((m, ops)) = stack.pop() {
+    // Each pending item: the message it starts from, the operations that made it and their
+    // encoded size. A tree's depth is bounded by its bytes, so an explicit stack rather than
+    // recursion; what forks and leaves copy is bounded by `MAX_COPIED`.
+    let mut stack: Vec<(Vec<u8>, Vec<Op>, usize)> = vec![(msg.to_vec(), Vec::new(), 0)];
+    let mut copied = 0usize;
+    let mut copy = |n: usize| {
+        copied += n;
+        (copied <= MAX_COPIED)
+            .then_some(())
+            .ok_or(Invalid::AnchorFormat)
+    };
+    while let Some((m, ops, size)) = stack.pop() {
         let mut tag = r.byte()?;
         let more = tag == 0xff;
         if more {
             tag = r.byte()?;
             // After this item, another of the same message follows.
-            stack.push((m.clone(), ops.clone()));
+            copy(m.len() + size)?;
+            stack.push((m.clone(), ops.clone(), size));
         }
         if tag == 0x00 {
             let kind: [u8; 8] = r.bytes(8)?.try_into().unwrap();
@@ -256,13 +277,15 @@ pub fn leaves(b: &[u8], msg: &[u8]) -> Result<Vec<Leaf>, Invalid> {
                 PENDING => Attestation::Pending,
                 _ => Attestation::Unknown,
             };
+            copy(size)?;
             out.push(Leaf { ops, attestation });
         } else {
             let op = r.op(tag)?;
             let next = op.apply(&m).ok_or(Invalid::AnchorFormat)?;
+            let size = size + op_size(&op);
             let mut ops = ops;
             ops.push(op);
-            stack.push((next, ops));
+            stack.push((next, ops, size));
         }
     }
     if !r.done() {
@@ -445,6 +468,36 @@ mod tests {
         };
         assert_eq!(Anchor::decode(&big.encode()), Err(Invalid::AnchorFormat));
         assert_eq!(big.root(&[0; 32]), None);
+    }
+
+    #[test]
+    fn a_deep_fork_isnt_copied_out_of_proportion() {
+        // `ff 08` at every level, a pending attestation as each level's second item: a valid tree of ~680 leaves whose
+        // paths share their prefixes, ~230,000 operations if each leaf's path were copied whole. Refused.
+        let att = |t: &mut Vec<u8>| {
+            t.push(0x00);
+            t.extend_from_slice(&PENDING);
+            t.push(0);
+        };
+        let k = 680;
+        let mut t = Vec::new();
+        for _ in 0..k {
+            t.extend_from_slice(&[0xff, 0x08]);
+        }
+        for _ in 0..=k {
+            att(&mut t);
+        }
+        assert!(t.len() <= MAX_TIMESTAMP);
+        assert!(leaves(&t, &[1; 32]).is_err(), "refused");
+        // A few levels of it are fine.
+        let mut t = Vec::new();
+        for _ in 0..3 {
+            t.extend_from_slice(&[0xff, 0x08]);
+        }
+        for _ in 0..=3 {
+            att(&mut t);
+        }
+        assert_eq!(leaves(&t, &[1; 32]).map(|l| l.len()), Ok(4));
     }
 
     #[test]

@@ -138,10 +138,10 @@ impl Held {
             keep.extend(t.ids.iter().copied());
             next = next.min(t.keep_until);
         }
-        // A chain whose first entry's time is still ahead (block times run ahead) may own later.
+        // A chain whose cover is still ahead may own later (none passed a header check, which allows `drift`).
         for c in &chains {
-            if c.seniority as u64 > now {
-                next = next.min(c.seniority as u64);
+            if c.cover_start > now {
+                next = next.min(c.cover_start);
             }
         }
         self.name.retain(|id, _| keep.contains(id));

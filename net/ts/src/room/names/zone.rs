@@ -3,8 +3,9 @@
 //! bytes, a signature: 362 or 1,034 bytes.
 //!
 //! A slot is an 8-byte tag and a node key sealed with ChaCha20-Poly1305 (32 bytes and its 16-byte
-//! tag), the tag and the AEAD's key both derived from the room's seal key, the full name asked
-//! (`test123`, `git.test123`) and `seq`, so no key or tag is used twice across versions and
+//! tag), the tag and the AEAD's key both derived from the room's seal key, the name id, the owner
+//! key, the full name asked (`test123`, `git.test123`) and `seq`, so no key or tag is used twice
+//! across versions or owners and
 //! unused slots (random bytes) can't be told from used ones. The AEAD's associated data is the
 //! zone's head, so a slot can't be moved to another name, owner or version. Slots are sorted by
 //! their bytes, so their order says nothing. The owner signs the sealed bytes: anyone can check a
@@ -37,11 +38,19 @@ pub struct Zone {
     pub sig: [u8; 64],
 }
 
-/// A slot's tag and AEAD key for `full` (relative to the room's domain) at `seq`.
-fn slot_keys(names: &RoomNames, full: &str, seq: u32) -> ([u8; 8], [u8; 32]) {
+/// A slot's tag and AEAD key for `full` (relative to the room's domain) in a zone of name id `name` by `owner` at
+/// `seq`: two owners of one name (after a lapse, or a back-order) both start at a small `seq`, so the owner is taken
+/// too, or their zones would share keystreams and tags.
+fn slot_keys(
+    names: &RoomNames,
+    full: &str,
+    name: &[u8; 32],
+    owner: &[u8; 32],
+    seq: u32,
+) -> ([u8; 8], [u8; 32]) {
     let s = seq.to_le_bytes();
-    let tag = keyed(&names.seal, &[b"tag", &s, full.as_bytes()]);
-    let key = keyed(&names.seal, &[b"key", &s, full.as_bytes()]);
+    let tag = keyed(&names.seal, &[b"tag", name, owner, &s, full.as_bytes()]);
+    let key = keyed(&names.seal, &[b"key", name, owner, &s, full.as_bytes()]);
     (tag[..8].try_into().unwrap(), key)
 }
 
@@ -88,7 +97,7 @@ impl Zone {
             if split(&full).is_none_or(|(s, m)| s != *sub || m != name) || fulls.contains(&full) {
                 return Err(Invalid::Zone);
             }
-            let (tag, k) = slot_keys(names, &full, seq);
+            let (tag, k) = slot_keys(names, &full, &z.name, &z.owner, seq);
             let ct = ChaCha20Poly1305::new(&k.into())
                 .encrypt(
                     &Nonce::default(),
@@ -131,7 +140,7 @@ impl Zone {
         if names.name_id(name) != self.name {
             return None;
         }
-        let (tag, k) = slot_keys(names, full, self.seq);
+        let (tag, k) = slot_keys(names, full, &self.name, &self.owner, self.seq);
         let head = self.head();
         let aead = ChaCha20Poly1305::new(&k.into());
         self.slots.iter().filter(|s| s[..8] == tag).find_map(|s| {
@@ -292,6 +301,24 @@ mod tests {
                 .iter()
                 .all(|s| z2.slots.iter().all(|t| s[..8] != t[..8]))
         );
+    }
+
+    #[test]
+    fn two_owners_of_one_name_at_one_seq_share_no_key_or_tag() {
+        // After a lapse (or a back-order) another owner starts its zone at the same small `seq`.
+        let names = RoomNames::derive("zone owners");
+        let a = owner_key(&[1; 32], &names, "shared");
+        let b = owner_key(&[2; 32], &names, "shared");
+        let za = Zone::seal(&names, &a, "shared", 1, &[(None, [0xaa; 32])], false).unwrap();
+        let zb = Zone::seal(&names, &b, "shared", 1, &[(None, [0xbb; 32])], false).unwrap();
+        assert!(
+            za.slots
+                .iter()
+                .all(|s| zb.slots.iter().all(|t| s[..8] != t[..8])),
+            "no tag in common"
+        );
+        assert_eq!(za.open(&names, "shared"), Some([0xaa; 32]));
+        assert_eq!(zb.open(&names, "shared"), Some([0xbb; 32]));
     }
 
     #[test]
