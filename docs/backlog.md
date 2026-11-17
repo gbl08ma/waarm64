@@ -1708,7 +1708,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
     - The proof of work's time in Chromium (production, cloud x86_64, five entries): 3, 17, 51, 62 and 64 s (a draw, as
       room-names.md says); the dev VM re-times it with N0's numbers.
-  - Review 2's fixes (N5a; NAMES-REVIEW-2.md), what they leave:
+  - Review 2's fixes (N5a; the review was NAMES-REVIEW-2.md, in git history before its deletion), what they leave:
     - Done (R2): finding 3 (servers finish renewals, option A).
       Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
       N0b measured what spreading must cover: stamps made within the same second are near-siblings in a calendar's tree
