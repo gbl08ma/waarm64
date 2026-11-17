@@ -5,6 +5,12 @@ OpenTimestamps proof, and the choice of servers by their chain's age (N5a's fix 
 code. Its recommendations touch decisions 4 and 12 of [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md), so they are the
 user's to take; "Decisions for the user" at the end lists them.
 
+**Status (2026-11-17):** the user took 1, 2 and 4, and asked 3 again. **R1 is built**: entries of 175 bytes without
+`ref`, Argon2id salted with the name id, an anchor with its block's one header against one compiled floor (1/16 of
+block 976,177's difficulty), items version 4; `Run`, the six headers, the floor's schedule, `REF_WINDOW` and the
+pending slack gone; a pending anchor dropped once its entry can no longer link; the agent asks an explorer for an
+anchor's one header and nothing else ([room-names.md](room-names.md) says what the code does). R2 and R3 are not.
+
 ## Summary
 
 **Not a deep redesign: a cut and one addition.** The rule (the oldest unbroken chain of stamped claims), the records'
@@ -269,7 +275,7 @@ it is built and tested, and B's risk is too cheap to take on.
 
 | Loop | What | Needs |
 |---|---|---|
-| R1 | Records: `ref` and the window out, one header an anchor, the constant floor; the agent without `ref()`; tests' titles and vectors | the user's go on question 1 |
+| R1 | Records: `ref` and the window out, one header an anchor, the constant floor; the agent without `ref()`; tests' titles and vectors. **Built (2026-11-17)** | the user's go on question 2 (given) |
 | R2 | Servers finish renewals at the calendars (finding 3) and check blocks at the explorers; the agent makes the next renewal ahead; the visit notice's promise tested with visits 14 days apart and seconds long | decision 4 |
 | R3 | The tiers out, the dissent message in; review 2's finding 2 test rewritten: 128 and 1,280 junk registrations, one honest holder, the member gets the owner | decision 12 |
 | then | N0b, N0c, N6, the end, as queued. N6 adds: explorer requests a server's first sync makes and the pace they tolerate; a first lookup's time with the wait for dissent | |

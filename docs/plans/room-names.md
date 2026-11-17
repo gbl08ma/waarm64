@@ -8,7 +8,7 @@ changed", at the end). Built so far: the records and the rules (N1, `net/ts/src/
 lists", "Records", "Who owns a name" and the headers of "Bitcoin as the clock" say what the code does), the names
 client and the servers' side (N2: "The names client", "Finding a server" and "Servers" say what the code does), and the
 member's side and the resolver (N3: "A member resolving a name", "The resolver", and the page's side of "Persist"), and
-the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
+the fixes of the out-of-context review of N1 to N3 (N4a, and N4b: finding 6, seven linked headers an anchor and the floor by time, which R1 undid: [room-names-redesign.md](room-names-redesign.md)), the records as the redesign has them (R1: no `ref`, an anchor's block's one header against one compiled floor), the names agent (N4c: "The names agent"), and the page (N5: "What the user sees"); the rest is a plan. The numbers marked *estimate* are arithmetic, not measurements, and loop N0 replaces them. It extends [networking/rooms.md](../networking/rooms.md), whose terms (room, link, tag, lookup, call
 back, the module) it uses. The track's brief is [NAMES-KICKOFF.md](../../NAMES-KICKOFF.md).
 
 ## What it is, in one paragraph
@@ -127,11 +127,12 @@ words: the resolver, and the dialog that registers.
 
 ## Records
 
-Binary, fixed order, integers little-endian. Every record starts with a version byte (1) and the room's 40 prefix
+Binary, fixed order, integers little-endian. Every record starts with a version byte and the room's 40 prefix
 bits; the hash that is signed also takes a 32-byte value derived from the room's whole ID, so a record of one room
 means nothing in another, even one whose prefix was made to collide.
 
-**Entry** (207 bytes):
+**Entry** (175 bytes, version 2; version 1 carried `ref`, a recent block's hash, and is refused: rooms are
+pre-release):
 
 | Field | Bytes | |
 |---|---|---|
@@ -140,21 +141,22 @@ means nothing in another, even one whose prefix was made to collide.
 | name id | 32 | |
 | owner | 32 | the owner key |
 | prev | 32 | the id of the entry before; zeros in a claim |
-| ref | 32 | the hash of a recent Bitcoin block (in the byte order Bitcoin computes it, the reverse of an explorer's): the entry was made after it |
 | nonce | 8 | proof of work |
 | signature | 64 | BIP-340 over the tagged hash (BIP-340's, tag `waarm64/names/entry`) of the room's value and the fields above |
 
 A claim's `prev` is zeros and a renewal's or release's isn't: anything else is invalid.
 
 - **Proof of work** is over the fields before the signature: the function's output has `POW_BITS` leading zero bits.
-  It is bound to `ref`, so it can't be stockpiled or reused for the next term. The function must be cheap to check
+  It is bound to its name (salted with the name id), so work done for one name serves no other; it can be done ahead
+  of time, which saves nothing (a term costs the same entries' work whenever it is done), and a renewal names the entry
+  before it, so its work is its own. The function must be cheap to check
   (a server checks every entry of the room), which bounds the memory a memory-hard one may use.
   **What it is for**: the price, every term, of a name held without being used: a dictionary stamped and held back
   ("What it does not give"), a back-order, a squat. Stamping is free and one stamp covers any number of claims, so
   without it a member could claim every word there is each term for a minute of signatures. It is not what keeps junk
   out of a registry (the servers' bound is). So the function is judged by what a million names cost an attacker a
   term on a GPU, which favours a memory-hard one. **Chosen (N0, provisional until the dev VM re-times it): Argon2id,
-  1 MiB, one pass, one lane, 32-byte output**, over the 143 bytes before the signature, salted with `ref` (version
+  1 MiB, one pass, one lane, 32-byte output**, over the 111 bytes before the signature, salted with the name id (version
   0x13; Node's `crypto.argon2Sync` gives the same, which the tests pin). A GPU's lead over a tab (bench/net/REPORT.md, NAMES
   loop 0) is ~3,900x at BLAKE2s (hashcat's published RTX 5090 figure against a tab's measured rate) and at most
   ~280x at Argon2id of 1 MiB (*estimate* from the card's memory bandwidth: no Argon2 figure at these sizes is
@@ -167,31 +169,32 @@ A claim's `prev` is zeros and a renewal's or release's isn't: anything else is i
   **Not a verifiable delay function** (weighed 2026-11-16): one is sequential an instance, but a dictionary is a
   million instances side by side, so it evens the field a core, as a memory-hard function does; and it costs
   milliseconds to check in wasm (60,000 entries: minutes of a server's first sync),
-  ~256 bytes of proof on a 207-byte entry, a tab without a wide multiply against native squaring, and group
+  ~256 bytes of proof on a 175-byte entry, a tab without a wide multiply against native squaring, and group
   arithmetic with no small vetted crate. Its one gain is a fixed time where hashcash is a draw (the mean under a
   minute, some several): the *Preparing* state's words allow for that.
-- **An entry is valid** when its signature and proof of work hold, the header that travels with it for `ref` is
-  `ref`'s block and proves itself ("Bitcoin as the clock"), and it has an anchor whose block's time `t` is within
-  `ref`'s block's time minus 2 hours (block times aren't ordered to the minute) and plus `REF_WINDOW`.
+- **An entry is valid** when its signature and proof of work hold and it has an anchor, whose block's header proves
+  itself ("Bitcoin as the clock"): its time `t` is that block's. Nothing ties an anchor to when the entry was made: an
+  anchor collected late times the entry late, which only ever costs its owner.
 
-**Anchor**: OpenTimestamps operations from the entry's id to a block's Merkle root, that block's header and the 6
-headers after it (a *run*, "Bitcoin as the clock"; on the wire, indices into the item's headers, which an item holds
-once each: 13 bytes an anchor, 480 a distinct block). It is
+**Anchor**: OpenTimestamps operations from the entry's id to a block's Merkle root, and that block's header ("Bitcoin
+as the clock"; on the wire, an index into the item's headers, which an item holds once each: 80 bytes a distinct
+block). It is
 one path in the format's own serialization (the operations, then the Bitcoin attestation with the block's height,
 which nothing trusts: the header gives the time): the calendar's receipt (id to its commitment) and its finished proof
 (commitment to the root) joined. The verifier handles the three operations the calendars emit (append, prepend,
 SHA-256) and the Bitcoin attestation; anything else, a fork in the path, or a message past the format's 4 KiB is an
 invalid anchor; 4 KiB at most. **One anchor an entry is kept**, the one with the earliest time (equal: the lower block
-hash, then the lower bytes, then the lower six after it); a node offered an earlier one for an entry it holds takes it, so an entry's time only
+hash, then the lower bytes); a node offered an earlier one for an entry it holds takes it, so an entry's time only
 ever moves back, and every node that has seen the same anchors has the same time. A *pending* anchor (which of the
 compiled calendars, by index, and the operations to its commitment: never a URL) proves nothing and is carried only on
 a chain's last entry, one at most (of two, the lower), so that a server can fetch the finished one; it carries the
 entry's owner key's BIP-340 signature over the tagged hash (`waarm64/names/pending`) of the room's value, the entry's
 id and the pending's calendar and operations, and a server keeps only a signed one (else anyone's lower pending would
 replace the owner's, and servers would ask a calendar for a commitment that doesn't exist: review 1); it is dropped when
-the entry is anchored, when an anchored entry follows it, and once its entry could no longer be valid: now past `ref`'s
-time plus `REF_WINDOW` plus 4 hours (a block's time can trail the moment it is mined, and a calendar serves the proof
-six blocks later), when the entry, still unanchored, is dropped too.
+the entry is anchored, when an anchored entry follows it, and once its entry can no longer link (chain.rs
+`Name::stale`): now past the entry before's `t + TERM + GRACE`, when the entry, still unanchored, is dropped too. A
+claim can always link (an anchor at any time makes it a claim then); a server keeps no unanchored claim, and pending
+renewals only on the owning chain's last entry, which can link as long as that chain owns the name.
 
 **Zone** (366 bytes with 4 slots, 1,038 with 16): version (2), room, name id, owner, `seq` (8), the slots (56 each), a
 signature. An address is computed from the node key a slot opens to, as today, and the resolver's answer teaches the
@@ -242,9 +245,8 @@ once.
 |---|---|---|
 | `TERM` | 30 days | the user's "a month, or shorter" |
 | `GRACE` | 7 days | |
-| `drift` | 2 hours | how far a block's time may run ahead: a header's time may be this far past now, an anchor this far before `ref`, and a chain covers from this far before its first entry's time |
-| pending slack | 4 hours | a pending anchor goes once now is past `ref` + `REF_WINDOW` + this ("Records") |
-| `REF_WINDOW` | 48 hours | from `ref`'s block to the anchor's block, which must exceed the calendars' slowest, not their usual. N0 (bench/net/REPORT.md, NAMES loop 0): `ref` is ~1 hour old when an entry is made (p99 2.3), the slowest calendar alone (`finney`, when `alice` and `bob`, one operator, are both down) reached its block within 27 hours at worst in a year's samples, under the slow reading of the model (~16 under the fast one, which the batch's first proofs fit), and block times may run 2 hours ahead: 48 covers that with half again to spare for the days the samples missed. Provisional until N0b checks the model against the batch of real stamps. Not sensitive: all it costs is how far ahead proof of work can be made, and two days is the same against `TERM`; an entry that misses it is made again ("The names agent") |
+| `drift` | 2 hours | how far a block's time may run ahead: a header's time may be this far past now, and a chain covers from this far before its first entry's time |
+| floor | `0x17216730` | the easiest target a header may claim, one number compiled in: 1/16 of the difficulty of block 976,177 ("Bitcoin as the clock") |
 | renew when | the last entry is older than `TERM / 2` | two entries a month a name; the page says "every 2 weeks", and a name is lost only past 3 |
 | `POW_BITS`, function | 16, Argon2id (1 MiB, t = 1, p = 1) | target: under a minute of one core in a tab, in the background. N0 (cloud, provisional): 0.49 ms a try in Chromium's wasm, so a mean of 32 s; hashcash is a draw: half within 22 s, 90% within 74 s, 99% within 2.5 minutes. Checking one costs one evaluation |
 
@@ -269,63 +271,34 @@ once.
   hours for 90% of stamps and 4.8 at worst; `finney` alone up to 14 hours, or 26 if a stamp misses the transaction
   being mined (the batch of real stamps says which: N0b). No day of the year had fees that would have stalled the
   calendars for long (blocks' 10th-percentile fee rate at most 5 sat/vB). **About 2 hours** is what the dialog can
-  say; `REF_WINDOW` covers the worst.
-- **Headers prove themselves, and an anchor's block comes with the six after it.** A verifier needs the 80-byte header
-  of `ref`'s block, and of an anchor's block **and the next 6** (a *run*); all travel with the entry. It checks the
-  `ref` header's hash against `ref`, the anchor against its block's Merkle root, and of every header its proof of work
-  against its own target, that target against **the floor at the header's own time** (below), and that its time isn't
-  past now by more than 2 hours; of the run, that there are exactly six after the block, each naming the one before
-  by its prev-hash, each timed from the block's time less 2 hours (Bitcoin orders block times only by the median of
-  the eleven before) to the block's time plus 12 hours (`run_span`: six blocks have taken that long only in 2009 and
-  2010; it keeps a forger from timing the six where the floor is lowest). Nothing else: no height, no explorer.
-  Times, unlike heights, are in the header, so a header can't be passed off as an earlier block's. **Why six more**
-  (review 1's finding 6, the user's decision 2026-11-17): a header proves its own work and nothing else, so a lone
-  header mined in private at the floor, timed weeks back, with a Merkle root of the forger's, would anchor claims on
-  any number of names in every room at that time (renewed with real stamps, they beat every chain claimed since, for
-  good). Seven linked headers at about half of the difficulty cost about 3.5 blocks' work; still reusable
-  ("What an attacker can do"; docs/backlog.md).
-- **The floor by header time** (`Params::floor`, header.rs `floor`): a compiled schedule of points, each a time and
-  the easiest target a header of that time may claim. The floor at a time is the latest point at or before it, its
-  target doubled every 21 days past the point, five times at most; a time before the first point takes the first
-  point's (no honest anchor is older than the release, so an old time buys a forger nothing). **The schedule now**: one
-  point, block 976,177 (2026-11-16 19:25:21 UTC, compact `0x17021673`) at half of its difficulty (twice its target,
-  compact `0x17042ce6`); so 1/2 of that difficulty for 21 days past it, then 1/4, … down to 1/64 from 105 days on.
-  Why so, from the facts:
-  - *Half*, not the whole: a real fall in difficulty mustn't fail honest headers. The largest fall in years, mid-2021,
-    was about 45% over two retargets; half covers it from a point's time with room.
-  - *Halving every 21 days past a point*: Bitcoin's retarget moves difficulty at most 4x per 2,016 blocks, and a fall
-    by a factor `f` means those blocks took `f` times two weeks, so difficulty can fall at most about e-fold every 5.4
-    weeks however hashrate goes (the product of the falls, for a given total time, is largest at e each). From a point at
-    half, a floor that halves every 3 weeks stays under that bound at every time: future times keep working with no
-    release, whatever the hashrate does, while the floor holds the full half for the first three weeks.
-  - *Five times at most*: past 105 days the floor stays at 1/64 of the point's difficulty, so a release left unrenewed
-    is never cheaper to forge than the lone header at 1/16 was (seven headers at 1/64 are 0.11 blocks). Difficulty
-    falling 64-fold would take at least ~22 weeks of hashrate leaving at the worst rate and never happened; if it did,
-    new entries would be refused until a release lowered the schedule, which is always safe.
-  - *Growth doesn't cheapen the floor* only as far as releases add points: between them the floor is the last
-    point's, decaying, while difficulty usually rises.
-  - **Adding a point** (a later release): its time is past, its target twice that of the lowest difficulty since that
-    time (so every real header since meets it), and taken while blocks aren't running slow (a retarget due to fall
-    already would fall within the step's first weeks). Points are only appended, and a point changes the floor only
-    from its own time on, so the headers old entries carry keep the floor they met (header.rs's test). Lowering the
-    schedule never invalidates anything.
-- **Who talks to an explorer**: only the agent, when it makes an entry, for a block hash to put in `ref` (one 6 deep,
-  taken when two explorers, blockstream.info and mempool.space, agree) and for the headers of its own anchors: the
-  block's and the six after it (Esplora's `block/<hash>/status` names the next block, `block/<hash>/header` gives a
-  header; a calendar serves a proof at six confirmations, the block and five after it, so the sixth may take one block
-  more). The tests' pretend explorer (tests/net/ots-calendar.ts) answers both.
-- **Who talks to a calendar**: the agent, to stamp and to collect. Servers finishing a pending renewal they hold (each
-  asking only with a chance set by a hash of the entry and its own key, backing off) is **not built, and waits for the
-  user** (N4d): a calendar's finished proof reaches only the block's Merkle root and names a height, and since N4b an
-  anchor counts only with its block's header and the six after it, which a calendar doesn't serve and only an explorer
-  does; only the agent asks an explorer, for its own anchors (above; decision 4: servers use calendars alone, members
-  nothing). A server holding a finished proof could complete it only from a run some item in the room already carries
-  (another entry anchored in the same block), which a quiet room lacks; members may ask nobody; so every way that
-  makes one short visit enough has some page other than the owner's ask an explorer for another's anchor.
-  docs/backlog.md has the options. Until then a renewal's anchor reaches the room when its owner's agent collects it at
-  a later visit (renewal at half a term leaves two weeks for it).
-- A block that was orphaned still passes (its work was real) and its time is as good; a stale tip in `ref` would
-  cost a re-mine, hence 6 deep.
+  say. A slow calendar costs only the wait: no window ties an anchor to when its entry was made.
+- **A header proves itself, and an anchor carries its block's one header** (R1, the user's decision of 2026-11-17 on
+  [room-names-redesign.md](room-names-redesign.md)'s question 2). A verifier needs the anchor's block's 80-byte
+  header, which travels with the entry. It checks the anchor against the header's Merkle root, the header's proof of
+  work against its own target, that target against **the floor**, and that the header's time isn't past now by more
+  than 2 hours. Nothing else: no height, no explorer, no headers after it. Times, unlike heights, are in the header, so
+  a header can't be passed off as an earlier block's.
+- **The floor** (`Params::floor`): one compiled target, 1/16 of the difficulty of block 976,177 (2026-11-16 19:25:21
+  UTC, compact `0x17021673`): sixteen times its target, compact `0x17216730`, whatever a header's time. It keeps junk
+  headers out and guards members, who ask no explorer: a header mined in private at the floor, timed weeks back with
+  a Merkle root of its own, costs 1/16 of a block's work and would anchor claims on any number of names in every room
+  at that time ("What an attacker can do"). Servers asking an explorer about each block (R2, decision 4 as the user
+  widened it on 2026-11-17) close that at servers; nothing closes it for a member both of whose servers are the
+  forger's. Sixteen times under a real block covers any fall in difficulty there has been (the largest in years,
+  mid-2021, was about 45%); a release may raise it, and a header that met it once may then be refused, so a raise
+  must stay under every block since the oldest anchor still alive (a term and a grace: 37 days). The design's earlier
+  run of seven headers and floor schedule (N4b) are gone, and with them `ref` and its window (the redesign document
+  says why: neither did what it was added for).
+- **Who talks to an explorer**: only the agent, for the header of each of its own anchors: the hash of the block at
+  the proof's height (`block-height/<h>`) and that block's header (`block/<hash>/header`), two GETs, from one explorer
+  (blockstream.info, then mempool.space when it fails or serves a header the module refuses). The header's Merkle root
+  must be the anchor's, or that explorer has another block there (a reorganisation): the other is asked. The tests'
+  pretend explorer (tests/net/ots-calendar.ts) answers both.
+- **Who talks to a calendar**: the agent, to stamp and to collect. Servers finishing a pending renewal they hold, with
+  the block's header from an explorer (the user's decision of 2026-11-17 on review 2's finding 3, option A), are
+  R2's ([room-names-redesign.md](room-names-redesign.md)), not built: until then a renewal's anchor reaches the room
+  when its owner's agent collects it at a later visit (renewal at half a term leaves two weeks for it).
+- A block that was orphaned still passes (its work was real) and its time is as good.
 - The OpenTimestamps libraries are LGPL: nothing is copied from them; the verifier is written from the format
   (`THIRD_PARTY.json` gets a reference row).
 
@@ -555,10 +528,9 @@ copies by nonce **and round** (the three rounds share a nonce).
 - **Verify** signatures, proof of work and anchors before keeping or serving, a slice each turn of the module (an
   entry 4 units, an anchor or a zone 1, 24 units a turn: ~6 entries, ~4 ms in Chromium's wasm; while any wait, the
   module asks to be ticked again at once), an entry already held only for an anchor that differs; what was verified
-  is stored as verified and not checked again at load. An entry that fails a check only a forgery fails (anything but
-  a `ref` header from the future, which a clock behind can make) ends its item's check, nothing of the item is kept,
-  and its id is remembered (4,096 lately) when what failed is the entry's own bytes (signature, proof of work, form,
-  room), so 1,024 copies of a junk entry cost one check, not 1,024 Argon2ids (review 1). Likewise an entry checked
+  is stored as verified and not checked again at load. An entry that fails a check (only a forgery fails one: what
+  is checked of an entry is its own bytes) ends its item's check, nothing of the item is kept, and its id is
+  remembered (4,096 lately: signature, proof of work, form, room), so 1,024 copies of a junk entry cost one check, not 1,024 Argon2ids (review 1). Likewise an entry checked
   whole is remembered (16,384 lately, without its anchor): a valid one put again, a dead chain's say, which `settle`
   drops so that it is never held, costs only its anchor's check (~1/40 of the whole; review 2: a dead title's 150
   entries put in a loop cost every server 0.1 s a put). In Chromium's wasm (N0, cloud): an entry is ~0.66 ms whole
@@ -586,16 +558,17 @@ copies by nonce **and round** (the three rounds share a nonce).
 
 ### Size, and where it stops
 
-*Estimates*; N0 replaces them. An entry is 207 bytes; its anchor 300 to 1,250 (the one measured was ~1,240 whole; entries a calendar put in one block share
-the anchor's tail and its header; how much is N0's to measure); its headers 80 for `ref` and 560 for the anchor's
-block and the six after it (N4b: 480 of those and 13 bytes of indices came with the six). Two entries a month: a name
-costs a server about 0.4 KB for its zone plus 2.3 to 4.2 KB a month it has been held (1 to 3 before the six).
+*Estimates*; N0 replaces them. An entry is 175 bytes; its anchor 300 to 1,250 (the one measured was ~1,240 whole; entries a calendar put in one block share
+the anchor's tail and its header; how much is N0's to measure) and 6 bytes of lengths and an index on the wire; its
+block's header 80, once for every entry anchored in that block (R1: before it, 80 for `ref` and 560 for the anchor's
+block and the six after it). Two entries a month: a name costs a server about 0.4 KB for its zone plus 1.1 to 3.0 KB
+a month it has been held (2.3 to 4.2 before R1).
 
 | Names, held six months on average | A server keeps | A new server's first sync through DERP (0.6 to 3 Mbit/s measured on public relays) |
 |---|---|---|
-| 1,000 | 14 to 26 MB | under a minute to 6 minutes |
-| 5,000 | 70 to 130 MB | 3 to 30 minutes |
-| 20,000 | 290 to 510 MB | too much for a tab |
+| 1,000 | 7 to 18 MB | under a minute to 4 minutes |
+| 5,000 | 35 to 92 MB | 2 to 20 minutes |
+| 20,000 | 140 to 370 MB | too much for a tab |
 
 A member keeps a few KB. So what grows with a room is each **server's** copy, and every new owner pays the first sync,
 in the background, before it serves. Past a few thousand long-held names it needs one of: servers that hold a share of
@@ -638,7 +611,7 @@ taken in keeps the bundle's with it (`TitleRecord.secret`), so that its renewals
 key (review 2's finding 11: they were the connection's, which broke the chain), and the agent renews a chain only with
 the key its title's secret derives. The module does the work (`ts_names_*`, pure: JSON in and out; make, mine
 in slices of 256 tries, sign and check an entry; a calendar's receipt made a pending anchor the owner key signs; the
-commitment to ask for and a finished proof's anchors; an anchor taken with its seven headers; a zone; a title's status;
+commitment to ask for and a finished proof's anchors; an anchor taken with its block's header; a zone; a title's status;
 a server's better item judged), in a worker of its own for proof of work (production: 3 to 64 s an entry in Chromium,
 a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no running machine:
 
@@ -646,18 +619,17 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   (sooner when a backoff ends), for each title, under **one Web Lock a title** (`waarm64-names:<identityKey>:<room
   hash>:<name>`, taken if free: another tab doing it is left to it): collect finished anchors (each calendar's pending
   proof at its compiled URL; the 404 without CORS of a pending one is a failed fetch: asked again with a backoff, 5
-  minutes doubling to an hour; one past its window is asked at once whatever the backoff), with the block's header and
-  the six after it from an explorer (`block-height`, `block/<hash>/header`, `status`'s `next_best`; not yet six: later);
-  renew when the owning chain's last entry is `TERM / 2` old and no renewal waits for its anchor (`ref` from the two
-  explorers' block 6 deep, which must agree, its header checked against the agreed hash; proof of work; the signature;
-  stamped at the three calendars, each receipt a pending anchor the owner key signs, the lowest on the entry, all three
-  kept to collect from); make the claim of a title that has none. **An entry whose anchor came past `REF_WINDOW`** (the
-  module refuses it: `AnchorWindow`) is dropped and made again (a new `ref`, proof of work, stamps), with the same
-  backoff; an entry no calendar stamped likewise. Nothing else drops one (review 2's finding 4): a calendar's answer
-  that isn't a proof (a proxy's page) moves on to the next calendar, a run one explorer serves that the module refuses
-  to the other's, a clock behind to a later try. An entry still unanchored once its window and the slack are over may
-  have an anchor in its window that no open page collected: it is kept and asked for, a new one is made beside it where
-  one is due, and it is dropped only a week past its window (a renewal so collected still links, and revives its chain).
+  minutes doubling to an hour; one that can no longer link is asked at once whatever the backoff), with its block's
+  header from an explorer ("Who talks to an explorer"); renew when the owning chain's last entry is `TERM / 2` old and
+  no renewal waits for its anchor (proof of work; the signature; stamped at the three calendars, each receipt a pending
+  anchor the owner key signs, the lowest on the entry, all three kept to collect from); make the claim of a title that
+  has none. An entry no calendar stamped is dropped and made again, with the same backoff. Nothing else drops one
+  (review 2's finding 4): every anchor counts whenever it comes, a calendar's answer that isn't a proof (a proxy's
+  page) moves on to the next calendar, a header one explorer serves that the module refuses to the other's, a clock
+  behind to a later try. A renewal still unanchored past its link end (the entry before's `t + TERM + GRACE`: the
+  module's `linkEnd` and `stale`) may have an anchor timed before then that no open page collected: it is kept and
+  asked for, and dropped only a week past its link end (a renewal so collected still links, and revives its chain). A
+  claim never goes stale.
   **[Let it go](ui:network:NameEntry.release)** drops the title's renewals that wait for their anchors (one collected later would be a branch whose
   cover outlasts the release's, so the name would stay: review 2's finding 6) and makes the release on the owning
   chain's last entry; a release no calendar stamped, or one that never came, is made again at the next pass.
@@ -775,9 +747,9 @@ names.
 | Hash a dictionary against a server's ids | nothing: 256 `ids` requests from any session list every id (the dialog's check needs the request; review 2 corrected the cost from "one registration") | learns which guessable names exist (and, with a `get`, where they point); nothing about the others; the cover ends listed are a week coarse |
 | Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its chain's age and its owner key's hash, says otherwise; both servers the attacker's (registrations as old as the honest servers', renewed all along, ranking below them for that question; junk registrations made lately rank after every older server): the member sees what it shows (it can't forge) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |
-| Forge a Bitcoin header | seven linked headers at the floor of their time: about 3.5 blocks' work at the schedule's half (0.11 of a block at its 1/64, a release unrenewed for 15 weeks), once | the forger's run, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the run serves again for any number of claims: **accepted for now** (the user, 2026-11-17: review 1's finding 6). Ideas for servers to check later, which would make servers ask an outside service and need the user's OK: docs/backlog.md |
+| Forge a Bitcoin header | one header at the floor: 1/16 of a block's work (about 0.2 BTC of mining revenue forgone, or hash power rented for that), once | the forger's header, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the header serves again for any number of claims. Servers asking an explorer about each block (R2: the user's decision of 2026-11-17) refuse it at a server within seconds of its arrival; until R2, and for a member both of whose servers are the forger's after it, it stands ([room-names-redesign.md](room-names-redesign.md) "Bitcoin beyond the proof") |
 | Calendars all down | | no new claims or renewals; existing names resolve; `GRACE` is the margin |
-| Explorers all down | | the same: only the agent uses them |
+| Explorers all down | | claims and renewals are made and stamped; collecting their anchors waits (only the agent uses an explorer); existing names resolve |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held; a key named again and again (a victim's) 4 answers a minute from each server |
 | Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by age and hash (never the best two's) |
 | Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
@@ -812,8 +784,8 @@ table; times are a shared x86_64 host's, good for the choices, re-timed in the d
 item 1 couldn't be read whole within a few hundred requests (a calendar's transactions are one request each:
 "How long an anchor takes"), so it is a complete record of the calendars' last days and samples through the year.
 
-1. **Time to anchor** from each calendar, the slowest as well as the usual: sets `REF_WINDOW` and what the dialog
-   promises. From a year of each calendar's transactions on Bitcoin, read through the two explorers ("How long an
+1. **Time to anchor** from each calendar, the slowest as well as the usual: sets what the dialog promises (and set
+   `REF_WINDOW`, which R1 removed). From a year of each calendar's transactions on Bitcoin, read through the two explorers ("How long an
    anchor takes"), not from a week of stamps, which would be a sample without the bad days; checked against a batch
    of real stamps whose commitments are committed, so a later session collects them. (One stamp made 2026-11-15 20:46 UTC: at 76 minutes pending at all three, `alice` and `bob` each naming
    a Bitcoin transaction and "waiting for 6 confirmations", so a calendar serves a proof only once its block is 6
@@ -858,7 +830,7 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
 
 ## Tests' parameters
 
-Production's parameters need real Bitcoin work (seven linked headers at half of a real block's difficulty), so a test can't
+Production's parameters need real Bitcoin work (a header at 1/16 of a real block's difficulty), so a test can't
 make a title they accept. The parameters are not configuration: the module runs on `Params::BUILT`, which is
 `Params::PRODUCTION` unless the crate is built with the `test-params` feature, which compiles in `Params::TEST` (the
 tests' pretend Bitcoin: regtest's floor, Argon2id of 8 KiB and 2 bits) instead. `net/ts/build.sh --test-params` builds

@@ -1578,7 +1578,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A zone a server got through sync waits out the 10-minute limit like one put to it, so servers can differ on a
     zone for up to 10 minutes (sync then asks for it every round).
   - Headers are kept once an item, not once a registry: entries a calendar anchored in one block repeat its header
-    and the six after it across names (560 bytes each). N6's sizes say whether it matters.
+    across names (80 bytes each). N6's sizes say whether it matters.
   - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
     round descends to them and lists them again (a request or two a range). N6 measures the bound's churn.
   - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
@@ -1600,22 +1600,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - A member's lookup that two servers left unanswered is tried once more and then given up (the query gets SERVFAIL
     at 4 s); a server that never answers a `get` but always answers "who serves?" is found again at each new question.
     N6 sees whether that matters at scale.
-  - **A forged run of headers is still reusable** (review 1's finding 6, the user's decision 2026-11-17; N4b): an
-    anchor carries its block's header and the six after it, linked, each at the floor of its time (half of the
-    difficulty at the schedule's point, room-names.md "Bitcoin as the clock"), so backdating costs about 3.5 blocks'
-    work instead of a sixteenth of one; but nothing ties the run to Bitcoin's chain, so one run mined in private, timed
-    weeks back, still anchors claims on any number of names in every room, for good. The user's ideas for servers
-    checking later, **each adding an outside service for servers (an explorer), so they come back to the user before
-    they're built**: random spot checks of block hashes at the explorers (a server asks now and then whether an
-    anchor's block is on the chain, so a forged run is found and refused room-wide); checks only for new claims, none
-    at a first sync (so a new server's sync of thousands of names asks nothing, and only what arrives later is
-    checked).
-  - The floor's schedule has one point (block 976,177). A release adds one (rules: room-names.md "The floor by header
-    time"): past 21 days without one the floor halves, and from 105 days it rests at 1/64 of the point's difficulty
-    (seven headers there cost 0.11 of a block). Who adds points, and how often, is open: a step in the release routine
-    (the difficulty from two explorers, checked against every block since the point's time) would do.
-  - An anchor's six headers are kept whole (480 bytes a distinct block); a follower's prev-hash is the hash of the one
-    before, so leaving it out would save 192 of them (a header table of its own for runs).
+  - **A forged header at the floor** (R1: an anchor is its proof and its block's one header, against one floor at 1/16
+    of block 976,177's difficulty): one header mined in private, timed weeks back, anchors claims on any number of
+    names in every room. Servers asking an explorer about each block (R2, the user's decision 2026-11-17) refuse it at
+    a server; a member both of whose servers are the forger's still takes it (docs/plans/room-names-redesign.md).
+    N4b's run of seven headers and the floor's schedule are gone, and with them the schedule's upkeep.
+  - The floor is one constant. Raising it at a release must stay under every block since the oldest anchor still
+    alive (a term and a grace, 37 days), or entries alive then are refused; no release step does it yet, and nothing
+    has to while difficulty doesn't fall sixteen-fold.
+  - A claim never goes stale (R1: an anchor at any time makes it a claim then), so the agent asks for a claim's proof
+    hourly for as long as its calendars never finish it (all three lost the commitment), and never makes it again. A
+    limit (made again after, say, a day with every calendar answering pending) would end that.
   - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
     - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
       (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.
@@ -1629,23 +1624,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A send past the 8 MiB queued to a peer fails quietly when it is an answer (the asker's request times out).
     - Done (N4c): the agent signs every pending anchor (`ts_names_pending`), and the rig test sees servers hold it.
   - The names agent's loose ends (N4c, room-names.md "The names agent"):
-    - **Servers don't finish pending renewals at the calendars, and that waits for the user** (N4d, the spec's "Who
-      talks to a calendar"): a renewal's anchor reaches the room when its owner's agent collects it at a later visit, so
-      one short visit isn't enough; two are (renewing at half a term leaves two weeks for the second). Why it wasn't
-      built: a calendar's finished proof is only the path to a block's Merkle root and a height; since N4b an anchor
-      counts only with its block's header and the six after it, which only an explorer serves, and decision 4 lets
-      servers ask calendars alone (members nothing; the agent an explorer, for its own anchors). So a server could
-      fetch the proof but not make it an anchor the room can check. The ways, for the user:
-      1. Servers (their page, through the room's worker) also ask an explorer, only after a calendar finished a
-         renewal they hold: the block by the proof's height (`block-height/<h>`, its header checked against the
-         proof's Merkle root) and the six after it, ~9 GETs a finished renewal for each server that asks, under the
-         same chance and backoff as the calendar's. The same new use of an explorer the forged-run spot checks above
-         need, so one decision could cover both.
-      2. Only what the room has: servers finish at the calendars and complete a proof from a run some item already
-         carries (another entry anchored in the same block: a calendar puts an hour's stamps in one transaction). Helps
-         busy rooms; in a quiet one it adds calendar traffic for nothing.
-      3. As now: the owner's agent at its next visit; the dialog (N5) says to open the page again within two weeks,
-         which decision 13 already asks.
+    - Servers don't finish pending renewals at the calendars yet (N4d, the spec's "Who talks to a calendar"), so one
+      short visit isn't enough; two are. **Decided** (the user, 2026-11-17: option A, servers ask an explorer for the
+      header of a renewal they finished, and decision 4 widened to a check of each block): R2 builds it, with the
+      agent making the next renewal ahead of the visit that stamps it (possible since R1 removed `ref`).
     - Done (N5): deleting a room connection that holds names says so in its question, with the export to copy, and
       forgets them (room-names.md "What the user sees").
     - Done (N5): an ephemeral connection with a key of its own can't hold a name; the dialog says so.
@@ -1665,16 +1647,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       - The last week's notice is a message bar notice that clears itself; a name past its term in grace says so in the
         menu only.
     - A title's item holds every entry the title ever had (each renewal, branches taken from the room): it grows by two
-      entries a month, ~1.5 KB each with their anchors and headers, and is put whole. Pruning dead branches and
+      entries a month, 0.6 to 1.5 KB each with their anchors and headers (R1), and is put whole. Pruning dead branches and
       stale entries from the item (they never count again) would keep puts small.
     - The publisher waits up to 45 s for its answers and is made again at each publish: a page with many titles in one
       room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
     - The proof of work's time in Chromium (production, cloud x86_64, five entries): 3, 17, 51, 62 and 64 s (a draw, as
       room-names.md says); the dev VM re-times it with N0's numbers.
   - Review 2's fixes (N5a; NAMES-REVIEW-2.md), what they leave:
-    - **Finding 3 waits for the user**: a renewal reaches the room only at the visit after the one that made it, so
-      visits every 2 weeks leave a name down for days each cycle. The ways are the review's (renew earlier, keep the page
-      collecting before it says Active, servers finishing renewals: the agent's loose ends above, or other words).
+    - **Finding 3, decided** (the user, 2026-11-17: servers finishing renewals, option A): a renewal reaches the room
+      only at the visit after the one that made it, so visits every 2 weeks leave a name down for days each cycle,
+      until R2 (the agent's loose ends above).
       Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
     - Answers rank by their chain's age (finding 2), so a Sybil needs registrations held as long as the honest
       servers', renewed all along: three months buys the top tier, and from there it is a lottery again. In a room
