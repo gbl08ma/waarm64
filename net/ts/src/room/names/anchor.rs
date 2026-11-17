@@ -325,6 +325,9 @@ impl Calendar {
 pub struct Pending {
     pub calendar: Calendar,
     pub ops: Vec<Op>,
+    /// The entry's owner key's signature over the entry's id and [`Pending::body`] (entry.rs `pending_hash`): a pending
+    /// anchor proves nothing until it finishes, so only the owner may say which one a server is to finish.
+    pub sig: [u8; 64],
 }
 
 impl Pending {
@@ -341,6 +344,7 @@ impl Pending {
         let p = Pending {
             calendar,
             ops: leaf.ops,
+            sig: [0; 64],
         };
         if p.encode().len() > MAX_ANCHOR {
             return Err(Invalid::AnchorFormat);
@@ -370,9 +374,17 @@ impl Pending {
             .collect())
     }
 
-    /// The calendar's index, then the operations.
+    /// What the owner signs: the calendar's index, then the operations.
+    pub fn body(&self) -> Vec<u8> {
+        let mut out = vec![self.calendar as u8];
+        out.extend(ops_bytes(&self.ops));
+        out
+    }
+
+    /// The calendar's index, the signature, then the operations.
     pub fn encode(&self) -> Vec<u8> {
         let mut out = vec![self.calendar as u8];
+        out.extend_from_slice(&self.sig);
         out.extend(ops_bytes(&self.ops));
         out
     }
@@ -383,12 +395,13 @@ impl Pending {
         }
         let mut r = Reader { b, i: 0 };
         let calendar = Calendar::from_u8(r.byte()?).ok_or(Invalid::AnchorFormat)?;
+        let sig = r.bytes(64)?.try_into().unwrap();
         let mut ops = Vec::new();
         while !r.done() {
             let tag = r.byte()?;
             ops.push(r.op(tag)?);
         }
-        Ok(Pending { calendar, ops })
+        Ok(Pending { calendar, ops, sig })
     }
 }
 
@@ -520,7 +533,10 @@ mod tests {
         assert_eq!(l[0].ops, l[1].ops);
         let p = Pending::from_receipt(Calendar::Bob, &t, &[1; 32]).unwrap();
         assert_eq!(Pending::decode(&p.encode()), Ok(p.clone()));
-        assert!(Pending::decode(&[3]).is_err(), "a calendar not compiled in");
+        assert!(
+            Pending::decode(&[3; 65]).is_err(),
+            "a calendar not compiled in"
+        );
         // A finished proof for the commitment.
         let mut proof = Vec::new();
         Op::Prepend(vec![7; 2]).write(&mut proof);

@@ -31,11 +31,11 @@ use k256::schnorr::SigningKey;
 use super::{
     Invalid, Params,
     chain::Name,
-    entry::{Pow, Stamped, sign, tagged, verify},
+    entry::{Pow, Stamped, pending_ok, sign, tagged, verify},
     id::RoomNames,
     member::Answer,
     store::{Held, Registry, read_record, zone_tag},
-    wire::{GetMode, Item, Msg, Question, Range, SyncAnswer, Transfers, WireEntry},
+    wire::{GetMode, Item, Msg, Proof, Question, Range, SyncAnswer, Transfers, WireEntry},
     zone::Zone,
 };
 
@@ -57,11 +57,21 @@ pub(super) const CHOOSE_AFTER: Duration = Duration::from_millis(300);
 pub(super) const GIVE_UP: Duration = Duration::from_millis(2500);
 pub(super) const NOBODY_FIRST: Duration = Duration::from_secs(30);
 pub(super) const NOBODY_MAX: Duration = Duration::from_secs(600);
-/// Incoming handshakes a question lets in (servers answering it), at most.
+/// Incoming handshakes a question lets in (servers answering it), at most at once.
 pub const ACCEPT_MAX: usize = 32;
-/// Askers a server holds at once, and how long one is held without a message.
+/// A key let in that hasn't served this long after its handshake makes room for a newcomer (a server's `serve` comes
+/// one round trip after it).
+pub const ACCEPT_GRACE: Duration = Duration::from_secs(1);
+/// Askers a server holds at once, how long one is held without a request, and at most.
 pub const MAX_ASKERS: usize = 32;
 const ASKER_IDLE: Duration = Duration::from_secs(60);
+const ASKER_LIFE: Duration = Duration::from_secs(600);
+
+/// An asker held: since when, and when it last made a request.
+struct Asker {
+    since: Instant,
+    active: Instant,
+}
 /// A server's answers a second: a budget of the names client's own, apart from the node's call
 /// backs and trials, so a flood of questions can't keep the node's own lookups out.
 pub const ANSWERS_PER_SECOND: usize = 4;
@@ -72,6 +82,15 @@ const SYNC_JITTER_MS: u64 = 30_000;
 pub const LIST_MAX: u32 = 64;
 /// Sync requests in flight to one partner.
 const SYNC_PARALLEL: usize = 4;
+/// A `have` names at most this many ids (a run tells 32 at a time), and what `have`s make us ask a peer waits at most
+/// this many at once.
+const HAVE_MAX: usize = 32;
+const HAVE_GETS: usize = 64;
+/// `put`s waiting to be verified: a peer's, and everyone's.
+const PUTS_PER_PEER: usize = 4;
+const PUTS_MAX: usize = 64;
+/// Entry ids remembered as refused.
+const REFUSED_KEPT: usize = 4096;
 /// The most `sync`s a run sends: a registry of 20,000 names each differing takes ~4,400 (1 + 16 + 256 + 4,096 ranges).
 pub const MAX_RUN_SYNCS: usize = 8192;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -133,6 +152,8 @@ pub enum Cmd {
         key: [u8; 32],
         region: usize,
     },
+    /// The peer with this key answered our question with a `serve` that held: it keeps its place in the window.
+    Served([u8; 32]),
     Send {
         to: [u8; 32],
         data: Vec<u8>,
@@ -148,7 +169,65 @@ pub enum Cmd {
     Log(String),
 }
 
-/// `BLAKE2s(nonce, key)`: who answers a question (its share) and whom the asker keeps.
+/// The window a names client's question opens for handshakes from keys it doesn't know (room-names.md "Finding a
+/// server"): the servers answering it, [`ACCEPT_MAX`] at most at once.
+#[derive(Debug, Default)]
+pub struct AcceptWindow {
+    until: Option<Instant>,
+    max: usize,
+    /// Who came in and when, and whether its `serve` held.
+    admitted: Vec<([u8; 32], Instant, bool)>,
+}
+
+impl AcceptWindow {
+    pub fn open(&mut self, until: Instant, max: usize) {
+        self.until = Some(until);
+        self.max = max;
+        self.admitted.clear();
+    }
+
+    /// The oldest key let in that never served and has had [`ACCEPT_GRACE`] to.
+    fn evictable(&self, now: Instant) -> Option<usize> {
+        (self.admitted.iter().enumerate())
+            .filter(|(_, (_, at, served))| {
+                !served && now.saturating_duration_since(*at) >= ACCEPT_GRACE
+            })
+            .min_by_key(|(_, (_, at, _))| *at)
+            .map(|(i, _)| i)
+    }
+
+    /// Whether a handshake from a key we don't know may come in now: the window is open, and it has room or holds a
+    /// key that came in a while ago and never served (junk, which then makes room: a fixed number of places taken
+    /// first come would let anyone who reads the question shut every server out).
+    pub fn room(&self, now: Instant) -> bool {
+        self.until.is_some_and(|u| now < u)
+            && (self.admitted.len() < self.max || self.evictable(now).is_some())
+    }
+
+    /// `key`'s handshake came in (after [`AcceptWindow::room`]): the key let go to make room for it, if any.
+    pub fn admit(&mut self, key: [u8; 32], now: Instant) -> Option<[u8; 32]> {
+        let gone = if self.admitted.len() >= self.max {
+            self.evictable(now).map(|i| self.admitted.remove(i).0)
+        } else {
+            None
+        };
+        self.admitted.push((key, now, false));
+        gone
+    }
+
+    /// `key`'s `serve` held.
+    pub fn served(&mut self, key: &[u8; 32]) {
+        for a in &mut self.admitted {
+            if a.0 == *key {
+                a.2 = true;
+            }
+        }
+    }
+}
+
+/// `BLAKE2s(nonce, key)` over a live name's owner key: who answers a question (its share) and whom the asker keeps.
+/// Over the owner key, not the names client's: an owner key costs a registration, a names client's key nothing, so
+/// keys made after the nonce is seen can't buy a place.
 pub fn share_hash(nonce: &[u8; 16], key: &[u8; 32]) -> [u8; 32] {
     let mut h = Blake2s256::new();
     h.update(nonce);
@@ -162,13 +241,19 @@ pub fn in_share(h: &[u8; 32], spread: u8) -> bool {
     spread == 0 || top >> (64 - spread.min(63) as u32) == 0
 }
 
+/// What a server signs to prove to server `to` that it, names client `from`, holds a live name (a run's first `sync`).
+pub fn peer_hash(names: &RoomNames, to: &[u8; 32], from: &[u8; 32]) -> [u8; 32] {
+    tagged("waarm64/names/peer", &[&names.value, to, from])
+}
+
 fn serve_hash(names: &RoomNames, nonce: &[u8; 16], server: &[u8; 32]) -> [u8; 32] {
     tagged("waarm64/names/serve", &[&names.value, nonce, server])
 }
 
 /// Whether `serve` (a [`Msg::Serve`] from the server with key `server`) answers our question
 /// `nonce`: a live name's entry (checked whole: signature, proof of work, its headers and anchor,
-/// its chain covering now) whose owner key signed the nonce and the server's key.
+/// its chain covering now) whose owner key signed the nonce and the server's key. The name's
+/// owner key and id.
 pub fn check_serve(
     names: &RoomNames,
     params: &Params,
@@ -177,7 +262,7 @@ pub fn check_serve(
     server: &[u8; 32],
     serve: &Msg,
     unix: u64,
-) -> Result<(), Invalid> {
+) -> Result<([u8; 32], [u8; 32]), Invalid> {
     let Msg::Serve {
         nonce: n,
         entry,
@@ -189,6 +274,28 @@ pub fn check_serve(
     if n != nonce {
         return Err(Invalid::Signature);
     }
+    check_live(
+        names,
+        params,
+        pow,
+        entry,
+        &serve_hash(names, nonce, server),
+        sig,
+        unix,
+    )
+}
+
+/// Whether `entry` is a live name's (checked whole, its chain covering now) whose owner key signed `msg`: the owner key
+/// and the name id.
+fn check_live(
+    names: &RoomNames,
+    params: &Params,
+    pow: &mut Pow,
+    entry: &WireEntry,
+    msg: &[u8; 32],
+    sig: &[u8; 64],
+    unix: u64,
+) -> Result<([u8; 32], [u8; 32]), Invalid> {
     let mut s = Stamped::check(
         entry.entry.clone(),
         entry.ref_header,
@@ -207,21 +314,72 @@ pub fn check_serve(
     if !n.chains(params).iter().any(|c| c.covers(unix)) {
         return Err(Invalid::AnchorWindow); // a dead name's key
     }
-    if !verify(&owner, &serve_hash(names, nonce, server), sig) {
+    if !verify(&owner, msg, sig) {
         return Err(Invalid::Signature);
     }
-    Ok(())
+    Ok((owner, n.id))
 }
 
-/// A question of ours.
-struct Ask {
-    nonce: [u8; 16],
-    started: Instant,
+/// An answer to a question: the hash of the owner key it served with, the owner key, the name id.
+pub(super) type Answered = ([u8; 32], [u8; 32], [u8; 32]);
+
+/// A question of ours (a server's or a member's).
+pub(super) struct Ask {
+    pub nonce: [u8; 16],
+    pub started: Instant,
     /// Rounds sent.
-    round: usize,
-    first: Option<Instant>,
-    /// Servers whose `serve` held, by their hash.
-    answers: BTreeMap<[u8; 32], [u8; 32]>,
+    pub round: usize,
+    pub first: Option<Instant>,
+    /// Servers whose `serve` held, by their names client's key: the hash of the owner key they served with, the owner
+    /// key and the name id.
+    pub answers: BTreeMap<[u8; 32], Answered>,
+}
+
+impl Ask {
+    pub fn new(nonce: [u8; 16], now: Instant) -> Ask {
+        Ask {
+            nonce,
+            started: now,
+            round: 1,
+            first: None,
+            answers: BTreeMap::new(),
+        }
+    }
+
+    /// A `serve` from `from` that held, with owner key `owner` on name `name`: counted when its hash is in the share of
+    /// a round sent (an honest server answers only so), and once a name: a registration answering from many keys is
+    /// one answer.
+    pub fn offer(
+        &mut self,
+        from: [u8; 32],
+        owner: [u8; 32],
+        name: [u8; 32],
+        now: Instant,
+    ) -> Result<(), &'static str> {
+        let h = share_hash(&self.nonce, &owner);
+        let spread = SPREADS[self.round.clamp(1, SPREADS.len()) - 1];
+        if !in_share(&h, spread) {
+            return Err("outside the share asked");
+        }
+        if (self.answers.values()).any(|(_, o, n)| *o == owner || *n == name) {
+            return Err("a name that answered already");
+        }
+        self.answers.insert(from, (h, owner, name));
+        self.first.get_or_insert(now);
+        Ok(())
+    }
+
+    /// The two answers with the lowest hash (not the fastest, which an attacker could always be), and the others.
+    pub fn choose(&self) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
+        let mut by: Vec<([u8; 32], [u8; 32])> =
+            self.answers.iter().map(|(k, a)| (a.0, *k)).collect();
+        by.sort();
+        let rest = by.split_off(by.len().min(2));
+        (
+            by.into_iter().map(|x| x.1).collect(),
+            rest.into_iter().map(|x| x.1).collect(),
+        )
+    }
 }
 
 /// A request of ours waiting for its answer.
@@ -254,6 +412,25 @@ struct Job {
     next: usize,
     checked: Vec<Stamped>,
     zone_checked: bool,
+    /// An entry of it failed a check only a forgery fails: nothing of it is kept.
+    forged: bool,
+}
+
+impl Job {
+    fn new(from: Option<([u8; 32], Option<u32>)>, item: Item) -> Job {
+        Job {
+            from,
+            item,
+            next: 0,
+            checked: Vec::new(),
+            zone_checked: false,
+            forged: false,
+        }
+    }
+
+    fn peer(&self) -> Option<[u8; 32]> {
+        self.from.map(|f| f.0)
+    }
 }
 
 pub struct Server {
@@ -275,7 +452,7 @@ pub struct Server {
     nobody: Option<(Instant, Duration)>,
     questions: VecDeque<Instant>,
     answers: VecDeque<Instant>,
-    askers: BTreeMap<[u8; 32], Instant>,
+    askers: BTreeMap<[u8; 32], Asker>,
     /// Call backs waiting out [`CROSSED_WAIT`].
     deferred: Vec<(Instant, [u8; 32], usize)>,
     /// The first sync is done (or nobody answered): only then does it answer questions.
@@ -283,7 +460,19 @@ pub struct Server {
     next_round: Option<Instant>,
     runs: BTreeMap<[u8; 32], Run>,
     synced_with: BTreeMap<[u8; 32], Instant>,
+    /// What sync (and `have`) brought from servers, verified first: a first sync is over once these are.
     jobs: VecDeque<Job>,
+    /// What anyone `put`, verified after, a slice of one job a turn in turn.
+    puts: VecDeque<Job>,
+    /// Entry ids that failed a check only a forgery fails, lately: not checked again.
+    refused: BTreeSet<[u8; 32]>,
+    refused_order: VecDeque<[u8; 32]>,
+    /// Peers that proved a live name: the servers our questions chose, and those whose `sync` carried a proof.
+    proven: BTreeSet<[u8; 32]>,
+    /// Peers whose proof was checked this session.
+    proof_tried: BTreeSet<[u8; 32]>,
+    /// What each peer's syncs cost us this sync round: since when, and how many items fingerprinted.
+    sync_spent: BTreeMap<[u8; 32], (Instant, u64)>,
     dropped: BTreeMap<[u8; 32], u64>,
     settle_at: Option<Instant>,
     cmds: VecDeque<Cmd>,
@@ -307,6 +496,8 @@ pub struct Stats {
     pub refused: usize,
     pub rounds: usize,
     pub syncs: usize,
+    /// Entries checked whole.
+    pub checked: usize,
 }
 
 pub(super) fn random<const N: usize>() -> [u8; N] {
@@ -342,6 +533,12 @@ impl Server {
             runs: BTreeMap::new(),
             synced_with: BTreeMap::new(),
             jobs: VecDeque::new(),
+            puts: VecDeque::new(),
+            refused: BTreeSet::new(),
+            refused_order: VecDeque::new(),
+            proven: BTreeSet::new(),
+            proof_tried: BTreeSet::new(),
+            sync_spent: BTreeMap::new(),
             dropped: BTreeMap::new(),
             settle_at: None,
             cmds: VecDeque::new(),
@@ -421,6 +618,9 @@ impl Server {
         self.askers.clear();
         self.runs.clear();
         self.synced_with.clear();
+        self.proven.clear();
+        self.proof_tried.clear();
+        self.sync_spent.clear();
     }
 
     pub fn names(&self) -> &RoomNames {
@@ -491,13 +691,15 @@ impl Server {
             },
         });
         // Verification waits: the next turn at once (a slice a turn).
-        let jobs = self.jobs.front().map(|_| self.now);
+        let jobs = (self.jobs.front().or(self.puts.front())).map(|_| self.now);
         [
             ask,
             self.next_round,
             self.xf.deadline(),
             self.reqs.values().map(|(_, t)| *t).min(),
-            self.askers.values().map(|t| *t + ASKER_IDLE).min(),
+            (self.askers.values())
+                .map(|a| (a.active + ASKER_IDLE).min(a.since + ASKER_LIFE))
+                .min(),
             self.settle_at,
             self.deferred.iter().map(|(t, _, _)| *t).min(),
             jobs,
@@ -507,9 +709,14 @@ impl Server {
         .min()
     }
 
+    /// The askers held now.
+    pub fn askers(&self) -> usize {
+        self.askers.len()
+    }
+
     /// Whether verification is waiting (the transport ticks again at once).
     pub fn busy(&self) -> bool {
-        !self.jobs.is_empty()
+        !self.jobs.is_empty() || !self.puts.is_empty()
     }
 
     pub fn tick(&mut self, now: Instant, unix: u64) {
@@ -567,7 +774,7 @@ impl Server {
         let idle: Vec<[u8; 32]> = self
             .askers
             .iter()
-            .filter(|(_, t)| now >= **t + ASKER_IDLE)
+            .filter(|(_, a)| now >= a.active + ASKER_IDLE || now >= a.since + ASKER_LIFE)
             .map(|(k, _)| *k)
             .collect();
         for k in idle {
@@ -597,13 +804,7 @@ impl Server {
         }
         self.questions.push_back(now);
         let nonce = random();
-        self.ask = Some(Ask {
-            nonce,
-            started: now,
-            round: 1,
-            first: None,
-            answers: BTreeMap::new(),
-        });
+        self.ask = Some(Ask::new(nonce, now));
         self.stats.rounds += 1;
         self.cmds.push_back(Cmd::Accept {
             until: now + GIVE_UP,
@@ -657,13 +858,18 @@ impl Server {
             &m,
             unix,
         );
-        if let Err(e) = ok {
-            self.log(format!("a serve refused: {e:?}"));
+        let (owner, name) = match ok {
+            Ok(x) => x,
+            Err(e) => {
+                self.log(format!("a serve refused: {e:?}"));
+                return self.cmds.push_back(Cmd::Forget(from));
+            }
+        };
+        if let Err(why) = self.ask.as_mut().unwrap().offer(from, owner, name, now) {
+            self.log(format!("a serve refused: {why}"));
             return self.cmds.push_back(Cmd::Forget(from));
         }
-        let a = self.ask.as_mut().unwrap();
-        a.answers.insert(from, share_hash(&nonce, &from));
-        a.first.get_or_insert(now);
+        self.cmds.push_back(Cmd::Served(from));
     }
 
     /// The two answers with the lowest hash are kept (not the fastest, which an attacker could
@@ -671,15 +877,14 @@ impl Server {
     fn choose(&mut self, now: Instant, _unix: u64) {
         let a = self.ask.take().unwrap();
         self.nobody = None;
-        let mut by: Vec<([u8; 32], [u8; 32])> = a.answers.iter().map(|(k, h)| (*h, *k)).collect();
-        by.sort();
+        let (keep, rest) = a.choose();
         self.cmds.push_back(Cmd::Accept { until: now, max: 0 });
-        for (i, (_, k)) in by.iter().enumerate() {
-            if i < 2 {
-                self.start_run(*k, now);
-            } else {
-                self.cmds.push_back(Cmd::Forget(*k));
-            }
+        for k in keep {
+            self.proven.insert(k);
+            self.start_run(k, now);
+        }
+        for k in rest {
+            self.cmds.push_back(Cmd::Forget(k));
         }
         let jitter = u64::from_le_bytes(random()) % (2 * SYNC_JITTER_MS);
         self.next_round = Some(
@@ -690,20 +895,23 @@ impl Server {
 
     // ---- Answering ----
 
-    /// Whether we would answer a question with `nonce` and `spread` now (the share, synced, room
-    /// for askers, the budget): the answer rule, apart from holding a live name.
-    fn answers_rule(&mut self, q: &Question, now: Instant) -> Result<(), &'static str> {
-        let Some(key) = self.key else {
+    /// Whether we would answer a question with `nonce` and `spread` now with a live name whose owner key's hash is `h`
+    /// (the share, synced, the budget): the answer rule. With every asker's place taken, the one held longest makes
+    /// room.
+    fn answers_rule(
+        &mut self,
+        q: &Question,
+        h: &[u8; 32],
+        now: Instant,
+    ) -> Result<(), &'static str> {
+        if self.key.is_none() {
             return Err("not running");
-        };
-        if !in_share(&share_hash(&q.nonce, &key), q.spread) {
+        }
+        if !in_share(h, q.spread) {
             return Err("outside the share");
         }
         if !self.synced {
             return Err("not synced yet");
-        }
-        if self.askers.len() >= MAX_ASKERS && !self.askers.contains_key(&q.key) {
-            return Err("no room");
         }
         if !room_in(&mut self.answers, ANSWERS_PER_SECOND, now) {
             return Err("over the budget");
@@ -711,34 +919,66 @@ impl Server {
         Ok(())
     }
 
-    /// A live name of ours to serve with: its owning chain's last entry and the key.
-    fn live_title(&self, unix: u64) -> Option<(SigningKey, WireEntry)> {
-        self.titles.iter().find_map(|(k, id)| {
-            let h = self.reg.get(id)?;
-            let o = h.owner.as_ref()?;
-            let pk: [u8; 32] = k.verifying_key().to_bytes().into();
-            (o.owner == pk && o.covers(unix))
-                .then(|| h.name.get(&o.last()).map(|e| (k.clone(), WireEntry::of(e))))
-                .flatten()
-        })
+    /// The live names of ours to serve with: each one's owning chain's last entry and the key.
+    fn live_titles(&self, unix: u64) -> Vec<(SigningKey, WireEntry)> {
+        (self.titles.iter())
+            .filter_map(|(k, id)| {
+                let h = self.reg.get(id)?;
+                let o = h.owner.as_ref()?;
+                let pk: [u8; 32] = k.verifying_key().to_bytes().into();
+                (o.owner == pk && o.covers(unix))
+                    .then(|| h.name.get(&o.last()).map(|e| (k.clone(), WireEntry::of(e))))
+                    .flatten()
+            })
+            .collect()
+    }
+
+    /// The live name of ours whose owner key has the lowest hash for `nonce`, and that hash.
+    fn live_title(&self, nonce: &[u8; 16], unix: u64) -> Option<(SigningKey, WireEntry, [u8; 32])> {
+        (self.live_titles(unix).into_iter())
+            .map(|(k, e)| {
+                let h = share_hash(nonce, &e.entry.owner);
+                (k, e, h)
+            })
+            .min_by_key(|x| x.2)
     }
 
     fn on_question(&mut self, q: Question, region: usize, now: Instant, unix: u64) {
-        if let Err(why) = self.answers_rule(&q, now) {
+        let Some((k, entry, h)) = self.live_title(&q.nonce, unix) else {
+            self.stats.refused += 1;
+            return;
+        };
+        if let Err(why) = self.answers_rule(&q, &h, now) {
             if why != "outside the share" {
                 self.stats.refused += 1;
             }
             return;
         }
-        let Some((k, entry)) = self.live_title(unix) else {
-            self.stats.refused += 1;
-            return;
-        };
+        // Every asker's place taken: the one held longest goes (junk can't keep them all for good), but never a sync
+        // partner of this round.
+        if self.askers.len() >= MAX_ASKERS && !self.askers.contains_key(&q.key) {
+            let old = (self.askers.iter())
+                .filter(|(k, _)| !self.runs.contains_key(*k))
+                .min_by_key(|(_, a)| a.since)
+                .map(|(k, _)| *k);
+            let Some(old) = old else {
+                self.stats.refused += 1;
+                return;
+            };
+            self.askers.remove(&old);
+            self.cmds.push_back(Cmd::Forget(old));
+        }
         self.answers.push_back(now);
         self.stats.answered += 1;
         let me = self.key.unwrap();
         let sig = sign(&k, &serve_hash(&self.names, &q.nonce, &me));
-        self.askers.insert(q.key, now);
+        self.askers
+            .entry(q.key)
+            .or_insert(Asker {
+                since: now,
+                active: now,
+            })
+            .active = now;
         if self.ask.is_some() && me > q.key {
             self.deferred.push((now + CROSSED_WAIT, q.key, region));
         } else {
@@ -765,12 +1005,15 @@ impl Server {
             Input::Question { q, region } => self.on_question(q, region, now, unix),
             Input::Gone(k) => self.gone(k),
             Input::Datagram { from, data } => {
-                if let Some(t) = self.askers.get_mut(&from) {
-                    *t = now;
-                }
                 if let Some((xid, payload)) = self.xf.input(from, &data, now) {
                     match Msg::decode(&payload) {
-                        Ok((m, reply)) => self.on_msg(from, xid, reply, m, now, unix),
+                        Ok((m, reply)) => {
+                            // Only a request keeps an asker: junk, or a part of one, doesn't.
+                            if let Some(a) = self.askers.get_mut(&from) {
+                                a.active = now;
+                            }
+                            self.on_msg(from, xid, reply, m, now, unix)
+                        }
                         Err(e) => self.log(format!("a message refused: {e:?}")),
                     }
                 }
@@ -801,9 +1044,39 @@ impl Server {
             };
             return self.on_answer(from, r, m, now);
         }
+        // A server's requests (sync, have, get of everything) only from a server that proved a live name: an asker's
+        // session is anyone's, and each of those costs this one work.
+        let server_only = matches!(
+            m,
+            Msg::Sync { .. }
+                | Msg::Have(_)
+                | Msg::Get {
+                    mode: GetMode::All,
+                    ..
+                }
+        );
+        if server_only && !self.proven.contains(&from) {
+            if let Msg::Sync { proof: Some(p), .. } = &m
+                && self.check_proof(from, p, unix)
+            {
+                self.proven.insert(from);
+            } else {
+                return self.log("a server's request refused: no live name shown".into());
+            }
+        }
         match m {
             m @ Msg::Serve { .. } => self.on_serve(from, m, now, unix),
-            Msg::Sync { range, fp } => {
+            Msg::Sync { range, fp, .. } => {
+                // A budget of what it may make us fingerprint, renewed every sync round: a run over all of a
+                // registry costs about 8 items a name.
+                let budget = 16 * (self.reg.len() as u64 + LIST_MAX as u64);
+                let spent = self.sync_spent.entry(from).or_insert((now, 0));
+                if now.saturating_duration_since(spent.0) >= SYNC_EVERY {
+                    *spent = (now, 0);
+                }
+                if spent.1 > budget {
+                    return self.log("a sync refused: past its budget".into());
+                }
                 self.synced_with.insert(from, now);
                 for id in self.reg.settle_due(&range, &self.params, unix) {
                     self.stored(&id);
@@ -816,6 +1089,9 @@ impl Server {
                 } else {
                     SyncAnswer::Children(self.reg.children(&range))
                 };
+                if let Some(x) = self.sync_spent.get_mut(&from) {
+                    x.1 += 2 * mine.count as u64 + 1;
+                }
                 self.send(from, &Msg::SyncAnswer(a), xid, now);
             }
             Msg::Get {
@@ -862,21 +1138,29 @@ impl Server {
                 self.send(from, &Msg::Items(items), xid, now);
             }
             Msg::Have(ids) => {
+                // A run tells 32 at a time; what it makes us ask, at most HAVE_GETS at once.
+                if ids.len() > HAVE_MAX {
+                    return self.log("a have refused: too long".into());
+                }
                 for id in ids {
-                    if self.dropped.contains_key(&id) {
+                    let waiting = (self.reqs.iter())
+                        .filter(|((p, _), (r, _))| *p == from && matches!(r, Req::Get(false)))
+                        .count();
+                    if self.dropped.contains_key(&id) || waiting >= HAVE_GETS {
                         continue;
                     }
                     let get = self.get_for(&id[..]);
                     self.request(from, &get, Req::Get(false), now);
                 }
             }
-            Msg::Put(item) => self.jobs.push_back(Job {
-                from: Some((from, Some(xid))),
-                item,
-                next: 0,
-                checked: Vec::new(),
-                zone_checked: false,
-            }),
+            Msg::Put(item) => {
+                // Anyone may put (an owner's agent, a member): its own few at a time, and a bounded queue.
+                let theirs = self.puts.iter().filter(|j| j.peer() == Some(from)).count();
+                if theirs >= PUTS_PER_PEER || self.puts.len() >= PUTS_MAX {
+                    return self.log("a put refused: its queue is full".into());
+                }
+                self.puts.push_back(Job::new(Some((from, Some(xid))), item));
+            }
             // Answers without a request (ours timed out): nothing to do.
             Msg::Items(_) | Msg::Taken | Msg::Better(_) | Msg::SyncAnswer(_) | Msg::Ids(_) => {}
         }
@@ -903,13 +1187,7 @@ impl Server {
             (Req::Get(in_run), Msg::Items(items)) => {
                 for item in items {
                     if !item.entries.is_empty() || item.zone.is_some() {
-                        self.jobs.push_back(Job {
-                            from: Some((from, None)),
-                            item,
-                            next: 0,
-                            checked: Vec::new(),
-                            zone_checked: false,
-                        });
+                        self.jobs.push_back(Job::new(Some((from, None)), item));
                     }
                 }
                 if in_run {
@@ -978,6 +1256,37 @@ impl Server {
         }
     }
 
+    /// Whether `p`, in a `sync` from `from`, proves a live name: checked once a session (a refused proof isn't
+    /// checked again, so junk proofs cost one check).
+    fn check_proof(&mut self, from: [u8; 32], p: &Proof, unix: u64) -> bool {
+        let Some(me) = self.key else { return false };
+        if !self.proof_tried.insert(from) {
+            return false;
+        }
+        let msg = peer_hash(&self.names, &me, &from);
+        let ok = check_live(
+            &self.names,
+            &self.params,
+            &mut self.pow,
+            &p.entry,
+            &msg,
+            &p.sig,
+            unix,
+        );
+        if let Err(e) = &ok {
+            self.log(format!("a server's proof refused: {e:?}"));
+        }
+        ok.is_ok()
+    }
+
+    /// Our proof to server `to` that we hold a live name, for a run's first `sync`.
+    fn proof_for(&self, to: &[u8; 32], unix: u64) -> Option<Box<Proof>> {
+        let me = self.key?;
+        let (k, entry) = self.live_titles(unix).into_iter().next()?;
+        let sig = sign(&k, &peer_hash(&self.names, to, &me));
+        Some(Box::new(Proof { entry, sig }))
+    }
+
     /// A partner that broke the protocol: the round with it ends (what it sent so far stays, checked as anything is).
     fn end_run(&mut self, partner: [u8; 32], why: &str) {
         self.log(format!("a sync partner refused: {why}"));
@@ -1035,10 +1344,19 @@ impl Server {
                 self.stored(&id);
             }
             let fp = self.reg.fp(&range);
-            self.request(partner, &Msg::Sync { range, fp }, Req::Sync(range), now);
+            // The run's first carries our proof that we serve.
+            let proof = (range == Range::ALL)
+                .then(|| self.proof_for(&partner, unix))
+                .flatten();
+            self.request(
+                partner,
+                &Msg::Sync { range, fp, proof },
+                Req::Sync(range),
+                now,
+            );
         }
         let run = &self.runs[&partner];
-        if run.outstanding == 0 && run.stack.is_empty() {
+        if run.outstanding == 0 && run.stack.is_empty() && run.gets.is_empty() {
             let run = self.runs.remove(&partner).unwrap();
             let ids: Vec<[u8; 32]> = run.have.into_iter().collect();
             for c in ids.chunks(32) {
@@ -1077,6 +1395,9 @@ impl Server {
         }
         self.askers.remove(&k);
         self.synced_with.remove(&k);
+        self.proven.remove(&k);
+        self.proof_tried.remove(&k);
+        self.sync_spent.remove(&k);
     }
 
     // ---- Verification and keeping ----
@@ -1084,19 +1405,29 @@ impl Server {
     fn verify_slice(&mut self, _now: Instant, unix: u64) {
         self.last_unix = unix;
         let mut units = 0;
-        while units < UNITS_PER_TURN
-            && let Some(mut job) = self.jobs.pop_front()
-        {
-            while units < UNITS_PER_TURN && job.next < job.item.entries.len() {
+        // What sync brought first (a first sync is over once it is verified); then the puts, one job's slice in turn.
+        while units < UNITS_PER_TURN {
+            let (mut job, put) = match self.jobs.pop_front() {
+                Some(j) => (j, false),
+                None => match self.puts.pop_front() {
+                    Some(j) => (j, true),
+                    None => break,
+                },
+            };
+            while units < UNITS_PER_TURN && !job.forged && job.next < job.item.entries.len() {
                 let w = job.item.entries[job.next].clone();
                 job.next += 1;
                 units += self.check_entry(&mut job, w, unix);
             }
-            if job.next < job.item.entries.len() {
-                self.jobs.push_front(job);
+            if !job.forged && job.next < job.item.entries.len() {
+                if put {
+                    self.puts.push_back(job);
+                } else {
+                    self.jobs.push_front(job);
+                }
                 break;
             }
-            if !job.zone_checked && job.item.zone.is_some() {
+            if !job.forged && !job.zone_checked && job.item.zone.is_some() {
                 job.zone_checked = true;
                 units += 1;
                 if !job.item.zone.as_ref().unwrap().verify(&self.names) {
@@ -1108,14 +1439,51 @@ impl Server {
         }
     }
 
-    /// Checks one entry of a job (or only its anchor, when the entry is held): its cost.
+    /// Entry `id` failed a check only a forgery fails: remembered, so copies of it cost nothing.
+    fn refuse(&mut self, id: [u8; 32]) {
+        if self.refused.insert(id) {
+            self.refused_order.push_back(id);
+            if self.refused_order.len() > REFUSED_KEPT
+                && let Some(old) = self.refused_order.pop_front()
+            {
+                self.refused.remove(&old);
+            }
+        }
+    }
+
+    /// An entry checked whole (counted).
+    fn check_whole(
+        &mut self,
+        e: super::entry::Entry,
+        ref_header: super::header::Header,
+        unix: u64,
+    ) -> Result<Stamped, Invalid> {
+        self.stats.checked += 1;
+        Stamped::check(
+            e,
+            ref_header,
+            &self.names,
+            &self.params,
+            &mut self.pow,
+            unix,
+        )
+    }
+
+    /// Checks one entry of a job (or only its anchor, when the entry is held): its cost. An entry that fails a check
+    /// only a forgery fails (all but a `ref` header from the future, which a clock behind can make) marks the job
+    /// forged: the rest of it isn't checked, and nothing of it is kept.
     fn check_entry(&mut self, job: &mut Job, w: WireEntry, unix: u64) -> u32 {
         let id = job.item.id;
         if w.entry.name != id {
             self.log("an entry refused: another name's".into());
+            job.forged = true;
             return 0;
         }
         let eid = w.entry.id();
+        if self.refused.contains(&eid) {
+            job.forged = true;
+            return 0;
+        }
         let held = self
             .reg
             .get(&id)
@@ -1124,17 +1492,19 @@ impl Server {
             .or_else(|| job.checked.iter().find(|s| s.id() == eid).cloned());
         let (mut s, mut cost) = match held {
             Some(s) => (s, 0),
-            None => match Stamped::check(
-                w.entry,
-                w.ref_header,
-                &self.names,
-                &self.params,
-                &mut self.pow,
-                unix,
-            ) {
+            None => match self.check_whole(w.entry, w.ref_header, unix) {
                 Ok(s) => (s, 4),
                 Err(e) => {
                     self.log(format!("an entry refused: {e:?}"));
+                    // Remembered only for what the entry's own bytes decide (not its `ref` header, which travels
+                    // beside it: anyone could otherwise send an honest entry with a broken header to have it refused).
+                    if matches!(
+                        e,
+                        Invalid::Prev | Invalid::Room | Invalid::Signature | Invalid::Work
+                    ) {
+                        self.refuse(eid);
+                    }
+                    job.forged |= e != Invalid::HeaderFuture;
                     return 4;
                 }
             },
@@ -1149,7 +1519,12 @@ impl Server {
             }
         }
         if let Some(p) = w.pending {
-            s.offer_pending(p, &self.params, unix);
+            // Only the owner says which pending anchor a server is to finish: anyone's would replace it.
+            if pending_ok(&self.names, &s.entry.owner, &eid, &p) {
+                s.offer_pending(p, &self.params, unix);
+            } else {
+                self.log("a pending anchor refused: not the owner's".into());
+            }
         }
         job.checked.retain(|c| c.id() != eid);
         job.checked.push(s);
@@ -1158,7 +1533,7 @@ impl Server {
 
     /// A verified job's entries and zone merged into the item held, settled; stored, told to
     /// the other servers, answered.
-    fn keep(&mut self, job: Job, unix: u64) {
+    fn keep(&mut self, mut job: Job, unix: u64) {
         let id = job.item.id;
         #[cfg(test)]
         if self.refuse.contains(&id) {
@@ -1168,6 +1543,10 @@ impl Server {
         let mut h = self.reg.take(&id).unwrap_or_else(|| Held::new(id, unix));
         let before = h.version;
         let was_empty = h.is_empty();
+        if job.forged {
+            job.checked.clear();
+            job.item.zone = None;
+        }
         for s in job.checked {
             h.name.insert(s, &self.params, unix);
         }

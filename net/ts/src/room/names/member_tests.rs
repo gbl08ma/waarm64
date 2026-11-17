@@ -160,7 +160,7 @@ impl Bus {
                 self.stored.insert(id, record);
             }
             Cmd::Log(l) => eprintln!("member: {l}"),
-            Cmd::Accept { .. } | Cmd::CallBack { .. } | Cmd::Subscribe(_) => {}
+            Cmd::Accept { .. } | Cmd::CallBack { .. } | Cmd::Subscribe(_) | Cmd::Served(_) => {}
         }
     }
 
@@ -608,4 +608,337 @@ fn the_module_runs_on_production_parameters() {
         LATE,
     );
     assert_eq!(r, Err(Invalid::HeaderFloor));
+}
+
+// ---- Review 1's findings (NAMES-REVIEW-1.md) ----
+
+/// A server the tests play by hand: its names client's key, the live name it serves with, its transfers.
+struct Fake {
+    key: [u8; 32],
+    sk: k256::schnorr::SigningKey,
+    entry: super::wire::WireEntry,
+    /// It serves a question's round whose `spread` is this or less.
+    spread: u8,
+    /// It serves only rounds whose share its owner key falls outside of (as no honest server does).
+    outside: bool,
+    xf: super::wire::Transfers,
+}
+
+impl Fake {
+    fn new(b: &mut Bitcoin, secret: u8, key: [u8; 32], spread: u8) -> Fake {
+        let name = format!("fake{secret}");
+        let sk = b.key(secret, &name);
+        let it = title(b, secret, &name, 20, &[4], [secret; 32], [secret; 32]);
+        Fake {
+            key,
+            sk,
+            entry: it.entries.last().unwrap().clone(),
+            spread,
+            outside: false,
+            xf: Default::default(),
+        }
+    }
+
+    fn owner(&self) -> [u8; 32] {
+        self.entry.entry.owner
+    }
+}
+
+/// A member and fake servers, its commands carried by hand; `answer(fake, get)` answers the member's requests. Runs
+/// for `d`; each call into the member is passed to `watch` after it returns. The publishes seen, (time, spread).
+fn drive(
+    b: &Bitcoin,
+    m: &mut Member,
+    fakes: &mut [Fake],
+    d: Duration,
+    query: &str,
+    answer: &mut dyn FnMut(usize, &super::wire::Msg) -> Option<super::wire::Msg>,
+    watch: &mut dyn FnMut(&Member),
+) -> Vec<(Duration, u8)> {
+    use super::wire::Msg;
+    let t0 = Instant::now();
+    let mkey = [0x99; 32];
+    let mut now = t0;
+    let unix = |now: Instant| T + now.duration_since(t0).as_secs();
+    m.start(mkey, now);
+    m.query(query, now, unix(now), true);
+    watch(m);
+    let mut published = Vec::new();
+    while now < t0 + d {
+        let mut moved = false;
+        while let Some(c) = m.poll() {
+            moved = true;
+            match c {
+                Cmd::Publish { nonce, spread } => {
+                    published.push((now - t0, spread));
+                    let off = |f: &Fake| {
+                        !super::server::in_share(
+                            &super::server::share_hash(&nonce, &f.owner()),
+                            spread,
+                        )
+                    };
+                    for f in fakes
+                        .iter_mut()
+                        .filter(|f| spread <= f.spread && (!f.outside || off(f)))
+                    {
+                        let h = super::entry::tagged(
+                            "waarm64/names/serve",
+                            &[&b.names.value, &nonce, &f.key],
+                        );
+                        let s = Msg::Serve {
+                            nonce,
+                            entry: Box::new(f.entry.clone()),
+                            sig: super::entry::sign(&f.sk, &h),
+                        };
+                        f.xf.send(mkey, &s.encode(0), now);
+                    }
+                }
+                Cmd::Send { to, data } => {
+                    if let Some(i) = fakes.iter().position(|f| f.key == to)
+                        && let Some((xid, p)) = fakes[i].xf.input(mkey, &data, now)
+                        && let Some(a) = answer(i, &Msg::decode(&p).unwrap().0)
+                    {
+                        fakes[i].xf.send(mkey, &a.encode(xid), now);
+                    }
+                }
+                Cmd::Forget(k) => {
+                    m.input(Input::Gone(k), now, unix(now));
+                    watch(m);
+                }
+                _ => {}
+            }
+        }
+        for f in fakes.iter_mut() {
+            for (_, d) in std::mem::take(&mut f.xf.out) {
+                moved = true;
+                m.input(
+                    Input::Datagram {
+                        from: f.key,
+                        data: d,
+                    },
+                    now,
+                    unix(now),
+                );
+                watch(m);
+            }
+        }
+        if !moved {
+            now = m
+                .deadline()
+                .map_or(now + Duration::from_millis(50), |t| t.max(now));
+            m.tick(now, unix(now));
+            m.query(query, now, unix(now), false);
+            watch(m);
+        }
+    }
+    published
+}
+
+/// A `serve` from outside the share of every round sent so far doesn't count: the rounds go on as if none came.
+#[test]
+fn a_serve_outside_the_share_sent_isnt_counted() {
+    let mut b = Bitcoin::new(ROOM, 30);
+    // Fakes that serve the first round only if their owner key falls outside its share.
+    let mut fakes: Vec<Fake> = (0..4)
+        .map(|k| Fake::new(&mut b, 40 + k, [0x30 + k; 32], 6))
+        .collect();
+    for f in &mut fakes {
+        f.outside = true;
+    }
+    let mut m = member();
+    let published = drive(
+        &b,
+        &mut m,
+        &mut fakes,
+        Duration::from_millis(600),
+        "alpha",
+        &mut |_, _| None,
+        &mut |_| {},
+    );
+    assert_eq!(published[0].1, 6);
+    assert_eq!(
+        published.get(1).map(|p| p.1),
+        Some(3),
+        "the second round as usual, not everyone at once after an answer: {published:?}"
+    );
+}
+
+type Keys = Vec<[u8; 32]>;
+
+/// Two honest servers and an attacker's registration answering from two names-client keys ground (after it saw the
+/// nonce) to hash below both honest servers' keys; the registration ranking `first` or last by its owner key's hash
+/// among the three. The servers the member holds, the honest servers' keys and the attacker's.
+fn many_keys(first: bool) -> (Keys, Keys, Keys) {
+    let mut b = Bitcoin::new(ROOM, 31);
+    let pool: Vec<Fake> = (0..3u8)
+        .map(|k| Fake::new(&mut b, 100 + k, [0x61; 32], 0))
+        .collect();
+    let mut m = member();
+    // The member asks; the attacker sees the nonce (here: the last round's).
+    let mut nonce = None;
+    let mut now = Instant::now();
+    m.start([0x99; 32], now);
+    m.query("alpha", now, T, true);
+    loop {
+        while let Some(c) = m.poll() {
+            if let Cmd::Publish {
+                nonce: n,
+                spread: 0,
+            } = c
+            {
+                nonce = Some(n);
+            }
+        }
+        if nonce.is_some() {
+            break;
+        }
+        now = m.deadline().unwrap_or(now + Duration::from_millis(50));
+        m.tick(now, T);
+    }
+    let nonce = nonce.unwrap();
+    // Three registrations by their owner key's hash for this nonce: the attacker's the first or the last.
+    let mut pool = pool;
+    pool.sort_by_key(|f| super::server::share_hash(&nonce, &f.owner()));
+    let a = if first {
+        pool.remove(0)
+    } else {
+        pool.remove(2)
+    };
+    let mut fakes = pool;
+    fakes[0].key = [0x51; 32];
+    fakes[1].key = [0x52; 32];
+    let below = super::server::share_hash(&nonce, &fakes[0].key)
+        .min(super::server::share_hash(&nonce, &fakes[1].key));
+    let mut ground = Vec::new();
+    for k in 0u64.. {
+        let mut key = [0x62; 32];
+        key[..8].copy_from_slice(&k.to_le_bytes());
+        if super::server::share_hash(&nonce, &key) < below {
+            ground.push(key);
+            if ground.len() == 2 {
+                break;
+            }
+        }
+        assert!(k < 1 << 24, "grinding");
+    }
+    for key in &ground {
+        fakes.push(Fake {
+            key: *key,
+            sk: a.sk.clone(),
+            entry: a.entry.clone(),
+            spread: 0,
+            outside: false,
+            xf: Default::default(),
+        });
+    }
+    // The serves for that nonce, to the member still asking: the attacker's first.
+    let mkey = [0x99; 32];
+    for f in fakes.iter_mut().rev() {
+        let h = super::entry::tagged("waarm64/names/serve", &[&b.names.value, &nonce, &f.key]);
+        let s = super::wire::Msg::Serve {
+            nonce,
+            entry: Box::new(f.entry.clone()),
+            sig: super::entry::sign(&f.sk, &h),
+        };
+        f.xf.send(mkey, &s.encode(0), now);
+        for (_, d) in std::mem::take(&mut f.xf.out) {
+            m.input(
+                Input::Datagram {
+                    from: f.key,
+                    data: d,
+                },
+                now,
+                T,
+            );
+        }
+    }
+    m.tick(now + Duration::from_secs(1), T);
+    (
+        m.servers().to_vec(),
+        vec![fakes[0].key, fakes[1].key],
+        ground,
+    )
+}
+
+/// Keys ground for a low hash win nothing (the choice goes by the owner key served with): a registration that ranks
+/// last isn't held.
+#[test]
+fn keys_ground_for_a_low_hash_win_nothing() {
+    let (mut held, mut honest, _) = many_keys(false);
+    held.sort();
+    honest.sort();
+    assert_eq!(held, honest, "the honest servers are held");
+}
+
+/// One registration answering from many keys counts once: ranking first, it takes one place, not both.
+#[test]
+fn one_name_answering_from_many_keys_counts_once() {
+    let (held, honest, attacker) = many_keys(true);
+    assert_eq!(held.len(), 2);
+    assert_eq!(
+        held.iter().filter(|k| attacker.contains(k)).count(),
+        1,
+        "{held:?}"
+    );
+    assert_eq!(held.iter().filter(|k| honest.contains(k)).count(), 1);
+}
+
+/// A `history` answer of one long chain's entries, each many times over: each entry is checked once, and a turn checks
+/// a slice (the room's worker isn't stalled).
+#[test]
+fn a_history_is_checked_once_an_entry_in_slices() {
+    let mut b = Bitcoin::new(ROOM, 32);
+    // What the member keeps: alpha's owner.
+    let alpha = title(&mut b, 1, "alpha", 20, &[4], [0xa1; 32], [0xa2; 32]);
+    let last = alpha.entries.last().unwrap().clone();
+    let mut rec = vec![2u8];
+    rec.extend_from_slice(&t(20).to_le_bytes());
+    rec.extend_from_slice(&(T - KEPT_REFRESH - 10).to_le_bytes()); // checked a while ago: asked again
+    rec.extend(
+        Item {
+            id: alpha.id,
+            entries: vec![last],
+            zone: alpha.zone.clone(),
+        }
+        .encode(),
+    );
+    let mut m = member();
+    assert!(m.load(&rec, T));
+    // A fake server contests it with an impostor's renewal, then shows a long run, 50 copies of each entry.
+    let renewals: Vec<u32> = (1..20).map(|k| 400 - 20 * k).collect();
+    let long = title(&mut b, 66, "alpha", 400, &renewals, [0x66; 32], [0x66; 32]);
+    let mut fakes = vec![Fake::new(&mut b, 70, [0x71; 32], 6)];
+    let (owner_answer, history) = {
+        let mut o = long.clone();
+        o.entries = vec![long.entries.last().unwrap().clone()];
+        let mut h = long.clone();
+        h.entries = (0..50).flat_map(|_| long.entries.clone()).collect();
+        (o, h)
+    };
+    assert!(history.entries.len() <= super::wire::MAX_ENTRIES);
+    let (mut most, mut before) = (0usize, 0usize);
+    drive(
+        &b,
+        &mut m,
+        &mut fakes,
+        Duration::from_secs(KEPT_REFRESH + 20),
+        "alpha",
+        &mut |_, msg| match msg {
+            super::wire::Msg::Get { mode, .. } => Some(super::wire::Msg::Items(vec![if *mode
+                == super::wire::GetMode::History
+            {
+                history.clone()
+            } else {
+                owner_answer.clone()
+            }])),
+            _ => None,
+        },
+        &mut |m| {
+            most = most.max(m.stats.checked - before);
+            before = m.stats.checked;
+        },
+    );
+    assert!(m.stats.histories >= 1, "asked for history");
+    assert!(m.stats.checked <= 2 * 20 + 4, "{} checked", m.stats.checked);
+    assert!(most <= 6, "{most} entries checked in one turn");
 }

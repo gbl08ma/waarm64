@@ -77,6 +77,21 @@ pub(super) fn verify(owner: &[u8; 32], msg: &[u8; 32], sig: &[u8; 64]) -> bool {
     k.verify_raw(msg, &s).is_ok()
 }
 
+/// What an entry's owner signs for a pending anchor of entry `id` (room-names.md "Records").
+pub fn pending_hash(names: &RoomNames, id: &[u8; 32], p: &Pending) -> [u8; 32] {
+    tagged("waarm64/names/pending", &[&names.value, id, &p.body()])
+}
+
+/// Signs pending anchor `p` of entry `id` with its owner key.
+pub fn sign_pending(key: &SigningKey, names: &RoomNames, id: &[u8; 32], p: &mut Pending) {
+    p.sig = sign(key, &pending_hash(names, id, p));
+}
+
+/// Whether `owner` signed pending anchor `p` of entry `id`.
+pub fn pending_ok(names: &RoomNames, owner: &[u8; 32], id: &[u8; 32], p: &Pending) -> bool {
+    verify(owner, &pending_hash(names, id, p), &p.sig)
+}
+
 impl Entry {
     /// An unsigned entry with no work done: [`Pow::mine`] and [`Entry::sign`] finish it.
     pub fn new(

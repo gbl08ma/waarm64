@@ -30,8 +30,8 @@ use super::{
     entry::{Pow, Stamped},
     id::{RoomNames, split},
     server::{
-        ACCEPT_MAX, CHOOSE_AFTER, Cmd, GIVE_UP, Input, NOBODY_FIRST, NOBODY_MAX,
-        QUESTIONS_PER_SECOND, ROUND_AT, SPREADS, check_serve, random, room_in, share_hash,
+        ACCEPT_MAX, Ask, CHOOSE_AFTER, Cmd, GIVE_UP, Input, NOBODY_FIRST, NOBODY_MAX,
+        QUESTIONS_PER_SECOND, ROUND_AT, SPREADS, UNITS_PER_TURN, check_serve, random, room_in,
     },
     store::{anchor_tag, zone_tag},
     wire::{GetMode, Item, Msg, Rd, Transfers, WireEntry},
@@ -119,6 +119,35 @@ struct Lookup {
     history: bool,
     /// Asked again once after every server failed.
     retried: bool,
+    /// Every server has said: what they said being checked, a slice a turn.
+    checking: Option<Checking>,
+}
+
+impl Lookup {
+    fn new(asked: BTreeMap<[u8; 32], Said>, history: bool, retried: bool) -> Lookup {
+        Lookup {
+            asked,
+            history,
+            retried,
+            checking: None,
+        }
+    }
+}
+
+/// The answers of a lookup being checked: those left, the views made, how many said none.
+struct Checking {
+    left: VecDeque<Check>,
+    views: Vec<([u8; 32], View)>,
+    nothing: usize,
+}
+
+/// One server's item being checked, an entry at a time (each once, however often the item repeats it).
+struct Check {
+    server: [u8; 32],
+    entries: VecDeque<WireEntry>,
+    zone: Option<Zone>,
+    name: Name,
+    last: Option<[u8; 32]>,
 }
 
 /// A server's answer, checked: the entries it showed (with the member's kept last entry), and the chain it says owns
@@ -135,14 +164,6 @@ enum Req {
     Ids(u8),
 }
 
-struct Ask {
-    nonce: [u8; 16],
-    started: Instant,
-    round: usize,
-    first: Option<Instant>,
-    answers: BTreeMap<[u8; 32], [u8; 32]>,
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct MemberStats {
     pub questions: usize,
@@ -151,6 +172,8 @@ pub struct MemberStats {
     pub histories: usize,
     /// Answers refused (a forged or broken entry or zone, a dead chain).
     pub refused: usize,
+    /// Entries checked whole (signature, proof of work, headers, anchor).
+    pub checked: usize,
 }
 
 pub struct Member {
@@ -175,6 +198,8 @@ pub struct Member {
     pub ids_answers: BTreeMap<u8, BTreeSet<[u8; 32]>>,
     cmds: VecDeque<Cmd>,
     pub stats: MemberStats,
+    /// The clock as the last tick or input gave it.
+    now: Instant,
 }
 
 impl Member {
@@ -199,6 +224,7 @@ impl Member {
             ids_answers: BTreeMap::new(),
             cmds: VecDeque::new(),
             stats: MemberStats::default(),
+            now: Instant::now(),
         }
     }
 
@@ -326,14 +352,8 @@ impl Member {
         {
             return;
         }
-        self.lookups.insert(
-            id,
-            Lookup {
-                asked: BTreeMap::new(),
-                history: false,
-                retried: false,
-            },
-        );
+        self.lookups
+            .insert(id, Lookup::new(BTreeMap::new(), false, false));
         self.dispatch(now);
     }
 
@@ -452,8 +472,13 @@ impl Member {
                 None => a.started + GIVE_UP,
             },
         });
+        // Answers being checked: the next turn at once (a slice a turn).
+        let checking = (self.lookups.values())
+            .any(|l| l.checking.is_some())
+            .then_some(self.now);
         [
             ask,
+            checking,
             self.next_question,
             self.xf.deadline(),
             self.reqs.values().map(|(_, t)| *t).min(),
@@ -468,6 +493,8 @@ impl Member {
         if self.key.is_none() {
             return;
         }
+        self.now = now;
+        self.verify_slice(now, unix);
         if let Some(a) = &self.ask {
             if let Some(f) = a.first {
                 if now >= f + CHOOSE_AFTER {
@@ -521,6 +548,7 @@ impl Member {
         if self.key.is_none() {
             return;
         }
+        self.now = now;
         match i {
             Input::Question { .. } => {} // a member answers nobody
             Input::Gone(k) => self.gone(k, now, unix),
@@ -546,13 +574,7 @@ impl Member {
         self.questions.push_back(now);
         self.stats.questions += 1;
         let nonce = random();
-        self.ask = Some(Ask {
-            nonce,
-            started: now,
-            round: 1,
-            first: None,
-            answers: BTreeMap::new(),
-        });
+        self.ask = Some(Ask::new(nonce, now));
         self.cmds.push_back(Cmd::Accept {
             until: now + GIVE_UP,
             max: ACCEPT_MAX,
@@ -590,7 +612,7 @@ impl Member {
         if a.answers.contains_key(&from) {
             return;
         }
-        if let Err(e) = check_serve(
+        let ok = check_serve(
             &self.names,
             &self.params,
             &mut self.pow,
@@ -598,29 +620,32 @@ impl Member {
             &from,
             &m,
             unix,
-        ) {
+        );
+        let (owner, name) = match ok {
+            Ok(x) => x,
+            Err(e) => {
+                self.stats.refused += 1;
+                self.log(format!("a serve refused: {e:?}"));
+                return self.cmds.push_back(Cmd::Forget(from));
+            }
+        };
+        if let Err(why) = self.ask.as_mut().unwrap().offer(from, owner, name, now) {
             self.stats.refused += 1;
-            self.log(format!("a serve refused: {e:?}"));
+            self.log(format!("a serve refused: {why}"));
             return self.cmds.push_back(Cmd::Forget(from));
         }
-        let a = self.ask.as_mut().unwrap();
-        a.answers.insert(from, share_hash(&nonce, &from));
-        a.first.get_or_insert(now);
+        self.cmds.push_back(Cmd::Served(from));
     }
 
     /// The two answers with the lowest hash are kept; the others are let go.
     fn choose(&mut self, now: Instant) {
         let a = self.ask.take().unwrap();
         self.nobody = None;
-        let mut by: Vec<([u8; 32], [u8; 32])> = a.answers.iter().map(|(k, h)| (*h, *k)).collect();
-        by.sort();
+        let (keep, rest) = a.choose();
         self.cmds.push_back(Cmd::Accept { until: now, max: 0 });
-        for (i, (_, k)) in by.into_iter().enumerate() {
-            if i < 2 {
-                self.servers.push(k);
-            } else {
-                self.cmds.push_back(Cmd::Forget(k));
-            }
+        self.servers.extend(keep);
+        for k in rest {
+            self.cmds.push_back(Cmd::Forget(k));
         }
         self.dispatch(now);
     }
@@ -692,96 +717,185 @@ impl Member {
         }
     }
 
-    /// A server's item checked: every entry whole (signature, proof of work, headers, anchor); with the kept last
-    /// entry; the chain whose last entry is the server's (the one it says owns the name), which must cover now.
-    fn view(
-        &mut self,
-        id: [u8; 32],
-        it: Item,
-        history: bool,
-        unix: u64,
-    ) -> Result<Option<View>, Invalid> {
-        let mut name = Name::new(id);
-        let kept_last = self.kept.get(&id).map(|k| k.last.clone());
-        if !history && it.entries.len() > 1 {
-            return Err(Invalid::Encoding); // a member checks the last entry only
-        }
-        let mut last = None;
-        for w in it.entries {
-            if w.entry.name != id {
-                return Err(Invalid::Name);
-            }
-            let mut s = Stamped::check(
-                w.entry,
-                w.ref_header,
-                &self.names,
-                &self.params,
-                &mut self.pow,
-                unix,
-            )?;
-            let (a, h) = w.anchor.ok_or(Invalid::AnchorRoot)?;
-            s.offer_anchor(a, h, &self.params, unix)?;
-            last = Some(s.id());
-            name.insert(s, &self.params, unix);
-        }
-        // Owner mode: the kept last entry joins what the server showed (a renewal continues it; no entry means the
-        // server's last is the one kept). A history is taken as shown: what is kept judges it after (`Kept::offer`).
-        if let Some(k) = kept_last.filter(|_| !history) {
-            last = last.or(Some(k.id()));
-            name.insert(k, &self.params, unix);
-        }
-        let Some(last) = last else {
-            return Ok(None);
-        };
-        let zone = match it.zone {
-            Some(z) if z.name != id || !z.verify(&self.names) => return Err(Invalid::Zone),
-            z => z,
-        };
-        let chain = name
-            .chains(&self.params)
-            .into_iter()
-            .find(|c| c.last() == last && c.covers(unix));
-        Ok(chain.map(|chain| View { name, chain, zone }))
-    }
-
-    /// A lookup whose servers have all answered (or failed): decided, or asked again for `history`.
+    /// A lookup whose servers have all answered (or failed): what they said is checked (a slice a turn: `history` may
+    /// carry a thousand entries), then decided.
     fn settle(&mut self, id: [u8; 32], now: Instant, unix: u64) {
-        let Some(l) = self.lookups.get(&id) else {
+        let Some(l) = self.lookups.get_mut(&id) else {
             return;
         };
-        if l.asked.values().any(|s| matches!(s, Said::Waiting)) {
+        if l.checking.is_some() || l.asked.values().any(|s| matches!(s, Said::Waiting)) {
             return;
         }
         let history = l.history;
-        let l = self.lookups.remove(&id).unwrap();
-        let mut views = Vec::new();
-        let mut nothing = 0;
-        for (server, said) in l.asked {
+        let kept_last = self.kept.get(&id).map(|k| k.last.clone());
+        let mut c = Checking {
+            left: VecDeque::new(),
+            views: Vec::new(),
+            nothing: 0,
+        };
+        let mut refused = 0;
+        for (server, said) in std::mem::take(&mut l.asked) {
             match said {
-                Said::Nothing => nothing += 1,
-                Said::Item(it) => match self.view(id, *it, history, unix) {
-                    Ok(Some(v)) => views.push((server, v)),
-                    Ok(None) => nothing += 1,
+                Said::Nothing => c.nothing += 1,
+                Said::Item(it) => {
+                    // A member checks the last entry only, unless it asked for the run.
+                    if (!history && it.entries.len() > 1) || it.id != id {
+                        refused += 1;
+                        continue;
+                    }
+                    let mut seen = BTreeSet::new();
+                    let entries = (it.entries.into_iter())
+                        .filter(|w| seen.insert(w.entry.id()))
+                        .collect();
+                    let mut name = Name::new(id);
+                    let mut last = None;
+                    // Owner mode: the kept last entry joins what the server showed (a renewal continues it; no entry
+                    // means the server's last is the one kept). A history is taken as shown: what is kept judges it.
+                    if let Some(k) = kept_last.clone().filter(|_| !history) {
+                        last = Some(k.id());
+                        name.insert(k, &self.params, unix);
+                    }
+                    c.left.push_back(Check {
+                        server,
+                        entries,
+                        zone: it.zone,
+                        name,
+                        last,
+                    });
+                }
+                Said::Waiting | Said::Failed => {}
+            }
+        }
+        l.checking = Some(c);
+        if refused > 0 {
+            self.stats.refused += refused;
+            self.log("an answer refused: Encoding".into());
+        }
+        self.verify_slice(now, unix);
+    }
+
+    /// Checks a slice of what servers said (an entry costs 4 units of [`UNITS_PER_TURN`], as a server's), and decides
+    /// the lookups whose answers are all checked.
+    fn verify_slice(&mut self, now: Instant, unix: u64) {
+        let mut units = 0;
+        let ids: Vec<[u8; 32]> = (self.lookups.iter())
+            .filter(|(_, l)| l.checking.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            loop {
+                let l = self.lookups.get_mut(&id).unwrap();
+                let c = l.checking.as_mut().unwrap();
+                let Some(mut check) = c.left.pop_front() else {
+                    break;
+                };
+                let mut verdict = None;
+                while units < UNITS_PER_TURN {
+                    let Some(w) = check.entries.pop_front() else {
+                        break;
+                    };
+                    units += 4;
+                    self.stats.checked += 1;
+                    if let Err(e) = self.check_one(&mut check, w, unix) {
+                        verdict = Some(Err(e));
+                        break;
+                    }
+                }
+                if verdict.is_none() && !check.entries.is_empty() {
+                    let c = self
+                        .lookups
+                        .get_mut(&id)
+                        .unwrap()
+                        .checking
+                        .as_mut()
+                        .unwrap();
+                    c.left.push_front(check);
+                    return;
+                }
+                let server = check.server;
+                let verdict = verdict.unwrap_or_else(|| self.view(id, check, unix));
+                let c = self
+                    .lookups
+                    .get_mut(&id)
+                    .unwrap()
+                    .checking
+                    .as_mut()
+                    .unwrap();
+                match verdict {
+                    Ok(Some(v)) => c.views.push((server, v)),
+                    Ok(None) => c.nothing += 1,
                     Err(e) => {
                         self.stats.refused += 1;
                         self.log(format!("an answer refused: {e:?}"));
                     }
-                },
-                Said::Waiting | Said::Failed => {}
+                }
+            }
+            let l = self.lookups.remove(&id).unwrap();
+            let c = l.checking.unwrap();
+            self.decide(id, l.history, l.retried, c.views, c.nothing, now, unix);
+            if units >= UNITS_PER_TURN {
+                return;
             }
         }
+    }
+
+    /// One entry of a server's item: checked whole (signature, proof of work, headers, anchor).
+    fn check_one(&mut self, check: &mut Check, w: WireEntry, unix: u64) -> Result<(), Invalid> {
+        if w.entry.name != check.name.id {
+            return Err(Invalid::Name);
+        }
+        let mut s = Stamped::check(
+            w.entry,
+            w.ref_header,
+            &self.names,
+            &self.params,
+            &mut self.pow,
+            unix,
+        )?;
+        let (a, h) = w.anchor.ok_or(Invalid::AnchorRoot)?;
+        s.offer_anchor(a, h, &self.params, unix)?;
+        check.last = Some(s.id());
+        check.name.insert(s, &self.params, unix);
+        Ok(())
+    }
+
+    /// A server's item checked: its zone, and the chain whose last entry is the server's (the one it says owns the
+    /// name), which must cover now.
+    fn view(&self, id: [u8; 32], check: Check, unix: u64) -> Result<Option<View>, Invalid> {
+        let Some(last) = check.last else {
+            return Ok(None);
+        };
+        let zone = match check.zone {
+            Some(z) if z.name != id || !z.verify(&self.names) => return Err(Invalid::Zone),
+            z => z,
+        };
+        let chain = (check.name.chains(&self.params).into_iter())
+            .find(|c| c.last() == last && c.covers(unix));
+        Ok(chain.map(|chain| View {
+            name: check.name,
+            chain,
+            zone,
+        }))
+    }
+
+    /// A lookup whose answers are checked: decided, or asked again for `history`.
+    #[allow(clippy::too_many_arguments)]
+    fn decide(
+        &mut self,
+        id: [u8; 32],
+        history: bool,
+        retried: bool,
+        views: Vec<([u8; 32], View)>,
+        nothing: usize,
+        now: Instant,
+        unix: u64,
+    ) {
         if views.is_empty() {
             if nothing == 0 {
                 // Nobody answered: once more, with servers found again if need be.
-                if !l.retried {
-                    self.lookups.insert(
-                        id,
-                        Lookup {
-                            asked: BTreeMap::new(),
-                            history: false,
-                            retried: true,
-                        },
-                    );
+                if !retried {
+                    self.lookups
+                        .insert(id, Lookup::new(BTreeMap::new(), false, true));
                     self.dispatch(now);
                 }
                 return;
@@ -811,14 +925,7 @@ impl Member {
             if lasts.len() > 1 || contested {
                 // The servers disagree, or one contests what is kept: each one's whole run.
                 let asked = views.iter().map(|(s, _)| (*s, Said::Waiting)).collect();
-                self.lookups.insert(
-                    id,
-                    Lookup {
-                        asked,
-                        history: true,
-                        retried: l.retried,
-                    },
-                );
+                self.lookups.insert(id, Lookup::new(asked, true, retried));
                 for (s, _) in &views {
                     self.send_get(id, *s, true, now);
                 }

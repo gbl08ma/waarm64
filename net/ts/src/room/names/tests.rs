@@ -394,6 +394,7 @@ fn a_pending_anchor_proves_nothing() {
     let pending = Pending {
         calendar: Calendar::Bob,
         ops: vec![Op::Append(vec![1; 8]), Op::Sha256],
+        sig: [0; 64],
     };
     assert!(held_back.offer_pending(pending.clone(), &p, T0 as u64));
     assert_eq!(held_back.time(), None);
@@ -789,6 +790,7 @@ fn copy(made: &[Made], rng: &mut Rng, p: &Params) -> Vec<Stamped> {
             let pending = Pending {
                 calendar: Calendar::ALL[rng.below(3) as usize],
                 ops: vec![Op::Append(vec![rng.below(4) as u8; 4])],
+                sig: [0; 64],
             };
             s.offer_pending(pending, p, T0 as u64);
         }

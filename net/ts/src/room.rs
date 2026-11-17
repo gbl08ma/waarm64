@@ -712,8 +712,7 @@ pub struct Client {
     names_subscribed: bool,
     /// Handshakes from unknown keys are let in until then, this many at most (our question's
     /// answers), and how many came.
-    names_accept: Option<(Instant, usize)>,
-    names_accepted: usize,
+    names_window: names::server::AcceptWindow,
     pub names_events: VecDeque<Input>,
     /// A node's registry, when it holds titles.
     pub names: Option<Box<NamesHost>>,
@@ -898,8 +897,7 @@ impl Client {
             map_pending: false,
             names_mode: false,
             names_subscribed: false,
-            names_accept: None,
-            names_accepted: 0,
+            names_window: Default::default(),
             names_events: VecDeque::new(),
             names,
             member: None,
@@ -1854,10 +1852,7 @@ impl Client {
                 // on, or a flow of the guest's with it) one that opens a connection, on trial.
                 let addr = self.room.addr(&src);
                 // A names client lets in only the servers answering its own question.
-                let names = self.names_mode
-                    && self
-                        .names_accept
-                        .is_some_and(|(until, max)| now < until && self.names_accepted < max);
+                let names = self.names_mode && self.names_window.room(now);
                 let expected = self.pending.contains_key(&addr) || names;
                 if !expected && !(self.cfg.incoming || self.has_flow(&addr, now)) {
                     return;
@@ -1875,8 +1870,11 @@ impl Client {
                     if !expected {
                         self.trials_in.push_back(now);
                     }
-                    if names {
-                        self.names_accepted += 1;
+                    if names
+                        && let Some(k) = self.names_window.admit(src, now)
+                        && let Some(old) = self.wg.peer_id(NodePublicKey::from_bytes(k))
+                    {
+                        self.forget(old);
                     }
                     self.drain_pending(id, now);
                 }
@@ -3241,10 +3239,8 @@ impl Client {
     fn names_cmd(&mut self, c: Cmd, now: Instant) {
         match c {
             Cmd::Publish { nonce, spread } => self.publish_question(nonce, spread, now),
-            Cmd::Accept { until, max } => {
-                self.names_accept = Some((until, max));
-                self.names_accepted = 0;
-            }
+            Cmd::Accept { until, max } => self.names_window.open(until, max),
+            Cmd::Served(k) => self.names_window.served(&k),
             Cmd::CallBack { key, region } => {
                 // A peer we have (a server of ours asking again) is answered on its session.
                 if !self.peers.values().any(|p| p.key == key) {

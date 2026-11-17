@@ -350,6 +350,15 @@ pub struct Fp {
     pub count: u32,
 }
 
+/// A server's proof to another that it holds a live name (room-names.md "Servers"): one entry of a live name's owning
+/// chain, with its anchor and headers, and that entry's owner key's signature over both names clients' keys. Only a
+/// server that proved itself so is answered `sync`, `have` and `get` of every kind but a member's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Proof {
+    pub entry: WireEntry,
+    pub sig: [u8; 64],
+}
+
 /// What a `sync` is answered with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncAnswer {
@@ -392,6 +401,8 @@ pub enum Msg {
     Sync {
         range: Range,
         fp: Fp,
+        /// A run's first `sync` carries the asker's proof that it serves.
+        proof: Option<Box<Proof>>,
     },
     SyncAnswer(SyncAnswer),
 }
@@ -478,10 +489,23 @@ impl Msg {
                     o.extend_from_slice(i);
                 }
             }
-            Msg::Sync { range, fp } => {
+            Msg::Sync { range, fp, proof } => {
                 o.push(range.depth);
                 o.extend_from_slice(&range.prefix);
                 write_fp(&mut o, fp);
+                match proof {
+                    None => o.push(0),
+                    Some(p) => {
+                        o.push(1);
+                        let it = Item {
+                            id: p.entry.entry.name,
+                            entries: vec![p.entry.clone()],
+                            zone: None,
+                        };
+                        o.extend(it.encode());
+                        o.extend_from_slice(&p.sig);
+                    }
+                }
             }
             Msg::SyncAnswer(a) => match a {
                 SyncAnswer::Same => o.push(0),
@@ -573,13 +597,24 @@ impl Msg {
                     Msg::Ids(ids)
                 }
             }
-            8 => Msg::Sync {
-                range: Range {
+            8 => {
+                let range = Range {
                     depth: r.u8()?,
                     prefix: r.a()?,
-                },
-                fp: read_fp(&mut r)?,
-            },
+                };
+                let fp = read_fp(&mut r)?;
+                let proof = match r.u8()? {
+                    0 => None,
+                    1 => {
+                        let it = Item::read(&mut r)?;
+                        let [entry]: [WireEntry; 1] =
+                            it.entries.try_into().map_err(|_| Invalid::Encoding)?;
+                        Some(Box::new(Proof { entry, sig: r.a()? }))
+                    }
+                    _ => return Err(Invalid::Encoding),
+                };
+                Msg::Sync { range, fp, proof }
+            }
             9 => Msg::SyncAnswer(match r.u8()? {
                 0 => SyncAnswer::Same,
                 1 => {
@@ -666,7 +701,14 @@ pub struct Transfers {
     peers: BTreeMap<[u8; 32], Peer>,
     /// Datagrams to send: (peer, bytes).
     pub out: Vec<([u8; 32], Vec<u8>)>,
+    /// Sends there was no room for: failed at the next tick (the time it was refused).
+    refused: Vec<([u8; 32], u32)>,
+    refused_at: Option<std::time::Instant>,
 }
+
+/// The most bytes of messages queued to one peer and not yet acknowledged whole: past it a send fails (a peer that
+/// asks much and acknowledges nothing can't make us hold all we would answer).
+pub const MAX_QUEUED: usize = 8 * MAX_MESSAGE;
 
 impl Transfers {
     /// Sends `payload` to `to`: its transfer's id.
@@ -674,6 +716,12 @@ impl Transfers {
         let p = self.peers.entry(to).or_default();
         p.next = p.next.wrapping_add(1).max(1);
         let id = p.next;
+        let queued: usize = p.out.iter().flat_map(|o| &o.parts).map(Vec::len).sum();
+        if queued + payload.len() > MAX_QUEUED {
+            self.refused.push((to, id));
+            self.refused_at.get_or_insert(now);
+            return id;
+        }
         let chunks: Vec<&[u8]> = if payload.is_empty() {
             vec![&[]]
         } else {
@@ -809,7 +857,8 @@ impl Transfers {
     /// Resends what's due; the transfers that failed (no acknowledgement after the last resend):
     /// (peer, transfer id).
     pub fn tick(&mut self, now: std::time::Instant) -> Vec<([u8; 32], u32)> {
-        let mut failed = Vec::new();
+        let mut failed = std::mem::take(&mut self.refused);
+        self.refused_at = None;
         let keys: Vec<[u8; 32]> = self.peers.keys().copied().collect();
         for k in keys {
             let p = self.peers.get_mut(&k).unwrap();
@@ -853,6 +902,9 @@ impl Transfers {
     }
 
     pub fn deadline(&self) -> Option<std::time::Instant> {
+        if let Some(t) = self.refused_at {
+            return Some(t);
+        }
         let out = self
             .peers
             .values()
@@ -868,6 +920,13 @@ impl Transfers {
             .flat_map(|p| p.inbound.values())
             .map(|t| t.last + INBOUND_IDLE);
         out.chain(stale).min()
+    }
+
+    /// The bytes of messages queued to `to` and not yet acknowledged whole.
+    pub fn queued(&self, to: &[u8; 32]) -> usize {
+        self.peers.get(to).map_or(0, |p| {
+            p.out.iter().flat_map(|o| &o.parts).map(Vec::len).sum()
+        })
     }
 
     /// Forgets a peer (its session ended).
