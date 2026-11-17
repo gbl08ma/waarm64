@@ -114,7 +114,7 @@ No record, message or stored registry holds a name in words. Three things do it:
 - **An owner key per name**, so a registry doesn't show that five ids are one person's.
 
 **What a server still learns:** how many names the room has; each id's owner key and the times of its entries (an
-owner's names renewed in one visit land in one block, so the agent spreads them when it can); which ids are asked for,
+owner's names renewed in one visit land in one block, which anyone who guesses those names sees in their `history`; the agent doesn't spread renewals yet, docs/backlog.md, but an `ids` answer's cover ends are rounded up to a week so that it doesn't group them); which ids are asked for,
 though not by whom (the names client's key is new each session); and **any name it can guess**: hashing a dictionary
 against the registry's ids is cheap, and a slow hash wouldn't change that by much (a million guesses at 0.1 s each is a
 day of one machine, and every resolver would pay the 0.1 s on each name a guest asks). So this hides names that aren't
@@ -479,7 +479,7 @@ copies by nonce **and round** (the three rounds share a nonce).
   the resolver's SERVFAIL.
 - **The dialog's check** for a name being typed must not tell a server which id someone is about to claim (it could
   guess the name and stamp too): it asks for `ids` (a `get` mode with the id's first byte only), every id in the 1/256 of
-  the registry that shares it, each with when its owner's hold ends (0: nobody's now), and looks for its own there
+  the registry that shares it, each with when its owner's hold ends rounded up to a week (0: nobody's now), and looks for its own there
   (`Member::ids`, `ids_done`; not counted as the name being asked for). The page asks through a publisher
   (`ts_room_names_ids`): "What the user sees".
 
@@ -726,7 +726,7 @@ names.
 | Stamp a dictionary and hold it back | the same work, every term, for as long as it waits | takes a name later registered by someone else: accepted |
 | Race a new registration | none | nothing: a claim is public only once anchored, and the dialog's check doesn't name the id |
 | Tie a claim it somehow knew of | several claims in the same block | wins most ties: the tie-break can be ground. It needs the name before the claim is public |
-| Hash a dictionary against a server's ids | one registration, then cheap | learns which guessable names exist and where they point; nothing about the others |
+| Hash a dictionary against a server's ids | nothing: 256 `ids` requests from any session list every id (the dialog's check needs them; review 2 corrected the cost from "one registration") | learns which guessable names exist (and, with a `get`, where they point); nothing about the others; the cover ends listed are a week coarse |
 | Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its chain's age and its owner key's hash, says otherwise; both servers the attacker's (registrations as old as the honest servers', renewed all along, ranking below them for that question; junk registrations made lately rank after every older server): the member sees what it shows (it can't forge) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |
 | Forge a Bitcoin header | seven linked headers at the floor of their time: about 3.5 blocks' work at the schedule's half (0.11 of a block at its 1/64, a release unrenewed for 15 weeks), once | the forger's run, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the run serves again for any number of claims: **accepted for now** (the user, 2026-11-17: review 1's finding 6). Ideas for servers to check later, which would make servers ask an outside service and need the user's OK: docs/backlog.md |

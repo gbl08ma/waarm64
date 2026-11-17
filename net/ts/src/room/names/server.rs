@@ -76,6 +76,8 @@ struct Asker {
 /// backs and trials, so a flood of questions can't keep the node's own lookups out.
 pub const ANSWERS_PER_SECOND: usize = 4;
 pub(super) const QUESTIONS_PER_SECOND: usize = 1;
+/// An `ids` answer's cover ends are rounded up to this (seconds).
+pub const IDS_UNTIL_STEP: u64 = 7 * 24 * 3600;
 /// Answers to questions naming one key, a minute (an honest asker asks a question a second at most, and rarely).
 pub const ANSWERS_PER_KEY: usize = 4;
 const ANSWERS_PER_KEY_WINDOW: Duration = Duration::from_secs(60);
@@ -1234,9 +1236,11 @@ impl Server {
                 let ids = (self.reg.matching(&id).into_iter())
                     .map(|i| {
                         let owner = self.reg.get(&i).and_then(|h| h.owner.as_ref());
+                        // Rounded up to a week: names renewed in one visit share a cover end, which would group an
+                        // owner's names (review 2); "taken until about" needs no more.
                         let until = owner
                             .filter(|o| !o.released && o.covers(unix))
-                            .map_or(0, |o| o.cover_end);
+                            .map_or(0, |o| o.cover_end.div_ceil(IDS_UNTIL_STEP) * IDS_UNTIL_STEP);
                         (i, until)
                     })
                     .collect();

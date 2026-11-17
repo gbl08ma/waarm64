@@ -1821,3 +1821,69 @@ fn questions_naming_one_key_get_few_call_backs() {
     }
     assert!(other);
 }
+
+/// Review 2's finding 13: an `ids` answer's "taken until" is rounded up to a week, so names renewed in one visit (one
+/// block, one cover end) can't be grouped by it into one owner's.
+#[test]
+fn ids_answers_round_cover_ends_to_a_week() {
+    const WEEK: u64 = 7 * DAY as u64;
+    let mut b = Bitcoin::new(ROOM, 49);
+    // Two names under one first byte.
+    let mut names = Vec::new();
+    for k in 0.. {
+        let n = format!("same{k}");
+        if b.names.name_id(&n)[0] == b.names.name_id("same0")[0] {
+            names.push(n);
+            if names.len() == 2 {
+                break;
+            }
+        }
+    }
+    // Renewed two hours apart, their cover ends inside one week.
+    let end = (T - 5 * DAY as u64 + 37 * DAY as u64).div_ceil(WEEK) * WEEK + 3600;
+    let r1 = (end - 37 * DAY as u64) as u32;
+    let mut s = Server::new(ROOM, cfg(vec![]), T);
+    let mut ends = Vec::new();
+    for (k, n) in names.iter().enumerate() {
+        let (_, item) = b.title(
+            k as u8 + 1,
+            n,
+            r1 - 20 * DAY,
+            &[r1 + 7200 * k as u32],
+            [9; 32],
+        );
+        assert!(s.load(&record(&item, T), T));
+        ends.push(
+            s.reg
+                .get(&item.id)
+                .unwrap()
+                .owner
+                .as_ref()
+                .unwrap()
+                .cover_end,
+        );
+    }
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    while s.poll().is_some() {}
+    let get = Msg::Get {
+        mode: GetMode::Ids,
+        id: vec![b.names.name_id(&names[0])[0]],
+        zone: (0, [0; 4]),
+        held: Vec::new(),
+    };
+    let got = exchange(&mut s, [0x30; 32], 1, &get, now, T);
+    let Some(Msg::Ids(ids)) = got.into_iter().next() else {
+        panic!("ids")
+    };
+    let untils: Vec<u64> = ids.iter().map(|(_, u)| *u).collect();
+    assert_eq!(untils.len(), 2);
+    assert_ne!(ends[0], ends[1]);
+    assert_eq!(
+        untils[0], untils[1],
+        "one week's cover ends look alike: {untils:?}"
+    );
+    for (u, e) in untils.iter().zip(&ends) {
+        assert!(*u % WEEK == 0 && *u >= *e && *u < *e + WEEK, "{u} for {e}");
+    }
+}
