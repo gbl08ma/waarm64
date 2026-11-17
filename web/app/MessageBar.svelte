@@ -28,6 +28,7 @@
     bodyId="message-body"
     actionsId="message-actions"
     dismissId="message-close"
+    crossfade={messageBar.text ? 'message' : undefined}
     dismissLabel={t('common:MessageBar.close')}
     ondismiss={() => page.dismiss()}
   >

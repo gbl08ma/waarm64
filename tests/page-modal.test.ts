@@ -246,7 +246,8 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await m.locator('[data-action=start]').click();
   // It starts with the disk added since it was opened (the firmware loads and boots; a stale record would wait again).
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.doesNotMatch(await page.locator('#message-text').textContent() ?? '', words('disks:power-actions.noDisks'));
+  // The floating bar's words (the Machines page, closing, may still be fading out with its own banner).
+  assert.doesNotMatch(await page.locator('#message #message-text').textContent() ?? '', words('disks:power-actions.noDisks'));
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -554,9 +555,9 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await page.click('#machines-open');
   // Its Settings tab: Visualize beside RAM opens the RAM's map over the page, once it has RAM (booting or running).
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  // No message: the message bar takes no room over the Machines page (it does while it shows one).
-  assert.equal(await page.locator('#message').isHidden(), true, await page.locator('#message').evaluate((e) => e.outerHTML.slice(0, 400)));
-  assert.equal(await page.evaluate(() => document.querySelector('#message')!.parentElement!.getBoundingClientRect().height), 0, 'no gap over the Machines page');
+  // No message: no floating bar over the Machines page (its messages show in the page's own banner), and no banner.
+  await page.locator('#message').waitFor({ state: 'detached', timeout: 5_000 });
+  assert.equal(await page.locator('.machines .banner').count(), 0, 'no gap over the Machines page');
   await m.locator('[data-tab=settings]').click();
   await m.locator('[data-action=ram-open]').click();
   await page.locator('#ram-window').waitFor({ timeout: 10_000 });

@@ -22,6 +22,7 @@
   import StorageBar from './StorageBar.svelte';
   import Button from './ui/Button.svelte';
   import ErrorBanner from './ui/ErrorBanner.svelte';
+  import { leaveInPlace } from './ui/crossfade.ts';
   import Pane from './ui/Pane.svelte';
   import { untrack } from 'svelte';
   import { Actions } from './actions.svelte.ts';
@@ -128,7 +129,7 @@
   }
 </script>
 
-<div class="machines" data-busy={runner.busy}>
+<div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text}>
   <div class="bar">
     <Button
       variant="tool"
@@ -151,6 +152,7 @@
       dismissLabel={t('machines:MachinesPage.dismiss')}
       ondismiss={() => (messageBar.text ? page.dismiss() : runner.clear())}
       countdown={messageBar.text ? messageBar.countdown : undefined}
+      crossfade={messageBar.text ? 'message' : undefined}
     >
       {#snippet actions()}
         {#each messageBar.actions as a (a)}<Button

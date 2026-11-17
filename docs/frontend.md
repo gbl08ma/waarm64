@@ -410,7 +410,11 @@ floats over the machine rather than taking a row of the page: the screen keeps i
 pushed the screen down made a guest that follows its display's size resize twice, and one that doesn't scaled and
 blurred). Over the Machines page it is not shown: the Machines page's own error banner, under its "Machines" header,
 shows the message instead, so there is never both a floating banner and the page's banner at once. The message bar
-floats again when the machines section closes. It has a close button, beside its words (which wrap with its actions)
+floats again when the machines section closes. Between the two places it moves (a 250 ms crossfade,
+`web/app/ui/crossfade.ts`: `ErrorBanner`'s `crossfade` key, kept as `data-crossfade` because a transition's parameter
+from a prop is a derived Svelte won't compute once its component is going); the closing Machines page, kept in the DOM
+for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it. Its
+words take the room its actions leave, which sit at the bar's far end. It has a close button, beside its words (which wrap with its actions)
 at the top right. A notice that leaves the machine as it was (`notify`) is `info` when something was
 done (a snapshot kept or saved; a suspended machine resumed; a disk saved, from this machine or another; changes
 loaded into a machine that's off; a disk grown; the guest asleep): green, it closes itself after 15 s, which a ring around the close button runs down (paused
