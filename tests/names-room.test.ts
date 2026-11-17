@@ -214,8 +214,11 @@ test('a title renewed in two browsers: the fork is settled, both taking the room
   const lastA = (await statusOf(a.backend, await titleOf(a.store, ca))).owner?.ids.at(-1);
   const lastB = (await statusOf(b.backend, await titleOf(b.store, cb))).owner?.ids.at(-1);
   assert.ok(lastA && lastA === lastB, `${lastA} ${lastB}`);
-  const both = (await statusOf(a.backend, await titleOf(a.store, ca))).entries.filter((e) => e.kind === 'renew');
-  assert.equal(both.length, 2, 'both branches held, the room\'s owning');
+  // The copy whose branch lost holds both, the room's owning (the servers finish both renewals once the calendar
+  // has, and keep the owning chain: the winner's copy may never be shown the other).
+  const renewals = async (x: typeof a, c: NamesConn) => (await statusOf(x.backend, await titleOf(x.store, c))).entries.filter((e) => e.kind === 'renew').length;
+  const [na, nb] = [await renewals(a, ca), await renewals(b, cb)];
+  assert.ok(Math.max(na, nb) === 2 && Math.min(na, nb) >= 1, `${na} ${nb}`);
 });
 
 test('a better chain shown by the servers makes a title lost: renewal stops', { skip, timeout: 240_000 }, async () => {
