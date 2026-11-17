@@ -1255,6 +1255,14 @@
     "message": "RAM",
     "note": "Machines page, Settings tab: the label of the memory size slider."
   },
+  "SettingsTab.ram.visualize": {
+    "message": "Visualize",
+    "note": "Machines page, Settings tab: the button beside the RAM slider, shown while the machine runs in this tab; it opens the map of the machine's RAM (the same window as the status bar's RAM link)."
+  },
+  "SettingsTab.ram.visualize.title": {
+    "message": "See the machine's RAM as a map: which parts hold data, and what changes.",
+    "note": "Machines page, Settings tab: tooltip of the Visualize button beside the RAM slider, which opens the map of the running machine's RAM in a window over the page."
+  },
   "SettingsTab.ram.title": {
     "message": "The sum of the split below",
     "note": "Machines page, Settings tab: tooltip of the RAM slider while it is disabled, the memory split being set by hand."

@@ -611,7 +611,9 @@ was (on the screen).
 ### RAM's map
 
 While a machine runs in this tab, the status bar's RAM element is a link (`StatusBar.svelte`; a press leaves the
-keyboard's focus on the screen) that opens the running machine's RAM as a block map in a floating window
+keyboard's focus on the screen), and its Settings tab on the Machines page has
+[Visualize](ui:machines:SettingsTab.ram.visualize) beside the RAM slider (`SettingsTab.svelte`); either opens the
+running machine's RAM as a block map in a floating window
 (`RamWindow.svelte`, the disk surface window's pieces: `ui/FloatingWindow.svelte`, its place remembered under
 `windows.ram`, `ui/BlockGrid.svelte`, `SurfaceLegend.svelte`, `surface-poll.svelte.ts`). It is open independently of a
 disk's window; `areas/ram.svelte.ts` says whether it is, and `App.svelte` mounts it beside the disk's, so it stays

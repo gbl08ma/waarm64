@@ -1,9 +1,11 @@
 <!--
   A machine's Settings tab (docs/machines.md §7): its name and shape (vCPUs, RAM and its split, the JIT's budget, the
   display, Vulkan, USB, the input and clock devices, clipboard sharing) and its keyboard layout. A change of shape
-  warns where it orphans the machine's snapshots; Save asks before it does (machine-edit.svelte.ts).
+  warns where it orphans the machine's snapshots; Save asks before it does (machine-edit.svelte.ts). While the machine
+  runs on this page, Visualize beside RAM opens its RAM's map (RamWindow.svelte), as the status bar's RAM does.
 -->
 <script lang="ts">
+  import Button from './ui/Button.svelte';
   import Check from './ui/Check.svelte';
   import Field from './ui/Field.svelte';
   import Fields from './ui/Fields.svelte';
@@ -15,6 +17,8 @@
   import SaveRow from './SaveRow.svelte';
   import UsbSwitch from './UsbSwitch.svelte';
   import { t, text } from '../i18n.ts';
+  import { current } from './areas/current.svelte.ts';
+  import { ramHost, ramWindow } from './areas/ram.svelte.ts';
   import type { Editing } from './machine-edit.svelte.ts';
   import { CPU_SLIDER, JIT_DEFAULT_MIB, JIT_SLIDER, numaNote, RAM_SLIDER } from './machine.ts';
 
@@ -32,6 +36,8 @@
     n === JIT_DEFAULT_MIB ? t('machines:SettingsTab.jit.default', { n }) : t('machines:SettingsTab.mib', { n });
   const jitGet = () => d.jitMiB ?? JIT_DEFAULT_MIB;
   const jitSet = (n: number) => (d.jitMiB = n === JIT_DEFAULT_MIB ? undefined : n);
+  /** The machine runs on this page: its RAM's map can open from here (RamWindow.svelte), as from the status bar. */
+  const ramLive = $derived(d.id === current.id && !!ramHost());
   const numa = $derived(numaNote(d.ramMiB, d.ramSplit, !!d.vulkan));
 
   /** What turning Vulkan on or off says: it orphans the snapshots, or this browser can't draw what it renders. */
@@ -48,12 +54,18 @@
   const vulkanNote = $derived(vulkanNoteOf());
 </script>
 
+{#snippet visualize()}
+  <Button data-action="ram-open" title={t('machines:SettingsTab.ram.visualize.title')} onclick={() => ramWindow.show()}>
+    {t('machines:SettingsTab.ram.visualize')}
+  </Button>
+{/snippet}
+
 <Fields oninput={edit.touch} onchange={edit.touch}>
   <Field label={t('machines:SettingsTab.name')}><input bind:value={d.name} data-field="name" /></Field>
   <Field label={t('machines:SettingsTab.ncpus')}>
     <Slider bind:value={d.ncpus} field="ncpus" --slider-value-w="15ch" {...CPU_SLIDER} label={cpuLabel} />
   </Field>
-  <Field label={t('machines:SettingsTab.ram')}>
+  <Field label={t('machines:SettingsTab.ram')} after={ramLive ? visualize : undefined}>
     <Slider
       bind:value={d.ramMiB}
       field="ram"

@@ -532,7 +532,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   await context.close();
 });
 
-test('a disk\'s read-only box on a running machine: powered off after asking, then saved', async () => {
+test('a disk\'s read-only box on a running machine: powered off after asking, then saved; Visualize beside RAM while it runs', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -547,10 +547,18 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` });
   await disk(page, 0);
+  assert.equal(await m.locator('[data-action=ram-open]').count(), 0, 'no Visualize beside RAM while it is off');
   await m.locator('[data-action=open]').click();
   // Running (its Web Lock held): the box asks to power it off, then takes its value from the click.
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   await page.click('#machines-open');
+  // Its Settings tab: Visualize beside RAM opens the RAM's map over the page, once it has RAM (booting or running).
+  await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+  await m.locator('[data-tab=settings]').click();
+  await m.locator('[data-action=ram-open]').click();
+  await page.locator('#ram-window').waitFor({ timeout: 10_000 });
+  await page.locator('#ram-window [data-action=close]').click();
+  await page.locator('#ram-window').waitFor({ state: 'detached', timeout: 5_000 });
   await m.locator('[data-tab=disks]').click();
   await page.waitForFunction((s) => (document.querySelector('.machines .head .meta')?.textContent ?? '').includes(s), t('machines:MachinesPage.state.running'), { timeout: 10_000 });
   // A click, then a wait: the box takes its value only after the power-off it asks for (`check()` verifies at once,
@@ -568,6 +576,8 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   assert.match(asked.at(-1)!, words('machines:MachinesPage.powerOff.confirm', {}, { start: true }));
   assert.equal(await page.locator('.machines .error').count(), 0, 'no error');
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 10_000 });
+  await m.locator('[data-tab=settings]').click();
+  assert.equal(await m.locator('[data-action=ram-open]').count(), 0, 'no Visualize after the power-off');
   assert.deepEqual(errors, []);
   await context.close();
 });
