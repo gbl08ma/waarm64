@@ -532,7 +532,10 @@ copies by nonce **and round** (the three rounds share a nonce).
   is stored as verified and not checked again at load. An entry that fails a check only a forgery fails (anything but
   a `ref` header from the future, which a clock behind can make) ends its item's check, nothing of the item is kept,
   and its id is remembered (4,096 lately) when what failed is the entry's own bytes (signature, proof of work, form,
-  room), so 1,024 copies of a junk entry cost one check, not 1,024 Argon2ids (review 1). In Chromium's wasm (N0, cloud): an entry is ~0.66 ms whole
+  room), so 1,024 copies of a junk entry cost one check, not 1,024 Argon2ids (review 1). Likewise an entry checked
+  whole is remembered (16,384 lately, without its anchor): a valid one put again, a dead chain's say, which `settle`
+  drops so that it is never held, costs only its anchor's check (~1/40 of the whole; review 2: a dead title's 150
+  entries put in a loop cost every server 0.1 s a put). In Chromium's wasm (N0, cloud): an entry is ~0.66 ms whole
   (Argon2id 0.49, BIP-340 0.15, its anchor's 46 SHA-256s 0.015, a header 0.0005), so a 5,000-name registry's 60,000
   take ~40 s of one core.
 - **Bound**: `MAX_NAMES` 20,000 and 128 MiB of items. Past either, a server drops names, never its own, the ones
@@ -714,7 +717,7 @@ names.
 | Explorers all down | | the same: only the agent uses them |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held |
 | Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by age and hash (never the best two's) |
-| Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check; `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
+| Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
 | Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below |
 
 ## What changes that needed the user's OK (given 2026-11-15, all of it)

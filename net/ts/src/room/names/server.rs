@@ -91,6 +91,8 @@ const PUTS_PER_PEER: usize = 4;
 const PUTS_MAX: usize = 64;
 /// Entry ids remembered as refused.
 const REFUSED_KEPT: usize = 4096;
+/// Entries remembered as verified (~300 bytes each, ~5 MB).
+const VERIFIED_KEPT: usize = 16_384;
 /// The most `sync`s a run sends: a registry of 20,000 names each differing takes ~4,400 (1 + 16 + 256 + 4,096 ranges).
 pub const MAX_RUN_SYNCS: usize = 8192;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -524,6 +526,10 @@ pub struct Server {
     /// Entry ids that failed a check only a forgery fails, lately: not checked again.
     refused: BTreeSet<[u8; 32]>,
     refused_order: VecDeque<[u8; 32]>,
+    /// Entries checked whole lately (signature, proof of work, `ref` header), without their anchors: a valid entry put
+    /// again (a dead chain's, say) costs only its anchor's check (review 2).
+    verified: BTreeMap<[u8; 32], Stamped>,
+    verified_order: VecDeque<[u8; 32]>,
     /// Peers that proved a live name: the servers our questions chose, and those whose `sync` carried a proof.
     proven: BTreeSet<[u8; 32]>,
     /// Peers whose proof was checked this session.
@@ -593,6 +599,8 @@ impl Server {
             puts: VecDeque::new(),
             refused: BTreeSet::new(),
             refused_order: VecDeque::new(),
+            verified: BTreeMap::new(),
+            verified_order: VecDeque::new(),
             proven: BTreeSet::new(),
             proof_tried: BTreeSet::new(),
             sync_spent: BTreeMap::new(),
@@ -1566,6 +1574,20 @@ impl Server {
         }
     }
 
+    /// Entry `s` was just checked whole (it has no anchor yet): remembered, so a copy of it costs only its anchor's
+    /// check.
+    fn remember_verified(&mut self, s: &Stamped) {
+        let id = s.id();
+        if self.verified.insert(id, s.clone()).is_none() {
+            self.verified_order.push_back(id);
+            if self.verified_order.len() > VERIFIED_KEPT
+                && let Some(old) = self.verified_order.pop_front()
+            {
+                self.verified.remove(&old);
+            }
+        }
+    }
+
     /// An entry checked whole (counted).
     fn check_whole(
         &mut self,
@@ -1604,11 +1626,19 @@ impl Server {
             .get(&id)
             .and_then(|h| h.name.get(&eid))
             .cloned()
-            .or_else(|| job.checked.iter().find(|s| s.id() == eid).cloned());
+            .or_else(|| job.checked.iter().find(|s| s.id() == eid).cloned())
+            .or_else(|| {
+                (self.verified.get(&eid))
+                    .filter(|v| v.ref_header == w.ref_header)
+                    .cloned()
+            });
         let (mut s, mut cost) = match held {
             Some(s) => (s, 0),
             None => match self.check_whole(w.entry, w.ref_header, unix) {
-                Ok(s) => (s, 4),
+                Ok(s) => {
+                    self.remember_verified(&s);
+                    (s, 4)
+                }
                 Err(e) => {
                     self.log(format!("an entry refused: {e:?}"));
                     // Remembered only for what the entry's own bytes decide (not its `ref` header, which travels

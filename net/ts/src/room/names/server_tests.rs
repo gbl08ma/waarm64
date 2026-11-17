@@ -1678,3 +1678,37 @@ fn a_runs_first_sync_carries_a_proof() {
     let msg = super::server::peer_hash(&names, &[0x22; 32], &[0x11; 32]);
     assert!(super::entry::verify(&p.entry.entry.owner, &msg, &p.sig));
 }
+
+/// Review 2's finding 7: valid entries of a dead chain, put again and again, are checked whole once: a server
+/// remembers what it verified lately, as it remembers what it refused.
+#[test]
+fn valid_entries_put_again_are_checked_once() {
+    let mut b = Bitcoin::new(ROOM, 46);
+    let k = b.key(1, "dead");
+    // A long title that lapsed long ago: each entry valid, the chain dead now.
+    let mut run = vec![b.at(Kind::Claim, &k, "dead", [0; 32], t(400))];
+    for r in 1..40 {
+        let prev = run.last().unwrap().id();
+        run.push(b.at(Kind::Renew, &k, "dead", prev, t(400 - 7 * r)));
+    }
+    let it = b.item("dead", &run, None);
+    let mut s = Server::new(ROOM, cfg(vec![]), T);
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    while s.poll().is_some() {}
+    let mut checked = Vec::new();
+    for (k, from) in [[0x44; 32], [0x44; 32], [0x45; 32]].into_iter().enumerate() {
+        for d in datagrams(k as u32 + 1, &Msg::Put(it.clone()).encode(0)) {
+            s.input(Input::Datagram { from, data: d }, now, T);
+        }
+        let mut ticks = 0;
+        while s.busy() {
+            s.tick(now, T);
+            ticks += 1;
+            assert!(ticks < 1000);
+        }
+        checked.push(s.stats.checked);
+    }
+    assert!(s.reg.is_empty(), "nothing of a dead chain is kept");
+    assert_eq!(checked, vec![40, 40, 40], "checked whole once each");
+}
