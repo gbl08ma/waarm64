@@ -200,7 +200,7 @@ pub enum Cmd {
 pub struct AcceptWindow {
     until: Option<Instant>,
     max: usize,
-    /// Who came in and when, and its answer's [`choice`] key once its `serve` held.
+    /// Who came in and when, and its answer's [`rank`] key once its `serve` held.
     admitted: Vec<([u8; 32], Instant, Option<u128>)>,
 }
 
@@ -212,7 +212,7 @@ impl AcceptWindow {
     }
 
     /// Whom to let go for a newcomer: the oldest key let in that never served and has had [`ACCEPT_GRACE`] to; else,
-    /// of those that served, the last by [`choice`] but the best two (cheap registrations answering first mustn't fill
+    /// of those that served, the last by [`rank`] but the best two (cheap registrations answering first mustn't fill
     /// every place: review 2).
     fn evictable(&self, now: Instant) -> Option<usize> {
         let idle = (self.admitted.iter().enumerate())
@@ -248,7 +248,7 @@ impl AcceptWindow {
         gone
     }
 
-    /// `key`'s `serve` held, its [`choice`] key `c`.
+    /// `key`'s `serve` held, its [`rank`] key `c`.
     pub fn served(&mut self, key: &[u8; 32], c: u128) {
         for a in &mut self.admitted {
             if a.0 == *key {
@@ -268,31 +268,12 @@ pub fn share_hash(nonce: &[u8; 16], key: &[u8; 32]) -> [u8; 32] {
     h.finalize().into()
 }
 
-/// Tiers of a chain's age an answer can show: one a half term, up to this many (90 days with production's term).
-pub const TIERS: u32 = 6;
-/// The most entries a `serve` carries: a name renewed at half a term reaches the top tier's age in seven.
-pub const SERVE_RUN: usize = 8;
-
-/// A chain's tier at `now`: whole half terms since its seniority (the first entry's time of the run shown), at most
-/// [`TIERS`].
-pub fn tier(params: &Params, seniority: u32, now: u64) -> u32 {
-    let half = (params.term as u64 / 2).max(1);
-    (now.saturating_sub(seniority as u64) / half).min(TIERS as u64) as u32
-}
-
-/// An answer's rank (lower is better): the share hash's top 64 bits, doubled for each tier the chain is short of the
-/// top. So a server answers a round's share, and is kept, as if it held 2^tier tickets: a registration made yesterday
-/// holds 1/64 of the chances of one held for three months, and tickets cost time, not only work (review 2).
-pub fn rank(h: &[u8; 32], tier: u32) -> u128 {
-    (u64::from_be_bytes(h[..8].try_into().unwrap()) as u128) << (TIERS - tier.min(TIERS))
-}
-
-/// The order answers are kept in (lower is better): the older tier first, then the lower share hash. Rounds sample
-/// servers by [`rank`]; among those that answered, an older chain always wins, so the cheap registrations an attacker
-/// can make in bulk win a place only against servers as young as they are.
-pub fn choice(h: &[u8; 32], tier: u32) -> u128 {
-    (((TIERS - tier.min(TIERS)) as u128) << 64)
-        | u64::from_be_bytes(h[..8].try_into().unwrap()) as u128
+/// An answer's rank (lower is better): the share hash's top 64 bits. A server answers a round when its rank falls in the
+/// share, and an asker keeps the two lowest: the plain draw (R3 took N5a's tiers of a chain's age out: a first lookup
+/// asks the room and believes what is shown for its content, docs/plans/room-names-r3.md), used now only for what must
+/// not name an id: the dialog's check, puts, sync partners, the refresh of kept names.
+pub fn rank(h: &[u8; 32]) -> u128 {
+    u64::from_be_bytes(h[..8].try_into().unwrap()) as u128
 }
 
 /// Whether an answer of rank `r` falls in the share `spread` names (0: everyone, whatever the rank).
@@ -310,9 +291,8 @@ fn serve_hash(names: &RoomNames, nonce: &[u8; 16], server: &[u8; 32]) -> [u8; 32
 }
 
 /// Whether `serve` (a [`Msg::Serve`] from the server with key `server`) answers our question
-/// `nonce`: an unbroken run of a live name (every entry checked whole: signature, proof of work, its headers and
-/// anchor; the run's chain covering now, nothing shown off it) whose owner key signed the nonce and the server's key.
-/// The name's owner key and id, and the run's tier.
+/// `nonce`: one entry of a live name (checked whole: signature, proof of work, its header and anchor; its chain
+/// covering now) whose owner key signed the nonce and the server's key. The name's owner key and id.
 pub fn check_serve(
     names: &RoomNames,
     params: &Params,
@@ -321,7 +301,7 @@ pub fn check_serve(
     server: &[u8; 32],
     serve: &Msg,
     unix: u64,
-) -> Result<([u8; 32], [u8; 32], u32), Invalid> {
+) -> Result<([u8; 32], [u8; 32]), Invalid> {
     let Msg::Serve {
         nonce: n,
         entries,
@@ -333,31 +313,22 @@ pub fn check_serve(
     if n != nonce {
         return Err(Invalid::Signature);
     }
-    let (Some(first), true) = (entries.first(), entries.len() <= SERVE_RUN) else {
+    let [entry] = &entries[..] else {
         return Err(Invalid::Encoding);
     };
-    let owner = first.entry.owner;
-    if !verify(&owner, &serve_hash(names, nonce, server), sig) {
+    // The signature first: it is cheap, the proof of work isn't.
+    if !verify(&entry.entry.owner, &serve_hash(names, nonce, server), sig) {
         return Err(Invalid::Signature);
     }
-    let mut name = Name::new(first.entry.name);
-    for w in entries {
-        let mut s = Stamped::check(w.entry.clone(), names, pow)?;
-        let Some((a, h)) = w.anchor.clone() else {
-            return Err(Invalid::AnchorRoot);
-        };
-        s.offer_anchor(a, h, params, unix)?;
-        if s.entry.owner != owner || !name.insert(s) {
-            return Err(Invalid::Encoding);
-        }
-    }
-    // One run, all of it shown: a chain covering now holds every entry.
-    let Some(c) =
-        (name.chains(params).into_iter()).find(|c| c.covers(unix) && c.ids.len() == entries.len())
-    else {
-        return Err(Invalid::Dead); // a dead name's key, or entries off the run
-    };
-    Ok((owner, name.id, tier(params, c.seniority, unix)))
+    check_live(
+        names,
+        params,
+        pow,
+        entry,
+        &serve_hash(names, nonce, server),
+        sig,
+        unix,
+    )
 }
 
 /// Whether `entry` is a live name's (checked whole, its chain covering now) whose owner key signed `msg`: the owner key
@@ -388,7 +359,7 @@ fn check_live(
     Ok((owner, n.id))
 }
 
-/// An answer to a question: its [`choice`] key, the owner key it served with, the name id.
+/// An answer to a question: its [`rank`] key, the owner key it served with, the name id.
 pub(super) type Answered = (u128, [u8; 32], [u8; 32]);
 
 /// A question of ours (a server's or a member's).
@@ -398,7 +369,7 @@ pub(super) struct Ask {
     /// Rounds sent.
     pub round: usize,
     pub first: Option<Instant>,
-    /// Servers whose `serve` held, by their names client's key: the answer's [`choice`] key, the owner key it served
+    /// Servers whose `serve` held, by their names client's key: the answer's [`rank`] key, the owner key it served
     /// with and the name id.
     pub answers: BTreeMap<[u8; 32], Answered>,
 }
@@ -415,37 +386,34 @@ impl Ask {
     }
 
     /// Whether a `serve` with owner key `owner` on name `name` would be one more answer (a registration answering from
-    /// many keys is one answer): asked before its check, which costs up to [`SERVE_RUN`] entries'.
+    /// many keys is one answer): asked before its check.
     pub fn new_name(&self, owner: &[u8; 32], name: &[u8; 32]) -> bool {
         !(self.answers.values()).any(|(_, o, n)| o == owner || n == name)
     }
 
-    /// A `serve` from `from` that held, with owner key `owner` on name `name` and a run of tier `tier`: counted when
-    /// its rank is in the share of a round sent (an honest server answers only so), and once a name. Its [`choice`]
-    /// key.
+    /// A `serve` from `from` that held, with owner key `owner` on name `name`: counted when its rank is in the share
+    /// of a round sent (an honest server answers only so), and once a name. Its [`rank`].
     pub fn offer(
         &mut self,
         from: [u8; 32],
         owner: [u8; 32],
         name: [u8; 32],
-        tier: u32,
         now: Instant,
     ) -> Result<u128, &'static str> {
-        let h = share_hash(&self.nonce, &owner);
+        let c = rank(&share_hash(&self.nonce, &owner));
         let spread = SPREADS[self.round.clamp(1, SPREADS.len()) - 1];
-        if !in_share(rank(&h, tier), spread) {
+        if !in_share(c, spread) {
             return Err("outside the share asked");
         }
         if !self.new_name(&owner, &name) {
             return Err("a name that answered already");
         }
-        let c = choice(&h, tier);
         self.answers.insert(from, (c, owner, name));
         self.first.get_or_insert(now);
         Ok(c)
     }
 
-    /// The two answers first by [`choice`] (not the fastest, which an attacker could always be), and the others.
+    /// The two answers first by [`rank`] (not the fastest, which an attacker could always be), and the others.
     pub fn choose(&self) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
         let mut by: Vec<(u128, [u8; 32])> = self.answers.iter().map(|(k, a)| (a.0, *k)).collect();
         by.sort();
@@ -1028,19 +996,14 @@ impl Server {
             &m,
             unix,
         );
-        let (owner, name, tier) = match ok {
+        let (owner, name) = match ok {
             Ok(x) => x,
             Err(e) => {
                 self.log(format!("a serve refused: {e:?}"));
                 return self.cmds.push_back(Cmd::Forget(from));
             }
         };
-        match self
-            .ask
-            .as_mut()
-            .unwrap()
-            .offer(from, owner, name, tier, now)
-        {
+        match self.ask.as_mut().unwrap().offer(from, owner, name, now) {
             Ok(c) => self.cmds.push_back(Cmd::Served(from, c)),
             Err(why) => {
                 self.log(format!("a serve refused: {why}"));
@@ -1095,12 +1058,8 @@ impl Server {
         Ok(())
     }
 
-    /// The live names of ours to serve with: each one's key, the tail of its owning chain a `serve` shows (the last
-    /// entry and the run before it back to the first entry old enough for the top tier, [`SERVE_RUN`] at most) and that
-    /// tail's tier.
-    fn live_titles(&self, unix: u64) -> Vec<(SigningKey, Vec<WireEntry>, u32)> {
-        let half = (self.params.term / 2).max(1) as u64;
-        let old = unix.saturating_sub(TIERS as u64 * half);
+    /// The live names of ours to serve with: each one's key and its owning chain's last entry.
+    fn live_titles(&self, unix: u64) -> Vec<(SigningKey, WireEntry)> {
         (self.titles.iter())
             .filter_map(|(k, id)| {
                 let h = self.reg.get(id)?;
@@ -1109,37 +1068,23 @@ impl Server {
                 if o.owner != pk || !o.covers(unix) {
                     return None;
                 }
-                let mut tail = Vec::new();
-                for id in o.ids.iter().rev() {
-                    let e = h.name.get(id)?;
-                    tail.push(e);
-                    if tail.len() == SERVE_RUN || e.time().is_some_and(|t| t as u64 <= old) {
-                        break;
-                    }
-                }
-                tail.reverse();
-                let t = tier(&self.params, tail[0].time()?, unix);
-                Some((k.clone(), tail.into_iter().map(WireEntry::of).collect(), t))
+                Some((k.clone(), WireEntry::of(h.name.get(&o.last())?)))
             })
             .collect()
     }
 
     /// The live name of ours whose answer ranks lowest for `nonce`, and that rank.
-    fn live_title(
-        &self,
-        nonce: &[u8; 16],
-        unix: u64,
-    ) -> Option<(SigningKey, Vec<WireEntry>, u128)> {
+    fn live_title(&self, nonce: &[u8; 16], unix: u64) -> Option<(SigningKey, WireEntry, u128)> {
         (self.live_titles(unix).into_iter())
-            .map(|(k, run, t)| {
-                let r = rank(&share_hash(nonce, &run[0].entry.owner), t);
-                (k, run, r)
+            .map(|(k, e)| {
+                let r = rank(&share_hash(nonce, &e.entry.owner));
+                (k, e, r)
             })
             .min_by_key(|x| x.2)
     }
 
     fn on_question(&mut self, q: Question, region: usize, now: Instant, unix: u64) {
-        let Some((k, entries, r)) = self.live_title(&q.nonce, unix) else {
+        let Some((k, entry, r)) = self.live_title(&q.nonce, unix) else {
             self.stats.refused += 1;
             return;
         };
@@ -1197,7 +1142,7 @@ impl Server {
         }
         let m = Msg::Serve {
             nonce: q.nonce,
-            entries,
+            entries: vec![entry],
             sig,
         };
         self.xf.send(q.key, &m.encode(0), now);
@@ -1506,12 +1451,9 @@ impl Server {
     /// Our proof to server `to` that we hold a live name, for a run's first `sync`.
     fn proof_for(&self, to: &[u8; 32], unix: u64) -> Option<Box<Proof>> {
         let me = self.key?;
-        let (k, run, _) = self.live_titles(unix).into_iter().next()?;
+        let (k, entry) = self.live_titles(unix).into_iter().next()?;
         let sig = sign(&k, &peer_hash(&self.names, to, &me));
-        Some(Box::new(Proof {
-            entry: run.into_iter().last()?,
-            sig,
-        }))
+        Some(Box::new(Proof { entry, sig }))
     }
 
     /// A partner that broke the protocol: the round with it ends (what it sent so far stays, checked as anything is).

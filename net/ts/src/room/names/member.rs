@@ -31,8 +31,7 @@ use super::{
     id::{RoomNames, split},
     server::{
         ACCEPT_MAX, Ask, CHOOSE_AFTER, Cmd, GIVE_UP, Input, NOBODY_FIRST, NOBODY_MAX,
-        QUESTIONS_PER_SECOND, ROUND_AT, SERVE_RUN, SPREADS, UNITS_PER_TURN, check_serve, random,
-        room_in,
+        QUESTIONS_PER_SECOND, ROUND_AT, SPREADS, UNITS_PER_TURN, check_serve, random, room_in,
     },
     store::{anchor_tag, zone_tag},
     wire::{GetMode, Item, Msg, Rd, Transfers, WireEntry},
@@ -66,6 +65,8 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 pub const MAX_KEPT: usize = 1024;
 const MAX_LOOKUPS: usize = 64;
 const MAX_NEGATIVE: usize = 1024;
+/// The most entries a server's answer may show to lead from a kept last entry to its release.
+const RELEASE_RUN: usize = 8;
 /// A member's record's version byte (a server's is 1: store.rs).
 const RECORD_VERSION: u8 = 2;
 
@@ -764,7 +765,7 @@ impl Member {
             &m,
             unix,
         );
-        let (owner, name, tier) = match ok {
+        let (owner, name) = match ok {
             Ok(x) => x,
             Err(e) => {
                 self.stats.refused += 1;
@@ -772,12 +773,7 @@ impl Member {
                 return self.cmds.push_back(Cmd::Forget(from));
             }
         };
-        match self
-            .ask
-            .as_mut()
-            .unwrap()
-            .offer(from, owner, name, tier, now)
-        {
+        match self.ask.as_mut().unwrap().offer(from, owner, name, now) {
             Ok(c) => self.cmds.push_back(Cmd::Served(from, c)),
             Err(why) => {
                 self.stats.refused += 1;
@@ -787,7 +783,7 @@ impl Member {
         }
     }
 
-    /// The two answers first by `choice` (the older tier, then the lower hash) are kept; the others are let go.
+    /// The two answers with the lowest rank are kept; the others are let go.
     fn choose(&mut self, now: Instant) {
         let a = self.ask.take().unwrap();
         self.nobody = None;
@@ -939,7 +935,7 @@ impl Member {
                     // A member checks the last entry only, unless it asked for the run, or the server shows the kept
                     // chain's release (and what leads to it from the kept last entry).
                     let release = kept_last.is_some()
-                        && it.entries.len() <= SERVE_RUN
+                        && it.entries.len() <= RELEASE_RUN
                         && it
                             .entries
                             .last()

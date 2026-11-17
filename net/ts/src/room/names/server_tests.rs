@@ -10,8 +10,8 @@ use super::{
     Invalid,
     entry::{Entry, Kind, Stamped},
     server::{
-        ANSWERS_PER_SECOND, Cmd, Config, Input, MAX_BYTES, MAX_NAMES, SPREADS, Server, TIERS,
-        Title, UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
+        ANSWERS_PER_SECOND, Cmd, Config, Input, MAX_BYTES, MAX_NAMES, SPREADS, Server, Title,
+        UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
     },
     store::read_record,
     testkit::{Bitcoin, DAY, HOUR, Services, params},
@@ -235,7 +235,7 @@ fn items_messages_and_transfers_round_trip() {
         Msg::SyncAnswer(SyncAnswer::Listing(vec![([1; 8], [2; 8])])),
         Msg::Serve {
             nonce: [5; 16],
-            entries: item.entries.clone(),
+            entries: item.entries[..1].to_vec(),
             sig: [6; 64],
         },
     ] {
@@ -336,10 +336,7 @@ fn the_answer_rules_counts() {
                         if matches!(cmd, Cmd::CallBack { .. }) {
                             c += 1;
                             // The rule's share, from outside.
-                            assert!(in_share(
-                                rank(&share_hash(&nonce, &owners[i]), TIERS),
-                                *spread
-                            ));
+                            assert!(in_share(rank(&share_hash(&nonce, &owners[i])), *spread));
                         }
                     }
                     bus.s[i].input(Input::Gone(asker), now, unix);
@@ -525,39 +522,92 @@ fn serve_is_a_live_names_signature_over_the_nonce_and_the_servers_key() {
         check(&mut b, &nonce, &me, std::slice::from_ref(&w), &dsig).map(|_| ()),
         Ok(())
     );
-    // The run shown is the chain's tail, and its age is the tier: the server's title (20 days) is tier 1; a claim
-    // made yesterday tier 0; an entry off the run, or another name's, refuses the serve.
-    assert_eq!(
-        entry.len(),
-        2,
-        "the whole title: it's younger than the top tier"
-    );
-    assert_eq!(check(&mut b, &nonce, &me, &entry, &sig).map(|x| x.2), Ok(1));
-    assert_eq!(
-        check(&mut b, &nonce, &me, &entry[1..], &sig).map(|x| x.2),
-        Ok(0),
-        "the last entry alone: its own age"
-    );
+    // One entry, the owning chain's last (R3: no run, no tier): two refuse the serve, at the check and at the wire.
+    assert_eq!(entry.len(), 1, "the last entry alone");
+    assert_eq!(entry[0].entry.kind, Kind::Renew, "the title's last entry");
     let off = b.at(Kind::Claim, &k, "dead", [0; 32], t(12));
     let both = [w.clone(), WireEntry::of(&off)];
     assert!(
         check(&mut b, &nonce, &me, &both, &dsig).is_err(),
-        "off the run"
-    );
-    let other = b.at(Kind::Claim, &k, "other", [0; 32], t(10));
-    let both = [w, WireEntry::of(&other)];
-    assert!(
-        check(&mut b, &nonce, &me, &both, &dsig).is_err(),
-        "another name"
+        "two entries"
     );
     let long = Msg::Serve {
         nonce,
-        entries: vec![entry[0].clone(); super::server::SERVE_RUN + 1],
+        entries: vec![entry[0].clone(); 2],
         sig,
     };
+    assert!(Msg::decode(&long.encode(0)).is_err(), "two entries");
+}
+
+/// R3 (docs/plans/room-names-r3.md): "who serves?" is the plain draw again. A server answers and is kept by the hash of
+/// its owner key alone: a name held for months ranks no better than one claimed yesterday (N5a's tiers are out).
+#[test]
+fn who_serves_is_the_plain_draw() {
+    let mut b = Bitcoin::new(ROOM, 44);
+    let (ok, old) = b.title(
+        1,
+        "old",
+        t(120),
+        &(1..8).map(|r| t(120 - 15 * r)).collect::<Vec<_>>(),
+        [9; 32],
+    );
+    let (yk, young) = b.title(2, "young", t(2), &[], [9; 32]);
+    let mk = |key, item| {
+        let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+        s.start([1; 32], Instant::now());
+        s.synced = true;
+        while s.poll().is_some() {}
+        s
+    };
+    let (mut so, mut sy) = (mk(ok, old.clone()), mk(yk, young.clone()));
+    let owner = |it: &Item| it.entries[0].entry.owner;
+    let (oo, yo) = (owner(&old), owner(&young));
+    let mut now = Instant::now();
+    let (mut young_first, mut young_answers) = (0, 0);
+    for k in 0..200u32 {
+        now += Duration::from_secs(2);
+        let nonce: [u8; 16] =
+            std::array::from_fn(|i| (k as usize * 37 + i * 11) as u8 ^ (k >> 2) as u8);
+        let mut asker = [0xee; 32];
+        asker[..4].copy_from_slice(&k.to_le_bytes());
+        let q = Question {
+            key: asker,
+            region: 0,
+            time: T,
+            nonce,
+            spread: 3,
+        };
+        let answered = |s: &mut Server| {
+            s.input(Input::Question { q, region: 0 }, now, T);
+            let mut c = false;
+            while let Some(cmd) = s.poll() {
+                c |= matches!(cmd, Cmd::CallBack { .. });
+            }
+            s.input(Input::Gone(asker), now, T);
+            while s.poll().is_some() {}
+            c
+        };
+        let (a_old, a_young) = (answered(&mut so), answered(&mut sy));
+        assert_eq!(a_old, in_share(rank(&share_hash(&nonce, &oo)), 3));
+        assert_eq!(a_young, in_share(rank(&share_hash(&nonce, &yo)), 3));
+        young_answers += a_young as usize;
+        // Of the two, the asker keeps the lower hash, whatever the ages.
+        let mut ask = super::server::Ask::new(nonce, now);
+        ask.round = SPREADS.len();
+        let co = ask.offer([1; 32], oo, old.id, now).unwrap();
+        let cy = ask.offer([2; 32], yo, young.id, now).unwrap();
+        young_first += (cy < co) as usize;
+    }
+    eprintln!(
+        "the young name answered {young_answers} of 200 at 1/8, ranked first {young_first} of 200"
+    );
     assert!(
-        Msg::decode(&long.encode(0)).is_err(),
-        "past SERVE_RUN entries"
+        (10..=45).contains(&young_answers),
+        "{young_answers}: about 1/8"
+    );
+    assert!(
+        (70..=130).contains(&young_first),
+        "{young_first}: about half"
     );
 }
 

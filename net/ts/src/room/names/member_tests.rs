@@ -683,7 +683,7 @@ impl Fake {
         Fake {
             key,
             sk,
-            entries: it.entries.clone(),
+            entries: vec![it.entries.last().unwrap().clone()],
             spread,
             outside: false,
             xf: Default::default(),
@@ -694,10 +694,9 @@ impl Fake {
         self.entries[0].entry.owner
     }
 
-    /// Its answer's rank for `nonce` (its run is 20 days old).
+    /// Its answer's rank for `nonce`.
     fn rank(&self, nonce: &[u8; 16]) -> u128 {
-        let tier = super::server::tier(&params(), t(20), T);
-        super::server::rank(&super::server::share_hash(nonce, &self.owner()), tier)
+        super::server::rank(&super::server::share_hash(nonce, &self.owner()))
     }
 }
 
@@ -993,78 +992,6 @@ fn a_history_is_checked_once_an_entry_in_slices() {
     assert!(m.stats.histories >= 1, "asked for history");
     assert!(m.stats.checked <= 2 * 20 + 4, "{} checked", m.stats.checked);
     assert!(most <= 6, "{most} entries checked in one turn");
-}
-
-/// Review 2's finding 2: claims on junk ids are cheap, so a Sybil with 128 fresh registrations against five honest
-/// servers that have held their names for months must not be both of most askers' servers. An answer ranks by its
-/// owner key's hash and its chain's age (what the `serve` shows of it), so tickets cost time, not only work.
-#[test]
-fn cheap_fresh_registrations_dont_buy_both_of_an_askers_servers() {
-    let mut b = Bitcoin::new(ROOM, 40);
-    let mut servers = Vec::new();
-    // Five honest servers, each a name held 120 days, renewed every 15.
-    for k in 0..5u8 {
-        let renewals: Vec<u32> = (1..8).map(|r| 120 - 15 * r).chain([2]).collect();
-        let (key, item) = {
-            let key = b.key(200 + k, &format!("old{k}"));
-            let mut run = vec![b.at(Kind::Claim, &key, &format!("old{k}"), [0; 32], t(120))];
-            for r in &renewals {
-                let prev = run.last().unwrap().id();
-                run.push(b.at(Kind::Renew, &key, &format!("old{k}"), prev, t(*r)));
-            }
-            (
-                key.to_bytes().into(),
-                b.item(&format!("old{k}"), &run, None),
-            )
-        };
-        servers.push(Server::new(
-            ROOM,
-            Config {
-                params: params(),
-                titles: vec![Title { key, item }],
-                max_names: MAX_NAMES,
-                max_bytes: MAX_BYTES,
-            },
-            T,
-        ));
-    }
-    // 128 junk registrations, claimed two days ago.
-    for k in 0..128u32 {
-        let (key, item) = b.title((k % 200) as u8 + 1, &format!("junk{k}"), t(2), &[], [1; 32]);
-        servers.push(Server::new(
-            ROOM,
-            Config {
-                params: params(),
-                titles: vec![Title { key, item }],
-                max_names: MAX_NAMES,
-                max_bytes: MAX_BYTES,
-            },
-            T,
-        ));
-    }
-    let mut bus = Bus::new(servers, member());
-    let honest: BTreeSet<[u8; 32]> = bus.keys[..5].iter().copied().collect();
-    const QUESTIONS: usize = 40;
-    let (mut both_junk, mut asked) = (0, 0);
-    for k in 0..QUESTIONS {
-        bus.m.stop();
-        bus.advance(Duration::from_secs(2)); // a question a second
-        bus.mkey = [0x40 + k as u8; 32];
-        let (mk, now) = (bus.mkey, bus.now);
-        bus.m.start(mk, now);
-        assert_eq!(bus.resolve(&format!("ask{k}")).0, Answer::Nx);
-        let held = bus.m.servers().to_vec();
-        if held.len() == 2 {
-            asked += 1;
-            both_junk += held.iter().all(|s| !honest.contains(s)) as usize;
-        }
-    }
-    eprintln!("both servers junk: {both_junk} of {asked}");
-    assert!(asked >= QUESTIONS - 2, "two servers held: {asked}");
-    assert!(
-        both_junk <= QUESTIONS / 10,
-        "both junk: {both_junk} of {asked}"
-    );
 }
 
 /// Review 2's finding 5: a release the servers hold ends what a member keeps (the servers show it, continuing the

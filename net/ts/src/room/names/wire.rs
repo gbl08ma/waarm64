@@ -367,9 +367,8 @@ pub enum SyncAnswer {
 /// A registry message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
-    /// A server answering a question: the tail of a live name's owning chain (its last entry and the run before it back
-    /// to an entry old enough for the top tier, [`super::server::SERVE_RUN`] at most, with their anchors and headers)
-    /// and the owner key's signature over the asker's nonce and the server's names key.
+    /// A server answering a question: the last entry of a live name's owning chain (one entry, with its anchor and
+    /// header) and the owner key's signature over the asker's nonce and the server's names key.
     Serve {
         nonce: [u8; 16],
         entries: Vec<WireEntry>,
@@ -547,7 +546,7 @@ impl Msg {
                 let nonce = r.a()?;
                 let it = Item::read(&mut r)?;
                 let sig = r.a()?;
-                if it.entries.is_empty() || it.entries.len() > super::server::SERVE_RUN {
+                if it.entries.len() != 1 {
                     return Err(Invalid::Encoding);
                 }
                 Msg::Serve {
