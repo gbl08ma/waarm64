@@ -3434,7 +3434,7 @@ impl Client {
         match c {
             Cmd::Publish { nonce, spread } => self.publish_question(nonce, spread, now),
             Cmd::Accept { until, max } => self.names_window.open(until, max),
-            Cmd::Served(k) => self.names_window.served(&k),
+            Cmd::Served(k, r) => self.names_window.served(&k, r),
             Cmd::CallBack { key, region } => {
                 // A peer we have (a server of ours asking again) is answered on its session.
                 if !self.peers.values().any(|p| p.key == key) {

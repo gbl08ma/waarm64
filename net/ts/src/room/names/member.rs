@@ -732,6 +732,14 @@ impl Member {
         if a.answers.contains_key(&from) {
             return;
         }
+        if let Msg::Serve { entries, .. } = &m
+            && let Some(e) = entries.first()
+            && !a.new_name(&e.entry.owner, &e.entry.name)
+        {
+            self.stats.refused += 1;
+            self.log("a serve refused: a name that answered already".into());
+            return self.cmds.push_back(Cmd::Forget(from));
+        }
         let ok = check_serve(
             &self.names,
             &self.params,
@@ -741,7 +749,7 @@ impl Member {
             &m,
             unix,
         );
-        let (owner, name) = match ok {
+        let (owner, name, tier) = match ok {
             Ok(x) => x,
             Err(e) => {
                 self.stats.refused += 1;
@@ -749,15 +757,22 @@ impl Member {
                 return self.cmds.push_back(Cmd::Forget(from));
             }
         };
-        if let Err(why) = self.ask.as_mut().unwrap().offer(from, owner, name, now) {
-            self.stats.refused += 1;
-            self.log(format!("a serve refused: {why}"));
-            return self.cmds.push_back(Cmd::Forget(from));
+        match self
+            .ask
+            .as_mut()
+            .unwrap()
+            .offer(from, owner, name, tier, now)
+        {
+            Ok(c) => self.cmds.push_back(Cmd::Served(from, c)),
+            Err(why) => {
+                self.stats.refused += 1;
+                self.log(format!("a serve refused: {why}"));
+                self.cmds.push_back(Cmd::Forget(from));
+            }
         }
-        self.cmds.push_back(Cmd::Served(from));
     }
 
-    /// The two answers with the lowest hash are kept; the others are let go.
+    /// The two answers first by `choice` (the older tier, then the lower hash) are kept; the others are let go.
     fn choose(&mut self, now: Instant) {
         let a = self.ask.take().unwrap();
         self.nobody = None;
@@ -862,6 +877,9 @@ impl Member {
 
     fn gone(&mut self, k: [u8; 32], now: Instant, unix: u64) {
         self.xf.forget(&k);
+        if let Some(a) = &mut self.ask {
+            a.answers.remove(&k); // let go by the accept window for a better one
+        }
         let mine: Vec<([u8; 32], u32)> =
             self.reqs.keys().filter(|(p, _)| *p == k).copied().collect();
         for (p, x) in mine {

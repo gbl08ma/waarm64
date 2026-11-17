@@ -387,11 +387,12 @@ pub enum SyncAnswer {
 /// A registry message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
-    /// A server answering a question: one entry of a live name (with its anchor and headers) and
-    /// that entry's owner key's signature over the asker's nonce and the server's names key.
+    /// A server answering a question: the tail of a live name's owning chain (its last entry and the run before it back
+    /// to an entry old enough for the top tier, [`super::server::SERVE_RUN`] at most, with their anchors and headers)
+    /// and the owner key's signature over the asker's nonce and the server's names key.
     Serve {
         nonce: [u8; 16],
-        entry: Box<WireEntry>,
+        entries: Vec<WireEntry>,
         sig: [u8; 64],
     },
     /// The ids `id` (a prefix of 8 or 32 bytes) asked for, with what the asker holds.
@@ -463,11 +464,15 @@ impl Msg {
         o.push(ty);
         w32(&mut o, reply);
         match self {
-            Msg::Serve { nonce, entry, sig } => {
+            Msg::Serve {
+                nonce,
+                entries,
+                sig,
+            } => {
                 o.extend_from_slice(nonce);
                 let it = Item {
-                    id: entry.entry.name,
-                    entries: vec![(**entry).clone()],
+                    id: entries.first().map_or([0; 32], |e| e.entry.name),
+                    entries: entries.clone(),
                     zone: None,
                 };
                 o.extend(it.encode());
@@ -562,11 +567,12 @@ impl Msg {
                 let nonce = r.a()?;
                 let it = Item::read(&mut r)?;
                 let sig = r.a()?;
-                let [entry]: [WireEntry; 1] =
-                    it.entries.try_into().map_err(|_| Invalid::Encoding)?;
+                if it.entries.is_empty() || it.entries.len() > super::server::SERVE_RUN {
+                    return Err(Invalid::Encoding);
+                }
                 Msg::Serve {
                     nonce,
-                    entry: Box::new(entry),
+                    entries: it.entries,
                     sig,
                 }
             }

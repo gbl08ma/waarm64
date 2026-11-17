@@ -10,8 +10,8 @@ use super::{
     Invalid,
     entry::{Entry, Kind, Stamped},
     server::{
-        ANSWERS_PER_SECOND, Cmd, Config, Input, MAX_BYTES, MAX_NAMES, SPREADS, Server, Title,
-        UNITS_PER_TURN, check_serve, in_share, share_hash,
+        ANSWERS_PER_SECOND, Cmd, Config, Input, MAX_BYTES, MAX_NAMES, SPREADS, Server, TIERS,
+        Title, UNITS_PER_TURN, check_serve, in_share, rank, share_hash,
     },
     store::read_record,
     testkit::{Bitcoin, DAY, EASY, HOUR, header, params},
@@ -122,7 +122,7 @@ impl Bus {
             Cmd::Store { id, record } => {
                 self.stored[i].insert(id, record);
             }
-            Cmd::Accept { .. } | Cmd::Log(_) | Cmd::Served(_) => {}
+            Cmd::Accept { .. } | Cmd::Log(_) | Cmd::Served(..) => {}
         }
     }
 
@@ -232,7 +232,7 @@ fn items_messages_and_transfers_round_trip() {
         Msg::SyncAnswer(SyncAnswer::Listing(vec![([1; 8], [2; 8])])),
         Msg::Serve {
             nonce: [5; 16],
-            entry: Box::new(item.entries[1].clone()),
+            entries: item.entries.clone(),
             sig: [6; 64],
         },
     ] {
@@ -280,14 +280,14 @@ fn items_messages_and_transfers_round_trip() {
 #[test]
 fn the_answer_rules_counts() {
     let mut b = Bitcoin::new(ROOM, 2);
-    // Each server its own name: the share goes by the owner key served with.
+    // Each server its own name, held long enough for the top tier: the share goes by the owner key served with.
     let titles: Vec<([u8; 32], Item)> = (0..500u32)
         .map(|k| {
             b.title(
                 (k % 250) as u8 + 1,
                 &format!("server{k}"),
-                t(20),
-                &[t(5)],
+                t(95),
+                &[t(80), t(65), t(50), t(35), t(20), t(5)],
                 [9; 32],
             )
         })
@@ -332,7 +332,10 @@ fn the_answer_rules_counts() {
                         if matches!(cmd, Cmd::CallBack { .. }) {
                             c += 1;
                             // The rule's share, from outside.
-                            assert!(in_share(&share_hash(&nonce, &owners[i]), *spread));
+                            assert!(in_share(
+                                rank(&share_hash(&nonce, &owners[i]), TIERS),
+                                *spread
+                            ));
                         }
                     }
                     bus.s[i].input(Input::Gone(asker), now, unix);
@@ -469,7 +472,7 @@ fn serve_is_a_live_names_signature_over_the_nonce_and_the_servers_key() {
     }
     let Some(Msg::Serve {
         nonce: n,
-        entry,
+        entries: entry,
         sig,
     }) = serve
     else {
@@ -478,10 +481,10 @@ fn serve_is_a_live_names_signature_over_the_nonce_and_the_servers_key() {
     assert_eq!(n, nonce);
     let (names, p) = (b.names.clone(), b.params.clone());
     let check =
-        |b: &mut Bitcoin, nonce: &[u8; 16], server: &[u8; 32], e: &WireEntry, sig: &[u8; 64]| {
+        |b: &mut Bitcoin, nonce: &[u8; 16], server: &[u8; 32], e: &[WireEntry], sig: &[u8; 64]| {
             let m = Msg::Serve {
                 nonce: *nonce,
-                entry: Box::new(e.clone()),
+                entries: e.to_vec(),
                 sig: *sig,
             };
             check_serve(&names, &p, &mut b.pow, &[3; 16], server, &m, T)
@@ -508,13 +511,50 @@ fn serve_is_a_live_names_signature_over_the_nonce_and_the_servers_key() {
     let dsig = super::entry::sign(&k, &msg);
     let w = WireEntry::of(&dead);
     assert!(
-        check(&mut b, &nonce, &me, &w, &dsig).is_err(),
+        check(&mut b, &nonce, &me, &[w], &dsig).is_err(),
         "a dead name's key"
     );
     // The same name alive, the same way: taken.
     let alive = b.at(Kind::Claim, &k, "dead", [0; 32], t(10));
     let w = WireEntry::of(&alive);
-    assert_eq!(check(&mut b, &nonce, &me, &w, &dsig).map(|_| ()), Ok(()));
+    assert_eq!(
+        check(&mut b, &nonce, &me, std::slice::from_ref(&w), &dsig).map(|_| ()),
+        Ok(())
+    );
+    // The run shown is the chain's tail, and its age is the tier: the server's title (20 days) is tier 1; a claim
+    // made yesterday tier 0; an entry off the run, or another name's, refuses the serve.
+    assert_eq!(
+        entry.len(),
+        2,
+        "the whole title: it's younger than the top tier"
+    );
+    assert_eq!(check(&mut b, &nonce, &me, &entry, &sig).map(|x| x.2), Ok(1));
+    assert_eq!(
+        check(&mut b, &nonce, &me, &entry[1..], &sig).map(|x| x.2),
+        Ok(0),
+        "the last entry alone: its own age"
+    );
+    let off = b.at(Kind::Claim, &k, "dead", [0; 32], t(12));
+    let both = [w.clone(), WireEntry::of(&off)];
+    assert!(
+        check(&mut b, &nonce, &me, &both, &dsig).is_err(),
+        "off the run"
+    );
+    let other = b.at(Kind::Claim, &k, "other", [0; 32], t(10));
+    let both = [w, WireEntry::of(&other)];
+    assert!(
+        check(&mut b, &nonce, &me, &both, &dsig).is_err(),
+        "another name"
+    );
+    let long = Msg::Serve {
+        nonce,
+        entries: vec![entry[0].clone(); super::server::SERVE_RUN + 1],
+        sig,
+    };
+    assert!(
+        Msg::decode(&long.encode(0)).is_err(),
+        "past SERVE_RUN entries"
+    );
 }
 
 #[test]
@@ -995,7 +1035,7 @@ fn partner_answers_with(
                         super::entry::tagged("waarm64/names/serve", &[&b.names.value, &nonce, &pk]);
                     let m = Msg::Serve {
                         nonce,
-                        entry: Box::new(last.clone()),
+                        entries: vec![last.clone()],
                         sig: super::entry::sign(&sk, &h),
                     };
                     x.send(vk, &m.encode(0), now);
@@ -1220,7 +1260,7 @@ fn junk_handshakes_dont_shut_servers_out_of_a_questions_window() {
         assert!(w.room(t0));
         assert_eq!(w.admit([k; 32], t0), None);
     }
-    w.served(&[0; 32]);
+    w.served(&[0; 32], 5);
     // An honest server's call back a second later: a session that never served is let go for it.
     let t1 = t0 + Duration::from_millis(1100);
     assert!(w.room(t1), "room for a server's call back");
@@ -1239,6 +1279,37 @@ fn junk_handshakes_dont_shut_servers_out_of_a_questions_window() {
         "everyone in it new or served"
     );
     assert!(!w.room(t0 + Duration::from_millis(2500)));
+}
+
+/// Review 2's finding 2: cheap registrations that answer first and serve properly mustn't fill every place. With the
+/// window full of keys that served, a newcomer takes the place of the worst ranked, never of the best two.
+#[test]
+fn served_keys_ranked_worst_make_room_but_the_best_two_stay() {
+    use super::server::{ACCEPT_MAX, AcceptWindow};
+    let mut w = AcceptWindow::default();
+    let t0 = Instant::now();
+    w.open(t0 + Duration::from_millis(2500), ACCEPT_MAX);
+    for k in 0..ACCEPT_MAX as u8 {
+        assert!(w.room(t0));
+        assert_eq!(w.admit([k; 32], t0), None);
+        w.served(&[k; 32], 1000 - k as u128); // the later, the better
+    }
+    let t1 = t0 + Duration::from_millis(100);
+    assert!(w.room(t1), "room for an honest server answering late");
+    assert_eq!(
+        w.admit([200; 32], t1),
+        Some([0; 32]),
+        "the worst ranked goes"
+    );
+    w.served(&[200; 32], 1);
+    for _ in 0..40 {
+        let g = w.admit([201; 32], t1).expect("room");
+        assert!(
+            g != [200; 32] && g != [ACCEPT_MAX as u8 - 1; 32],
+            "{g:?}: one of the best two"
+        );
+        w.served(&[201; 32], 2000);
+    }
 }
 
 #[test]

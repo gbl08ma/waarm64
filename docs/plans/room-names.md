@@ -365,8 +365,10 @@ Servers subscribe to that tag (their names client does), and drop a question as 
 copies through other relays, the relay's budget, an hour off the clock, our own key, a region outside the link), its
 copies by nonce **and round** (the three rounds share a nonce).
 
-- **Who answers.** A server answers when `BLAKE2s(nonce, owner key)`'s top `spread` bits are zero (the share), for
-  the owner key of one of its live names (it serves the one with the lowest hash), it has synced, and its budget
+- **Who answers.** A server answers when its answer's **rank** falls in the share: the top 64 bits of `BLAKE2s(nonce,
+  owner key)`, doubled once for each **tier** its name's chain is short of the top (a tier is a half term of the
+  chain's age, from the first entry of the run its `serve` shows, six at most: 90 days), must have their top `spread`
+  bits zero; for the owner key of one of its live names (it serves the one with the lowest rank), it has synced, and its budget
   allows (4 a second, **apart from** the node's call backs and trials: a budget of the names client's own, in a client
   of its own, so a flood of questions can't keep a server's own lookups out). The hash is over the owner key, not the
   names client's: an owner key costs a registration, a names client's key nothing, so keys made after the nonce is
@@ -374,7 +376,7 @@ copies by nonce **and round** (the three rounds share a nonce).
   a part of a message, doesn't count), or 10 minutes after it came whatever it sends, and with every place taken a
   newcomer takes the place of the one held longest (but never a sync partner's). The asker sends `spread` 6 (1/64),
   then 3 (1/8) after 0.4 s, then 0 (everyone) after 1 s, and stops at the first round that brings an answer. Measured
-  (`server_tests.rs`, 200 questions each, each server its own name): one server answers in the third round (176 of
+  (`server_tests.rs`, 200 questions each, each server its own name held for the top tier): one server answers in the third round (176 of
   200; 2 in the first, 22 in the second); twenty in the second (137; 44 in the first, by 1.1 servers, 19 in the
   third); 500 in the first, every time, by 7.6 servers on average. (A forged question can still ask everyone at once: each server spends one
   handshake from that separate budget. rooms.md "Spam".)
@@ -382,16 +384,29 @@ copies by nonce **and round** (the three rounds share a nonce).
   servers asking at once would each start a handshake to the other, and crossed handshakes both fail (rooms.md
   "Finding a peer"); by then the lower key's call back carries both ways.
 - **The answer** is a call back to the asker's region (none when a session with it is up), then a `serve` message:
-  the owning chain's last entry of a live name of the server's (its anchor and both headers) and a BIP-340 signature
-  by that name's owner key over the tagged hash (`waarm64/names/serve`) of the room's value, the asker's nonce and the
-  server's names key. The asker checks the entry whole (signature, proof of work, headers, anchor) and that its chain
-  covers now (`check_serve`). So only a node that holds a live name's secret can serve, which costs a registration.
+  the tail of the owning chain of a live name of the server's, its last entry and the run before it back to the first
+  entry 90 days old (the top tier's age) or the claim, 8 entries at most (`SERVE_RUN`: a name renewed at half a term
+  needs 7), each with its anchor and headers, and a BIP-340 signature by that name's owner key over the tagged hash
+  (`waarm64/names/serve`) of the room's value, the asker's nonce and the server's names key. The asker checks every
+  entry whole (signature, proof of work, headers, anchor), that they make one unbroken run with nothing off it and
+  that it covers now, and takes the tier from the run's first entry (`check_serve`; a second `serve` of a name that
+  answered already is refused before it is checked). So only a node that holds a live name's secret can serve, which
+  costs a registration, and only one that has held it for months ranks at the top, which costs time.
 - **The choice.** An answer counts when its owner key's hash falls in the share of a round already sent (an honest
   server answers only so), and once a name: a second `serve` with an owner key or a name id that answered already is
   refused, so one registration answering from many names-client keys is one answer. The asker waits 0.3 s from the
-  first answer, then keeps the two with the lowest `BLAKE2s(nonce, owner key)`: not the two fastest, which an
-  attacker could always be, nor the lowest names-client keys, which it could grind for; the others are let go. Both
-  of a member's servers are an attacker's only when its registrations rank below every honest server's. A
+  first answer, then keeps two: **the older tier first, then the lower `BLAKE2s(nonce, owner key)`** (`choice`): not
+  the two fastest, which an attacker could always be, nor the lowest names-client keys, which it could grind for; the
+  others are let go. **Why the tier** (review 2's finding 2): a claim on a junk id costs a minute of proof of work and
+  a share of one stamp, so with the hash alone 128 junk registrations, an hour of a core a term, were both servers of
+  ~93% of questions against five honest ones; ranked by age, a registration made yesterday wins a place only against
+  servers as young as it is, and rounds sample it 1/64 as often, so a Sybil needs registrations held for three months
+  and renewed all along (`member_tests.rs`: 128 two-day-old claims against five 120-day-old servers, both servers the
+  attacker's in at most 1 of 40 questions, 22 of 30 before). In a room younger than that, servers rank by age among
+  themselves: rounds sample young ones as rarely, so more questions reach the last round (everyone). The accept window
+  does the same: once full of keys that served, a newcomer takes the place of the last by that order, never of the best
+  two, so junk answering first can't fill it. Both of a member's servers are an attacker's only when its registrations
+  are as old as the honest servers' and rank below them. A
   member that has only one answer by then asks everyone at once (the last round, and 0.3 s again), so it holds two where the
   room has two: a lone server could leave a name out or show a younger chain unseen (N3: in a room of two servers, a
   quarter of questions stopped at one). A member holds its servers while it asks and for 3 minutes after the last
@@ -692,13 +707,13 @@ names.
 | Race a new registration | none | nothing: a claim is public only once anchored, and the dialog's check doesn't name the id |
 | Tie a claim it somehow knew of | several claims in the same block | wins most ties: the tie-break can be ground. It needs the name before the claim is public |
 | Hash a dictionary against a server's ids | one registration, then cheap | learns which guessable names exist and where they point; nothing about the others |
-| Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its owner key's hash, says otherwise; both servers the attacker's (two registrations, both ranking below every honest server's for that question): the member sees what it shows (it can't forge) |
+| Serve, and leave names out or serve an old zone | one registration | a member it serves misses a name or a change until its other server, chosen by its chain's age and its owner key's hash, says otherwise; both servers the attacker's (registrations as old as the honest servers', renewed all along, ranking below them for that question; junk registrations made lately rank after every older server): the member sees what it shows (it can't forge) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |
 | Forge a Bitcoin header | seven linked headers at the floor of their time: about 3.5 blocks' work at the schedule's half (0.11 of a block at its 1/64, a release unrenewed for 15 weeks), once | the forger's run, timed (say) 36 days back with a Merkle root of its own, anchors claims on any number of names in every room at that time; renewed with real stamps, they beat every chain claimed since, and the run serves again for any number of claims: **accepted for now** (the user, 2026-11-17: review 1's finding 6). Ideas for servers to check later, which would make servers ask an outside service and need the user's OK: docs/backlog.md |
 | Calendars all down | | no new claims or renewals; existing names resolve; `GRACE` is the margin |
 | Explorers all down | | the same: only the agent uses them |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held |
-| Fill an asker's accept window | a handshake (a DERP connection) per place | a place held a second without a `serve` goes to the next newcomer |
+| Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by age and hash (never the best two's) |
 | Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check; `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
 | Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below |
 
