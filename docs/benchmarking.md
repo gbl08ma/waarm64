@@ -137,6 +137,13 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
   (`bench/mem/probe.ts`), the page's own accounting (`__status.memory`) and, unless `MEMLOG_UASM=0`,
   `measureUserAgentSpecificMemory` (50-60 s a call); `bench/mem/calibrate.ts` compares the page's estimate with smaps
   ([jit.md](jit.md) "The page's memory signal").
+- **On the Mac** (the JIT's ranking host; PERF's tier 3): `bench/gpu/ab-mac.sh <outdir> <rounds>
+  <arm>=<core.wasm>[@<tree>]...` runs the pages session from `target/snapbench/pages.waarm64snap` (`FROM`) through
+  `bench/gpu/sway-mac.sh`, `PHASE_S=1` (a second of each page's frames: Firefox's starts and the pages' loads are the
+  measure), each round starting with the next arm, into the same layout as `ab.sh` (so `ab-summary.ts` reads it:
+  `pagesS` is the starts and loads summed, `startsS` the starts), with `mac-leftovers.sh --kill` after each session.
+  `@<tree>` runs an arm from another checkout's web/ (a core of an older ABI: `../waarm64-base` at its commit,
+  sharing this `target/`). ~4 min a session (bench/boot/REPORT.md "PERF loop 35").
 - **Turnaround** (the dev VM, Firefox's pages session, 160 against 320 MiB and an A/A, three rounds): from boot a
   session is 441-490 s, 72 s of it the boot, the login and sway; from the snapshot 376-428 s, 11 s of it the restore.
   Nine sessions: 70 min from boot, 59 from the snapshot. The measured phase is the cost: what saves time is a shorter

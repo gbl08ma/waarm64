@@ -375,8 +375,8 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
 
 ## Preemption (parallel SMP's polled code)
 
-In parallel SMP (what the page runs) compiled code carries **no step budget** (PERF loop 31; the user's decisions in
-PERF-HANDOVER.md "Preemption without the budget"): `Config::polled` (set for a VM with `VmConfig.smp` = 1) emits no
+In parallel SMP (what the page runs) compiled code carries **no step budget** (PERF loops 30-35; the user's decision,
+[decisions.md](decisions.md) "JIT"): `Config::polled` (set for a VM with `VmConfig.smp` = 1) emits no
 `left` checks, no `left -= len`, no `SUM`; a transfer passes `left` as 0. Round-robin (deterministic and realtime) and
 user mode keep the counted code above, byte for byte (Alpine's boot dumped by both cores: the same 319 modules, two
 differing only in the address of a core table they embed, the CRC tables).
@@ -398,8 +398,12 @@ differing only in the address of a core table they embed, the CRC tables).
   again often enough): `spin.c`'s `pure` shape, a loop of a register add, is there for a V8 that hoists further.
 - **Where:** what can close a cycle, or repeat code with no transfer backward. A static transfer whose target is
   fixed (a region's edge, a chain to a compiled block, one through the jump cache) polls when its target's VA is at or
-  before its block's start (the loop's back-edge, mostly): along forward ones the target's key (its PA) only grows, so
-  every cycle of them has a backward one. A **by-VA link** (a chain to another page that wasn't compiled with its
+  before its block's start (the loop's back-edge, mostly), and a region's edge also when its target's key (its PA)
+  isn't above its block's: a chain's key is its block's plus the offset, so it moves with the VA, but a region's
+  member in another page was taken by the VA it was seen at (`block::forward`), whatever PA that VA mapped, and one
+  physical page at successive VAs then makes a cycle of keys whose every transfer goes forward in VA (PERF loop 35, the
+  final review: `spin.c`'s `xpage`). So along unpolled transfers to fixed targets the key only grows, and every cycle
+  of them has a polled one. A **by-VA link** (a chain to another page that wasn't compiled with its
   block, found by its VA in the transfer cache) polls forward too: its target is whatever that VA maps now, so a run
   forward through VAs that alias pages already run reaches the same compiled blocks again with no backward transfer
   (PERF loop 33, the review of loop 31: a cycle of PCs has a backward step, a cycle of compiled blocks needn't).
@@ -408,8 +412,8 @@ differing only in the address of a core table they embed, the CRC tables).
   lands back in the caller with no transfer, so forward calls from a run of call sites to one callee, nested, would
   run steps multiplying with the depth (16 sites × 16 × a 16-step callee in `spin.c`; four levels of 256 would pass
   2^31 steps, where `acc` reads as `RETURNED`); a failed poll there returns the count without `RETURNED`, the stop
-  every caller passes up. Unpolled, then, are only forward transfers to fixed targets, which visit each compiled block
-  at most once: a run with no poll is bounded by the compiled code. Interpreted code doesn't poll: the dispatcher
+  every caller passes up. Unpolled, then, are only transfers to fixed targets at higher keys, which reach each key at most
+  once: a run with no poll is bounded by the compiled code. Interpreted code doesn't poll: the dispatcher
   interprets at most `jit::POLLED_RUN` (32,768, a default chunk) steps before it reads the word again (the block
   interpreter, the debug interpreter of an EL armed for debug, one instruction at a time). A forward edge or chain to a
   fixed target checks nothing: in loop 30's counts those were 55-63% of the budget checks.
@@ -445,13 +449,12 @@ differing only in the address of a core table they embed, the CRC tables).
   the probe's tag missed): its poll is also the only one of a guarded chain whose guard failed, and the probe's failed
   poll falls to it, which would then run on. The form `word == 0` (no `acc`) saves nothing by itself (static ±0.1%:
   V8 compares with a register either way) and loses the chunk's bound.
-- **Counted:** (bench/boot/REPORT.md "PERF loop 31", the diagnostic core's `poll` tally) 56 polls per 1000 steps in
-  Alpine's parallel boot, 47-75 in the userspace phases on 4 vCPUs (loop 30 estimated 42-52 from its tallies of the
-  points); chunks ended early by the word 0.3-0.7%. Since PERF loop 33's polls at host-call returns and forward by-VA
-  links: 69 / 68 / 77 per 1000 steps (smp1 / smp4 / smp-user4, from 56 / 56 / 65), the boots' modules per function
-  within ±0.4% of instructions on both hosts. A parallel boot's modules: per function arm64 −6.3% instructions
-  and −5.7% frame memory operands, x64 −9.8% and −13.8%; the Mac's gates moved ~1-2%, within their spread
-  (bench/boot/REPORT.md "PERF loop 31").
+- **Counted** (the diagnostic core's `poll` tally, `bench/boot/preempt-counts.ts`, PERF loop 35): 69 / 68 / 78 polls
+  per 1000 steps (Alpine's parallel boot on 1 and 4 vCPUs, the userspace phases on 4); chunks ended early by the word
+  0.3-0.9%. A parallel boot's modules against the counted code's, per function: arm64 −6.3% instructions and −5.7%
+  frame memory operands, x64 −9.8% and −13.8% (PERF loop 31; loops 33-35 moved them under ±0.5%, loop 34 −1.4% /
+  −2.1% instructions). On the Mac the gates moved ~1-2%; Firefox's pages session's starts and loads −4.7%, busy MIPS
+  +3.4% (bench/boot/REPORT.md "PERF loop 35"; platform.md "Parallel SMP").
 
 ## Sharing
 

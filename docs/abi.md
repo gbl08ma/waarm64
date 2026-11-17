@@ -538,8 +538,8 @@ implemented by this step).
 
 ## PERF: the stop word (design note for ABI 71)
 
-PERF loop 31 (the user's decisions in PERF-HANDOVER.md "Preemption without the budget": parallel SMP only, the stop
-word and its setters, these exports approved): parallel SMP's compiled code has no step budget (`left`); it polls a
+PERF loop 31 (the user's decision, [decisions.md](decisions.md) "JIT": parallel SMP only, the stop word and its
+setters, these exports approved, 2026-11-16): parallel SMP's compiled code has no step budget (`left`); it polls a
 per-vCPU **stop word** where a cycle can close ([jit.md](jit.md) "Preemption"), and stops there once its `acc`
 reaches the word. The run loop stores the chunk's steps in it before it looks for work, so a vCPU that loops with no
 exit still ends a chunk about where it did (its timers, the worker's event loop, the periodic work all stay paced by

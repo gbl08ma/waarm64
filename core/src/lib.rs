@@ -725,8 +725,9 @@ pub unsafe extern "C" fn vm_console(vm: *const vm::Vm) -> *const pl011::Rings {
 }
 
 /// Parallel mode's steps between two publications of a vCPU's PC (ABI 34): short while the guest PC sampler runs
-/// (web/profiler.ts), so a sample is at most that many instructions old; 0 restores the default (32768). Round-robin
-/// is unaffected. Any thread.
+/// (web/profiler.ts), so a sample is at most that many instructions old; 0 restores the default (32768). Under the
+/// JIT it may also be longer, up to 2^30 (ABI 71: the spin tests', where only the stop word's setters end a chunk
+/// early; docs/abi.md "PERF: the stop word"). Round-robin is unaffected. Any thread.
 ///
 /// # Safety
 /// See the note above [`vm_new`].

@@ -53,6 +53,9 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
       flushes: res.jit?.flushes ?? NaN, modules: res.jit?.modules ?? NaN, wasmMB: res.jit ? Math.round(res.jit.bytes / 1e6) : NaN,
       share: counts?.share ?? NaN, interpG: counts?.interpGsteps ?? NaN, gsteps: counts?.gsteps ?? NaN,
       busyMips: st?.busyMips ?? NaN, stalls20: st?.stallsAtLeastMs?.[20] ?? NaN, stalls50: st?.stallsAtLeastMs?.[50] ?? NaN,
+      // Firefox's start on each page and its load, summed (s): the pages session's measure (bench/gpu/ab-mac.sh).
+      startsS: pages.length ? +pages.reduce((a, k) => a + res[k].started, 0).toFixed(1) : NaN,
+      pagesS: pages.length ? +pages.reduce((a, k) => a + res[k].started + res[k].loadMs / 1000, 0).toFixed(1) : NaN,
       wikiLoadS: res['page-wiki'] ? +(res['page-wiki'].loadMs / 1000).toFixed(1) : NaN, bbcLoadS: res['page-bbc'] ? +(res['page-bbc'].loadMs / 1000).toFixed(1) : NaN,
       pagesFps: pages.length ? pages.map(fps).join('/') : '', webglFps: fps('webgl') ?? NaN,
       wallS: wall ? Math.round(+wall[1]) : NaN, setupS: t.setUp && t.start ? Math.round((t.setUp - t.start) / 1000) : NaN, measuredS: t.setUp && t.saved ? Math.round((t.saved - t.setUp) / 1000) : NaN,
@@ -80,7 +83,7 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
     rows.push(row);
   }
 }
-const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'ics', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
+const KEYS = ['flushes', 'modules', 'wasmMB', 'share', 'interpG', 'firstFlushS', 'flushesPerMin', 'slowG', 'slowS', 'made', 'doneS', 'locks', 'contended', 'waitMs', 'emitMs', 'lockedMs', 'planMs', 'perLock', 'skipped', 'dsbMs', 'platMs', 'ics', 'overdue', 'rssMed', 'rssMax', 'codeMed', 'codeMax', 'busyMips', 'stalls20', 'stalls50', 'startsS', 'pagesS', 'wikiLoadS', 'bbcLoadS', 'webglFps', 'wallS', 'setupS', 'measuredS', 'restoreS'];
 const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); const i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
 const arms: Record<string, Record<string, { median: number; iqr: number; n: number; all: number[] }>> = {};
 for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {
@@ -92,7 +95,7 @@ for (const arm of [...new Set(rows.map((r) => r.arm as string))]) {
 }
 if (json) console.log(JSON.stringify({ sessions: rows, arms }, null, 1));
 else {
-  const cols = ['session', 'exit', ...KEYS.slice(0, 29), 'pagesFps', ...KEYS.slice(29)];
+  const cols = ['session', 'exit', ...KEYS.slice(0, KEYS.indexOf('webglFps')), 'pagesFps', ...KEYS.slice(KEYS.indexOf('webglFps'))];
   console.log(cols.join('\t'));
   for (const r of rows) console.log(cols.map((c) => r[c] ?? '').join('\t'));
   console.log();

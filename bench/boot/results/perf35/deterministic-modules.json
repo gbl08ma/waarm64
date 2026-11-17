@@ -1,0 +1,5 @@
+{
+ "note": "SHA-256 of every module of Alpine deterministic boot (bench/jit/dump-modules.ts), b770bb20 core vs PERF loop 35 core; 2651076469 steps each",
+ "modules": 319,
+ "identical": true
+}

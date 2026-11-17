@@ -6164,3 +6164,69 @@ binaries didn't change.
 
 CI, each alone, on the final tree: `scripts/ci.sh` (863 s), `scripts/ci-jit.sh` (283 s). Not run: `scripts/ci-debian.sh`
 (no run loop or host change), `ci-usb.sh`, `ci-audio.sh`; Firefox's pages session (P4's).
+
+## PERF loop 35: the block's end, Firefox's pages session and the final review (2026-11-17)
+
+P4 of "Preemption without the budget" (PERF loops 30-35): the whole block measured on the JIT's real workload, the
+final out-of-context review's findings fixed, every CI layer the area names run. Data: `bench/boot/results/perf35/`
+(its README). docs/jit.md "Preemption (parallel SMP's polled code)", docs/testing.md "Spin tests".
+
+**Firefox's pages session on the Mac.** Its old harness (a local script pointing at the pre-rename checkout and a
+`.webpcsnap`) is now `bench/gpu/ab-mac.sh` (docs/benchmarking.md "Starting from a snapshot"): `bench/gpu/sway-mac.sh`
+from `target/snapbench/pages.waarm64snap` (made again with `bench/gpu/warm-snapshots.sh firefox`, 292 s), each round
+starting with the next arm, into `ab.sh`'s layout so that `bench/gpu/ab-summary.ts` reads it (which now also sums
+Firefox's starts and the pages' loads, `pagesS`); `@<tree>` runs an arm from another checkout, which the base needed:
+0ffa96ef's core is ABI 70, so it ran with 0ffa96ef's web/ (`../waarm64-base`). The snapshot loads into both (its
+layout didn't change). ~225 s a session. Base 0ffa96ef (before loop 31) against b770bb20 (loop 34's end), 5 rounds
+alternated, M4, macOS 26.6.2, Chrome for Testing 157.0.8103.78, nothing else on the dev VM or the Mac; medians, IQR,
+[ranges]:
+
+| | base | new | |
+|---|---|---|---|
+| Firefox's starts + the pages' loads (s) | 76.8, IQR 1.3 [76.3-79.1] | 73.2, IQR 2.0 [72.2-75.8] | **−4.7%**, no overlap |
+| the starts alone (s) | 57.4, IQR 1.0 [57.3-58.4] | 54.8, IQR 1.6 [54.3-56.4] | **−4.5%**, no overlap |
+| busy MIPS (the vCPUs' timeline) | 407, IQR 1 [404-410] | 421, IQR 3 [417-425] | **+3.4%**, no overlap |
+| the heavy pages' loads, wiki / bbc (s) | 5.6 / 6.6 | 5.2 / 6.3 | −7% / −5% |
+| Gsteps interpreted | 3.35 | 3.27 | −2.4% |
+| DSB waits for TLBI IS (ms a session) | 639, IQR 22 | 107, IQR 15 | −83% |
+| stalls of 20 ms+ | 2 | 0 | |
+| modules / wasm MB / emit ms | 2826 / 135 / 2080 | 2866 / 135 / 2123 | +1.4% / 0 / +2.1% |
+
+The gates moved ~1-2% over the block (loops 31-34, within their spread each time); the browser moves more, and its
+largest single change is the DSB waits: a TLBI IS's issuer waited for each target's chunk end before, ~640 ms of a
+session; now its target stops at its next poll (decision 3's bound). Memory: none (the renderer's RSS wasn't sampled on the Mac).
+
+**The final review** (`review/perf-preempt-final`, deleted with this loop): four findings, all fixed.
+1. *A cycle with no poll through a region's cross-page edge* (medium). `block::forward` takes a member in another page
+   by the VA it was queued at, whatever PA that VA maps, and the edge polled only when the target's VA was at or
+   before its block's: with one physical page at successive VAs, a region whose head at 0x800 reaches a member at
+   0x100 of the next VA page (a lower key) that chains forward in VA back to the head's key runs up through the
+   aliases with no poll. *Confirming test, failing first:* `spin.c`'s `xpage` (three variants, 32 aliases each; MMU
+   on, EL1 and EL0): on b770bb20's core 0-1 of 8 pings inside the shape in every variant (the test wants 4). Whether
+   the region forms depends on when each block reaches the compile threshold (the dispatcher counts the same-page
+   branch into the head only now and then): alone (`SPIN_ONLY`), about one run in three formed it; after the other
+   shapes every variant did, in each of 3 runs. *Fix:* polled code also polls a region's edge whose target key isn't
+   above its block's (`(to.key & !3) <= (b.key & !3)`, known when compiling; chains' keys move with their VA): along
+   unpolled transfers to fixed targets the key now only grows. After: 7-8 of 8. Planted (the condition removed):
+   0-1 of 8 again. Polls per 1000 steps (`counts-*.json`): smp1 68.9 → 68.9, smp4 67.9 → 67.6, smp-user4 76.6 → 77.9
+   (Lua 83.9 → 85.2, SQLite 89.9 → 93.2: user processes' pages are scattered in PA). Static counts of a parallel
+   boot's modules (`codestats.json`): arm64 instructions +0.2%, frame memory operands +0.1%; x64 +0.3%, +0.2%, inside
+   two dumps' run-to-run spread (+0.5%, PERF loop 34): no Mac A/B.
+2. *The stop word inside `&mut Vcpu`* (low): other threads store to `jit::State::stop` while the vCPU's thread holds
+   `&mut Vcpu`, outside Rust's aliasing rules. Documented at the field, not restructured: every Rust access is atomic
+   (compiled code's are wasm, which the core's compiler doesn't see); moving it to `CpuPar` would add a pointer load
+   to every poll, and a run loop on a raw `*mut Vcpu` would rewrite `vm::parallel` and `jit::steps` for no behavior.
+3. *The polled differential test passed every run that stored into code* (low): such a run returned before
+   comparing, and the JIT side's RAM wasn't resynced. Now only a run whose interpreter stored into code is skipped;
+   one where only the JIT's side did fails; both resync. Planted (a polled store writing a byte into the code area
+   too): the old harness passed 3 of 3 memory classes, the new one fails them; unplanted, the polled core passes all
+   179 classes at 1024 words.
+4. *Nits:* `emit::returned` no longer updates `left` in polled code (Alpine's deterministic boot: 319 modules
+   byte-identical with b770bb20's, the same steps, `deterministic-modules.json`); `vm_set_chunk`'s doc names ABI 71's
+   long chunks; `tests/spin.test.ts`'s count of shapes.
+
+tests/steps.txt didn't move.
+
+CI, each alone, on the final tree: `scripts/ci.sh` (960 s), `scripts/ci-jit.sh` (290 s; the spin tests in every mode,
+the polled differential, lockstep and corpus), `scripts/ci-debian.sh --platform` (614 s, 20 of 20), `scripts/ci-usb.sh`
+(9 s, 9 of 9 through the rigs), `scripts/ci-audio.sh` (47 s, 6 of 6). Not run: `oracle.sh` on the new `xpage` shapes.

@@ -864,7 +864,7 @@ impl Vm {
             // (its fence, `run_loop`): its news may be stored with any ordering (`Vm::signal`'s AcqRel).
             fence(Ordering::SeqCst);
             // SAFETY: the word is in vCPU `i`'s boxed `Vcpu`, which lives as long as the VM; it's only accessed
-            // atomically (its own thread's run loop and dispatcher, compiled code's atomic loads).
+            // atomically (its own thread's run loop and dispatcher; compiled code's loads, wasm's: `jit::State::stop`).
             unsafe { &*w }.store(0, Ordering::SeqCst);
         }
     }

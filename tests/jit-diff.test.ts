@@ -347,14 +347,18 @@ function setup(code: number, fma = FUSED) {
     const d = ca.findIndex((x, i) => x !== cb[i]);
     const m = mem ? ramDiff() : -1;
     // Polled code runs on past the steps asked for, along forward branches, into other words and the data area's
-    // random ones, whose stores may rewrite code (stale blocks then: the guest would need an IC). Such a run is
-    // skipped, its code restored and the blocks dropped (as the tests skip a run that rewrote its own code: the JIT
-    // runs on in the stale blocks, the interpreter doesn't).
+    // random ones, whose stores may rewrite code (stale blocks then: the guest would need an IC). A run whose
+    // interpreter rewrote code is skipped (as the tests skip a run that rewrote its own code: the JIT runs on in the
+    // stale blocks, the interpreter doesn't); one where only the JIT's side did is a wrong store, reported. Either
+    // way the code is restored, the blocks dropped and the JIT's RAM made the interpreter's again, so nothing of this
+    // run shows in a later one.
     if (before && (Buffer.compare(a8.subarray(0, code), before) || Buffer.compare(b8.subarray(0, code), before))) {
+      const own = Buffer.compare(a8.subarray(0, code), before) !== 0;
+      const at = b8.subarray(0, code).findIndex((x, i) => x !== before[i]);
       a8.set(before);
-      b8.set(before);
+      b8.set(a8);
       ex.jit_flush(jit);
-      return null;
+      return own ? null : `a store into the code area (byte ${at}), by the JIT's side only`;
     }
     // Polled code stops only at an exit or past the steps asked for.
     const short = POLLED && !xb[0] && db < n;

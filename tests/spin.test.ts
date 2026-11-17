@@ -1,7 +1,8 @@
 // Parallel SMP's polled code (PERF loop 31; docs/jit.md "Preemption", docs/testing.md "Spin tests"): a vCPU looping in
 // compiled code with no exits takes its timer's IRQ, another vCPU's IPI and TLBI IS, and stops for the host's pause,
-// each in bounded time. tests/baremetal/spin.c spins CPU 1 in nine shapes (one block, a 20-block chain, BR, the transfer
-// cache's miss function, a by-VA link, VA aliases, nested calls, the debug interpreter, a loop with no memory access) at EL1 with the MMU off and on and at EL0, and prints the medians it timed; this
+// each in bounded time. tests/baremetal/spin.c spins CPU 1 in twelve shapes (one block, a 20-block chain, BR, the transfer
+// cache's miss function, a by-VA link, VA aliases, nested calls, the debug interpreter, a loop with no memory access,
+// one page at successive VAs whose region edge goes down in PA, three times) at EL1 with the MMU off and on and at EL0, and prints the medians it timed; this
 // file pauses the machine while CPU 1 spins and holds the numbers to bounds. Each JIT mode (JIT; JIT-stress and JIT-check in scripts/ci-jit.sh) runs twice: with the default
 // chunk (the timer's bound is the chunk's steps, as before the stop word), and with chunks of 2^30 steps
 // (`vm_set_chunk`), where only the stop word's setters end one early, so a missing setter shows as milliseconds (a
@@ -20,12 +21,12 @@ const HOST = 0xa0_0000, PHASE_STOP = 0x5709n;
 const PAUSES = 8;
 /** spin.c's pings a shape. */
 const ROUNDS = 8;
-/** The medians' bounds (µs): the median over the 15 shapes, and the worst shape's. Typical: tens of µs. */
+/** The medians' bounds (µs): the median over the shapes' runs (`LINES`), and the worst one's. Typical: tens of µs. */
 const MEDIAN_US = 1000, WORST_US = 50_000;
 /** The pauses' (ms): the median of `PAUSES`. */
 const PAUSE_MS = 5;
-/** spin.c's shapes: 9 forms at 3 ELs and MMU settings, but the aliases (shape 5) with the MMU off. */
-const LINES = 9 * 3 - 1;
+/** spin.c's shapes: 12 forms at 3 ELs and MMU settings, but the aliases (shapes 5 and 9-11) with the MMU off. */
+const LINES = 12 * 3 - 4;
 const MAX_MS = Number(process.env.WAARM64_SPIN_MAX_MS ?? 60_000);
 
 type Line = { env: string; form: string; rtt: number; tlbi: number; timer: number; inside: number };
@@ -83,8 +84,9 @@ for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2], ['JIT-check', 3], ['th
       bounded('IPI round trip', lines.map((l) => l.rtt), all);
       bounded('TLBI IS + DSB', lines.map((l) => l.tlbi), all);
       // Where the pings were taken in the aliases and the nested calls: at polls along the way, not only at their laps'
-      // checks (a forward by-VA link, a callee's return, that didn't poll).
-      for (const l of lines.filter((l) => l.form === 'alias' || l.form === 'calls')) assert.ok(l.inside >= ROUNDS / 2, `${l.env} ${l.form}: ${l.inside} of ${ROUNDS} pings taken inside the shape\n${all}`);
+      // checks (a forward by-VA link, a callee's return, a region's edge to a lower PA in the next VA page, that didn't
+      // poll).
+      for (const l of lines.filter((l) => l.form === 'alias' || l.form === 'calls' || l.form === 'xpage')) assert.ok(l.inside >= ROUNDS / 2, `${l.env} ${l.form}: ${l.inside} of ${ROUNDS} pings taken inside the shape\n${all}`);
       // The timer has no setter: its bound is the chunk's steps (with long chunks, spin.c's ping after 50 ms), whose
       // time JIT-check's checker (a hash at every transfer) stretches to milliseconds.
       if (!long && jit === 1) bounded("the spinner's own timer, late", lines.map((l) => l.timer), all);

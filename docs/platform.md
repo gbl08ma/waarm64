@@ -138,7 +138,9 @@ indexes of their instance).
   publications, the PC sampler) stays paced by the chunk's steps as before: a vCPU that loops with no exit ends a
   chunk within a poll of 32,768 steps. A ticker that let chunks run longer didn't pay (PERF loop 32: a chunk end
   costs ~0.2 µs, and it's where the vCPU sees its timer and installs compiled modules; [jit.md](jit.md) "No ticker"). The spin tests (`tests/baremetal/spin.c`, `tests/spin.test.ts`) time what a
-  looping vCPU answers.
+  looping vCPU answers. Against the counted code before it, on Firefox's pages session (the Mac, PERF loop 35):
+  Firefox's starts and the pages' loads −4.7%, busy MIPS +3.4%, and the time issuers' DSBs waited for TLBI IS −83%
+  (639 → 107 ms a session: a target stops at its next poll instead of its chunk's end).
 - **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
   never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a
   BUDGET or DEVICE exit waits a µs on a word nothing writes. The tasks V8 and Blink post to the thread run then

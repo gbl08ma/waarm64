@@ -44,8 +44,19 @@ pub struct State {
     /// called it) reaches it, and the dispatcher once its steps do. The run
     /// loop stores the chunk's steps before it looks for work; whatever has
     /// news for the vCPU (another thread: `vm::parallel`, the host through
-    /// `vm_cpu_stop`) stores 0 after making it. Only ever accessed atomically. After `mem`, in what was
-    /// padding: every other field keeps its offset, so counted code's bytes didn't change.
+    /// `vm_cpu_stop`) stores 0 after making it. After `mem`, in what was padding: every other field keeps its
+    /// offset, so counted code's bytes didn't change.
+    ///
+    /// **An exception to Rust's aliasing rules, on purpose:** the other threads store here while the vCPU's thread
+    /// holds `&mut Vcpu` (the parallel run loop, `steps`), which strictly asserts that nothing else touches any of
+    /// it, atomics included. Every access in Rust is atomic: the run loop's and the dispatcher's (`Ordering::SeqCst`
+    /// stores and loads, with the fences of `vm::parallel`), the setters' through the raw pointer `CpuPar::stop` or the
+    /// host's `vm_cpu_stop`; no reference to the field outlives one access. Compiled code's reads are wasm (an atomic
+    /// or plain `i32.load` at `emit::STOP`: a racy plain read is defined there), which the core's compiler never sees. A compiler can't drop or reorder those
+    /// atomic accesses in practice, `noalias` or not. Kept here because polled code reads it at a fixed `Vcpu`
+    /// offset: in `Shared` (`CpuPar`, where the other cross-thread words live) every poll would load a pointer first,
+    /// and a run loop on a raw `*mut Vcpu` with short borrows would be a rewrite of `vm::parallel` and `steps` for
+    /// no behavior (PERF loop 35, the final review's finding 2). Never access it non-atomically.
     pub stop: AtomicU32,
     /// Why the last block stopped early (the instruction that didn't retire).
     pub exit: Option<Exit>,

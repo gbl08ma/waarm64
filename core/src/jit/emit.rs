@@ -2019,8 +2019,11 @@ pub fn returned(c: &mut Func, len: u32, off: i64) {
         // acc + left stays SUM.
         c.local_get(SUM).local_get(RESULT).op(SUB).local_set(LEFT);
     } else {
-        c.local_get(LEFT).local_get(ACC).op(ADD);
-        c.local_get(RESULT).op(SUB).local_set(LEFT);
+        // Polled code reads no `left`: `acc` alone.
+        if !c.polled {
+            c.local_get(LEFT).local_get(ACC).op(ADD);
+            c.local_get(RESULT).op(SUB).local_set(LEFT);
+        }
         c.local_get(RESULT).local_set(ACC);
     }
     c.local_get(VCPU).i64_load(PC);
