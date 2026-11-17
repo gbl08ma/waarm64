@@ -24,7 +24,8 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 | Review 1 | Out-of-context review of `net/ts/src/room/names/` (and the names code in `room.rs`, `wasm.rs`, `web/room*.ts`) → `NAMES-REVIEW-1.md` on this branch: 13 findings | done (2026-11-17) |
 | N4a | Review 1's findings (2026-11-17, cloud; f00329c, 320a75d, 5f580f9): 12 of 13 fixed, each with its test failing first, 34 planted bugs caught; tests/page-room.test.ts passes alone (204 s); 6 waits for the user (open questions). Spec changes: the share and the choice by `BLAKE2s(nonce, owner key)` of the name served with (not the names client's key), an answer counted in the share sent and once a name, the accept window evicting keys that never served; askers kept by requests, 10 minutes at most, the longest-held making room; `sync`/`have`/`get all` only from servers that proved a live name (a run's first `sync` carries a proof), with budgets; puts in their own queue after sync's; a forged entry ends its item's check, own-bytes failures remembered; runs bounded; every part counts against a peer's 2 MiB, stale transfers dropped at 10 s, 8 MiB queued at most; pending anchors signed by the owner; a member's checks in slices, each entry once; a chain covers from its first time less `drift`; zone slot keys take the name id and owner; `load` false for a lapsed record; records by room and connection, flushed before the worker goes; `leaves` copies 64 KiB at most. Wire and storage changed (Sync's proof, Pending's signature): pre-release, fine. What's left: docs/backlog.md "Review 1's fixes" | done |
 | CI mid | `scripts/ci.sh`, `scripts/ci-net.sh` alone | *dev VM*, not run yet: N4 onwards follow a review whose full scripts haven't run; the dev VM session runs them first (a cloud `ci.sh` skips the image tests) |
-| N4 | Review 1's findings, then the names agent | queued |
+| N4b | Finding 6 as the user decided (above): seven linked headers an anchor, the floor by time | next |
+| N4c | The names agent (the kickoff's N4 after the review's findings) | queued |
 | N5 | The page | queued |
 | N0c | N0's items 5 and 6 (public DERP transfer, cold lookup) and the GPU figure | *dev VM* |
 | N6 | Scale and abuse; days on the public services | *dev VM* |
@@ -38,12 +39,15 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Open questions
 
-- **Review 1, finding 6 (the user's decision; NAMES-REVIEW-1.md §6)**: a header proves only its own work, so one
-  header mined at the floor (a sixteenth of a block's work), timed weeks back, anchors claims on any number of names in
-  every room at that time; renewed with real stamps, they beat every chain claimed since, for good. Options the review
-  names: tie an anchor's header to a compiled checkpoint by a header chain (80 bytes a block), or have servers refuse a
-  first entry whose anchor is much older than when the room first saw it (which decision 1 may rule out: it is a kind
-  of pinning). The spec's "What an attacker can do" row now says so. Not fixed; asked.
+- **Review 1, finding 6: decided by the user, 2026-11-17.** A header proves only its own work, not that it is on
+  Bitcoin's chain, so a header mined in private at the floor, timed weeks back, backdates any number of claims in
+  every room. The user chose **six more headers and a higher floor**: an anchor carries its block's header and the next
+  6, each linked to the one before by prev-hash; the floor rises to about half of the difficulty at the time, as a
+  floor by header time (a compiled schedule, so a difficulty drop doesn't fail honest headers and growth doesn't
+  cheapen the floor); the agent fetches the six from the explorers when it collects. A forgery then costs ~3.5
+  blocks' work, still reusable: **the gap is filed in docs/backlog.md**, with the user's ideas for servers checking
+  later (random spot checks of block hashes at the explorers; checks only for new claims, none at a first sync).
+  Those would add an outside service for servers, so they come back to the user before they're built. Loop N4b.
 
 - **A year of the calendars' history** (the kickoff's N0): reading it whole through the explorers is ~16,000+
   requests (a calendar pays from rotating coins, so no address lists it), far past "a few hundred". N0a took the
