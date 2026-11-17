@@ -648,7 +648,7 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   to the other's, a clock behind to a later try. An entry still unanchored once its window and the slack are over may
   have an anchor in its window that no open page collected: it is kept and asked for, a new one is made beside it where
   one is due, and it is dropped only a week past its window (a renewal so collected still links, and revives its chain).
-  **Let it go** drops the title's renewals that wait for their anchors (one collected later would be a branch whose
+  **[Let it go](ui:network:NameEntry.release)** drops the title's renewals that wait for their anchors (one collected later would be a branch whose
   cover outlasts the release's, so the name would stay: review 2's finding 6) and makes the release on the owning
   chain's last entry; a release no calendar stamped, or one that never came, is made again at the next pass.
 - **Publishing** is a `put` through a **publisher**: a room client that is a names client alone (room.rs
@@ -724,11 +724,14 @@ and the servers it synced with lately (the module's `names` event, sent when the
 2. Two notices, always shown, no boxes: [Members of this room who know the name can find this machine and see when it's online, and your machine helps other members look names up.](ui:network:NameDialog.notice.find); [Open this web app at least every 2 weeks to keep the name.](ui:network:NameDialog.notice.visit) ("this web app" is the page's word for itself, docs/copy.md).
 3. **[Register](ui:network:NameDialog.register).** The dialog closes; the adapter shows the name with its state:
    [Preparing](ui:network:names-view.preparing) (proof of work), *Reserved, public in about N hours; it already works on
-   this machine*, then *Active, kept until about <date> unless you visit*; in its grace, lapsed, let go and lost as the
+   this machine* (counted from the claim's own stamp, again when it is made again; past the usual wait, [Reserved, public
+   once this web app has been open a while; it already works on this machine.](ui:network:names-view.reservedLate), as
+   only an open page collects the proof: review 2's finding 17), then *Active, kept until about <date> unless you visit*; in its grace, lapsed, let go and lost as the
    agent reports them.
 
 No key is shown or asked for. Changing where a name points (a member's name in the room, or a key, pasted), adding a
-label under it and letting it go are in the adapter's details. The Machines page shows a stored machine's names (its
+label under it (15 at most: past four points a zone is sealed wide, 16 slots) and letting it go are in the adapter's
+details. The Machines page shows a stored machine's names (its
 Network tab, each room adapter's) with the date each stops resolving unless renewed, and the page says, on load, after
 the agent's first pass, when one is inside its last week (kept until less than 7 days on). All words are in
 `web/messages/en/network.json` (the Machines page's line in `machines.json`).

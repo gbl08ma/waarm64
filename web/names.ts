@@ -34,6 +34,9 @@ export const SERVICES: readonly string[] = [...CALENDARS, ...EXPLORERS];
 export const PASS_MS = 60 * 60 * 1000;
 /** The first wait before asking again (a pending proof, an entry to make again), doubling to PASS_MS. */
 export const RETRY_MS = 5 * 60 * 1000;
+/** A zone's slots, narrow and wide (net/ts room/names/zone.rs): a name with more points than the first is sealed in the
+ * second, and has at most that many (web/app/names-view.ts `MAX_POINTS`). */
+const ZONE_NARROW = 4;
 /** An entry unanchored past its window is kept and asked for this long more (seconds). */
 const STALE_KEEP_S = 7 * 24 * 60 * 60;
 /** A fetch's longest wait. */
@@ -668,7 +671,8 @@ export class NamesAgent {
     t.item = item;
     t.stamps[id] = stamps;
     t.collect[id] = { next: Date.now() + this.retryMs, tries: 0 };
-    t.stampedAt ??= Date.now();
+    // From the claim's own stamp: a claim made again counts its wait again (review 2).
+    if (kind === 'claim' || t.stampedAt === undefined) t.stampedAt = Date.now();
     delete t.remake;
     this.log(`${t.name}: ${kind} ${id.slice(0, 8)} made, stamped at ${stamps.length} calendar(s)`);
   }
@@ -685,7 +689,9 @@ export class NamesAgent {
     const st = await this.b.op<TitleStatus>('status', { item, now: nowS() });
     const held = st.zone?.seq;
     const seq = this.nextSeq(t, seen !== undefined && (held === undefined || BigInt(seen) > BigInt(held)) ? seen : held);
-    return (await this.b.op<{ item: string }>('zone', { room: t.room, secret, name: t.name, seq, points: t.points, item })).item;
+    // Past four points, sixteen slots (review 2: a fifth failed with the module's bare `Zone`).
+    const wide = t.points.length > ZONE_NARROW;
+    return (await this.b.op<{ item: string }>('zone', { room: t.room, secret, name: t.name, seq, points: t.points, item, wide })).item;
   }
 
   private async seal(t: TitleRecord) {

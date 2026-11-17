@@ -7,6 +7,8 @@ import type { NameCheck, TitleView } from '../names.ts';
 import { base32, roomOf } from '../room.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
+/** The most points a name has: the name itself and 15 labels (a wide zone's 16 slots; web/names.ts). */
+export const MAX_POINTS = 16;
 
 /** Connection `c`'s titles: its key's, in its room (by the room's ID, not the link a title was registered with: a
  * connection rejoined with other relays keeps its names, review 2), those being registered first (as Preparing). */
@@ -20,7 +22,14 @@ export function titlesOf(
   const held = titles.filter((t) => mine(t, t.room));
   const making = registering
     .filter((r) => mine(r, roomOf(r.link)) && !held.some((t) => t.name === r.name))
-    .map((r): TitleView => ({ identityKey: r.identityKey, room, link: r.link, name: r.name, state: 'preparing', points: [] }));
+    .map((r): TitleView => ({
+      identityKey: r.identityKey,
+      room,
+      link: r.link,
+      name: r.name,
+      state: 'preparing',
+      points: [],
+    }));
   return [...making, ...held];
 }
 const date = (unixS: number) => new Date(unixS * 1000);
@@ -32,6 +41,9 @@ export function titleState(v: TitleView, now = Date.now()): Msg {
     case 'preparing':
       return msg('network:names-view.preparing');
     case 'reserved': {
+      // Past the usual wait, the claim's proof waits for this web app to be open long enough to collect it: no hours
+      // to count (review 2).
+      if ((v.publicAbout ?? now) <= now) return msg('network:names-view.reservedLate');
       const count = Math.max(1, Math.ceil(((v.publicAbout ?? now) - now) / HOUR_MS));
       return msg('network:names-view.reserved', { count });
     }
@@ -64,7 +76,10 @@ export function checkWords(name: string, c: CheckShown): Msg | undefined {
     case 'free':
       return msg('network:names-view.check.free', { name });
     case 'taken':
-      return msg('network:names-view.check.taken', { name, when: date(c.until) });
+      return msg('network:names-view.check.taken', {
+        name,
+        when: date(c.until),
+      });
     case 'unknown':
       return msg('network:names-view.check.unknown', { name });
   }
@@ -76,8 +91,14 @@ export const canRegister = (c: CheckShown) => c.state === 'free' || c.state === 
 /** The details' line of the registry: a server's names held, or a member's resolved, and the servers. */
 export function namesLine(n: { serving: boolean; names: number; servers: number }): Msg {
   return n.serving
-    ? msg('network:names-view.line.serving', { count: n.names, servers: n.servers })
-    : msg('network:names-view.line.member', { count: n.names, servers: n.servers });
+    ? msg('network:names-view.line.serving', {
+        count: n.names,
+        servers: n.servers,
+      })
+    : msg('network:names-view.line.member', {
+        count: n.names,
+        servers: n.servers,
+      });
 }
 
 /** A stored machine's names on the Machines page: each with the date it stops resolving unless renewed. */
@@ -87,7 +108,10 @@ export function machineNames(views: TitleView[]): Msg[] {
     .map((v) =>
       v.keptUntil === undefined
         ? msg('network:names-view.machine.new', { name: v.name })
-        : msg('network:names-view.machine.until', { name: v.name, when: date(v.keptUntil) }),
+        : msg('network:names-view.machine.until', {
+            name: v.name,
+            when: date(v.keptUntil),
+          }),
     );
 }
 

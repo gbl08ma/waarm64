@@ -86,11 +86,19 @@ test('an entry whose anchor came past REF_WINDOW, or none in its window, is made
   const c = conn('conn-window');
   // The chain's block 6 deep is 49 hours old: the claim made after it is anchored past its 48-hour window.
   refAt(cal, nowS() - 49 * 3600);
-  await agent.register(c, 'late', point());
+  const clock = Date.now;
+  Date.now = () => clock() - 60_000; // stamped a minute ago
+  try {
+    await agent.register(c, 'late', point());
+  } finally {
+    Date.now = clock;
+  }
   const first = (await statusOf(backend, (await store.titles(c.identityKey))[0])).entries[0].id;
+  const stamped = (await store.titles(c.identityKey))[0].stampedAt!;
   cal.mine(7); // anchored now, and a recent block 6 deep for what is made again
   await agent.pass(c.identityKey);
   assert.ok(log.some((l) => l.includes('refused for good (AnchorWindow)')), log.join('\n'));
+  assert.ok((await store.titles(c.identityKey))[0].stampedAt! > stamped, 'the claim made again: "public in about" counts from its stamp (review 2)');
   let st = await statusOf(backend, (await store.titles(c.identityKey))[0]);
   assert.equal(st.entries.length, 1, 'made again');
   assert.notEqual(st.entries[0].id, first);
@@ -472,6 +480,18 @@ test('a title publishes through its connection\'s link as it is now, not the one
   // Another room's connection changes nothing.
   await agent2.relink({ identityKey: c.identityKey, link: 'waarm64-room:another' });
   assert.equal((await store.titles(c.identityKey))[0].link, moved);
+});
+
+test('a zone of more than four points is sealed wide: sixteen slots (review 2, finding 17)', { skip, timeout: 60_000 }, async () => {
+  const { agent, store, backend } = await testAgent({ publish: fakePublish() });
+  const c = conn('conn-wide');
+  cal.mine(7);
+  await agent.register(c, 'wide', point());
+  const many = [{ label: null, key: '01'.repeat(32) }, ...['a', 'b', 'c', 'd', 'e'].map((l, i) => ({ label: l, key: `${i + 2}`.padStart(2, '0').repeat(32) }))];
+  await agent.setZone(c, 'wide', many);
+  const [t] = await store.titles(c.identityKey);
+  assert.equal(t.points.length, 6);
+  assert.ok((await statusOf(backend, t)).zone);
 });
 
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {

@@ -1195,6 +1195,10 @@
     "message": "Reserved, public in about 1 hour; it already works on this machine.",
     "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."
   },
+  "names-view.reservedLate": {
+    "message": "Reserved, public once this web app has been open a while; it already works on this machine.",
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when its claim's timestamp is later than the usual couple of hours (this web app collects it only while open)."
+  },
   "names-view.reserved_other": {
     "message": "Reserved, public in about {{count}} hours; it already works on this machine.",
     "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state while its claim waits for its timestamp. {{count}} is the hours left."

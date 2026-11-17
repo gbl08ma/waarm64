@@ -14,7 +14,7 @@ const v = (o: Partial<TitleView>): TitleView => ({ identityKey: 'k', room: 'r', 
 test('a title\'s state in words: each state its own, the reserved one\'s hours rounded up, never fewer than one', () => {
   assert.equal(text(titleState(v({ state: 'preparing' }), NOW)), t('network:names-view.preparing'));
   assert.equal(text(titleState(v({ state: 'reserved', publicAbout: NOW + 90 * 60_000 }), NOW)), t('network:names-view.reserved', { count: 2 }));
-  assert.equal(text(titleState(v({ state: 'reserved', publicAbout: NOW - 1 }), NOW)), t('network:names-view.reserved', { count: 1 }), 'late: about an hour still');
+  assert.equal(text(titleState(v({ state: 'reserved', publicAbout: NOW - 1 }), NOW)), t('network:names-view.reservedLate'), 'late (the page closed before its proof came): no hours counted (review 2)');
   const until = NOW / 1000 + 20 * 86400;
   assert.equal(text(titleState(v({ state: 'active', keptUntil: until }), NOW)), t('network:names-view.active', { when: new Date(until * 1000) }));
   assert.equal(text(titleState(v({ state: 'grace', lapsesAt: until }), NOW)), t('network:names-view.grace', { when: new Date(until * 1000) }));

@@ -13,7 +13,7 @@
   import { MsgError, t, text } from '../i18n.ts';
   import type { NamesConn, TitleView, ZonePoint } from '../names.ts';
   import { pageNames } from './areas/names.svelte.ts';
-  import { parseTarget, targetName, titleState } from './names-view.ts';
+  import { MAX_POINTS, parseTarget, targetName, titleState } from './names-view.ts';
 
   type Props = { v: TitleView; conn: NamesConn; domain: string; here: string };
   let { v, conn, domain, here }: Props = $props();
@@ -91,6 +91,7 @@
     <div class="actions">
       <Button
         data-action="add-label"
+        disabled={rows.length >= MAX_POINTS}
         onclick={() => (rows = [...rows, { label: '', target: targetName(here, domain) }])}
       >
         {t('network:NameEntry.addLabel')}
