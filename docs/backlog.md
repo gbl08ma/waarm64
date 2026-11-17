@@ -1670,6 +1670,31 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       room puts them one publisher each. One publisher a pass a room would ask "who serves?" once.
     - The proof of work's time in Chromium (production, cloud x86_64, five entries): 3, 17, 51, 62 and 64 s (a draw, as
       room-names.md says); the dev VM re-times it with N0's numbers.
+  - Review 2's fixes (N5a; NAMES-REVIEW-2.md), what they leave:
+    - **Finding 3 waits for the user**: a renewal reaches the room only at the visit after the one that made it, so
+      visits every 2 weeks leave a name down for days each cycle. The ways are the review's (renew earlier, keep the page
+      collecting before it says Active, servers finishing renewals: the agent's loose ends above, or other words).
+      Spreading one owner's renewals over visits (finding 13) waits on the same decision: it moves when renewals happen.
+    - Answers rank by their chain's age (finding 2), so a Sybil needs registrations held as long as the honest
+      servers', renewed all along: three months buys the top tier, and from there it is a lottery again. In a room
+      younger than that servers rank by age among themselves, and rounds sample young ones rarely, so more questions
+      reach the last round (everyone answers, within each server's 4 a second). A `serve` carries up to 8 entries
+      (~16 KB with anchors and headers) where it carried one: N6 measures a cold lookup with it.
+    - A server remembers 16,384 entries it verified (finding 7); an attacker with more valid entries than that (a dead
+      registry's, collected over time) can still make it check them whole. Checking an item's anchors before its
+      entries' proof of work (a dead chain fails on the cheap part) or a budget of whole checks a second for puts would
+      close it; neither is built.
+    - A question's key proves nothing (finding 12): a server answers questions naming one key 4 times a minute, so a
+      victim's node gets 4 call backs and `serve`s a minute from each server (1.3 trials a second with 20, of its 16). A
+      proof needs a round trip the asker starts, which "who serves?" can't carry.
+    - Listing the registry's ids costs nothing (finding 13; the spec's table says so now), and the dialog's check takes
+      them all (finding 1): ~40 bytes a name, 800 KB at the bound, a minute's answer kept. Fine for the rooms N6 sizes;
+      a registry near the bound would want the check's answer in parts.
+    - A sync run lasts 4 minutes at most (finding 14): a new server answers questions after its first run even when
+      that run's partner held it up, with what it got so far; the next rounds fill in the rest.
+    - A member's answer goes only into a lookup asking that server in the same mode (finding 9): a defence beside the
+      fix (no lookup being checked is asked again), with no test of its own, since the fix leaves nothing for it to
+      catch.
 - **Several adapters' loose ends** ([networking/adapters.md](networking/adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

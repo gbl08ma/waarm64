@@ -12,7 +12,7 @@ clean). Line numbers are at `b54bc77`. Findings are ranked by severity.
 |---|---|---|
 | 1 | High | The dialog's check tells a server the name being typed: one checker key asks for the first byte of every prefix |
 | 2 | High (spec) | Server choice is a lottery with one ticket per live claim, and claims on junk ids are cheap: a Sybil is both of most askers' servers |
-| 3 | High | "Every 2 weeks" doesn't keep a name resolving: a renewal reaches the room only at the visit after the one that made it |
+| 3 | High | "Every 2 weeks" doesn't keep a name resolving: a renewal reaches the room only at the visit after the one that made it (**waiting for the user**) |
 | 4 | Medium-High | The agent drops a valid entry for good on one failed or odd collection |
 | 5 | Medium | A released name keeps resolving for members that kept it, and they refuse its next owner (test) |
 | 6 | Medium | Let it go, while a renewal waits for its anchor, releases nothing |
@@ -27,6 +27,32 @@ clean). Line numbers are at `b54bc77`. Findings are ranked by severity.
 | 15 | Low | Titles taken in from a pasted export are trusted unverified by the node's server |
 | 16 | Low | A title publishes through the link it was registered with, and is shown only on a connection with that exact link |
 | 17 | Low | The page's words: "public in about 1 hour" for days; Add a label past 3 fails with a bare `Zone` |
+
+
+## Status (N5a, 2026-11-17)
+
+Each fix started with its test, failing first; each new rule has a planted bug the tests caught (NAMES-HANDOVER.md's
+N5a row). What a fix leaves: docs/backlog.md "Review 2's fixes".
+
+| # | Status | Test (net/ts/src/room/names/…, tests/…) |
+|---|---|---|
+| 1 | Fixed (fa6c561): the check asks for every id the servers hold (`ALL_IDS`), the answer kept a minute | names-agent.test.ts "the dialog's check: … every id at once"; member_tests.rs `ids_by_first_byte` |
+| 2 | Fixed (df84c2f) within the decisions: a `serve` shows its chain's run (8 entries at most), answers rank by the chain's age in half terms (6 tiers, 90 days) then the hash, rounds sample a young chain as rarely; the accept window keeps the best two | member_tests.rs `cheap_fresh_registrations_dont_buy_both_of_an_askers_servers` (both servers junk in 22 of 30 before, ≤ 1 of 40 after); server_tests.rs `served_keys_ranked_worst_make_room_but_the_best_two_stay`, `serve_is_a_live_names_…` |
+| 3 | **Waiting for the user** (the renewal rule, the visit notice and servers finishing renewals are theirs to decide) | — |
+| 4 | Fixed (f6466a2): only `AnchorWindow` drops an entry; a stale one is kept and asked for a week past its window; each calendar's answer and each explorer's run tried | names-agent.test.ts "a renewal collected late revives its chain …", "a calendar answering junk, or an explorer an inconsistent run …" |
+| 5 | Fixed (0c67cb6): a server shows a tombstone's release to a member whose last entry is on it; the member ends what it keeps and asks again. Also found: transfer ids restarted per peer after a forget, so a server met again dropped a member's new requests as done | member_tests.rs `a_release_ends_a_kept_name_and_its_next_owner_is_taken`; server_tests.rs `a_peer_forgotten_and_met_again_gets_new_transfers` |
+| 6 | Fixed (87b9af9): Let it go drops waiting renewals; a release not stamped is made again | names-agent.test.ts "Let it go while a renewal waits …" |
+| 7 | Fixed (2342371): 16,384 entries verified lately are remembered | server_tests.rs `valid_entries_put_again_are_checked_once` |
+| 8 | Fixed (f6466a2): not lost while a lapsed chain's own entry waits for its anchor; a lost title is put and judged again; the key from the claim | names-agent.test.ts "a renewal collected late revives its chain …", "a better chain of another key's makes a title lost …" |
+| 9 | Fixed (daa620e): a lookup being checked isn't asked again; answers only into a lookup of their own mode | member_tests.rs `a_lookup_being_checked_isnt_asked_again` |
+| 10 | Fixed (652c99e): a zone not taken is answered `better`; the agent counts past the room's `seq` and puts again after 11 minutes | server_tests.rs `a_zone_the_server_doesnt_take_isnt_answered_taken`; names-agent.test.ts "a zone the room's servers didn't take …" |
+| 11 | Fixed (5e5ca8a): a title taken in keeps its bundle's secret where the connection has another; renewals only with the title's key | names-agent.test.ts "an export pasted into a connection that has an owners' secret already …" |
+| 12 | Fixed in part (ed9616c): a server answers questions naming one key 4 times a minute; a proof of the key filed (docs/backlog.md "Review 2's fixes") | server_tests.rs `questions_naming_one_key_get_few_call_backs` |
+| 13 | Fixed in part (6add82e): `ids` cover ends rounded up to a week, the spec's cost corrected; spreading renewals filed (it waits with finding 3) | server_tests.rs `ids_answers_round_cover_ends_to_a_week` |
+| 14 | Fixed (9d53f6f): a run lasts 4 minutes at most and ends the round | server_tests.rs `a_slow_partner_doesnt_keep_a_server_unsynced` |
+| 15 | Fixed (726a2a5): `set_titles` verifies a title's entries and zone; one that fails is refused whole | server_tests.rs `titles_are_verified_before_the_registry_holds_them` |
+| 16 | Fixed (567e8c0): the views by room ID; `relink` publishes through the connection's link as it is now | names-page.test.ts "a connection's names: by its key and room …"; names-agent.test.ts "a title publishes through its connection's link …" |
+| 17 | Fixed (7f22d89): late reserved words, the wait from the claim's own stamp; past four points a wide zone, 15 labels at most | names-page.test.ts (the reserved state); names-agent.test.ts "… REF_WINDOW …", "a zone of more than four points is sealed wide" |
 
 ---
 
@@ -92,6 +118,9 @@ clean). Line numbers are at `b54bc77`. Findings are ranked by severity.
   whole run. A Sybil then needs registrations held for months, renewed every term.
 
 ## 3. High: "every 2 weeks" doesn't keep a name resolving
+
+- **Status: waiting for the user** (N5a left the renewal rule, the visit notice and how servers finish renewals as they
+  are; NAMES-HANDOVER.md "Open questions").
 
 - **Where:**
   - `web/names.ts:540-548` (renew when the last anchored entry is `TERM / 2` old);
