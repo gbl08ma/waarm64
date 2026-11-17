@@ -5,6 +5,7 @@
 // in their last week. The agent and its worker are loaded only when titles exist or the dialog is used.
 import { msg, MsgError, type Msg } from '../../i18n.ts';
 import type { NameCheck, NamesConn, TitleView, ZonePoint } from '../../names.ts';
+import { titlesOf } from '../names-view.ts';
 
 const names = () => import('../../names.ts');
 /** How often the titles are read again while nothing changes (the reserved state's hours). */
@@ -47,20 +48,14 @@ class PageNames {
 
   /** Connection `c`'s titles in its room, those being registered first (as Preparing). */
   of(c: NamesConn): TitleView[] {
-    const making = this.registering
-      .filter((r) => r.identityKey === c.identityKey && r.link === c.link)
-      .filter(
-        (r) => !this.titles.some((t) => t.identityKey === r.identityKey && t.link === r.link && t.name === r.name),
-      )
-      .map((r): TitleView => ({
-        identityKey: r.identityKey,
-        room: '',
-        link: r.link,
-        name: r.name,
-        state: 'preparing',
-        points: [],
-      }));
-    return [...making, ...this.titles.filter((t) => t.identityKey === c.identityKey && t.link === c.link)];
+    return titlesOf(this.titles, this.registering, c);
+  }
+
+  /** Connection `c` is up with link `c.link`: its titles in the room publish through it (web/names.ts `relink`). */
+  async relink(c: NamesConn) {
+    if (!this.of(c).some((t) => t.link !== c.link)) return;
+    await (await names()).namesAgent().relink(c);
+    await this.refresh();
   }
 
   /** The dialog's check of `name` as typed (web/names.ts `NamesAgent.check`: servers asked for its id's first byte). */

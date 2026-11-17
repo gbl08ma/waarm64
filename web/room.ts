@@ -415,6 +415,15 @@ export async function roomNamesStore(id: string, identityKey: string): Promise<R
 // A room's link, as net/ts/src/room/link.rs reads it: `waarm64-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part
 // percent-encoded. The page builds it (Create a room) and checks one pasted (Join a room); the module reads it again.
 export const ROOM_SCHEME = 'waarm64-room:';
+
+/** A room's ID from its link (`waarm64-room:<id>?…`, or a bare ID), as link.rs reads it. */
+export function roomOf(link: string): string {
+  const s = link.trim();
+  if (!s.startsWith('waarm64-room:')) return s;
+  const rest = s.slice('waarm64-room:'.length);
+  const q = rest.indexOf('?');
+  return decodeURIComponent(q < 0 ? rest : rest.slice(0, q));
+}
 /** What link.rs allows: an ID of at most 256 bytes, at most 8 relays and 8 regions. */
 export const ROOM_MAX_ID = 256;
 export const ROOM_MAX_RELAYS = 8;

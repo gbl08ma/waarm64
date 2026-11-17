@@ -18,6 +18,10 @@
   const s = $derived(a.index ? `-${a.index}` : '');
   const room = $derived(a.connection?.room);
   const titles = $derived(room ? pageNames.of({ identityKey: room.identityKey, link: room.link }) : []);
+  // Its names publish through the link the connection has now.
+  $effect(() => {
+    if (room && titles.some((v) => v.link !== room.link)) void pageNames.relink({ identityKey: room.identityKey, link: room.link });
+  });
 </script>
 
 {#if room}

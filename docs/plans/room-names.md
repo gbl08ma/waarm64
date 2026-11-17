@@ -672,6 +672,11 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   it waits for its anchor (collected, it may revive the chain, whose claim may be the elder), and a lost title is
   still put once a visit and hourly, so that it is judged again: its chain owning the name again clears `lost` (review
   2's finding 8). The title's key is its claim's.
+- **A title publishes through its connection's link as it is now** (review 2's finding 16): the page's views take a
+  connection's titles by its key and the room's ID, not by the link a title was registered with, and when a connected
+  room adapter shows titles kept with another link, or the user changes or lets go of one, the agent stores the
+  connection's link in them (`relink`), so a connection rejoined with other relays keeps its names and they don't go on
+  through relays that went away.
 - **When the connection's room runs**, the node is a server: the room's worker gives the module the connection's titles
   in its config (`room.names.titles`, each the owner key derived from the secret and the item) and again as they change
   (the agent's BroadcastChannel `waarm64-names`; `ts_room_names_titles`: a member given titles becomes a server).

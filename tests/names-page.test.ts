@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { t, text } from '../web/i18n.ts';
 import type { TitleView } from '../web/names.ts';
-import { canRegister, checkWords, machineNames, namesLine, parseTarget, targetName, titleState } from '../web/app/names-view.ts';
+import { canRegister, checkWords, machineNames, namesLine, parseTarget, targetName, titleState, titlesOf } from '../web/app/names-view.ts';
 
 const NOW = 1_800_000_000_000;
 const v = (o: Partial<TitleView>): TitleView => ({ identityKey: 'k', room: 'r', link: 'l', name: 'mybox', state: 'active', points: [], ...o });
@@ -70,4 +70,13 @@ test('wording: the dialog\'s check', () => {
   assert.match(t('network:names-view.check.taken', { name: 'mybox', when: new Date(NOW) }), /^mybox is taken, until about .+ unless its owner renews it\.$/);
   assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /^Nobody in the room can say whether mybox is free/);
   assert.match(t('network:names-view.check.invalid'), /^Not a name that can be registered\./);
+});
+
+test('a connection\'s names: by its key and room, whatever link it was registered with (review 2, finding 16)', () => {
+  const a = 'waarm64-room:myroom?nostr=wss%3A%2F%2Fone.example';
+  const b = 'waarm64-room:myroom?nostr=wss%3A%2F%2Ftwo.example';
+  const titles = [v({ room: 'myroom', link: a, name: 'one' }), v({ room: 'other', link: 'waarm64-room:other', name: 'two' }), v({ identityKey: 'x', room: 'myroom', link: a, name: 'three' })];
+  assert.deepEqual(titlesOf(titles, [], { identityKey: 'k', link: b }).map((x) => x.name), ['one'], 'another link to the same room');
+  const making = [{ identityKey: 'k', link: a, name: 'new' }];
+  assert.deepEqual(titlesOf(titles, making, { identityKey: 'k', link: b }).map((x) => [x.name, x.state]), [['new', 'preparing'], ['one', 'active']]);
 });

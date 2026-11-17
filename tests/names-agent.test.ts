@@ -452,6 +452,28 @@ test('an export pasted into a connection that has an owners\' secret already: it
   assert.equal((await b.agent.titles(cb.identityKey)).find((v) => v.name === 'moved')?.state, 'active');
 });
 
+test('a title publishes through its connection\'s link as it is now, not the one it was registered with (review 2, finding 16)', { skip, timeout: 60_000 }, async () => {
+  const pub = fakePublish();
+  const { agent: agent2, store } = await testAgent({ publish: pub });
+  const links = pub.links;
+  const c = conn('conn-relink');
+  cal.mine(7);
+  await agent2.register(c, 'relinked', point());
+  cal.mine(7);
+  await agent2.pass(c.identityKey);
+  assert.equal(links.at(-1), LINK);
+  // The connection now reaches the room through other relays: the same room's ID, another link.
+  const moved = `${LINK}&nostr=${encodeURIComponent('ws://127.0.0.1:10')}`;
+  await agent2.relink({ identityKey: c.identityKey, link: moved });
+  const [t] = await store.titles(c.identityKey);
+  assert.equal(t.link, moved);
+  await agent2.setZone({ identityKey: c.identityKey, link: moved }, 'relinked', point('77'.repeat(32)));
+  assert.equal(links.at(-1), moved, 'published through the link the connection has now');
+  // Another room's connection changes nothing.
+  await agent2.relink({ identityKey: c.identityKey, link: 'waarm64-room:another' });
+  assert.equal((await store.titles(c.identityKey))[0].link, moved);
+});
+
 test('production talks to the compiled calendars and explorers only: no link, title or receipt names another', { skip, timeout: 60_000 }, async () => {
   // The calendars are the module's, in its order (anchor.rs `Calendar::url`: a pending anchor names one by index).
   const rust = readFileSync(new URL('../net/ts/src/room/names/anchor.rs', import.meta.url), 'utf8');

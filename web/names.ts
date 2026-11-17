@@ -14,7 +14,9 @@
 // connection's export (`exportNames`, `importNames`, carried by web/app/connections.ts with the node key).
 import { NamesError, type IdsAnswer, type NamesBackend, type PutAnswer } from './names-ops.ts';
 import type { FromNames, ToNames } from './names-worker.ts';
-import { openIdb } from './room.ts';
+import { openIdb, roomOf } from './room.ts';
+
+export { roomOf };
 import type { NamesTitle, NamesOp } from './ts-client.ts';
 
 /** The calendars, in the module's order (net/ts/src/room/names/anchor.rs `Calendar`: a pending anchor's index). */
@@ -343,6 +345,7 @@ export class NamesAgent {
   /** Points `name` at `points`: a new zone (its `seq` never one another copy of the title uses), published if public. */
   async setZone(c: NamesConn, name: string, points: ZonePoint[]): Promise<TitleView> {
     const room = roomOf(c.link);
+    await this.relink(c);
     const t = await this.locked({ identityKey: c.identityKey, room, name }, true, async () => {
       const t = await this.mustGet(c.identityKey, room, name);
       t.points = points;
@@ -354,9 +357,27 @@ export class NamesAgent {
     return this.view((await this.store.get(c.identityKey, room, name)) ?? t!);
   }
 
+  /**
+   * Connection `c`'s titles in its room publish through its link as it is now (`c.link`): a connection rejoined with
+   * other relays keeps its names, and they don't go on through relays that went away (review 2).
+   */
+  async relink(c: NamesConn): Promise<void> {
+    const room = roomOf(c.link);
+    for (const t0 of await this.store.titles(c.identityKey)) {
+      if (t0.room !== room || t0.link === c.link) continue;
+      await this.locked(t0, true, async () => {
+        const t = await this.store.get(t0.identityKey, t0.room, t0.name);
+        if (!t || t.link === c.link) return;
+        t.link = c.link;
+        await this.save(t);
+      });
+    }
+  }
+
   /** Lets `name` go: a release made on its chain and stamped; published once anchored, like any entry. */
   async release(c: NamesConn, name: string): Promise<TitleView> {
     const room = roomOf(c.link);
+    await this.relink(c);
     await this.locked({ identityKey: c.identityKey, room, name }, true, async () => {
       const t = await this.mustGet(c.identityKey, room, name);
       // Renewals waiting for their anchors go: one collected later would be a branch whose cover outlasts the
@@ -857,15 +878,6 @@ export class NamesAgent {
 }
 
 const titleKey = (t: { identityKey: string; room: string; name: string }) => JSON.stringify([t.identityKey, t.room, t.name]);
-
-/** A room's ID from its link (`waarm64-room:<id>?…`, or a bare ID), as link.rs reads it. */
-export function roomOf(link: string): string {
-  const s = link.trim();
-  if (!s.startsWith('waarm64-room:')) return s;
-  const rest = s.slice('waarm64-room:'.length);
-  const q = rest.indexOf('?');
-  return decodeURIComponent(q < 0 ? rest : rest.slice(0, q));
-}
 
 // ---- Export and import (with a room connection's key) ----
 

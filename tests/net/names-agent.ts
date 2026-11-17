@@ -45,12 +45,16 @@ export function routeServices(cal: OtsCalendar): { asked: Asked; restore(): void
 /** A publisher that answers as the test says (no room): each put recorded. */
 export function fakePublish(answer: (item: string) => PutAnswer[] = () => [{ id: '', server: 's1', result: 'taken', item: null }]) {
   const puts: string[] = [];
+  /** The link each publish went through. */
+  const links: string[] = [];
   return {
     puts,
+    links,
     wrap(b: NamesBackend): NamesBackend {
       return {
         ...b,
-        publish: (_link, items) => {
+        publish: (link, items) => {
+          links.push(link);
           puts.push(...items.map((i) => i.item));
           return Promise.resolve(new Map(items.map((i) => [i.id, answer(i.item)])));
         },

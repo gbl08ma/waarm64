@@ -4,9 +4,25 @@
 // (web/app/areas/names.svelte.ts) and the components call these.
 import { msg, type Msg } from '../i18n.ts';
 import type { NameCheck, TitleView } from '../names.ts';
-import { base32 } from '../room.ts';
+import { base32, roomOf } from '../room.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
+
+/** Connection `c`'s titles: its key's, in its room (by the room's ID, not the link a title was registered with: a
+ * connection rejoined with other relays keeps its names, review 2), those being registered first (as Preparing). */
+export function titlesOf(
+  titles: TitleView[],
+  registering: { identityKey: string; link: string; name: string }[],
+  c: { identityKey: string; link: string },
+): TitleView[] {
+  const room = roomOf(c.link);
+  const mine = (x: { identityKey: string }, r: string) => x.identityKey === c.identityKey && r === room;
+  const held = titles.filter((t) => mine(t, t.room));
+  const making = registering
+    .filter((r) => mine(r, roomOf(r.link)) && !held.some((t) => t.name === r.name))
+    .map((r): TitleView => ({ identityKey: r.identityKey, room, link: r.link, name: r.name, state: 'preparing', points: [] }));
+  return [...making, ...held];
+}
 const date = (unixS: number) => new Date(unixS * 1000);
 
 /** Title `v`'s state in words at `now` (ms): Preparing, Reserved (public in about N hours), Active (kept until about a
