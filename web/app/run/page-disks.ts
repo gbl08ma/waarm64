@@ -152,7 +152,7 @@ export async function refreshRecords(m: PageMachine) {
   if (!m.stored) return;
   for (const a of m.stored.record.attachments) {
     // A record not refreshed keeps its last numbers: the next run's end tries again.
-    if (a.inPlace) await refreshStored(m.store, a.disk).catch(() => undefined);
+    if (a.inPlace && !a.readOnly) await refreshStored(m.store, a.disk).catch(() => undefined);
     else if (a.overlay) await refreshOverlay(m.store, a.overlay).catch(() => undefined);
   }
 }

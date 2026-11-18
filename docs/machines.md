@@ -284,7 +284,9 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
 - **The blk device writes through `WritableDisk`** (web/overlay.ts: `write`, `zero`, `discard`, `flush`, and
   `written`/`block`/`zeroed` for exports and snapshots); nothing above it assumes a base underneath. A stored disk
   opened for writing is the same block store over zeros, so **writing in place needed no new device code**, only
-  the attachment's choice.
+  the attachment's choice. Ticking Read-only clears it (the box is hidden then); an attachment marked both (a record
+  from before) is read, not written: the device, the snapshots' bases (§5.1) and the record's refresh after a run all
+  take written in place as `inPlace && !readOnly`.
 - **Locks:** under overlays a stored disk is read with read-only sync access handles under a shared Web Lock, so
   several machines can use it at once; writing it in place or merging into it takes the lock exclusively.
 - **A stored disk has a generation** (§3.3) as an overlay has; writing in place bumps it.
