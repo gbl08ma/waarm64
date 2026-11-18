@@ -9,10 +9,7 @@
 //! the entries held, so nodes that hold the same entries with the same anchors agree, whatever
 //! order they got them in.
 
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet},
-};
+use std::{cmp::Ordering, collections::BTreeSet};
 
 use sha2::{Digest, Sha256};
 
@@ -93,14 +90,70 @@ pub fn order(a: &Chain, b: &Chain) -> Ordering {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name {
     pub id: [u8; 32],
-    entries: BTreeMap<[u8; 32], Stamped>,
+    entries: Entries,
+}
+
+/// A name's entries by id, in order: a sorted `Vec` of exactly their number, not a `BTreeMap` (NAMES loop 6b: a map's
+/// node holds 11 entries of ~400 bytes whatever it holds, and a name has two or three, so ~4 KB a name went to empty
+/// slots, a third of a server's memory).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Entries(Vec<Stamped>);
+
+impl Entries {
+    fn at(&self, id: &[u8; 32]) -> Result<usize, usize> {
+        self.0.binary_search_by(|s| s.id().cmp(id))
+    }
+
+    fn get(&self, id: &[u8; 32]) -> Option<&Stamped> {
+        self.at(id).ok().map(|i| &self.0[i])
+    }
+
+    fn get_mut(&mut self, id: &[u8; 32]) -> Option<&mut Stamped> {
+        self.at(id).ok().map(|i| &mut self.0[i])
+    }
+
+    fn contains_key(&self, id: &[u8; 32]) -> bool {
+        self.at(id).is_ok()
+    }
+
+    /// A new entry (one held is merged by the caller).
+    fn insert(&mut self, s: Stamped) {
+        if let Err(i) = self.at(&s.id()) {
+            // Exactly one more: a Vec's growth would hold four for one entry, at ~400 bytes each.
+            self.0.reserve_exact(1);
+            self.0.insert(i, s);
+        }
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&[u8; 32], &Stamped) -> bool) {
+        self.0.retain(|s| keep(&s.id(), s));
+        if self.0.capacity() > self.0.len() + 1 {
+            self.0.shrink_to_fit();
+        }
+    }
+
+    fn values(&self) -> std::slice::Iter<'_, Stamped> {
+        self.0.iter()
+    }
+
+    fn values_mut(&mut self) -> std::slice::IterMut<'_, Stamped> {
+        self.0.iter_mut()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl Name {
     pub fn new(id: [u8; 32]) -> Name {
         Name {
             id,
-            entries: BTreeMap::new(),
+            entries: Entries::default(),
         }
     }
 
@@ -113,7 +166,7 @@ impl Name {
         match self.entries.get_mut(&s.id()) {
             Some(held) => held.merge(s),
             None => {
-                self.entries.insert(s.id(), s);
+                self.entries.insert(s);
                 true
             }
         }
@@ -245,7 +298,8 @@ impl Name {
         });
         // An unanchored entry is its run's last as long as nothing anchored follows it.
         let followed: BTreeSet<[u8; 32]> = self.entries.values().map(|e| e.entry.prev).collect();
-        for (id, e) in self.entries.iter_mut() {
+        for e in self.entries.values_mut() {
+            let id = &e.id();
             let last = if e.time().is_some() {
                 lasts.contains(id)
             } else {

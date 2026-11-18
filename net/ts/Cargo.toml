@@ -63,3 +63,8 @@ test = true
 [[example]]
 name = "names-title"
 required-features = ["test-params"]
+
+# Where a server's memory goes (bench/net/REPORT.md "NAMES loop 6b"): a counting allocator over a registry and a sync.
+[[example]]
+name = "names-memory"
+required-features = ["test-params"]
