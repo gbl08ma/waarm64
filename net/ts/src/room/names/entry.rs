@@ -7,6 +7,8 @@
 //! anchor, one, the earliest offered, whose block's time is the entry's time; or a pending
 //! anchor, at most one, which proves nothing.
 
+use std::collections::{BTreeSet, VecDeque};
+
 use argon2::{Algorithm, Argon2, Block, Version};
 use k256::schnorr::{Signature, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
@@ -153,6 +155,14 @@ impl Entry {
         Sha256::digest(self.encode()).into()
     }
 
+    /// SHA-256 of the fields before the signature: what the proof of work covers. Entries that differ only in their
+    /// signature (the owner signing one mined entry again, with other aux randomness) share it, and so their work's
+    /// verdict (final review's finding 1: an id takes the signature in, so caches keyed by id let each re-signing cost
+    /// an Argon2id).
+    pub fn work_key(&self) -> [u8; 32] {
+        Sha256::digest(self.signed()).into()
+    }
+
     /// What the owner signs: a tagged hash of the room's value and the fields before the
     /// signature.
     pub fn sighash(&self, names: &RoomNames) -> [u8; 32] {
@@ -175,7 +185,16 @@ pub struct Pow {
     argon: Argon2<'static>,
     blocks: Vec<Block>,
     bits: u32,
+    /// The work keys ([`Entry::work_key`]) whose work held lately: an entry signed again over the same fields costs
+    /// its signature's check, not another Argon2id.
+    held: BTreeSet<[u8; 32]>,
+    held_order: VecDeque<[u8; 32]>,
+    /// Argon2id runs (the tests count them).
+    pub runs: u64,
 }
+
+/// Work keys remembered as holding (32 bytes each, ~1 MB at most).
+const WORK_KEPT: usize = 16_384;
 
 impl Pow {
     pub fn new(params: &Params) -> Pow {
@@ -186,11 +205,15 @@ impl Pow {
             argon: Argon2::new(Algorithm::Argon2id, Version::V0x13, p),
             blocks,
             bits: params.pow_bits,
+            held: BTreeSet::new(),
+            held_order: VecDeque::new(),
+            runs: 0,
         }
     }
 
     /// The function's output for an entry's signed fields.
     pub fn hash(&mut self, e: &Entry) -> [u8; 32] {
+        self.runs += 1;
         let mut out = [0u8; 32];
         self.argon
             .hash_password_into_with_memory(&e.signed(), &e.name, &mut out, &mut self.blocks[..])
@@ -198,15 +221,33 @@ impl Pow {
         out
     }
 
-    /// Whether `e`'s proof of work holds: `bits` leading zero bits.
+    /// Whether `e`'s proof of work holds: `bits` leading zero bits. A verdict that held is remembered by the work key,
+    /// so the same fields signed again cost nothing here.
     pub fn ok(&mut self, e: &Entry) -> bool {
+        let k = e.work_key();
+        if self.held.contains(&k) {
+            return true;
+        }
+        let ok = self.holds(e);
+        if ok && self.held.insert(k) {
+            self.held_order.push_back(k);
+            if self.held_order.len() > WORK_KEPT
+                && let Some(old) = self.held_order.pop_front()
+            {
+                self.held.remove(&old);
+            }
+        }
+        ok
+    }
+
+    fn holds(&mut self, e: &Entry) -> bool {
         leading_zeros(&self.hash(e)) >= self.bits
     }
 
     /// Tries `tries` nonces from `e`'s; true when one holds (left in `e`).
     pub fn mine(&mut self, e: &mut Entry, tries: u64) -> bool {
         for _ in 0..tries {
-            if self.ok(e) {
+            if self.holds(e) {
                 return true;
             }
             e.nonce = e.nonce.wrapping_add(1);

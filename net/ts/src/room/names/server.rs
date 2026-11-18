@@ -92,6 +92,11 @@ pub const ANSWERS_PER_SECOND: usize = 4;
 pub(super) const QUESTIONS_PER_SECOND: usize = 1;
 /// An `ids` answer's cover ends are rounded up to this (seconds).
 pub const IDS_UNTIL_STEP: u64 = 7 * 24 * 3600;
+/// `ids` answered to one session at most (the dialog's checker asks once a press: a retry's room), and to everyone a
+/// minute (final review, finding 7: answered to anyone as often as asked, 256 gets listed every id held).
+pub const IDS_PER_SESSION: u32 = 2;
+pub const IDS_PER_MINUTE: usize = 4;
+const IDS_WINDOW: Duration = Duration::from_secs(60);
 /// A server's replies to asks a second (room-names-r3.md): a budget of their own, apart from call backs and from answers
 /// to "who serves?", so neither starves the other.
 pub const REPLIES_PER_SECOND: usize = 2;
@@ -99,8 +104,8 @@ pub const REPLIES_PER_SECOND: usize = 2;
 /// this often at most.
 pub const REPLIES_PER_TAG: usize = 16;
 const REPLIES_PER_TAG_WINDOW: Duration = Duration::from_secs(60);
-/// Ask nonces replied to lately: an ask's rounds share a nonce, and a server in the first round's share is in the
-/// next's too.
+/// Asks replied to lately, by nonce and asker key: an ask's rounds share a nonce, and a server in the first round's
+/// share is in the next's too.
 const REPLIED_KEPT: usize = 1024;
 /// Answers to questions naming one key, a minute (an honest asker asks a question a second at most, and rarely).
 pub const ANSWERS_PER_KEY: usize = 4;
@@ -134,6 +139,9 @@ const PUTS_MAX: usize = 64;
 const REFUSED_KEPT: usize = 4096;
 /// Entries remembered as verified (~300 bytes each, ~5 MB).
 const VERIFIED_KEPT: usize = 16_384;
+/// Entries of one job signed again over the same fields as one it checked (only the owner's key makes them) are
+/// skipped, a unit for this many.
+const SIGNED_AGAIN_A_UNIT: u32 = 16;
 /// The most `sync`s a run sends: a registry of 20,000 names each differing takes ~4,400 (1 + 16 + 256 + 4,096 ranges).
 pub const MAX_RUN_SYNCS: usize = 8192;
 /// A run's longest time (review 2: a partner answering each request just before it times out could stretch a run's
@@ -541,6 +549,10 @@ struct Job {
     item: Item,
     next: usize,
     checked: Vec<Stamped>,
+    /// The work keys of the entries checked, and their ids: another entry over the same fields (signed again) is
+    /// skipped (final review, finding 1); how many were.
+    bodies: BTreeMap<[u8; 32], [u8; 32]>,
+    again: u32,
     zone_checked: bool,
     /// An entry of it failed a check only a forgery fails: nothing of it is kept.
     forged: bool,
@@ -556,6 +568,8 @@ impl Job {
             item,
             next: 0,
             checked: Vec::new(),
+            bodies: BTreeMap::new(),
+            again: 0,
             zone_checked: false,
             forged: false,
         }
@@ -589,11 +603,12 @@ pub struct Server {
     /// [`ANSWERS_PER_KEY`] times a minute at most (review 2: questions naming a victim's key).
     answered_keys: BTreeMap<[u8; 32], VecDeque<Instant>>,
     askers: BTreeMap<[u8; 32], Asker>,
-    /// Replies to asks lately: every one ([`REPLIES_PER_SECOND`]), by reply tag ([`REPLIES_PER_TAG`]), by nonce.
+    /// Replies to asks lately: every one ([`REPLIES_PER_SECOND`]), by reply tag ([`REPLIES_PER_TAG`]), by nonce and
+    /// asker key.
     replies: VecDeque<Instant>,
     reply_tags: BTreeMap<[u8; 32], VecDeque<Instant>>,
-    replied: BTreeSet<[u8; 16]>,
-    replied_order: VecDeque<[u8; 16]>,
+    replied: BTreeSet<([u8; 16], [u8; 32])>,
+    replied_order: VecDeque<([u8; 16], [u8; 32])>,
     /// The largest item a reply carries (the tests' lower it): [`REPLY_MAX`].
     pub reply_max: usize,
     /// Call backs waiting out [`CROSSED_WAIT`].
@@ -610,14 +625,19 @@ pub struct Server {
     /// Entry ids that failed a check only a forgery fails, lately: not checked again.
     refused: BTreeSet<[u8; 32]>,
     refused_order: VecDeque<[u8; 32]>,
-    /// Entries checked whole lately (signature, proof of work), without their anchors: a valid entry put
-    /// again (a dead chain's, say) costs only its anchor's check (review 2).
+    /// Entries checked whole lately (signature, proof of work), without their anchors, by their work key
+    /// ([`super::entry::Entry::work_key`]): a valid entry put again (a dead chain's, say) costs only its anchor's check
+    /// (review 2), and the same fields signed again only a signature's check, taking no place of their own (final
+    /// review, finding 1: by id, each signing took one and flushed the rest).
     verified: BTreeMap<[u8; 32], Stamped>,
     verified_order: VecDeque<[u8; 32]>,
     /// Peers that proved a live name: the servers our questions chose, and those whose `sync` carried a proof.
     proven: BTreeSet<[u8; 32]>,
     /// Peers whose proof was checked this session.
     proof_tried: BTreeSet<[u8; 32]>,
+    /// `ids` answered: to each peer this session, and to everyone lately ([`IDS_PER_SESSION`], [`IDS_PER_MINUTE`]).
+    ids_asked: BTreeMap<[u8; 32], u32>,
+    ids_answered: VecDeque<Instant>,
     /// What each peer's syncs cost us this sync round: since when, and how many items fingerprinted.
     sync_spent: BTreeMap<[u8; 32], (Instant, u64)>,
     dropped: BTreeMap<[u8; 32], u64>,
@@ -662,8 +682,10 @@ pub struct Stats {
     pub fetched: usize,
     pub rounds: usize,
     pub syncs: usize,
-    /// Entries checked whole.
+    /// Entries checked whole (their signature, and their proof of work unless the same fields held lately).
     pub checked: usize,
+    /// Proofs of work computed (Argon2id runs).
+    pub work: u64,
 }
 
 pub(super) fn random<const N: usize>() -> [u8; N] {
@@ -712,6 +734,8 @@ impl Server {
             verified_order: VecDeque::new(),
             proven: BTreeSet::new(),
             proof_tried: BTreeSet::new(),
+            ids_asked: BTreeMap::new(),
+            ids_answered: VecDeque::new(),
             sync_spent: BTreeMap::new(),
             dropped: BTreeMap::new(),
             settle_at: None,
@@ -744,13 +768,21 @@ impl Server {
                 continue;
             };
             let id = t.item.id;
-            self.titles.push((key, id));
-            self.own.insert(id);
-            if let Some(z) = t.item.zone.clone() {
-                self.title_zones.insert(id, z);
+            let pk: [u8; 32] = key.verifying_key().to_bytes().into();
+            // Verified as anything from outside is, now (a title is a few entries), and before it counts as this node's
+            // own: it may have come in a pasted export, which anyone can craft (review 2). A title is its key's claim
+            // and what follows it, and that key's zone of its name: one with no entries, another key's entry or zone,
+            // or one that doesn't hold is refused whole (final review, finding 6: it answered the resolver from its
+            // zone, unchecked, while the registry didn't resolve the name). Entries held already, or checked lately,
+            // cost nothing.
+            let theirs = t.item.entries.is_empty()
+                || t.item.entries.iter().any(|w| w.entry.owner != pk)
+                || (t.item.zone.as_ref())
+                    .is_some_and(|z| z.owner != pk || z.name != id || !z.verify(&self.names));
+            if theirs {
+                self.log("a title refused: not its key's".into());
+                continue;
             }
-            // Verified as anything from outside is, now (a title is a few entries): it may have come in a pasted
-            // export, which anyone can craft (review 2). Entries held already, or checked lately, cost nothing.
             let mut job = Job::new(None, t.item);
             while !job.forged && job.next < job.item.entries.len() {
                 let w = job.item.entries[job.next].clone();
@@ -761,7 +793,12 @@ impl Server {
                 self.log("a title refused: an entry doesn't hold".into());
                 continue;
             }
-            let zone = job.item.zone.take().filter(|z| z.verify(&self.names));
+            self.titles.push((key, id));
+            self.own.insert(id);
+            let zone = job.item.zone.take();
+            if let Some(z) = zone.clone() {
+                self.title_zones.insert(id, z);
+            }
             let mut h = self.reg.take(&id).unwrap_or_else(|| Held::new(id, unix));
             h.asked = h.asked.max(unix);
             for e in job.checked {
@@ -839,6 +876,7 @@ impl Server {
         self.synced_with.clear();
         self.proven.clear();
         self.proof_tried.clear();
+        self.ids_asked.clear();
         self.sync_spent.clear();
         self.out.stop();
     }
@@ -1445,7 +1483,9 @@ impl Server {
     /// last entry and the zone, none, or that its item is past [`Server::reply_max`].
     fn reply(&mut self, a: &NameAsk, via: [u8; 16], now: Instant, unix: u64) {
         let me = self.key.unwrap();
-        if self.replied.contains(&a.nonce) {
+        // Once a nonce and asker key (final review, finding 3: by nonce alone, a copy of a round under another key,
+        // sent first, had the asker's later rounds and dissent go unreplied).
+        if self.replied.contains(&(a.nonce, a.key)) {
             return;
         }
         let tag = self.reply_tags.entry(a.key).or_default();
@@ -1465,8 +1505,8 @@ impl Server {
             w.back()
                 .is_some_and(|t| now.saturating_duration_since(*t) < REPLIES_PER_TAG_WINDOW)
         });
-        self.replied.insert(a.nonce);
-        self.replied_order.push_back(a.nonce);
+        self.replied.insert((a.nonce, a.key));
+        self.replied_order.push_back((a.nonce, a.key));
         if self.replied_order.len() > REPLIED_KEPT
             && let Some(old) = self.replied_order.pop_front()
         {
@@ -1615,6 +1655,21 @@ impl Server {
                 id,
                 ..
             } => {
+                // Twice a session, four a minute from everyone: past them an empty `items`, so the checker hears at
+                // once that this server can't say (final review, finding 7; not closed: docs/backlog.md).
+                let n = self.ids_asked.entry(from).or_default();
+                while (self.ids_answered.front())
+                    .is_some_and(|t| now.saturating_duration_since(*t) >= IDS_WINDOW)
+                {
+                    self.ids_answered.pop_front();
+                }
+                if *n >= IDS_PER_SESSION || self.ids_answered.len() >= IDS_PER_MINUTE {
+                    self.stats.refused += 1;
+                    self.send(from, &Msg::Items(Vec::new()), xid, now);
+                    return self.log("an ids get refused: past its budget".into());
+                }
+                *n += 1;
+                self.ids_answered.push_back(now);
                 // Each with until when its owner holds it (its cover's end; 0: nobody does now), for the dialog's
                 // "taken until about".
                 let ids = (self.reg.matching(&id).into_iter())
@@ -1986,6 +2041,7 @@ impl Server {
         self.synced_with.remove(&k);
         self.proven.remove(&k);
         self.proof_tried.remove(&k);
+        self.ids_asked.remove(&k);
         self.sync_spent.remove(&k);
     }
 
@@ -2040,12 +2096,13 @@ impl Server {
         }
     }
 
-    /// Entry `s` was just checked whole (it has no anchor yet): remembered, so a copy of it costs only its anchor's
-    /// check.
+    /// Entry `s` was just checked whole (it has no anchor yet): remembered by its work key, so a copy of it costs only
+    /// its anchor's check. One signed again over fields remembered takes no place of its own.
     fn remember_verified(&mut self, s: &Stamped) {
-        let id = s.id();
-        if self.verified.insert(id, s.clone()).is_none() {
-            self.verified_order.push_back(id);
+        let k = s.entry.work_key();
+        if let std::collections::btree_map::Entry::Vacant(v) = self.verified.entry(k) {
+            v.insert(s.clone());
+            self.verified_order.push_back(k);
             if self.verified_order.len() > VERIFIED_KEPT
                 && let Some(old) = self.verified_order.pop_front()
             {
@@ -2057,7 +2114,10 @@ impl Server {
     /// An entry checked whole (counted).
     fn check_whole(&mut self, e: super::entry::Entry) -> Result<Stamped, Invalid> {
         self.stats.checked += 1;
-        Stamped::check(e, &self.names, &mut self.pow)
+        let runs = self.pow.runs;
+        let r = Stamped::check(e, &self.names, &mut self.pow);
+        self.stats.work += self.pow.runs - runs;
+        r
     }
 
     /// Checks one entry of a job (or only its anchor, when the entry is held): its cost. An entry that fails a check
@@ -2075,19 +2135,29 @@ impl Server {
             job.forged = true;
             return 0;
         }
+        // The same fields as an entry of this job, signed again (only its owner key does that): skipped, whatever it
+        // carries (final review, finding 1: 1,024 signings of one mined entry, each valid, cost 1,024 Argon2ids).
+        let wk = w.entry.work_key();
+        if job.bodies.get(&wk).is_some_and(|i| *i != eid) {
+            job.again += 1;
+            return u32::from(job.again.is_multiple_of(SIGNED_AGAIN_A_UNIT));
+        }
+        job.bodies.insert(wk, eid);
         let held = self
             .reg
             .get(&id)
             .and_then(|h| h.name.get(&eid))
             .cloned()
             .or_else(|| job.checked.iter().find(|s| s.id() == eid).cloned())
-            .or_else(|| self.verified.get(&eid).cloned());
+            .or_else(|| self.verified.get(&wk).filter(|s| s.id() == eid).cloned());
+        // Fields verified lately under another signature: its proof of work held, only the signature is checked.
+        let known = self.verified.contains_key(&wk);
         let (mut s, mut cost) = match held {
             Some(s) => (s, 0),
             None => match self.check_whole(w.entry) {
                 Ok(s) => {
                     self.remember_verified(&s);
-                    (s, 4)
+                    (s, if known { 1 } else { 4 })
                 }
                 Err(e) => {
                     self.log(format!("an entry refused: {e:?}"));

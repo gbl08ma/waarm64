@@ -1014,6 +1014,41 @@ fn work_for_one_name_serves_no_other() {
 }
 
 #[test]
+fn work_that_held_is_remembered_by_the_fields_it_covers() {
+    // The final review's finding 1: an entry signed again (other aux randomness) has another id and the same work. Its
+    // proof of work isn't computed again; a nonce changed is new work, and a verdict that failed isn't remembered.
+    let p = params();
+    let names = RoomNames::derive("names test room");
+    let key = owner_key(&[1; 32], &names, "again");
+    let owner = key.verifying_key().to_bytes().into();
+    let mut pow = Pow::new(&p);
+    let mut e = Entry::new(&names, Kind::Claim, names.name_id("again"), owner, [0; 32]);
+    assert!(pow.mine(&mut e, 1 << 20));
+    e.sign(&key, &names);
+    let runs = pow.runs;
+    assert!(pow.ok(&e));
+    assert_eq!(pow.runs, runs + 1);
+    let mut f = e.clone();
+    f.sign(&key, &names);
+    assert_ne!(f.id(), e.id());
+    assert_eq!(f.work_key(), e.work_key());
+    assert!(Stamped::check(f, &names, &mut pow).is_ok());
+    assert_eq!(pow.runs, runs + 1, "signed again: no work");
+    let mut g = e.clone();
+    g.nonce = g.nonce.wrapping_add(1);
+    let short = !pow.ok(&g);
+    assert_eq!(pow.runs, runs + 2, "another nonce: work");
+    if short {
+        pow.ok(&g);
+        assert_eq!(
+            pow.runs,
+            runs + 3,
+            "a verdict that failed is computed again"
+        );
+    }
+}
+
+#[test]
 fn two_headers_over_one_root_settle_on_the_same() {
     // One path to one Merkle root under two headers (another block's time, or one forged at the floor): every node keeps
     // the earlier, whatever came first, and what a `get` says it holds tells the two apart, so servers holding one each

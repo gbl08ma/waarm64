@@ -1769,8 +1769,10 @@ impl Client {
         };
         let unix = self.unix(now);
         let region = self.local_region(q.region);
-        // A question's rounds share its nonce: each round is remembered apart.
-        let seen = mac16(&[q.spread; 32], &[&q.nonce]);
+        // A question's rounds share its nonce: each round is remembered apart, and each asker's (final review, finding
+        // 3: by nonce and round alone, a copy under another key sent first had the asker's own round dropped). A copy
+        // of one event through another relay carries the same key.
+        let seen = mac16(&[q.spread; 32], &[&q.key, &q.nonce]);
         if q.key == self.public
             || unix.abs_diff(q.time) > LOOKUP_MAX_AGE
             || self.nonces.contains(&seen)

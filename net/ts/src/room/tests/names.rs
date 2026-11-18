@@ -337,6 +337,45 @@ fn a_flood_of_questions_leaves_the_nodes_own_lookups_and_call_backs_alone() {
     );
 }
 
+/// The final review's finding 3: a question's rounds share their nonce, and copies were dropped by nonce and round
+/// alone. Anyone who read a round could send the next rounds' spreads with that nonce under another key first, and the
+/// asker's own rounds were dropped as copies: a new server then heard nobody and served an unsynced registry. Copies
+/// are the same key's (another relay's copy of one event).
+#[test]
+fn a_question_copied_under_another_key_doesnt_drop_the_askers_round() {
+    let mut b = Bitcoin::new(ROOM, 6);
+    let t = title(&mut b, 1, "busy");
+    let mut n = Net::new(vec![server_config(1, vec![t]), config(2)]);
+    n.advance(Duration::from_secs(5));
+    assert!(n.server(0).synced);
+    let room = Room::derive(ROOM);
+    let region = n.nodes[0].c.wire_region(n.nodes[0].c.home);
+    let unix = n.nodes[0].c.unix(n.now);
+    let tag = room.names_tag(unix / 3600);
+    let nonce = [0x3c; 16];
+    let answered = n.server(0).stats.answered;
+    for key in [[0x66; 32], [0x67; 32], [0x67; 32]] {
+        let q = Question {
+            key,
+            region,
+            time: unix,
+            nonce,
+            spread: 0,
+        };
+        let content = b64().encode(lookup::seal_bare(&room, &tag, &q.plain()));
+        let e = nostr::Author::random()
+            .unwrap()
+            .event(KIND, &tag, &content, unix);
+        n.forward(&e);
+        n.run();
+    }
+    assert_eq!(
+        n.server(0).stats.answered - answered,
+        2,
+        "the forger's and the asker's, not the asker's again"
+    );
+}
+
 #[test]
 fn two_servers_asking_at_once_still_find_each_other() {
     let mut b = Bitcoin::new(ROOM, 5);
