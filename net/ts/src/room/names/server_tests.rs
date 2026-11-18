@@ -3605,6 +3605,101 @@ fn a_server_replies_to_asks_by_their_mode() {
     assert_eq!(s.stats.fetched, 1);
 }
 
+/// The final review's finding 5: a server holding a release (a tombstone) replies it, with what leads to it as far as
+/// a reply carries: in place of none to a `share`, beside the owner's reply when the name has a next owner, and to a
+/// `dissent` whatever it showed (the released chain's last entry, replayed, is alive by its own time).
+#[test]
+fn a_server_holding_a_release_replies_it() {
+    use super::wire::{AskMode, Reply, ReplyItem};
+    let mut b = Bitcoin::new(ROOM, 57);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let k = b.key(2, "shop");
+    let claim = b.at(Kind::Claim, &k, "shop", [0; 32], t(30));
+    let renew = b.at(Kind::Renew, &k, "shop", claim.id(), t(10));
+    let release = b.at(Kind::Release, &k, "shop", renew.id(), t(1));
+    let gone = b.item("shop", &[claim, renew.clone(), release.clone()], None);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    assert!(s.load(&record(&gone, T), T));
+    let mut now = Instant::now();
+    s.start([7; 32], now);
+    while s.poll().is_some() {}
+    s.synced = true;
+    let replies = |s: &mut Server, a: super::wire::NameAsk, now: Instant| -> Vec<Reply> {
+        s.input(
+            Input::Ask {
+                ask: a,
+                region: Some(0),
+                via: [0; 16],
+            },
+            now,
+            T,
+        );
+        let mut v = Vec::new();
+        while let Some(c) = s.poll() {
+            if let Cmd::Reply { data, .. } = c {
+                v.push(Reply::decode(&data).unwrap());
+            }
+        }
+        v
+    };
+    let ids = |r: &Reply| match &r.item {
+        ReplyItem::Item(it) => it.entries.iter().map(|w| w.entry.id()).collect::<Vec<_>>(),
+        other => panic!("{other:?}"),
+    };
+    let r = replies(
+        &mut s,
+        an_ask(1, 1, gone.id, AskMode::Share, 0, [0; 8]),
+        now,
+    );
+    assert_eq!(r.len(), 1, "the release in place of none");
+    assert_eq!(
+        ids(&r[0]),
+        [release.id(), renew.id(), gone.entries[0].entry.id()]
+    );
+    // What fits: none when not even the release does.
+    s.reply_max = 1;
+    now += Duration::from_secs(1);
+    let r = replies(
+        &mut s,
+        an_ask(1, 2, gone.id, AskMode::Share, 0, [0; 8]),
+        now,
+    );
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].item, ReplyItem::None, "nothing fits");
+    s.reply_max = super::wire::REPLY_MAX;
+    // A dissent naming the replayed last entry: the release.
+    now += Duration::from_secs(1);
+    let shown = super::wire::shown(&renew.entry.owner, &renew.id(), None);
+    let r = replies(
+        &mut s,
+        an_ask(2, 3, gone.id, AskMode::Dissent, 6, shown),
+        now,
+    );
+    assert_eq!(r.len(), 1);
+    assert_eq!(ids(&r[0])[0], release.id());
+    // Registered again since: the next owner's reply, and the release in one of its own.
+    let (_, next) = b.title(3, "shop", t(0), &[], [3; 32]);
+    assert!(s.load(&record(&next, T), T));
+    now += Duration::from_secs(1);
+    let r = replies(
+        &mut s,
+        an_ask(3, 4, gone.id, AskMode::Share, 0, [0; 8]),
+        now,
+    );
+    assert_eq!(r.len(), 2, "{r:?}");
+    assert_eq!(ids(&r[0]), [next.entries[0].entry.id()]);
+    assert_eq!(ids(&r[1])[0], release.id());
+    // Once a nonce and key, both.
+    assert!(
+        replies(
+            &mut s,
+            an_ask(3, 4, gone.id, AskMode::Share, 0, [0; 8]),
+            now
+        )
+        .is_empty()
+    );
+}
+
 /// The final review's finding 3: a first lookup's rounds share their nonce, and a server replied to a nonce once,
 /// whoever asked. Anyone who read the first round could send its nonce under another key first (spread 0), and the
 /// asker's later rounds and dissent went unreplied. Once a nonce and asker key: a copy through another relay is the

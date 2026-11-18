@@ -1406,8 +1406,12 @@ impl Server {
             }
             AskMode::Dissent => {
                 // Another owner, or the owner's later entry or another zone (R3a): whatever differs from what was shown.
+                // A release held: always (final review, finding 5: what was shown may be the released chain's last
+                // entry, alive by its own time, and only the release says it isn't).
                 let held = self.shown_of(&a.id, unix);
-                if held.is_some_and(|h| a.shown == [0; 8] || h != a.shown) {
+                if held.is_some_and(|h| a.shown == [0; 8] || h != a.shown)
+                    || self.released_item(&a.id, unix).is_some()
+                {
                     self.reply(&a, via, now, unix);
                 }
             }
@@ -1479,32 +1483,43 @@ impl Server {
         }
     }
 
-    /// Replies to ask `a` (once a nonce, within [`REPLIES_PER_SECOND`] and [`REPLIES_PER_TAG`]): the owning chain's
-    /// last entry and the zone, none, or that its item is past [`Server::reply_max`].
+    /// Released chains held as tombstones (store.rs `Held::settle`): each one's release and as much of what leads to
+    /// it as a reply carries ([`Server::reply_max`]), in one item without a zone. None when none is held.
+    fn released_item(&mut self, id: &[u8; 32], unix: u64) -> Option<Item> {
+        let params = self.params.clone();
+        let reply_max = self.reply_max;
+        let h = self.settled(id, unix)?;
+        let mut it = Item {
+            id: *id,
+            entries: Vec::new(),
+            zone: None,
+        };
+        for c in h.name.chains(&params) {
+            if !c.released || c.keep_until <= unix {
+                continue;
+            }
+            // The release, then the entries before it, last first, while the reply has room.
+            for e in c.ids.iter().rev().filter_map(|i| h.name.get(i)) {
+                it.entries.push(WireEntry::of(e));
+                if it.encode().len() > reply_max {
+                    it.entries.pop();
+                    break;
+                }
+            }
+        }
+        (!it.entries.is_empty()).then_some(it)
+    }
+
+    /// Replies to ask `a` (once a nonce and asker key, within [`REPLIES_PER_SECOND`] and [`REPLIES_PER_TAG`]): the
+    /// owning chain's last entry and the zone, none, or that its item is past [`Server::reply_max`]; and, with a
+    /// release held, the release in a reply of its own (in place of none, when no chain owns the name: final review,
+    /// finding 5).
     fn reply(&mut self, a: &NameAsk, via: [u8; 16], now: Instant, unix: u64) {
-        let me = self.key.unwrap();
         // Once a nonce and asker key (final review, finding 3: by nonce alone, a copy of a round under another key,
         // sent first, had the asker's later rounds and dissent go unreplied).
-        if self.replied.contains(&(a.nonce, a.key)) {
+        if self.replied.contains(&(a.nonce, a.key)) || !self.reply_budget(&a.key, now) {
             return;
         }
-        let tag = self.reply_tags.entry(a.key).or_default();
-        while tag
-            .front()
-            .is_some_and(|t| now.saturating_duration_since(*t) >= REPLIES_PER_TAG_WINDOW)
-        {
-            tag.pop_front();
-        }
-        if tag.len() >= REPLIES_PER_TAG || !room_in(&mut self.replies, REPLIES_PER_SECOND, now) {
-            self.stats.replies_refused += 1;
-            return;
-        }
-        tag.push_back(now);
-        self.replies.push_back(now);
-        self.reply_tags.retain(|_, w| {
-            w.back()
-                .is_some_and(|t| now.saturating_duration_since(*t) < REPLIES_PER_TAG_WINDOW)
-        });
         self.replied.insert((a.nonce, a.key));
         self.replied_order.push_back((a.nonce, a.key));
         if self.replied_order.len() > REPLIED_KEPT
@@ -1520,17 +1535,56 @@ impl Server {
             ),
             None => (None, 0),
         };
+        let released = self.released_item(&a.id, unix);
         self.note_asked(&a.id, unix);
         #[cfg(test)]
         let since = self.lie_since.filter(|_| item.is_some()).unwrap_or(since);
         let item = match item {
-            None => ReplyItem::None,
+            None if released.is_some() => None,
+            None => Some(ReplyItem::None),
             // Past the bound: the last entry alone, so the reply holds something checkable.
             Some(it) if it.encode().len() > self.reply_max => {
-                ReplyItem::TooBig(Box::new(Item { zone: None, ..it }))
+                Some(ReplyItem::TooBig(Box::new(Item { zone: None, ..it })))
             }
-            Some(it) => ReplyItem::Item(Box::new(it)),
+            Some(it) => Some(ReplyItem::Item(Box::new(it))),
         };
+        // The first within the budget already counted; the next only if it fits too.
+        let replies = item
+            .map(|i| (i, since))
+            .into_iter()
+            .chain(released.map(|r| (ReplyItem::Item(Box::new(r)), 0)));
+        for (k, (item, since)) in replies.enumerate() {
+            if k > 0 && !self.reply_budget(&a.key, now) {
+                return;
+            }
+            self.send_reply(a, via, since, item);
+        }
+    }
+
+    /// Whether a reply under `key`'s tag fits the budgets (counted when it does).
+    fn reply_budget(&mut self, key: &[u8; 32], now: Instant) -> bool {
+        let tag = self.reply_tags.entry(*key).or_default();
+        while tag
+            .front()
+            .is_some_and(|t| now.saturating_duration_since(*t) >= REPLIES_PER_TAG_WINDOW)
+        {
+            tag.pop_front();
+        }
+        if tag.len() >= REPLIES_PER_TAG || !room_in(&mut self.replies, REPLIES_PER_SECOND, now) {
+            self.stats.replies_refused += 1;
+            return false;
+        }
+        tag.push_back(now);
+        self.replies.push_back(now);
+        self.reply_tags.retain(|_, w| {
+            w.back()
+                .is_some_and(|t| now.saturating_duration_since(*t) < REPLIES_PER_TAG_WINDOW)
+        });
+        true
+    }
+
+    fn send_reply(&mut self, a: &NameAsk, via: [u8; 16], since: u32, item: ReplyItem) {
+        let me = self.key.unwrap();
         self.stats.replied += 1;
         let r = Reply {
             nonce: a.nonce,

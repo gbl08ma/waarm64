@@ -418,8 +418,9 @@ struct AskCopy {
     at: Instant,
     first: usize,
     second: Option<usize>,
-    /// The reply, once made, until it went through a second relay.
-    reply: Option<String>,
+    /// The replies made (an item or none, and a release held: final review, finding 5), until they went through a
+    /// second relay.
+    reply: Vec<String>,
 }
 
 /// A query to the room's resolver waiting for the names client.
@@ -1683,7 +1684,7 @@ impl Client {
         if let Some(c) = self.ask_copies.get_mut(&seen) {
             if c.first != i && c.second.is_none() {
                 c.second = Some(i);
-                if let Some(text) = c.reply.take() {
+                for text in std::mem::take(&mut c.reply) {
                     self.nostr_send(i, text);
                 }
             }
@@ -1721,7 +1722,7 @@ impl Client {
                 at: now,
                 first: i,
                 second: None,
-                reply: None,
+                reply: Vec::new(),
             },
         );
         self.names_events.push_back(Input::Ask {
@@ -3150,9 +3151,12 @@ impl Client {
         });
         let waiting = self.dns_waiting.iter().map(|w| w.until).min();
         let copies = (self.ask_copies.values())
-            .map(|c| match c.reply {
-                Some(_) => c.at + REPLY_SECOND_WAIT,
-                None => c.at + ASK_COPIES_FOR,
+            .map(|c| {
+                if c.reply.is_empty() {
+                    c.at + ASK_COPIES_FOR
+                } else {
+                    c.at + REPLY_SECOND_WAIT
+                }
             })
             .min();
         let publisher = self.publisher.as_ref().and_then(|p| p.deadline());
@@ -3677,7 +3681,7 @@ impl Client {
         let (first, second) = match self.ask_copies.get_mut(&via) {
             Some(c) => {
                 if c.second.is_none() {
-                    c.reply = Some(text.clone());
+                    c.reply.push(text.clone());
                 }
                 (Some(c.first), c.second)
             }
@@ -3704,15 +3708,17 @@ impl Client {
 
     /// Replies whose ask's copy didn't come go through another relay; old asks are forgotten.
     fn ask_copies_tick(&mut self, now: Instant) {
-        let due: Vec<([u8; 16], usize, String)> = (self.ask_copies.iter_mut())
-            .filter(|(_, c)| now >= c.at + REPLY_SECOND_WAIT && c.reply.is_some())
-            .map(|(k, c)| (*k, c.first, c.reply.take().unwrap()))
+        let due: Vec<(usize, Vec<String>)> = (self.ask_copies.values_mut())
+            .filter(|c| now >= c.at + REPLY_SECOND_WAIT && !c.reply.is_empty())
+            .map(|c| (c.first, std::mem::take(&mut c.reply)))
             .collect();
-        for (_, first, text) in due {
+        for (first, texts) in due {
             if let Some(i) =
                 (0..self.nostr.len()).find(|i| *i != first && self.nostr[*i].conn.is_some())
             {
-                self.nostr_send(i, text);
+                for text in texts {
+                    self.nostr_send(i, text);
+                }
             }
         }
         self.ask_copies

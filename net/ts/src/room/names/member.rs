@@ -304,6 +304,9 @@ struct First {
     /// Entries checked whole (signature, proof of work) by id: each once, however many replies carry it (None: it
     /// failed). Anchors are checked with each copy: a forged anchor on a copied entry mustn't refuse the honest copy.
     entries: BTreeMap<[u8; 32], Option<Stamped>>,
+    /// Releases replied by their holders, with what leads to them, checked: a key shown whose last entry one of them
+    /// releases shows nothing (final review, finding 5).
+    released: Vec<Stamped>,
 }
 
 impl First {
@@ -1489,6 +1492,7 @@ impl Member {
                 repliers: Vec::new(),
                 contest: None,
                 entries: BTreeMap::new(),
+                released: Vec::new(),
             },
         );
         self.next_round(id, now);
@@ -1668,6 +1672,38 @@ impl Member {
             while units < UNITS_PER_TURN {
                 let f = self.firsts.get_mut(&id).unwrap();
                 let Some(r) = f.queue.pop_front() else { break };
+                // A release, and what leads to it (a holder's: final review, finding 5): every entry checked; it says
+                // none, and ends what it releases.
+                if let ReplyItem::Item(it) = &r.item
+                    && it.entries.iter().any(|w| w.entry.kind == Kind::Release)
+                {
+                    let ReplyItem::Item(it) = r.item else {
+                        unreachable!()
+                    };
+                    let (names, params) = (&self.names, &self.params);
+                    let checked = Self::check_release(
+                        names,
+                        params,
+                        &mut self.pow,
+                        &mut self.stats,
+                        &mut f.entries,
+                        *it,
+                        &id,
+                        unix,
+                        &mut units,
+                    );
+                    match checked {
+                        Err(e) => {
+                            self.stats.refused += 1;
+                            self.log(format!("a release replied refused: {e:?}"));
+                        }
+                        Ok(run) => {
+                            self.released(id, run);
+                            self.counted(id, r.nonce, r.server, 0, None, now, unix);
+                        }
+                    }
+                    continue;
+                }
                 let it = match r.item {
                     ReplyItem::None => None,
                     ReplyItem::Item(it) => Some((it, false)),
@@ -1752,6 +1788,65 @@ impl Member {
         }
     }
 
+    /// A release replied (final review, finding 5): the release of a chain its holder keeps as a tombstone, and the
+    /// entries before it that fit, each checked whole with its anchor. Any that fails refuses the reply.
+    #[allow(clippy::too_many_arguments)]
+    fn check_release(
+        names: &RoomNames,
+        params: &Params,
+        pow: &mut Pow,
+        stats: &mut MemberStats,
+        seen: &mut BTreeMap<[u8; 32], Option<Stamped>>,
+        it: Item,
+        id: &[u8; 32],
+        unix: u64,
+        units: &mut u32,
+    ) -> Result<Vec<Stamped>, Invalid> {
+        if it.id != *id || it.zone.is_some() || it.entries.len() > 2 * RELEASE_RUN {
+            return Err(Invalid::Encoding);
+        }
+        (it.entries.into_iter())
+            .map(|w| Self::check_entry(names, params, pow, stats, seen, w, id, unix, units))
+            .collect()
+    }
+
+    /// Whether `s` (a key's last entry shown) is on a chain one of `released` ends: the release links to it (what leads
+    /// to it was replied with it, or `s` is the entry it names).
+    fn is_released(params: &Params, released: &[Stamped], s: &Stamped) -> bool {
+        let mut n = Name::new(s.entry.name);
+        n.insert(s.clone());
+        for e in released.iter().filter(|e| e.entry.owner == s.entry.owner) {
+            n.insert(e.clone());
+        }
+        (n.chains(params).iter()).any(|c| c.released && c.ids.contains(&s.id()))
+    }
+
+    /// A release replied for first lookup `id`, checked: the keys shown whose last entry it releases show nothing, and
+    /// a name taken from one of them meanwhile (a late release) is kept no more.
+    fn released(&mut self, id: [u8; 32], run: Vec<Stamped>) {
+        let params = self.params.clone();
+        let f = self.firsts.get_mut(&id).unwrap();
+        f.released.extend(run);
+        let gone: Vec<[u8; 32]> = (f.keys.iter())
+            .filter(|(_, (s, _))| Self::is_released(&params, &f.released, s))
+            .map(|(k, _)| *k)
+            .collect();
+        for k in &gone {
+            f.keys.remove(k);
+            f.zoned.remove(k);
+            f.repliers.retain(|r| r.key != *k);
+        }
+        if !gone.is_empty() {
+            self.log("a key shown is released: it shows nothing".into());
+        }
+        let ended = (self.kept.get(&id))
+            .is_some_and(|k| Self::is_released(&params, &self.firsts[&id].released, &k.last));
+        if ended {
+            self.kept.remove(&id);
+            self.cmds.push_back(Cmd::Store { id, record: None });
+        }
+    }
+
     /// A reply's item checked: exactly the owning chain's last entry, alive, and its zone (the owner's, for this name).
     #[allow(clippy::too_many_arguments)]
     fn check_item(
@@ -1806,10 +1901,13 @@ impl Member {
     ) {
         self.nobody = None; // someone answers
         self.heard = Some(now);
+        let params = self.params.clone();
         let f = self.firsts.get_mut(&id).unwrap();
         if nonce == f.nonce {
             f.share_count += 1;
         }
+        // An entry a release replied already ends (final review, finding 5): it shows nothing.
+        let item = item.filter(|(s, _, _)| !Self::is_released(&params, &f.released, s));
         let mut new_key = false;
         match item {
             None => f.nones += 1,
