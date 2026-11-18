@@ -310,7 +310,11 @@ shape, §5.1, and carried by definitions) makes it the guest's swap with nothing
   (its blocks, its record, its machines' choice), and the half-made block store is removed. The disk's record is
   written after the copy, which deletes the overlay's files: cut off between, the disk is still blank and what the
   overlay held is lost. The confirmation (`mergeEffect`) says which, the size, the overlays deleted and the
-  snapshots it orphans (for a grow: those of machines whose guest would see the disk at another size).
+  snapshots it orphans (for a grow: those of machines whose guest would see the disk at another size); under the
+  merge's lock, a merge that is no longer the one confirmed (another how or size: the overlay written meanwhile, by a
+  machine in another tab; or an overlay to delete the confirmation didn't list) is refused
+  ([The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it
+  again.](ui:disks:merge.changed)).
 - **Writing in place and snapshots:** a disk written in place has no earlier state to fork from. A kept snapshot pins
   the disk's generation and restores it only while it matches; otherwise a file carrying the whole disk forks it into
   an overlay, and one without is refused with the reason. **A downloaded snapshot can't be self-contained** without

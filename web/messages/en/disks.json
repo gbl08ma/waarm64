@@ -467,6 +467,10 @@
     "message": "A machine using the overlay <name>{{name}}</name> is running. Power it off first.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
   },
+  "merge.changed": {
+    "message": "The disk's overlays changed since you were asked (in another tab, or by a machine). Look again and merge it again.",
+    "note": "Detail of an error on the Home page (Disks), under Overlays.failed.merge, when Merge into the disk is refused because what it would do is no longer what the confirmation said: the overlay was written meanwhile (a grow became a conversion), or another overlay the merge would delete was made."
+  },
   "merge.diskRunning": {
     "message": "A machine using this disk is running. Power it off first.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the stored disk itself open."

@@ -28,9 +28,11 @@ async function mergeHow(d: DiskRecord, o: OverlayRecord) {
  * its record. Into a blank disk: an overlay never written to grows the
  * disk to its size and is deleted (the other overlays stay: the disk still reads as zeros); one written to makes the
  * disk a stored disk of its blocks (the other overlays deleted, as above). Machines that had the deleted overlays
- * chosen are left without one. The caller confirmed (it says `mergeEffect`). Returns the blocks merged.
+ * chosen are left without one. The caller confirmed `confirmed` (its `mergeEffect`): a merge that would differ from
+ * it now (how, the size, an overlay to delete it didn't list: the overlay written, or one made, meanwhile) is refused.
+ * Returns the blocks merged.
  */
-export async function mergeIntoDisk(store: Store, overlay: string): Promise<number> {
+export async function mergeIntoDisk(store: Store, overlay: string, confirmed: Confirmed): Promise<number> {
   const o = await store.get('overlays', overlay);
   if (!o) throw new MsgError('disks:disks.overlayGone');
   const d = await store.get('disks', o.disk);
@@ -42,9 +44,17 @@ export async function mergeIntoDisk(store: Store, overlay: string): Promise<numb
     if (!o2) throw new MsgError('disks:disks.overlayGone');
     const how = d2 && (await mergeHow(d2, o2));
     if (!d2 || !how) throw new MsgError('disks:merge.onlyStored');
+    const others = how === 'grow' ? [] : (await store.overlaysOf(d2.id)).filter((x) => x.id !== o2.id);
+    const listed = new Set(confirmed.others.map((x) => x.id));
+    const size = Math.max(d2.size, o2.size ?? 0);
+    if (how !== confirmed.how || size !== confirmed.size || others.some((x) => !listed.has(x.id)))
+      throw new MsgError('disks:merge.changed');
     return how === 'grow' ? growBlank(store, o2, d2) : merge(store, o2, d2);
   });
 }
+
+/** What the user confirmed of a merge (its `mergeEffect`). */
+type Confirmed = Pick<NonNullable<Awaited<ReturnType<typeof mergeEffect>>>, 'how' | 'others' | 'size'>;
 
 /** Refused while one of `overlays`, or disk `d` itself, is open. */
 async function noneInUse(d: DiskRecord, overlays: OverlayRecord[]) {
