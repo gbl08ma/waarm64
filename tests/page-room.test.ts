@@ -6,7 +6,7 @@
 // page's network configuration (its address, the room's resolver), and one pings the other by its name in the room
 // (`<key>.<tag>.p2p.internal`, which the room's resolver answers, through the guest's systemd-resolved; asked directly
 // too), the menu showing the name, the member reached and the
-// link to copy. Then registered names (docs/plans/room-names.md "The resolver"): a room with no server answers NXDOMAIN;
+// link to copy. Then registered names (docs/networking/names.md "The resolver"): a room with no server answers NXDOMAIN;
 // a server appears (a guest-less member in the room's harness page, tests/browser/room.html, serving titles the test's
 // own tool makes on the tests' pretend Bitcoin, net/ts/examples/names-title.rs) while a guest keeps asking, and is found;
 // a name by its full name, by the short one through the search domain, a label under it, a zone change, reserved
@@ -155,7 +155,7 @@ type Title = { name: string; key: string; items: string[] };
 const makeTitles = (spec: object): Title[] => {
   const titles: Title[] = JSON.parse(execFileSync(TITLE_TOOL, [JSON.stringify(spec)], { encoding: 'utf8', timeout: 60_000 }));
   // Their blocks, mined by the tool, are known to the pretend explorer (as real blocks are to a real one), so the
-  // servers' checks of them pass (docs/plans/room-names.md "Outside the room"). An item: version, id, the headers' count
+  // servers' checks of them pass (docs/networking/names.md "Outside the room"). An item: version, id, the headers' count
   // (2 bytes), the headers.
   for (const t of titles) {
     for (const it of t.items) {
@@ -371,7 +371,7 @@ async function namesServer(contexts: BrowserContext[], roomId: string, titles: {
   return page;
 }
 
-/** The registered names' part (docs/plans/room-names.md "The resolver"), on the two guests of the room the test made. */
+/** The registered names' part (docs/networking/names.md "The resolver"), on the two guests of the room the test made. */
 async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: string; a6: string; b6: string; roomId: string; contexts: BrowserContext[] }) {
   const { a, b, roomId, contexts } = o;
   const domain = o.nameA.split('.').slice(1).join('.');
@@ -441,7 +441,7 @@ async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: stri
   assert.match(short.out, new RegExp(`^${ipA}\\s`), `the short name through the search domain: ${short.out}`);
 
   // A zone change: the server's title now points the name at B. A member that hadn't asked sees it at once; one that
-  // keeps the name sees it once what it keeps is 5 minutes old (room-names.md "A member resolving a name").
+  // keeps the name sees it once what it keeps is 5 minutes old (names.md "A member resolving a name").
   await server.context().close();
   await namesServer(contexts, roomId, [{ key: title.key, item: title.items[1] }]);
   const changed = await lookup(a, full('test123'));
@@ -476,7 +476,7 @@ async function registeredNames(o: { a: Page; b: Page; nameA: string; nameB: stri
 const untouched = (p: Page) => p.evaluate(() => [document.querySelectorAll('dialog[open]').length, document.getElementById('message-text')?.textContent ?? '']);
 
 /**
- * Name this machine… (docs/plans/room-names.md "What the user sees"), on A: the dialog's check (as typed, the page alone; at Register, the room), its two notices
+ * Name this machine… (docs/networking/names.md "What the user sees"), on A: the dialog's check (as typed, the page alone; at Register, the room), its two notices
  * and no key, Register; the name Reserved, then Active once its anchor is collected; B's guest reaches it with nothing
  * done on B's page; a label added in A's details; on a load in its last week (the page's clock 24 days on) the notice.
  */

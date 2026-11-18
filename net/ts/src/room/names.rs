@@ -1,4 +1,4 @@
-//! Registered names in a room (docs/plans/room-names.md): the records and the rules, and the registry's two sides, sans
+//! Registered names in a room (docs/networking/names.md): the records and the rules, and the registry's two sides, sans
 //! I/O (room.rs carries them through names clients).
 //!
 //! - [`id`]: a name's rules (one label, the reserved list), its id (BLAKE2s keyed with a key from
@@ -41,7 +41,7 @@ pub mod testkit;
 #[cfg(test)]
 mod tests;
 
-/// The clock's and the proof of work's parameters (room-names.md "Who owns a name", "Records",
+/// The clock's and the proof of work's parameters (names.md "Who owns a name", "Records",
 /// "Bitcoin as the clock"). [`Params::PRODUCTION`] is the spec's; tests run a pretend Bitcoin of
 /// easy headers and cheap proof of work through their own.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,7 +52,7 @@ pub struct Params {
     pub grace: u32,
     /// How far block times may run ahead: a header's time may be this far past now.
     pub drift: u32,
-    /// The floor: the easiest target a header may claim, in Bitcoin's compact form (room-names.md "Bitcoin as the
+    /// The floor: the easiest target a header may claim, in Bitcoin's compact form (names.md "Bitcoin as the
     /// clock").
     pub floor: u32,
     /// Argon2id's memory in KiB, passes and lanes.
@@ -61,7 +61,7 @@ pub struct Params {
     pub pow_p: u32,
     /// The leading zero bits an entry's proof of work needs.
     pub pow_bits: u32,
-    /// What a server asks outside the room (room-names.md "Servers": renewals finished at a calendar, blocks checked
+    /// What a server asks outside the room (names.md "Servers": renewals finished at a calendar, blocks checked
     /// at an explorer; server/outside.rs): a pending renewal is first asked for this long (seconds) after the server
     /// first held it...
     pub finish_after: u32,
@@ -77,7 +77,7 @@ const DAY: u32 = 24 * HOUR;
 
 impl Params {
     /// The spec's values (N0, provisional). The floor is 1/16 of the difficulty of block 976,177 (2026-11-16
-    /// 19:25:21 UTC, bits `0x17021673`): sixteen times its target (room-names.md "Bitcoin as the clock").
+    /// 19:25:21 UTC, bits `0x17021673`): sixteen times its target (names.md "Bitcoin as the clock").
     pub const PRODUCTION: Params = Params {
         term: 30 * DAY,
         grace: 7 * DAY,

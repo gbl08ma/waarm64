@@ -63,10 +63,10 @@ export type RoomConfig = {
     incoming?: boolean;
     /** The wall clock at the start, Unix seconds (default: the system's): a benchmark's shifted clock. */
     unixTime?: number;
-    /** The node's titles (docs/plans/room-names.md "The registry"): each a name's owner key and its item (hex,
+    /** The node's titles (docs/networking/names.md "The registry"): each a name's owner key and its item (hex,
      * net/ts/src/room/names/wire.rs). With them the node serves the room's names; without, it is a member that asks. */
     names?: { titles: NamesTitle[]; maxNames?: number; maxBytes?: number };
-    /** A publisher (docs/plans/room-names.md "The names agent"): no node, no guest, a names client alone under a fresh
+    /** A publisher (docs/networking/names.md "The names agent"): no node, no guest, a names client alone under a fresh
      * key that puts what `namesPut` gives it to the room's servers, each answer a `names-put` event. */
     publish?: boolean;
   };

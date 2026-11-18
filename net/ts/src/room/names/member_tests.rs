@@ -334,7 +334,7 @@ fn title(
     b.item(name, &run, Some(zone))
 }
 
-/// A first lookup asks the room through the relays: no question, no session, no `get` (room-names-r3.md). What is kept
+/// A first lookup asks the room through the relays: no question, no session, no `get` (names.md "A member resolving a name"). What is kept
 /// answers at once, and its refresh after 5 minutes goes through "who serves?" and `get`, never an ask.
 #[test]
 fn a_member_resolves_a_name_keeps_it_and_asks_again_after_five_minutes() {
@@ -471,7 +471,7 @@ fn a_kept_name_isnt_replaced_by_a_younger_chain() {
     assert!(bus.m.stats.histories >= 2, "the contest asked for history");
     assert_eq!(bus.m.kept[&alpha.id].kept, kept.kept, "what is kept stands");
     assert_eq!(bus.resolve("alpha").0, Answer::Node([0xa1; 32]));
-    // A member that never knew the name takes the impostor: what the protocol can't help (room-names.md "What it
+    // A member that never knew the name takes the impostor: what the protocol can't help (names.md "What it
     // does not give").
     let mut fresh = Bus::new(vec![serving(&mut b, 5, &[&fake])], member());
     assert_eq!(fresh.resolve("alpha").0, Answer::Node([0x66; 32]));
@@ -1324,7 +1324,7 @@ fn kept_record(it: &Item, checked: u64) -> Vec<u8> {
     rec
 }
 
-// ---- R3: a first lookup asks the room through the relays (docs/plans/room-names-r3.md) ----
+// ---- R3: a first lookup asks the room through the relays (docs/networking/names.md) ----
 
 /// A server holding `items`, with a title of its own named `name` (claimed two days ago: anyone's cheap registration).
 fn junk_server(b: &mut Bitcoin, k: u32, items: &[&Item]) -> Server {

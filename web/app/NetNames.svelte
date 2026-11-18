@@ -1,5 +1,5 @@
 <!--
-  A room adapter's names in its section of the Network menu (NetAdapter.svelte; docs/plans/room-names.md "What the user
+  A room adapter's names in its section of the Network menu (NetAdapter.svelte; docs/networking/names.md "What the user
   sees"): each name its connection holds in the room with its state (Preparing, Reserved, public in about N hours,
   Active, kept until about a date, …: web/app/names-view.ts), and Name this machine…, which opens its dialog
   (NameDialog.svelte) and closes the menu. Changing where a name points, a label under it and letting it go are in the

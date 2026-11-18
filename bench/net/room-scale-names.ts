@@ -1,4 +1,4 @@
-// NAMES loop 6a (docs/plans/room-names.md "Servers", "Size, and where it stops"; bench/net/REPORT.md "NAMES loop 6a"):
+// NAMES loop 6a (docs/networking/names.md "Servers", "Size, and where it stops"; bench/net/REPORT.md "NAMES loop 6a"):
 // a room's registry at scale on the tests' Nostr relay (tests/net/nostr-relay.ts, a process of its own), the tailcat
 // rig's derper and the pretend calendars and explorer (tests/net/ots-calendar.ts, in this process): no public service.
 // Room nodes are the module (target/net/ts-test.wasm, the tests' cheap proof of work and easy headers) in instances of

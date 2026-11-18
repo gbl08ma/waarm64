@@ -348,7 +348,7 @@ export const hasRoomIdentity = (key: string) => idb<number>('readonly', (s) => s
 export const forgetRoomIdentity = (key: string) => idb('readwrite', (s) => s.delete(key)).then(() => {});
 
 /**
- * A room's registry records (docs/plans/room-names.md "Servers" "Persist", "A member resolving a name"), in `waarm64-room`'s
+ * A room's registry records (docs/networking/names.md "Servers" "Persist", "A member resolving a name"), in `waarm64-room`'s
  * `names` store: what a server holds of each name, or what a member keeps of each name it resolved, one record a name id,
  * keyed by the room and the connection (a hash of the room's ID and the `identityKey`: `roomNamesKey`) and the id in hex. The module emits them (action 11) and takes them
  * back at the start (`TsClient.namesLoad`), so a member answers names it knew before it asks anyone. Only a stored

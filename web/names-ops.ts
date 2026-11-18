@@ -1,4 +1,4 @@
-// The names agent's work in the module (docs/plans/room-names.md "The names agent"): the pure operations of
+// The names agent's work in the module (docs/networking/names.md "The names agent"): the pure operations of
 // net/ts/src/room/names/agent.rs (`ts_names_*`: make, mine, sign and check an entry, sign a pending anchor, make a zone,
 // a title's status, what a server showed), and a publisher, a room client that is a names client alone (no machine, no
 // guest, a key made new each time) which puts titles to the room's servers. One instance of the module does both: in
@@ -20,7 +20,7 @@ export class NamesError extends Error {
 /** A server's answer to a put, without the event's type. */
 export type PutAnswer = Omit<NamesPut, 'type'>;
 
-/** The dialog's check (docs/plans/room-names.md "A member resolving a name"), one a press of Register: each answering
+/** The dialog's check (docs/networking/names.md "A member resolving a name"), one a press of Register: each answering
  * server's ids under one first byte, each with until when its owner holds it (Unix seconds, 0: nobody now), one list a
  * server, never merged (an answer is a bare claim: one lying server mustn't make a name taken, the final review's
  * finding 8); `nobody` when nobody serves the room's names, `failed` when no server answered. */

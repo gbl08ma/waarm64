@@ -1,4 +1,4 @@
-// NAMES loop 0 (docs/plans/room-names.md "Measure first", item 1): how long an OpenTimestamps calendar takes to
+// NAMES loop 0 (bench/net/REPORT.md "NAMES loop 0", item 1): how long an OpenTimestamps calendar takes to
 // anchor, from its own transactions on Bitcoin, read through the two explorers' public HTTP APIs.
 // A calendar pays from a wallet that changes address every transaction (each spends the one before's change), so its
 // history can't be listed by address: it is walked back one transaction a request. A year of `alice` alone is ~7,500

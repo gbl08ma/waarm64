@@ -1,4 +1,4 @@
-// The names agent (docs/plans/room-names.md "The names agent"): the page's side of owning names in a room. It keeps the
+// The names agent (docs/networking/names.md "The names agent"): the page's side of owning names in a room. It keeps the
 // owners' secret and the titles (the only place a name is kept in words), makes their entries (proof of work, a
 // signature, stamps at the three calendars), collects finished anchors with their block's header from an explorer,
 // renews when due, and publishes each title to two of the room's servers through a publisher (a names client alone: no machine, no key of the node's). A server that shows a
@@ -44,7 +44,7 @@ const FETCH_MS = 15_000;
 const MINE_SLICE = 256;
 /** A server takes a new zone for a name at most this often (net/ts room/names/store.rs `ZONE_EVERY`), and a minute. */
 const ZONE_AGAIN_MS = 11 * 60 * 1000;
-/** What the dialog says of a claim's wait for its anchor (room-names.md "How long an anchor takes"). */
+/** What the dialog says of a claim's wait for its anchor (names.md "How long an anchor takes"). */
 export const PUBLIC_IN_MS = 2 * 60 * 60 * 1000;
 
 /** Where a name points: the name itself (`label` null) or a label under it, at a node key (64 hex digits). */
@@ -69,7 +69,7 @@ export type TitleRecord = {
   collect: Record<string, { next: number; tries: number }>;
   /** When an entry may be made again (one that no calendar stamped). */
   remake?: { next: number; tries: number };
-  /** The next renewal made ahead (room-names-redesign.md §3): its proof of work and signature done, after entry `prev`
+  /** The next renewal made ahead (names.md "Decisions"): its proof of work and signature done, after entry `prev`
    * (the owning chain's last, or the renewal waiting on it), not stamped. A visit that finds a renewal due stamps this
    * one, which takes seconds, and hands it to the servers, who finish it at its calendar: so a short visit keeps a name. */
   ahead?: { prev: string; entry: string };

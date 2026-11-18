@@ -168,7 +168,7 @@ impl Bitcoin {
     }
 }
 
-/// The tests' pretend calendars and explorers over one pretend chain: what servers fetch (room-names.md "Servers",
+/// The tests' pretend calendars and explorers over one pretend chain: what servers fetch (names.md "Servers",
 /// server/outside.rs), answered at the compiled URLs as the real services answer. A calendar's
 /// `/timestamp/<commitment>` is 404 while pending (as a page sees it), then the proof once its block is [`depth`] deep;
 /// an explorer's `block-height/<h>` is its block's hash as explorers show it, `block/<hash>/header` its header in hex,

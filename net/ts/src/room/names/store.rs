@@ -1,4 +1,4 @@
-//! A server's registry (room-names.md "Servers"): per name, the entries it keeps, its zone, when
+//! A server's registry (names.md "Servers"): per name, the entries it keeps, its zone, when
 //! it was last asked for, and what range sync compares.
 //!
 //! **What is kept of a name** is a function of the entries held and the time, the same on every
@@ -30,7 +30,7 @@ use super::{
 /// browsers at once makes two).
 pub const MAX_PENDING: usize = 2;
 pub const MAX_TOMBSTONES: usize = 2;
-/// A server takes a new zone for a name at most this often (room-names.md "Records").
+/// A server takes a new zone for a name at most this often (names.md "Records").
 pub const ZONE_EVERY: u64 = 600;
 const RECORD_VERSION: u8 = 1;
 

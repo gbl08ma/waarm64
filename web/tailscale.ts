@@ -40,7 +40,7 @@ export type NetMap = {
     name: string; link: string; incoming: boolean; relayOnly: boolean; directBlocked?: boolean; directFailed?: number; peersBlocked?: number;
     /** The node key (64 hex digits): where a name registered on this machine points. */
     key?: string;
-    /** The registry's line (room-names.md "What the user sees"): a server's names held and servers synced with
+    /** The registry's line (names.md "What the user sees"): a server's names held and servers synced with
      * (`serving`), or a member's names resolved and servers held. */
     names?: { serving: boolean; names: number; servers: number };
   };

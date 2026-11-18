@@ -26,7 +26,7 @@
 //! - **Incoming connections** (on by default): a member we don't know may call us. Off, only the
 //!   guest's own flows get their replies, and lookups for it go unanswered unless it has a flow
 //!   with the dialer.
-//! - **Names** ([`names`], docs/plans/room-names.md "The registry"): a node that holds titles is a
+//! - **Names** ([`names`], docs/networking/names.md "The registry"): a node that holds titles is a
 //!   server. Its registry traffic goes through a **names client**: a second `Client` in the same
 //!   worker, under a key made new each session, relay only, with no guest, its own DERP and Nostr
 //!   connections ([`NAMES_CONN`] up), subscribed to the room's names tag, letting in handshakes only
@@ -122,7 +122,7 @@ const LOOKUP_QUEUE: usize = 16;
 const LOOKUP_EVENTS_PER_SECOND: usize = 128;
 const OPENED_FOR: Duration = Duration::from_secs(10);
 /// A server's reply to an ask goes through the relay that brought the ask and the one whose copy came next; with no
-/// copy this long after the reply, through another relay (room-names-r3.md: replies through two relays).
+/// copy this long after the reply, through another relay (names.md "A member resolving a name": replies through two relays).
 const REPLY_SECOND_WAIT: Duration = Duration::from_secs(1);
 /// An ask's copies are remembered this long.
 const ASK_COPIES_FOR: Duration = Duration::from_secs(5);
@@ -208,7 +208,7 @@ pub const NAMES_CONN: u32 = 0x4000_0000;
 /// A names client that failed is made again after this long.
 const NAMES_RETRY: Duration = Duration::from_secs(60);
 /// A query for a name the member doesn't know waits this long for its names client (finding servers takes 1 to 3 s on
-/// public relays, room-names.md "The resolver"), then gets SERVFAIL (a guest's resolver asks again).
+/// public relays, names.md "The resolver"), then gets SERVFAIL (a guest's resolver asks again).
 pub const DNS_WAIT: Duration = Duration::from_secs(4);
 /// Queries waiting at once; past it, SERVFAIL at once.
 const MAX_DNS_WAITING: usize = 64;
@@ -418,7 +418,7 @@ pub struct Config {
     pub names: Option<names::server::Config>,
     /// The clock's and proof of work's parameters a member checks names with (the module's: [`Params::BUILT`]).
     pub params: Params,
-    /// A publisher (room-names.md "The names agent"): not a node but a names client alone, under this fresh key, relay
+    /// A publisher (names.md "The names agent"): not a node but a names client alone, under this fresh key, relay
     /// only, no guest, that finds servers and puts the items the page gives it ([`Client::names_put`]). The page's
     /// names agent publishes titles through one with no machine running.
     pub publish: bool,
@@ -758,7 +758,7 @@ pub struct Client {
     /// relay only; questions and registry datagrams go to `names_events`.
     names_mode: bool,
     names_subscribed: bool,
-    /// A member's names client: subscribed to its reply tag (room-names-r3.md).
+    /// A member's names client: subscribed to its reply tag (names.md "A member resolving a name").
     names_replies: bool,
     /// Asks opened lately (by the event's mark): the relay that brought each first, the one whose copy came next, and
     /// the reply waiting for that copy.
@@ -2772,7 +2772,7 @@ impl Client {
     }
 
     /// The guest's DNS query `p` to the room's resolver: a name that is a key, its address computed; a registered name
-    /// (room-names.md "The resolver"), from what this node holds or once its names client hears.
+    /// (names.md "The resolver"), from what this node holds or once its names client hears.
     fn resolve(&mut self, p: &[u8], info: &ip::Info, now: Instant) {
         let Some(m) = ip::udp_payload(p, info) else {
             return;

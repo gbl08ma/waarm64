@@ -1,9 +1,9 @@
-//! A member's side of the registry (room-names.md "A member resolving a name", room-names-r3.md), sans I/O: what the
+//! A member's side of the registry (names.md "A member resolving a name"), sans I/O: what the
 //! resolver asks for a name that isn't a key, and what the member keeps. The transport is a names client of its own, as
 //! a server's is (room.rs), made when the guest first asks for such a name and closed after [`IDLE`] without one.
 //!
 //! - **A first lookup** (a name not kept: never resolved, or what was kept has ended) **asks the room through the
-//!   relays** (room-names-r3.md): an `ask` under the room's names tag, mode `share` at the spread that last brought one
+//!   relays** (names.md "A member resolving a name"): an `ask` under the room's names tag, mode `share` at the spread that last brought one
 //!   to eight replies in this room (6 the first time), wider at 0.4 and 1 s while nothing comes; servers reply under
 //!   this names client's reply tag with the owning chain's last entry and the zone, or none. Each reply is believed for
 //!   what it holds, which is checked (signature, proof of work, header, anchor, alive; the zone's signature), never for
@@ -75,7 +75,7 @@ pub const NEGATIVE_MAX: Duration = Duration::from_secs(600);
 /// The servers a question chose are held this long after they were last asked...
 pub const SERVERS_HELD: Duration = Duration::from_secs(180);
 /// ...and redrawn this long after they were drawn, so a pair that serves a stale zone isn't kept for as long as the
-/// guest goes on asking (room-names-r3.md).
+/// guest goes on asking (names.md "A member resolving a name").
 pub const SERVERS_REDRAW: Duration = Duration::from_secs(900);
 /// A first lookup decides this long after its `dissent` ask...
 pub const DISSENT_WAIT: Duration = Duration::from_millis(700);
@@ -278,7 +278,7 @@ struct Replier {
     key: [u8; 32],
 }
 
-/// A first lookup (room-names-r3.md "A first lookup").
+/// A first lookup (names.md "A member resolving a name").
 struct First {
     /// The `share` ask's nonce (its rounds share it), the spreads of its rounds, how many went.
     nonce: [u8; 16],
@@ -1452,7 +1452,7 @@ impl Member {
     }
 }
 
-// ---- First lookups (room-names-r3.md): the room asked through the relays ----
+// ---- First lookups (names.md "A member resolving a name"): the room asked through the relays ----
 
 impl Member {
     /// Tests' view: the first lookups under way.

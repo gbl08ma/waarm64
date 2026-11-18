@@ -1,4 +1,4 @@
-// The tests' pretend OpenTimestamps calendars and block explorer (docs/plans/room-names.md "Bitcoin as the clock"): no
+// The tests' pretend OpenTimestamps calendars and block explorer (docs/networking/names.md "Bitcoin as the clock"): no
 // test touches a public service. One HTTP server plays the three calendars the module compiles in (anchor.rs `Calendar`:
 // alice, bob and finney, each under its own path) and an Esplora explorer (blockstream.info's and mempool.space's API),
 // over a pretend Bitcoin whose headers meet the tests' floor (room/names.rs `Params::TEST`: regtest's target, so half of

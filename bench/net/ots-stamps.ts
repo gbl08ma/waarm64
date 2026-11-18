@@ -1,4 +1,4 @@
-// NAMES loop 0 (docs/plans/room-names.md "Measure first"): a batch of real OpenTimestamps stamps of random 32-byte
+// NAMES loop 0 (bench/net/REPORT.md "NAMES loop 0"): a batch of real OpenTimestamps stamps of random 32-byte
 // digests (not names) at the spec's three calendars, and, later, the collection of their finished proofs.
 // - `stamp`: POSTs each digest to `alice`, `bob` and `finney` on a schedule (bursts of digests submitted at once, which a
 //   calendar aggregates together, and single digests minutes apart, which share only what one calendar transaction

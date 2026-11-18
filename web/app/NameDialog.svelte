@@ -1,5 +1,5 @@
 <!--
-  Register a domain… (docs/plans/room-names.md "What the user sees", where it is a name): one dialog from a room
+  Register a domain… (docs/networking/names.md "What the user sees", where it is a name): one dialog from a room
   adapter's section of the Network menu, for the adapter's connection (which holds the domain by its key, wherever
   the connection is attached). A field, with the whole domain under it (`<name>.<room name or tag>.p2p.internal`), checked as typed by this page alone (not a valid name, this connection's already: no server
   asked); Register asks the room's servers (one first byte of the name's id a press, the user's decision 2026-11-17:

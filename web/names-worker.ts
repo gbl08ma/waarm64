@@ -1,4 +1,4 @@
-// The names agent's worker (web/names.ts, docs/plans/room-names.md "The names agent"): the module (target/net/ts.wasm)
+// The names agent's worker (web/names.ts, docs/networking/names.md "The names agent"): the module (target/net/ts.wasm)
 // for its pure `ts_names_*` operations, proof of work above all (a minute of a core in production), and the publishers
 // that put titles to a room's servers and the dialog's checkers, off the page's thread. Messages are requests by number; each gets one answer.
 import { localBackend, NamesError, type NamesBackend } from './names-ops.ts';

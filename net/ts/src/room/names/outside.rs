@@ -1,4 +1,4 @@
-//! What a server asks outside the room (room-names.md "Servers": "Outside the room"; the redesign's R2): the page
+//! What a server asks outside the room (names.md "Servers": "Outside the room"; the redesign's R2): the page
 //! fetches, the module decides. Members ask nothing (decision 4 as amended covers servers only).
 //!
 //! - **Renewals finished.** A renewal the server holds with a signed pending anchor is asked of that anchor's calendar

@@ -1,4 +1,4 @@
-// Room names' TypeScript side (docs/plans/room-names.md; the member's and the resolver's logic is net/ts's, tested
+// Room names' TypeScript side (docs/networking/names.md; the member's and the resolver's logic is net/ts's, tested
 // natively: `cargo test -p waarm64_ts`): the tests' pretend calendars and explorer (tests/net/ots-calendar.ts) answer as
 // the real ones do over a chain that meets the tests' floor and not production's; the shipped module runs on
 // production's parameters and only the page tests' build (net/ts/build.sh --test-params, ts-test.wasm) on the tests';

@@ -395,7 +395,7 @@ fn two_servers_asking_at_once_still_find_each_other() {
     assert_eq!((n.server(0).stats.syncs, n.server(1).stats.syncs), (1, 1));
 }
 
-// ---- A member resolving names (room-names.md "A member resolving a name", "The resolver") ----
+// ---- A member resolving names (names.md "A member resolving a name", "The resolver") ----
 
 /// A title of node `seed`'s for `name`: the name points at `node`, `git.<name>` at `git`.
 fn title_to(
@@ -543,7 +543,7 @@ fn a_member_resolves_a_registered_name_through_a_names_client_of_its_own() {
         assert_eq!(n.ask(2, r, dns::AAAA), (nx(), Duration::ZERO), "{r}");
     }
     assert_eq!(n.names_conns(2), 0, "nothing asked");
-    // A first lookup: the names client starts and asks the room through the relays (room-names-r3.md); the replies
+    // A first lookup: the names client starts and asks the room through the relays (names.md "A member resolving a name"); the replies
     // come back through them too: no question, no DERP, no session.
     let (a, took) = n.ask(2, "alpha", dns::AAAA);
     eprintln!("a member's first lookup through the fake DERP and relay: {took:?}");
@@ -773,7 +773,7 @@ fn a_registered_name_in_a_room_named_like_a_tag_resolves_under_its_tag_alone() {
     }
 }
 
-// ---- The names agent's publisher (room-names.md "The names agent") and titles as they change ----
+// ---- The names agent's publisher (names.md "The names agent") and titles as they change ----
 
 fn publisher(seed: u8) -> Config {
     let mut c = config(seed);

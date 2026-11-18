@@ -101,7 +101,7 @@ pub struct Lookup {
 impl Room {
     /// A node's tag for `hour` (Unix hours): what its subscription filters on.
     /// The room's names tag for `hour`: what servers' names clients subscribe to and askers
-    /// publish "who serves the registry?" under (room-names.md "Finding a server").
+    /// publish "who serves the registry?" under (names.md "Finding a server").
     pub fn names_tag(&self, hour: u64) -> String {
         let mut h = Blake2s256::new();
         h.update(self.salt);
@@ -114,7 +114,7 @@ impl Room {
     }
 
     /// A member's names client's reply tag for `hour`: what it subscribes to, and servers publish their replies to its
-    /// asks under (room-names-r3.md).
+    /// asks under (names.md "A member resolving a name").
     pub fn reply_tag(&self, key: &[u8; 32], hour: u64) -> String {
         let mut h = Blake2s256::new();
         h.update(self.salt);

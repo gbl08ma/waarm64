@@ -1,4 +1,4 @@
-//! Anchors (room-names.md "Records", "Bitcoin as the clock"): an OpenTimestamps proof from an
+//! Anchors (names.md "Records", "Bitcoin as the clock"): an OpenTimestamps proof from an
 //! entry's id to a Bitcoin block's Merkle root. Written from the format (a timestamp is a tree of
 //! operations from a message to attestations; its serialization is documented by the
 //! OpenTimestamps project), nothing taken from its LGPL libraries.
@@ -294,7 +294,7 @@ pub fn leaves(b: &[u8], msg: &[u8]) -> Result<Vec<Leaf>, Invalid> {
     Ok(out)
 }
 
-/// The calendars compiled in (room-names.md "Bitcoin as the clock"): `alice` and `bob` at
+/// The calendars compiled in (names.md "Bitcoin as the clock"): `alice` and `bob` at
 /// opentimestamps.org, `finney` at eternitywall.com.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Calendar {
@@ -319,7 +319,7 @@ impl Calendar {
     }
 }
 
-/// The explorers compiled in (Esplora's API; room-names.md "Bitcoin as the clock"): an anchor's block's header by its
+/// The explorers compiled in (Esplora's API; names.md "Bitcoin as the clock"): an anchor's block's header by its
 /// height (a renewal a server finishes), a block's header by its hash (a server's check of each block). The agent's
 /// list is web/names.ts `EXPLORERS`, in the same order.
 pub const EXPLORERS: [&str; 2] = ["https://blockstream.info/api", "https://mempool.space/api"];

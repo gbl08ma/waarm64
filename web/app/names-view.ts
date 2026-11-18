@@ -1,4 +1,4 @@
-// Registered names as the page says them (docs/plans/room-names.md "What the user sees"): a title's state in the
+// Registered names as the page says them (docs/networking/names.md "What the user sees"): a title's state in the
 // adapter's menu and details, the dialog's check (as typed, and at Register), the details' line of the registry, a stored machine's names on
 // the Home page, and where a name points in words (a member's name in the room) and back. Pure: the area
 // (web/app/areas/names.svelte.ts) and the components call these.
@@ -104,7 +104,7 @@ export type NameAsk = {
 };
 
 /**
- * The dialog's check (room-names.md "What the user sees"; the user's decision, 2026-11-17): **as typed, only what this
+ * The dialog's check (names.md "What the user sees"; the user's decision, 2026-11-17): **as typed, only what this
  * page can say** (not a valid name, this connection's own); **the room's servers are asked when Register is pressed**,
  * one first byte a press. Free: registered. Taken: the dialog stays open and says until about when. Nobody can say, or
  * the servers disagree (one lists it, another doesn't: an answer is a bare claim, so one liar can't make it taken, the

@@ -1,4 +1,4 @@
-//! A name's rules and its id (room-names.md "Names", "Names nobody lists"): what the room's ID
+//! A name's rules and its id (names.md "Names", "Names nobody lists"): what the room's ID
 //! derives for names, a name's id (BLAKE2s keyed with a key of the room's), the label syntax and
 //! the reserved list (enforced where names are still words: the resolver and the dialog), and an
 //! owner key per name.

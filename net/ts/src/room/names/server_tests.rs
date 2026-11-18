@@ -592,7 +592,7 @@ fn serve_is_a_live_names_signature_over_the_nonce_and_the_servers_key() {
     assert!(Msg::decode(&long.encode(0)).is_err(), "two entries");
 }
 
-/// R3 (docs/plans/room-names-r3.md): "who serves?" is the plain draw again. A server answers and is kept by the hash of
+/// R3 (docs/networking/names.md): "who serves?" is the plain draw again. A server answers and is kept by the hash of
 /// its owner key alone: a name held for months ranks no better than one claimed yesterday (N5a's tiers are out).
 #[test]
 fn who_serves_is_the_plain_draw() {
@@ -1112,7 +1112,7 @@ fn servers_sync_and_a_server_that_leaves_names_out() {
 
 /// N0c found two servers that start within a second each waiting 30 s for the other: each one's question came while
 /// the other's own was open and it wasn't synced yet, so both found nobody. A server that refused a question for that
-/// asks again within seconds (room-names.md "Finding a server", "Nobody answered").
+/// asks again within seconds (names.md "Finding a server", "Nobody answered").
 #[test]
 fn servers_that_start_together_find_each_other_within_seconds() {
     let mut b = Bitcoin::new(ROOM, 52);
@@ -2877,7 +2877,7 @@ fn compiled_only(bus: &Bus) {
     assert!(bus.svc.as_ref().is_none_or(|s| s.foreign.is_empty()));
 }
 
-/// The redesign's promise (room-names-redesign.md §3, "Open this web app at least every 2 weeks"): an owner whose page
+/// The redesign's promise (names.md "Decisions", "Open this web app at least every 2 weeks"): an owner whose page
 /// opens for a few seconds every 14 days, closed between, keeps its name resolving and owned throughout. Each visit
 /// only stamps the renewal made ahead and hands it to a server; the calendar finishes it hours later, when no page is
 /// open, and the servers finish it themselves. The claim is 5 days old at the start, so each renewal is stamped at a
@@ -3412,7 +3412,7 @@ fn block_checks_are_paced_newest_first_and_load_back() {
     compiled_only(&bus);
 }
 
-// ---- R3: asks and replies (docs/plans/room-names-r3.md) ----
+// ---- R3: asks and replies (docs/networking/names.md) ----
 
 /// What a server says to one ask: the reply (decoded), whether it called the asker back, and what it sent it.
 fn ask_one(

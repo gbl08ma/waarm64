@@ -1,4 +1,4 @@
-//! A names client's registry side (room-names.md "The registry"), sans I/O: a server's store and
+//! A names client's registry side (names.md "The registry"), sans I/O: a server's store and
 //! its exchanges, and the question that finds servers. The transport (a room client of its own
 //! under a session key, relay only: room.rs) hands it questions and datagrams ([`Input`]) and
 //! carries out what it says ([`Cmd`]).
@@ -97,7 +97,7 @@ pub const IDS_UNTIL_STEP: u64 = 7 * 24 * 3600;
 pub const IDS_PER_SESSION: u32 = 2;
 pub const IDS_PER_MINUTE: usize = 4;
 const IDS_WINDOW: Duration = Duration::from_secs(60);
-/// A server's replies to asks a second (room-names-r3.md): a budget of their own, apart from call backs and from answers
+/// A server's replies to asks a second (names.md "A member resolving a name"): a budget of their own, apart from call backs and from answers
 /// to "who serves?", so neither starves the other.
 pub const REPLIES_PER_SECOND: usize = 2;
 /// Replies under one reply tag (one asker's names key), a minute: a flood of forged asks naming one key reaches it
@@ -174,7 +174,7 @@ pub struct Config {
     pub max_bytes: usize,
 }
 
-/// The spec's bound (room-names.md "Servers").
+/// The spec's bound (names.md "Servers").
 pub const MAX_NAMES: usize = 20_000;
 pub const MAX_BYTES: usize = 128 << 20;
 
@@ -228,7 +228,7 @@ pub enum Cmd {
     Forget([u8; 32]),
     /// Subscribe to the names tag (a server) or not.
     Subscribe(bool),
-    /// Subscribe to our reply tag (a member: room-names-r3.md) or not.
+    /// Subscribe to our reply tag (a member: names.md "A member resolving a name") or not.
     Replies(bool),
     /// An ask under the names tag of the hour (a member's first lookup).
     Ask {
@@ -263,7 +263,7 @@ pub enum Cmd {
     Log(String),
 }
 
-/// The window a names client's question opens for handshakes from keys it doesn't know (room-names.md "Finding a
+/// The window a names client's question opens for handshakes from keys it doesn't know (names.md "Finding a
 /// server"): the servers answering it, [`ACCEPT_MAX`] at most at once.
 #[derive(Debug, Default)]
 pub struct AcceptWindow {
@@ -272,7 +272,7 @@ pub struct AcceptWindow {
     /// Who came in and when, and its answer's [`rank`] key once its `serve` held.
     admitted: Vec<([u8; 32], Instant, Option<u128>)>,
     /// Keys let in by name until a time, apart from the question's places: the servers a member's `fetch` asked
-    /// (room-names-r3.md), and nobody else.
+    /// (names.md "A member resolving a name"), and nobody else.
     only: Vec<[u8; 32]>,
     only_until: Option<Instant>,
 }
@@ -360,7 +360,7 @@ pub fn share_hash(nonce: &[u8; 16], key: &[u8; 32]) -> [u8; 32] {
 
 /// An answer's rank (lower is better): the share hash's top 64 bits. A server answers a round when its rank falls in the
 /// share, and an asker keeps the two lowest: the plain draw (R3 took N5a's tiers of a chain's age out: a first lookup
-/// asks the room and believes what is shown for its content, docs/plans/room-names-r3.md), used now only for what must
+/// asks the room and believes what is shown for its content, docs/networking/names.md), used now only for what must
 /// not name an id: the dialog's check, puts, sync partners, the refresh of kept names.
 pub fn rank(h: &[u8; 32]) -> u128 {
     u64::from_be_bytes(h[..8].try_into().unwrap()) as u128
@@ -1373,7 +1373,7 @@ impl Server {
             .active = now;
     }
 
-    // ---- Asks (room-names-r3.md) ----
+    // ---- Asks (names.md "A member resolving a name") ----
 
     /// An ask under the names tag: a `share` in our share, or a `dissent` where we hold another owner, is replied
     /// through the relays (its own budgets); a `fetch` naming us is called back and sent the owning chain's run.

@@ -943,7 +943,7 @@ const HALF_HARD: u32 = 0x1f1f_fffe;
 
 #[test]
 fn a_lone_header_at_the_floor_anchors_and_one_under_it_doesnt() {
-    // An anchor is its proof and its block's header alone (docs/plans/room-names-redesign.md): a header whose target
+    // An anchor is its proof and its block's header alone (docs/networking/names.md): a header whose target
     // is the floor's anchors; one whose target is easier (less work than the floor) anchors nothing.
     let mut w = World::new(40);
     let p = Params {
@@ -1049,7 +1049,7 @@ fn an_entry_without_ref_round_trips() {
 
 #[test]
 fn work_for_one_name_serves_no_other() {
-    // Argon2id is salted with the name id (docs/plans/room-names-redesign.md): a nonce found for one name's entry, the
+    // Argon2id is salted with the name id (docs/networking/names.md): a nonce found for one name's entry, the
     // fields otherwise the same, falls short under another name. 8 bits, so that a nonce passing both by chance is rare
     // (1/256 an entry; the seeds below are fixed).
     let p = Params {

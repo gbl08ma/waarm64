@@ -1,4 +1,4 @@
-//! Who owns a name (room-names.md "Who owns a name"): chains, their cover and seniority, the owner
+//! Who owns a name (names.md "Who owns a name"): chains, their cover and seniority, the owner
 //! now as a total order, and what a member keeps.
 //!
 //! A [`Name`] holds every entry a node has of one name id, each with its one anchor: the entries
@@ -299,7 +299,7 @@ impl Name {
         Some(t as u64 + params.term as u64 + params.grace as u64)
     }
 
-    /// Whether unanchored entry `s` can no longer link at `now`: past [`Name::link_end`] (room-names.md "Records": a
+    /// Whether unanchored entry `s` can no longer link at `now`: past [`Name::link_end`] (names.md "Records": a
     /// pending anchor is dropped then). An anchor in a block timed before it, collected late, still links.
     pub fn stale(&self, s: &Stamped, params: &Params, now: u64) -> bool {
         self.link_end(s, params).is_some_and(|end| now > end)
@@ -398,7 +398,7 @@ fn chain(run: &[&Stamped], params: &Params) -> Chain {
     }
 }
 
-/// What a member keeps of a name it resolved (room-names.md "A member resolving a name"): the
+/// What a member keeps of a name it resolved (names.md "A member resolving a name"): the
 /// chain it took, and the earliest entry time it ever verified for that chain. While that chain
 /// covers now, another replaces it only by showing a run that starts earlier, so a member that
 /// knew a name refuses an impersonator after a reset.

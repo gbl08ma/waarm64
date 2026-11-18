@@ -1,4 +1,4 @@
-// Registered names as the page says them (web/app/names-view.ts, docs/plans/room-names.md "What the user sees"): a
+// Registered names as the page says them (web/app/names-view.ts, docs/networking/names.md "What the user sees"): a
 // title's state at each step, the dialog's check (as typed, by the page alone; the room's servers at Register) and when Register is offered, the Home page's line, a
 // member's name in the room read back as its key; and the wording cases, which pin the words the kickoff's decisions
 // bind (the dialog's two notices: decisions 6 and 13).

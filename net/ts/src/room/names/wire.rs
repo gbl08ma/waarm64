@@ -1,4 +1,4 @@
-//! What the registry sends (room-names.md "The registry"): binary, integers little-endian.
+//! What the registry sends (names.md "The registry"): binary, integers little-endian.
 //!
 //! - **An item**: a name's record as a server holds and sends it: its id, the headers its entries'
 //!   anchors need (once each), its entries (each with its anchor and its block's header, or a
@@ -268,7 +268,7 @@ impl Question {
     }
 }
 
-/// What an `ask` wants (docs/plans/room-names-r3.md "The messages").
+/// What an `ask` wants (names.md "A member resolving a name").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AskMode {
     /// Servers in the share `spread` names reply, with the owning chain's last entry or with none.
@@ -280,7 +280,7 @@ pub enum AskMode {
     Fetch = 2,
 }
 
-/// A first lookup's question to the room (room-names-r3.md): what a member's names client publishes under the room's
+/// A first lookup's question to the room (names.md "A member resolving a name"): what a member's names client publishes under the room's
 /// names tag, sealed and MAC'd as "who serves?" is. It names the id: a lookup of a name the member doesn't keep (the
 /// user's decision 12 as widened, 2026-11-17).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -301,7 +301,7 @@ pub struct NameAsk {
     pub shown: [u8; 8],
 }
 
-/// What a `dissent` names (R3a, room-names-r3.md "As built"): 8 bytes of a hash over the owner key, the owning chain's
+/// What a `dissent` names (R3a, names.md "A member resolving a name"): 8 bytes of a hash over the owner key, the owning chain's
 /// last entry's id and the zone (none: nothing), so a server holding any of the three otherwise (another owner, a
 /// renewal, another zone) replies; the key alone let an attacker show the owner's own last entry with an old zone, or
 /// none, or an older entry, and silence every holder. All three are public records any asker can have.
@@ -362,7 +362,7 @@ impl NameAsk {
 }
 
 /// The most bytes of an item a reply carries: past it the item is left out and [`Reply::item`] says so, and the asker
-/// fetches it through a session (room-names-r3.md: the user's choice, 2026-11-17; all six default relays forward it,
+/// fetches it through a session (names.md "A member resolving a name": the user's choice, 2026-11-17; all six default relays forward it,
 /// and items up to 32 KiB, five refusing 64: bench/net/REPORT.md "NAMES loop 0c").
 pub const REPLY_MAX: usize = 4096;
 /// A reply's head: the nonce, the replier's names key and region, `since`, the item's kind.
@@ -382,7 +382,7 @@ pub enum ReplyItem {
     TooBig(Box<Item>),
 }
 
-/// A server's answer to an ask (room-names-r3.md), published under the asker's reply tag
+/// A server's answer to an ask (names.md "A member resolving a name"), published under the asker's reply tag
 /// (`Room::reply_tag`), sealed as an ask is. It proves nothing of who sent it: it is believed for what its item holds,
 /// which the member checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -470,7 +470,7 @@ pub enum GetMode {
     /// A member's when answers disagree or contest what it keeps: the owning chain's whole unbroken run and the zone.
     /// Counts as asked.
     History = 2,
-    /// The dialog's check (room-names.md "A member resolving a name"): every id held whose first byte is the `id`
+    /// The dialog's check (names.md "A member resolving a name"): every id held whose first byte is the `id`
     /// given (one byte), so the server can't tell which id is about to be claimed. Answered with [`Msg::Ids`]; not
     /// counted as asked.
     Ids = 3,
@@ -534,7 +534,7 @@ pub struct Fp {
     pub count: u32,
 }
 
-/// A server's proof to another that it holds a live name (room-names.md "Servers"): one entry of a live name's owning
+/// A server's proof to another that it holds a live name (names.md "Servers"): one entry of a live name's owning
 /// chain, with its anchor and headers, and that entry's owner key's signature over both names clients' keys. Only a
 /// server that proved itself so is answered `sync`, `have` and `get` of every kind but a member's.
 #[derive(Debug, Clone, PartialEq, Eq)]

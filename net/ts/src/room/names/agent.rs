@@ -1,4 +1,4 @@
-//! The names agent's operations (room-names.md "The names agent"): what the page's agent (web/names.ts) asks of the
+//! The names agent's operations (names.md "The names agent"): what the page's agent (web/names.ts) asks of the
 //! module to make and keep a title, as pure functions over a title's item (wire.rs `Item`: every entry of the title,
 //! each with its anchor (and its block's header) or a pending one, and the zone). No state: the page keeps the title and the
 //! owners' secret. The wasm exports (`ts_names_*`, wasm.rs) take and give JSON through [`call`], bytes in hex.

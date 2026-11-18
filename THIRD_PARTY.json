@@ -1098,7 +1098,7 @@
             "crate": "`argon2`",
             "version": "0.5.3",
             "license": "MIT or Apache-2.0",
-            "use": "RustCrypto's; Argon2id, a room name's proof of work (docs/plans/room-names.md \"Records\"; OK'd 2026-11-15 for N0's pick)"
+            "use": "RustCrypto's; Argon2id, a room name's proof of work (docs/networking/names.md \"Records\"; OK'd 2026-11-15 for N0's pick)"
           }
         },
         {

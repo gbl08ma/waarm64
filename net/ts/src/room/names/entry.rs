@@ -1,4 +1,4 @@
-//! Entries (room-names.md "Records"): `claim`, `renew` and `release`, binary, fixed order,
+//! Entries (names.md "Records"): `claim`, `renew` and `release`, binary, fixed order,
 //! integers little-endian, 175 bytes. Signed with the name's owner key (BIP-340) over a tagged
 //! hash of the fields before the signature and the room's value; proof of work (Argon2id salted
 //! with the name id) over those fields, nonce included. An entry's id is the SHA-256 of its bytes.
@@ -78,7 +78,7 @@ pub(super) fn verify(owner: &[u8; 32], msg: &[u8; 32], sig: &[u8; 64]) -> bool {
     k.verify_raw(msg, &s).is_ok()
 }
 
-/// What an entry's owner signs for a pending anchor of entry `id` (room-names.md "Records").
+/// What an entry's owner signs for a pending anchor of entry `id` (names.md "Records").
 pub fn pending_hash(names: &RoomNames, id: &[u8; 32], p: &Pending) -> [u8; 32] {
     tagged("waarm64/names/pending", &[&names.value, id, &p.body()])
 }
@@ -180,7 +180,7 @@ impl Entry {
 
 /// The proof of work's function, with its memory kept between calls: Argon2id with the
 /// parameters' memory, passes and lanes, 32 bytes out, salted with the name id (so work done for one name serves
-/// no other, room-names.md "Records").
+/// no other, names.md "Records").
 pub struct Pow {
     argon: Argon2<'static>,
     blocks: Vec<Block>,
@@ -320,7 +320,7 @@ impl Stamped {
     }
 
     /// An entry as this node stored it, verified when it was first taken: not checked again (a
-    /// server's store, room-names.md "Servers").
+    /// server's store, names.md "Servers").
     pub fn trusted(entry: Entry, anchor: Option<Anchored>, pending: Option<Pending>) -> Stamped {
         let id = entry.id();
         let pending = pending.filter(|_| anchor.is_none());

@@ -171,8 +171,8 @@ test('with no machine running: a claim public once anchored, and a renewal made 
   cal.mine(7);
   const t1 = Date.now();
   // Once both servers hold it finished (they resolve from their registries): a member's first lookup asks the room at
-  // once (room-names-r3.md), and one made while the renewal was still pending would keep the name in its grace, NXDOMAIN
-  // for 5 minutes (room-names.md "A member resolving a name").
+  // once (names.md "A member resolving a name"), and one made while the renewal was still pending would keep the name in its grace, NXDOMAIN
+  // for 5 minutes (names.md "A member resolving a name").
   for (const s of servers) await resolves(s, 'delta', 0, 60_000);
   const member3 = await node(link);
   await resolves(member3, 'delta', 0, 60_000);

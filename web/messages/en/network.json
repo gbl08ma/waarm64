@@ -1109,7 +1109,7 @@
   },
   "network-actions.delete.names_one": {
     "message": "Delete the connection <name>{{name}}</name>? It holds the domain <name>{{names}}</name> in its room, and this browser keeps the only copy of it: deleting the connection forgets it, and nobody will renew it. To keep it, copy the connection's key below first, domains included, and paste it as a room connection's key.",
-    "note": "Text of the question asked by a room connection's Delete when it holds a registered name (docs/plans/room-names.md); its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the name it holds."
+    "note": "Text of the question asked by a room connection's Delete when it holds a registered name (docs/networking/names.md); its field below holds the connection's export (its key and names) to copy. {{name}} is the connection's name, {{names}} the name it holds."
   },
   "network-actions.delete.names_other": {
     "message": "Delete the connection <name>{{name}}</name>? It holds the domains <name>{{names}}</name> in its room, and this browser keeps the only copy of them: deleting the connection forgets them, and nobody will renew them. To keep them, copy the connection's key below first, domains included, and paste it as a room connection's key.",
@@ -1153,7 +1153,7 @@
   },
   "NetNames.name": {
     "message": "Register a domain…",
-    "note": "The toolbar's Network menu, a room adapter's section, once its connection is connected: the button that opens a dialog to register a domain in the room for this connection (docs/plans/room-names.md, where it is a \"name\"): `<name>.<room name>.p2p.internal` (or `<name>.<tag>.p2p.internal`, which also works), which members' guests then reach this connection's address by."
+    "note": "The toolbar's Network menu, a room adapter's section, once its connection is connected: the button that opens a dialog to register a domain in the room for this connection (docs/networking/names.md, where it is a \"name\"): `<name>.<room name>.p2p.internal` (or `<name>.<tag>.p2p.internal`, which also works), which members' guests then reach this connection's address by."
   },
   "NameDialog.title": {
     "message": "Register a domain in this room",
@@ -1201,7 +1201,7 @@
   },
   "names-view.check.invalid": {
     "message": "Not a domain that can be registered. It takes 1 to 32 lower-case letters, digits and hyphens, not starting or ending with a hyphen; some, such as every two-letter one, are reserved.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when it breaks the rules of names (docs/plans/room-names.md \"Names\")."
+    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the name when it breaks the rules of names (docs/networking/names.md \"Names\")."
   },
   "names-view.check.yours": {
     "message": "This connection already holds <name>{{name}}</name>.",
@@ -1249,7 +1249,7 @@
   },
   "names-view.lost": {
     "message": "Lost: another owner's claim holds it.",
-    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when a server showed another owner's chain that owns the name now (docs/plans/room-names.md \"Who owns a name\": an older claim, or a younger one once this name had lapsed); this web app no longer renews it."
+    "note": "The toolbar's Network menu, a room adapter's section and its details: a registered name's state when a server showed another owner's chain that owns the name now (docs/networking/names.md \"Who owns a name\": an older claim, or a younger one once this name had lapsed); this web app no longer renews it."
   },
   "names-view.line.serving_one": {
     "message": "This web app serves the room's domains for this connection: it keeps the records of 1 domain, and synced with {{servers}} other servers lately.",

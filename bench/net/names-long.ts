@@ -1,4 +1,4 @@
-// NAMES loop 6b: the kickoff's days-long run (NAMES-KICKOFF.md loop 6, "a few days on the public calendars, explorers and
+// NAMES loop 6b: the kickoff's days-long run (docs/backlog.md "The days-long run on public services": "a few days on the public calendars, explorers and
 // default relays with real stamps, between two pages"; bench/net/REPORT.md "NAMES loop 6b"). Two Node processes play the
 // two pages, each running the page's own code: the shipped module (target/net/ts.wasm: production's proof of work and
 // headers floor), the names agent (web/names.ts `NamesAgent` on web/names-ops.ts `localBackend`, the ops the names

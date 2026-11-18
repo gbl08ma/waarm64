@@ -1,4 +1,4 @@
-//! Zones (room-names.md "Names nobody lists", "Records"): where a name points, a signed, numbered
+//! Zones (names.md "Names nobody lists", "Records"): where a name points, a signed, numbered
 //! record replaced whole. Version (2), room, name id, owner, `seq` (8 bytes), 4 or 16 slots of 56
 //! bytes, a signature: 366 or 1,038 bytes.
 //!

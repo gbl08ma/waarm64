@@ -1,4 +1,4 @@
-// NAMES loop 0c (docs/plans/room-names.md "Measure first", items 5 and 6, and what R2 and R3 left to measure on public
+// NAMES loop 0c (bench/net/REPORT.md "NAMES loop 0", items 5 and 6, and what R2 and R3 left to measure on public
 // services; bench/net/REPORT.md "NAMES loop 0c"), from this machine. A few hundred small requests a service at most,
 // never a load test; tailcat's DERP for one transfer a size.
 // - `relays`: whether each default Nostr relay (net/ts/src/room/link.rs DEFAULT_NOSTR) forwards an ephemeral event of

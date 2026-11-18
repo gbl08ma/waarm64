@@ -1,4 +1,4 @@
-// The names agent (web/names.ts, docs/plans/room-names.md "The names agent") in Node, on the tests' module
+// The names agent (web/names.ts, docs/networking/names.md "The names agent") in Node, on the tests' module
 // (target/net/ts-test.wasm) and the pretend calendars and explorer (tests/net/ots-calendar.ts), its compiled services
 // routed there through `fetch` (tests/net/names-agent.ts): a claim held back until anchored, then published; an anchor
 // counted whenever it comes, and a renewal that can no longer link dropped; one Web Lock a title (two tabs make one entry);

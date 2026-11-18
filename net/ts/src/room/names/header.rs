@@ -1,4 +1,4 @@
-//! A Bitcoin block header as the names' clock (room-names.md "Bitcoin as the clock"): it proves
+//! A Bitcoin block header as the names' clock (names.md "Bitcoin as the clock"): it proves
 //! itself, with no height and no explorer. Its hash, its proof of work against its own target, that
 //! target against the one floor compiled in ([`Params::floor`]), and its time no further past now
 //! than block times may run ahead. An anchor carries its block's header alone.

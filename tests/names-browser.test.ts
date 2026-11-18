@@ -1,4 +1,4 @@
-// The names agent in Chromium (web/names.ts, docs/plans/room-names.md "The names agent"): its worker
+// The names agent in Chromium (web/names.ts, docs/networking/names.md "The names agent"): its worker
 // (web/names-worker.ts) on the tests' module (target/net/ts-test.wasm, served in ts.wasm's place), its titles and the
 // owners' secret in IndexedDB `waarm64-room` (stores `owner` and `titles`), its Web Locks, and the compiled calendars and
 // explorers routed to the pretend ones (tests/net/ots-calendar.ts; a pending proof's 404 has no CORS header, so the page

@@ -1,4 +1,4 @@
-// Registered names on the page (docs/plans/room-names.md "What the user sees"): the titles the names agent keeps
+// Registered names on the page (docs/networking/names.md "What the user sees"): the titles the names agent keeps
 // (web/names.ts), read into `$state` at load and again whenever the agent changes one (its BroadcastChannel, in any tab)
 // and every minute (a reserved name's "in about N hours"); the dialog's checks (as typed, and at Register), Register (the dialog has closed: the
 // adapter shows Preparing until the title is stored), a name's zone and its release; and, at load, the notice of names
