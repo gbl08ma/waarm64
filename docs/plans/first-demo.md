@@ -170,6 +170,33 @@ What it has that the local helper hasn't:
   - **On the page:** the message bar shows a budget crossed or spent, with when it resets; the machine's Network
     status shows the lane it's in. Refused destinations show only as a count, with the last few names, so they don't
     become noise.
+- **Egress through a VPN or a SOCKS proxy** (asked by the user, 2026-11-18). Every outbound connection goes
+  through the one dial point the allowlist already wraps (above, step 2), so the dialer is swappable **per lane**:
+  - `direct`: the server's own network (the default).
+  - `socks5`: golang.org/x/net/proxy (BSD-3, already in gvisor-tap-vsock's tree). The helper connects **by name**
+    (remote DNS, as `socks5h`), since it knows each address's name from its own resolver, so the proxy resolves it and
+    the allowlist and the proxy agree on the destination. SOCKS rarely carries UDP, which matters little here: the
+    guest's only UDP is the helper's own DNS, and that can go through the proxy as DNS over TCP.
+  - `wireguard`: a WireGuard tunnel inside the process (wireguard-go with its userspace netstack, MIT), from a
+    standard `wg-quick` file: no root, no interface on the host, TCP and UDP both. Most commercial VPNs hand out such
+    files.
+  - Or no code at all: run the helper in a network namespace or container whose default route is the VPN.
+  
+  **The use worth having:** the slow lane through a VPN and the fast lane direct. Then whatever strangers do off the
+  list leaves from the VPN's address, not the server's, and abuse reports go to the provider. Check the provider's
+  terms first: many forbid running a proxy for others. ICMP doesn't pass through SOCKS, so `ping` beyond the gateway
+  fails there (the gateway still answers its own).
+
+  ```toml
+  [egress.fast]
+  kind = "direct"
+
+  [egress.slow]
+  kind = "wireguard"
+  config = "/etc/waarm64-demonet/slow.conf"   # a wg-quick file
+  # kind = "socks5", address = "127.0.0.1:1080", username/password optional
+  ```
+  If a lane's egress is down, its connections are refused (a reset), never sent direct instead.
 - **The slow lane** (the user, 2026-11-18): a setting, **off by default**, that lets a guest reach destinations off
   the list over a heavily throttled connection, as JSLinux's VPN does (40 kB/s and 2 connections per IP there). With it
   on:
