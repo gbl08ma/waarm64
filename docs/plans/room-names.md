@@ -448,7 +448,10 @@ copies by nonce **and round** (the three rounds share a nonce).
      bits narrower next time, up to 15), then 3 bits wider at 0.4 s, then everyone at 1 s, while nothing counts.
      Three rounds whatever the start: a room found at "everyone" sends "everyone" again at 0.4 and 1 s, which a server
      whose reply budget was spent, or a relay that lost the ask, answers. The rounds share a nonce; a server replies
-     to a nonce once.
+     to a nonce once. The 0.4 and 1 s count from when the round before **left** (asks wait for the member's 4 a
+     second), and so does the silence below (NAMES loop 6a: timed from the lookup's start, 10 names asked at once in a
+     room of one server ran their rounds out while their asks still waited, and the member took the room for one
+     nobody serves, NXDOMAIN for every name for 30 s and doubling; `names_asked_at_once_wait_for_their_asks_to_go_out`).
   2. **Each reply is checked for what it holds** (the entry: signature, proof of work, its header and anchor, its chain
      covering now; the zone: the owner's, this name's, its signature), never for who sent it. An entry is checked whole
      once a lookup however many replies carry it; its anchor with each copy (a forged anchor on a copied entry mustn't
@@ -487,7 +490,7 @@ copies by nonce **and round** (the three rounds share a nonce).
        forged repliers hold a contest 10 s at most; a contest needs a second live chain of the name (a registration)
        or a key shown only too big, and forged copies of the owner's entry from made-up servers then cost that name
        its answer, not its owner.
-     - silence through the last round, 2.5 s after the first: **nobody serves** (30 s, doubling to 10 minutes, reset
+     - silence through the last round, 1.5 s after its ask left (2.5 s after the first when none waited): **nobody serves** (30 s, doubling to 10 minutes, reset
        by a reply), unless a reply counted in the last minute (the room's reply budgets were spent: a guest asking
        many names at once): then the query gets the resolver's SERVFAIL, and the next asks again.
   5. **A reply up to 3 s after the decision** is still checked: another owner key (or a key shown only too big) starts a
@@ -625,12 +628,17 @@ copies by nonce **and round** (the three rounds share a nonce).
   counting as the name being asked for; and `ids` (every id held under one first byte, answered `ids`; not counted). A server that leaves names out (or lies) is outvoted in sync by
   any other server holding them, and a member asking it for one gets nothing from it and the name from its other
   server (N3: the answer that has one stands).
-- **Asks** (R3, `Server::on_ask`), once its first sync is done: a `share` whose rank (the plain draw over its live
-  names' owner keys; no live name: only "everyone") falls in the share, and a `dissent` when it holds an owner for the
+- **Asks** (R3, `Server::on_ask`), once its first sync is done: a `share` whose rank (**one draw a server**: its live
+  name of the lowest id's owner key; no live name: only "everyone") falls in the share, and a `dissent` when it holds an owner for the
   id and its (owner key, last entry, zone) isn't what `shown` names (any owner for zeros; R3a), are replied: the owning chain's last entry with its
   anchor and header, and the zone (`owner_answer`, nothing held), or none, or "too big" past `REPLY_MAX` (the last entry
   alone); the reply
-  counts the name as asked for. A reply proves nothing of the replier, so a server's share is its own to keep. Replies
+  counts the name as asked for. A reply proves nothing of the replier, so a server's share is its own to keep, and a
+  spread is a share of the room's servers, not of their names (NAMES loop 6a: the best draw over every name it owns
+  put a server of 250 names in a spread of 6 98% of the time, so each first lookup in a room of 20 such servers drew
+  ~15 replies, and 500 members joining in a minute spent the room's 40 replies a second: 221 of their 500 lookups were
+  NXDOMAIN; `a_server_with_many_names_is_one_draw_in_a_share`). "Who serves?" keeps the best of its names (its
+  `serve` proves the name it ranks by; docs/backlog.md). Replies
   have **budgets of their own**: 2 a second (`REPLIES_PER_SECOND`), 16 a minute under one reply tag
   (`REPLIES_PER_TAG`), once a nonce, apart from "who serves?"'s answers and the call backs, so neither starves the
   other (measured: 2,000 forged asks from 200 keys over 10 s make 20 replies, and questions are answered meanwhile;
@@ -656,13 +664,20 @@ copies by nonce **and round** (the three rounds share a nonce).
   entries put in a loop cost every server 0.1 s a put). In Chromium's wasm (N0, cloud): an entry is ~0.66 ms whole
   (Argon2id 0.49, BIP-340 0.15, its anchor's 46 SHA-256s 0.015, a header 0.0005), so a 5,000-name registry's 60,000
   take ~40 s of one core.
-- **Bound**: `MAX_NAMES` 20,000 and 128 MiB of items. Past either, a server drops names, never its own, the ones
-  nobody has asked it for longest first (asked: a member's `get`, or the name's arrival; sync doesn't count), deletes
-  them from its store and doesn't fetch them by sync for a day unless a member asks. A dropped name isn't lost (its
-  owner holds the title and puts it back), and junk registered in bulk is what nobody asks for (unless its registrant
-  asks: askers can't be told apart, so an attacker can keep its junk asked for and have honest names that are rarely
-  asked dropped first. Not handled: N6 measures it). Proof of work alone can't bound the registry: a GPU makes
-  100,000 claims for the price of a few hours (*estimate*), and one stamp covers them all.
+- **Bound**: `MAX_NAMES` 20,000 and 128 MiB of items. Past either, a server drops names, never its own, **the
+  youngest owning chains first** (by their seniority, the run's first time; a name no chain owns before any), and of
+  one age those nobody has asked it for longest (asked: a member's `get` or a reply to an ask, or the name's arrival;
+  sync doesn't count), deletes them from its store and doesn't fetch them by sync for a day unless a member asks. A
+  dropped name isn't lost (its owner holds the title and puts it back). **Why age and not asks** (NAMES loop 6a):
+  askers can't be told apart and an ask costs nothing, and a name's arrival counted as asked, so junk registered in
+  bulk outranked every name nobody had asked for since it came. In the scale rig (20 servers holding 5,000 names, a
+  bound of 7,500, a registrant's server bringing 5,000 junk names claimed in the last day) each server dropped
+  ~2,490 of the room's names (~176 of them in use by members) and no junk. A chain's age is bought only with time:
+  junk outranks a name only if it was claimed before it and kept renewed since, so an attack now can't push out
+  names older than its start. What it can still push out is names claimed after its junk (a new registration in a
+  room the attacker keeps over the bound), and an honest room past the bound drops its newest names, not its least
+  used. Proof of work alone can't bound the registry: a GPU makes 100,000 claims for the price of a few hours
+  (*estimate*), and one stamp covers them all.
 - **Persist** per name, binary, one record each (a version byte, when it was last asked for, the item), and per block
   checked ("Outside the room", version 3): the module
   emits each as it changes (action 11, the name id and the record; none: delete it) and takes them back before its
@@ -735,7 +750,10 @@ whose low end assumed anchors shared).
 N0c measured it (bench/net/REPORT.md "NAMES loop 0c"): 5 MB of items synced in 61 s and 20 MB in 228 s between two
 servers through tailcat's Frankfurt region and the six default relays, a guest's ping on the node's own DERP
 connection beside it unmoved (95 ms median before, during and after); 50 MB went past a run's 4 minutes and on in the
-next round (docs/backlog.md).
+next round (docs/backlog.md). N6a measured a room of 20 servers holding 5,000 names (15.5 MB of items, each name
+two entries with 30-level anchors) on the tests' relay and derper (bench/net/REPORT.md "NAMES loop 6a"): 54 to 61 MB
+of linear memory a server (3.5 to 3.9x its items), 0.3 cores for all 20 while they synced from a cold start, under 0.1
+idle and 0.2 to 0.3 while members looked names up; 1,000 members beside them 1.4 MB each.
 
 Anchors a calendar put in one transaction share their path's tail, and those in one block their header, but an item
 is one name's and carries neither across names. A store that kept a registry's anchors by calendar transaction
@@ -940,7 +958,7 @@ names.
 
 | | Cost | Result |
 |---|---|---|
-| Register many names | proof of work each, again every term | squatting; the names lapse when it stops paying. Servers drop the unasked-for first; members never see them |
+| Register many names | proof of work each, again every term | squatting; the names lapse when it stops paying. Past the bound, servers drop the youngest chains first (NAMES loop 6a: asks were the attacker's to make), so bulk junk pushes out only names claimed after it; members never see them |
 | Stamp a dictionary and hold it back | the same work, every term, for as long as it waits | takes a name later registered by someone else: accepted |
 | Race a new registration | none | a guessable name, at best: a claim is public only once anchored, and the dialog's check sends one byte of the id a press of Register (the user's decision, 2026-11-17), never the id; a byte a prefix, as typed, spelled the name out (review 2) |
 | Tie a claim it somehow knew of | several claims in the same block | wins most ties: the tie-break can be ground. It needs the name before the claim is public |
@@ -951,7 +969,7 @@ names.
 | Hold many younger claims on one name, each lying about `since` | a registration on that name each, every term | that name's first lookups run a contest: a `fetch` and a run's check a liar, 8 at a time; the owner still wins |
 | Junk replies under an asker's tag (it reads the tag's inputs in the ask) | events | a failed check each; no place taken from anyone; "too big" carries a checkable entry (review 3); copies of real entries from made-up servers narrow the next lookup's first spread at most (its rounds widen to everyone) |
 | Copies of an owner's entry from made-up servers claiming `since` 0, in a contest | events, and a registration on that name for the contest | the name's first lookups give no answer for 10 s each (`CONTEST_FOR`); never another owner |
-| Forged asks that make servers reply | one event | every holder replies once (a `dissent` with a made-up `shown`, a `share` at spread 0): bounded by 2 replies a second a server and 16 a minute a tag; with hundreds of servers, megabytes a second onto public relays (backlog) |
+| Forged asks that make servers reply | one event | every holder replies once (a `dissent` with a made-up `shown`, a `share` at spread 0): bounded by 2 replies a second a server and 16 a minute a tag; with hundreds of servers, megabytes a second onto public relays (NAMES loop 6a: 300 holders, 10 forged asks a second already, 600 replies a second, ~2.5 MB/s of 4 KiB items through two relays each; backlog) |
 | Keep honest dissent away by spending servers' reply budgets | forged asks at every server's 2 a second, sustained | members take what the attacker shows for names they don't keep, while it lasts. Loud; the budget is apart from "who serves?"'s |
 | Serve a member's refresh, and leave names out or serve an old zone | registrations (the plain draw) | a stale zone or a release unseen for 15 minutes at most, before the member redraws; never another owner (a kept chain yields only to an older run) |
 | Hold a name after a reset | one registration | impersonates it to members that never resolved it, until a server that holds the owner's chain is asked |

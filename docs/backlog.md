@@ -1619,7 +1619,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     N0b's 80 stamps would have. Asks spaced around the expected proof (a first at an hour, then every 10 to 15 minutes
     to 3 hours, then the doubling) make "about 2 hours" true for ~90%.
   - Names a server dropped by its bound keep their ranges' fingerprints differing from other servers', so each sync
-    round descends to them and lists them again (a request or two a range). N6 measures the bound's churn.
+    round descends to them and lists them again (a request or two a range). Not measured past one round (N6a's junk
+    run: the bound dropped 2,500 junk names a server as the registrant's names came, ~0.2 cores for 20 servers over
+    the 5 minutes): the churn of rounds after it is for a longer run.
+  - **The bound by age** (N6a: the youngest owning chains first, room-names.md "Servers"): an honest room past the
+    bound now drops its newest names, and an attacker who claimed junk early and kept it renewed still pushes out
+    names claimed after it. A share of the id space per server (room-names.md "Size, and where it stops") is what
+    takes a room past the bound for good.
   - An asker checks each `serve` whole (an Argon2id, ~0.5 ms in wasm) as it comes; at most 32 a question.
   - The module grew 92 KB Brotli (592 to 684, `net/ts/build.sh`, 2026-11-16) once the names code was linked (N1's
     records and rules were dead code until N2 used them). Not looked into: what dominates (Argon2, the anchor
@@ -1655,11 +1661,30 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       hundred events, no public service touched in the cloud). Under a relay's limit, items come by `fetch` (a session).
     - **Forged asks in a room of hundreds of servers**: each holder replies once to a made-up `dissent` (up to 4.1 KB
       through two relays), bounded only by 2 a second a server and 16 a minute a tag: megabytes a second onto public
-      relays. The design's remedy (servers answering on one relay, thinning replies by the room's size) isn't built:
-      N6 measures it.
-    - **Reply budgets spent by one guest**: in a room of a few servers, a guest asking many names at once meets the
-      servers' 2 replies a second; the rounds repeat "everyone" and silence soon after a reply is SERVFAIL rather than
-      "nobody serves", so the guest's resolver retries. Not measured with real guests.
+      relays. The design's remedy (servers answering on one relay, thinning replies by the room's size) isn't built.
+      Measured on the bus (N6a, bench/net/REPORT.md "NAMES loop 6a"): 300 holders, 10 forged asks a second already
+      make the room's whole budget, 600 replies a second (100 or 1,000 a second make no more): with real items (up
+      to 4.1 KB) ~2.5 MB/s, each through two relays, from one event's worth of attacker work per ask. Thinning
+      `dissent` replies by the room's size would cost the dissent's guarantee (one honest holder suffices) a chance of
+      silence: the user's call.
+    - **Reply budgets spent by one guest** (N6a measured it on the bus, after the rounds fix below): a guest asking 10
+      names at once in a room of one or two servers has all 10 within 10 s (SERVFAILs meanwhile); 40 names at once
+      against 2 servers, 20 within a minute and no more (each server's 16 replies a minute to one reply tag), 5
+      servers 34, 20 servers all 40 within 30 s. Never NXDOMAIN now. Before N6a's fix (a lookup's rounds timed from
+      its start while its asks waited for the member's 4 a second), 10 names at once in a room of one or two servers
+      were all NXDOMAIN, "nobody serves" for 30 s doubling to 10 minutes.
+    - **"Nobody serves" from a member that never heard the room, while the servers' reply budgets are spent** (N6a):
+      500 members joining in a minute, each asking one name as it runs (20 servers, 5,000 names): 467 answered, 33
+      NXDOMAIN (30 of them silence through every round, taken for "nobody serves", 30 s; 3 "none" from a server
+      lacking the name whose holders' dissent went over budget). A first silence from a room never heard could be a
+      SERVFAIL (asked again) and only a second "nobody serves", at the cost of a room with no server answering
+      NXDOMAIN ~2.5 s later than now; or the servers' 2 replies a second could grow with the room. Both change what
+      the user measured or decided: open question.
+    - **"Who serves?" ranks a server by the best of its names** (N6a): asks now draw once a server, but a question's
+      answer carries a `serve` that proves the name it ranks by, so a server owning many names answers nearly every
+      question's first round (250 names: 98% at a spread of 6). Refreshes ask questions rarely (servers held 3
+      minutes, redrawn every 15), so it didn't show at 1,000 members; a server answering every question costs it a
+      call back and a handshake each.
     - **A name in its grace resolved first while its renewal is pending** is kept and NXDOMAIN for 5 minutes, as any
       kept name in its grace (room-names.md "A member resolving a name"); a first lookup now comes sooner than the
       servers finish a renewal, which the rig's test had to wait out. A shorter freshness for a kept name in its grace
@@ -1682,14 +1707,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     - A server's count of the room's servers, which sets its chance of asking a calendar, comes from its own questions'
       answers (times the round's share, at most 64). Junk registrations that answer questions raise it, so honest
       servers ask a renewal's calendar less often (at worst 1/64 a slot each) and a renewal is finished later; the
-      owner's own visit still collects it. A room of many young or junk servers isn't measured: N6.
+      owner's own visit still collects it. A room of many young or junk servers isn't measured (N6a measured the rest
+      of its scale; this one wants hours of simulated time with hundreds of servers on the bus, ~an hour of `cargo
+      test` at the 20-server test's pace): by the rule, junk servers counted at the cap of 64 leave `h` honest servers
+      asking a renewal's calendar `h`/64 times a slot together instead of about once, never less than the owner's visit.
     - The pace of block checks (one every 3 s a server, the newest first): 100 checks at that pace to each explorer
       all answered, no limit seen (N0c, bench/net/REPORT.md "NAMES loop 0c"; both explorers' 404s for an unknown block
       carry their CORS header, and a cross-origin-isolated page sees them). Not measured: a big room's first sync,
       whose distinct blocks are bounded by the window, not the names (37 days are ~5,300 blocks; the calendars' own
       transactions land in ~2,000 to 3,000 of them: alice's every ~3 blocks, bob's ~4), so that many checks, 1.7 to
       2.5 hours at one explorer for one new server.
-      The calendars' asks' rates are the design's: N6.
+      N6a's rig confirms the count at scale: 20 servers syncing 5,000 names anchored in 1,342 distinct blocks asked
+      the explorer 1,342 times each (26,838 in all), every block once a server whatever the names in it, and nothing
+      more once the verdicts were stored (a restart from its records asked none). At production's pace that is 67
+      minutes of checks for each new server, one request every 3 s.
     - A server finishes the one pending anchor it keeps an entry (the lower of two): if that calendar never finishes
       (it lost the commitment), the servers ask it, ever more rarely, until the renewal goes stale; the owner's agent,
       at its visit, tries all three of its calendars.
@@ -1711,12 +1742,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       next round at once after a run cut by its time (not by a breach) would close it.
     - **A server's memory is ~4x its registry's bytes** in the module (20 MB synced: 82 MB of linear memory; 50 MB
       of titles: 328 MB, 600 MB RSS): at 5,000 names held six months (72 to 93 MB) ~300 to 370 MB in a tab. Where
-      it goes (items kept decoded beside their bytes, the store's records, transfer buffers) isn't measured: N6.
+      it goes (items kept decoded beside their bytes, the store's records, transfer buffers) isn't measured. N6a: 5,000
+      names (15.5 MB of items) in 54 to 61 MB of linear memory a server (3.5 to 3.9x), ~140 MB RSS a server in Node;
+      7,500 names (the bound) 78 MB.
+    - **A room's servers that all start at once converge in rounds** (N6a: 20 servers of 250 names each, the tests'
+      relay and derper): each held ~3,100 to 3,700 of the 5,000 a minute after the start, then nothing more until the
+      next round ~5 minutes on (4,800 to 5,000 by 6.5 minutes), not all within 8 minutes. A name a server learns is
+      told in `have` only to the servers of its rounds of the last 10 minutes, so the rest wait for a round.
     - **Two servers that start within a second don't find each other for 30 s**: each one's first question comes
       while the other's own is open and it isn't synced yet (the answer rule's "not synced yet", by the logs' times),
       and both back off 30 s. Once
       in three runs the next three questions (at ~30, ~90 and ~210 s) went unanswered too, and the sync started at
-      ~350 s; the logs then didn't keep the names lines, so why is unknown: N6 looks for it with them.
+      ~350 s; the logs then didn't keep the names lines, so why is unknown. N6a's 20 servers started within 10 s on the
+      tests' relay and derper: each asked once, heard nobody and served 1 s after its start, and they found each other
+      within the minute (their asks again 30 s on); the public relays' case (N0c) is for N6b's run with the names lines kept.
   - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
     - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
       (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.

@@ -15,12 +15,19 @@
 // Every second the relay's counters and the processes' CPU (/proc) are sampled. Usage:
 //   node bench/net/room-scale.ts [members] [processes] [out.json]
 // Needs NODE_EXTRA_CA_CERTS for the rig's certificate (the script sets it for its children).
+//
+// `node bench/net/room-scale.ts names <phase> …`: the room's registry at scale instead (NAMES loop 6a,
+// bench/net/room-scale-names.ts).
 import { execFileSync, fork, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { cpus } from 'node:os';
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { FromWorker, ToWorker } from './room-scale-worker.ts';
 import type { RelayStats } from '../../tests/net/nostr-relay.ts';
 
+if (process.argv[2] === 'names') {
+  await import('./room-scale-names.ts');
+  process.exit(0);
+}
 const ROOT = new URL('../..', import.meta.url).pathname;
 const N = Number(process.argv[2] ?? 1000);
 const P = Number(process.argv[3] ?? 4);

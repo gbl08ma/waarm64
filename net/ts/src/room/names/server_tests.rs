@@ -3337,3 +3337,73 @@ fn an_item_past_the_reply_bound_is_left_out() {
     bytes.extend(vec![0; REPLY_MAX]);
     assert!(super::wire::Reply::decode(&bytes).is_err());
 }
+
+/// NAMES loop 6a (bench/net/REPORT.md "NAMES loop 6a"; a bench, not a check: `cargo test -p waarm64_ts --release
+/// forged_asks_in_a_room_of_hundreds -- --ignored --nocapture`): a flood of forged asks (dissents showing a made-up
+/// owner, from a fresh reply tag each) reaching every server of a room of 300 that holds the name: what the servers
+/// reply together, a second and in bytes, against the flood's size.
+#[test]
+#[ignore]
+fn forged_asks_in_a_room_of_hundreds() {
+    use super::wire::AskMode;
+    let mut b = Bitcoin::new(ROOM, 61);
+    let (_, alpha) = b.title(2, "alpha", t(30), &[t(2)], [0xa1; 32]);
+    let now0 = Instant::now();
+    let mut servers: Vec<Server> = (0..300u32)
+        .map(|k| {
+            let (key, item) = b.title(
+                3 + (k % 200) as u8,
+                &format!("server{k}"),
+                t(20),
+                &[t(5)],
+                [9; 32],
+            );
+            let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+            assert!(s.load(&record(&alpha, T), T));
+            let mut k32 = [0x77; 32];
+            k32[..4].copy_from_slice(&k.to_le_bytes());
+            s.start(k32, now0);
+            s.synced = true;
+            while s.poll().is_some() {}
+            s
+        })
+        .collect();
+    for per_second in [10u32, 100, 1000] {
+        let (mut replies, mut bytes) = (0usize, 0usize);
+        let mut now = now0 + Duration::from_secs(120 * per_second as u64);
+        for sec in 0..10u32 {
+            for n in 0..per_second {
+                let mut a = an_ask(1, sec * 100_000 + n, alpha.id, AskMode::Dissent, 0, [1; 8]);
+                a.key[..4]
+                    .copy_from_slice(&(per_second * 1_000_000 + sec * 100_000 + n).to_le_bytes());
+                let at = now + Duration::from_micros(1_000_000 * n as u64 / per_second as u64);
+                for s in servers.iter_mut() {
+                    s.input(
+                        Input::Ask {
+                            ask: a,
+                            region: Some(0),
+                            via: [0; 16],
+                        },
+                        at,
+                        T,
+                    );
+                    while let Some(c) = s.poll() {
+                        if let Cmd::Reply { data, .. } = c {
+                            replies += 1;
+                            bytes += data.len();
+                        }
+                    }
+                }
+            }
+            now += Duration::from_secs(1);
+        }
+        eprintln!(
+            "# 300 servers holding the name, {per_second} forged asks a second for 10 s: {replies} replies \
+             ({} a second, {} KB a second unsealed; an ask's item here {} bytes)",
+            replies / 10,
+            bytes / 10 / 1000,
+            alpha.encode().len()
+        );
+        assert!(replies <= 300 * 2 * 10 + 300);
+    }
+}

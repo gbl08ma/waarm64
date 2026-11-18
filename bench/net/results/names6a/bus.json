@@ -1,0 +1,32 @@
+{
+ "date": "2026-11-18",
+ "host": "linux arm64 (dev VM, 8 vCPUs)",
+ "how": "cargo test -q --release -p waarm64_ts --lib -- --ignored --nocapture forged_asks_in_a_room_of_hundreds a_guest_asking_many_names_at_once (server_tests.rs, member_tests.rs: the registry's bus, simulated time)",
+ "forgedAsks": {
+  "servers": 300,
+  "seconds": 10,
+  "itemBytes": 1061,
+  "rows": [
+   { "forgedAsksPerSecond": 10, "replies": 6000, "repliesPerSecond": 600, "unsealedKBPerSecond": 472 },
+   { "forgedAsksPerSecond": 100, "replies": 6000, "repliesPerSecond": 600, "unsealedKBPerSecond": 472 },
+   { "forgedAsksPerSecond": 1000, "replies": 6000, "repliesPerSecond": 600, "unsealedKBPerSecond": 472 }
+  ]
+ },
+ "manyNamesAtOnce": {
+  "columns": ["servers", "names", "within1s", "within4s", "within10s", "within30s", "within60s", "nxdomain", "servfails", "replies", "asks"],
+  "before": [
+   [1, 10, 0, 0, 0, 0, 0, 10, 0, 0, 12],
+   [2, 10, 0, 0, 0, 0, 0, 10, 0, 0, 12],
+   [2, 40, 0, 1, 1, 1, 1, 0, 585, 32, 244],
+   [5, 40, 0, 1, 1, 1, 1, 0, 585, 80, 244],
+   [20, 40, 1, 4, 4, 4, 4, 0, 540, 321, 244]
+  ],
+  "after": [
+   [1, 10, 0, 0, 10, 10, 10, 0, 13, 10, 35],
+   [2, 10, 0, 3, 10, 10, 10, 0, 9, 17, 32],
+   [2, 40, 0, 0, 1, 20, 20, 0, 392, 32, 244],
+   [5, 40, 0, 0, 1, 34, 34, 0, 225, 80, 191],
+   [20, 40, 1, 7, 13, 40, 40, 0, 103, 134, 107]
+  ]
+ }
+}

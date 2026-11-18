@@ -1923,3 +1923,86 @@ fn names_asked_at_once_wait_for_their_asks_to_go_out() {
         "nobody serves, said of a room that does"
     );
 }
+
+/// NAMES loop 6a (bench/net/REPORT.md "NAMES loop 6a"; a bench, not a check: `cargo test -p waarm64_ts --release
+/// a_guest_asking_many_names_at_once -- --ignored --nocapture`): a guest asks `n` names at once in a room of `k`
+/// servers that hold them all (the replies' budgets: 2 a second a server, 16 a minute a reply tag), its resolver asking
+/// again as a guest's does (a SERVFAIL at 4 s, asked again at once): when each is answered.
+#[test]
+#[ignore]
+fn a_guest_asking_many_names_at_once() {
+    for (k, n) in [(1usize, 10usize), (2, 10), (2, 40), (5, 40), (20, 40)] {
+        let mut b = Bitcoin::new(ROOM, 81);
+        let items: Vec<Item> = (0..n)
+            .map(|i| {
+                title(
+                    &mut b,
+                    40,
+                    &format!("many{i}"),
+                    20,
+                    &[4],
+                    [i as u8; 32],
+                    [1; 32],
+                )
+            })
+            .collect();
+        let refs: Vec<&Item> = items.iter().collect();
+        let servers = (0..k)
+            .map(|s| serving(&mut b, s as u8 + 1, &refs))
+            .collect();
+        let mut bus = Bus::new(servers, member());
+        let start = bus.now;
+        let names: Vec<String> = (0..n).map(|i| format!("many{i}")).collect();
+        let mut done: Vec<Option<(Answer, Duration)>> = vec![None; n];
+        let mut asked_at = vec![start; n];
+        for (i, name) in names.iter().enumerate() {
+            let (now, unix) = (bus.now, bus.unix());
+            let a = bus.m.query(name, now, unix, true);
+            if a != Answer::Wait {
+                done[i] = Some((a, Duration::ZERO));
+            }
+        }
+        let mut servfails = 0;
+        while done.iter().any(Option::is_none) && bus.now - start < Duration::from_secs(60) {
+            bus.advance(Duration::from_millis(10));
+            for (i, name) in names.iter().enumerate() {
+                if done[i].is_some() {
+                    continue;
+                }
+                let (now, unix) = (bus.now, bus.unix());
+                let again = now - asked_at[i] >= Duration::from_secs(4);
+                if again {
+                    servfails += 1;
+                    asked_at[i] = now;
+                }
+                let a = bus.m.query(name, now, unix, again);
+                if a != Answer::Wait {
+                    done[i] = Some((a, now - start));
+                }
+            }
+        }
+        let within = |s: u64| {
+            (done.iter())
+                .filter(|d| {
+                    d.as_ref().is_some_and(|(a, t)| {
+                        matches!(a, Answer::Node(_)) && *t <= Duration::from_secs(s)
+                    })
+                })
+                .count()
+        };
+        let nx = (done.iter())
+            .filter(|d| matches!(d, Some((Answer::Nx, _))))
+            .count();
+        eprintln!(
+            "# {k} servers, {n} names asked at once: answered within 1 s {}, 4 s {}, 10 s {}, 30 s {}, 60 s {}; \
+             NXDOMAIN {nx}; SERVFAILs {servfails}; replies {}, asks {}",
+            within(1),
+            within(4),
+            within(10),
+            within(30),
+            within(60),
+            bus.replies,
+            bus.asks.len()
+        );
+    }
+}

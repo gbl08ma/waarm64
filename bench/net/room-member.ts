@@ -17,6 +17,12 @@ export type MemberOptions = {
   packet?(p: Uint8Array): void;
   /** Every event. */
   event?(e: TsEvent): void;
+  /** Stored registry records, loaded before the first tick (`TsClient.namesLoad`; bench/net/room-scale-names.ts). */
+  records?: Uint8Array[];
+  /** A server's records as they change (`namesStore`). */
+  namesStore?(id: Uint8Array, record: Uint8Array | null): void;
+  /** A server's fetch outside the room (`namesFetch`): answer with `client.namesFetched`. */
+  namesFetch?(client: TsClient, id: number, url: string): void;
 };
 
 export type Member = {
@@ -86,6 +92,8 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
     room: { link: o.link, relayOnly: true, incoming: o.incoming ?? true, unixTime: o.unixTime, ...(o.names ? { names: o.names } : {}) },
     ...(o.key ? { key: o.key } : {}),
   }, {
+    ...(o.namesStore ? { namesStore: o.namesStore } : {}),
+    ...(o.namesFetch ? { namesFetch: (id: number, url: string) => o.namesFetch!(client, id, url) } : {}),
     packet(p) {
       o.packet?.(p);
       if (p[0] >> 4 !== 6 || p[6] !== 17 || p.length < 52) return;
@@ -110,6 +118,7 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
       }
     },
   });
+  for (const r of o.records ?? []) client.namesLoad(r);
   if (!self) throw new Error('no self event');
   m.client = client;
   m.address6 = self.address6;

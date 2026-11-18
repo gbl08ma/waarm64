@@ -1,0 +1,423 @@
+{
+ "date": "2026-11-18T06:52:21.450Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "phase": "junk",
+ "inUse": {
+  "asked": 500,
+  "found": 358,
+  "nxdomain": 132,
+  "failed": 10,
+  "ms": {
+   "n": 358,
+   "p50": 1310.9,
+   "p90": 9319.9,
+   "p99": 16726,
+   "max": 17330.2
+  },
+  "tries": {
+   "n": 500,
+   "p50": 1,
+   "p90": 3,
+   "p99": 5,
+   "max": 5
+  }
+ },
+ "junk": {
+  "bound": 7500,
+  "seconds": 310,
+  "perServer": [
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 2500,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 2500,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 2500,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 2500,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   }
+  ],
+  "dropped": {
+   "junk": {
+    "n": 20,
+    "p50": 0,
+    "p90": 2500,
+    "p99": 2500,
+    "max": 2500
+   },
+   "honestUsed": {
+    "n": 20,
+    "p50": 0,
+    "p90": 0,
+    "p99": 0,
+    "max": 0
+   },
+   "honestUnused": {
+    "n": 20,
+    "p50": 0,
+    "p90": 0,
+    "p99": 0,
+    "max": 0
+   }
+  },
+  "servers": {
+   "names": {
+    "n": 20,
+    "p50": 5076,
+    "p90": 7500,
+    "p99": 7500,
+    "max": 7500
+   },
+   "serving": 20,
+   "wasmMB": {
+    "n": 20,
+    "p50": 54.7,
+    "p90": 77.8,
+    "p99": 77.8,
+    "max": 77.8
+   },
+   "fetches": {
+    "blockstream": 508
+   },
+   "fetchesPerServer": {
+    "n": 20,
+    "p50": 35,
+    "p90": 49,
+    "p99": 49,
+    "max": 49
+   },
+   "stored": 27805,
+   "deleted": 10018,
+   "logs": {
+    "a names client, nodekey:H": 20,
+    "nobody serves the registry; asking again in N s": 20
+   }
+  },
+  "over": {
+   "seconds": 309,
+   "relayPerSecond": {
+    "reqs": 3.9,
+    "eventsIn": 7.1,
+    "forwards": 42.4,
+    "kbIn": 15.7,
+    "kbOut": 37.8
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0,
+    "services": 0,
+    "server": 0.2,
+    "member": 0,
+    "junk": 0.1
+   },
+   "rssMB": {
+    "relay": 130.1,
+    "derper": 58.4,
+    "services": 198.5,
+    "server": 3081.5,
+    "member": 594.7,
+    "junk": 327.2
+   }
+  },
+  "progress": [
+   {
+    "t": 10.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 20,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 30,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 40.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 50.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 60,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 70,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 80.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 90.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 100,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 110,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 120,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 130.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 140,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 150,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 160,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 170.1,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 180,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 190,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 200,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 210,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 220,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 230,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 240,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 250,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 259.9,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 270,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 280,
+    "names": 4860,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 290,
+    "names": 4860,
+    "junk": 1727,
+    "honest": 0
+   },
+   {
+    "t": 299.9,
+    "names": 4924,
+    "junk": 5000,
+    "honest": 0
+   },
+   {
+    "t": 309.9,
+    "names": 5076,
+    "junk": 10018,
+    "honest": 0
+   }
+  ]
+ },
+ "inUseAfter": {
+  "asked": 500,
+  "found": 500,
+  "nxdomain": 0,
+  "failed": 0,
+  "ms": {
+   "n": 500,
+   "p50": 0.2,
+   "p90": 0.4,
+   "p99": 0.7,
+   "max": 716.2
+  },
+  "tries": {
+   "n": 500,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  }
+ }
+}

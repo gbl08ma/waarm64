@@ -987,3 +987,116 @@ node bench/net/names-public.ts transfer --mb 5 --out results/names0c/transfer-5.
 node bench/net/names-public.ts client --idle 60 --out results/names0c/client.json
 node bench/net/names-public.ts lookup --rounds 6 --out results/names0c/lookup.json
 ```
+
+## NAMES loop 6a (dev VM), 2026-11-18
+
+The in-room half of the kickoff's loop 6 ("Scale and abuse"): a room's registry at the scale the kickoff names, with no
+public service, and R2's and R3's backlog items that fit the rig. The dev VM (8 vCPUs, 18 GiB; Node 26.7.0), nothing
+else running. JSON under `results/names6a/`.
+
+**The rig** (`bench/net/room-scale.ts names <phase>`, `bench/net/room-scale-names.ts` and its worker): room nodes are the
+module (`target/net/ts-test.wasm`: easy headers, cheap proof of work) in instances of their own, as a page's worker
+holds one, many to a Node process (servers 2 to a process, members 250), on the tests' Nostr relay
+(`tests/net/nostr-relay.ts`, a process of its own), the tailcat rig's derper and the pretend calendars and explorer
+(`tests/net/ots-calendar.ts`, the servers' fetches routed to it). 1,000 members and 20 servers in processes fit with
+room to spare (servers ~140 MB RSS each, members 1.4 MB each, ~5.5 GB in all), so no smaller shape was needed; the
+bus (the registry's logic in simulated time, `server_tests.rs`, `member_tests.rs`) took the parts that need hundreds
+of servers or a guest's many names. **The registry**: 20 servers owning 250 names each, 5,000 names, each a claim 14
+to 28 days back and a renewal 16 days later, anchors 30 levels deep (as real ones weigh), the entries of each half
+hour in one block (`names-title.rs`'s new `blockSecs` and `spread`: 1,342 distinct blocks); 3,091 bytes a name, 15.5 MB
+in all. Each phase is a bounded run; servers start from the records the `converge` run stored.
+
+### What a server costs
+
+| | |
+|---|---|
+| 20 servers from a cold start (titles only) | each served 1 s after its start (its first question heard nobody); held 3,100 to 3,700 of the 5,000 a minute in, then nothing until the next round ~5 minutes on; 4,800 to 5,000 at 6.5 minutes, not all by 8 (docs/backlog.md) |
+| CPU | 0.3 cores for all 20 servers while syncing, under 0.1 idle, 0.5 while 500 members joined and looked names up in a minute |
+| memory | 54 to 61 MB of linear memory a server at 5,000 names (3.5 to 3.9x its items), 78 MB at 7,500; ~140 MB RSS a server in Node |
+| outside the room | the explorer asked once a block a server: 1,342 each, 26,838 in all (production's pace: 67 minutes a new server); none after a restart from records (the verdicts are stored); no calendar ask (no renewal pending) |
+| a member | 1,472 KB of linear memory, 1.4 MB RSS; the room idle with 500 members: 9 REQs/s and 0.4 events/s at the relay |
+
+### Lookups (`members`), before and after this loop's fixes
+
+| | before | after |
+|---|---|---|
+| cold first lookup, 100 members 2 a second | 100 of 100, 0.72 s (p99 0.74); ~18 events each at the relay | 100 of 100, 1.12 s (p99 1.32); ~5.6 events each |
+| a second name, the same members | 100 of 100, 1.12 s | 100 of 100, 0.73 s (p90 1.32) |
+| **500 members joining in a minute, each asking a name as it runs** | **279 found, 221 NXDOMAIN**; 57 events/s in, 495 forwards/s | **467 found, 33 NXDOMAIN** (30 "nobody serves", 3 "none"), p50 1.12 s, p99 1.32 s; 50 events/s, 493 forwards/s |
+
+- **Why 221 failed: a server was as many draws as it owns names.** A `share` ask ranked a server by the best of its
+  live names' owner keys, so a server of 250 names fell in a spread of 6 (1/64) 98% of the time and each first lookup
+  drew ~15 replies of the 20 servers; at 8 joins a second that is ~125 replies a second against the room's 40 (2 a
+  second a server), and lookups whose dissent or rounds went unanswered were NXDOMAIN, for 60 s and doubling.
+  **Fixed**: one draw a server (its live name of the lowest id; `a_server_with_many_names_is_one_draw_in_a_share`,
+  failing first at 143 replies of 256 asks). A cold lookup now usually waits for its second round (0.4 s): 1.1 s.
+- **What is left** (docs/backlog.md, an open question): a member that never heard the room takes silence through
+  every round for "nobody serves" (NXDOMAIN 30 s); with the room's budgets spent, 30 of 500 joiners did. A burst of
+  25 lookups a second (`junk`'s 100 members resolving 5 names each at once) still found 358 of 500 at first, 132
+  NXDOMAIN (some servers there had restarted from records a few hundred names short and said "none").
+
+### Junk against the bound (`junk`)
+
+The servers' bound lowered to 7,500 names; 100 members keep 500 of the names in use (resolved, then again every 2
+minutes); a registrant's server (one key) brings 5,000 junk names claimed in the last day (1,748 bytes each, 49
+blocks), which the servers take from it at their next round.
+
+| | junk dropped a server | the room's names in use dropped | not in use dropped | the names in use, resolved after |
+|---|---|---|---|---|
+| before (the longest unasked first) | **0** | **176** (p50) | **2,313** (p50) | 317 of 500 |
+| after (the youngest chain first) | 2,500 (each server the junk reached: 4 by the run's end) | 0 | 0 | 500 of 500 |
+
+- **Before, the bound dropped only the room's names**, without the registrant asking for anything: a name's arrival
+  counted as asked, so 5,000 junk names arriving last outranked every name nobody had asked for since it came, and
+  even names in use went (a member's asks reach only some servers). Asking for the junk, which anyone can do for
+  nothing, would only have made it surer. **Fixed**: the youngest owning chains go first, of one age the longest
+  unasked (`the_bound_drops_young_chains_before_old_ones_however_asked`, failing first). Junk now outranks only names
+  claimed after it: an attacker must have claimed it before them and kept it renewed (docs/backlog.md).
+
+### On the bus (`results/names6a/bus.json`)
+
+- **Forged asks in a room of hundreds of servers** (`forged_asks_in_a_room_of_hundreds`, 300 servers holding the
+  name, dissents showing a made-up owner from a fresh reply tag each): 10 forged asks a second already make the room's
+  whole budget, **600 replies a second**, and 100 or 1,000 a second make no more; with real items (up to 4.1 KB)
+  ~2.5 MB/s, each reply through two relays. Not fixed (docs/backlog.md: thinning replies trades the dissent's
+  guarantee).
+- **A guest asking many names at once** (`a_guest_asking_many_names_at_once`, the resolver's SERVFAIL at 4 s and its
+  retry):
+
+  | servers, names at once | before: within 10 s / 60 s, NXDOMAIN | after: within 10 s / 30 s / 60 s, NXDOMAIN |
+  |---|---|---|
+  | 1, 10 | 0 / 0, **10** | 10 / 10 / 10, 0 |
+  | 2, 10 | 0 / 0, **10** | 10 / 10 / 10, 0 |
+  | 2, 40 | 1 / 1, 0 | 1 / 20 / 20, 0 |
+  | 5, 40 | 1 / 1, 0 | 1 / 34 / 34, 0 |
+  | 20, 40 | 4 / 4, 0 | 13 / 40 / 40, 0 |
+
+  **Before, names asked at once in a small room were all NXDOMAIN** for 30 s doubling to 10 minutes: a lookup's
+  rounds and its silence were timed from its start while its asks waited for the member's 4 a second, so its last
+  round ran out before it was sent and the member took the room for one nobody serves. **Fixed**: rounds count from
+  when the one before left (`names_asked_at_once_wait_for_their_asks_to_go_out`, failing first; a relay 0.8 s away).
+  What is left is the servers' 16 replies a minute to one reply tag: 40 names against 2 servers, 20 a minute.
+
+### Fixes, tests, planted bugs
+
+Three commits, each from its failing test: the share (one draw a server), the bound (the youngest first), the rounds
+(from when asks left). Planted and caught: the bound oldest-first; a round not waiting for its ask; rounds timed from
+the start (caught once the test's relay was 0.8 s away: on an instant bus it passed). `cargo test -p waarm64_ts` 265
+passed (the 2 benches ignored); clippy with and without `test-params`; `net/ts/build.sh` and `--test-params`; `tsc`.
+
+### Not done here
+
+N0c's public-relay items and the days-long run on the public services are N6b's. The calendars' ask rate in a room of
+many junk servers (their count of the room capped at 64) wants hours of simulated time with hundreds of servers: by
+the rule, `h` honest servers then ask a renewal's calendar `h`/64 times a slot together (docs/backlog.md).
+
+### Reproduce
+```sh
+cargo build -q -p waarm64_ts --features test-params --example names-title && net/ts/build.sh --test-params
+node bench/net/room-scale.ts names make                                                    # titles, ~11 s
+node bench/net/room-scale.ts names converge --wait 470 --out results/names6a/converge.json  # ~8.5 min; stores records
+node bench/net/room-scale.ts names members --out results/names6a/members-after.json        # ~4 min
+node bench/net/room-scale.ts names junk --wait 300 --out results/names6a/junk-after.json   # ~6.5 min
+cargo test -q --release -p waarm64_ts --lib -- --ignored --nocapture forged_asks_in_a_room_of_hundreds a_guest_asking_many_names_at_once
+```
+(`members.json` and `junk-before.json` are the same runs on the module before the fixes.)

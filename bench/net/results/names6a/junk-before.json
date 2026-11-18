@@ -1,0 +1,418 @@
+{
+ "date": "2026-11-18T06:31:17.131Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "phase": "junk",
+ "inUse": {
+  "asked": 500,
+  "found": 182,
+  "nxdomain": 297,
+  "failed": 21,
+  "ms": {
+   "n": 182,
+   "p50": 1548.5,
+   "p90": 13325.3,
+   "p99": 17323.8,
+   "max": 17332.1
+  },
+  "tries": {
+   "n": 500,
+   "p50": 1,
+   "p90": 4,
+   "p99": 5,
+   "max": 5
+  }
+ },
+ "junk": {
+  "bound": 7500,
+  "seconds": 300,
+  "perServer": [
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 184,
+    "honestUnused": 2316
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 177,
+    "honestUnused": 2323
+   },
+   {
+    "junk": 0,
+    "honestUsed": 179,
+    "honestUnused": 2321
+   },
+   {
+    "junk": 0,
+    "honestUsed": 176,
+    "honestUnused": 2324
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 180,
+    "honestUnused": 2320
+   },
+   {
+    "junk": 0,
+    "honestUsed": 172,
+    "honestUnused": 2328
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 183,
+    "honestUnused": 2317
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 177,
+    "honestUnused": 2323
+   },
+   {
+    "junk": 0,
+    "honestUsed": 180,
+    "honestUnused": 2320
+   },
+   {
+    "junk": 0,
+    "honestUsed": 187,
+    "honestUnused": 2313
+   },
+   {
+    "junk": 0,
+    "honestUsed": 189,
+    "honestUnused": 2311
+   },
+   {
+    "junk": 0,
+    "honestUsed": 0,
+    "honestUnused": 0
+   },
+   {
+    "junk": 0,
+    "honestUsed": 161,
+    "honestUnused": 2039
+   }
+  ],
+  "dropped": {
+   "junk": {
+    "n": 20,
+    "p50": 0,
+    "p90": 0,
+    "p99": 0,
+    "max": 0
+   },
+   "honestUsed": {
+    "n": 20,
+    "p50": 176,
+    "p90": 187,
+    "p99": 189,
+    "max": 189
+   },
+   "honestUnused": {
+    "n": 20,
+    "p50": 2313,
+    "p90": 2324,
+    "p99": 2328,
+    "max": 2328
+   }
+  },
+  "servers": {
+   "names": {
+    "n": 20,
+    "p50": 7500,
+    "p90": 7500,
+    "p99": 7500,
+    "max": 7500
+   },
+   "serving": 20,
+   "wasmMB": {
+    "n": 20,
+    "p50": 76.1,
+    "p90": 77.2,
+    "p99": 77.3,
+    "max": 77.3
+   },
+   "fetches": {
+    "blockstream": 832
+   },
+   "fetchesPerServer": {
+    "n": 20,
+    "p50": 49,
+    "p90": 49,
+    "p99": 49,
+    "max": 49
+   },
+   "stored": 64914,
+   "deleted": 29700,
+   "logs": {
+    "a names client, nodekey:H": 20,
+    "nobody serves the registry; asking again in N s": 20,
+    "N items of a get answer dropped: the queue is full": 914
+   }
+  },
+  "over": {
+   "seconds": 299.9,
+   "relayPerSecond": {
+    "reqs": 4,
+    "eventsIn": 8.9,
+    "forwards": 60.4,
+    "kbIn": 19.7,
+    "kbOut": 51.9
+   },
+   "cores": {
+    "relay": 0,
+    "derper": 0,
+    "services": 0,
+    "server": 0.3,
+    "member": 0,
+    "junk": 0.1
+   },
+   "rssMB": {
+    "relay": 125.7,
+    "derper": 60.3,
+    "services": 198.9,
+    "server": 3346.2,
+    "member": 572.2,
+    "junk": 324.6
+   }
+  },
+  "progress": [
+   {
+    "t": 10.1,
+    "names": 5000,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 20.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 30.2,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 40.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 50.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 60.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 70.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 80,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 90.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 100.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 110.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 120,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 130.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 140.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 150.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 160,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 170,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 180.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 190.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 200,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 210,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 220,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 230.1,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 240,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 250,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 260,
+    "names": 5064,
+    "junk": 0,
+    "honest": 0
+   },
+   {
+    "t": 270,
+    "names": 5064,
+    "junk": 0,
+    "honest": 2749
+   },
+   {
+    "t": 279.9,
+    "names": 5064,
+    "junk": 0,
+    "honest": 13716
+   },
+   {
+    "t": 290,
+    "names": 5077,
+    "junk": 0,
+    "honest": 22500
+   },
+   {
+    "t": 300,
+    "names": 7500,
+    "junk": 0,
+    "honest": 29682
+   }
+  ]
+ },
+ "inUseAfter": {
+  "asked": 500,
+  "found": 317,
+  "nxdomain": 183,
+  "failed": 0,
+  "ms": {
+   "n": 317,
+   "p50": 0.2,
+   "p90": 0.5,
+   "p99": 0.6,
+   "max": 708.6
+  },
+  "tries": {
+   "n": 500,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  }
+ }
+}

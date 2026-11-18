@@ -25,17 +25,20 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   when the page did (it reads the docs' quotes of the page). At the end also `scripts/ci-debian.sh`,
   `scripts/ci-machines.sh`. **Review 3** (the redesign's code, R1–R3a) is done and its seven findings fixed
   (`NAMES-REVIEW-3.md` "Status"); its fix loop ran targeted tests only (`cargo test -p waarm64_ts`, the Node names
-  tests): the loop's full scripts are `scripts/ci.sh` and `scripts/ci-net.sh` (names-room's rig, page-room).
+  tests): the loop's full scripts are `scripts/ci.sh` and `scripts/ci-net.sh` (names-room's rig, page-room). N6a
+  (branch `names-n6a`) changed the member's first lookup, the share and the bound; it ran the Rust checks and the Node names
+  tests (room-names, names-room with the tailcat derper, names-agent: green); `scripts/ci.sh` and `scripts/ci-net.sh`
+  (page-room) are to run on it.
 - **Session kind:** the dev VM from 2026-11-18 (cloud before: docs/cloud.md). The user (2026-11-17): **N6 doesn't
   run in a cloud session**.
 
 ## Next, in order (a dev VM session)
 
-1. **N6**: scale and abuse as the kickoff says, plus R2's and R3's items in docs/backlog.md ("What servers ask
-   outside the room", R3's loose ends: forged-reply floods with hundreds of servers, reply budgets in small rooms)
-   and N0c's ("On the public relays and DERP": two servers missing each other for minutes once, a first sync cut by
-   `RUN_MAX` and resumed a round later, ~4x a registry's bytes in memory, the 8-part window). N0c's
-   `bench/net/names-public.ts` runs room nodes on the public services and keeps their names lines.
+1. **N6b**: N0c's public-relay items in docs/backlog.md ("On the public relays and DERP": two servers missing each
+   other for minutes once, a first sync cut by `RUN_MAX` and resumed a round later, the 8-part window) and the
+   kickoff's days-long run on the public calendars, explorers and default relays with real stamps, between two pages.
+   N0c's `bench/net/names-public.ts` runs room nodes on the public services and keeps their names lines; N6a's
+   `bench/net/room-scale.ts names` is the in-room rig (no public service).
 2. **The end**, as the kickoff says: final review, the full scripts (also `ci-debian.sh`, `ci-machines.sh`),
    `docs/networking/names.md` from the spec, rooms.md's decisions, the deletions (this file, the kickoff,
    `docs/plans/room-names*.md`, `room-names-research/`, `NAMES-REVIEW-3.md`), PLAN.md's row.
@@ -67,7 +70,8 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 | Domains | The page's words (2026-11-18, dev VM; the user's call): a name is a **domain**, a label a **subdomain** (a term people can look up, held by the connection's key, not a machine); Register a domain… and its dialog (the whole domain `<name>.<tag>.p2p.internal` under the field, the room's suffix while empty), Point all at this connection, the serving notice says this web app serves while the connection is connected (a machine running or not). Keys and components unchanged; copy.md's words table has the row; the spec keeps "name" and says so | done |
 | Review 3 | Out-of-context review of the redesign (R1–R3a) → `NAMES-REVIEW-3.md` (7 findings), and its fix loop (2026-11-18, dev VM; 468e9ee1 to c987a221, one commit a finding, each from a failing test, 15 planted bugs caught, one by inspection): a kept name whose claim wasn't seen isn't replaced by another key's back-order (`Kept.whole`, member record version 3); "too big" replies carry the last entry, a contest decides within 10 s (`CONTEST_FOR`) and only when every key shown is settled, never for another owner, 32 repliers a key; a fetched run goes to its own name's contest; a `get`'s answer keeps only the name asked, a peer's share of the verify queue bounded (256 items, 4 MiB); a title is lost only when no server of the pass took it and an explorer knows the better chain's block; an anchor in a block refused mid-job isn't kept; block retries double. Wire changed (Reply's too big, a fetch's empty item), pre-release | done |
 | N0c | Public services and the GPU figure (2026-11-18, dev VM; bench/net/REPORT.md "NAMES loop 0c", `results/names0c/`, `bench/net/names-public.ts`): a first sync through tailcat 303 and the six relays ~0.8 Mbit/s (5 MB 61 s, 20 MB 228 s; 50 MB cut by `RUN_MAX` at 241 s and on next round), a guest's ping beside it unmoved (95 ms); the names client 7 WebSockets, 64 KiB, ~0.04% CPU; a cold first lookup 1.53 s, a second name 0.93, NXDOMAIN 0.92; all six relays forward a `REPLY_MAX` reply (and up to 32 KiB): it stays 4 KiB; both explorers' 404s carry CORS, the page sees them (R2 stands); 100 checks at 3 s each answered; Argon2id 1 MiB 0.38 ms in wasm (`POW_BITS` 16 stays), a GPU ~216x a tab (RTX 5090, from published Chukwa v2 rates), a million names ~63 GPU-hours a term. No product code changed; spec, r3 doc, backlog updated | done |
-| N6 | Scale and abuse; days on the public services | *dev VM*: "Next" 1 (not in a cloud session: the user) |
+| N6a | Scale in the room, no public service (2026-11-18, dev VM; bench/net/REPORT.md "NAMES loop 6a", `results/names6a/`, `bench/net/room-scale.ts names`): 1,000 members and 20 servers of 5,000 names in processes; a server 54–61 MB linear (3.5–3.9x), 1,342 explorer asks each (once a block); three fixes from failing tests: a server one draw in a `share` (500 joins in a minute: 221 → 33 NXDOMAIN), the bound drops the youngest chains first (junk dropped 2,500/server, the room's names 0; before: ~2,490 of the room's, no junk), a first lookup's rounds count from when their asks left (10 names at once in a small room: all NXDOMAIN → all within 10 s); 3 planted bugs caught; forged asks at 300 servers 600 replies/s (filed) | done |
+| N6b | N0c's public-relay items; days on the public services | *dev VM*: "Next" 1 (not in a cloud session: the user) |
 | End | Final review, full scripts, docs, deletions | *dev VM*: "Next" 2 |
 
 ## Notes for whoever runs loops here
@@ -96,6 +100,17 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   that knows the room's ID and the name→machine mapping sees the key lookup that follows a resolution anyway.
 
 ## Open questions
+
+From N6a (2026-11-18):
+- **The bound drops the youngest chains first** (was the longest unasked: junk registered in bulk dropped only the
+  room's names). Built within the decisions; what it gives up, for the user to know: an honest room past the bound
+  drops its newest names, and junk claimed early and kept renewed still pushes out names claimed after it.
+- **"Nobody serves" under load**: a member that never heard the room takes silence through every round for nobody
+  serving (NXDOMAIN 30 s); 30 of 500 members joining in a minute did. A first silence as SERVFAIL (a room with no
+  server then answers NXDOMAIN ~2.5 s later than N3's measured 2.6 s), or reply budgets that grow with the room
+  (more amplification for forged asks: 600 replies/s at 300 servers now)?
+- **Forged asks at hundreds of servers**: thinning `dissent` replies by the room's size would cost the guarantee that
+  one honest holder is enough.
 
 From N0c (2026-11-18):
 - **A measured GPU figure needs the user's OK to install a tool on the Mac host** (hashcat, or a WebGPU Argon2
