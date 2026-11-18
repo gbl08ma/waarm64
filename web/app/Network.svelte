@@ -29,6 +29,9 @@
 
   /** The adapter whose menu is open (any, for the single menu: it's open); none: closed. */
   let openAt = $state<number>();
+  /** The menus (by adapter when apart, else `all`): an item that opens a dialog focuses its menu's button first (Menu.svelte `focusButton`). */
+  const menus = $state<Record<string, { focusButton: () => void } | undefined>>({});
+  const toButton = (i: number) => menus[apart ? i : 'all']?.focusButton();
   /** The menu's openings by the page: the adapters' sections start again (last time's errors gone). */
   let session = $state(0);
   let lastPhases: string[] = [];
@@ -53,14 +56,17 @@
   }
 
   function wizard(i: number) {
+    toButton(i);
     openAt = undefined;
     network.openWizard({ mode: 'attach', machine: current.id, adapter: i, here: views[i]?.on });
   }
   function details(i: number) {
+    toButton(i);
     openAt = undefined;
     network.openDetails(i);
   }
   function naming(i: number) {
+    toButton(i);
     openAt = undefined;
     network.openNaming(i);
   }
@@ -79,6 +85,7 @@
 {#if apart}
   {#each views as a (a.index)}
     <Menu
+      bind:this={menus[a.index]}
       id={a.index ? `network-${a.index}` : 'network'}
       icon="network"
       title={t('network:Network.title.adapter', { adapter: a.index + 1 })}
@@ -97,6 +104,7 @@
   {/each}
 {:else}
   <Menu
+    bind:this={menus.all}
     id="network"
     icon="network"
     title={t('network:Network.title')}

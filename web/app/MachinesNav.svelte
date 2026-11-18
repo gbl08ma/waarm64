@@ -86,8 +86,8 @@
   }
 </script>
 
-<nav aria-labelledby="machines-heading">
-  <h2 id="machines-heading">{t('machines:MachinesNav.heading')}</h2>
+<nav aria-labelledby="home-heading">
+  <h3 id="machines-heading">{t('machines:MachinesNav.heading')}</h3>
   {#if listed}
     <ul>
       {#if current.transient}
@@ -159,7 +159,7 @@
     background: var(--surface-raised);
   }
   /* The list's heading, a label over it, in line with its machines' names. */
-  h2 {
+  h3 {
     margin: 0 0 calc(-1 * var(--space-2));
     padding: 0 var(--space-4);
     font-size: var(--text-sm);

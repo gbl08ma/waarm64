@@ -58,6 +58,7 @@
 
   let el: HTMLDetailsElement;
   let items = $state<HTMLElement>();
+  let button = $state<HTMLElement>();
   $effect(() => {
     const away = (e: PointerEvent) => {
       if (open && !el.contains(e.target as Node)) open = false;
@@ -81,6 +82,14 @@
   $effect(() => {
     if (disabled) open = false;
   });
+
+  /**
+   * Focuses the menu's button: before an item opens a dialog, so that the dialog gives the focus back to it as it
+   * closes (the item itself is in the closed menu by then, and the focus would fall to the page).
+   */
+  export function focusButton() {
+    button?.focus();
+  }
 </script>
 
 <details
@@ -93,6 +102,7 @@
   {...rest}
 >
   <summary
+    bind:this={button}
     class={[variant, { attention }]}
     id={summaryId}
     {title}

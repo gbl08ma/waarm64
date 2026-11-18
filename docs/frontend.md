@@ -449,7 +449,9 @@ edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab
 `PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
 called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav`, `openMachines`, `#machines-open`, kept
 theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
-address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. The left
+address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. Its heading,
+**[Home](ui:machines:MachinesPage.heading)**, is for a screen reader alone (an `h2`, the toolbar's `h1` above it): it
+names the left column (a `nav`), and the list's heading and each pane's title (`h3`) are under it. The left
 column's **[Machines](ui:machines:MachinesNav.heading)** heads the list of machines, each said running (its Web Lock
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off (while there are none, a line
 says so in its place, with no rule under it); then the commands that make one (new, **from a disk image…** (what Open

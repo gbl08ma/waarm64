@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
 
 let browser: Browser;
 let base: string;
@@ -82,6 +83,25 @@ test("the primitives: a form's buttons are one height (ui/Button.svelte), and th
   assert.equal(got.control, '28px', 'tokens.css is loaded');
   assert.ok(got.heights.length >= 2, `buttons: ${got.heights.length}`);
   assert.deepEqual([...new Set(got.heights)], [28], `heights: ${got.heights.join(', ')}`);
+  await page.close();
+});
+
+test("the Home page's outline: its heading, then the machines' list and each pane under it; the nav named for the page", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await page.locator('.machines nav').waitFor();
+  const r = await page.evaluate(() => {
+    const nav = document.querySelector('.machines nav')!;
+    const by = nav.getAttribute('aria-labelledby');
+    return {
+      nav: nav.getAttribute('aria-label') ?? (by ? document.getElementById(by)?.textContent?.trim() : undefined),
+      headings: [...document.querySelectorAll('.machines :is(h1, h2, h3, h4)')].map((h) => `${h.tagName}:${h.textContent?.trim()}`),
+    };
+  });
+  assert.equal(r.nav, t('machines:MachinesPage.heading'));
+  assert.deepEqual(r.headings.slice(0, 2), [`H2:${t('machines:MachinesPage.heading')}`, `H3:${t('machines:MachinesNav.heading')}`]);
+  assert.ok(r.headings.slice(2).every((h) => h.startsWith('H3:')), JSON.stringify(r.headings));
   await page.close();
 });
 

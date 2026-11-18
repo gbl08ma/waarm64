@@ -21,6 +21,7 @@
   let { folders }: { folders: PageFolders } = $props();
 
   let open = $state(false);
+  let menu = $state<{ focusButton: () => void }>();
   const views = $derived(folders.views());
   const waiting = $derived(views.some((v) => v.problem));
   $effect(() =>
@@ -52,6 +53,7 @@
 {#snippet path()}<code>{shares.path}/&lt;name&gt;</code>{/snippet}
 
 <Menu
+  bind:this={menu}
   id="folders"
   icon="folder"
   title={t('folders:FoldersMenu.title')}
@@ -91,6 +93,7 @@
     <Button
       id="folder-attach"
       onclick={() => {
+        menu?.focusButton();
         open = false;
         shares.openWizard({
           machine: current.id,
@@ -109,6 +112,7 @@
     id="folders-mount-open"
     title={t('folders:FoldersMenu.mount.title')}
     onclick={() => {
+      menu?.focusButton();
       open = false;
       shares.openMount();
     }}

@@ -86,7 +86,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      the window and remembered under a settings key, a size per shape (`sizeKey`: the keyboard's layouts;
      `floating-frame.svelte.ts`); a click on it leaves the focus where it was. `tool`: a tool's slim bar, see-through,
      nothing in it taking the focus.
-   - `Modal` (a dialog's shell), `Pane` (a pane of the Home page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
+   - `Modal` (a dialog's shell), `Pane` (a pane of the Home page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export; an item that opens a dialog calls its `focusButton()` first, so the dialog gives the focus back to the menu's button rather than to the page), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.
 2. **Styles reach only the component's own markup.** No `:global(...)` into children, and no parent styling a child's

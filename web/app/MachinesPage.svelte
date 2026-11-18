@@ -131,6 +131,9 @@
 </script>
 
 <div class="machines" data-busy={runner.busy} out:leaveInPlace={!!messageBar.text || !!runner.error}>
+  <!-- The page's heading, for a screen reader (its top bar says it with the toolbar's Home): its list and panes are
+       under it, and its left column, the way to them, is named after it. -->
+  <h2 id="home-heading" class="sr">{t('machines:MachinesPage.heading')}</h2>
   <div class="bar">
     <Button
       variant="tool"
