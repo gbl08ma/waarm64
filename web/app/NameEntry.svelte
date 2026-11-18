@@ -12,10 +12,10 @@
   import T from './T.svelte';
   import { Actions } from './actions.svelte.ts';
   import { ask } from './ask.svelte.ts';
-  import { msg, MsgError, t, text } from '../i18n.ts';
+  import { msg, t, text } from '../i18n.ts';
   import type { NamesConn, TitleView, ZonePoint } from '../names.ts';
   import { pageNames } from './areas/names.svelte.ts';
-  import { MAX_POINTS, parseTarget, targetName, titleState } from './names-view.ts';
+  import { MAX_POINTS, targetName, titleState, zonePoints } from './names-view.ts';
 
   type Props = { v: TitleView; conn: NamesConn; domain: string; here: string };
   let { v, conn, domain, here }: Props = $props();
@@ -29,20 +29,8 @@
     v.state === 'preparing' || v.state === 'reserved' || v.state === 'active' || v.state === 'grace',
   );
   const runner = new Actions();
-  const LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
-  function points(): ZonePoint[] {
-    const out: ZonePoint[] = [];
-    for (const r of rows) {
-      const label = r.label === null ? null : r.label.trim().toLowerCase();
-      if (label !== null && !LABEL.test(label)) throw new MsgError('network:NameEntry.badLabel', { label });
-      const key = parseTarget(r.target);
-      if (!key) throw new MsgError('network:NameEntry.badTarget', { target: r.target });
-      out.push({ label, key });
-    }
-    return out;
-  }
-  const save = () => runner.run('', () => pageNames.setZone(conn, v.name, points()));
+  const save = () => runner.run('', () => pageNames.setZone(conn, v.name, zonePoints(rows)));
   async function letGo() {
     const sure = await ask.confirm(msg('network:NameEntry.release.confirm', { name: v.name }), {
       ok: t('network:NameEntry.release'),

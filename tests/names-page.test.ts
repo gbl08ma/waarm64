@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { t, text } from '../web/i18n.ts';
 import type { NameCheck, TitleView } from '../web/names.ts';
-import { canRegister, checkWords, machineNames, NameForm, type CheckShown, namesLine, parseTarget, targetName, titleState, titlesOf } from '../web/app/names-view.ts';
+import { canRegister, checkWords, machineNames, NameForm, type CheckShown, namesLine, parseTarget, subdomainOk, targetName, titleState, titlesOf, zonePoints } from '../web/app/names-view.ts';
+import { MsgError } from '../web/i18n.ts';
 
 const NOW = 1_800_000_000_000;
 const v = (o: Partial<TitleView>): TitleView => ({ identityKey: 'k', room: 'r', link: 'l', name: 'mybox', state: 'active', points: [], ...o });
@@ -146,6 +147,29 @@ test('where a name points: a member\'s name in the room, its first label, or a k
   assert.equal(parseTarget(name.split('.')[0].toUpperCase()), key);
   assert.equal(parseTarget(` ${key.toUpperCase()} `), key);
   for (const bad of ['', 'mybox', key.slice(2), `${name.slice(0, 51)}z.x`]) assert.equal(parseTarget(bad), undefined, bad);
+});
+
+test('a subdomain the details take is one the module takes: a DNS label, never `--` in its third and fourth places (the final review, finding 10)', () => {
+  for (const ok of ['git', 'a', 'a-b', 'ab-c', 'a--b', '0', 'x'.repeat(63), 'abc--', 'ab-']) assert.equal(subdomainOk(ok), !ok.endsWith('-'), ok);
+  for (const bad of ['', '-a', 'a-', 'ab--c', 'xn--a', 'xn--abc', '12--', 'x'.repeat(64), 'A', 'a.b', 'a_b']) assert.equal(subdomainOk(bad), false, bad);
+});
+
+test('Save\'s rows as a zone\'s points: a subdomain the module would refuse, or one twice, said in the catalog\'s words (the final review, finding 10)', () => {
+  const here = targetName('ab'.repeat(32), 'abcdefgh.p2p.internal');
+  const said = (rows: { label: string | null; target: string }[]) => {
+    try {
+      zonePoints(rows);
+      return undefined;
+    } catch (err) {
+      assert.ok(err instanceof MsgError, String(err));
+      return text(err.msg);
+    }
+  };
+  assert.deepEqual(zonePoints([{ label: null, target: here }, { label: ' Git ', target: 'cd'.repeat(32) }]), [{ label: null, key: 'ab'.repeat(32) }, { label: 'git', key: 'cd'.repeat(32) }]);
+  assert.equal(said([{ label: null, target: here }, { label: 'ab--c', target: here }]), t('network:names-view.badLabel', { label: 'ab--c' }));
+  assert.equal(said([{ label: 'xn--a', target: here }]), t('network:names-view.badLabel', { label: 'xn--a' }));
+  assert.equal(said([{ label: 'git', target: here }, { label: 'GIT', target: here }]), t('network:names-view.labelTwice', { label: 'git' }));
+  assert.equal(said([{ label: 'git', target: 'nowhere' }]), t('network:names-view.badTarget', { target: 'nowhere' }));
 });
 
 test('wording: the dialog\'s two notices (decision 6: discoverable, and the visits; decision 13: every 2 weeks)', () => {

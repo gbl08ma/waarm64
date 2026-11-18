@@ -2,8 +2,8 @@
 // adapter's menu and details, the dialog's check (as typed, and at Register), the details' line of the registry, a stored machine's names on
 // the Home page, and where a name points in words (a member's name in the room) and back. Pure: the area
 // (web/app/areas/names.svelte.ts) and the components call these.
-import { msg, type Msg } from '../i18n.ts';
-import type { NameCheck, TitleView } from '../names.ts';
+import { msg, MsgError, type Msg } from '../i18n.ts';
+import type { NameCheck, TitleView, ZonePoint } from '../names.ts';
 import { base32, roomOf } from '../room.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -191,6 +191,31 @@ export function machineNames(views: TitleView[]): Msg[] {
             when: date(v.keptUntil),
           }),
     );
+}
+
+/** Whether `label` (lower case) is a subdomain the module takes under a name (net/ts room/names/id.rs `label_ok`): a
+ * DNS label, without `--` in its third and fourth places (`xn--`'s, the punycode prefix). One the page took and the
+ * module refused failed Save with the module's bare `Zone` (the final review, finding 10). */
+export const subdomainOk = (label: string) =>
+  /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label) && label.slice(2, 4) !== '--';
+
+/**
+ * The details' rows (NameEntry.svelte: the name itself, label null, and each subdomain, at a member's name in the room
+ * or a key) as the zone's points, or a `MsgError` saying which row the module would refuse: a subdomain that isn't one
+ * (`subdomainOk`), one twice, a target that is neither (Save failed with the module's bare `Zone` otherwise: the final
+ * review, finding 10).
+ */
+export function zonePoints(rows: { label: string | null; target: string }[]): ZonePoint[] {
+  const out: ZonePoint[] = [];
+  for (const r of rows) {
+    const label = r.label === null ? null : r.label.trim().toLowerCase();
+    if (label !== null && !subdomainOk(label)) throw new MsgError('network:names-view.badLabel', { label });
+    if (out.some((p) => p.label === label)) throw new MsgError('network:names-view.labelTwice', { label: label ?? '' });
+    const key = parseTarget(r.target);
+    if (!key) throw new MsgError('network:names-view.badTarget', { target: r.target });
+    out.push({ label, key });
+  }
+  return out;
 }
 
 const B32 = 'abcdefghijklmnopqrstuvwxyz234567';

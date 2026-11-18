@@ -992,7 +992,9 @@ room adapter, **[Register a domain…](ui:network:NetNames.name)** opens one dia
 
 No key is shown or asked for. Changing where a name points (a member's name in the room, or a key, pasted), adding a
 label under it (15 at most: past four points a zone is sealed wide, 16 slots) and letting it go are in the adapter's
-details. The Home page shows a stored machine's names (its
+details. Save checks the rows as the module will (web/app/names-view.ts `zonePoints`: a label is id.rs `label_ok`'s, no
+`--` in its third and fourth places; no label twice; a target a member's name or a key), each refusal in the catalog's
+words (the final review's finding 10: one the page took failed with the module's bare `Zone`). The Home page shows a stored machine's names (its
 Network tab, each room adapter's) with the date each stops resolving unless renewed, and the page says, on load, after
 the agent's first pass, when one is inside its last week (kept until less than 7 days on). All words are in
 `web/messages/en/network.json` (the Home page's line in `machines.json`).

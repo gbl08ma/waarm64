@@ -10,6 +10,7 @@ import { after, before, test } from 'node:test';
 import { CALENDARS, EXPLORERS, exportNames, importNames, inLastWeek, LAST_WEEK_S, memoryNamesStore, NamesAgent, roomOf, serviceFetch, SERVICES, type TitleView } from '../web/names.ts';
 import { localBackend, mergeIds, type IdsAnswer, type NamesBackend } from '../web/names-ops.ts';
 import type { NamesIds } from '../web/ts-client.ts';
+import { subdomainOk } from '../web/app/names-view.ts';
 import { aged, DAY, fakePublish, nowS, point, routeServices, statusOf, TEST_WASM, testAgent, testModule, type Asked } from './net/names-agent.ts';
 import { startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
 
@@ -678,6 +679,19 @@ test('the dialog\'s check: one server listing the name, another not, can\'t make
   // Neither lists it as held now: free.
   answers = [server('a', [[id, 0]]), server('b', [])];
   assert.deepEqual(await agent.check(conn('conn-liar-8'), 'common'), { state: 'free' });
+});
+
+test('the details\' subdomain check agrees with the module\'s (the final review, finding 10: Save failed with a bare `Zone`)', { skip, timeout: 30_000 }, async () => {
+  const { backend } = await testAgent();
+  const labels = ['git', 'a', 'a-b', 'a--b', 'ab--c', 'xn--a', 'xn--abc', '12--3', 'abc--d', '-a', 'a-', 'x'.repeat(63), 'x'.repeat(64), 'a_b', 'A'];
+  for (const label of labels) {
+    const sealed = await backend.op('zone', { room: roomOf(LINK), secret: '11'.repeat(32), name: 'labels', seq: '1', points: [{ label, key: 'ab'.repeat(32) }] })
+      .then(() => true, (err: unknown) => {
+        if (err instanceof Error && 'code' in err && err.code === 'Zone') return false;
+        throw err;
+      });
+    assert.equal(subdomainOk(label), sealed, `${label}: the page and the module agree`);
+  }
 });
 
 test('on load the page says which names are in their last week: still resolving or in their grace, kept less than a week', () => {

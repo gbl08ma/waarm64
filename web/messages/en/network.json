@@ -1311,11 +1311,15 @@
     "message": "Let <name>{{name}}</name> go? It will stop working for the room's members, and anyone can register it once the release is public.",
     "note": "The question asked by a registered name's Let it go; {{name}} is the name."
   },
-  "NameEntry.badLabel": {
-    "message": "“{{label}}” isn't a subdomain: use letters, digits and inner hyphens, 63 at most.",
-    "note": "Error shown in a room adapter's details when Save finds a subdomain that isn't a DNS label; {{label}} is what was typed."
+  "names-view.badLabel": {
+    "message": "“{{label}}” isn't a subdomain: use letters, digits and inner hyphens, 63 at most, and not two hyphens as its third and fourth characters.",
+    "note": "Error shown in a room adapter's details when Save finds a subdomain that isn't a DNS label, or has “--” in its third and fourth places (the punycode prefix's, as in “xn--”); {{label}} is what was typed."
   },
-  "NameEntry.badTarget": {
+  "names-view.labelTwice": {
+    "message": "“{{label}}” is listed twice: a subdomain points at one place.",
+    "note": "Error shown in a room adapter's details when Save finds the same subdomain in two rows; {{label}} is the subdomain."
+  },
+  "names-view.badTarget": {
     "message": "“{{target}}” isn't a member's name in the room or a key.",
     "note": "Error shown in a room adapter's details when Save finds a target that isn't a member's name (<key>.<tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
   },
