@@ -540,7 +540,7 @@ at 32 packets of 1,232 bytes in flight.
 
 ## NAMES loop 0, cloud part (N0a, 2026-11-16)
 
-The NAMES track's measurements (docs/plans/room-names.md "Measure first", items 1 to 4; items 5 and 6 and a GPU of our
+The NAMES track's measurements (its spec's "Measure first", items 1 to 4, in git history; what they set is docs/networking/names.md; items 5 and 6 and a GPU of our
 own are the dev VM's). **A cloud session** (x86_64 Firecracker, 4 vCPUs, Intel Xeon @ 2.30 GHz, shared; Node
 26.13.1, Playwright's Chromium 153.0.8010.12 headless, the pinned nightly): **its times are cloud figures, provisional
 until a dev VM run**; they are good for ratios and for choices a 20% error can't move. JSON under
@@ -819,7 +819,7 @@ N names stamps N/360 entries an hour and alice's transaction (every ~1.2 hours) 
 
 **Stamps made in the same second are near-siblings in the calendar's tree** (under ~450 bytes apart, where stamps 10
 seconds or more apart differ by 290 to 700), so a server that holds two names' anchors can tell whether they were
-stamped within the same second or so: a finer grouping than "one block" (room-names.md "What a server still
+stamped within the same second or so: a finer grouping than "one block" (docs/networking/names.md "Names nobody lists", "What a server still
 learns"). The agent stamps a visit's due renewals one title after another, seconds apart (the 1 to 10 s pairs here
 were 291 to 641); docs/backlog.md's "spreading one owner's renewals" covers both.
 
@@ -843,7 +843,7 @@ node bench/net/ots-history.ts model --lead 600 --out bench/net/results/names0/hi
 
 ## NAMES loop 0c (dev VM), 2026-11-18
 
-N0's items 5 and 6 (docs/plans/room-names.md "Measure first"), the GPU figure for Argon2id, and what R2 and R3 left to
+N0's items 5 and 6 (the spec's "Measure first", in git history), the GPU figure for Argon2id, and what R2 and R3 left to
 measure on public services. The dev VM (Lima on the M4 Mac mini, home connection in Europe, no IPv6; Node 26.7.0,
 Chromium 155.0.8059.84 headless), nothing else running. `bench/net/names-public.ts`; JSON under `results/names0c/`.
 Room nodes are Node processes of their own on the tests' module (`target/net/ts-test.wasm`: easy headers and cheap
@@ -1198,7 +1198,7 @@ behind; N6a's logs bucketed lines differently, so whether the 8 gets made more o
 
 ### The days-long run (`bench/net/names-long.ts`)
 
-Built, not run here for days: the user launches it (NAMES-HANDOVER.md "Next"). **Two Node processes, not two pages**,
+Built, not run here for days: the user launches it (docs/backlog.md "The days-long run on public services"). **Two Node processes, not two pages**,
 each running the page's own code: the shipped module (`target/net/ts.wasm`: production's proof of work and headers
 floor), the names agent (`web/names.ts` `NamesAgent`) on `web/names-ops.ts` `localBackend` (the ops the names worker
 runs, in the process's thread: Node has no page Worker), its publisher, and a room node wired as the room's worker
@@ -1254,7 +1254,7 @@ each relay (A's "who serves?" alone in its room, three events every 5 minutes, t
 not answering; the calendars and explorers a few dozen over the run (one claim; no renewal is due within a term's
 half, 15 days). The script's caps (2,000 events and 300 connections a relay a day; past one the run ends) are past
 the kickoff's "a few hundred" for events and would end the run within hours on relay.degmods.com's reconnects: the
-launch is the user's call (NAMES-HANDOVER.md "Next", open questions).
+launch is the user's call (docs/backlog.md "The days-long run on public services").
 
 ### Reproduce
 ```sh

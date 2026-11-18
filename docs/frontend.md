@@ -2005,7 +2005,7 @@ and the guest's default way out (below).
   the clipboard refuses; empty before the connection's first start makes one), to paste in another connection, on this
   computer or another. `net/ts/examples/room-key-mine.rs` mines a key whose address in a room has chosen digits (docs/networking/tailnet.md
   "Rooms").
-  **Names** (docs/plans/room-names.md "The names agent"): web/names.ts is the names agent (titles and the owners'
+  **Names** ([networking/names.md](networking/names.md) "The names agent"): web/names.ts is the names agent (titles and the owners'
   secret in `waarm64-room`'s `owner` and `titles`; collecting, renewing and publishing, started at every load when a
   title is kept, hourly while open, with no machine running), web/names-worker.ts its worker (the module's `ts_names_*`
   operations and the publishers), web/names-ops.ts what both run; a running room's worker gives the module the
@@ -2019,9 +2019,10 @@ and the guest's default way out (below).
   alone, asking no server (the agent's `checkHere`: not a valid name, this connection's own); **the room's servers are
   asked when Register is pressed** (the user's decision, 2026-11-17; the agent's `check`): every id under the name's
   id's first byte, one byte a press, never the id, through a checker made for that press (a publisher, closed with its
-  answer), each with when its owner's hold ends. Free, the name is registered and the dialog closes; taken, the dialog
-  stays open and says until about a date; nobody in the room can say, the dialog says so and Register pressed again
-  with the same name registers it; under the field, the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` in a room whose
+  answer), each with when its owner's hold ends, each server's answer weighed apart. Free, the name is registered and
+  the dialog closes; taken (every server that answered lists it), the dialog stays open and says until about the
+  earliest date given; the servers disagree (one lists it, another doesn't), or nobody in the room can say, the dialog
+  says so and Register pressed again with the same name registers it; under the field, the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` in a room whose
   ID isn't a label of its own, docs/networking/rooms.md "The room's name as a domain"; or the room's suffix
   while nothing is typed); the two notices, always shown, no boxes ([Members of this room who know the domain can
   reach this connection's address and see when it's online. While this connection is connected, this web app helps
@@ -2033,7 +2034,9 @@ and the guest's default way out (below).
   registry's line (a server's names held and the servers it synced with, or a member's names resolved and servers held:
   the module's `names` event) and, per name (`NameEntry.svelte`), where it and each label under it point (a member's
   name in the room, or a key, pasted), [Add a subdomain](ui:network:NameEntry.addLabel),
-  [Point all at this connection](ui:network:NameEntry.pointHere), Save (a new zone) and
+  [Point all at this connection](ui:network:NameEntry.pointHere), Save (a new zone; its rows checked as the module will,
+  names-view.ts `zonePoints`: a subdomain a DNS label with no `--` in its third and fourth places, none twice, a target
+  a member's name or a key, each refusal in the catalog's words) and
   [Let it go](ui:network:NameEntry.release) (after asking). A stored machine's Network tab lists each room adapter's
   names with the date each stops resolving unless renewed. At every load the agent starts when titles are kept and,
   after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The wizard's

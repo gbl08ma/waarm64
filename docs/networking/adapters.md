@@ -65,7 +65,7 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   `waarm64-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
   machine's address and name in the room stay the same. The same database's `names` store (version 2) keeps a stored
   connection's room-names records, by room (a hash of its ID) and name id (web/room.ts `roomNamesStore`,
-  docs/plans/room-names.md "Persist"); its `owner` and `titles` stores (version 3) keep the names agent's owners' secret and
+  [names.md](names.md) "Servers"); its `owner` and `titles` stores (version 3) keep the names agent's owners' secret and
 titles under the connection's `identityKey`, so names go with the key: the connection's export is the key and, after a
 dot, its names (`Connections.exportKey`, web/app/room-export.ts), and a connection made from it takes them. A connection made with another's key ([The connection's key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its

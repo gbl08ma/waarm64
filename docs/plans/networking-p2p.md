@@ -4,11 +4,9 @@ Rooms are built (the P2P track, 2026-11-10 to 2026-11-12): how they work, the de
 and findings are [networking/rooms.md](../networking/rooms.md); their loose ends are [backlog.md](../backlog.md)
 "Rooms' loose ends". This page holds only the ideas past them, none of them scheduled.
 
-- **Human-readable names**: specified, not built: [room-names.md](room-names.md) (2026-11-15: names registered first
-  come by a key for a term, each claim timestamped through OpenTimestamps, the registry copied between members with
-  nothing stored on a relay). The direction first discussed (2026-10-18: TLDs held by keys, DNSSEC's formats, a
-  Merkle log on always-on relays with witnesses) lost to it for needing servers nobody runs; the options weighed are
-  [room-names-options.md](room-names-options.md). Still open there: which suffixes names may use.
+- **Other suffixes for registered names**: names are built (the NAMES track: [networking/names.md](../networking/names.md))
+  under a room's own domains (`<tag>.p2p.internal`, and the room's name when its ID is a label of its own); which
+  other suffixes names may use is undecided.
 - **Onion routing**, so that neither peers nor relays see who talks to whom from where: circuits through other
   members (or volunteer nodes), the address still the key's, as only the outer path changes. A track of its own if
   wanted; relay only covers hiding from peers until then.

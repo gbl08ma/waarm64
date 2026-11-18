@@ -41,7 +41,7 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   event (`state`, `lease`, `self`, `serving`, `client`, `netmap`, `login`, `store`, `exitnode`,
   `loggedout`, `log`); a `Failed` state and a refused `exitnode` say why as a stable `code` the page words
   (`web/ts-client.ts` `failureOf`, docs/i18n.md), with any technical `detail` beside it. Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
-- **A room's registry** (docs/plans/room-names.md "The registry"): a room's config with `names` (`titles`: each a
+- **A room's registry** ([names.md](names.md) "The registry"): a room's config with `names` (`titles`: each a
   name's owner key, 64 hex digits, and its item, hex: `room/names/wire.rs`; `maxNames`, `maxBytes`) makes the node a
   server of the room's names; without it the node is a member, which asks the room for the names its guest wants
   (`room/names/member.rs`: a first lookup is an ask under the room's names tag, answered by servers' replies under the
@@ -57,9 +57,9 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   in IndexedDB `waarm64-room`, store `names`, under the room and the connection and the id (web/room.ts
   `roomNamesStore`; a stored connection's only, written before the worker is closed), and deletes what the module didn't take. The room's `self` event says which parameters names
   are checked with (`params`: `production`; `test` only in the page tests' build, `net/ts/build.sh --test-params` →
-  `target/net/ts-test.wasm`, never shipped: room-names.md "Tests' parameters"). The room's resolver answers registered
-  names (room-names.md "The resolver") and logs each query for one (`resolver: …`). A server asks outside the room
-  (room-names.md "Servers", `room/names/outside.rs`): action 12 is a GET (the id, then the URL, always a compiled
+  `target/net/ts-test.wasm`, never shipped: names.md "Tests' parameters"). The room's resolver answers registered
+  names (names.md "The resolver") and logs each query for one (`resolver: …`). A server asks outside the room
+  (names.md "Servers", `room/names/outside.rs`): action 12 is a GET (the id, then the URL, always a compiled
   calendar's or explorer's), whose answer goes back with `ts_room_names_fetched(h, id, status, ptr, len)` (the HTTP
   status, 0 when the fetch failed, and the body); web/room-worker.ts makes it through web/names.ts `serviceFetch`, which
   fetches nothing but the compiled services. A server stores each block's check as a record too (version 3, under the

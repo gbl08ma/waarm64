@@ -5,8 +5,10 @@ only as the fallback. Reaching a peer takes two things: **being in its room**, a
 an ID its members agree on (`gabriel-lan`, or a name with a random suffix), with the relays they meet on; it has no
 owner and no account, and nothing lists who is in it. A node's address and name come from its key and can't be
 guessed, so a node is reachable only by those its user gives its name to, even in a room everyone is in (the global
-room, below). The only names are names that are keys. What's left open (human-readable names, onion routing,
-broadcast, IPv4 between guests, a directory on the page) is [plans/networking-p2p.md](../plans/networking-p2p.md).
+room, below). A node's own name is its key. Human-chosen names, **domains**, can be registered in a room besides,
+first come by a key for a term, served by their owners' pages with nothing stored on a relay: [names.md](names.md).
+What's left open (onion routing, broadcast, IPv4 between guests, a directory on the page) is
+[plans/networking-p2p.md](../plans/networking-p2p.md).
 
 **The files.** `net/ts/src/room.rs` is a third client of the tailnet module ([tailnet.md](tailnet.md) "The module"),
 with `room/link.rs` (the link), `room/lookup.rs` (lookups) and `nostr.rs` (NIP-01 and BIP-340 over `k256`);
@@ -20,7 +22,7 @@ bench/net/REPORT.md "Rooms", "Rooms at scale", "Again in the dev VM", "Rooms on 
 
 ## Decisions
 
-The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
+The user's, or taken with them, 2026-10-18 to 2026-11-18; they bind. Registered names' own are [names.md](names.md) "Decisions".
 
 - **Layer 3, not layer 2.** A node's address is its room's /48 plus the first 80 bits of its WireGuard node key, as
   tailcat's is its own /48 plus 80 bits, and a node accepts packets from a peer only with that peer's own address as
@@ -60,13 +62,16 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 - **Connections on demand.** A WebRTC connection opens when the guest first sends to a peer (or the peer offers
   one), at most 64 open, those idle 60 s closed; peers past the cap go through DERP. A room of thousands costs a node
   only the peers it talks to (bench/net/REPORT.md "Rooms at scale": nothing grows with the room's size).
-- **No room owner, no membership list, no directory in the protocol.** Anyone with a room's ID can join; joining
-  reaches nobody until one has a name. Talking to a node gives it one's own address, as an IP address does. A
+- **No room owner, no membership list, no directory of members in the protocol.** Anyone with a room's ID can join;
+  joining reaches nobody until one has a name. A registry of names, not of members, is in the protocol (the user,
+  2026-11-15: [names.md](names.md) "Decisions"): a name's owner is discoverable and serves it, and a member that only
+  uses names announces no more than a name's id (for one it doesn't keep) under a key new each session. Talking to a node gives it one's own address, as an IP address does. A
   directory is the participants' own: an application on a member whose name they agree on (and can't come from the
   room's ID, or every member would hold its key).
 - **Names stay full keys** (the user, 2026-11-11, asked whether a name could carry only the address's 80 bits): only
   the full key lets a lookup be sealed to its target and the handshake accept that one key rather than any key with
-  its first 80 bits. Nicer names are plans/networking-p2p.md's.
+  its first 80 bits. A registered name points at a full key (its zone holds the key, sealed), so a lookup to a named
+  machine is sealed to it as to a key name ([names.md](names.md)).
 - **A room's names under its own name too** (the user, 2026-11-18): `*.gabriel-lan.p2p.internal` is answered in the
   room `gabriel-lan` as `*.<tag>.p2p.internal` is, so a key name and a registered domain read better where the guest
   doesn't take the search domain; except when the room's ID looks derived, where it'd read as another room's domain
@@ -235,7 +240,7 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 - **The resolver** at the room's `<prefix>::53` (the lease's `dns6`, with the room's domains as its search domains):
   `<key>.<tag>.p2p.internal` AAAA is the address computed from the key, which the module remembers to seal lookups to it;
   A for such a name is an empty answer; a registered name under the domain (`<name>[.<label>].<tag>.p2p.internal`) is
-  [plans/room-names.md](../plans/room-names.md) "The resolver"'s; anything else NXDOMAIN. The suffix is `.internal` (which ICANN reserved in 2024 for private use and will never
+  [names.md](names.md) "The resolver"'s; anything else NXDOMAIN. The suffix is `.internal` (which ICANN reserved in 2024 for private use and will never
   delegate), not RFC 9476's `.alt` ("Findings"). The lease: the room address as a /128, IPv4
   `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter that isn't the guest's primary (`prefix6`,
   web/room-worker.ts).
@@ -352,6 +357,17 @@ tag is one node's), again after 1 s and 3 s only while no call back comes, at mo
 thousand members: 17 REQs a second steady, 2.8 KB/s in; each new pair a second, one event (bench/net/REPORT.md "Rooms
 at scale"). The relays' own terms (rate limits, proof of work, payment) decide how far public relays carry a room.
 
+**Registered names** ([names.md](names.md)) ask more of a relay, still nothing stored. A node whose names client runs
+(a server's always, a member's from its guest's first query for a name that isn't a key until 10 minutes after the
+last) holds a second connection a relay. All of a room's servers subscribe to one names tag, so a question (123 bytes
+in the clear) or a first lookup's `ask` (164 bytes, ~650 on the wire) is forwarded to every server on that relay, not
+to one subscriber; a member asks at most 4 a second. Replies come back under the asker's own reply tag, each through
+two relays, and carry registry records: 1.3 to 4.1 KB on the wire, 6 KB at most (`REPLY_MAX`, 4 KiB of item), so a
+relay must forward an ephemeral event of ~6 KB (all six defaults forward up to 32 KiB of item, five refuse 64 KiB:
+bench/net/REPORT.md "NAMES loop 0c"). A room's own cadence (a server asking "who serves?" every 5 minutes, three events
+each; a publisher's connection an hour; a member's names client reconnecting at a lookup after 10 idle minutes) is
+~40 events and ~6 connections an hour a relay in a room of two, ~1,000 events a day ("NAMES loop 6b").
+
 ## Numbers
 
 From bench/net/REPORT.md. **The direct path against DERP** (`bench/net/room.ts`, two members in two pages through the
@@ -376,7 +392,7 @@ minutes off, a forged lookup that doesn't move a live peer and one that names an
 room's proof and their junk lookups (neither charged to a budget), a reloaded peer
 called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a lookup's
 copies through six relays and junk through one, a guest sweeping the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
-cases; BIP-340's first vector; and the registry of room names, plans/room-names.md: servers' names clients finding each other,
+cases; BIP-340's first vector; and the registry of room names ([names.md](names.md) "Tests and benches"): servers' names clients finding each other,
 syncing two and twenty, a reset, a flood of "who serves?" beside the node's own lookups, nothing under the node's key,
 a member's first lookup asking the room through the relays (no DERP packet), a contested one fetching through sessions
 with each reply through two relays, key and registered names under the room's name and its tag, and a room named like
