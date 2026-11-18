@@ -18,6 +18,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { eventually } from './until.ts';
 import { words } from './words.ts';
+import { t } from '../web/i18n.ts';
 import { checkSave } from './snapshot-phases.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
@@ -138,7 +139,9 @@ test('a file save staged through OPFS: a download and a picked file; no room, a 
     await pickInto(page, 'failed.waarm64snap');
     await cdp.send('Storage.overrideQuotaForOrigin', { origin: base, quotaSize: (await usage(page)) + Math.floor(N * 1.5) });
     await page.locator('#save-snapshot').click();
-    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-details')?.textContent ?? ''), words('snapshots:worker-stage.notCopied', { name: 'failed.waarm64snap' }, { start: true }).source, { timeout: 120_000, polling: 50 });
+    // The details: what the page did (the machine runs on, no file), then why.
+    const failedDetails = `^${t('snapshots:snapshot-actions.runsOn.noFile').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n${words('snapshots:worker-stage.notCopied', { name: 'failed.waarm64snap' }).source}`;
+    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-details')?.textContent ?? ''), failedDetails, { timeout: 120_000, polling: 50 });
     assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? ''), words('snapshots:worker-snapshot.notSaved', {}, { start: true }));
     assert.equal((await picked(page, 'failed.waarm64snap')).size, 0, 'the picked file holds none of it');
     assert.deepEqual(await staging(page), {}, 'the failed copy\'s staging file is gone');
