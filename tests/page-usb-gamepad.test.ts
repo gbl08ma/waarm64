@@ -4,13 +4,15 @@
 // pad, a wired Xbox 360 controller, and the guest's xpad makes it an evdev game pad with the codes of Linux's game pad
 // convention (BTN_A…BTN_THUMBR, the hat, the sticks and triggers) and force feedback; the fake pad's buttons, sticks,
 // trigger and D-pad reach /dev/input as those codes; a rumble effect played in the guest plays on the fake pad; the
-// pad going away unplugs it. Opt-in with WAARM64_DISTROS=debian (scripts/ci-debian.sh --platform); ~1 min.
+// pad going away unplugs it. Opt-in with WAARM64_DISTROS=debian (scripts/ci-debian.sh --platform); from page-usb-guest's
+// booted-Debian fixture (tests/debian-fixture.ts `storedFixture`), ~40 s.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { credentialsQuery } from './debian-unattended.ts';
+import { putStored, replacesFixture, STORED, STORED_QUERY, storedFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
@@ -76,81 +78,74 @@ const setPad = (page: Page, o: { pressed?: number[]; axes?: number[]; event?: 'g
   if (o.event) dispatchEvent(Object.assign(new Event(o.event), { gamepad: p }));
 }, { pad: PAD, o });
 
-test('a host game pad through the Gamepad API: listed once pressed, attached from the menu, an Xbox 360 pad in Debian with its rumble, unplugged when it goes', { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
-  const context = await browser.newContext();
-  await context.addInitScript(fakeGamepads);
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page, () => {});
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
-  const image = readFileSync(IMAGE);
-  const size = Number(image.readBigUInt64BE(24));
-  const id = await page.evaluate(async ({ size, bytes }) => {
-    const { Store } = await import('/web/app/store.ts' as string);
-    const { newId } = await import('/web/app/shape.ts' as string);
-    const store = await Store.open();
-    const now = Date.now();
-    const disk = newId();
-    await store.put('disks', { id: disk, kind: 'url', name: 'disk.qcow2', size, url: '/target/images/debian/disk.qcow2', identity: { kind: 'url', path: '/target/images/debian/disk.qcow2', bytes }, created: now });
-    const id = newId();
-    await store.put('machines', { id, name: 'Game pad machine', ncpus: 2, ramMiB: 1024, display: '2d', network: false, usb: true, attachments: [{ id: newId(), disk, readOnly: false }], created: now, modified: now });
-    store.close();
-    return id;
-  }, { size, bytes: image.length });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`);
-  await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 420_000, polling: 250 });
-  await shows(page, /login: /);
-  await type(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  assert.equal(await padEvent(page, false), '');
+test('a host game pad through the Gamepad API: listed once pressed, attached from the menu, an Xbox 360 pad in Debian with its rumble, unplugged when it goes', { skip, timeout: 20 * 60_000 }, async () => {
+  // From a booted-Debian fixture (tests/debian-fixture.ts), page-usb-guest's machine.
+  const fixture = await storedFixture(browser, base, STORED.usb(), STORED_QUERY);
+  await withDebianLock(async () => {
+    const context = await browser.newContext();
+    await context.addInitScript(fakeGamepads);
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page, (q) => !replacesFixture(q));
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    const usb = STORED.usb();
+    await putStored(page, usb);
+    await page.goto(`${base}/web/app/?${STORED_QUERY}&m=${usb.machine.id}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 420_000, polling: 250 });
+    await shows(page, /login: /);
+    await type(page, 'root\n');
+    await shows(page, /root@\S+:~# /);
+    assert.equal(await padEvent(page, false), '');
 
-  // No pad until one is pressed: the hint. Then it is listed, and its checkbox attaches it.
-  await page.click('#usb-menu summary');
-  assert.ok(await page.getByText(t('usb:UsbMenu.pads.none')).isVisible());
-  await setPad(page, { event: 'gamepadconnected' });
-  await page.waitForSelector('#usb-menu [data-usb-pad="0"]', { timeout: 10_000 });
-  assert.equal(await page.textContent('#usb-menu [data-usb-pad="0"] .name'), 'Test pad');
-  await page.check('#usb-menu [data-usb-pad="0"] input');
-  await page.waitForFunction(() => document.getElementById('usb-menu')?.dataset.attached === '1', null, { timeout: 30_000, polling: 100 });
-  const ev = await padEvent(page, true);
-  assert.match(ev, /^event\d+$/);
-  const sys = `/sys/class/input/${ev}/device`;
-  assert.equal(await ok(page, `cat ${sys}/name`), 'Microsoft X-Box 360 pad');
-  assert.equal(await ok(page, `basename $(readlink ${sys}/device/driver)`), 'xpad');
-  // BTN_A, B, X, Y, TL, TR, SELECT, START, MODE, THUMBL, THUMBR; ABS_X, Y, Z, RX, RY, RZ, HAT0X, HAT0Y; FF_RUMBLE.
-  assert.equal(await ok(page, `cat ${sys}/capabilities/key`), '7cdb000000000000 0 0 0 0');
-  assert.equal(await ok(page, `cat ${sys}/capabilities/abs`), '3003f');
-  const ff = (await ok(page, `cat ${sys}/capabilities/ff`)).split(' ').reverse(); // 64-bit words, the highest first
-  assert.ok((BigInt(`0x${ff[1] ?? 0}`) >> 16n & 1n) === 1n, `FF_RUMBLE (0x50) among the effects: ${ff}`);
+    // No pad until one is pressed: the hint. Then it is listed, and its checkbox attaches it.
+    await page.click('#usb-menu summary');
+    assert.ok(await page.getByText(t('usb:UsbMenu.pads.none')).isVisible());
+    await setPad(page, { event: 'gamepadconnected' });
+    await page.waitForSelector('#usb-menu [data-usb-pad="0"]', { timeout: 10_000 });
+    assert.equal(await page.textContent('#usb-menu [data-usb-pad="0"] .name'), 'Test pad');
+    await page.check('#usb-menu [data-usb-pad="0"] input');
+    await page.waitForFunction(() => document.getElementById('usb-menu')?.dataset.attached === '1', null, { timeout: 30_000, polling: 100 });
+    const ev = await padEvent(page, true);
+    assert.match(ev, /^event\d+$/);
+    const sys = `/sys/class/input/${ev}/device`;
+    assert.equal(await ok(page, `cat ${sys}/name`), 'Microsoft X-Box 360 pad');
+    assert.equal(await ok(page, `basename $(readlink ${sys}/device/driver)`), 'xpad');
+    // BTN_A, B, X, Y, TL, TR, SELECT, START, MODE, THUMBL, THUMBR; ABS_X, Y, Z, RX, RY, RZ, HAT0X, HAT0Y; FF_RUMBLE.
+    assert.equal(await ok(page, `cat ${sys}/capabilities/key`), '7cdb000000000000 0 0 0 0');
+    assert.equal(await ok(page, `cat ${sys}/capabilities/abs`), '3003f');
+    const ff = (await ok(page, `cat ${sys}/capabilities/ff`)).split(' ').reverse(); // 64-bit words, the highest first
+    assert.ok((BigInt(`0x${ff[1] ?? 0}`) >> 16n & 1n) === 1n, `FF_RUMBLE (0x50) among the effects: ${ff}`);
 
-  // The pad's A, its left stick full left, its right stick up, its left trigger, its D-pad right and down: BTN_A 1,
-  // ABS_X −32767, ABS_RY −32767, ABS_Z 255, ABS_HAT0X 1, ABS_HAT0Y 1 in /dev/input.
-  await ok(page, `(timeout 15 cat /dev/input/${ev} > /tmp/ev 2> /dev/null < /dev/null &) ; sleep 1`);
-  await setPad(page, { pressed: [0, 6, 13, 15], axes: [-1, 0, 0, -1] });
-  await new Promise((r) => setTimeout(r, 500));
-  await setPad(page, {});
-  const events = await ok(page, `for i in $(seq 40); do [ $(stat -c %s /tmp/ev) -ge 384 ] && break; sleep 0.25; done; od -An -v -td2 -w24 /tmp/ev | awk '$9 != 0 { printf "%s:%s:%s ", $9, $10, $11 }'`);
-  // (type, code, value's low 16 bits as int16) per event; SYN reports dropped.
-  for (const want of ['1:304:1', '3:0:-32767', '3:4:-32767', '3:2:255', '3:16:1', '3:17:1', '1:304:0', '3:0:0', '3:4:0', '3:2:0', '3:16:0', '3:17:0']) {
-    assert.ok(events.split(' ').includes(want), `${want} in ${events}`);
-  }
-  assert.ok(events.indexOf('1:304:1') < events.indexOf('1:304:0'), events);
+    // The pad's A, its left stick full left, its right stick up, its left trigger, its D-pad right and down: BTN_A 1,
+    // ABS_X −32767, ABS_RY −32767, ABS_Z 255, ABS_HAT0X 1, ABS_HAT0Y 1 in /dev/input.
+    await ok(page, `(timeout 15 cat /dev/input/${ev} > /tmp/ev 2> /dev/null < /dev/null &) ; sleep 1`);
+    await setPad(page, { pressed: [0, 6, 13, 15], axes: [-1, 0, 0, -1] });
+    await new Promise((r) => setTimeout(r, 500));
+    await setPad(page, {});
+    const events = await ok(page, `for i in $(seq 40); do [ $(stat -c %s /tmp/ev) -ge 384 ] && break; sleep 0.25; done; od -An -v -td2 -w24 /tmp/ev | awk '$9 != 0 { printf "%s:%s:%s ", $9, $10, $11 }'`);
+    // (type, code, value's low 16 bits as int16) per event; SYN reports dropped.
+    for (const want of ['1:304:1', '3:0:-32767', '3:4:-32767', '3:2:255', '3:16:1', '3:17:1', '1:304:0', '3:0:0', '3:4:0', '3:2:0', '3:16:0', '3:17:0']) {
+      assert.ok(events.split(' ').includes(want), `${want} in ${events}`);
+    }
+    assert.ok(events.indexOf('1:304:1') < events.indexOf('1:304:0'), events);
 
-  // A rumble effect in the guest (EVIOCSFF, then played; strong 0xc000, weak 0x4000) plays on the host's pad, and
-  // stops when the effect's file closes. struct ff_effect is 48 bytes on arm64, the rumble's magnitudes at 16 and 18.
-  const rumble = `open(my $f, "+<", "/dev/input/${ev}") or die "$!"; my $e = pack("vsvvvvvx2vvx28", 0x50, -1, 0, 0, 0, 5000, 0, 0xc000, 0x4000);`
-    + ` ioctl($f, 0x40304580, $e) or die "EVIOCSFF: $!"; syswrite($f, pack("qqvvl", 0, 0, 0x15, unpack("x2s", $e), 1)) or die "$!"; sleep 1; close $f`;
-  await ok(page, `perl -e '${rumble}'`);
-  await page.waitForFunction(() => (window as unknown as { rumbles: unknown[] }).rumbles.at(-1) === 'reset', null, { timeout: 10_000, polling: 100 });
-  const rumbles = await page.evaluate(() => (window as unknown as { rumbles: unknown[] }).rumbles);
-  assert.deepEqual(rumbles[0], ['dual-rumble', { startDelay: 0, duration: 5000, strongMagnitude: 0xc0 / 255, weakMagnitude: 0x40 / 255 }], JSON.stringify(rumbles));
+    // A rumble effect in the guest (EVIOCSFF, then played; strong 0xc000, weak 0x4000) plays on the host's pad, and
+    // stops when the effect's file closes. struct ff_effect is 48 bytes on arm64, the rumble's magnitudes at 16 and 18.
+    const rumble = `open(my $f, "+<", "/dev/input/${ev}") or die "$!"; my $e = pack("vsvvvvvx2vvx28", 0x50, -1, 0, 0, 0, 5000, 0, 0xc000, 0x4000);`
+      + ` ioctl($f, 0x40304580, $e) or die "EVIOCSFF: $!"; syswrite($f, pack("qqvvl", 0, 0, 0x15, unpack("x2s", $e), 1)) or die "$!"; sleep 1; close $f`;
+    await ok(page, `perl -e '${rumble}'`);
+    await page.waitForFunction(() => (window as unknown as { rumbles: unknown[] }).rumbles.at(-1) === 'reset', null, { timeout: 10_000, polling: 100 });
+    const rumbles = await page.evaluate(() => (window as unknown as { rumbles: unknown[] }).rumbles);
+    assert.deepEqual(rumbles[0], ['dual-rumble', { startDelay: 0, duration: 5000, strongMagnitude: 0xc0 / 255, weakMagnitude: 0x40 / 255 }], JSON.stringify(rumbles));
 
-  // The pad goes away: the game pad is unplugged, the menu lists nothing again.
-  await setPad(page, { event: 'gamepaddisconnected', gone: true });
-  await page.waitForFunction(() => !document.getElementById('usb-menu')?.dataset.attached, null, { timeout: 30_000, polling: 100 });
-  assert.equal(await padEvent(page, false), '');
-  assert.equal(await page.locator('#usb-menu [data-usb-pad]').count(), 0);
-  assert.deepEqual(errors, []);
-  await context.close();
-}));
+    // The pad goes away: the game pad is unplugged, the menu lists nothing again.
+    await setPad(page, { event: 'gamepaddisconnected', gone: true });
+    await page.waitForFunction(() => !document.getElementById('usb-menu')?.dataset.attached, null, { timeout: 30_000, polling: 100 });
+    assert.equal(await padEvent(page, false), '');
+    assert.equal(await page.locator('#usb-menu [data-usb-pad]').count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+});

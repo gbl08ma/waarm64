@@ -116,7 +116,8 @@ Layered, cheapest first:
 - **`scripts/ci-machines.sh`** boots Debian on the page for machines as the unit: `page-folders` (shared folders, [shares.md](shares.md) §7), `page-machines` (four disks: blank,
   ramdisk, read-only, serials, a reboot), `page-stored` (a disk stored in the browser in two steps: import, variants,
   merge, grown with the agent growing its root at the in-place boot, in place), `page-snapshots` (kept snapshots, forks, the ramdisk, Suspend on pins, orphaned ones), `page-quota` and `page-incognito` (the storage full: docs/machines.md "Storage"), `page-surface-debian` (a disk's map live, opened as the boot starts: the qcow2 counted per table as the boot reads them, its kept blocks ticked, the overlay's cores, a guest write flashing and counted, the files after the power-off), three at a
-  time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min.
+  time (`WAARM64_DEBIAN_SLOTS=3`), ~4.5 min (269 s, 611 slot-seconds, 2026-11-18: 309 s and 844 before the stored
+  fixtures below; the tail is page-folders' first test and page-stored's two, which boot for real).
   Split from `ci-debian.sh` on 2026-10-17: together they took 455 s on two slots (790 s of slot time, the machines
   tests ~415 of it), 361 s on three.
 - **`scripts/ci-net.sh`** (~5 min) runs the network tests on Debian (`net-guest`, `page-network`,
@@ -1044,6 +1045,18 @@ Parallel test files wait for one maker (a lock directory beside the file). `WAAR
   page-clock's (87 → 47 s: the agent sets the clock after the fixture's load as after its own), page-spill's (81 → 30
   s, its split's own file, loaded after the Machine menu's checks) and the two clipboard tests' (one file of the sway
   image on the uefi machine, `?disk=` keying it: 177 → 145 s, 121 → 97 s).
+- **A stored machine** (`storedFixture(browser, base, records, query)`): the records of `STORED` (a test puts them with
+  `putStored`) under **fixed ids** (`fixedId`: a stored snapshot is checked by the shape hash, whose disks' serials
+  are the attachments' ids), opened with `STORED_QUERY` (`display=simple` is in the shape), at its serial login prompt,
+  kept with the toolbar's Snapshot and downloaded from the Snapshots tab (86–95 MiB, 32–40 s to make); its key
+  `pageFixture`'s with the records, the query and `shape.ts`. A test loads it with Load snapshot › From a file while
+  its machine boots and answers the question whether to keep the overlay with Replace (`replacesFixture`): the start
+  attached "Changes", which takes the fixture's blocks, so the machine has the one overlay it would have after a boot.
+  The users, 2026-11-18: page-usb-guest and page-usb-gamepad (one file: `STORED.usb`; slot 57 → 12 s), page-incognito
+  (`STORED.net`: 112 → 23 s; its cache still fills from the guest's read of the whole disk), page-snapshots
+  (`STORED.ramdisk`: ~60 → 19 s) and page-folders' snapshot and workload tests (`STORED.shares`, on the Debian and the
+  debian-tools disks: 42 → 12 s, 51 → 26 s). The folders aren't in the shape: the fixture is made without any, and
+  the test attaches its own, which the guest's automount finds at its first look.
 - **What keeps a real boot:** the tests whose subject is the boot (net-guest's first test: the card's units don't hold
   the boot up; page-agent: the agent's arrival over fw_cfg, which a restore doesn't give), and page-network (its
   reloads start the machine again, and its first boot runs beside its form checks).

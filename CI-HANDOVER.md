@@ -105,12 +105,20 @@ decisions in §11).
   at 3 slots: `--platform` 636 → 455 s (slots), → **382 s** (fixtures), peak 7.2 GiB. 368ecbbe, 9e546e16 and 695f4336
   passed ci-debian --platform and ci.sh (638 s).
 
+- **Stored-machine fixtures** (`storedFixture`, `STORED`, `putStored`: fixed ids, the kept snapshot downloaded, loaded
+  with Load snapshot › From a file during the boot, Replace answered so "Changes" takes the blocks): page-usb-guest
+  (57 → 12 s) and page-usb-gamepad on one file, page-incognito (112 → 23 s), page-snapshots (~60 → 19 s),
+  page-folders' tests 2 and 3 (42 → 12, 51 → 26 s; folders aren't in the shape). ci-machines **309 → 269 s**
+  (slot-seconds 844 → 611; logs `bench/results/local/ci/stored/`). Passed ci-machines, the fast lane (111 s), ci.sh
+  (646 s) and ci-debian --platform (399 s).
+
 ## Next, in order
 
-1. **The booted-Debian fixture, the rest:** the stored shapes (ci-machines: page-snapshots, page-incognito (the cache
-   fills from the boot's reads: make the guest read), page-usb-guest and page-usb-gamepad's USB family, page-folders
-   test 2, page-machines' first boot); a stored snapshot matches by the shape hash, whose disk serials are `newId()`s
-   now (fixed ids needed). page-network keeps its boots.
+1. **ci-machines' tail:** page-folders' first test (a real boot + reboot, ~110 s) and page-stored's two (186 s in
+   series, real boots: each follows a disk change) set the wall; the slot lock is first-come (500 ms polls), so the
+   longest chains can start last. Options: a priority for the long chains in `tests/debian-lock.ts`, page-machines'
+   first boot from a fixture (5 disks: blank, ramdisk, a read-only file, swap; ~30 s of its 112). page-network keeps
+   its boots.
 2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
 3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from

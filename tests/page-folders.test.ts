@@ -14,6 +14,8 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { putStored, replacesFixture, STORED, STORED_QUERY, storedFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { answerAsks } from './page-ask.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
@@ -22,7 +24,10 @@ import { SHARES_BY_HAND } from '../web/app/shares-mount.ts';
 
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
-const TOOLS = new URL('../target/images/debian-tools/disk.qcow2', import.meta.url);
+const TOOLS_PATH = '/target/images/debian-tools/disk.qcow2';
+const TOOLS = new URL(`..${TOOLS_PATH}`, import.meta.url);
+/** The guest tests' address: the shape's (`STORED_QUERY`), the Host folder served asynchronously. */
+const FOLDERS_QUERY = `${STORED_QUERY}&sharesasync=Host`;
 const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : undefined;
 const debian = (process.env.WAARM64_DISTROS ?? '').split(',').includes('debian');
 const skipGuest = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WAARM64_DISTROS=debian)' : !existsSync(IMAGE) ? 'SKIPPED: run images/build.sh debian' : skip;
@@ -360,75 +365,89 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
   rmSync(dir, { recursive: true, force: true });
 }));
 
-test('snapshots: restored with a file open for writing, and into a folder detached since', { skip: skipGuest, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
-  const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: docs/backlog.md "A handle read back off the record"
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page, () => true);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
-  const [work, host, gone] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host'), await makeFolder(page, 'Gone', { 'kept.txt': 'kept' })];
-  const id = await debianMachine(page, [{ id: work, readOnly: false }, { id: host, readOnly: false }, { id: gone, readOnly: false }]);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&sharesasync=Host&${credentialsQuery()}`);
-  await running(page);
-  await login(page);
-  await type(page, 'exec 9>/mnt/shared/Work/open.txt 7>/mnt/shared/Host/open.txt 8</mnt/shared/Gone/kept.txt\n');
-  await ok(page, 'echo one >&9; echo one >&7; chmod 700 /mnt/shared/Work/open.txt; stat -c %i /mnt/shared/Work/open.txt > /tmp/inode');
-  await page.waitForTimeout(1000);
-  await page.locator('#save-snapshot').click();
-  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.kept', {}, { start: true }).source, { timeout: 180_000 }); // its .slept and .awake variants start the same
-  // The snapshot landed what was open, and the machine writes on.
-  assert.equal(await folderFile(page, host, 'open.txt'), 'one\n');
-  await ok(page, 'echo two >&9; echo two >&7');
-  // Detached since: its fids go stale, and the mount lives on.
-  await menu(page);
-  await page.locator(`#folders [data-folder="${gone}"] [data-action="detach-folder"]`).click();
-  await page.waitForFunction((id) => !document.querySelector(`#folders [data-folder="${id}"]`), gone, { timeout: 10_000 });
-  await page.locator('#folders summary').click();
-  await page.click('#machines-open');
-  await page.locator('.machines [data-tab=snapshots]').click();
-  await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
-  await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 });
-  await running(page);
-  await page.waitForTimeout(1000);
-  await type(page, '\n');
-  assert.equal(await ok(page, 'ls /mnt/shared'), 'Host Work');
-  assert.equal(await ok(page, 'stat -c "%a %i" /mnt/shared/Work/open.txt'), `700 ${await ok(page, 'cat /tmp/inode')}`.trim(), 'its chmod and its qid came back');
-  await ok(page, 'echo three >&9; echo three >&7');
-  await type(page, 'exec 9>&- 7>&-\n');
-  assert.equal(await ok(page, 'cat /mnt/shared/Work/open.txt'), 'one three');
-  assert.equal(await ok(page, 'cat /mnt/shared/Host/open.txt'), 'one three');
-  assert.match((await sh(page, 'cat <&8')).out, /Stale file handle/);
-  assert.equal(await folderFile(page, gone, 'kept.txt'), 'kept');
-  assert.deepEqual(errors, []);
-  await context.close();
-  rmSync(dir, { recursive: true, force: true });
-}));
+test('snapshots: restored with a file open for writing, and into a folder detached since', { skip: skipGuest, timeout: 20 * 60_000 }, async () => {
+  // From a booted-Debian fixture (tests/debian-fixture.ts) of a shares machine without folders: the guest mounts the root at its first look.
+  const fixture = await storedFixture(browser, base, STORED.shares(), FOLDERS_QUERY);
+  await withDebianLock(async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
+    const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' }); // on disk: docs/backlog.md "A handle read back off the record"
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    let loading = !!fixture;
+    await answerAsks(page, (q) => !(loading && replacesFixture(q)));
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    const [work, host, gone] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host'), await makeFolder(page, 'Gone', { 'kept.txt': 'kept' })];
+    const r = STORED.shares();
+    await putStored(page, { ...r, machine: { ...r.machine, folders: [{ id: work, readOnly: false }, { id: host, readOnly: false }, { id: gone, readOnly: false }] } });
+    await page.goto(`${base}/web/app/?${FOLDERS_QUERY}&m=${r.machine.id}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    loading = false;
+    await running(page);
+    await login(page);
+    await type(page, 'exec 9>/mnt/shared/Work/open.txt 7>/mnt/shared/Host/open.txt 8</mnt/shared/Gone/kept.txt\n');
+    await ok(page, 'echo one >&9; echo one >&7; chmod 700 /mnt/shared/Work/open.txt; stat -c %i /mnt/shared/Work/open.txt > /tmp/inode');
+    await page.waitForTimeout(1000);
+    await page.locator('#save-snapshot').click();
+    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.kept', {}, { start: true }).source, { timeout: 180_000 }); // its .slept and .awake variants start the same
+    // The snapshot landed what was open, and the machine writes on.
+    assert.equal(await folderFile(page, host, 'open.txt'), 'one\n');
+    await ok(page, 'echo two >&9; echo two >&7');
+    // Detached since: its fids go stale, and the mount lives on.
+    await menu(page);
+    await page.locator(`#folders [data-folder="${gone}"] [data-action="detach-folder"]`).click();
+    await page.waitForFunction((id) => !document.querySelector(`#folders [data-folder="${id}"]`), gone, { timeout: 10_000 });
+    await page.locator('#folders summary').click();
+    await page.click('#machines-open');
+    await page.locator('.machines [data-tab=snapshots]').click();
+    await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
+    await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 });
+    await running(page);
+    await page.waitForTimeout(1000);
+    await type(page, '\n');
+    assert.equal(await ok(page, 'ls /mnt/shared'), 'Host Work');
+    assert.equal(await ok(page, 'stat -c "%a %i" /mnt/shared/Work/open.txt'), `700 ${await ok(page, 'cat /tmp/inode')}`.trim(), 'its chmod and its qid came back');
+    await ok(page, 'echo three >&9; echo three >&7');
+    await type(page, 'exec 9>&- 7>&-\n');
+    assert.equal(await ok(page, 'cat /mnt/shared/Work/open.txt'), 'one three');
+    assert.equal(await ok(page, 'cat /mnt/shared/Host/open.txt'), 'one three');
+    assert.match((await sh(page, 'cat <&8')).out, /Stale file handle/);
+    assert.equal(await folderFile(page, gone, 'kept.txt'), 'kept');
+    assert.deepEqual(errors, []);
+    await context.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
 
-test('a real workload: make, gcc and git in a share, both backends', { skip: skipGuest || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 15 * 60_000 }, () => withDebianLock(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
-  const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
-  const [work, host] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host')];
-  const id = await debianMachine(page, [{ id: work, readOnly: false }, { id: host, readOnly: false }], TOOLS);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&sharesasync=Host&${credentialsQuery()}`);
-  await running(page);
-  await login(page);
-  for (const W of ['/mnt/shared/Work', '/mnt/shared/Host']) {
-    await ok(page, `mkdir ${W}/c && cd ${W}/c && printf "int f(void);\\nint main(void){return f();}\\n" > m.c && echo "int f(void){return 0;}" > f.c && printf "p: m.o f.o\\n\\tgcc -o p m.o f.o\\n" > Makefile && make -s && ./p && touch f.c && make -s && ./p`);
-    await ok(page, `cd ${W} && git init -q r && cd r && git config user.email a@b && git config user.name a && for k in 1 2 3 4 5; do echo $k > f$k; done && git add . && git commit -qm one && echo more >> f1 && mkdir d && git mv f2 d/ && git add -A && git commit -qm two && git status --porcelain && git log --oneline | wc -l && git fsck --strict 2>&1 | tail -1 && git gc -q && git log --oneline | wc -l`);
-    assert.equal(await ok(page, `cd ${W}/r && git log --oneline | wc -l; git status --porcelain | wc -l`), '2 0');
-    await ok(page, `cd; rm -r ${W}/c ${W}/r`);
-    assert.equal(await ok(page, `ls ${W} | wc -l`), '0');
-  }
-  await type(page, 'poweroff\n');
-  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 120_000 });
-  assert.deepEqual(errors, []);
-  await context.close();
-  rmSync(dir, { recursive: true, force: true });
-}));
+test('a real workload: make, gcc and git in a share, both backends', { skip: skipGuest || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 15 * 60_000 }, async () => {
+  // From a booted-Debian fixture of debian-tools' disk (tests/debian-fixture.ts).
+  const fixture = await storedFixture(browser, base, STORED.shares(TOOLS_PATH), FOLDERS_QUERY);
+  await withDebianLock(async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'waarm64-profile-'));
+    const context = await chromium.launchPersistentContext(dir, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page, (q) => !replacesFixture(q));
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+    const [work, host] = [await makeFolder(page, 'Work'), await makeFolder(page, 'Host')];
+    const r = STORED.shares(TOOLS_PATH);
+    await putStored(page, { ...r, machine: { ...r.machine, folders: [{ id: work, readOnly: false }, { id: host, readOnly: false }] } });
+    await page.goto(`${base}/web/app/?${FOLDERS_QUERY}&m=${r.machine.id}`);
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await running(page);
+    await login(page);
+    for (const W of ['/mnt/shared/Work', '/mnt/shared/Host']) {
+      await ok(page, `mkdir ${W}/c && cd ${W}/c && printf "int f(void);\\nint main(void){return f();}\\n" > m.c && echo "int f(void){return 0;}" > f.c && printf "p: m.o f.o\\n\\tgcc -o p m.o f.o\\n" > Makefile && make -s && ./p && touch f.c && make -s && ./p`);
+      await ok(page, `cd ${W} && git init -q r && cd r && git config user.email a@b && git config user.name a && for k in 1 2 3 4 5; do echo $k > f$k; done && git add . && git commit -qm one && echo more >> f1 && mkdir d && git mv f2 d/ && git add -A && git commit -qm two && git status --porcelain && git log --oneline | wc -l && git fsck --strict 2>&1 | tail -1 && git gc -q && git log --oneline | wc -l`);
+      assert.equal(await ok(page, `cd ${W}/r && git log --oneline | wc -l; git status --porcelain | wc -l`), '2 0');
+      await ok(page, `cd; rm -r ${W}/c ${W}/r`);
+      assert.equal(await ok(page, `ls ${W} | wc -l`), '0');
+    }
+    await type(page, 'poweroff\n');
+    await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 120_000 });
+    assert.deepEqual(errors, []);
+    await context.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

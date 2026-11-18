@@ -7,11 +7,16 @@
 // credentials). A file whose key moved is made again; parallel test files wait for one maker (a lock directory beside
 // the file, as tests/debian-lock.ts's). WAARM64_DEBIAN_FIXTURES=0 boots instead.
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Browser } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
+import { t } from '../web/i18n.ts';
+import type { Question } from './page-ask.ts';
+import { PAGE_QUERY } from './page-query.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { credentialsQuery } from './debian-unattended.ts';
 import { shows } from './serial-console.ts';
+import { words } from './words.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const DIR = join(ROOT, 'target/ci');
@@ -138,6 +143,107 @@ export async function debianFixture(browser: Browser, base: string, name: keyof 
  */
 const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'web/app/worker-header.ts', 'web/app/machine.ts', 'target/images/agent/waarm64-agent.gz'];
 
+/** What the page's start and its stored machines make: `pageFixture`'s and `storedFixture`'s key. */
+const pageSources = () => PAGE_SOURCES.map((f) => (existsSync(join(ROOT, f)) ? sha(readFileSync(join(ROOT, f))) : ''));
+
+/** A stored machine's records (IndexedDB `machines` and `disks`: web/app/shape.ts), as a test puts them. */
+export type StoredRecords = { machine: { id: string; attachments: { id: string; disk: string }[] } & Record<string, unknown>; disks: ({ id: string } & Record<string, unknown>)[] };
+
+/** An id as `newId` makes them (12 hex digits), fixed by `label`: a stored machine's shape hash takes its disks' serials (the attachments' ids). */
+export const fixedId = (label: string) => sha(label).slice(0, 12);
+
+/** The record of a URL disk of the test server's file `path` (`/target/images/…`), under `id`. */
+export function urlDisk(id: string, path: string, name = path.slice(path.lastIndexOf('/') + 1)) {
+  const file = join(ROOT, path);
+  const head = Buffer.alloc(32);
+  const fd = openSync(file, 'r');
+  try { readSync(fd, head, 0, 32, 0); } finally { closeSync(fd); }
+  const size = head.readUInt32BE(0) === 0x514649fb ? Number(head.readBigUInt64BE(24)) : statSync(file).size; // a qcow2's virtual size
+  return { id, kind: 'url', name, size, url: path, identity: { kind: 'url', path, bytes: statSync(file).size }, created: 0 };
+}
+
+/** Puts `r`'s records into the page's store (a page of the web app, any machine). */
+export const putStored = (page: Page, r: StoredRecords) => page.evaluate(async (r) => {
+  const { Store } = await import('/web/app/store.ts' as string);
+  const store = await Store.open();
+  try {
+    const now = Date.now();
+    for (const d of r.disks) await store.put('disks', { created: now, ...d });
+    await store.put('machines', { created: now, modified: now, ...r.machine });
+  } finally {
+    store.close();
+  }
+}, r);
+
+/**
+ * A stored machine at its serial login prompt, `r`'s records (fixed ids: `fixedId`) opened with `query`
+ * (web/app/?<query>&m=<id>: the address's devices are in the shape too), its kept snapshot downloaded from the Snapshots
+ * tab: its local path, or '' with WAARM64_DEBIAN_FIXTURES=0. A test loads it with Load snapshot › From a file
+ * (`loadSnapshotFile`) while its machine of the same records and query boots, answering the question whether to keep
+ * the overlay written since with Replace (`replacesFixture`), so the machine keeps its one overlay.
+ */
+export async function storedFixture(browser: Browser, base: string, r: StoredRecords, query: string): Promise<string> {
+  if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
+  const disk = r.disks.find((d) => d.kind === 'url')?.url as string | undefined;
+  const key = sha(JSON.stringify([fixtureKey({ disk }), r, query, pageSources(), sha(readFileSync(join(ROOT, 'web/app/shape.ts')))])).slice(0, 16);
+  return fixture(`stored-${sha(JSON.stringify([r, query])).slice(0, 8)}`, key, async (to) => {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+      await putStored(page, r);
+      await page.goto(`${base}/web/app/?${query}&m=${r.machine.id}`);
+      await page.waitForFunction(() => /\S+ login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 300_000, polling: 250 });
+      await page.locator('#save-snapshot').click();
+      await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:snapshot-actions.kept', {}, { start: true }).source, { timeout: 120_000, polling: 250 });
+      await page.locator('#machines-open').click();
+      await page.locator('.machines [data-tab=snapshots]').click();
+      const download = page.waitForEvent('download', { timeout: 120_000 });
+      await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.download') }).click();
+      const d = await download;
+      await d.saveAs(to);
+      await d.delete();
+    } finally {
+      await ctx.close();
+    }
+  });
+}
+
+/** The tests' stored machines on the tests' Debian (fixed ids, so one fixture fits any profile), opened with `STORED_QUERY`. */
+export const STORED = {
+  /** page-usb-guest, page-usb-gamepad: the USB controller, no network. */
+  usb: () => machine('usb', { name: 'USB machine', network: false, usb: true }),
+  /** page-incognito: one adapter. */
+  net: () => machine('net', { name: 'Incognito', network: true }),
+  /** page-snapshots: one adapter, the Debian disk and a 64 MiB ramdisk. */
+  ramdisk: () => machine('ramdisk', { name: 'Snappy', network: true }, [ramdisk(fixedId('ramdisk-ram'), 64 << 20)]),
+  /**
+   * page-folders: shared folders and no adapter, on `image` (the tests' Debian, or debian-tools'). The folders aren't in
+   * the shape: the test attaches its own (`folders`) to the records the fixture was made without.
+   */
+  shares: (image = '/target/images/debian/disk.qcow2') => machine(`shares-${image}`, { name: 'Debian', adapters: [], shares: true }, [], image),
+};
+/** `STORED`'s address (the shape takes `display=simple`), with the tests' credentials. */
+export const STORED_QUERY = `${PAGE_QUERY}view=terminal&display=simple&${credentialsQuery()}`;
+
+/** A ramdisk's record. */
+const ramdisk = (id: string, bytes: number) => ({
+  id, kind: 'ramdisk', size: bytes, identity: { kind: 'ramdisk', id, bytes }, created: 0,
+  name: 'Ramdisk', // i18n-ignore: a name the test gives
+});
+
+/** Stored machine `label` (2 vCPUs, 1 GiB, 2D): `image` (the tests' Debian) first, then `more`'s disks, each attached writable. */
+function machine(label: string, fields: Record<string, unknown>, more: StoredRecords['disks'] = [], image = '/target/images/debian/disk.qcow2'): StoredRecords {
+  const disks = [urlDisk(fixedId(`${label}-disk`), image), ...more];
+  return {
+    disks,
+    machine: { id: fixedId(`${label}-machine`), ncpus: 2, ramMiB: 1024, display: '2d', ...fields, attachments: disks.map((d, i) => ({ id: fixedId(`${label}-attachment-${i}`), disk: d.id, readOnly: false })) },
+  };
+}
+
+/** Whether `q` asks whether to keep the overlay written since a snapshot: a fixture's load answers Replace (false). */
+export const replacesFixture = (q: Question) => q.kind === 'confirm' && [1, 2].some((count) => words('snapshots:snapshot-restore.restore.keep', { count }).test(q.text));
+
 /**
  * The page's own transient machine of `query` (web/app/?<query>, the tests' `PAGE_QUERY` and `unattendedQuery()`
  * in it, or a `disk=` of its own) at its serial login prompt, saved with the page's Snapshot: its local path, for Load snapshot
@@ -147,7 +253,7 @@ const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'w
 export async function pageFixture(browser: Browser, base: string, query: string): Promise<string> {
   if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
   const disk = new URLSearchParams(query).get('disk') ?? undefined; // the query's disk (a `?disk=` URL machine), else the tests' Debian
-  const key = sha(JSON.stringify([fixtureKey({ disk }), query, PAGE_SOURCES.map((f) => (existsSync(join(ROOT, f)) ? sha(readFileSync(join(ROOT, f))) : ''))])).slice(0, 16);
+  const key = sha(JSON.stringify([fixtureKey({ disk }), query, pageSources()])).slice(0, 16);
   return fixture(`page-${sha(query).slice(0, 8)}`, key, async (to) => {
     const ctx = await browser.newContext({ acceptDownloads: true });
     try {
