@@ -812,6 +812,11 @@ impl Server {
         self.settle_at = Some(now + SETTLE_EVERY);
     }
 
+    /// Whether it runs (started with its names client's key, not stopped since).
+    pub fn running(&self) -> bool {
+        self.key.is_some()
+    }
+
     /// The transport is gone (it failed, or closed): everything tied to its key goes.
     pub fn stop(&mut self) {
         self.key = None;

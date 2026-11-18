@@ -70,6 +70,9 @@ struct Faults {
     /// Node `.0`'s connections to URL `.1` after the first never get a hello (a region whose
     /// probe answers but whose DERP doesn't work).
     mute_after_first: Vec<(usize, String)>,
+    /// Node `.0`'s first DERP connection after its own (its names client's) gets its hello only when `Net::release` says
+    /// (a public region takes a second or more to connect).
+    hold_names: Vec<usize>,
 }
 
 /// A subscription on the fake Nostr relay.
@@ -329,6 +332,13 @@ impl Net {
                 let server = DerpServer::new([100 + i as u8; 32]);
                 let hello = server.hello();
                 let hold = (self.faults.hold_first.iter()).position(|(j, u)| *j == i && *u == url);
+                let hold_names = self.opened.iter().any(|(j, _)| *j == i)
+                    && (self.faults.hold_names.iter())
+                        .position(|j| *j == i)
+                        .is_some_and(|k| {
+                            self.faults.hold_names.remove(k);
+                            true
+                        });
                 let mute = self.opened.contains(&(i, url.clone()))
                     && (self.faults.mute_after_first.iter()).any(|(j, u)| *j == i && *u == url);
                 self.opened.insert((i, url.clone()));
@@ -338,6 +348,10 @@ impl Net {
                 }
                 if let Some(k) = hold {
                     self.faults.hold_first.remove(k);
+                    self.held.push((i, conn, hello));
+                    return;
+                }
+                if hold_names {
                     self.held.push((i, conn, hello));
                     return;
                 }

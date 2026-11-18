@@ -3364,8 +3364,8 @@ impl Client {
                 let key = t.public;
                 let h = self.names.as_mut().unwrap();
                 h.retry_at = None;
+                // The server starts once its home region is up (`pump_names`).
                 h.transport = Some(Box::new(t));
-                h.server.start(key, now);
                 self.log(format!("names: a names client, nodekey:{}", hex(&key)));
             }
             Err(e) => {
@@ -3462,6 +3462,16 @@ impl Client {
     /// out; then the queries that wait are looked at again.
     fn pump_names(&mut self, now: Instant) {
         if let Some(mut h) = self.names.take() {
+            // The server starts (subscribes and asks "who serves?") once its names client's home region is up: the
+            // answers' call backs come through it (NAMES loop 6b: asked before, on a public region that takes a second or
+            // more to connect, they found nobody, and the server took nobody answering for 30 s).
+            if let Some(t) = h.transport.as_ref()
+                && t.state == State::Running
+                && !h.server.running()
+            {
+                let key = t.public;
+                h.server.start(key, now);
+            }
             if self.pump_side(&mut h.transport, &mut h.server, now) {
                 h.transport = None;
                 h.server.stop();

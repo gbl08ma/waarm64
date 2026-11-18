@@ -95,6 +95,37 @@ impl Net {
     }
 }
 
+/// NAMES loop 6b: a server's first question waits for its names client's home region. It went out at once, before that
+/// DERP connection was up (a public region takes a second or more: TLS, the DERP handshake), so the servers' call backs
+/// found nobody there to reach, and the server took nobody answering for 30 s (the rig's derper dropped them as an
+/// unknown destination).
+#[test]
+fn a_servers_first_question_waits_for_its_names_clients_home_region() {
+    let mut b = Bitcoin::new(ROOM, 61);
+    let (ta, tb) = (title(&mut b, 1, "alpha"), title(&mut b, 2, "bravo"));
+    let faults = Faults {
+        hold_names: vec![1],
+        ..Faults::default()
+    };
+    let mut n = Net::build(
+        vec![
+            server_config(1, vec![ta.clone()]),
+            server_config(2, vec![tb.clone()]),
+        ],
+        faults,
+    );
+    // Node 1's names client's region connects 8 s on.
+    n.advance(Duration::from_secs(8));
+    n.release();
+    let expect: BTreeSet<[u8; 32]> = [ta.1.id, tb.1.id].into();
+    let took = n.converge(&[0, 1], &expect, Duration::from_secs(120));
+    eprintln!("a server whose names client connected 8 s late: converged {took:?} after");
+    assert!(
+        took <= Duration::from_secs(10),
+        "converged {took:?} after its names client's region was up"
+    );
+}
+
 #[test]
 fn two_servers_converge_and_the_node_key_carries_none_of_it() {
     let mut b = Bitcoin::new(ROOM, 1);
