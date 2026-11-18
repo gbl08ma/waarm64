@@ -6,7 +6,7 @@ import type { Input } from '../../input.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import type { Sample } from '../statusbar-metrics.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
-import type { Msg } from '../../msg.ts';
+import { MsgError, type Msg } from '../../msg.ts';
 import type { Channels } from './start-message.ts';
 
 /** A save in progress (a snapshot, a suspend): the worker's messages for it, by its id (web/app/run/worker-messages.ts). */
@@ -21,6 +21,12 @@ export type SnapshotJob = {
 };
 /** A save's message, without the id `Run.save` gives it. */
 type Save = { [K in 'snapshot' | 'suspend']: Omit<Extract<ToWorker, { type: K }>, 'id'> }['snapshot' | 'suspend'];
+
+/**
+ * How long the machine worker's `stop` waits for a save in progress (a staged file's copy goes on after the resume:
+ * a guest that powers off meanwhile must not cut it off), ms; the run's close waits that much longer for it.
+ */
+export const SAVE_STOP_MS = 60_000;
 
 /** Who holds the page's run now. */
 export type RunHolder = { run: Run | undefined };
@@ -68,8 +74,9 @@ export class Run {
 
   /**
    * Tells the machine worker to stop (it releases the backends and lands what its folders hold) and ends the run's
-   * workers once it says `stopped`, or after `CLOSE_MS` and 1.5 s more without it; once: at a stop, or when the machine
-   * stopped by itself (web/app/run/runner.ts `ended`).
+   * workers once it says `stopped`, or after `CLOSE_MS` and 1.5 s more without it (and `SAVE_STOP_MS` more with a save
+   * in progress, which the worker waits for); once: at a stop, or when the machine stopped by itself
+   * (web/app/run/runner.ts `ended`). A save still in progress then fails: its worker is gone.
    */
   close(): Promise<void> {
     this.#closed ??= new Promise<void>((resolve) => {
@@ -78,9 +85,10 @@ export class Run {
         this.worker.removeEventListener('message', heard);
         this.worker.terminate();
         this.gpu?.terminate();
+        this.failJobs(new MsgError('snapshots:run.stopped'));
         resolve();
       };
-      const timer = setTimeout(done, CLOSE_MS + 1500);
+      const timer = setTimeout(done, CLOSE_MS + 1500 + (this.#jobs.size ? SAVE_STOP_MS : 0));
       const heard = (e: MessageEvent<FromWorker>) => {
         if (e.data.type === 'stopped') done();
       };
@@ -102,7 +110,7 @@ export class Run {
     if (end) this.#jobs.delete(id);
     return j;
   }
-  /** Every save in progress fails with `e` (the worker failed). */
+  /** Every save in progress fails with `e` (the worker failed, or ended). */
   failJobs(e: unknown) {
     for (const j of this.#jobs.values()) j.error(e);
     this.#jobs.clear();

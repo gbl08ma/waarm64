@@ -29,6 +29,7 @@ import { stopRam } from './worker-ram.ts';
 import { post, state } from './worker-post.ts';
 import { limitJit, status, watchKeyboard } from './worker-status.ts';
 import { checkSnapshot, saveSnapshot, spareBuffer, suspend, TAIL, type Running } from './worker-snapshot.ts';
+import { saveSettled } from './worker-saving.ts';
 import {
   loadPhases,
   bootOptions,
@@ -89,8 +90,10 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       return up?.();
     case 'stop':
       stopping = true;
-      stopRam();
       void (async () => {
+        // A save in progress ends first (a staged file's copy goes on after the resume), within the page's wait for it.
+        await saveSettled();
+        stopRam();
         // A machine still booting is closed once it's there (its device worker may have the overlay open).
         const v = vm ?? (await booting?.catch(() => undefined));
         if (v && current) await shutdown(v);
@@ -234,14 +237,8 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   let release: (() => void) | undefined;
   if (snapshot) {
     try {
-      ({
-        plan,
-        restore,
-        specs,
-        header,
-        phases: restored,
-        release,
-      } = await fromSnapshot(m, machine, snapshot, !!resume));
+      const r = await fromSnapshot(m, machine, snapshot, !!resume);
+      ({ plan, restore, specs, header, phases: restored, release } = r);
     } catch (err) {
       if (resume && !stopped()) return bootInstead(err);
       throw err;

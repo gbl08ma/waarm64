@@ -14,6 +14,7 @@ import { startPool, type SavePool } from '../snapshot-pool.ts';
 import type { Machine } from './machine.ts';
 import { header, type Session } from './worker-header.ts';
 import { post, progress, state, throttled } from './worker-post.ts';
+import { begin, snapshotting } from './worker-saving.ts';
 import type { SaveTimes } from './protocol.ts';
 
 /**
@@ -44,8 +45,6 @@ export type Running = {
   /** The room a staging file assumes instead of the storage's estimate (`?stageroom=`, bytes; docs/frontend.md "Query parameters"). */
   stageRoom?: number;
 };
-
-let snapshotting = false;
 
 /**
  * Answers `snapshot-check`: what a device would refuse a snapshot or a suspend (`what`) for now (Vulkan in use, a
@@ -225,7 +224,7 @@ export async function saveSnapshot(
   const fail = (error: unknown) => post({ type: 'snapshot-error', id, error: toWire(error) });
   const refused = cantSave(r);
   if (refused || !r) return fail(refused);
-  snapshotting = true;
+  const end = begin();
   let out: Out | undefined;
   let pool: ReturnType<typeof poolFor> | undefined;
   let staged: Staging | undefined;
@@ -278,7 +277,7 @@ export async function saveSnapshot(
     pool?.close();
     await out?.abort();
     if (!handed) await staged?.discard();
-    snapshotting = false;
+    end();
   }
 }
 
@@ -295,7 +294,7 @@ function cantSave(r: Running | undefined) {
     return new MsgError('snapshots:worker-snapshot.notRunning', undefined, {
       cause: new MsgError('snapshots:worker-snapshot.notRunning.cause'),
     });
-  if (snapshotting)
+  if (snapshotting())
     return new MsgError('snapshots:worker-snapshot.saving', undefined, {
       cause: new MsgError('snapshots:worker-snapshot.saving.cause'),
     });
@@ -330,7 +329,7 @@ function cantSuspend(r: Running | undefined) {
     return new MsgError('machine:worker-snapshot.suspend.noHome', undefined, {
       cause: new MsgError('machine:worker-snapshot.suspend.noHome.cause'),
     });
-  if (snapshotting)
+  if (snapshotting())
     return new MsgError('machine:worker-snapshot.suspend.busy', undefined, {
       cause: new MsgError('machine:worker-snapshot.suspend.busy.cause'),
     });
@@ -347,7 +346,7 @@ export async function suspend(r: Running | undefined, id: number) {
   const refused = cantSuspend(r);
   if (refused || !r?.home) return fail(refused);
   const home = r.home;
-  snapshotting = true;
+  const end = begin();
   let paused = false;
   let closing = false;
   let pool: ReturnType<typeof poolFor> | undefined;
@@ -376,6 +375,6 @@ export async function suspend(r: Running | undefined, id: number) {
     fail(new MsgError('machine:worker-snapshot.suspend.failed', {}, { cause: err }));
   } finally {
     pool?.close();
-    snapshotting = false;
+    end();
   }
 }
