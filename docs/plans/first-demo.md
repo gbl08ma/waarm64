@@ -52,7 +52,7 @@ only to a list of destinations, and everything else, if the owner turns it on, g
 |---|---|---|
 | What crosses the WebSocket | the guest's Ethernet frames, as with the local helper today | TCP (and maybe UDP) streams opened by name |
 | Who runs TCP/IP | the server (gvisor-tap-vsock's netstack, in waarm64-net) | **the page**: a new TCP/IP endpoint at the gateway (smoltcp, or a port of unkernel's ~530-line `net.ts`) |
-| New page code | almost none: a `local` connection whose URL is `wss://` on a host of ours instead of loopback (no Local Network Access prompt) | the stack, DNS with fake addresses, the stream client, a new connection kind |
+| New page code | a connection kind (`demo`) beside `local`'s client, with the control channel and its words (§8 finding 4); no Local Network Access prompt) | the stack, DNS with fake addresses, the stream client, a new connection kind |
 | What the guest gets | everything the local helper gives: TCP, UDP (DNS, NTP, QUIC), ICMP, IPv6 where the server has it, a 1500 MTU | TCP only (UDP only with Wisp v2's extension where the server allows it), IPv4, DNS answered with fake addresses |
 | The allowlist | at the server's dial (below, §3.2): addresses from its own DNS, checked again against the TLS SNI or HTTP Host | by name in each CONNECT: trivial |
 | Hosting | a server we run (any small VPS, or the host behind static.gbl08ma.com), behind TLS | the same server |
@@ -182,14 +182,16 @@ What it has that the local helper hasn't:
     files.
   - Or no code at all: run the helper in a network namespace or container whose default route is the VPN.
   
-  **The use worth having:** the slow lane through a VPN and the fast lane direct. Then whatever strangers do off the
-  list leaves from the VPN's address, not the server's, and abuse reports go to the provider. Check the provider's
+  **Every lane through it, the allowlisted one included** (the user, 2026-11-18): the SNI check can be fronted, so
+  whatever strangers do leaves from the VPN's address, not the server's, and abuse reports go to the provider.
+  Throttling stays the slow lane's alone. Check the provider's
   terms first: many forbid running a proxy for others. ICMP doesn't pass through SOCKS, so `ping` beyond the gateway
   fails there (the gateway still answers its own).
 
   ```toml
   [egress.fast]
-  kind = "direct"
+  kind = "wireguard"
+  config = "/etc/waarm64-demonet/fast.conf"
 
   [egress.slow]
   kind = "wireguard"
@@ -212,9 +214,7 @@ What it has that the local helper hasn't:
     the helper's own DNS, so QUIC falls back to TCP.
   - **What it can't stop:** at any rate, the lane lets a stranger's traffic leave from the server's address (slow
     scanning, a login form tried, a request to a site that bans the address). That's why it's off by default, why
-    its rate is low, and why the owner turns it on knowingly. Abuse reports name the server's IP, so the logs keep
-    what answering one needs: per connection, a hash of the source IP, the destination name and port, the time
-    and the bytes, for a few days only (the owner's setting), never contents.
+    its rate is low, why the owner turns it on knowingly, and why its egress goes through a VPN.
   - The guest's motd says which hosts are fast and that the rest is slow.
 
   ```toml
@@ -225,10 +225,9 @@ What it has that the local helper hasn't:
   bytes_per_day = "50MB"         # per source IP
   total_rate = "2MB/s"           # the whole lane, every visitor together
   ports = [80, 443]
-  log_days = 3                   # per-connection records for abuse reports (hashed IP, name, port, bytes)
   ```
-- **Logs:** counts per destination and budget refusals. No addresses are kept past the budget's day, except the slow
-  lane's hashed records above.
+- **Logs: counters only** (the user, 2026-11-18): per destination and budget refusals, nothing that names a visitor,
+  so no privacy notice. Behind a VPN, a log of visitors' addresses would answer no abuse report anyway.
 - **Cost:** bandwidth. A demo visitor's `apk add python3` is about 20 MB. One small VPS with a few TB a month covers a
   launch.
 
@@ -269,8 +268,8 @@ Dropped for now (the user, 2026-11-18). What was found, so it isn't looked up ag
 
 ### 3.5 Either way
 
-- **Where it sits in our model:** A is a `local` connection with a hosted URL. The demo's definition attaches adapter 0 to a
-  built-in "Demo network" connection. B would be a new connection kind, `wisp`, with a URL.
+- **Where it sits in our model:** a connection kind of its own, `demo`, that any machine can attach, many at once
+  (DEMO-KICKOFF.md decision 10). B would be a new connection kind, `wisp`, with a URL.
 - **Inbound traffic:** none. A public helper forwards no ports, and Wisp has no listening sockets. Rooms, tailnets and
   the local helper stay the way in.
 - **Snapshots:** the guest's connections don't survive a resume (the server's side is gone), which is fine for a demo
@@ -348,14 +347,16 @@ published next to its disk and snapshot:
   pieces and its snapshot are addressed by content. Nobody is held on an old version by the "started before" check,
   because the new id doesn't match. The store can name an id's successor (`replaces: "<old id>"`), so the card says
   "you have an older version of this demo".
-- **Storage:** a demo machine's disk blocks go to the OPFS store of a URL disk, as any machine's do, not the
-  expiring bucket. The bucket is right for a one-off visit, but a demo is now a machine the visitor keeps until they
-  delete it.
+- **Storage** (the user, 2026-11-18): a demo's base disk is read remotely, never copied whole. Its reads go into the
+  expiring disk cache, as any URL disk's do (`web/diskcache.ts`), and only the overlay is kept for good. A demo
+  machine needs vmdisks.tny.im to run, and shows "this demo's files are gone" when a manifest 404s.
 - **Hosting: every demo on vmdisks.tny.im** (the user, 2026-11-18). vmdisks.tny.im is an assets-only Worker
   (remote-disks.md "Where our images are"; not a Pages project, though the limits are alike): no bill per request,
   25 MiB a file, **20,000 files a version** (`deploy/disks/deploy.sh` refuses past that), no ranges. So the store,
   each demo's definition, thumbnail, chunked disk and chunked snapshot go there as pieces of 2 MiB. Pieces are named
-  by their hash and shared across images and versions, so a new version costs only the pieces it changed. **The
+  by their hash and go into **one `pieces/` directory for the whole site** (today `tools/chunk-image.ts` writes one
+  per image and `_headers` matches `/:image/pieces/*`: both change), so a new version costs only the pieces it
+  changed. **The
   budget is files, not bytes:** the desktop's 1.95 GB is ~1,000 pieces, Alpine's demo a few hundred with its
   snapshot. Keep the whole site under ~15,000 files, so a version's old and new pieces fit side by side during a
   change. A deploy replaces the whole site, so `target/disks/` must hold every demo that stays, and a demo's id
@@ -383,33 +384,10 @@ published next to its disk and snapshot:
 - **3D:** the desktop with glmark2 / vkcube / a small game preinstalled, so that "fully compliant OpenGL ES 3.0" is
   something a visitor sees, not something they read.
 
-## 6. Loops (draft, for a kickoff)
+## 6. Loops
 
-0. **Measure the gap.** unkernel's and v86's demos against ours, by hand and in headless Chromium: time to prompt,
-   bytes on the wire, `apk add python3` time, peak memory. These numbers feed [../comparison.md](../comparison.md) §3.
-   No code.
-1. **The public helper**, a fork of waarm64-net in a project of its own (§3.2): a network per WebSocket, the
-   budgets, the TOML configuration with `--check`, and the allowlist at the resolver, the dial and the first bytes, tested against fake upstreams (an allowed name,
-   a name off the list, an allowed CDN address reached with another SNI or Host, ECH, UDP 443, a literal address).
-2. **Hosting it:** on the user's server, behind TLS, with the list the user approves; logs without addresses. Deploy only on the user's word.
-3. **The page:** a built-in "Demo network" (a `local` connection with that URL, no pairing, no Local Network Access
-   prompt), its words in the catalog, and `scripts/ci-net.sh` against a public-mode helper on loopback.
-4. **The demo guest.** `images/build.sh alpine-demo`, its template snapshot, chunked and traced from the resume,
-   with numbers.
-5. **The store and the definition's `demo` fields.** The store's page (`#demos`, `/demos`, Home's Demos item), the interstitial, the cards, `?id=` and `?store=`, a machine made from
-   the definition with `fromDemo`, the first start's restore, "started before" and versions by id.
-   `scripts/ci-machines.sh` and `ci-debian.sh`.
-6. **The desktop demo as a snapshot**, and the 3D one.
-7. **Templates under New machine.**
-8. **Review, numbers, the comparison's numbers filled in, the docs.**
-
-**Settled (the user, 2026-11-18):** the no-Wisp decision reopened; a demo makes a stored machine, with `fromDemo`
-and versions by id; the public helper is a fork of its own, hosted on the user's server, configured from a file.
-Also settled: A, the hosted helper, on the user's server; no Cloudflare Workers for now; the fork in a new
-repository; TOML; the first allowlist is what the Alpine demo's `apk` needs (§3.2); the demos are hosted on
-vmdisks.tny.im (§4 "Hosting").
-Also: the fork's dependencies (BurntSushi/toml, golang.org/x/net/proxy, wireguard-go) are OK'd.
-**Needs the user's OK:** each rule added to the allowlist past the first; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image; any deploy.
+The loops, the decisions that bind them and what needs the user's OK are in [DEMO-KICKOFF.md](../../DEMO-KICKOFF.md).
+Where this page and the kickoff disagree, the kickoff wins.
 
 ## 7. Open questions
 
@@ -499,3 +477,12 @@ Everything else is this plan's.
     lease changes for OpenRC, adapters.md's and decisions.md's changes, the privacy notice, the retention rule, and
     the fallback if Alpine misses the budget (Buildroot can't run `apk`). The fork's repository is private, so cloud
     sessions skip its tests and say so.
+
+**The user's answers (2026-11-18), now in the kickoff:** 1, measure the template's overlay blocks and change the
+snapshot only if it saves a significant part of the download; 2, the agent comes to Alpine for every Alpine user,
+Alpine stays the light demo and Arch the desktop and graphics ones; 3, orphaned snapshots are accepted, and an
+automated build re-makes them under the demos' existing ids; 4, the `demo` kind as proposed; 5, demo base disks are
+read remotely, never copied whole; 7, every lane's egress through the VPN or proxy, the allowlisted one too;
+8, **no per-connection logs and no privacy notice**, and other stores' definitions need no extra restrictions (the
+server accepts only our origins); 9–12 as proposed; the first visit opens the store; if Alpine misses the budget, it
+ships with its numbers.
