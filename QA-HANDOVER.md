@@ -19,9 +19,15 @@ Wave 2 (after wave 1 merges; touches the whole catalog):
 Then: out-of-context review of the whole change, fix loops, the full CI set.
 
 ## State
-- Wave 1 (idle, storage, netfolders, home) merged into main locally, 1b9c4906; ci.sh running on it, then ci-debian
-  --platform, ci-machines, ci-audio, ci-net, ci-graphics. Push after green. Lane screenshots: bench/results/local/qa/.
-- Wave 2 (refs) running from d9189c7a (branch qa-refs).
-- To check in review: the storage lane's snapshot warning is the Snapshot button's tooltip plus the notice after a
-  kept snapshot; a crashed (kernel panic) machine keeps running on purpose (idle lane); tools/screens.ts crashes in
-  its seed (size-actions.ts:119 `shapeNow`), pre-existing, maybe fixed by refs.
+- Wave 1 merged, green on ci.sh, ci-debian --platform, ci-machines; pushed (with NAMES's two flaky server tests fixed).
+- Wave 2 (refs) merged locally (ffeefae5): ci.sh running; then ci-debian, ci-machines, ci-net, ci-graphics, ci-audio,
+  ci-usb. Two out-of-context reviews running (review/qa-storage-run, review/qa-page); triage into fix loops.
+- Screenshots: bench/results/local/qa-*/ and qa-refs-screens/.
+- To check in review: the snapshot warning is the Snapshot button's tooltip plus the notice after a kept snapshot; a
+  crashed (kernel panic) machine keeps running on purpose; refs left some marked messages drawn as plain text
+  (status-bar tooltips/chips, <option> labels, the network status line, size-actions.settings.confirm, restore
+  failure alerts through errorText).
+
+## After QA (the user, 2026-11-18)
+When QA is done (all green, pushed, track closed) and nothing is running: continue NAMES as NAMES-HANDOVER.md's
+"Next" says (Review 3 first, then N0c, N6, the end).
