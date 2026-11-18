@@ -99,6 +99,12 @@ pub const FIRST_SPREAD: u8 = 6;
 const REPLIES_FEW: usize = 8;
 /// Silence this soon after a reply counted isn't taken for "nobody serves".
 const HEARD_FOR: Duration = Duration::from_secs(60);
+/// Replies under our reply tag to nonces we never sent (or sent more than [`STRAY_FOR`] ago), this many in
+/// [`STRAY_FOR`]: someone spends servers' budgets under our tag ([`super::server::REPLIES_PER_TAG`] a minute each),
+/// and silence, none or one key shown may be what it left (final review, finding 2). Half a server's budget: an
+/// honest room sends none.
+pub const STRAYS_MAX: usize = 8;
+pub const STRAY_FOR: Duration = Duration::from_secs(60);
 const MAX_SPREAD: u8 = 15;
 /// A member's names client closes after this long without a query for a name that isn't a key.
 pub const IDLE: Duration = Duration::from_secs(600);
@@ -385,6 +391,9 @@ pub struct Member {
     firsts: BTreeMap<[u8; 32], First>,
     /// The ask nonces of first lookups, and their ids.
     ask_nonces: BTreeMap<[u8; 16], [u8; 32]>,
+    /// Ask nonces sent in the last [`STRAY_FOR`] (a late reply to one isn't a stray), and when strays came.
+    sent_nonces: VecDeque<([u8; 16], Instant)>,
+    strays: VecDeque<Instant>,
     /// Asks waiting for the rate ([`ASKS_PER_SECOND`]), and those sent lately.
     asks_out: VecDeque<AskOut>,
     asks_sent: VecDeque<Instant>,
@@ -431,6 +440,8 @@ impl Member {
             lookups: BTreeMap::new(),
             firsts: BTreeMap::new(),
             ask_nonces: BTreeMap::new(),
+            sent_nonces: VecDeque::new(),
+            strays: VecDeque::new(),
             asks_out: VecDeque::new(),
             asks_sent: VecDeque::new(),
             spread: FIRST_SPREAD,
@@ -1539,6 +1550,7 @@ impl Member {
             }
             let a = self.asks_out.pop_front().unwrap();
             self.asks_sent.push_back(now);
+            self.sent_nonces.push_back((a.nonce, now));
             if a.mode == AskMode::Share
                 && let Some(f) = self.firsts.get_mut(&a.id).filter(|f| f.nonce == a.nonce)
             {
@@ -1613,6 +1625,15 @@ impl Member {
     /// A reply under our reply tag: to a first lookup's ask, it waits for its check.
     fn on_reply(&mut self, r: Reply, now: Instant, unix: u64) {
         let Some(id) = self.ask_nonces.get(&r.nonce).copied() else {
+            // Not ours: an ask naming our key, which a server replied to from our tag's budget.
+            while (self.sent_nonces.front())
+                .is_some_and(|(_, t)| now.saturating_duration_since(*t) >= STRAY_FOR)
+            {
+                self.sent_nonces.pop_front();
+            }
+            if !self.sent_nonces.iter().any(|(n, _)| *n == r.nonce) {
+                self.strays.push_back(now);
+            }
             return;
         };
         let Some(f) = self.firsts.get_mut(&id) else {
@@ -1969,6 +1990,10 @@ impl Member {
         let f = self.firsts.get_mut(&id).unwrap();
         // In a contest, a replier that came is among those its next step may fetch.
         if f.decided.is_some() && f.contest.is_none() {
+            if self.interfered(now) {
+                return;
+            }
+            let f = self.firsts.get_mut(&id).unwrap();
             if new_key && f.keys.len() > 1 {
                 self.log("a late reply shows another owner: a contest".into());
                 self.start_contest(id, now, unix);
@@ -2026,11 +2051,25 @@ impl Member {
         }
     }
 
+    /// Whether servers' reply budgets under our tag are being spent by others: [`STRAYS_MAX`] strays in the last
+    /// [`STRAY_FOR`]. A first lookup then decides nothing (final review, finding 2): what it heard may be what the
+    /// spending left, an impostor alone or a forged none.
+    fn interfered(&mut self, now: Instant) -> bool {
+        while (self.strays.front()).is_some_and(|t| now.saturating_duration_since(*t) >= STRAY_FOR)
+        {
+            self.strays.pop_front();
+        }
+        self.strays.len() >= STRAYS_MAX
+    }
+
     /// Nobody replied through the last round: nobody serves (as "who serves?" remembers it). Unless the room replied
     /// lately: its servers' reply budgets were spent (a guest asking many names at once), and the query gets the
     /// resolver's SERVFAIL; the next asks again.
     fn silence(&mut self, id: [u8; 32], now: Instant) {
         self.end_first(id);
+        if self.interfered(now) {
+            return self.log("no reply to an ask, while our replies are spent by others".into());
+        }
         if self
             .heard
             .is_some_and(|t| now.saturating_duration_since(t) < HEARD_FOR)
@@ -2063,6 +2102,10 @@ impl Member {
     /// The decision: one owner key, that owner; only none, NXDOMAIN; more keys, or one shown only by items too big, a
     /// contest.
     fn decide_first(&mut self, id: [u8; 32], now: Instant, unix: u64) {
+        if self.interfered(now) {
+            self.log("a first lookup undecided: our replies are spent by others; asked again at the next query".into());
+            return self.end_first(id);
+        }
         let f = self.firsts.get_mut(&id).unwrap();
         f.decided = Some(now);
         // Where the room was found: the spread that brought one to eight replies, narrower past eight.
@@ -2179,6 +2222,10 @@ impl Member {
         f.decided.get_or_insert(now);
         for k in c.fetched.iter().chain(c.flying.keys()) {
             self.forget_fetched(*k);
+        }
+        if self.interfered(now) {
+            self.log("a contest undecided: our replies are spent by others".into());
+            return self.end_first(id);
         }
         let f = &self.firsts[&id];
         let Some(owner) = best else {
