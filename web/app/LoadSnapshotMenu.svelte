@@ -7,6 +7,7 @@
   import Button from './ui/Button.svelte';
   import Menu from './ui/Menu.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { openPicker } from './file-pickers.ts';
   import { t } from '../i18n.ts';
   import { records } from './areas/records.svelte.ts';
@@ -78,7 +79,7 @@
         <span>{s.name}</span><span class="dim">{new Date(s.created).toLocaleString()}</span>
       </Button>
     {:else}
-      <div class="hint"><Note>{t('toolbar:LoadSnapshotMenu.load.none')}</Note></div>
+      <div class="hint"><Note><T k="toolbar:LoadSnapshotMenu.load.none" /></Note></div>
     {/each}
     <hr />
     <Button variant="item" onclick={then(() => page.openMachines('snapshots', id))}>

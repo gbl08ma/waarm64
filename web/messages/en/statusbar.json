@@ -341,7 +341,7 @@
   },
   "statusbar-render.os.title": {
     "message": "The guest's operating system: {{os}}",
-    "note": "Tooltip of the Guest OS element in the status bar (the page's footer). {{os}} is the name the guest's /etc/os-release gives itself, e.g. Debian GNU/Linux 13 (trixie)."
+    "note": "Tooltip of the Guest OS element in the status bar (the page's footer). {{os}} is what the guest's /etc/os-release calls itself (no one gave it: not marked), e.g. Debian GNU/Linux 13 (trixie)."
   },
   "statusbar-render.pointer.held": {
     "message": "Mouse held",
@@ -364,8 +364,8 @@
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text) while the toolbar's mouse lock is off."
   },
   "statusbar-render.pointer.off.title": {
-    "message": "The mouse lock is off. Turn it on from the toolbar's Mouse lock menu.",
-    "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the lock is off."
+    "message": "The mouse lock is off. Turn it on from the toolbar's <ui-mouse>Mouse lock</ui-mouse> menu.",
+    "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the lock is off. <ui-mouse>Mouse lock</ui-mouse> names the toolbar's Mouse menu (an icon button whose tooltip says Mouse lock), with its icon."
   },
   "statusbar-render.keyboard.locked": {
     "message": "Keys locked",
@@ -728,15 +728,15 @@
     "note": "A disk's name in the status bar (the page's footer)'s disk elements when the page doesn't know its file's name: {{number}} counts from 1, as the machine's Disks tab lists them."
   },
   "statusbar-traffic.disk.one": {
-    "message": "{{name}} {{traffic}}",
-    "note": "A Disk speed or Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name (its file), {{traffic}} read (R) and written (W)."
+    "message": "<name>{{name}}</name> {{traffic}}",
+    "note": "A Disk speed or Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name (its file), {{traffic}} read (R) and written (W). When the page doesn't know the disk's name, {{name}} is “Disk 1”… (statusbar:statusbar-traffic.disk.name)."
   },
   "statusbar-traffic.disk.one.total.title": {
-    "message": "Bytes read (R) and written (W) on {{name}} since the machine started.",
+    "message": "Bytes read (R) and written (W) on <name>{{name}}</name> since the machine started.",
     "note": "Tooltip of the Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
   },
   "statusbar-traffic.disk.one.rate.title": {
-    "message": "Bytes a second read (R) and written (W) on {{name}}.",
+    "message": "Bytes a second read (R) and written (W) on <name>{{name}}</name>.",
     "note": "Tooltip of the Disk speed element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
   },
   "statusbar-traffic.usb.traffic": {
@@ -800,7 +800,7 @@
     "note": "Made-up words for the Preferences' status bar editor's preview while no machine runs: the second sample adapter, with no connection, in a Connection element's tooltip."
   },
   "status-live.link": {
-    "message": "{{connection}}: {{state}}",
+    "message": "<name>{{connection}}</name>: {{state}}",
     "note": "After the adapter's name in the Connection element's tooltip in the status bar (the page's footer): {{connection}} is the connection's name, {{state}} how it's going (as the Network menu says it)."
   },
   "status-live.link.none": {
@@ -840,12 +840,12 @@
     "note": "Note beside the vCPU number field of a one-vCPU element in the Preferences' status bar editor."
   },
   "StatusOptions.index.net": {
-    "message": "Numbered from 1, as the machine's Network tab lists them. Hidden on a machine that doesn't have it.",
-    "note": "Note beside the Adapter number field of a one-adapter element in the Preferences' status bar editor (the Network tab is the Home page's)."
+    "message": "Numbered from 1, as the machine's <ui-network>Network</ui-network> tab lists them. Hidden on a machine that doesn't have it.",
+    "note": "Note beside the Adapter number field of a one-adapter element in the Preferences' status bar editor (the Network tab is the Home page's). The <ui-network> marker shows the tab's icon before its words."
   },
   "StatusOptions.index.disk": {
-    "message": "Numbered from 1, as the machine's Disks tab lists them. Hidden on a machine that doesn't have it.",
-    "note": "Note beside the Disk number field of a one-disk element in the Preferences' status bar editor (the Disks tab is the Home page's)."
+    "message": "Numbered from 1, as the machine's <ui-database>Disks</ui-database> tab lists them. Hidden on a machine that doesn't have it.",
+    "note": "Note beside the Disk number field of a one-disk element in the Preferences' status bar editor (the Disks tab is the Home page's). The <ui-database> marker shows the tab's icon before its words."
   },
   "StatusEditor.bar": {
     "message": "The status bar's elements",

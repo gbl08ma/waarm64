@@ -168,7 +168,9 @@ async function restoreOf(
     type: 'phase',
     text: resume ? msg('machine:worker-start.phase.resuming') : msg('snapshots:worker-start.phase.checking'),
   });
-  const name = m.snapshot?.name ?? msg('machine:worker-start.suspendedMachine');
+  const name = m.snapshot
+    ? msg('snapshots:worker-start.file', { name: m.snapshot.name })
+    : msg('machine:worker-start.suspendedMachine');
   const header = await readHeader(snapshot);
   // Another version's file (an older one: they aren't migrated) is refused as that, before its devices are looked at.
   const other = otherVersion(header, lz.snapshotVersion);

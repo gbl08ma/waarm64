@@ -6,6 +6,7 @@
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
   import Radio from './ui/Radio.svelte';
+  import T from './T.svelte';
   import { t } from '../i18n.ts';
   import { aboutOf, deviceOf, firstIndex, hasLooks, iconOf, lookOf, nameOf, type Item } from './statusbar.ts';
   import type { Look } from './statusbar-kinds.ts';
@@ -33,11 +34,6 @@
     cpu: t('statusbar:StatusOptions.device.cpu'),
     net: t('statusbar:StatusOptions.device.net'),
     disk: t('statusbar:StatusOptions.device.disk'),
-  } as const;
-  const INDEX_NOTE = {
-    cpu: t('statusbar:StatusOptions.index.cpu'),
-    net: t('statusbar:StatusOptions.index.net'),
-    disk: t('statusbar:StatusOptions.index.disk'),
   } as const;
 
   function setIndex(e: Event & { currentTarget: HTMLInputElement }, first: number) {
@@ -84,7 +80,11 @@
           data-field="status-index"
         />
       </label>
-      <Note inline>{INDEX_NOTE[device]}</Note>
+      <Note inline
+        >{#if device === 'net'}<T k="statusbar:StatusOptions.index.net" />{:else if device === 'disk'}<T
+            k="statusbar:StatusOptions.index.disk"
+          />{:else}{t('statusbar:StatusOptions.index.cpu')}{/if}</Note
+      >
     </fieldset>
   {/if}
   <span class="grow"></span>

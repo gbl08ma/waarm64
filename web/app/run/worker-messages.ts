@@ -70,7 +70,7 @@ export function displayHandlers(x: Runner): Handlers<DisplayToPage> {
 function stateChanged(x: Runner, r: Run, m: StateMessage) {
   const title = x.d.machine.spec.title;
   if (m.state === 'booting') {
-    bootCard.title = t('machine:worker-messages.boot.booting', { machine: title });
+    bootCard.title = msg('machine:worker-messages.boot.booting', { machine: title });
     bootCard.progress = undefined;
     bootCard.line = t('machine:worker-messages.boot.kernel'); // then its lines, until its console takes the screen (~2 s on Debian)
   }
