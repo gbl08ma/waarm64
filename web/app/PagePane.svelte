@@ -13,7 +13,7 @@
   import { PAGE } from './machines-panes.ts';
   import type { Act } from './actions.svelte.ts';
   import { openPicker } from './file-pickers.ts';
-  import { t } from '../i18n.ts';
+  import { msg, t } from '../i18n.ts';
   import type { Store } from './store.ts';
   import type { ExportMode } from './export.ts';
   import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
@@ -38,7 +38,7 @@
 <Pane
   id={PAGE}
   title={label}
-  meta={t('machines:PagePane.transient.meta')}
+  meta={msg('machines:PagePane.transient.meta')}
   tabs={[...tabs]}
   {tab}
   ontab={(x) => (machinesNav.tab = x as MachinesTab)}

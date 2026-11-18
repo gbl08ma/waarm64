@@ -16,7 +16,7 @@
   import type { Act } from './actions.svelte.ts';
   import { exportDefinition } from './definitions.ts';
   import type { IconName } from './icons.ts';
-  import { t, text, type Msg } from '../i18n.ts';
+  import { msg, t, text, type Msg } from '../i18n.ts';
   import type { Editing } from './machine-edit.svelte.ts';
   import { deleteMachine, duplicateMachine } from './machines.ts';
   import type { PageFolders } from './folders-live.ts';
@@ -87,7 +87,7 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
     });
   async function remove() {
-    const sure = await ask.confirm(t('machines:MachinePane.delete.confirm', { name: m.name }), {
+    const sure = await ask.confirm(msg('machines:MachinePane.delete.confirm', { name: m.name }), {
       ok: t('machines:MachinePane.delete.ok'),
       danger: true,
     });

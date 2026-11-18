@@ -7,6 +7,7 @@
   import Button from './ui/Button.svelte';
   import Field from './ui/Field.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { msg, t, text, type Msg } from '../i18n.ts';
   import { browserLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS } from './keyboard.ts';
   import type { Editing } from './machine-edit.svelte.ts';
@@ -42,8 +43,8 @@
   ];
   const followNote = $derived(
     browserNow
-      ? t('machines:KeyboardField.keyboard.followNote.now', { layout: browserNow })
-      : t('machines:KeyboardField.keyboard.followNote'),
+      ? msg('machines:KeyboardField.keyboard.followNote.now', { layout: browserNow })
+      : msg('machines:KeyboardField.keyboard.followNote'),
   );
 </script>
 
@@ -67,9 +68,9 @@
     {#each choices as c (c.id)}<option value={c.id}>{c.label}</option>{/each}
   </select>
 </Field>
-{#if matched}<Note data-keyboard-match>{text(matched)}</Note>{/if}
+{#if matched}<Note data-keyboard-match><T m={matched} /></Note>{/if}
 {#if edit.draft.keyboard === FOLLOW_BROWSER}
-  <Note data-keyboard-note>{followNote}</Note>
+  <Note data-keyboard-note><T m={followNote} /></Note>
 {:else if edit.draft.keyboard}
-  <Note data-keyboard-note>{t('machines:KeyboardField.keyboard.setNote')}</Note>
+  <Note data-keyboard-note><T k="machines:KeyboardField.keyboard.setNote" /></Note>
 {/if}

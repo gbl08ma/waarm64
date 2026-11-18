@@ -17,6 +17,7 @@
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import ConnectionEditButton from './ConnectionEditButton.svelte';
+  import T from './T.svelte';
   import { CONNECTIONS } from './machines-panes.ts';
   import { kindText } from './connection-kind.ts';
   import type { Connection } from './connections.ts';
@@ -48,7 +49,7 @@
   ];
   function metaOf(c: Connection) {
     const users = usedBy(c);
-    return t('machines:ConnectionsPane.connection.meta', {
+    return msg('machines:ConnectionsPane.connection.meta', {
       kind: kindText(c),
       state: stateOf(c),
       used: users.length
@@ -57,7 +58,7 @@
     });
   }
   async function logout(c: Connection) {
-    const sure = await ask.confirm(t('machines:ConnectionsPane.logout.confirm', { name: c.name }), {
+    const sure = await ask.confirm(msg('machines:ConnectionsPane.logout.confirm', { name: c.name }), {
       ok: t('machines:ConnectionsPane.logout.ok'),
       danger: true,
     });
@@ -75,7 +76,7 @@
       {t('machines:ConnectionsPane.connections.new')}
     </Button>
   {/snippet}
-  <CardList class="connections" empty={conns.length ? undefined : t('machines:ConnectionsPane.connections.none')}>
+  <CardList class="connections" empty={conns.length ? undefined : msg('machines:ConnectionsPane.connections.none')}>
     {#each conns as c (c.id)}
       <Card data-connection={c.id}>
         <div class="named">
@@ -89,7 +90,7 @@
               onchange={(name: string) =>
                 void act(t('machines:ConnectionsPane.busy.renaming'), () => page.netRename(c, name))}
             />
-            <Note inline class="meta">{metaOf(c)}</Note>
+            <Note inline class="meta"><T m={metaOf(c)} /></Note>
           </div>
         </div>
         {#snippet actions()}

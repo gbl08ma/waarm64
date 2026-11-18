@@ -23,7 +23,9 @@
 </script>
 
 {#snippet agentNote()}
-  <span data-agent-note>{agent ? t('machines:DeviceSwitches.agent.on') : t('machines:DeviceSwitches.agent.off')}</span>
+  <span data-agent-note
+    >{#if agent}<T k="machines:DeviceSwitches.agent.on" />{:else}{t('machines:DeviceSwitches.agent.off')}{/if}</span
+  >
 {/snippet}
 
 <!-- The note names the toolbar's clipboard menu with its icon after the words (docs/copy.md "The elements"). -->

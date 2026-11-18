@@ -118,7 +118,7 @@
     // The guest asked to shut down first where its agent can (the page's powerOff: web/app/run/clean-stop.ts).
     const soft = power.canSoft;
     const question = soft ? 'machines:MachinesPage.powerOff.confirm.soft' : 'machines:MachinesPage.powerOff.confirm';
-    const sure = await ask.confirm(t(question, { name: m.name }), {
+    const sure = await ask.confirm(msg(question, { name: m.name }), {
       ok: t(soft ? 'machines:MachinesPage.powerOff.ok.soft' : 'machines:MachinesPage.powerOff.ok'),
       danger: true,
     });

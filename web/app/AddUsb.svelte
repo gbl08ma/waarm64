@@ -9,7 +9,7 @@
   import Modal from './ui/Modal.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
-  import { t } from '../i18n.ts';
+  import { msg, t } from '../i18n.ts';
   import type { IconName } from './icons.ts';
   import { hasApi, type Api } from './usb-live.ts';
   import { Actions } from './actions.svelte.ts';
@@ -44,7 +44,7 @@
   }
 </script>
 
-<Modal id="add-usb" bind:this={dialog} title={t('usb:AddUsb.title', { name })} onclose={close}>
+<Modal id="add-usb" bind:this={dialog} title={msg('usb:AddUsb.title', { name })} onclose={close}>
   <ol class="steps">
     <li>{t('usb:AddUsb.step.kind')}</li>
     <li>{t('usb:AddUsb.step.pick')}</li>

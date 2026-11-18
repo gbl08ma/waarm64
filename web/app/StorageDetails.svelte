@@ -8,6 +8,7 @@
   import Modal from './ui/Modal.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { t } from '../i18n.ts';
   import type { storageReport } from './storage-report.ts';
 
@@ -38,7 +39,7 @@
   <h3>{t('machines:StorageDetails.items')}</h3>
   <ul data-items>
     {#each items as it (it)}
-      <li>{t('machines:StorageDetails.item', { what: it.what, size: it.bytes })}</li>
+      <li><T k="machines:StorageDetails.item" params={{ what: it.what, size: it.bytes }} /></li>
     {/each}
   </ul>
   {#snippet buttons()}<Button onclick={() => dialog.close()}>{t('machines:StorageDetails.close')}</Button>{/snippet}

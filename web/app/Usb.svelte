@@ -14,7 +14,8 @@
   import Icon from './ui/Icon.svelte';
   import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
-  import { t } from '../i18n.ts';
+  import T from './T.svelte';
+  import { msg, t } from '../i18n.ts';
   import { ask } from './ask.svelte.ts';
   import { KEYBOARD_CONNECTOR, USER_CONNECTORS, type MachineRecord } from './shape.ts';
   import { deviceName, hasTwins, idsText } from './usb-ports.ts';
@@ -53,12 +54,12 @@
     held: 'usb:Usb.state.held',
     ungranted: 'usb:Usb.state.ungranted',
   };
-  const stateText = (v: EntryView) =>
-    v.state === 'held' && v.holder ? t('usb:Usb.state.heldBy', { holder: v.holder }) : t(STATE[v.state]);
+  const stateWords = (v: EntryView) =>
+    v.state === 'held' && v.holder ? msg('usb:Usb.state.heldBy', { holder: v.holder }) : msg(STATE[v.state]);
   /** The list's note: what attaching does, by where the machine runs. */
-  function noteText() {
-    if (!running) return t('usb:Usb.note.stopped');
-    return here ? t('usb:Usb.note') : t('usb:Usb.note.otherTab');
+  function note() {
+    if (!running) return msg('usb:Usb.note.stopped');
+    return here ? msg('usb:Usb.note') : msg('usb:Usb.note.otherTab');
   }
   /** The English ordinal's suffix of `n` as the words write it (2nd, 3rd, 4th…): a message each. */
   const nth = (n: number) =>
@@ -72,7 +73,7 @@
     const name = deviceName(v.entry);
     const attached = here && v.state === 'attached';
     if (
-      !(await ask.confirm(attached ? t('usb:Usb.forget.attached', { name }) : t('usb:Usb.forget', { name }), {
+      !(await ask.confirm(attached ? msg('usb:Usb.forget.attached', { name }) : msg('usb:Usb.forget', { name }), {
         title: t('usb:Usb.forget.title'),
         ok: t('usb:Usb.forget.ok'),
         danger: attached,
@@ -105,7 +106,7 @@
               <span
                 data-usb-state
                 class={{ ok: v.state === 'attached', warn: v.state === 'held' || v.state === 'ungranted' }}
-                >{stateText(v)}</span
+                ><T m={stateWords(v)} /></span
               ></Note
             >
             {#if c?.entry === e.id && c.problems?.length}
@@ -186,7 +187,7 @@
   {#if hasTwins(machine.usbDevices ?? [])}
     <Note data-usb-twins>{t('usb:Usb.twins')}</Note>
   {/if}
-  <Note>{noteText()}</Note>
+  <Note><T m={note()} /></Note>
 </div>
 {#if adding}<AddUsb machine={machine.id} name={machine.name} close={() => (adding = false)} />{/if}
 

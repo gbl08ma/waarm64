@@ -10,6 +10,7 @@
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
   import StatusEditor from './StatusEditor.svelte';
+  import T from './T.svelte';
   import { PREFERENCES } from './machines-panes.ts';
   import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
@@ -39,6 +40,11 @@
   }
 </script>
 
+<!-- Notes that name the page's elements (Suspend, the Settings tab, the status bar's Keyboard), drawn with T. -->
+{#snippet dropCachesNote()}<T k="machines:PreferencesPane.dropCaches.note" />{/snippet}
+{#snippet clockSyncNote()}<T k="machines:PreferencesPane.clockSync.note" />{/snippet}
+{#snippet statusFullscreenNote()}<T k="machines:PreferencesPane.statusFullscreen.note" />{/snippet}
+
 <Pane
   id={PREFERENCES}
   title={t('machines:MachinesNav.preferences')}
@@ -57,7 +63,7 @@
       bind:checked={dropCaches}
       onchange={() => remember({ dropCaches })}
       field="drop-caches"
-      note={t('machines:PreferencesPane.dropCaches.note')}
+      note={dropCachesNote}
     >
       {t('machines:PreferencesPane.dropCaches')}
     </Check>
@@ -65,7 +71,7 @@
       bind:checked={setClock}
       onchange={() => remember({ clockSync: setClock })}
       field="clock-sync"
-      note={t('machines:PreferencesPane.clockSync.note')}
+      note={clockSyncNote}
     >
       {t('machines:PreferencesPane.clockSync')}
     </Check>
@@ -93,7 +99,7 @@
           bind:checked={status.fullscreen}
           onchange={() => remember({ statusFullscreen: status.fullscreen })}
           field="status-fullscreen"
-          note={t('machines:PreferencesPane.statusFullscreen.note')}
+          note={statusFullscreenNote}
         >
           {t('machines:PreferencesPane.statusFullscreen')}
         </Check>

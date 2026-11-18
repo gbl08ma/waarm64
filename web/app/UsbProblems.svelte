@@ -4,6 +4,7 @@
   to copy) and the browser's own message.
 -->
 <script lang="ts">
+  import T from './T.svelte';
   import { t } from '../i18n.ts';
   import { browserSaid, type FixStep, type ProblemWords } from './usb-problems.ts';
 
@@ -19,7 +20,9 @@
 <div class="problems">
   {#each words as w, i (i)}
     <div class="problem">
-      <p>{w.text}</p>
+      <p>
+        {#if w.msg}<T m={w.msg} />{:else}{w.text}{/if}
+      </p>
       {#if w.fix ?? w.said}
         <details>
           <summary>{w.fix?.title ?? t('usb:UsbProblems.details')}</summary>

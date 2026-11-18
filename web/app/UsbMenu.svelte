@@ -5,12 +5,14 @@
   It opens by itself when there is something to do (web/app/areas/usb.svelte.ts `openMenu`: an offer).
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import AddUsb from './AddUsb.svelte';
   import Menu from './ui/Menu.svelte';
   import Button from './ui/Button.svelte';
   import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
-  import { t } from '../i18n.ts';
+  import T from './T.svelte';
+  import { msg, t, type Msg } from '../i18n.ts';
   import { deviceName } from './usb-ports.ts';
   import { Actions } from './actions.svelte.ts';
   import { usb } from './areas/usb.svelte.ts';
@@ -44,14 +46,14 @@
           ? t('usb:UsbMenu.why.ungranted')
           : '';
   /** What the device's line says at its right: where it is, or why it can't be attached. */
-  function where(v: View, c: (typeof usb.connectors)[number]) {
+  function where(v: View, c: (typeof usb.connectors)[number]): Msg | undefined {
     if (c?.entry === v.entry.id && c.state !== 'attached')
-      return c.state === 'detaching' ? t('usb:UsbMenu.where.detaching') : t('usb:UsbMenu.where.attaching');
-    if (v.state === 'attached') return t('usb:UsbMenu.where.connector', { connector: v.entry.connector + 1 });
+      return c.state === 'detaching' ? msg('usb:UsbMenu.where.detaching') : msg('usb:UsbMenu.where.attaching');
+    if (v.state === 'attached') return msg('usb:UsbMenu.where.connector', { connector: v.entry.connector + 1 });
     if (v.state === 'held')
-      return v.holder ? t('usb:UsbMenu.where.heldBy', { holder: v.holder }) : t('usb:UsbMenu.where.held');
-    if (v.state === 'plugged') return '';
-    return v.state === 'ungranted' ? t('usb:UsbMenu.where.ungranted') : t('usb:UsbMenu.where.unplugged');
+      return v.holder ? msg('usb:UsbMenu.where.heldBy', { holder: v.holder }) : msg('usb:UsbMenu.where.held');
+    if (v.state === 'plugged') return undefined;
+    return v.state === 'ungranted' ? msg('usb:UsbMenu.where.ungranted') : msg('usb:UsbMenu.where.unplugged');
   }
 </script>
 
@@ -61,7 +63,7 @@
       >{/if}{/snippet}
   {#each usb.offers as o (o.id)}
     <div class="offer" data-usb-offer={o.id}>
-      <p>{o.text}</p>
+      <p><T m={o.text} /></p>
       <div class="row">
         <Button variant="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</Button><Button
           onclick={() => page.usbOffer(o.id, false)}>{t('usb:UsbMenu.notNow')}</Button
@@ -72,6 +74,7 @@
   {#each usb.entries as v (v.entry.id)}
     {@const on = v.state === 'attached'}
     {@const c = usb.connectors[v.entry.connector]}
+    {@const place = where(v, c)}
     <label class="device" data-usb-device={v.entry.id} data-state={v.state} title={why(v)}>
       <input
         type="checkbox"
@@ -81,12 +84,14 @@
         onchange={(e) => toggle(v.entry.id, e.currentTarget.checked)}
       />
       <span class="name">{deviceName(v.entry)}</span>
-      <span class="dim">{where(v, c)}</span>
+      <span class="dim"
+        >{#if place}<T m={place} />{/if}</span
+      >
     </label>
     {#if on && c?.entry === v.entry.id && c.problems?.length}
       <div class="problems">
         <Note tone="warn" data-usb-problems={v.entry.id} title={c.problems.map((w) => w.text).join('\n\n')}>
-          {t('usb:UsbMenu.problems')}
+          <T k="usb:UsbMenu.problems" />
         </Note>
       </div>
     {/if}
@@ -122,7 +127,7 @@
     >
   {/if}
   {#if runner.error}<div class="error" role="alert">
-      <Note tone="error">{runner.error.text}</Note>{#if runner.error.words}<UsbProblems
+      <Note tone="error"><ErrorText error={runner.error} /></Note>{#if runner.error.words}<UsbProblems
           words={runner.error.words}
         />{/if}
     </div>{/if}
@@ -141,7 +146,7 @@
         }}>{t('usb:UsbMenu.all')}</Button
       >{/if}
   </div>
-  {#if !usb.running}<Note>{t('usb:UsbMenu.stopped')}</Note>{/if}
+  {#if !usb.running}<Note><T k="usb:UsbMenu.stopped" /></Note>{/if}
 </Menu>
 {#if adding}<AddUsb machine={current.id} name={current.title} close={() => (adding = false)} />{/if}
 

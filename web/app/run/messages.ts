@@ -31,9 +31,10 @@ export function withNote(e: unknown, note: string): Described {
   return { headline: `${d.headline}\n${note}`, details: d.details, from: [undefined, ...(d.from ?? []).slice(1)] };
 }
 /** Words a USB device's error adds under a headline (web/app/usb-problems.ts `errorLines`: its own, then its problems'). */
-export const usbDetails = (headline: string, err: unknown): Described => ({
-  headline,
+export const usbDetails = (headline: Msg, err: unknown): Described => ({
+  headline: text(headline),
   details: errorLines(err).split('\n'),
+  from: [headline],
 });
 /** Whether error `e` (or a cause of it) is a disk's overlay another tab has open (web/overlay.ts `problem`, the browser's lock). */
 export function inUse(e: unknown) {
