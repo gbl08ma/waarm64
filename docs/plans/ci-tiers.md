@@ -431,7 +431,7 @@ In order of what they unblock:
 6. **A Chromium file's start-up:** a server's start and its first page compile, from a small page test's timings
    with and without a warm server (~5 min).
 
-## 10. Drafts for CLAUDE.md and docs/testing.md (the user decides; not applied)
+## 10. Drafts for CLAUDE.md and docs/testing.md (applied in loop 1: docs/testing.md "Tiers" is the current copy)
 
 **CLAUDE.md, "Commands"** (replacing the `scripts/ci.sh` line's description, adding one):
 ```sh

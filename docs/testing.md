@@ -1,9 +1,96 @@
 # Testing
 
-Layered, cheapest first, in scripts by what a change touches (not needed for a change that
-only edits docs: `.md` files or code comments):
+## Tiers
 
-- **`scripts/ci.sh`** (~8 min) must pass before any piece of work is done: every layer but the
+CI runs in tiers, by when a change is made and what it touches. A change that only edits docs (`.md` files or code
+comments) needs none (`tools/i18n-check.ts` when it changes a `(ui:` quote; the fast lane does that by itself).
+
+| Tier | When | What | Time (dev VM, 2026-11-18) |
+|---|---|---|---|
+| **T1, the fast lane**: `scripts/ci-fast.sh` | after every change | the static checks; the changed areas' crates; the smoke set, the areas' heavy files, reduced | ~2–3 min: 111 s for a network change (net/ts's crate beside 129 files), 161 s for a JIT one (the core's crate, 143 s, the tail; 133 files); peaks 4.2 and 3.3 GiB |
+| **T2, before a push**: `scripts/ci.sh` + the areas' topic scripts | before a push or a merge; a piece of work is done when it passed | everything but the Debian boots and the topic scripts' layers; the scripts the change table names | ci.sh ~15.5 min (937 s), plus the topic scripts |
+| **T3, the full set** | a track's end | every script, the track-end column below | ~85 min, ~160 with dEQP's `--full` |
+
+**The fast lane** (`scripts/ci-fast.sh`, the areas map `tests/areas.ts`, the selection `tools/ci-select.ts`). For
+the changes (the commits since the merge base with the upstream, the index, the working tree and untracked files;
+`--since REV`, `--files F...`, `--all`; `--dry-run` prints the selection):
+- `cargo fmt`, then at once: `tsc`, `svelte-check`, the page's linters, the i18n checks, `tools/third-party.ts`, the
+  harness pages' imports, the areas map's check, and the wasm core's and net/ts's builds (content-stamped: 0 s when
+  current);
+- then, beside each other: the areas' crates (clippy and `cargo test` of `waarm64-core` or `waarm64_ts`, TestFloat for
+  floating point, the agent's), and the JS tests, 4 files at a time (`WAARM64_FAST_JOBS`): **the smoke set** (every
+  test file neither heavy nor topic-only: those under `HEAVY_SECONDS`, 20 s of wall in `ci.sh`, ~125 files and all
+  run on every change), **the heavy files of the areas the change touches**, the changed test files and the files
+  importing a changed test helper. Reduced: no `WAARM64_DISTROS` (no Alpine), no `WAARM64_LONG_TESTS`,
+  `WAARM64_PARALLEL_RUNS=1`, `WAARM64_JIT_DIFF=512` (8× fewer words a class).
+- It ends naming the push tier for the changes ("Before a push: scripts/ci.sh scripts/ci-net.sh") and the track end's
+  additions, and appends a line to `bench/results/local/ci-history.jsonl` (the changes, areas, files run and failed):
+  a `ci.sh` failure on a change whose fast lane passed is a miss of the map, to fix in it.
+- A change to the dependencies, the toolchain or the build's configuration (`build-rust`, `build-js`) runs every
+  heavy file and every crate, and its tier is `ci.sh`. A file in no area runs the smoke set; the map's check prevents
+  that for tracked and new files.
+- It misses what only T2 runs: the long guests (Alpine, its userspace benchmark, Alpine through EDK2, the parallel
+  litmus at `-r 50`), full jit-diff, TSan, the native image tests, TestFloat unless FP changed, the Debian boots and
+  bugs that need ci.sh's load.
+
+**The areas map** (`tests/areas.ts`): each area's source globs, its heavy test files, its crates, the topic scripts a
+push adds and what a track's end adds. `node tools/ci-select.ts --check` (in `ci.sh` and the fast lane) fails when a
+tracked or new file is in no area, a glob matches nothing, or a topic-only file (`TOPIC`: one that only skips under
+`npm test`) is named by no `scripts/ci-*.sh`; it warns when `ci.sh`'s last timings (`target/ci/timings.json`, written
+on every run by `tools/test-timings.ts`) show a smoke file past `HEAVY_SECONDS` or a topic-only file running tests.
+A warning is fixed in the map: the file becomes heavy in the area it guards.
+
+**The CI lock** (`scripts/ci-lock.sh`, `/tmp/waarm64-ci.lock`, machine-wide across worktrees and sessions):
+`ci.sh` and every topic script take it exclusive, `ci-fast.sh` shared. Fast lanes run beside each other and queue
+behind an exclusive run; a waiting exclusive run goes first (it holds `/tmp/waarm64-ci.lock.intent` while it waits),
+so fast lanes don't hold it off. A waiter prints the holders and gives up after `WAARM64_CI_LOCK_WAIT` s (3600). The
+fd is inherited: a leftover child of a run keeps the lock (`lslocks` names it). Memory caps stay the caller's: the
+fast lane under `systemd-run --user --scope -q -p MemoryMax=6G -p MemorySwapMax=0` (peak 4.2 GiB at 4 files), `ci.sh` and
+the topic scripts at 11G (dEQP-VK 14G).
+
+**Lanes and agents:** a lane runs the fast lane after every change, in its own worktree; it runs T2 once before
+pushing (queued on the lock: wait on its notification). Commit after the fast lane, push after T2; a handover says
+which tier each commit passed. A T2 failure over a batch of small fixes is bisected with fast lanes.
+
+### The change table
+
+Every change runs the fast lane, which picks its areas' heavy files by itself (`tests/areas.ts`). Before a push, `ci.sh`
+and the scripts in the push column; at a track's end, the track-end column too (a track's end always means T3).
+
+| Change (area in `tests/areas.ts`) | Fast lane adds (heavy files, crates) | Push adds to `ci.sh` | Track end adds |
+|---|---|---|---|
+| Docs only | nothing (`i18n-check` for a `(ui:` quote) | nothing | — |
+| Tests only | the changed files, and the importers of a changed helper | `ci.sh` | — |
+| Page UI (`page`: `web/app/`, the catalog, the theme) | `page-run`, `page-modal`, `page-statusbar` | — | `ci-debian.sh` |
+| The on-screen keyboard, keys (`osk`) | `page-osk` | — | — |
+| Page boot path, firmware, UEFI (`firmware`) | `uefi`, `page-run` | `ci-debian.sh` | `ci-debian.sh --platform` |
+| Devices (`devices`: virtio, the device worker) | — | `ci-debian.sh` | — |
+| Disks, overlays, qcow2, stored disks (`disks`) | `blockcache`, `qcow2-write`, `overlay`, `page-save` | `ci-machines.sh` | `ci-debian.sh` |
+| Snapshots (`snapshots`) | `snapshot`, `page-snapshot` | `ci-machines.sh`, `ci-debian.sh` | — |
+| Stored machines, the Machines and Home pages (`machines`) | `storage-full` | `ci-machines.sh` | — |
+| Shared folders (`folders`) | — | `ci-machines.sh` | — |
+| Display: virtio-gpu 2D, presenter, screen, cursor, EDID (`display`) | `page-pointers`, `page-surface`, `page-layout` | `ci-debian.sh`, `ci-graphics.sh` | — |
+| 3D: virgl, TGSI, caps, GPU worker, video (`virgl`) | `virgl-browser` | `ci-graphics.sh`, `ci-deqp.sh` | `ci-deqp.sh --full` |
+| Vulkan: `vk/`, `web/venus*.ts` (`vulkan`) | `venus-driver`, `wgsl` | `ci-graphics.sh`, `ci-deqp-vk.sh` | `ci-deqp-vk.sh --full` |
+| Network: gateway, virtio-net, tailnet, tailcat, the Network menu (`network`) | `page-local`, `page-connections`, `net-path`; `waarm64_ts` | `ci-net.sh` | — |
+| Rooms and names (`rooms`) | `waarm64_ts` | `ci-net.sh` | — |
+| Sound (`sound`) | — | `ci-audio.sh` | — |
+| USB (`usb`) | — | `ci-usb.sh` | `ci-machines.sh` |
+| Guest agent, clipboard, soft power-off (`agent`) | `page-clipboard-ui`; the agent's crate | `ci-debian.sh` | `ci-debian.sh --platform` |
+| JIT (`jit`: `core/src/jit/`, what compiled code reads) | jit-diff (4 parts, 512 words), `corpus-wasm`, `boot-node`, `boot-node-linux`; `waarm64-core` | `ci-jit.sh` | `ci-debian.sh` |
+| FP (`fp`) | jit-diff; `waarm64-core`, TestFloat | `ci-fp.sh`, `ci-jit.sh` | — |
+| Core, not JIT (`core`: interpreter, MMU, GIC, platform) | `corpus-wasm`, `boot-node`; `waarm64-core` | — | `ci-jit.sh`, `ci-debian.sh` |
+| Parallel SMP (`smp`: the runner, atomics, the stop word) | `boot-node-parallel`, `boot-node-litmus`, `browser`, `hoststall`, `pause` | `ci-jit.sh` | — |
+| Guest images (`images`) | — | the scripts that use the image | — |
+| Guest-visible changes, step counts | the exact-step boots (`boot-node*` by area) | `ci-debian.sh` | — |
+| CI scripts and tools (`ci`) | — | `ci.sh` | — |
+| Dependencies, toolchain, Vite, tsconfig (`build-rust`, `build-js`) | every heavy file (and every crate) | `ci.sh` | a toolchain bump: the benchmarks |
+
+## The scripts
+
+Layered, cheapest first:
+
+- **`scripts/ci.sh`** (~15.5 min: T2) before a push: every layer but the
   Debian boots and the JIT's JIT-stress and JIT-check variants (`ci-jit.sh`, below). It includes the heaviest
   multi-vCPU runs (`WAARM64_LONG_TESTS=1`: the parallel litmus and atomics stress under the JIT at `-r 50`, Node's
   Alpine on 4 parallel vCPUs; a plain `npm test` leaves them out or runs `-r 10`), and the graphics and network tests
@@ -11,13 +98,9 @@ only edits docs: `.md` files or code comments):
   `display`; `network`, `gateway`, `net`, `devices`), and the sound device's (`snd`, the snd guest likewise).
 - **`scripts/ci-debian.sh`** boots Debian on the page: `page-debian`, `page-disk`, `start`'s run, `page-spill`, `page-ram`, ~5 min in the dev VM ("Debian boots" below). Two run at a time
   (`WAARM64_DEBIAN_SLOTS=2` in `tests/debian-lock.ts`: nothing else runs beside them there), so
-  `page-debian`'s ~5 min is about its wall time (`WAARM64_DEBIAN_TIMES=1` prints each test's hold of a slot). It must pass too when a change touches the
-  page, the firmware or UEFI, the devices, disks or overlays, snapshots or the display (virtio-gpu
-  and its presenter, the page's screen: its size, the keys and the pointer on it, the guest's
-  cursor; EDID); for guest-visible changes; and at the end of a milestone or a track. `--platform` adds
+  `page-debian`'s ~5 min is about its wall time (`WAARM64_DEBIAN_TIMES=1` prints each test's hold of a slot). `--platform` adds
   `page-usb-keyboard` (the built-in USB keyboard in the firmware), `page-usb-gamepad` (the game pad of ours from a faked Gamepad API, an Xbox 360 pad under `xpad` in Debian, its rumble), `page-clock` (the guest agent's clock through a snapshot,
-  a resume and a load) and `page-clipboard` (clipboard sharing with sway; skipped without images/debian-sway/build.sh), ~7 min in all, which a change to the JIT, Venus or memory doesn't reach: it must pass when a change touches those, and
-  at the end of a milestone or a track.
+  a resume and a load) and `page-clipboard` (clipboard sharing with sway; skipped without images/debian-sway/build.sh), ~7 min in all.
   The page's machines are 3D by default (the GPU worker draws the screen); `WAARM64_PAGE_QUERY=gpu=2d
   scripts/ci-debian.sh` runs it on the 2D path (every page test adds `clocksync=0`, the agent's clock setting off, and `WAARM64_PAGE_QUERY` to the page's
   query, `tests/page-query.ts`): for changes to the 2D presenter (`web/gpu-present.ts`) or the
@@ -27,27 +110,20 @@ only edits docs: `.md` files or code comments):
   through Venus on images/debian-vulkan/build.sh's Debian, reaching steady frames and living through a 6 s stall of the
   GPU worker's thread past Venus's watchdog (GD G3), its frames presented through a GLES
   sway into virgl and seen by grim, and with images/vkframes/build.sh's disk vkcube's frames compared with lavapipe's,
-  vk/README.md "Checking frames"; skipped without that image or vk/build.sh's renderer). It must pass too when a change
-  touches the display or 3D (virtio-gpu, its presenter, the GPU worker, the Machine menu's graphics, Venus's device), and
-  at the end of a milestone or a track. Split from `ci-debian.sh` on 2026-10-30, with `--platform`: together they took 476 s; now 291 s, 390 s with `--platform`, and this script 169 s.
+  vk/README.md "Checking frames"; skipped without that image or vk/build.sh's renderer). Split from `ci-debian.sh` on 2026-10-30, with `--platform`: together they took 476 s; now 291 s, 390 s with `--platform`, and this script 169 s.
 - **`scripts/ci-machines.sh`** boots Debian on the page for machines as the unit: `page-folders` (shared folders, [shares.md](shares.md) §7), `page-machines` (four disks: blank,
   ramdisk, read-only, serials, a reboot), `page-stored` (a disk stored in the browser in two steps: import, variants,
   merge, grown with the agent growing its root at the in-place boot, in place), `page-snapshots` (kept snapshots, forks, the ramdisk, Suspend on pins, orphaned ones), `page-quota` and `page-incognito` (the storage full: docs/machines.md "Storage"), `page-surface-debian` (a disk's map live, opened as the boot starts: the qcow2 counted per table as the boot reads them, its kept blocks ticked, the overlay's cores, a guest write flashing and counted, the files after the power-off), three at a
-  time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min. It must pass too when a change touches stored machines, their disks (stored,
-  blank, ramdisk, overlays, serials), snapshots of them or the Home page, and at the end of a milestone or a track.
+  time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min.
   Split from `ci-debian.sh` on 2026-10-17: together they took 455 s on two slots (790 s of slot time, the machines
   tests ~415 of it), 361 s on three.
 - **`scripts/ci-net.sh`** (~4 min) runs the network tests on Debian (`net-guest`, `page-network`,
-  `net-tailnet` (with two adapters: the tailnet beside tailcat), `net-tailcat`, `net-local`) and the local helper's own Go tests; it must pass too when a change touches the network (the gateway, virtio-net, the
-  Tailscale client, the Network menu, Debian's network command line, the local helper and web/local-net.ts).
+  `net-tailnet` (with two adapters: the tailnet beside tailcat), `net-tailcat`, `net-local`) and the local helper's own Go tests.
 - **`scripts/ci-audio.sh`** (~1 min) runs the realtime sound tests on the page (`audio-browser`: the snd guest's
-  tone heard, the microphone, snapshots while it plays); it must pass too when a change touches sound (virtio-snd,
-  the sound ring, the Sound menu, the microphone). They time the sound against the clock, so they run alone:
+  tone heard, the microphone, snapshots while it plays). They time the sound against the clock, so they run alone:
   beside `npm test`'s other files a starved guest failed their timing now and then (backlog).
 - **`scripts/ci-deqp.sh`** (~11 min; `--full` ~49 min) runs dEQP on the page (`page-deqp`: GLES2's and GLES3's pass lists in
-  `tests/deqp/`, every case expected to pass, a machine each, both at once); it must pass too when a change touches 3D (the
-  virgl renderer, the TGSI translator, the caps, the GPU worker, virtio-gpu's 3D commands), and at the end of a
-  graphics track. It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are every
+  `tests/deqp/`, every case expected to pass, a machine each, both at once). It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are every
   case of dEQP's mustpass lists that passed on SwiftShader in the census of 2026-11-09 (17,027 and 44,399:
   bench/gpu/REPORT.md "dEQP-GLES's census"; 17,035 and 44,476 with the cases the caps from WebGL2's extensions added; `bench/gpu/deqp-census.ts --lists` makes them from a whole run's results).
   By default a sample of each, as `ci-deqp-vk.sh`'s: every 8th case of each group (a name's second to fourth parts)
@@ -75,8 +151,7 @@ only edits docs: `.md` files or code comments):
   change that cuts across groups (the replay, the pipeline key, descriptors); `--full --phases M [DIR]` runs it in M slices of the list, a boot each (cut at whole rounds of the shards' blocks, so a case keeps its shard and neighbours), each slice's result (counts, the cases that didn't pass, their detail) a checkpoint `DIR/phase-N.json` (default `bench/results/local/deqp-vk-full`): a run that dies resumes at the first slice without one, and a slice that fails doesn't stop the next (VK4's full run: three slices of ~27,000); a task proves its own new cases with runs
   of its own (bench/gpu/deqp-run.ts `CASES`) before they join the list; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
   second boot), then `page-venus` (the programs' captures against lavapipe's frames,
-  also ci-graphics.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK); it must pass too when a change touches Vulkan (the renderer's driver
-  and translator in `vk/`, `web/venus-gpu.ts`, Venus's device), and at the end of a Vulkan track. It needs
+  also ci-graphics.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK). It needs
   `images/deqp/build.sh vk`'s disk and guest (VK-GL-CTS vulkan-cts-1.4.7.0's deqp-vk and Arch Linux with Venus's
   guest driver; on demand, ~25 min once), `page-venus`'s Debian and frames disk and the renderer (`vk/build.sh`); it skips where the page has no WebGPU
   adapter. The list is the cases that passed of samples of the direct set's groups (`PREFIX`/`STRIDE` runs of
@@ -96,15 +171,13 @@ only edits docs: `.md` files or code comments):
 - **`scripts/ci-jit.sh`** (~2 min, alone: the litmus run takes 4 vCPUs) runs the JIT's amplifying variants, which a plain
   `npm test` and `ci.sh` skip (`WAARM64_JIT_VARIANTS=1`, `tests/jit-variants.ts`): JIT-stress on the bare-metal tests,
   kvm-unit-tests' `cache` and `debug`, the golden corpus and lockstep, and JIT-check on the parallel bare-metal tests and
-  the parallel litmus and atomics stress on 4 vCPUs. It must pass too when a change touches the JIT (`core/src/jit/`,
-  its emitters and runtime, the dispatcher, the code cache, what compiled code reads of the `Cpu`, the TLB or memory)
-  and at the end of a JIT track. `ci.sh` keeps the plain JIT's runs (the default path, which every core change
+  the parallel litmus and atomics stress on 4 vCPUs. `ci.sh` keeps the plain JIT's runs (the default path, which every core change
   meets), the differential test and lockstep. Split from `ci.sh` on 2026-11-06: those variants were ~480 s of the JS
   tests' 3,015 s of test time (the litmus run under JIT-check 242 s alone, 100 s here), which ran in ~590 s of wall
   time; after it the JS tests took 416 s (2,130 s of test time) and `ci.sh` 494 s (was 672), this script 104 s.
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
-  them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).
+  them.
   These tests never go in `ci.sh` or `ci-debian.sh`, so cloud sessions and machines without the rigs aren't blocked.
   Without a rig it exits 0 with `CI-USB skipped: <why>`, and each test file skips by itself without
   `WAARM64_USB_TESTS=1` or its rig. Tests are added to its `TESTS` list.

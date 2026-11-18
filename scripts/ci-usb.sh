@@ -9,6 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 skipped() { printf '\nCI-USB skipped: %s\n' "$*"; exit 0; }
 
 TESTS=(tests/usb-e2e-webusb.test.ts tests/usb-e2e-hid.test.ts tests/usb-guest.test.ts)

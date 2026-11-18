@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# What every change runs (~15 min on 2026-11-18: docs/plans/ci-tiers.md); works the same locally. CHROMIUM overrides the browser binary.
+# Before a push (T2, docs/testing.md "Tiers"; ~15.5 min on 2026-11-18); works the same locally. CHROMIUM overrides the browser binary.
 # docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
 # alpine-uefi run when their images are current; WAARM64_DISTROS (a comma list) overrides which
 # ones. The Debian page boots are scripts/ci-debian.sh's, graphics' scripts/ci-graphics.sh's, the network
@@ -8,6 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 step rust fmt;    cargo fmt --all --check
 # The checks that take seconds first (~35 s): a type error or a lint once surfaced only after the Rust tests' ~170 s.
@@ -19,6 +20,7 @@ step lint;        npm run -s lint
 step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
 step third-party; node --disable-warning=ExperimentalWarning tools/third-party.ts
 step harness imports; node --disable-warning=ExperimentalWarning tools/harness-imports.ts
+step areas;       node --disable-warning=ExperimentalWarning tools/ci-select.ts --check
 step rust clippy; cargo clippy --all-targets -q -- -D warnings
 step rust test;   cargo test -q
 # Clipboard sharing's guest agent (agent/: its own crate and toolchain), then its build (Podman; the host's cargo without it).
@@ -65,7 +67,11 @@ native_log=$(mktemp)
 trap 'rm -f "$native_log"' EXIT
 native > "$native_log" 2>&1 &
 native_pid=$!
-step js tests;    js=0; npm test --silent || js=$?
+# npm test's files, with each file's wall time written to target/ci/timings.json (tools/test-timings.ts: tests/areas.ts's
+# check keeps the fast lane's smoke set to the quick files from it).
+mkdir -p target/ci
+step js tests;    js=0; node --disable-warning=ExperimentalWarning --test --test-reporter=spec --test-reporter-destination=stdout \
+  --test-reporter=./tools/test-timings.ts --test-reporter-destination=target/ci/timings.json 'tests/**/*.test.ts' || js=$?
 step 'native guest-image tests (ran beside the JS tests)'
 native_rc=0; wait "$native_pid" || native_rc=$?
 cat "$native_log"

@@ -13,6 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 for name in debian edk2 linux-snd agent; do images/build.sh --check "$name" > /dev/null || { echo "ci-debian: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
 platform=()

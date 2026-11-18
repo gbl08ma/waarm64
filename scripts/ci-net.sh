@@ -9,6 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 images/build.sh --check debian > /dev/null || { echo 'ci-net: the Debian image is missing or stale (images/build.sh debian)'; exit 1; }
 export WAARM64_DISTROS=debian WAARM64_NET_TESTS=1

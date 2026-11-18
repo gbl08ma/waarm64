@@ -8,6 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 for f in target/deqp/deqp.ext4 target/deqp/guest.qcow2; do
   [ -f "$f" ] || { echo "ci-deqp: $f is missing (images/deqp/build.sh; --guest-only for the guest alone)"; exit 1; }

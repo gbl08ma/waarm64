@@ -11,6 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 for f in target/deqp/deqp-vk.ext4 target/deqp/guest-vk.qcow2 target/vk/venus.wasm target/images/debian-vulkan/disk.qcow2 target/vkframes/vkframes.ext4; do
   [ -f "$f" ] || { echo "ci-deqp-vk: $f is missing (images/deqp/build.sh vk; vk/build.sh; images/debian-vulkan/build.sh; images/vkframes/build.sh)"; exit 1; }

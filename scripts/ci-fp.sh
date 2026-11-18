@@ -8,6 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 for i in linux fptest; do
   images/build.sh --check $i > /dev/null || { echo "ci-fp: the $i image is missing or stale (images/build.sh $i)"; exit 1; }

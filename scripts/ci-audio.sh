@@ -7,6 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 images/build.sh --check linux-snd > /dev/null || { echo 'ci-audio: the snd guest is missing or stale (images/build.sh linux-snd)'; exit 1; }
 export WAARM64_AUDIO_TESTS=1

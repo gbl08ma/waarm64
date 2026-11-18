@@ -58,7 +58,8 @@ and `.../guest-vk.qcow2` (fetch them into `target/deqp/`). Details: [docs/cloud.
 ## Commands
 
 ```sh
-scripts/ci.sh                  # what every change runs (~8 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, the page's linters, the i18n checks, Node + Chromium tests, image tests, the long multi-vCPU runs
+scripts/ci-fast.sh             # the fast lane (T1, ~2–3 min, ≤ 4.5 GiB): the static checks, the changed crates' tests, the smoke set and the changed areas' heavy tests (tests/areas.ts), reduced; after every change
+scripts/ci.sh                  # before a push (T2, ~15.5 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, the page's linters, the i18n checks, the areas map's check, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~15 min): also when a change touches the network (docs/testing.md)
 scripts/ci-debian.sh           # Debian on the page (~5 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes; --platform (~7 min) adds the USB keyboard in the firmware, the clock catch-up and the clipboard with sway, for those and track ends (docs/testing.md)
 scripts/ci-graphics.sh         # graphics on Debian (~3 min): also for the display, 3D, Venus's device, track ends: the Machine menu's 3D or 2D, vkcube through Venus
@@ -79,10 +80,12 @@ images/build.sh [name...]      # guest images in rootless Podman -> target/image
 
 Everything else (the corpus, the JIT's tests, the oracles, the USB rigs, the network clients, the renderer,
 benchmarks): [docs/devenv.md](docs/devenv.md) "Commands" and [docs/benchmarking.md](docs/benchmarking.md).
-**`scripts/ci.sh` must pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
-the display, for guest-visible changes and at the end of a track; `scripts/ci-graphics.sh` when it touches the display, 3D or Venus's device and at the end of a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines page; `scripts/ci-net.sh`
-when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D; `scripts/ci-deqp-vk.sh` when it touches Vulkan; `scripts/ci-jit.sh` when it touches the JIT; `scripts/ci-fp.sh` when it touches floating point; `scripts/ci-usb.sh` when it touches USB). **Exception:** a change that only edits docs (`.md` files or code comments)
-needs no CI run.
+**CI runs in tiers** ([docs/testing.md](docs/testing.md) "Tiers"): `scripts/ci-fast.sh` after every change; before
+a push, `scripts/ci.sh` and the topic scripts of the areas the branch touched (docs/testing.md's change table, which
+`ci-fast.sh` prints at its end: e.g. the network → `ci-net.sh`, Vulkan → `ci-deqp-vk.sh`); at a track's end the whole
+set. A piece of work is done when its push tier passed. A handover says which tier each commit passed. A new file goes
+in an area of `tests/areas.ts` (the map's check fails otherwise). **Exception:** a change that only edits docs needs no
+CI run (`tools/i18n-check.ts` if it changes a `(ui:` quote).
 
 ## Conventions
 
@@ -163,8 +166,8 @@ their code.**
   experiment 9). Bound every wait too; if a run's CPU or progress doesn't match its expected time,
   kill it and investigate.
 - **Cap memory on heavy runs** (`npm test`, `scripts/ci.sh`, multi-machine experiments):
-  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>` (11G for `npm test` and the
-  `scripts/ci*.sh` scripts, whose JS step peaks near 10G: docs/backlog.md; 14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
+  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>` (6G for `scripts/ci-fast.sh`; 11G for `npm test` and the
+  other `scripts/ci*.sh` scripts, whose JS step peaks near 10G: docs/backlog.md; 14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
   once grew a Node test process to 7 GB and the VM's OOM kill took the whole Claude session down
   (M8 loop 8); a capped scope dies alone. **Subagents cap every `node` and `cargo` run**, small
   ones too, with caps that sum under the VM's memory (a "pure TypeScript" unit test run uncapped
@@ -179,9 +182,11 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
-- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh`, `scripts/ci-deqp-vk.sh`, `scripts/ci-jit.sh`, `scripts/ci-fp.sh` and `scripts/ci-usb.sh` run alone, one at a time, in the background** (each is at or over the
-  Bash tool's cap): start it, wait for its notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
-  timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
+- **`scripts/ci.sh` and the topic scripts take the machine's CI lock exclusive** (`scripts/ci-lock.sh`,
+  `/tmp/waarm64-ci.lock`), and `scripts/ci-fast.sh` takes it shared: they queue by themselves. Start them in the
+  background (each can pass the Bash tool's cap) under their memory cap and wait for the notification. Run no other
+  Chromium, QEMU or benchmark work beside an exclusive one (a contended run was cancelled by a timeout; a
+  timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
 - `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the
   ABI number.
 - Remove debug hooks that use `process` (e.g. module dumps in `web/vm.ts`) before any Chromium run.

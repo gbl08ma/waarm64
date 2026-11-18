@@ -12,6 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
+source scripts/ci-lock.sh; ci_lock exclusive # alone on the machine (scripts/ci-lock.sh)
 
 for name in debian edk2 agent; do images/build.sh --check "$name" > /dev/null || { echo "ci-machines: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
 export WAARM64_DISTROS=debian WAARM64_DEBIAN_SLOTS=${WAARM64_DEBIAN_SLOTS-3}
