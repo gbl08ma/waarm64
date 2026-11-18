@@ -129,7 +129,9 @@ type Chain = { ids: string[]; owner: string; seniority: number; resolveEnd: numb
 type EntryStatus = { id: string; kind: 'claim' | 'renew' | 'release'; prev: string; owner: string; time: number | null; linkEnd: number | null; stale: boolean; pending: boolean };
 /** `zone.seq` in decimal: 64 bits, past what a number holds. */
 export type TitleStatus = { id: string; entries: EntryStatus[]; owner: Chain | null; best: Chain | null; zone: { seq: string; owner: string } | null; term: number; grace: number };
-type Judged = { verdict: 'ours' | 'branch' | 'lost' | 'none'; item: string; by?: string; pending: boolean };
+/** A server's chain judged against the title; for `lost`, the winning chain's first block (as explorers name it) and
+ * its header, checked at an explorer before the title is called lost. */
+type Judged = { verdict: 'ours' | 'branch' | 'lost' | 'none'; item: string; by?: string; pending: boolean; block?: string | null; header?: string | null };
 
 // ---- Storage ----
 
@@ -790,6 +792,23 @@ export class NamesAgent {
     return undefined;
   }
 
+  /** Whether an explorer knows block `hash` with this `header`: `known` at the first that serves it, `denied` when every
+   * explorer answers 404, `unchecked` when one couldn't be asked (or there is nothing to ask). */
+  private async blockKnown(hash: string | null | undefined, header: string | null | undefined): Promise<'known' | 'denied' | 'unchecked'> {
+    if (!hash || !header || !/^[0-9a-f]{64}$/.test(hash)) return 'unchecked';
+    let denied = 0;
+    for (const e of EXPLORERS) {
+      try {
+        const r = await get(`${e}/block/${hash}/header`);
+        if (r.status === 404) denied++;
+        else if (r.ok && (await r.text()).trim().toLowerCase() === header.toLowerCase()) return 'known';
+      } catch {
+        // unreachable: asked again at the next pass
+      }
+    }
+    return denied === EXPLORERS.length ? 'denied' : 'unchecked';
+  }
+
   /** Block `height`'s header from explorer `e` (two GETs: its hash, then its header); undefined when `e` has another
    * block there (a reorganisation: `root` is the anchor's, as a header carries it) or can't be reached. */
   private async header(e: string, height: number, root: string): Promise<string | undefined> {
@@ -821,6 +840,7 @@ export class NamesAgent {
     const answers = (await this.b.publish(t.link, [{ id: st.id, item }])).get(st.id) ?? [];
     let shown = false;
     let lost: string | undefined;
+    let lostBlock: { block?: string | null; header?: string | null } = {};
     const branches: string[] = [];
     // A server that holds the title's chain but didn't take its zone (review 2): within its 10 minutes of the last
     // (put again after them), or a zone of the room's at or past ours (another copy's: counted past it).
@@ -841,9 +861,27 @@ export class NamesAgent {
         }
         if (j.verdict === 'ours') shown = true;
         else if (j.verdict === 'branch') branches.push(a.item);
-        else if (j.verdict === 'lost') lost = j.by;
+        else if (j.verdict === 'lost') {
+          lost = j.by;
+          lostBlock = j;
+        }
       } catch (err) {
         this.log(`${t.name}: a server's answer refused: ${String(err)}`);
+      }
+    }
+    // A server that took the title (or holds its own chain) wins over one showing a better chain in the same pass: the
+    // liar's chain may be on a forged header the honest servers refused (review 3, finding 5).
+    if (lost && (shown || branches.length)) {
+      this.log(`${t.name}: a server shows a better chain, another holds this one: not lost`);
+      lost = undefined;
+    }
+    // Lost only once an explorer knows the better chain's first block: one both deny is forged; one neither can be
+    // asked about is judged again at the next pass (renewing meanwhile).
+    if (lost) {
+      const known = await this.blockKnown(lostBlock.block, lostBlock.header);
+      if (known !== 'known') {
+        this.log(`${t.name}: a better chain on a block ${known === 'denied' ? 'no explorer knows: refused' : 'not checked yet: judged again'}`);
+        lost = undefined;
       }
     }
     if (zoneAgain) {

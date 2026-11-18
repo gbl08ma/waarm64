@@ -460,9 +460,14 @@ pub fn judge(
         );
     };
     if o.owner != owner_key {
+        // The winning chain's first block, as an explorer names it, and its header: the agent checks it at an explorer
+        // before it calls the title lost (review 3, finding 5: a forged header a server would refuse, shown by liars).
+        let first = all.get(&o.first()).and_then(Stamped::anchor);
         return Ok(json!({
             "verdict": "lost", "item": hex(&title.encode()), "by": hex(&o.owner), "owner": chain_json(&o),
             "pending": held_pending,
+            "block": first.map(|a| { let mut h = a.header.hash(); h.reverse(); hex(&h) }),
+            "header": first.map(|a| hex(&a.header.0)),
         }));
     }
     let have: BTreeSet<[u8; 32]> = mine.entries().map(Stamped::id).collect();

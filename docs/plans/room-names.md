@@ -831,7 +831,11 @@ a mean of ~39 s over five, cloud x86_64); no JavaScript crypto. It needs no runn
   says so (`TitleView.state` `lost`, `lostTo`). Not while the title's own chain has lapsed as collected and an entry of
   it waits for its anchor (collected, it may revive the chain, whose claim may be the elder), and a lost title is
   still put once a visit and hourly, so that it is judged again: its chain owning the name again clears `lost` (review
-  2's finding 8). The title's key is its claim's.
+  2's finding 8). Nor when another server of the same pass took the title (or showed its own chain), nor until an
+  explorer knows the better chain's first block (`block/<hash>/header`, the header `judge` returns): one both explorers
+  deny is a forged header, which honest servers refuse, and one neither could be asked about is judged again at the
+  next pass, renewing meanwhile (review 3, finding 5: a liar drawn as one of the two servers, its chain older on a
+  forged header, stopped the owner's renewals until the name lapsed everywhere). The title's key is its claim's.
 - **A title publishes through its connection's link as it is now** (review 2's finding 16): the page's views take a
   connection's titles by its key and the room's ID, not by the link a title was registered with, and when a connected
   room adapter shows titles kept with another link, or the user changes or lets go of one, the agent stores the
