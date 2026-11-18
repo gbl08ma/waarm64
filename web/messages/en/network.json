@@ -119,6 +119,26 @@
     "message": "A tailnet, tailcat, your computer, or a peer-to-peer room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the line under “New connection…”, the kinds it can make."
   },
+  "ConnectionEditButton.edit": {
+    "message": "Edit…",
+    "note": "Machines page, Connections, and each connection to choose in the Network wizard (Change connection…): button that opens the connection's settings in the Network wizard."
+  },
+  "ConnectionEditButton.title.tailnet": {
+    "message": "Change its hostname. A different control server needs a new connection.",
+    "note": "Machines page, Connections, and each connection to choose in the Network wizard (Change connection…): tooltip of a tailnet connection's Edit… button."
+  },
+  "ConnectionEditButton.title.local": {
+    "message": "Change the helper's link.",
+    "note": "Machines page, Connections, and each connection to choose in the Network wizard (Change connection…): tooltip of a local helper connection's Edit… button."
+  },
+  "ConnectionEditButton.title.room": {
+    "message": "Change whether this machine connects directly to members, and whether members can connect to it.",
+    "note": "Machines page, Connections, and each connection to choose in the Network wizard (Change connection…): tooltip of a room connection's Edit… button."
+  },
+  "ConnectionEditButton.title.tailcat": {
+    "message": "Change its server and relay.",
+    "note": "Machines page, Connections, and each connection to choose in the Network wizard (Change connection…): tooltip of a tailcat connection's Edit… button."
+  },
   "NetKindStep.kind.note": {
     "message": "How should the machine reach a network? Connecting doesn't restart the machine.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the text above its four choices."

@@ -1,6 +1,6 @@
 <!--
   The Machines page's Connections (docs/networking/adapters.md §3.1): the browser's network connections, each with its
-  kind, who has it now and the machines that use it; rename, edit (the Network wizard), a tailcat server's new address,
+  kind, who has it now and the machines that use it; rename, edit (the Network wizard, ConnectionEditButton.svelte), a tailcat server's new address,
   log out, delete. Logic is web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
@@ -11,6 +11,7 @@
   import NameInput from './ui/NameInput.svelte';
   import Note from './ui/Note.svelte';
   import Pane from './ui/Pane.svelte';
+  import ConnectionEditButton from './ConnectionEditButton.svelte';
   import { CONNECTIONS } from './machines-panes.ts';
   import { kindText } from './connection-kind.ts';
   import type { Connection } from './connections.ts';
@@ -28,12 +29,6 @@
   let { net, machines, act }: Props = $props();
 
   const conns = $derived(net.connections);
-  const EDIT_TITLES: Record<Connection['kind'], string> = {
-    tailnet: t('machines:ConnectionsPane.connection.edit.tailnet'),
-    local: t('machines:ConnectionsPane.connection.edit.local'),
-    room: t('machines:ConnectionsPane.connection.edit.room'),
-    tailcat: t('machines:ConnectionsPane.connection.edit.tailcat'),
-  };
 
   /** Who has connection `c` now: an adapter here, a machine in another tab, or no one. */
   function stateOf(c: Connection) {
@@ -93,13 +88,7 @@
           </div>
         </div>
         {#snippet actions()}
-          <Button
-            onclick={() => network.openWizard({ mode: 'edit', connection: c.id })}
-            data-action="edit-connection"
-            title={EDIT_TITLES[c.kind]}
-          >
-            {t('machines:ConnectionsPane.connection.edit')}
-          </Button>
+          <ConnectionEditButton connection={c} onclick={() => network.openWizard({ mode: 'edit', connection: c.id })} />
           {#if c.tailcat?.serve}
             <Button
               onclick={() => act(t('machines:ConnectionsPane.busy.forgettingAddress'), () => page.netNewAddress(c))}

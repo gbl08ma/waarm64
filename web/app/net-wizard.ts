@@ -62,8 +62,10 @@ export type Flow = {
   readonly here: boolean;
   /** Ends a step that made `c`: attaches it (connecting it with `key` on the page's machine), or closes. */
   made(c: Connection, key?: string): Promise<void>;
-  /** Ends an edit: writes `c` back, closes. */
+  /** Ends an edit: writes `c` back, closes (or, an edit opened from the pick step, goes back to it). */
   edited(c: Connection): Promise<void>;
+  /** Edits `c` in the wizard's place (the pick step's Edit…): its Save or Back comes back to the pick step. */
+  edit(c: Connection): void;
   /** Shows an error under the form (a message, an error with its causes). */
   fail(e: unknown): void;
   /** Goes to another step. */
