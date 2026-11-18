@@ -10,6 +10,7 @@
   import CardList from './ui/CardList.svelte';
   import Icon from './ui/Icon.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import { msg, t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
@@ -59,7 +60,9 @@
                   >{t('folders:Folders.noPermission')}</Note
                 >{/if}
               {#if v?.problem === 'held'}<Note inline tone="warn" class="meta"
-                  >{v.holder ? t('folders:Folders.inUseBy', { holder: v.holder }) : t('folders:Folders.inUse')}</Note
+                  >{#if v.holder}<T k="folders:Folders.inUseBy" params={{ holder: v.holder }} />{:else}{t(
+                      'folders:Folders.inUse',
+                    )}{/if}</Note
                 >{/if}
             </div>
           </div>

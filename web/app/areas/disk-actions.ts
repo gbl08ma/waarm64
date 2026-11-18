@@ -84,7 +84,7 @@ export class DiskActions {
     // Another name, size or date: the same bytes by the hash, where the disk has one (a definition's: machines.md §6).
     if (d.sha256 && file.size === want.bytes && (await hashFile(file)) === d.sha256) return true;
     return ask.confirm(
-      t('disks:disk-actions.otherFile', {
+      msg('disks:disk-actions.otherFile', {
         file: file.name,
         name: want.name,
         bytes: want.bytes,
@@ -185,7 +185,7 @@ export class DiskActions {
     if (d.power.busy()) return;
     if ('file' in choice && (await d.changesHeader(choice.file))) {
       // a changes file isn't a disk to boot: it goes onto the disk on the page
-      if (!overlayName(m)) return void ask.alert(t('disks:disk-actions.changes.noDisk', { name: choice.file.name }));
+      if (!overlayName(m)) return void ask.alert(msg('disks:disk-actions.changes.noDisk', { name: choice.file.name }));
       return d.loadChanges(choice.file);
     }
     if (!m.spec.firmware) return; // only a machine that boots through UEFI takes a disk of its own (the test guests' kernels are their own)
@@ -195,7 +195,7 @@ export class DiskActions {
     const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
     if (
       isLive(power.state) &&
-      !(await ask.confirm(t('disks:disk-actions.boot.confirm', { name: next.file?.name ?? next.url }), {
+      !(await ask.confirm(msg('disks:disk-actions.boot.confirm', { name: next.file?.name ?? next.url }), {
         ok: t('disks:disk-actions.boot.ok'),
         danger: true,
       }))
@@ -216,8 +216,8 @@ export class DiskActions {
         ? msg('disks:disk-actions.theDisk', { name: diskName(m) })
         : msg('disks:disk-actions.machineDisk', { machine: m.spec.title });
     const question = written
-      ? t('disks:disk-actions.reset.confirm.size', { disk, size: written })
-      : t('disks:disk-actions.reset.confirm', { disk });
+      ? msg('disks:disk-actions.reset.confirm.size', { disk, size: written })
+      : msg('disks:disk-actions.reset.confirm', { disk });
     if (
       !(await ask.confirm(question, {
         title: t('disks:disk-actions.reset.title'),

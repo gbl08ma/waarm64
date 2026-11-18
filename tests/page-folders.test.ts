@@ -129,7 +129,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.waitForFunction(([id, want]) => (document.querySelector(`#folders [data-folder="${id}"]`)?.textContent ?? '').includes(want), [data, t('folders:FoldersMenu.state.heldBy', { holder: 'Alpha' })], { timeout: 10_000 });
   await b.locator(`#folders [data-folder="${data}"] [data-action="use-folder"]`).click();
   await b.waitForFunction((id) => document.querySelector(`#folders [data-folder="${id}"]`)?.getAttribute('data-problem') === null, data, { timeout: 15_000 });
-  assert.match(asked.at(-1)!, words('folders:folder-actions.inUse.confirm', { holder: 'Alpha' }));
+  assert.match(asked.at(-1)!, words('folders:folder-actions.inUse.confirm', { who: 'Alpha' }));
   await a.waitForFunction((id) => document.querySelector(`#folders [data-folder="${id}"]`)?.getAttribute('data-problem') === 'held', data, { timeout: 5_000 });
 
   // Attach a new folder through the wizard while Bravo runs: nothing else to attach, so its kinds at once.

@@ -51,6 +51,14 @@
     "message": "not attached to a machine",
     "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line when no machine has it."
   },
+  "DiskInfo.line": {
+    "message": "{{meta}} · {{overlays}} · {{on}}",
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the small line under its name. {{meta}} is DiskInfo.meta or .meta.held, {{overlays}} DiskInfo.overlays or .overlaysSized, {{on}} DiskInfo.on or .onNone (messages)."
+  },
+  "DiskInfo.line.ramdisk": {
+    "message": "{{meta}} · {{on}}",
+    "note": "A ramdisk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the small line under its name (a ramdisk has no overlays). {{meta}} is DiskInfo.meta, {{on}} DiskInfo.on or .onNone (messages)."
+  },
   "Disks.newOverlay.text": {
     "message": "With an empty overlay, the disk's contents will reflect its image. Enter a name for the new overlay:",
     "note": "Home page, Disks: the question of the text prompt that New empty opens, above the field for the new overlay's name."
@@ -76,12 +84,12 @@
     "note": "Home page: the error headline when New empty fails to make the overlay or switch the disk to it; why is the detail under it."
   },
   "switch-asked.orphans_one": {
-    "message": "The guest sees {{name}} as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this switch.",
-    "note": "Home page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans a kept snapshot. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
+    "message": "The guest sees <name>{{name}}</name> as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this switch.",
+    "note": "Home page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans a kept snapshot. {{name}}: the name of the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
   },
   "switch-asked.orphans_other": {
-    "message": "The guest sees {{name}} as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this switch: {{list}}.",
-    "note": "Home page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans kept snapshots. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+    "message": "The guest sees <name>{{name}}</name> as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this switch: {{list}}.",
+    "note": "Home page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans kept snapshots. {{name}}: the name of the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
   },
   "switch-asked.title": {
     "message": "Switch to another size?",
@@ -92,12 +100,12 @@
     "note": "Home page, a machine's Disks tab: the confirm button of the question disks:switch-asked.orphans: switches the disk to the overlay chosen."
   },
   "disk-changes.changes.orphans_one": {
-    "message": "Its disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this.",
-    "note": "Appended (on a line of its own) to the question asked before a changes file is imported into a stored machine's disk (Import changes…), when the changes file's disk is larger than the disk the machine sees now (it was exported from a resized overlay) and that orphans a kept snapshot. {{size}}: the changes' disk size; {{now}}: the size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
+    "message": "\nIts disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this.",
+    "note": "The end of the question (disk-changes.changes.confirm's {{orphans}}, on a line of its own) asked before a changes file is imported into a stored machine's disk (Import changes…), when the changes file's disk is larger than the disk the machine sees now (it was exported from a resized overlay) and that orphans a kept snapshot. {{size}}: the changes' disk size; {{now}}: the size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
   },
   "disk-changes.changes.orphans_other": {
-    "message": "Its disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this: {{list}}.",
-    "note": "Appended (on a line of its own) to the question asked before a changes file is imported into a stored machine's disk (Import changes…), when the changes file's disk is larger than the disk the machine sees now (it was exported from a resized overlay) and that orphans kept snapshots. {{size}}: the changes' disk size; {{now}}: the size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+    "message": "\nIts disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this: {{list}}.",
+    "note": "The end of the question (disk-changes.changes.confirm's {{orphans}}, on a line of its own) asked before a changes file is imported into a stored machine's disk (Import changes…), when the changes file's disk is larger than the disk the machine sees now (it was exported from a resized overlay) and that orphans kept snapshots. {{size}}: the changes' disk size; {{now}}: the size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
   },
   "Disks.busy.switch": {
     "message": "Switching the overlay",
@@ -132,8 +140,8 @@
     "note": "Home page, Disks: names the disk in the detach confirmation (Disks.detach.confirm) when its record is missing."
   },
   "Disks.detach.confirm": {
-    "message": "Detach {{disk}} from {{machine}}? {{kept}} To delete it or to attach it again, to this or another machine, use Add a disk… › A disk already in this browser.",
-    "note": "Home page, Disks: the confirmation that a disk's Detach asks. {{disk}} is the disk's name (or Disks.detach.theDisk), {{machine}} the machine's, {{kept}} one of Disks.detach.kept, Disks.detach.keptOverlays, Disks.detach.keptRamdisk."
+    "message": "Detach {{disk}} from <name>{{machine}}</name>? {{kept}} To delete it or to attach it again, to this or another machine, use <ui>Add a disk… › A disk already in this browser</ui>.",
+    "note": "Home page, Disks: the confirmation that a disk's Detach asks. {{disk}} is a message: \"the disk <name>…</name>\" (disks:disk-actions.theDisk), or Disks.detach.theDisk when its record is missing, {{machine}} the machine's, {{kept}} one of Disks.detach.kept, Disks.detach.keptOverlays, Disks.detach.keptRamdisk. The <ui> marker frames the menu path's words as the page's elements."
   },
   "Disks.detach.title": {
     "message": "Detach a disk",
@@ -212,12 +220,12 @@
     "note": "Home page, Disks: the item of a disk's Changes in list when the machine has no overlay chosen yet: its next start makes one."
   },
   "disk-lines.option": {
-    "message": "{{name}} ({{held}} of {{size}})",
-    "note": "Home page, Disks: an overlay in a disk's Changes in list. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
+    "message": "<name>{{name}}</name> ({{held}} of {{size}})",
+    "note": "Home page, Disks: an overlay in a disk's Changes in list. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own). Drawn as text (an option of a list): the <name> marker isn't drawn there."
   },
   "disk-lines.forked": {
-    "message": "{{name}} ({{held}} of {{size}}, forked)",
-    "note": "Home page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
+    "message": "<name>{{name}}</name> ({{held}} of {{size}}, forked)",
+    "note": "Home page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own). Drawn as text (an option of a list): the <name> marker isn't drawn there."
   },
   "Disks.newEmpty.title": {
     "message": "A new, empty overlay: the disk contents will be reset to those of the disk image. The current overlay is kept.",
@@ -236,8 +244,8 @@
     "note": "Home page, Disks: the button on a disk with overlays that opens its Overlays dialog (every overlay of the disk, with Rename, Delete, Merge into the disk and Export)."
   },
   "Disks.importChanges.title": {
-    "message": "A changes file of this disk (created via Export › Changes only (qcow2)) becomes a new overlay, and the disk switches to it.",
-    "note": "Home page, Disks: the tooltip of Import changes…."
+    "message": "A changes file of this disk (created via <ui>Export… › Changes only</ui>) becomes a new overlay, and the disk switches to it.",
+    "note": "Home page, Disks: the tooltip of Import changes…. A tooltip: the <ui> marker isn't drawn there."
   },
   "Disks.importChanges": {
     "message": "Import changes…",
@@ -260,8 +268,8 @@
     "note": "Add a disk wizard (Home page): the name of the choice of a disk the browser keeps already (shown only when there is one), on the first step's button."
   },
   "AddDisk.source.known.text": {
-    "message": "A detached disk or one already associated with another machine. To delete a disk and free the space it takes, use Disks under the list of machines.",
-    "note": "Add a disk wizard: what A disk already in this browser means, under its name on the first step, and the note at the top of its step."
+    "message": "A detached disk or one already associated with another machine. To delete a disk and free the space it takes, use <ui-database>Disks</ui-database> under the list of machines.",
+    "note": "Add a disk wizard: what A disk already in this browser means, under its name on the first step, and the note at the top of its step. The <ui-database> marker shows the Disks pane's icon before its title."
   },
   "AddDisk.title.known": {
     "message": "Add a disk already in this browser",
@@ -332,7 +340,7 @@
     "note": "Home page: the busy line (shown with a trailing …) while the Add a disk wizard attaches or makes the disk."
   },
   "add-disk.attachedAlready": {
-    "message": "{{name}} is already attached to this machine.",
+    "message": "<name>{{name}}</name> is already attached to this machine.",
     "note": "Add a disk wizard: the error under the fields when the file or URL chosen is a disk the browser knows that the machine has already. {{name}} is that disk's name."
   },
   "add-disk.urlProblems": {
@@ -344,7 +352,7 @@
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: the error under the fields when Add is pressed before a file is picked."
   },
   "add-disk.store.confirm": {
-    "message": "Copy {{name}} into this browser? The copy will take about {{size}} of this browser's storage ({{free}} free), and you can't easily manage it except from this web app.",
+    "message": "Copy <name>{{name}}</name> into this browser? The copy will take about {{size}} of this browser's storage ({{free}} free), and you can't easily manage it except from this web app.",
     "note": "Add a disk wizard › A file, copied into this browser: the confirmation Add asks before copying. {{name}} is the file's name, {{size}} what the copy takes (estimated), {{free}} the browser's storage left."
   },
   "add-disk.store.title": {
@@ -356,11 +364,11 @@
     "note": "Add a disk wizard › A file, copied into this browser: the confirm button that starts the copy."
   },
   "add-disk.storing": {
-    "message": "Copying {{name}} into this browser ({{percent}}%)",
+    "message": "Copying <name>{{name}}</name> into this browser ({{percent}}%)",
     "note": "Add a disk wizard › A file, copied into this browser: the progress line under the fields while the file is copied. {{name}} is the file's name, {{percent}} how much is done (0–100)."
   },
   "AddDisk.title": {
-    "message": "Add a disk to {{machine}}",
+    "message": "Add a disk to <name>{{machine}}</name>",
     "note": "Add a disk wizard: the dialog's title on its first step (the source not chosen yet). {{machine}} is the machine's name."
   },
   "AddDisk.where": {
@@ -396,7 +404,7 @@
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: the button that opens the browser's file picker."
   },
   "AddDiskFile.picked": {
-    "message": "{{name}} ({{size}})",
+    "message": "<name>{{name}}</name> ({{size}})",
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: beside Select a file…, the file selected. {{name}} is its name, {{size}} its size."
   },
   "AddDiskFile.picked.none": {
@@ -432,7 +440,7 @@
     "note": "Add a disk wizard: the primary button that adds the disk (not on A disk already in this browser, whose disks have Attach)."
   },
   "disks.pickAgain": {
-    "message": "This web app can't read {{name}} until you select the file again.",
+    "message": "This web app can't read <name>{{name}}</name> until you select the file again.",
     "note": "Detail of an error (message bar or Home page) when a disk that is a file on the user's computer has no handle kept: it can't be read until the user selects it again. {{name}} is the disk's name."
   },
   "disks.overlayGone": {
@@ -452,7 +460,7 @@
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when Merge into the disk is asked of a disk that isn't stored in this browser nor blank."
   },
   "merge.overlayNamedRunning": {
-    "message": "A machine using the overlay {{name}} is running. Power it off first.",
+    "message": "A machine using the overlay <name>{{name}}</name> is running. Power it off first.",
     "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
   },
   "merge.diskRunning": {
@@ -480,15 +488,15 @@
     "note": "Error (message bar) of an export of changes or an import of changes when the disk's image can't be read (e.g. the file changed or went away). {{offset}} is the byte offset of the failed read."
   },
   "changes.notChanges": {
-    "message": "This file isn't a changes file, as it names no base image. To start a machine from a disk image, use Open disk….",
+    "message": "This file isn't a changes file, as it names no base image. To start a machine from a disk image, use <ui>Open disk…</ui>.",
     "note": "Error (message bar) of Import changes… when the file is a disk image rather than a changes file."
   },
   "changes.notOurs": {
-    "message": "This qcow2 file wasn't made by this web app's Export › Changes only (qcow2), so its base image ({{backing}}) can't be checked. Its changes can't be imported.",
+    "message": "This qcow2 file wasn't made by this web app's <ui>Export… › Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked. Its changes can't be imported.",
     "note": "Error (message bar) of Import changes… when the qcow2 has a backing file but not the hash this web app's exports record. {{backing}} is the backing file's name it records."
   },
   "changes.otherSize": {
-    "message": "These changes are for a disk of {{size}} bytes, made over {{backing}}, but {{label}} has {{baseSize}} bytes. Import them into the disk they were made over.",
+    "message": "These changes are for a disk of {{size}} bytes, made over <name>{{backing}}</name>, but <name>{{label}}</name> has {{baseSize}} bytes. Import them into the disk they were made over.",
     "note": "Error (message bar) of Import changes… when the changes file is for a disk of another size (smaller than the disk: a larger one is a grown disk's, and is taken). {{size}} is the size it records (bytes), {{backing}} its backing file's name, {{label}} the disk's name, {{baseSize}} the disk's size (bytes)."
   },
   "changes.checkingBase": {
@@ -496,7 +504,7 @@
     "note": "The page's state line while Import changes… hashes the disk's image to check it is the one the changes were made over, followed by the percentage done."
   },
   "changes.otherBase": {
-    "message": "These changes were made over {{backing}} (hash {{hash}}…), which isn't {{label}} (hash {{baseHash}}…). Import them into the disk they were made over.",
+    "message": "These changes were made over <name>{{backing}}</name> (hash {{hash}}…), which isn't <name>{{label}}</name> (hash {{baseHash}}…). Import them into the disk they were made over.",
     "note": "Error (message bar) of Import changes… when the disk's image isn't the one the changes were made over. {{backing}} is the backing file's name the changes record, {{hash}} the first 12 hex digits of its hash, {{label}} the disk's name, {{baseHash}} the first 12 hex digits of the disk's."
   },
   "changes.blockWriteFailed": {
@@ -512,7 +520,7 @@
     "note": "Error when a qcow2 disk image (or changes file) the user opened has a version this page can't read (only 2 and 3). Shown as a detail of the error that the disks couldn't be opened, or of an import. {{version}} is the file's version number."
   },
   "qcow2.backing": {
-    "message": "This qcow2 file is a changes file over another image, not a disk to start from. Import it with Import changes… into the disk it was made over.",
+    "message": "This qcow2 file is a changes file over another image, not a disk to start from. Import it with <ui>Import changes…</ui> into the disk it was made over.",
     "note": "Error when the qcow2 the user opened as a disk has a backing file (it is a changes file). Shown as a detail of the error that the disks couldn't be opened."
   },
   "qcow2.encrypted": {
@@ -580,31 +588,31 @@
     "note": "Error when a chunked image's manifest is missing fields or they don't agree: in Add a disk › From a URL's check, or as a detail when the disks can't be opened."
   },
   "overlay.storageFull": {
-    "message": "This browser's storage is full. Free up space on the Home page, whose bottom bar shows what takes this browser's storage.",
-    "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.)."
+    "message": "This browser's storage is full. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes this browser's storage.",
+    "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). The <ui-home> marker shows the Home button's icon before its words."
   },
   "overlay.mapUnreadable": {
     "message": "The disk's block map can't be read from this browser's storage.",
     "note": "Error (the cause under a machine's failed start, an export's, a merge's or a stored disk's opening) when the file that says where a disk's written blocks are (its overlay's, or a disk stored in this browser's) reads back shorter than it is: the disk isn't opened, rather than read as if nothing had been written to it."
   },
   "overlay.storageFull.numbers": {
-    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). Free up space on the Home page, whose bottom bar shows what takes this browser's storage.",
-    "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). {{used}} is what this web app's storage holds, {{quota}} what the browser says it gives it (in a private window the browser refuses writes well before it)."
+    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes this browser's storage.",
+    "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). {{used}} is what this web app's storage holds, {{quota}} what the browser says it gives it (in a private window the browser refuses writes well before it). The <ui-home> marker shows the Home button's icon before its words."
   },
   "problems.needsUser_one": {
-    "message": "Allow access to {{names}}, or select the file again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
+    "message": "Allow access to <name>{{names}}</name>, or select the file again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
     "note": "What the message bar (under the toolbar) says before a start when a disk of the machine is a file this browser lets this web app read only after a click (Allow and start, or Select and start, follows); {{names}} is the disk's name."
   },
   "problems.needsUser_other": {
-    "message": "Allow access to {{names}}, or select the files again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
+    "message": "Allow access to <name>{{names}}</name>, or select the files again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",
     "note": "What the message bar (under the toolbar) says before a start when several disks of the machine are files this browser lets this web app read only after a click; {{names}} is their names, {{count}} how many."
   },
   "disk-actions.pickAgain": {
-    "message": "Select {{name}} again",
-    "note": "Title of the browser's file picker opened by Select and start, for a disk whose file must be given again; {{name}} is the disk's name."
+    "message": "Select <name>{{name}}</name> again",
+    "note": "Title of the browser's file picker opened by Select and start, for a disk whose file must be given again; {{name}} is the disk's name. Drawn as text (the file picker's title): the <name> marker isn't drawn there."
   },
   "disk-actions.otherFile": {
-    "message": "Use {{file}} anyway? It isn't the file this disk was made from ({{name}}, {{bytes}} bytes, modified {{when}}). The disk's overlays hold changes made on top of that file, which may not make sense on top of this one.",
+    "message": "Use <name>{{file}}</name> anyway? It isn't the file this disk was made from (<name>{{name}}</name>, {{bytes}} bytes, modified {{when}}). The disk's overlays hold changes made on top of that file, which may not make sense on top of this one.",
     "note": "Text of the question asked when the file selected again for a disk isn't the one it was made from: {{file}} is the file selected, {{name}}, {{bytes}} and {{when}} the disk's file's name, size and date."
   },
   "disk-actions.otherFile.title": {
@@ -640,24 +648,24 @@
     "note": "Button in the message bar (under the toolbar) for a test machine whose disk's changes were made over another image (or whose reset failed): it asks, then deletes the changes."
   },
   "power-actions.noDisks": {
-    "message": "{{name}} has no disks yet. Add one on its Disks tab.",
-    "note": "What the message bar (under the toolbar) says when the machine kept in this browser has no disks (Disks… follows); {{name}} is the machine's name."
+    "message": "<name>{{name}}</name> has no disks yet. Add one on its <ui-database>Disks</ui-database> tab.",
+    "note": "What the message bar (under the toolbar) says when the machine kept in this browser has no disks (Disks… follows); {{name}} is the machine's name. The <ui-database> marker shows the Disks tab's icon before its words."
   },
   "disk-actions.theDisk": {
-    "message": "the disk {{name}}",
-    "note": "Names a disk the user opened, inside a question or a notice (Reset the disk, a snapshot's load); {{name}} is its file's name."
+    "message": "the disk <name>{{name}}</name>",
+    "note": "Names a disk, inside a question or a notice (Reset the disk, Import changes, Detach on a machine's Disks tab, a snapshot's load); {{name}} is its name (a disk the user opened: its file's name)."
   },
   "disk-actions.machineDisk": {
-    "message": "{{machine}}'s disk",
+    "message": "<name>{{machine}}</name>'s disk",
     "note": "Names a test machine's own disk (its image), inside a question (Reset the disk, Import changes, a snapshot's load); {{machine}} is the machine's name."
   },
   "disk-actions.reset.confirm": {
     "message": "Reset {{disk}}? This will delete everything the machine wrote to it, including your files, installed packages and settings. The machine will then boot from the unchanged base image.",
-    "note": "Text of the question asked by Reset disk… when the machine has written nothing to it yet; {{disk}} names the disk."
+    "note": "Text of the question asked by Reset disk… when the machine has written nothing to it yet; {{disk}} is a message that says the disk (disk-actions.theDisk or disk-actions.machineDisk) and marks its name."
   },
   "disk-actions.reset.confirm.size": {
     "message": "Reset {{disk}}? This will delete everything the machine wrote to it ({{size, bytes}}), including your files, installed packages and settings. The machine will then boot from the unchanged base image.",
-    "note": "Text of the question asked by Reset disk…; {{disk}} names the disk, {{size}} what the machine has written to it."
+    "note": "Text of the question asked by Reset disk…; {{disk}} is a message that says the disk (disk-actions.theDisk or disk-actions.machineDisk) and marks its name, {{size}} what the machine has written to it."
   },
   "disk-actions.reset.title": {
     "message": "Reset the disk",
@@ -684,11 +692,11 @@
     "note": "Error headline in the message bar (under the toolbar) when the file picked with Open disk… couldn't be opened; why is the detail under it."
   },
   "disk-actions.changes.noDisk": {
-    "message": "{{name}} holds changes to a disk. Open that disk first with Open disk…, then import the changes.",
+    "message": "<name>{{name}}</name> holds changes to a disk. Open that disk first with <ui>Open disk…</ui>, then import the changes.",
     "note": "Notice when a changes file (a disk's export of its changes) is opened or dropped on a page with no disk open; {{name}} is the file's name."
   },
   "disk-actions.boot.confirm": {
-    "message": "Boot from {{name}}? This will forcibly power off the machine and boot it again from this disk, so unsaved work in the guest will be lost. The changes made to the current disk are kept.",
+    "message": "Boot from <name>{{name}}</name>? This will forcibly power off the machine and boot it again from this disk, so unsaved work in the guest will be lost. The changes made to the current disk are kept.",
     "note": "Text of the question asked when another disk is opened on a test machine while it runs; {{name}} is the disk's file name or URL."
   },
   "disk-actions.boot.ok": {
@@ -696,36 +704,36 @@
     "note": "The confirm button (drawn as a warning) of the question asked when another disk is opened while the machine runs."
   },
   "disk-changes.changes.runsElsewhere": {
-    "message": "{{name}} is running in another tab. Power it off there first.",
+    "message": "<name>{{name}}</name> is running in another tab. Power it off there first.",
     "note": "Notice when changes are imported into a disk of a machine that runs in another tab; {{name}} is the machine's name."
   },
   "disk-changes.changes.notChanges": {
-    "message": "{{name}} isn't a changes file. Changes files are qcow2 files made by Export › Changes only (qcow2). To start a machine from a disk image, use Open disk….",
+    "message": "<name>{{name}}</name> isn't a changes file. Changes files are qcow2 files made by <ui>Export… › Changes only</ui>. To start a machine from a disk image, use <ui>Open disk…</ui>.",
     "note": "Notice when a file imported as changes isn't a changes file; {{name}} is the file's name."
   },
   "disk-changes.changes.noHash": {
-    "message": "{{name}} wasn't made by this web app's Export › Changes only (qcow2), so its base image ({{backing}}) can't be checked and its changes can't be imported.",
+    "message": "<name>{{name}}</name> wasn't made by this web app's <ui>Export… › Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked and its changes can't be imported.",
     "note": "Notice when a qcow2 imported as changes wasn't made by this web app; {{name}} is the file's name, {{backing}} the backing file it names."
   },
   "disk-changes.changes.intoOverlay": {
-    "message": "They will go into a new overlay of {{disk}}, and the machine will switch to it. The current overlay is kept.",
+    "message": "They will go into a new overlay of <name>{{disk}}</name>, and the machine will switch to it. The current overlay is kept.",
     "note": "What happens, in the question asked before changes are imported into a disk of a machine kept in this browser; {{disk}} is the disk's name."
   },
   "disk-changes.changes.replace": {
     "message": "They will replace everything the machine has written to {{disk}}, and the firmware's settings.",
-    "note": "What happens, in the question asked before changes are loaded onto a test machine's disk that has nothing written yet; {{disk}} names the disk."
+    "note": "What happens, in the question asked before changes are loaded onto a test machine's disk that has nothing written yet; {{disk}} is a message that says the disk (disk-actions.theDisk or disk-actions.machineDisk) and marks its name."
   },
   "disk-changes.changes.replace.size": {
     "message": "They will replace everything the machine has written to {{disk}} ({{size, bytes}}), and the firmware's settings.",
-    "note": "What happens, in the question asked before changes are loaded onto a test machine's disk; {{disk}} names the disk, {{size}} what the machine has written to it."
+    "note": "What happens, in the question asked before changes are loaded onto a test machine's disk; {{disk}} is a message that says the disk (disk-actions.theDisk or disk-actions.machineDisk) and marks its name, {{size}} what the machine has written to it."
   },
   "disk-changes.changes.confirm": {
-    "message": "Import the changes in {{name}}? {{into}}",
-    "note": "Text of the question asked before changes are imported (Import changes…, or a changes file dropped on the page) while the machine is off: {{name}} is the file's name, {{into}} where they go."
+    "message": "Import the changes in <name>{{name}}</name>? {{into}}{{orphans}}",
+    "note": "Text of the question asked before changes are imported (Import changes…, or a changes file dropped on the page) while the machine is off: {{name}} is the file's name, {{into}} where they go, {{orphans}} disk-changes.changes.orphans (on a line of its own) or nothing."
   },
   "disk-changes.changes.confirm.running": {
-    "message": "Import the changes in {{name}}? {{into}} This will forcibly power off the machine, which will be started again afterwards.",
-    "note": "Text of the question asked before changes are imported while the machine runs: {{name}} is the file's name, {{into}} where they go."
+    "message": "Import the changes in <name>{{name}}</name>? {{into}} This will forcibly power off the machine, which will be started again afterwards.{{orphans}}",
+    "note": "Text of the question asked before changes are imported while the machine runs: {{name}} is the file's name, {{into}} where they go, {{orphans}} disk-changes.changes.orphans (on a line of its own) or nothing."
   },
   "disk-changes.changes.title": {
     "message": "Import changes",
@@ -736,7 +744,7 @@
     "note": "The confirm button of the question asked before changes are imported into a disk."
   },
   "disk-changes.changes.loaded": {
-    "message": "Imported the changes in {{name}} into a new overlay of {{disk}}.",
+    "message": "Imported the changes in <name>{{name}}</name> into a new overlay of <name>{{disk}}</name>.",
     "note": "Notice in the message bar (under the toolbar) once changes were imported into a disk; {{name}} is the file's name, {{disk}} the disk's."
   },
   "disk-changes.changes.failed": {
@@ -764,11 +772,11 @@
     "note": "The kind of file in the browser's save dialog of a disk's Export, the whole disk as a raw image."
   },
   "disk-export.save.runsElsewhere": {
-    "message": "{{name}} is running from this disk in another tab. Power it off there first.",
+    "message": "<name>{{name}}</name> is running from this disk in another tab. Power it off there first.",
     "note": "Notice when a disk is exported while a machine in another tab runs from it; {{name}} is the machine's name."
   },
   "disk-export.save.emptied": {
-    "message": "The save dialog emptied {{name}}, the file this machine's disk reads from, so nothing was saved. The machine can't read its disk any more. Next time, save to a different file.",
+    "message": "The save dialog emptied <name>{{name}}</name>, the file this machine's disk reads from, so nothing was saved. The machine can't read its disk any more. Next time, save to a different file.",
     "note": "Error in the message bar (under the toolbar) when the file picked in a disk's Export save dialog was the disk's own file (the dialog emptied it); {{name}} is the file's name."
   },
   "disk-export.save.nothing": {
@@ -776,12 +784,12 @@
     "note": "Detail under Couldn't save the disk in the message bar (under the toolbar) when the disk's changes are exported before the machine wrote any."
   },
   "disk-export.saved": {
-    "message": "Saved {{name}} ({{size, bytes}}).",
+    "message": "Saved <name>{{name}}</name> ({{size, bytes}}).",
     "note": "Notice in the message bar (under the toolbar) once a disk was exported whole; {{name}} is the file's name, {{size}} its size."
   },
   "disk-export.saved.changes": {
-    "message": "Saved {{name}} ({{size, bytes}}, {{blocks}} changed blocks). Keep {{base}} too, as this file is useless without it.",
-    "note": "Notice in the message bar (under the toolbar) once a disk's changes were exported; {{name}} is the file's name, {{size}} its size, {{blocks}} how many blocks changed, {{base}} the image they go over."
+    "message": "Saved <name>{{name}}</name> ({{size, bytes}}, {{blocks}} changed blocks). Keep <name>{{base}}</name> too, as this file is useless without it.",
+    "note": "Notice in the message bar (under the toolbar) once a disk's changes were exported; {{name}} is the file's name, {{size}} its size, {{blocks}} how many blocks changed, {{base}} the file name of the image they go over."
   },
   "disk-export.save.failed": {
     "message": "Couldn't save the disk",
@@ -812,12 +820,12 @@
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a ramdisk can't grow (the tab has no more memory)."
   },
   "devices.storageFull": {
-    "message": "This browser's storage is full. The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Home page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
-    "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute)."
+    "message": "This browser's storage is full. The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
+    "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute). The <ui-home> marker shows the Home button's icon before its words."
   },
   "devices.storageFull.numbers": {
-    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Home page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
-    "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute); {{used}} is what this web app's storage holds, {{quota}} what the browser gives it."
+    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the <ui-home>Home</ui-home> page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
+    "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute); {{used}} is what this web app's storage holds, {{quota}} what the browser gives it. The <ui-home> marker shows the Home button's icon before its words."
   },
   "ExportButton.title": {
     "message": "Save the disk, or just the changes made to it, to a file",
@@ -852,7 +860,7 @@
     "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the first step's choice that saves only what was written over the disk's image."
   },
   "ExportSteps.changes.text": {
-    "message": "A small qcow2 file holding only what was written over the disk's base image, which it names as its backing file. Keep the base image beside it: without it, this file is useless. Import changes… loads it back.",
+    "message": "A small qcow2 file holding only what was written over the disk's base image, which it names as its backing file. Keep the base image beside it: without it, this file is useless. <ui>Import changes…</ui> loads it back.",
     "note": "Export wizard (a disk's Export on a machine's Disks tab or the page's machine, or Export on an overlay in a disk's Overlays dialog): the dim line under Changes only."
   },
   "ExportSteps.whole": {
@@ -908,8 +916,8 @@
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the dialog's title. {{disk}} is the disk's name."
   },
   "Overlays.note": {
-    "message": "Each overlay holds changes made on top of the disk's base image. A machine writes to the overlay chosen for this disk on its Disks tab.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the note under the title."
+    "message": "Each overlay holds changes made on top of the disk's base image. A machine writes to the overlay chosen for this disk on its <ui-database>Disks</ui-database> tab.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the note under the title. The <ui-database> marker shows the Disks tab's icon before its words."
   },
   "Overlays.meta": {
     "message": "{{held}} of {{size}} used, created {{when}}",
@@ -920,7 +928,7 @@
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the small line under the name of an overlay that a snapshot's restore forked off another, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
   },
   "Overlays.usedBy": {
-    "message": "used by {{machines}}",
+    "message": "used by <name>{{machines}}</name>",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): after an overlay's size and date: the machines whose attachment of the disk writes to it. {{machines}} is their names, joined with commas."
   },
   "Overlays.usedByNone": {
@@ -940,7 +948,7 @@
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the question of the text prompt that an overlay's Rename opens, above the field holding its current name."
   },
   "Overlays.rename.title": {
-    "message": "Rename the overlay {{name}}",
+    "message": "Rename the overlay <name>{{name}}</name>",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the title of the prompt that an overlay's Rename opens. {{name}} is the overlay's current name."
   },
   "Overlays.rename.ok": {
@@ -972,7 +980,7 @@
     "note": "Home page: the error headline when an overlay's Delete fails; why is the detail under it."
   },
   "Overlays.merge.other": {
-    "message": "{{name}} ({{size}})",
+    "message": "<name>{{name}}</name> ({{size}})",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): one overlay in the list of those a merge deletes (Overlays.merge.others). {{name}} is the overlay's name, {{size}} what it holds."
   },
   "Overlays.merge.others": {
@@ -988,15 +996,15 @@
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when several snapshots pin the disk or the overlays involved. Starts on a new line. {{count}} is how many."
   },
   "Overlays.merge.confirm": {
-    "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk.{{others}}{{snapshots}}",
+    "message": "Merge <name>{{overlay}}</name> into <name>{{disk}}</name>? The changes in it will become part of the disk.{{others}}{{snapshots}}",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
   },
   "Overlays.merge.confirm.blank": {
-    "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk, which will then be stored in this browser, at {{size, bytes}}.{{others}}{{snapshots}}",
+    "message": "Merge <name>{{overlay}}</name> into <name>{{disk}}</name>? The changes in it will become part of the disk, which will then be stored in this browser, at {{size, bytes}}.{{others}}{{snapshots}}",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks of a blank disk's overlay that has been written to (OK in red when it deletes other overlays): the blank disk becomes a disk stored in the browser holding the overlay's blocks. {{overlay}} is the overlay's name, {{disk}} the blank disk's, {{size}} the disk's size after (the overlay's, if it was grown); {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
   },
   "Overlays.merge.confirm.grow": {
-    "message": "Merge {{overlay}} into {{disk}}? Nothing has been written to the overlay: the disk will be {{size, bytes}}, as the overlay is, and the overlay will be deleted.{{snapshots}}",
+    "message": "Merge <name>{{overlay}}</name> into <name>{{disk}}</name>? Nothing has been written to the overlay: the disk will be {{size, bytes}}, as the overlay is, and the overlay will be deleted.{{snapshots}}",
     "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks of a blank disk's overlay that nothing was ever written to (e.g. one made by resizing the disk on a machine): the blank disk takes the overlay's size and stays blank. {{overlay}} is the overlay's name, {{disk}} the blank disk's, {{size}} the disk's size after; {{snapshots}} is Overlays.merge.snapshots or nothing."
   },
   "Overlays.merge.ok": {
@@ -1056,7 +1064,7 @@
     "note": "Overlays dialog, on Export's steps (after an overlay's Export…): the button that goes back a step, from the first one to the list of overlays."
   },
   "AttachDisk.title": {
-    "message": "Attach {{disk}} to a machine",
+    "message": "Attach <name>{{disk}}</name> to a machine",
     "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the dialog's title. {{disk}} is the disk's name."
   },
   "AttachDisk.note": {
@@ -1120,8 +1128,8 @@
     "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Delete on a disk no machine has."
   },
   "DisksPane.deleteAttached.title": {
-    "message": "A disk attached to a machine can't be deleted. Detach it from {{machines}} first.",
-    "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Delete, turned off, on a disk some machines have. {{machines}} is their names, joined with commas."
+    "message": "A disk attached to a machine can't be deleted. Detach it from <name>{{machines}}</name> first.",
+    "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Delete, turned off, on a disk some machines have. {{machines}} is their names, joined with commas. A tooltip: the <name> marker isn't drawn there."
   },
   "DisksPane.deleteButton": {
     "message": "Delete",
@@ -1160,23 +1168,23 @@
     "note": "Home page, Disks pane: the last line of a URL's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the image on the server alone."
   },
   "DisksPane.delete.confirm_zero": {
-    "message": "Delete {{name}}? This will delete {{what}}.{{remains}}",
+    "message": "Delete <name>{{name}}</name>? This will delete {{what}}.{{remains}}",
     "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when it has no overlay (a ramdisk, or a disk no machine has used). {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{remains}} DisksPane.delete.remains.* or nothing."
   },
   "DisksPane.delete.confirm_one": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay.{{remains}}",
+    "message": "Delete <name>{{name}}</name>? This will delete {{what}} and its {{count}} overlay.{{remains}}",
     "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlay empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.confirm_other": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays.{{remains}}",
+    "message": "Delete <name>{{name}}</name>? This will delete {{what}} and its {{count}} overlays.{{remains}}",
     "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlays (none or several) empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.confirmSized_one": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay, with the {{size}} of changes made on top of the base image.{{remains}}",
+    "message": "Delete <name>{{name}}</name>? This will delete {{what}} and its {{count}} overlay, with the {{size}} of changes made on top of the base image.{{remains}}",
     "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlay holds something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{size}} what the overlay holds, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.confirmSized_other": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays, with the {{size}} of changes made on top of the base image.{{remains}}",
+    "message": "Delete <name>{{name}}</name>? This will delete {{what}} and its {{count}} overlays, with the {{size}} of changes made on top of the base image.{{remains}}",
     "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlays hold something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{size}} what they hold together, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.title": {
@@ -1236,7 +1244,7 @@
     "note": "Resize dialog (Home page: Resize… on a stored disk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it) and what the overlay or the stored disk holds in the browser. {{size}}, {{held}}: in KiB, MiB or GiB."
   },
   "ResizeDisk.newOverlay": {
-    "message": "This disk has no overlay yet: a new empty one, {{name}}, is made at the new size and used by {{machine}}.",
+    "message": "This disk has no overlay yet: a new empty one, <name>{{name}}</name>, is made at the new size and used by <name>{{machine}}</name>.",
     "note": "Resize dialog, opened from Resize… on a writable disk in a machine's Disks tab that has no overlay chosen yet (its first start would make one): what OK does besides the size. {{name}} is the new overlay's name (page-disks.overlayName), {{machine}} the machine's name."
   },
   "ResizeDisk.size": {
@@ -1260,7 +1268,7 @@
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line under the size field with the size the disk grows to. {{size}}: in KiB, MiB or GiB."
   },
   "ResizeDisk.machines": {
-    "message": "It grows for {{machines}}.",
+    "message": "It grows for <name>{{machines}}</name>.",
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line naming the machines whose disk grows. {{machines}}: their names, comma-separated."
   },
   "ResizeDisk.machinesNone": {
@@ -1276,12 +1284,12 @@
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans kept snapshots. {{list}}: each as ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
   },
   "ResizeDisk.snapshot": {
-    "message": "{{name}} ({{machine}})",
+    "message": "<name>{{name}}</name> (<name>{{machine}}</name>)",
     "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a snapshot in ResizeDisk.snapshots' list. {{name}}: the snapshot's name; {{machine}}: its machine's."
   },
   "ResizeDisk.powerOff": {
-    "message": "Power off {{name}}",
-    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button under the running machine's refusal when that machine is the one on this page; it asks first, as the page's other edits do. {{name}}: the machine."
+    "message": "Power off <name>{{name}}</name>",
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button under the running machine's refusal when that machine is the one on this page; it asks first, as the page's other edits do. {{name}}: the machine's name."
   },
   "ResizeDisk.grow": {
     "message": "Grow the partition and filesystem at the next start",
@@ -1552,8 +1560,8 @@
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The first choice of the list in the window's title bar: the disk without any of its overlays laid over it."
   },
   "SurfaceWindow.overlay": {
-    "message": "{{name}} ({{held}} of {{size}})",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). A choice of the list in the window's title bar: one of the disk's overlays laid over it. {{name}} is its name, {{held}} what it holds, {{size}} the size the guest sees through it (the disk's, or a grown overlay's own)."
+    "message": "<name>{{name}}</name> ({{held}} of {{size}})",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). A choice of the list in the window's title bar: one of the disk's overlays laid over it. {{name}} is its name, {{held}} what it holds, {{size}} the size the guest sees through it (the disk's, or a grown overlay's own). Drawn as text (an option of a list): the <name> marker isn't drawn there."
   },
   "SurfaceWindow.overlays": {
     "message": "Overlay",
@@ -1592,8 +1600,8 @@
     "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The tooltip of the Refresh button over the map."
   },
   "SurfaceWindow.map": {
-    "message": "Map of {{name}}",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The spoken name of the map (a grid of squares; the arrow keys move between them, Enter pins one). {{name}} is the disk's name."
+    "message": "Map of <name>{{name}}</name>",
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The spoken name of the map (a grid of squares; the arrow keys move between them, Enter pins one). {{name}} is the disk's name. Spoken only: the <name> marker isn't drawn."
   },
   "SurfaceWindow.reading": {
     "message": "Reading the map…",

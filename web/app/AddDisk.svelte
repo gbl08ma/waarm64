@@ -3,6 +3,7 @@
   then its details (the URL and the server's check, the file, the size) and whether the machine may write to it.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import { onMount } from 'svelte';
   import AddDiskFile from './AddDiskFile.svelte';
   import AddDiskUrl from './AddDiskUrl.svelte';
@@ -15,9 +16,10 @@
   import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { Actions, type Act } from './actions.svelte.ts';
   import { makeDisk, type Picked, type Source } from './add-disk.ts';
-  import { t } from '../i18n.ts';
+  import { msg, t, type Msg } from '../i18n.ts';
   import { attach } from './machines.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import type { OverlayRecord, Store } from './store.ts';
@@ -33,47 +35,47 @@
   };
   let { store, machine, act, offFirst, close }: Props = $props();
 
-  const SOURCES: { kind: Source; icon: IconName; name: string; text: string; title: string }[] = [
+  const SOURCES: { kind: Source; icon: IconName; name: string; text: Msg; title: string }[] = [
     {
       kind: 'known',
       icon: 'database',
       name: t('disks:AddDisk.source.known'),
-      text: t('disks:AddDisk.source.known.text'),
+      text: msg('disks:AddDisk.source.known.text'),
       title: t('disks:AddDisk.title.known'),
     },
     {
       kind: 'file',
       icon: 'file',
       name: t('disks:AddDisk.source.file'),
-      text: t('disks:AddDisk.source.file.text'),
+      text: msg('disks:AddDisk.source.file.text'),
       title: t('disks:AddDisk.title.file'),
     },
     {
       kind: 'stored',
       icon: 'database-import',
       name: t('disks:AddDisk.source.stored'),
-      text: t('disks:AddDisk.source.stored.text'),
+      text: msg('disks:AddDisk.source.stored.text'),
       title: t('disks:AddDisk.title.stored'),
     },
     {
       kind: 'url',
       icon: 'world-www',
       name: t('disks:AddDisk.source.url'),
-      text: t('disks:AddDisk.source.url.text'),
+      text: msg('disks:AddDisk.source.url.text'),
       title: t('disks:AddDisk.title.url'),
     },
     {
       kind: 'blank',
       icon: 'square-dashed',
       name: t('disks:AddDisk.source.blank'),
-      text: t('disks:AddDisk.source.blank.text'),
+      text: msg('disks:AddDisk.source.blank.text'),
       title: t('disks:AddDisk.title.blank'),
     },
     {
       kind: 'ramdisk',
       icon: 'bolt',
       name: t('disks:AddDisk.source.ramdisk'),
-      text: t('disks:AddDisk.source.ramdisk.text'),
+      text: msg('disks:AddDisk.source.ramdisk.text'),
       title: t('disks:AddDisk.title.ramdisk'),
     },
   ];
@@ -86,7 +88,7 @@
   let readOnly = $state(false);
   let picked = $state<Picked | undefined>();
   /** A copy into the browser's progress, in words. */
-  let progress = $state('');
+  let progress = $state<Msg | undefined>();
   /** The dialog's own runner: its errors show here (the page's bar is behind the dialog); the page's `act` says what runs. */
   const runner = new Actions();
   const chosen = $derived(SOURCES.find((s) => s.kind === source));
@@ -161,17 +163,19 @@
 <Modal
   id="add-disk"
   bind:this={dialog}
-  title={chosen ? chosen.title : t('disks:AddDisk.title', { machine: machine.name })}
+  title={chosen ? chosen.title : msg('disks:AddDisk.title', { machine: machine.name })}
   onclose={close}
   onsubmit={add}
 >
   {#if !source}
     <Note size="md">{t('disks:AddDisk.where')}</Note>
     {#each sources as s (s.kind)}
-      <Choice label={s.name} icon={s.icon} data-source={s.kind} onclick={() => choose(s.kind)}>{s.text}</Choice>
+      <Choice label={s.name} icon={s.icon} data-source={s.kind} onclick={() => choose(s.kind)}><T m={s.text} /></Choice>
     {/each}
   {:else}
-    <Note size="md">{chosen?.text}</Note>
+    <Note size="md"
+      >{#if chosen}<T m={chosen.text} />{/if}</Note
+    >
     {#if source === 'known'}
       <CardList>
         {#each known as k (k.disk.id)}
@@ -200,8 +204,9 @@
       <Check bind:checked={readOnly} title={t('disks:AddDisk.readOnly.title')}>{t('disks:AddDisk.readOnly')}</Check>
     {/if}
   {/if}
-  {#if progress}<Note size="md" data-progress>{progress}</Note>{/if}
-  {#if runner.error}<Note tone="error" size="md" class="error" role="alert">{runner.error.text}</Note>{/if}
+  {#if progress}<Note size="md" data-progress><T m={progress} /></Note>{/if}
+  {#if runner.error}<Note tone="error" size="md" class="error" role="alert"><ErrorText error={runner.error} /></Note
+    >{/if}
   {#snippet back()}
     {#if source}<Button
         type="button"

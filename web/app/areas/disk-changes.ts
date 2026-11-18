@@ -55,22 +55,24 @@ export class DiskChanges {
     const size = (await changesHeader(file))?.size ?? 0;
     const orphans = into.m ? await sizeOrphans(pm.store, into.m.id, into.attachment, { size }) : [];
     const written = into.m ? 0 : await overlayBytes(into.overlay).catch(() => 0);
-    const onto = pm.chosen ? diskName(pm) : msg('disks:disk-actions.machineDisk', { machine: pm.spec.title });
+    const onto = pm.chosen
+      ? msg('disks:disk-actions.theDisk', { name: diskName(pm) })
+      : msg('disks:disk-actions.machineDisk', { machine: pm.spec.title });
     const what = into.m
       ? msg('disks:disk-changes.changes.intoOverlay', { disk: into.disk.name })
       : written
         ? msg('disks:disk-changes.changes.replace.size', { disk: onto, size: written })
         : msg('disks:disk-changes.changes.replace', { disk: onto });
-    const asked = running
-      ? t('disks:disk-changes.changes.confirm.running', { name: file.name, into: what })
-      : t('disks:disk-changes.changes.confirm', { name: file.name, into: what });
     const m = into.m;
     const a = m?.attachments.find((x) => x.id === into.attachment);
     const now = m && a ? sizeSeen(into.disk, a, a.overlay ? await pm.store.get('overlays', a.overlay) : undefined) : 0;
-    const list = orphans.map((x) => t('disks:ResizeDisk.snapshot', { name: x.name, machine: m?.name ?? '' }));
-    const question = orphans.length
-      ? `${asked}\n${t('disks:disk-changes.changes.orphans', { size, now, count: orphans.length, list })}`
-      : asked;
+    const list = orphans.map((x) => msg('disks:ResizeDisk.snapshot', { name: x.name, machine: m?.name ?? '' }));
+    const lost = orphans.length
+      ? msg('disks:disk-changes.changes.orphans', { size, now, count: orphans.length, list })
+      : undefined;
+    const question = running
+      ? msg('disks:disk-changes.changes.confirm.running', { name: file.name, into: what, orphans: lost })
+      : msg('disks:disk-changes.changes.confirm', { name: file.name, into: what, orphans: lost });
     return ask.confirm(question, {
       title: t('disks:disk-changes.changes.title'),
       ok: t('disks:disk-changes.changes.ok'),
@@ -81,13 +83,13 @@ export class DiskChanges {
   /** Whether `file` can go into `into` (a changes file with its disk's hash, the machine not running elsewhere), said if not. */
   async #checked(file: File, into: Into) {
     if (into.m && !into.here && (await isRunning(into.m.id))) {
-      void ask.alert(t('disks:disk-changes.changes.runsElsewhere', { name: into.m.name }));
+      void ask.alert(msg('disks:disk-changes.changes.runsElsewhere', { name: into.m.name }));
       return false;
     }
     const info = await changesHeader(file);
-    if (!info) void ask.alert(t('disks:disk-changes.changes.notChanges', { name: file.name }));
+    if (!info) void ask.alert(msg('disks:disk-changes.changes.notChanges', { name: file.name }));
     else if (!info.hash)
-      void ask.alert(t('disks:disk-changes.changes.noHash', { name: file.name, backing: info.backingName }));
+      void ask.alert(msg('disks:disk-changes.changes.noHash', { name: file.name, backing: info.backingName }));
     return !!info?.hash;
   }
 

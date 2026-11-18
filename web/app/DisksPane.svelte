@@ -59,14 +59,14 @@
           ? msg('disks:DisksPane.delete.remains.url')
           : undefined;
     const question = bytes
-      ? t('disks:DisksPane.delete.confirmSized', {
+      ? msg('disks:DisksPane.delete.confirmSized', {
           name: d.name,
           what,
           count: mine.length,
           size: bytesText(bytes),
           remains,
         })
-      : t('disks:DisksPane.delete.confirm', { name: d.name, what, count: mine.length, remains });
+      : msg('disks:DisksPane.delete.confirm', { name: d.name, what, count: mine.length, remains });
     if (
       !(await ask.confirm(question, {
         title: t('disks:DisksPane.delete.title'),

@@ -8,6 +8,7 @@
   the page's other edits do), the snapshots it orphans, or why the size is refused.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import { onMount } from 'svelte';
   import { Actions, type Act } from './actions.svelte.ts';
   import Button from './ui/Button.svelte';
@@ -15,6 +16,7 @@
   import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import { msg, t } from '../i18n.ts';
   import { errorView } from './usb-problems.ts';
@@ -110,8 +112,8 @@
   const here = $derived(running.find((m) => m.id === current.id));
   const machinesLine = $derived(
     costs?.machines.length
-      ? t('disks:ResizeDisk.machines', { machines: costs.machines.map((m) => m.name) })
-      : t('disks:ResizeDisk.machinesNone'),
+      ? msg('disks:ResizeDisk.machines', { machines: costs.machines.map((m) => m.name) })
+      : msg('disks:ResizeDisk.machinesNone'),
   );
   const snapshotsLine = $derived.by(() => {
     if (!costs?.snapshots.length) return undefined;
@@ -119,7 +121,7 @@
     const list = costs.snapshots.map((s) =>
       msg('disks:ResizeDisk.snapshot', { name: s.name, machine: names.get(s.machine) ?? '' }),
     );
-    return t('disks:ResizeDisk.snapshots', { count: costs.snapshots.length, list });
+    return msg('disks:ResizeDisk.snapshots', { count: costs.snapshots.length, list });
   });
   const ready = $derived(!!costs && !running.length && !runner.busy);
 
@@ -152,7 +154,10 @@
         : t('disks:ResizeDisk.nowHeld', { size: now, held })}</Note
     >{/if}
   {#if 'attachment' in target}<Note size="md" data-new-overlay
-      >{t('disks:ResizeDisk.newOverlay', { name: t('disks:page-disks.overlayName'), machine: machine ?? '' })}</Note
+      ><T
+        k="disks:ResizeDisk.newOverlay"
+        params={{ name: t('disks:page-disks.overlayName'), machine: machine ?? '' }}
+      /></Note
     >{/if}
   <Field label={t('disks:ResizeDisk.size')}
     ><span class="line"
@@ -170,15 +175,18 @@
   {#if refusal}<Note tone="error" size="md" data-refusal role="alert">{refusal}</Note>{/if}
   {#if costs}
     <Note size="md" data-new>{t('disks:ResizeDisk.newSize', { size })}</Note>
-    <Note size="md" data-machines>{machinesLine}</Note>
-    {#if snapshotsLine}<Note tone="warn" size="md" data-snapshots>{snapshotsLine}</Note>{/if}
+    <Note size="md" data-machines><T m={machinesLine} /></Note>
+    {#if snapshotsLine}<Note tone="warn" size="md" data-snapshots><T m={snapshotsLine} /></Note>{/if}
     {#if running.length}
       <Note tone="error" size="md" data-running role="alert"
-        >{t('machines:resize.running', { machines: running.map((m) => m.name), count: running.length })}</Note
+        ><T
+          k="machines:resize.running"
+          params={{ machines: running.map((m) => m.name), count: running.length }}
+        /></Note
       >
       {#if here}<span
           ><Button onclick={() => powerOff(here)} data-action="resize-power-off"
-            >{t('disks:ResizeDisk.powerOff', { name: here.name })}</Button
+            ><T k="disks:ResizeDisk.powerOff" params={{ name: here.name }} /></Button
           ></span
         >{/if}
     {/if}
@@ -188,7 +196,8 @@
       >{t('disks:ResizeDisk.grow')}</Check
     >
   {/if}
-  {#if runner.error}<Note tone="error" size="md" class="error" role="alert">{runner.error.text}</Note>{/if}
+  {#if runner.error}<Note tone="error" size="md" class="error" role="alert"><ErrorText error={runner.error} /></Note
+    >{/if}
   {#snippet buttons()}
     <Button onclick={() => dialog.close()}>{t('disks:ResizeDisk.cancel')}</Button>
     <Button variant="primary" disabled={!ready} onclick={ok} data-action="resize-ok">{t('disks:ResizeDisk.ok')}</Button>

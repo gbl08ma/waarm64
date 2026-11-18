@@ -9,6 +9,7 @@
   import { t, text } from '../i18n.ts';
   import { bytesText } from './machines.ts';
   import { checkUrl, URL_SLOW, type UrlCheck } from './urlcheck.ts';
+  import T from './T.svelte';
 
   type Props = { url: string; check: UrlCheck | undefined };
   let { url = $bindable(), check = $bindable() }: Props = $props();
@@ -42,7 +43,7 @@
 {#if check?.ok}
   <Note tone="ok" size="md" class="ok">
     {check.bytes ? t('disks:AddDiskUrl.url.ok', { size: bytesText(check.bytes) }) : t('disks:AddDiskUrl.url.okUnknown')}
-    {text(URL_SLOW)}
+    <T m={URL_SLOW} />
   </Note>
 {:else if check}
   <ul class="problems">

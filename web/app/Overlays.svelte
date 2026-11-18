@@ -6,6 +6,7 @@
   (ExportSteps.svelte) take the dialog's place, the list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.
 -->
 <script lang="ts">
+  import ErrorText from './ErrorText.svelte';
   import type { Act } from './actions.svelte.ts';
   import ExportSteps from './ExportSteps.svelte';
   import ResizeDisk from './ResizeDisk.svelte';
@@ -13,6 +14,7 @@
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import Modal from './ui/Modal.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import { ask } from './ask.svelte.ts';
@@ -71,7 +73,7 @@
 
   async function rename(o: OverlayRecord) {
     const name = await ask.prompt(t('disks:Overlays.rename.text'), o.name, {
-      title: t('disks:Overlays.rename.title', { name: o.name }),
+      title: msg('disks:Overlays.rename.title', { name: o.name }),
       ok: t('disks:Overlays.rename.ok'),
     });
     if (name)
@@ -108,10 +110,10 @@
     const words = { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned };
     const question =
       how === 'grow'
-        ? t('disks:Overlays.merge.confirm.grow', { overlay: o.name, disk: disk.name, size, snapshots: orphaned })
+        ? msg('disks:Overlays.merge.confirm.grow', { overlay: o.name, disk: disk.name, size, snapshots: orphaned })
         : how === 'convert'
-          ? t('disks:Overlays.merge.confirm.blank', { ...words, size })
-          : t('disks:Overlays.merge.confirm', words);
+          ? msg('disks:Overlays.merge.confirm.blank', { ...words, size })
+          : msg('disks:Overlays.merge.confirm', words);
     if (!(await ask.confirm(question, { ok: t('disks:Overlays.merge.ok'), danger: others.length > 0 }))) return;
     await run(t('disks:Overlays.busy.merge'), () =>
       mergeIntoDisk(store, o.id).catch((e: unknown) => {
@@ -133,7 +135,7 @@
       >{#snippet hint()}{t('disks:Overlays.exportHint')}{/snippet}</ExportSteps
     >
   {:else}
-    <Note size="md">{t('disks:Overlays.note')}</Note>
+    <Note size="md"><T k="disks:Overlays.note" /></Note>
     <CardList empty={mine.length ? undefined : t('disks:Overlays.none')}>
       {#each mine as o (o.id)}
         {@const users = usersOf(o.id)}
@@ -145,9 +147,9 @@
               held: bytesText(o.bytes),
               size: bytesText(Math.max(disk.size, o.size ?? 0)),
               when: new Date(o.created),
-            })} · {users.length
-              ? t('disks:Overlays.usedBy', { machines: users })
-              : t('disks:Overlays.usedByNone')}</Note
+            })} · {#if users.length}<T k="disks:Overlays.usedBy" params={{ machines: users }} />{:else}{t(
+                'disks:Overlays.usedByNone',
+              )}{/if}</Note
           >
           <div class="actions">
             <Button
@@ -186,7 +188,8 @@
       {/each}
     </CardList>
   {/if}
-  {#if runner.error}<Note tone="error" size="md" class="error" role="alert">{runner.error.text}</Note>{/if}
+  {#if runner.error}<Note tone="error" size="md" class="error" role="alert"><ErrorText error={runner.error} /></Note
+    >{/if}
   {#snippet back()}
     {#if exporting}<Button type="button" data-action="export-back" onclick={goBack}>{t('disks:Overlays.back')}</Button
       >{/if}

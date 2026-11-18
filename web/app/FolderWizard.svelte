@@ -11,6 +11,7 @@
   import Modal from './ui/Modal.svelte';
   import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import Check from './ui/Check.svelte';
   import { msg, t } from '../i18n.ts';
   import { Actions } from './actions.svelte.ts';
@@ -68,7 +69,7 @@
       : f.kind === 'host'
         ? msg('folders:FolderWizard.state.host')
         : msg('folders:FolderWizard.state.opfs');
-    return f.readOnly ? t('folders:FolderWizard.state.readOnly', { state }) : t(state.key, state.params);
+    return f.readOnly ? msg('folders:FolderWizard.state.readOnly', { state }) : state;
   }
 
   /** Runs `f` once at a time; its error shows under the form (the picker's Cancel isn't one). */
@@ -110,7 +111,7 @@
       >
       {#each choices as f (f.id)}
         <Choice label={f.name} data-folder={f.id} pressed={picked === f.id} onclick={() => (picked = f.id)}
-          >{stateOf(f)}</Choice
+          ><T m={stateOf(f)} /></Choice
         >
       {/each}
       <Check id="folder-attach-ro" bind:checked={readOnly}>{t('folders:FolderWizard.pick.readOnly')}</Check>
@@ -125,19 +126,23 @@
         onclick={() => (step = 'host')}>{t('folders:FolderWizard.kind.host.text')}</Choice
       >
       <Choice id="folder-kind-opfs" label={t('folders:FolderWizard.kind.opfs')} onclick={() => (step = 'opfs')}
-        >{t('folders:FolderWizard.kind.opfs.text')}</Choice
+        ><T k="folders:FolderWizard.kind.opfs.text" /></Choice
       >
     </section>
   {:else if step === 'host'}
     <section class="step">
       <ol class="steps">
         <li>
-          {t('folders:FolderWizard.host.readOnly')}
+          <T k="folders:FolderWizard.host.readOnly" />
           <div class="in-step">
             <Check id="folder-host-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
           </div>
         </li>
-        <li>{readOnly ? t('folders:FolderWizard.host.read') : t('folders:FolderWizard.host.readWrite')}</li>
+        <li>
+          {#if readOnly}<T k="folders:FolderWizard.host.read" />{:else}<T
+              k="folders:FolderWizard.host.readWrite"
+            />{/if}
+        </li>
       </ol>
       <Note size="md">{t('folders:FolderWizard.host.refused')}</Note>
     </section>

@@ -8,6 +8,7 @@
   import type { Snippet } from 'svelte';
   import Choice from './ui/Choice.svelte';
   import Note from './ui/Note.svelte';
+  import T from './T.svelte';
   import { msg, t, type Msg } from '../i18n.ts';
   import type { ExportMode } from './export.ts';
 
@@ -60,7 +61,7 @@
     icon="file-plus"
     data-export="changes"
     onclick={() => (step = 'changes')}
-    {@attach focus}>{t('disks:ExportSteps.changes.text')}</Choice
+    {@attach focus}><T k="disks:ExportSteps.changes.text" /></Choice
   >
   <Choice label={t('disks:ExportSteps.whole')} icon="database" data-export="whole" onclick={() => (step = 'whole')}
     >{t('disks:ExportSteps.whole.text')}</Choice

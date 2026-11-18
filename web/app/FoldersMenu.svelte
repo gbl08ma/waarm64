@@ -11,7 +11,7 @@
   import StatusDot from './ui/StatusDot.svelte';
   import T from './T.svelte';
   import { Actions } from './actions.svelte.ts';
-  import { t } from '../i18n.ts';
+  import { msg, t, type Msg } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
   import { shares } from './areas/shares.svelte.ts';
   import { current } from './areas/current.svelte.ts';
@@ -29,20 +29,20 @@
   );
   const runner = new Actions();
   const act = (f: () => Promise<unknown>) => runner.run('', f);
-  function stateText(v: (typeof views)[number]) {
+  function stateText(v: (typeof views)[number]): Msg {
     switch (v.problem) {
       case 'permission':
-        return t('folders:FoldersMenu.state.permission');
+        return msg('folders:FoldersMenu.state.permission');
       case 'held':
         return v.holder
-          ? t('folders:FoldersMenu.state.heldBy', { holder: v.holder })
-          : t('folders:FoldersMenu.state.held');
+          ? msg('folders:FoldersMenu.state.heldBy', { holder: v.holder })
+          : msg('folders:FoldersMenu.state.held');
       case 'missing':
-        return t('folders:FoldersMenu.state.missing');
+        return msg('folders:FoldersMenu.state.missing');
       case 'failed':
-        return t('folders:FoldersMenu.state.failed', { why: v.holder });
+        return msg('folders:FoldersMenu.state.failed', { why: v.holder });
       default:
-        return v.readOnly ? t('folders:FoldersMenu.state.readOnly') : t('folders:FoldersMenu.state.readWrite');
+        return v.readOnly ? msg('folders:FoldersMenu.state.readOnly') : msg('folders:FoldersMenu.state.readWrite');
     }
   }
 </script>
@@ -62,12 +62,12 @@
   <ul class="folder-list">
     {#each views as v (v.id)}
       <li data-folder={v.id} data-problem={v.problem}>
-        <span><b>{v.name}</b> <small class="folder-state">{stateText(v)}</small></span>
+        <span><b>{v.name}</b> <small class="folder-state"><T m={stateText(v)} /></small></span>
         <span class="buttons">
           {#if v.problem === 'permission'}<Button
               data-action="allow-folder"
               onclick={() => act(() => page.folderAllow(v.id))}
-              >{t('folders:FoldersMenu.allow', { name: v.name })}</Button
+              ><T k="folders:FoldersMenu.allow" params={{ name: v.name }} /></Button
             >{/if}
           {#if v.problem === 'held'}<Button data-action="use-folder" onclick={() => act(() => page.folderUseHere(v.id))}
               >{t('folders:FoldersMenu.useHere')}</Button
