@@ -31,5 +31,5 @@ step 'polled code against the interpreter'
 CARGO_TARGET_DIR=target/polled scripts/build-wasm.sh -q --features polled
 WAARM64_CORE=target/polled/wasm32-unknown-unknown/release/waarm64_core.wasm WAARM64_POLLED=1 WAARM64_JIT_DIFF=1024 \
   node --disable-warning=ExperimentalWarning --test --test-name-pattern='^(JIT vs interpreter|lockstep: .*user mode, JIT$|golden corpus on the wasm core: JIT)' \
-  tests/jit-diff.test.ts tests/jit-lockstep.test.ts tests/corpus-wasm.test.ts
+  tests/jit-diff-[1-4].test.ts tests/jit-lockstep.test.ts tests/corpus-wasm.test.ts
 printf '\nCI-JIT OK (%d s)\n' "$SECONDS"

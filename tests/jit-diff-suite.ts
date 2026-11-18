@@ -11,11 +11,32 @@
 // quarter as many sequences). Flat bus only (the MMU path is covered by
 // lockstep and the boots), but for the load and store classes on spill
 // memories at the end. Needs the wasm build (scripts/ci.sh).
+// Four files define these tests, each a quarter of them in their order (tests/jit-diff-1.test.ts to -4), so that they
+// run side by side: node --test runs files in parallel and a file's tests in sequence, and in one file they were
+// ~650 s of CPU, the tail of `scripts/ci.sh`'s JS tests (docs/plans/ci-tiers.md). Each test seeds the generator from
+// its name, so a test draws the same words whichever part runs it and when it runs alone (`--test-name-pattern`).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
+import { test as nodeTest } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
 import { coreImports, helperReport } from '../web/vm.ts';
+
+const [PART, PARTS] = (globalThis as { jitDiffPart?: [number, number] }).jitDiffPart ?? [0, 1];
+let defined = 0;
+/** FNV-1a over the name: a test's seed (never 0, which xorshift keeps). */
+const seedOf = (name: string) => {
+  let h = 0xcbf29ce484222325n;
+  for (const c of new TextEncoder().encode(name)) h = ((h ^ BigInt(c)) * 0x100000001b3n) & ((1n << 64n) - 1n);
+  return h || 1n;
+};
+const test = ((name: string, ...rest: unknown[]) => {
+  if (defined++ % PARTS !== PART) return;
+  const body = rest.pop() as (...a: unknown[]) => unknown;
+  (nodeTest as (...a: unknown[]) => unknown)(name, ...rest, (...a: unknown[]) => {
+    seed = seedOf(name);
+    return body(...a);
+  });
+}) as typeof nodeTest;
 
 // `WAARM64_CORE` (a path from the repo's root): another core, such as the polled test core (Cargo feature `polled`,
 // scripts/ci-jit.sh), with `WAARM64_POLLED=1`: its JIT vCPUs compile parallel SMP's polled code, which runs on to its

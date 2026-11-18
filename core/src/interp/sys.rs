@@ -1016,7 +1016,7 @@ mod tests {
         assert_eq!((v >> 28 & 1, v >> 29 & 1), (1, 0), "IDC 1, DIC 0");
     }
 
-    /// The `Cpu` offsets `tests/jit-diff.test.ts` randomizes (SYSREG_FIELDS,
+    /// The `Cpu` offsets `tests/jit-diff-suite.ts` randomizes (SYSREG_FIELDS,
     /// PSTATE, SCTLR): update both together.
     #[test]
     fn jit_diff_offsets() {

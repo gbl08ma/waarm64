@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# What every change runs (~6 min); works the same locally. CHROMIUM overrides the browser binary.
+# What every change runs (~15 min on 2026-11-18: docs/plans/ci-tiers.md); works the same locally. CHROMIUM overrides the browser binary.
 # docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
 # alpine-uefi run when their images are current; WAARM64_DISTROS (a comma list) overrides which
 # ones. The Debian page boots are scripts/ci-debian.sh's, graphics' scripts/ci-graphics.sh's, the network
@@ -10,6 +10,15 @@ cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 
 step rust fmt;    cargo fmt --all --check
+# The checks that take seconds first (~35 s): a type error or a lint once surfaced only after the Rust tests' ~170 s.
+step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
+step lint deps;   [ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit
+step typecheck;   npx tsc --noEmit
+step svelte-check; npm run -s svelte-check
+step lint;        npm run -s lint
+step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
+step third-party; node --disable-warning=ExperimentalWarning tools/third-party.ts
+step harness imports; node --disable-warning=ExperimentalWarning tools/harness-imports.ts
 step rust clippy; cargo clippy --all-targets -q -- -D warnings
 step rust test;   cargo test -q
 # Clipboard sharing's guest agent (agent/: its own crate and toolchain), then its build (Podman; the host's cargo without it).
@@ -22,14 +31,6 @@ step tailnet client; net/ts/build.sh
 # The tests' module too (tests/names-*.test.ts run it when it exists): a stale one tested the page's names agent against
 # an older module and failed for no fault of the change (QA, 2026-11-18).
 net/ts/build.sh --test-params
-step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
-step lint deps;   [ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit
-step typecheck;   npx tsc --noEmit
-step svelte-check; npm run -s svelte-check
-step lint;        npm run -s lint
-step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
-step third-party; node --disable-warning=ExperimentalWarning tools/third-party.ts
-step harness imports; node --disable-warning=ExperimentalWarning tools/harness-imports.ts
 current() { images/build.sh --check "$1" > /dev/null; }
 export WAARM64_DISTROS=${WAARM64_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current alpine-uefi && echo ,alpine-uefi)}
 export WAARM64_LONG_TESTS=${WAARM64_LONG_TESTS-1}

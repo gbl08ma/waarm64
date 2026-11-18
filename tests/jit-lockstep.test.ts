@@ -23,7 +23,7 @@ function checksum(m: WebAssembly.Memory, ram: number) {
   return h >>> 0;
 }
 
-// `WAARM64_CORE` and `WAARM64_POLLED=1` (tests/jit-diff.test.ts): the JIT side on another core, the polled test
+// `WAARM64_CORE` and `WAARM64_POLLED=1` (tests/jit-diff-suite.ts): the JIT side on another core, the polled test
 // core's polled code, which runs past a chunk to its first poll; the interpreter then runs the steps it ran. Its
 // whole VMs (EL1) are round-robin's, counted.
 const CORE = process.env.WAARM64_CORE;

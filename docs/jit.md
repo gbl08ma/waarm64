@@ -1664,6 +1664,6 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
 ## Validation
 
 The golden corpus through the JIT (forced and stress), the JIT-vs-interpreter differential test on
-random words and sequences (`tests/jit-diff.test.ts`), lockstep (`tests/jit-lockstep.test.ts`),
+random words and sequences (`tests/jit-diff-suite.ts`, run as `tests/jit-diff-[1-4].test.ts`), lockstep (`tests/jit-lockstep.test.ts`),
 every boot's exact steps under the JIT, and planted bugs for every new rule. Details in
 [testing.md](testing.md).
