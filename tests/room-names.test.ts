@@ -12,6 +12,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { TsClient, TsModule, type TsEvent } from '../web/ts-client.ts';
 import { applyOps, EASY_BITS, readTimestamp, sha256d, startOtsCalendar, target, type OtsCalendar } from './net/ots-calendar.ts';
+import { base32, nameOf, roomPrefix } from './net/room-keys.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/ts.wasm`;
@@ -93,13 +94,13 @@ test('the pretend explorer: block hashes by height and their headers, in the exp
 });
 
 /** A room client's `self` event in Node, from the module at `wasm` (its sockets stubbed: nothing connects). */
-async function selfOf(wasm: string): Promise<Extract<TsEvent, { type: 'self' }>> {
+async function selfOf(wasm: string, id = 'params'): Promise<Extract<TsEvent, { type: 'self' }>> {
   const real = globalThis.WebSocket;
   (globalThis as { WebSocket: unknown }).WebSocket = class { binaryType = ''; readyState = 0; send() {} close() {} };
   try {
     const m = await TsModule.load(readFileSync(wasm));
     let self: TsEvent | undefined;
-    const c = new TsClient(m, { room: { link: 'waarm64-room:params?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9' } }, {
+    const c = new TsClient(m, { room: { link: `waarm64-room:${encodeURIComponent(id)}?nostr=ws%3A%2F%2F127.0.0.1%3A9&derp=127.0.0.1%3A9` } }, {
       packet() {},
       event(e) { if (e.type === 'self') self = e; },
     });
@@ -115,6 +116,23 @@ test('the shipped module runs on production\'s parameters; only the page tests\'
   assert.equal((await selfOf(WASM)).params, 'production');
   if (!existsSync(TEST_WASM)) return console.log('# no target/net/ts-test.wasm (net/ts/build.sh --test-params): only the shipped module checked');
   assert.equal((await selfOf(TEST_WASM)).params, 'test');
+});
+
+test('a member\'s name the page shows: under the room\'s name when its ID is a label that doesn\'t look derived, else under its tag', { skip: existsSync(WASM) ? false : 'net/ts/build.sh' }, async () => { // i18n-ignore
+  const tagShaped = base32(roomPrefix('test room').subarray(1));
+  for (const [id, domain] of [
+    ['Gabriel-LAN', 'gabriel-lan.p2p.internal'],
+    ['global', 'global.p2p.internal'],
+    ['test room', undefined],
+    [tagShaped, undefined],
+    [`lan-${'a'.repeat(26)}`, undefined],
+  ] as const) {
+    const s = await selfOf(WASM, id);
+    const tag = `${base32(roomPrefix(id).subarray(1))}.p2p.internal`;
+    assert.equal(s.tag, base32(roomPrefix(id).subarray(1)), id);
+    assert.equal(s.name, nameOf(id, Buffer.from(s.key.replace('nodekey:', ''), 'hex')), id);
+    assert.equal(s.name?.split('.').slice(1).join('.'), domain ?? tag, id);
+  }
 });
 
 let browser: Browser | undefined;

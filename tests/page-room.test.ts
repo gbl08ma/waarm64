@@ -28,7 +28,7 @@ import { startNostrRelay, type NostrRelay } from './net/nostr-relay.ts';
 import { RIG_RELAY } from './net/tailcat-cli.ts';
 import { t } from '../web/i18n.ts';
 import { parseRoomLink } from '../web/room.ts';
-import { keyPair, nameOf, roomPrefix } from './net/room-keys.ts';
+import { keyPair, nameOf } from './net/room-keys.ts';
 import { words } from './words.ts';
 import { CALENDARS, EXPLORERS } from '../web/names.ts';
 import { CALENDARS as PRETEND, startOtsCalendar, type OtsCalendar } from './net/ots-calendar.ts';
@@ -258,12 +258,11 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     const pasted = keyPair();
     const parsed = parseRoomLink(ra.room.link);
     assert.ok('room' in parsed);
-    const prefix = roomPrefix(parsed.room.id);
     await b.fill('#net-room-key-paste', ` ${pasted.key.toUpperCase()} `);
     await b.click('#net-connect');
     await menuSays(b, words('network:network-view.room.connections', { count: 0 }), 60_000);
     const nameB = await b.locator('#net-room-name').inputValue();
-    assert.equal(nameB, nameOf(prefix, pasted.pub), 'the pasted key\'s name');
+    assert.equal(nameB, nameOf(parsed.room.id, pasted.pub), 'the pasted key\'s name');
     assert.equal(nameB.split('.')[1], nameA.split('.')[1], 'one room, one tag');
     assert.notEqual(nameB, nameA);
 

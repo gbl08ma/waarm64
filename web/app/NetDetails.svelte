@@ -36,7 +36,8 @@
   /** The connection can be edited (the browser has it). */
   const editable = $derived(!!c && net.connections.some((x) => x.id === c.id));
   const roomNames = $derived(c?.room ? pageNames.of({ identityKey: c.room.identityKey, link: c.room.link }) : []);
-  /** The room's domain (`<tag>.p2p.internal`): a member's name is its key's label under it. */
+  /** The room's domain the module named the member under (`<room name>.p2p.internal`, or `<tag>.p2p.internal`: net/ts room.rs
+   * `Room::domain`): a member's name is its key's label under it. */
   const domain = $derived(v?.room?.name.split('.').slice(1).join('.') ?? '');
   const allow = $derived(v?.tailcatKey ? `tailcat serve --allow=${v.tailcatKey} exit-node` : '');
 

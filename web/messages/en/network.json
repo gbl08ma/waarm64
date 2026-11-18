@@ -557,7 +557,7 @@
   },
   "NetAdapter.room.name": {
     "message": "This machine's name in the room",
-    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<tag>.p2p.internal), when its connection is a room's."
+    "note": "The toolbar's Network menu and an adapter's details (a dialog): the label of the field (with a Copy icon in it) with the machine's name in a peer-to-peer room (<key>.<room name>.p2p.internal when the room's ID is a plain DNS label, else <key>.<tag>.p2p.internal, where the tag is 8 letters and digits derived from the ID), when its connection is a room's."
   },
   "NetAdapter.room.link": {
     "message": "The room's link",
@@ -1153,7 +1153,7 @@
   },
   "NetNames.name": {
     "message": "Register a domain…",
-    "note": "The toolbar's Network menu, a room adapter's section, once its connection is connected: the button that opens a dialog to register a domain in the room for this connection (docs/plans/room-names.md, where it is a \"name\"): `<name>.<tag>.p2p.internal`, which members' guests then reach this connection's address by."
+    "note": "The toolbar's Network menu, a room adapter's section, once its connection is connected: the button that opens a dialog to register a domain in the room for this connection (docs/plans/room-names.md, where it is a \"name\"): `<name>.<room name>.p2p.internal` (or `<name>.<tag>.p2p.internal`, which also works), which members' guests then reach this connection's address by."
   },
   "NameDialog.title": {
     "message": "Register a domain in this room",
@@ -1165,11 +1165,11 @@
   },
   "NameDialog.full": {
     "message": "Guests in this room will reach it as <name>{{full}}</name>, and usually as <name>{{name}}</name> alone.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field once a name is typed. {{full}} is the whole domain (`<name>.<tag>.p2p.internal`, the room's domain), {{name}} the part typed (the guest's search domain lets it be used alone; not every guest's). Both are domains someone typed, marked as names."
+    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field once a name is typed. {{full}} is the whole domain (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` when the room's ID isn't a plain DNS label: the room's domain), {{name}} the part typed (the guest's search domain lets it be used alone; not every guest's). Both are domains someone typed, marked as names."
   },
   "NameDialog.suffix": {
     "message": "A domain in this room ends in .{{domain}}, which guests can usually leave out.",
-    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field while nothing is typed. {{domain}} is the room's domain (`<tag>.p2p.internal`)."
+    "note": "Register a domain… (a dialog opened from a room adapter's section of the toolbar's Network menu): the line under the field while nothing is typed. {{domain}} is the room's domain (`<room name>.p2p.internal`, or `<tag>.p2p.internal` when the room's ID isn't a plain DNS label; the other form, under the tag, works too)."
   },
   "NameDialog.notice.find": {
     "message": "Members of this room who know the domain can reach this connection's address and see when it's online. While this connection is connected, this web app helps other members look domains up.",
@@ -1321,7 +1321,7 @@
   },
   "names-view.badTarget": {
     "message": "“{{target}}” isn't a member's name in the room or a key.",
-    "note": "Error shown in a room adapter's details when Save finds a target that isn't a member's name (<key>.<tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
+    "note": "Error shown in a room adapter's details when Save finds a target that isn't a member's name (<key>.<room name or tag>.p2p.internal) or a 64-digit key; {{target}} is what was typed."
   },
   "names.ephemeral": {
     "message": "A connection that isn't kept in this browser can't hold a domain",

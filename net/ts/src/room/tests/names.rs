@@ -437,7 +437,12 @@ impl Net {
     /// comes (10 s at most): the answer and how long it took.
     fn ask(&mut self, i: usize, rel: &str, qtype: u16) -> (Dns, Duration) {
         let domain = self.nodes[i].c.room.domain();
-        let name = format!("{rel}.{domain}");
+        self.ask_full(i, &format!("{rel}.{domain}"), qtype)
+    }
+
+    /// [`Net::ask`] for the whole name `name`.
+    fn ask_full(&mut self, i: usize, name: &str, qtype: u16) -> (Dns, Duration) {
+        let rel = name;
         let mut q = vec![0x56, 0x78, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];
         for l in name.split('.') {
             q.push(l.len() as u8);
@@ -691,6 +696,81 @@ fn a_servers_own_name_not_public_yet_answers_its_own_address() {
     assert_eq!(n.ask(0, "git.mine", dns::AAAA).0, nx());
     // Nobody else sees it: it isn't public.
     assert_eq!(n.ask(1, "mine", dns::AAAA).0, nx());
+}
+
+/// Node `seed`'s config in the room whose ID is `id`.
+fn in_room(id: &str, mut c: Config) -> Config {
+    c.link.id = id.into();
+    c
+}
+
+#[test]
+fn a_registered_name_resolves_under_the_rooms_name_and_its_tag() {
+    const LAN: &str = "Names-LAN";
+    let mut b = Bitcoin::new(LAN, 10);
+    let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
+    let mut n = Net::new(vec![
+        in_room(LAN, server_config(1, vec![alpha])),
+        in_room(LAN, config(2)),
+    ]);
+    n.advance(Duration::from_secs(3));
+    let tag = n.nodes[1].c.room.tag.clone();
+    assert_eq!(n.nodes[1].c.room.domain(), "names-lan.p2p.internal");
+    for i in [0, 1] {
+        for name in [
+            "alpha.names-lan.p2p.internal".to_string(),
+            "ALPHA.Names-LAN.p2p.internal".to_string(),
+            format!("alpha.{tag}.p2p.internal"),
+        ] {
+            assert_eq!(
+                n.ask_full(i, &name, dns::AAAA).0,
+                aaaa(n.addr(1)),
+                "{i}: {name}"
+            );
+        }
+        for name in [
+            "git.alpha.names-lan.p2p.internal".to_string(),
+            format!("git.alpha.{tag}.p2p.internal"),
+        ] {
+            assert_eq!(
+                n.ask_full(i, &name, dns::AAAA).0,
+                aaaa(n.addr(0)),
+                "{i}: {name}"
+            );
+        }
+        assert_eq!(
+            n.ask_full(i, "wpad.names-lan.p2p.internal", dns::AAAA).0,
+            nx()
+        );
+    }
+}
+
+#[test]
+fn a_registered_name_in_a_room_named_like_a_tag_resolves_under_its_tag_alone() {
+    let other = Room::derive(ROOM).tag;
+    let mut b = Bitcoin::new(&other, 11);
+    let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
+    let mut n = Net::new(vec![
+        in_room(&other, server_config(1, vec![alpha])),
+        in_room(&other, config(2)),
+    ]);
+    n.advance(Duration::from_secs(3));
+    let tag = n.nodes[1].c.room.tag.clone();
+    assert_ne!(tag, other);
+    for i in [0, 1] {
+        assert_eq!(
+            n.ask_full(i, &format!("alpha.{other}.p2p.internal"), dns::AAAA)
+                .0,
+            nx(),
+            "{i}: not under the other room's tag"
+        );
+        assert_eq!(
+            n.ask_full(i, &format!("alpha.{tag}.p2p.internal"), dns::AAAA)
+                .0,
+            aaaa(n.addr(1)),
+            "{i}"
+        );
+    }
 }
 
 // ---- The names agent's publisher (room-names.md "The names agent") and titles as they change ----

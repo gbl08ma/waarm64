@@ -32,6 +32,13 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   the first sync's rate, a name's memory) and the fake net's faults; it ran the Rust checks (fmt, clippy with and
   without `test-params`, `cargo test -p waarm64_ts`), tsc, i18n-check and the Node names tests (room-names,
   names-agent, names-room with the tailcat derper): `scripts/ci.sh` and `scripts/ci-net.sh` are to run on it.
+- **Names under the room's name** (branch `names-suffix`, the user's request of 2026-11-18): `*.<room ID>.p2p.internal`
+  is answered as `*.<tag>.p2p.internal` when the ID, lower-cased, is a DNS label that doesn't look derived (not
+  `[a-z2-7]{8}`, a tag's shape; not a private room's `-[a-z2-7]{26}` end): room.rs `room_label`, `Room::domains`;
+  the lease gives both, the room name's first, and the `self` event's name (what the page shows) uses it.
+  docs/networking/rooms.md "The room's name as a domain". It ran fmt, clippy with and without `test-params`,
+  `cargo test -p waarm64_ts`, tsc, svelte-check, i18n-check and the Node tests room-names, room-keys, names-agent and
+  names-page; `scripts/ci.sh` and `scripts/ci-net.sh` (page-room: a private room, so its tag) are to run on it.
 - **Session kind:** the dev VM from 2026-11-18 (cloud before: docs/cloud.md). The user (2026-11-17): **N6 doesn't
   run in a cloud session**.
 
@@ -141,6 +148,11 @@ From the final review's Rust lane (2026-11-18, branch `names-final-a`; findings 
   finding 3 (dedup by nonce and key), finding 5 (holders of a release reply it; the reply item may now be a release
   run), finding 6 (titles refused whole unless their key's, before they count as the node's own; an export crafted
   with a secret its sender knows still passes: what an export is).
+From names-suffix (2026-11-18):
+- **IDs that differ only in case share a room-name domain** (`Gabriel-LAN` and `gabriel-lan` are two rooms, both
+  `gabriel-lan.p2p.internal`): the brief said to lower-case; leaving such rooms the tag alone would need the ID to be
+  all lower case (stricter), the user's call. Likewise "looks derived" is read strictly (any 8 characters of base32's,
+  and a private room's form, both left the tag alone); a narrower reading is the user's call too.
 
 From N6b (2026-11-18):
 - **The long run's relay traffic is past "a few hundred requests a service"**: a room's own cadence (a server alone

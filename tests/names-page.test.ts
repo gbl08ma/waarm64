@@ -147,6 +147,10 @@ test('where a name points: a member\'s name in the room, its first label, or a k
   assert.equal(parseTarget(name.split('.')[0].toUpperCase()), key);
   assert.equal(parseTarget(` ${key.toUpperCase()} `), key);
   for (const bad of ['', 'mybox', key.slice(2), `${name.slice(0, 51)}z.x`]) assert.equal(parseTarget(bad), undefined, bad);
+  // Under the room's name (a room whose ID is a label: docs/networking/rooms.md "The resolver"), as the page shows it.
+  const named = targetName(key, 'gabriel-lan.p2p.internal');
+  assert.equal(named, `${name.split('.')[0]}.gabriel-lan.p2p.internal`);
+  assert.equal(parseTarget(named), key);
 });
 
 test('a subdomain the details take is one the module takes: a DNS label, never `--` in its third and fourth places (the final review, finding 10)', () => {

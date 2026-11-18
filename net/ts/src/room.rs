@@ -21,7 +21,8 @@
 //!   `RtcClose`) and the worker the data channel (`RtcSend`, `rtc_message`). At most
 //!   [`MAX_RTC`] channels, each closed after [`RTC_IDLE`] without the guests' traffic.
 //! - **The resolver** at the room's `::53` answers `<key>.<tag>.p2p.internal` by computing the address,
-//!   and remembers the key, so lookups to it are sealed to it.
+//!   and remembers the key, so lookups to it are sealed to it; every name also under the room's name
+//!   (`<key>.<room ID>.p2p.internal`) when the ID is a label that doesn't look derived ([`room_label`]).
 //! - **Incoming connections** (on by default): a member we don't know may call us. Off, only the
 //!   guest's own flows get their replies, and lookups for it go unanswered unless it has a flow
 //!   with the dialer.
@@ -224,6 +225,8 @@ pub struct Room {
     pub prefix: [u8; 6],
     /// Those 40 bits in base32, for names.
     pub tag: String,
+    /// The room's ID as a DNS label, when it gets a domain by it ([`room_label`]): lower case.
+    pub label: Option<String>,
     /// The salt of the nodes' tags (lookup.rs).
     pub salt: [u8; 32],
     /// The key of lookups to a bare address (lookup.rs), mixed into sealed ones too.
@@ -289,6 +292,20 @@ pub fn unbase32(s: &str) -> Option<Vec<u8>> {
     (bits < 5 && acc & ((1 << bits) - 1) == 0).then_some(out)
 }
 
+/// The label a room's ID is under `p2p.internal` beside its tag (rooms.md "The resolver"): the ID in lower case when
+/// that is a DNS label (`[a-z0-9]` and inner `-`, 63 at most, no `--` third and fourth: the registered names' rule,
+/// [`names::id`]), unless it looks derived: 8 characters of base32's alphabet (any room's tag is one: a room named
+/// so would answer under that room's domain), or a private room's form (a hyphen and 26 of them at its end: that ID is
+/// the room's secret, and its name alone would be the public room's of that name). None: the tag's domain alone.
+pub fn room_label(id: &str) -> Option<String> {
+    let l = id.to_ascii_lowercase();
+    let b = l.as_bytes();
+    let b32 = |s: &[u8]| s.iter().all(|c| B32.contains(c));
+    let tag_shaped = b.len() == 8 && b32(b);
+    let private = b.len() >= 27 && b[b.len() - 27] == b'-' && b32(&b[b.len() - 26..]);
+    (names::id::label_ok(&l, 63) && !tag_shaped && !private).then_some(l)
+}
+
 impl Room {
     pub fn derive(id: &str) -> Room {
         let mut prefix = [0u8; 6];
@@ -306,6 +323,7 @@ impl Room {
         Room {
             prefix,
             tag: base32(&prefix[1..]),
+            label: room_label(id),
             salt: hash("waarm64 room tag salt v1", id),
             lookup: hash("waarm64 room lookup key v1", id),
             psk: hash("waarm64 room psk v1", id),
@@ -358,9 +376,19 @@ impl Room {
         a
     }
 
-    /// The names' domain: `<tag>.p2p.internal`.
+    /// The names' domain the page shows and a lease gives first: `<room name>.p2p.internal` when the room's ID is a
+    /// label of its own ([`room_label`]), else `<tag>.p2p.internal`.
     pub fn domain(&self) -> String {
-        format!("{}.{SUFFIX}", self.tag)
+        format!("{}.{SUFFIX}", self.label.as_deref().unwrap_or(&self.tag))
+    }
+
+    /// Every domain the resolver answers under, [`Room::domain`] first: the room name's, if any, and the tag's, always.
+    pub fn domains(&self) -> Vec<String> {
+        let tag = format!("{}.{SUFFIX}", self.tag);
+        match &self.label {
+            Some(l) => vec![format!("{l}.{SUFFIX}"), tag],
+            None => vec![tag],
+        }
     }
 
     /// A node's name: its key in base32, then the room's domain.
@@ -995,7 +1023,7 @@ impl Client {
         // No IPv4 routes: the room's /48 is all it reaches; its names, at the room's resolver.
         let lease = json!({
             "address": GUEST4, "address6": self.addr, "mtu": TUNNEL_MTU,
-            "dns": [], "dns6": [self.resolver], "domains": [self.room.domain()],
+            "dns": [], "dns6": [self.resolver], "domains": self.room.domains(),
             "prefix6": [prefix, 48],
         });
         self.event(json!({ "type": "lease", "lease": lease }));
@@ -2749,10 +2777,11 @@ impl Client {
             return;
         };
         let Some(q) = dns::parse(m) else { return };
-        let rel = q
-            .name
-            .strip_suffix(&self.room.domain())
-            .and_then(|s| s.strip_suffix('.'))
+        let rel = self
+            .room
+            .domains()
+            .iter()
+            .find_map(|d| q.name.strip_suffix(d.as_str())?.strip_suffix('.'))
             .map(str::to_string);
         let key = rel
             .as_deref()

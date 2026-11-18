@@ -1,7 +1,7 @@
 <!--
   Register a domain… (docs/plans/room-names.md "What the user sees", where it is a name): one dialog from a room
   adapter's section of the Network menu, for the adapter's connection (which holds the domain by its key, wherever
-  the connection is attached). A field, with the whole domain under it (`<name>.<tag>.p2p.internal`), checked as typed by this page alone (not a valid name, this connection's already: no server
+  the connection is attached). A field, with the whole domain under it (`<name>.<room name or tag>.p2p.internal`), checked as typed by this page alone (not a valid name, this connection's already: no server
   asked); Register asks the room's servers (one first byte of the name's id a press, the user's decision 2026-11-17:
   web/names-view.ts `NameForm`, web/names.ts `check`): free, it registers and closes (the adapter then shows the name
   as Preparing, Reserved, Active); taken, it stays open and says until about when; nobody in the room can say, it says
@@ -37,7 +37,8 @@
   const conn = $derived<NamesOf | undefined>(
     room && { identityKey: room.identityKey, link: room.link, ephemeralKey: !!room.identity },
   );
-  /** The room's domain (`<tag>.p2p.internal`): a domain registered here is `<name>.<domain>`. */
+  /** The room's domain the module named the member under (`<room name>.p2p.internal`, or `<tag>.p2p.internal`: net/ts room.rs
+   * `Room::domain`): a domain registered here is `<name>.<domain>` (and under the tag's as well). */
   const domain = $derived(ad?.view.room?.name.split('.').slice(1).join('.') ?? '');
   const name = $derived(typed.trim().toLowerCase());
   const said = $derived(checkWords(name, check));

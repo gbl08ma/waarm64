@@ -67,6 +67,10 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 - **Names stay full keys** (the user, 2026-11-11, asked whether a name could carry only the address's 80 bits): only
   the full key lets a lookup be sealed to its target and the handshake accept that one key rather than any key with
   its first 80 bits. Nicer names are plans/networking-p2p.md's.
+- **A room's names under its own name too** (the user, 2026-11-18): `*.gabriel-lan.p2p.internal` is answered in the
+  room `gabriel-lan` as `*.<tag>.p2p.internal` is, so a key name and a registered domain read better where the guest
+  doesn't take the search domain; except when the room's ID looks derived, where it'd read as another room's domain
+  ("The resolver" below has the rule).
 - **Public and private rooms, and fast derivation.** A room's secrets come from its ID by BLAKE2s, fast, so a relay
   that keeps lookups can guess a short ID offline and read them. The page makes the trade-off plain instead of
   slowing it: Create a room asks whether the room is private, and a private room's ID is the chosen name plus a
@@ -128,7 +132,9 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
   of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
-  /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.internal`.
+  /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.internal`,
+  or `<key>.<room name>.p2p.internal` when the room's ID is a label of its own ("The resolver": both are answered,
+  and the page shows the second).
   So a key can be mined for an address: `cargo run --release -p waarm64_ts --example room-key-mine -- <link> --prefix
   HEX | --suffix HEX | --regex RE` (all given must hold) prints keys whose address has those digits after the room's /48
   at its start or end (compared as bits, no text), or matches the expression on the address written out whole (8 groups
@@ -226,12 +232,29 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   guest has a flow with that address; a flow table (the peer's address, the protocol, both ports or an echo's
   identifier; 5 minutes idle, 4,096 at most) lets in only replies to the guest's own flows (and ICMPv6 errors from a
   peer it has one with).
-- **The resolver** at the room's `<prefix>::53` (the lease's `dns6`, with the room's `<tag>.p2p.internal` as its domain):
+- **The resolver** at the room's `<prefix>::53` (the lease's `dns6`, with the room's domains as its search domains):
   `<key>.<tag>.p2p.internal` AAAA is the address computed from the key, which the module remembers to seal lookups to it;
-  A for such a name is an empty answer, anything else NXDOMAIN. The suffix is `.internal` (which ICANN reserved in 2024 for private use and will never
+  A for such a name is an empty answer; a registered name under the domain (`<name>[.<label>].<tag>.p2p.internal`) is
+  [plans/room-names.md](../plans/room-names.md) "The resolver"'s; anything else NXDOMAIN. The suffix is `.internal` (which ICANN reserved in 2024 for private use and will never
   delegate), not RFC 9476's `.alt` ("Findings"). The lease: the room address as a /128, IPv4
   `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter that isn't the guest's primary (`prefix6`,
   web/room-worker.ts).
+- **The room's name as a domain** (`room_label`, `Room::domains` in room.rs): when the room's ID, in lower case
+  (ASCII's letters only), is a DNS label (`[a-z0-9]` and inner `-`, 63 characters at most, no `--` third and fourth, so
+  no punycode `xn--`: the registered names' rule) and doesn't look derived, the resolver answers every name above
+  under `<id>.p2p.internal` too, exactly as under the tag's (`<key>.gabriel-lan.p2p.internal`,
+  `test123.gabriel-lan.p2p.internal`, `git.test123.gabriel-lan.p2p.internal`; any case, as DNS asks). **Looks
+  derived** is either of: 8 characters all of base32's alphabet (`[a-z2-7]{8}`, the shape of every tag: a public
+  room called `abcdefgh` would otherwise answer `bank.abcdefgh.p2p.internal`, the domain of the room whose tag is
+  `abcdefgh`, for a guest in both, and a name given out from either would read as the other's), or a private room's
+  form (a hyphen and 26 of base32's characters at its end, web/room.ts `PRIVATE`: the ID is the room's secret, which a
+  name is given out without, and its name without the suffix would be the public room of that name's). Such a room,
+  and an ID that isn't a label (`test lan`, `café`, `a.b`), has the tag's domain alone. The lease's domains are both,
+  the room name's first (DHCPv6's domain list; DHCPv4's option 15 takes the first), so a guest with resolved routes
+  either to the room's resolver and searches both; the module's `self` event names the member under the room name's
+  domain, which the page shows and builds on (the name to copy, [Register a domain…](ui:network:NetNames.name)'s whole domain, a zone's targets).
+  Two rooms whose IDs differ only in case (`Gabriel-LAN`, `gabriel-lan`) are two rooms with one such domain: their
+  tags still tell them apart.
 
 ## The direct path
 
@@ -355,12 +378,14 @@ copies through six relays and junk through one, a guest sweeping the /48, a rela
 cases; BIP-340's first vector; and the registry of room names, plans/room-names.md: servers' names clients finding each other,
 syncing two and twenty, a reset, a flood of "who serves?" beside the node's own lookups, nothing under the node's key,
 a member's first lookup asking the room through the relays (no DERP packet), a contested one fetching through sessions
-with each reply through two relays,
+with each reply through two relays, key and registered names under the room's name and its tag, and a room named like
+a tag answering under its own tag alone,
 in `room/tests/names.rs`, and the registry's logic against a bus in `room/names/server_tests.rs`); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
 NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
 RFC 6455 server, no dependency; a message past 1 MiB closes the connection, `events` keeps the last 65,536); `tests/room-browser.test.ts` (Chromium, `WAARM64_TAILCAT=1`: pages joining one room
 by its link on the rig's derper and that relay, by address and by name, relay only, incoming off); `tests/room-link.test.ts` (the page's link and
-key checks against link.rs's); `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key) and `tests/network.test.ts`'s room cases;
+key checks against link.rs's); `tests/room-keys.test.ts` (tests/net/room-keys.ts's address, name and room label against
+the module's) and `tests/room-names.test.ts`'s case on the `self` event's name in rooms of each kind; `tests/connections.test.ts`'s (another tab's ephemeral connection on a stored one's key) and `tests/network.test.ts`'s room cases;
 `tests/net-live.test.ts` (the key's lock); `tests/page-connections.test.ts` (the global room in the wizard); and, in
 `scripts/ci-net.sh`, `tests/page-room.test.ts` (two Debian guests in one Chromium: Create, Join by link, the wizard's
 refusals, the resolver asked directly and through resolved, pings both ways by name; ~2 min) and

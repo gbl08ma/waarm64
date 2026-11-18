@@ -91,8 +91,13 @@ A registered name is `<name>.<tag>.p2p.internal`, under the domain the lease alr
 resolver gets the query with no change to the lease, and a guest whose resolver uses the lease's domain as a search
 domain reaches it as plain `<name>` (DHCPv6 option 24 carries it; the RA has no DNSSL: N3 checks Debian and Arch, and
 what they ask the search domain unprompted). A key name is 52 characters, so the two never collide. A name's zone may
-add one label under it (`git.<name>.<tag>.p2p.internal`; a DNS label, `[a-z0-9]` and inner `-`, up to 63 characters). A nicer suffix is the later decision; it changes the resolver's
-match and the lease's domains, nothing else here.
+add one label under it (`git.<name>.<tag>.p2p.internal`; a DNS label, `[a-z0-9]` and inner `-`, up to 63 characters). **Under
+the room's name too** (the user, 2026-11-18): in a room whose ID is a DNS label and doesn't look derived (not 8
+characters of base32's, a tag's shape, nor a private room's ID; docs/networking/rooms.md "The room's name as a domain"
+has the rule), every name is answered under `<room ID in lower case>.p2p.internal` as under the tag's
+(`test123.gabriel-lan.p2p.internal`, `git.test123.gabriel-lan.p2p.internal`); the lease gives both domains, the room
+name's first, and the page shows that one. It changed the resolver's match and the lease's domains, nothing else here:
+a name's id, its records and the registry don't hold a suffix.
 
 ## Names nobody lists
 
@@ -831,8 +836,8 @@ owners, so the user's call); fewer renewals a term. None is in v1; the first is 
 
 ## The resolver
 
-`resolve()` (room.rs) gains, after the key-name case, for a name under `<tag>.p2p.internal` (the name, or one label under
-it) that passes "Names"' rules:
+`resolve()` (room.rs) gains, after the key-name case, for a name under `<tag>.p2p.internal` or the room name's domain
+(`Room::domains`; the name, or one label under it) that passes "Names"' rules:
 
 - on a server's node, from the registry it holds whole (`Server::resolve`); a name of this node's own that isn't public
   yet (or lapsed) answers from its title's zone, or this node's address for the name itself (a server can be tried by
@@ -981,7 +986,8 @@ can't be taken for a connection's, an adapter's or the room's own name; and it's
 wherever the connection is attached, not by a machine), a label a **subdomain**. In the Network menu of a connected
 room adapter, **[Register a domain…](ui:network:NetNames.name)** opens one dialog:
 
-1. A field, the whole domain under it (`<name>.<tag>.p2p.internal`, or the room's suffix while nothing is typed). Under it, as typed, only what the page can say alone, asking no server: not a valid name (the rules, by
+1. A field, the whole domain under it (`<name>.<room name>.p2p.internal`, or `<name>.<tag>.p2p.internal` in a room
+   whose ID isn't a label of its own: the domain the member's own name is under; or the room's suffix while nothing is typed). Under it, as typed, only what the page can say alone, asking no server: not a valid name (the rules, by
    the module), or this connection's already. **The room is asked when Register is pressed** (the user's decision,
    2026-11-17; step 3). Nothing lists a room's names, here or anywhere: the registry couldn't.
 2. Two notices, always shown, no boxes: [Members of this room who know the domain can reach this connection's

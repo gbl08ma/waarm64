@@ -75,7 +75,7 @@ pub fn owner_key(secret: &[u8; 32], names: &RoomNames, name: &str) -> SigningKey
 
 /// `[a-z0-9]` and inner `-`, `max` characters at most, no `--` in the third and fourth places
 /// (punycode's `xn--` and its kind).
-fn label_ok(s: &str, max: usize) -> bool {
+pub(crate) fn label_ok(s: &str, max: usize) -> bool {
     let b = s.as_bytes();
     !b.is_empty()
         && b.len() <= max
