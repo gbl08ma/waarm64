@@ -1,6 +1,7 @@
 <!--
-  Name this machine… (docs/plans/room-names.md "What the user sees"): one dialog from a room adapter's section of the
-  Network menu. A field, checked as typed by this page alone (not a valid name, this connection's already: no server
+  Register a domain… (docs/plans/room-names.md "What the user sees", where it is a name): one dialog from a room
+  adapter's section of the Network menu, for the adapter's connection (which holds the domain by its key, wherever
+  the connection is attached). A field, with the whole domain under it (`<name>.<tag>.p2p.internal`), checked as typed by this page alone (not a valid name, this connection's already: no server
   asked); Register asks the room's servers (one first byte of the name's id a press, the user's decision 2026-11-17:
   web/names-view.ts `NameForm`, web/names.ts `check`): free, it registers and closes (the adapter then shows the name
   as Preparing, Reserved, Active); taken, it stays open and says until about when; nobody in the room can say, it says
@@ -35,6 +36,8 @@
   const conn = $derived<NamesOf | undefined>(
     room && { identityKey: room.identityKey, link: room.link, ephemeralKey: !!room.identity },
   );
+  /** The room's domain (`<tag>.p2p.internal`): a domain registered here is `<name>.<domain>`. */
+  const domain = $derived(ad?.view.room?.name.split('.').slice(1).join('.') ?? '');
   const name = $derived(typed.trim().toLowerCase());
   const said = $derived(checkWords(name, check));
   const tone = $derived(check.state === 'checking' ? 'dim' : 'warn');
@@ -92,6 +95,13 @@
         maxlength="32"
       />
     </Field>
+    {#if domain}
+      <Note size="md" tone="dim" id="net-name-full">
+        {name
+          ? t('network:NameDialog.full', { full: `${name}.${domain}`, name })
+          : t('network:NameDialog.suffix', { domain })}
+      </Note>
+    {/if}
     <Note size="md" {tone} id="net-name-check" data-check={check.state}>{said ? text(said) : ''}</Note>
     <div class="notices" data-notices>
       <Note size="md" id="net-name-notice-find">{t('network:NameDialog.notice.find')}</Note>

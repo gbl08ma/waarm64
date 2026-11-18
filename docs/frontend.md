@@ -1926,24 +1926,25 @@ and the guest's default way out (below).
   minute; web/app/names-view.ts their words): a connected room adapter's section of the menu lists its connection's
   names with their states (`NetNames.svelte`: [Preparing](ui:network:names-view.preparing), Reserved, public in about N
   hours, Active, kept until about a date, in its grace, [Lapsed: anyone can register it now.](ui:network:names-view.lapsed),
-  [Let go](ui:network:names-view.released), lost) and [Name this machine…](ui:network:NetNames.name), which opens one
+  [Let go](ui:network:names-view.released), lost) and [Register a domain…](ui:network:NetNames.name), which opens one
   dialog (`NameDialog.svelte`, its logic `NameForm` in names-view.ts): the name's field, checked as typed by the page
   alone, asking no server (the agent's `checkHere`: not a valid name, this connection's own); **the room's servers are
   asked when Register is pressed** (the user's decision, 2026-11-17; the agent's `check`): every id under the name's
   id's first byte, one byte a press, never the id, through a checker made for that press (a publisher, closed with its
   answer), each with when its owner's hold ends. Free, the name is registered and the dialog closes; taken, the dialog
   stays open and says until about a date; nobody in the room can say, the dialog says so and Register pressed again
-  with the same name registers it; the two notices, always shown, no boxes
-  ([Members of this room who know the name can find this machine and see when it's online, and your machine helps other
-  members look names up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to keep the
-  name.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once [Register](ui:network:NameDialog.register)
-  has registered it, the name shows Preparing until its claim is made. A connection whose key is ephemeral (its own, in the
+  with the same name registers it; under the field, the whole domain (`<name>.<tag>.p2p.internal`, or the room's suffix
+  while nothing is typed); the two notices, always shown, no boxes ([Members of this room who know the domain can
+  reach this connection's address and see when it's online. While this connection is connected, this web app helps
+  other members look domains up.](ui:network:NameDialog.notice.find) and [Open this web app at least every 2 weeks to
+  keep the domain.](ui:network:NameDialog.notice.visit)); no key shown or asked for; once
+  [Register](ui:network:NameDialog.register) has registered it, the name shows Preparing until its claim is made. A connection whose key is ephemeral (its own, in the
   page's memory) can't hold a name: the dialog says so in place of the field and has no Register (the name would point
   at a key gone with the page while its title, in IndexedDB, went on being renewed). The adapter's details add the
   registry's line (a server's names held and the servers it synced with, or a member's names resolved and servers held:
   the module's `names` event) and, per name (`NameEntry.svelte`), where it and each label under it point (a member's
-  name in the room, or a key, pasted), [Add a label](ui:network:NameEntry.addLabel),
-  [Point all at this machine](ui:network:NameEntry.pointHere), Save (a new zone) and
+  name in the room, or a key, pasted), [Add a subdomain](ui:network:NameEntry.addLabel),
+  [Point all at this connection](ui:network:NameEntry.pointHere), Save (a new zone) and
   [Let it go](ui:network:NameEntry.release) (after asking). A stored machine's Network tab lists each room adapter's
   names with the date each stops resolving unless renewed. At every load the agent starts when titles are kept and,
   after its first pass, the message bar names those in their last week (web/names.ts `inLastWeek`). The wizard's

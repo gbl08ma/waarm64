@@ -850,12 +850,19 @@ the names client finds servers and asks; the answer comes within the resolver's 
 adapter's details gain one line, for the curious: a member's names resolved and servers held, or a server's names held
 and the servers it synced with lately (the module's `names` event, sent when the numbers change).
 
-**Naming a machine.** In the Network menu of a connected room adapter, **[Name this machine…](ui:network:NetNames.name)** opens one dialog:
+**Registering a domain.** The page calls a name a **domain** (the user, 2026-11-18: a term people can look up, which
+can't be taken for a connection's, an adapter's or the room's own name; and it's held by the connection, by its key,
+wherever the connection is attached, not by a machine), a label a **subdomain**. In the Network menu of a connected
+room adapter, **[Register a domain…](ui:network:NetNames.name)** opens one dialog:
 
-1. A field. Under it, as typed, only what the page can say alone, asking no server: not a valid name (the rules, by
+1. A field, the whole domain under it (`<name>.<tag>.p2p.internal`, or the room's suffix while nothing is typed). Under it, as typed, only what the page can say alone, asking no server: not a valid name (the rules, by
    the module), or this connection's already. **The room is asked when Register is pressed** (the user's decision,
    2026-11-17; step 3). Nothing lists a room's names, here or anywhere: the registry couldn't.
-2. Two notices, always shown, no boxes: [Members of this room who know the name can find this machine and see when it's online, and your machine helps other members look names up.](ui:network:NameDialog.notice.find); [Open this web app at least every 2 weeks to keep the name.](ui:network:NameDialog.notice.visit) ("this web app" is the page's word for itself, docs/copy.md).
+2. Two notices, always shown, no boxes: [Members of this room who know the domain can reach this connection's
+   address and see when it's online. While this connection is connected, this web app helps other members look
+   domains up.](ui:network:NameDialog.notice.find); [Open this web app at least every 2 weeks to keep the
+   domain.](ui:network:NameDialog.notice.visit) ("this web app" is the page's word for itself, docs/copy.md; it serves
+   the room's domains whenever the connection is connected, whether a machine runs or not).
 3. **[Register](ui:network:NameDialog.register).** It first asks the room's servers for every id under the name's
    id's first byte, one byte a press, through a checker made for that press (`ts_room_names_ids`, `names-ids` events;
    a server's `ids` answer carries each id's cover end, when the owning chain's hold ends, 0 when nobody owns it now,

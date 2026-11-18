@@ -135,10 +135,17 @@ test('where a name points: a member\'s name in the room, its first label, or a k
 });
 
 test('wording: the dialog\'s two notices (decision 6: discoverable, and the visits; decision 13: every 2 weeks)', () => {
-  assert.equal(t('network:NameDialog.notice.find'), 'Members of this room who know the name can find this machine and see when it\'s online, and your machine helps other members look names up.');
-  assert.equal(t('network:NameDialog.notice.visit'), 'Open this web app at least every 2 weeks to keep the name.');
-  assert.equal(t('network:NetNames.name'), 'Name this machine…');
+  assert.equal(t('network:NameDialog.notice.find'), 'Members of this room who know the domain can reach this connection\'s address and see when it\'s online. While this connection is connected, this web app helps other members look domains up.');
+  assert.equal(t('network:NameDialog.notice.visit'), 'Open this web app at least every 2 weeks to keep the domain.');
+  assert.equal(t('network:NetNames.name'), 'Register a domain…');
   assert.equal(t('network:NameDialog.register'), 'Register');
+});
+
+test('wording: a domain, not a name (the user, 2026-11-18: a term to look up, held by the connection, not the machine)', () => {
+  assert.equal(t('network:NameDialog.full', { full: 'mybox.abcdefgh.p2p.internal', name: 'mybox' }), 'Guests in this room will reach it as mybox.abcdefgh.p2p.internal, and usually as mybox alone.');
+  assert.equal(t('network:NameDialog.suffix', { domain: 'abcdefgh.p2p.internal' }), 'A domain in this room ends in .abcdefgh.p2p.internal, which guests can usually leave out.');
+  assert.equal(t('network:NameEntry.addLabel'), 'Add a subdomain');
+  assert.equal(t('network:NameEntry.pointHere'), 'Point all at this connection');
 });
 
 test('wording: the adapter\'s states as the spec words them', () => {
@@ -151,7 +158,7 @@ test('wording: the dialog\'s check', () => {
   assert.match(t('network:names-view.check.taken', { name: 'mybox', when: new Date(NOW) }), /^mybox is taken, until about .+ unless its owner renews it\.$/);
   assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /^Nobody in the room can say whether mybox is free/);
   assert.match(t('network:names-view.check.unknown', { name: 'mybox' }), /Press Register again to register it all the same\.$/, 'nobody can say: the way on');
-  assert.match(t('network:names-view.check.invalid'), /^Not a name that can be registered\./);
+  assert.match(t('network:names-view.check.invalid'), /^Not a domain that can be registered\./);
 });
 
 test('a connection\'s names: by its key and room, whatever link it was registered with (review 2, finding 16)', () => {
