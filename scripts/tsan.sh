@@ -11,14 +11,30 @@ cd "$(dirname "$0")/.."
 export RUSTFLAGS=-Zsanitizer=thread TSAN_OPTIONS=halt_on_error=1
 host=$(rustc -vV | sed -n 's/^host: //p')
 t() { cargo test -q --config 'profile.release.panic="unwind"' -Zbuild-std --target "$host" --release --target-dir target/tsan "$@"; }
-WAARM64_PARALLEL_RUNS=3 t --test baremetal baremetal_parallel
+# The parts run at once (~2.5 cores between them, ~50 s alone; one after another they were TSan's 260 s of ci.sh's tail
+# beside its JS tests): built first, then each part's output printed in order; any part's failure fails the run.
+t --no-run --test baremetal --test boot --test litmus
+logs=$(mktemp -d)
+trap 'rm -rf "$logs"' EXIT
+parts=() pids=()
+part() { parts+=("$1"); "$1" > "$logs/$1.log" 2>&1 & pids+=($!); }
+baremetal() { WAARM64_PARALLEL_RUNS=3 t --test baremetal baremetal_parallel; }
+buildroot() { WAARM64_PARALLEL_RUNS=1 t --test boot -- --ignored linux_boots_in_parallel; }
+litmus() { WAARM64_LITMUS=-s,100,-r,1 WAARM64_STRESS=-n,10000 t --test litmus -- --ignored litmus_parallel; }
+part baremetal
 if images/build.sh --check linux > /dev/null && images/build.sh --check buildroot > /dev/null; then
-  WAARM64_PARALLEL_RUNS=1 t --test boot -- --ignored linux_boots_in_parallel
+  part buildroot
 else
   echo 'tsan: Buildroot SKIPPED (images not current)'
 fi
 if images/build.sh --check linux > /dev/null && images/build.sh --check litmus > /dev/null; then
-  WAARM64_LITMUS=-s,100,-r,1 WAARM64_STRESS=-n,10000 t --test litmus -- --ignored litmus_parallel
+  part litmus
 else
   echo 'tsan: litmus SKIPPED (images not current)'
 fi
+rc=0
+for i in "${!pids[@]}"; do
+  if wait "${pids[$i]}"; then echo "tsan ${parts[$i]}: ok"; else rc=1; echo "tsan ${parts[$i]}: FAILED"; fi
+  cat "$logs/${parts[$i]}.log"
+done
+exit $rc

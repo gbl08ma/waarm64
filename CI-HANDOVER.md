@@ -24,14 +24,18 @@ decisions in §11).
   (nextest alone 64 s; peak < 300 MiB; a rebuild after an edit ~3 s). Passed ci.sh: 847 s, its rust test step 26 s
   (134 before), the JS tests from 175 s to 736 s. **The tail is now the native group beside them**, ends at ~847 s:
   TSan 361 s of it (272 → 633 s). The tests' CPU sum is 160 s on 8 cores: splitting them further gains little.
+- **TSan's three parts at once** (scripts/tsan.sh): alone 112 s → 53 s (peak 2.4 → 4.8 GiB); in ci.sh 361 s → 127 s.
+  ci.sh **737 s** (peak 8.0 GiB under its 11G), the JS tests (594 s) and the native group now end together. vmstat
+  (`bench/results/local/ci/tsan-par-vmstat.log`): the cores are saturated from the JS tests' start to ~10 min, and ~70%
+  idle in the 144 s before them (the serial steps: clippy, rust test, agent, testfloat, wasm build).
 - **Not run yet:** the topic scripts since they gained the lock line (each `ci_lock exclusive` after `step()`), and the
   lock with two sessions' real runs at once (it was checked with small scripts only).
 
 ## Next, in order
 
-1. **The cheap speedups:** TSan's parts at once (now ci.sh's tail: 361 s); the fast lane re-measured with nextest;
-   the steps before ci.sh's JS tests (~130 s now: agent 18, testfloat 41, wasm and tailnet builds 45; beside them, or
-   skipped by `ci.sh --affected` when no Rust input changed); ci-net.sh at 2 Debian slots.
+1. **The cheap speedups:** the steps before ci.sh's JS tests beside each other (144 s at ~70% idle: rust test 29,
+   agent 19, testfloat 41, wasm build; or skipped by `ci.sh --affected` when no Rust input changed); the fast lane
+   re-measured with nextest; ci-net.sh at 2 Debian slots. Past those, ci.sh is CPU-bound: less work, not more overlap.
 2. **The measurement window** (§9, ~2.5 h, the machine idle): each file's peak memory and time alone, the fast lane's
    concurrency, the Debian slots.
 3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.
