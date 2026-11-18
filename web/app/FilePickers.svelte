@@ -1,6 +1,6 @@
 <!--
   The page's hidden file inputs (web/app/file-pickers.ts opens them: the toolbar's Load snapshot…, a Snapshots tab's
-  Restore from a file, the Machines page's Import changes…, Open disk… without the File System Access picker): each
+  Restore from a file, the Home page's Import changes…, Open disk… without the File System Access picker): each
   hands the file it's given to `page`. Their ids are the tests' handles.
 -->
 <script lang="ts">

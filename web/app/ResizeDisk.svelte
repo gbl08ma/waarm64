@@ -1,5 +1,5 @@
 <!--
-  Resize… (docs/machines.md §4.5): a dialog over the Machines page that grows a stored disk, a ramdisk or an overlay,
+  Resize… (docs/machines.md §4.5): a dialog over the Home page that grows a stored disk, a ramdisk or an overlay,
   opened from the Disks pane (a disk's card, an overlay's row in Overlays…) and from a machine's Disks tab (its
   attachment's overlay, one made for it where it has none yet, its stored disk written in place or ramdisk). The size
   now and what it holds, the new one (MiB or GiB, rounded up to

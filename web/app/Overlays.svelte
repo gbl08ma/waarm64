@@ -1,5 +1,5 @@
 <!--
-  A disk's overlays (docs/machines.md §4): a dialog over the Machines page, opened by Overlays… on a disk in the Disks pane or
+  A disk's overlays (docs/machines.md §4): a dialog over the Home page, opened by Overlays… on a disk in the Disks pane or
   on a machine's Disks tab. Each overlay with what it holds of the size its guest sees, when it was made and the machines that write to it; Rename,
   Delete, Resize… (ResizeDisk.svelte, over this dialog), Merge into the disk (a stored disk) and Export. Export's steps
   (ExportSteps.svelte) take the dialog's place, the list the step before them (Back). Which overlay a machine uses is chosen on its Disks tab.

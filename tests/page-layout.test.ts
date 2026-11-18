@@ -1,4 +1,4 @@
-// The page's frames in Chromium, without a guest: every pane of the Machines page (web/app/ui/Pane.svelte) puts its title
+// The page's frames in Chromium, without a guest: every pane of the Home page (web/app/ui/Pane.svelte) puts its title
 // at the same place, and its body at the same place under a head of one line, whether or not the head has buttons; the
 // message's text (#message) is centered on its buttons while it is one line.
 import assert from 'node:assert/strict';
@@ -17,7 +17,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-test("the Machines page's panes: the title and the body at one place, with buttons in the head or none", async () => {
+test("the Home page's panes: the title and the body at one place, with buttons in the head or none", async () => {
   // Wide enough that every pane's head is one line.
   const page = await browser.newPage({ viewport: { width: 2400, height: 900 } });
   const errors: string[] = [];
@@ -56,6 +56,8 @@ test('the message: one line of text centered on its buttons', async () => {
   const page = await browser.newPage({ viewport: { width: 2560, height: 600 } });
   await page.goto(`${base}/web/app/`);
   await page.locator('#message:not([hidden]) #message-actions button').waitFor();
+  // Where it lands: its slide down from above the page (ui/crossfade.ts) done.
+  await page.locator('#message .banner').evaluate((e) => Promise.all(e.getAnimations().map((a) => a.finished)));
   const mid = (sel: string) => page.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; });
   const [text, button, close] = [await mid('#message-body'), await mid('#message-actions button'), await mid('#message-close')];
   const height = await page.locator('#message-text').evaluate((e) => e.getBoundingClientRect().height);

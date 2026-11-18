@@ -107,7 +107,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const ramdisk = '/dev/vdb';
   await ok(page, `mkfs.ext4 -q ${ramdisk} && mkdir -p /mnt/r && mount ${ramdisk} /mnt/r`);
 
-  /** Keeps a snapshot (the toolbar's Snapshot: named by the time), waits for the page to say so, then renames it `name` on the Machines page. */
+  /** Keeps a snapshot (the toolbar's Snapshot: named by the time), waits for the page to say so, then renames it `name` on the Home page. */
   const keep = async (name: string) => {
     const before = await page.locator('#message').getAttribute('data-snapshot');
     await page.locator('#save-snapshot').click();
@@ -165,7 +165,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await stateIs(page, 'suspended');
   await page.goto(url);
   await stateIs(page, 'running');
-  assert.match(await page.locator('#message-text').textContent() ?? '', words('machine:worker.resumed'));
+  assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', words('machine:worker.resumed'));
   assert.equal(await ok(page, 'cat /root/f /mnt/r/x'), 'b r-two');
   // Suspended again, then its overlay switched: the next load boots instead, with a note.
   await page.locator('#suspend').click();
@@ -179,10 +179,10 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   }`, id);
   await page.goto(url);
   await stateIs(page, 'booting', 'running');
-  assert.match(await page.locator('#message-text').textContent() ?? '', words('machine:worker.notResumed'));
-  assert.match(await page.locator('#message-details').textContent() ?? '', words('machine:worker-start.diskChanged')); // why: the note's detail
+  assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', words('machine:worker.notResumed'));
+  assert.match(await page.evaluate(() => document.getElementById('message-details')?.textContent ?? '') ?? '', words('machine:worker-start.diskChanged')); // why: the note's detail
 
-  // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Machines page deletes them in one action.
+  // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Home page deletes them in one action.
   await page.locator('#machines-open').click();
   const m = page.locator('.machines section.machine[data-selected]');
   await m.locator('[data-tab=settings]').click();

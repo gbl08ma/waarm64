@@ -6,7 +6,7 @@
 // console (a reader on tty1 writes what it gets to a file; a long paste arrives whole; none of it while tty1 is in
 // graphics mode, as under a compositor: TYPED says why), COPY's text of tty1's screen (none in graphics mode), the toolbar's clipboard
 // button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), a trim
-// from the Machines page's storage bar (a deleted file's blocks out of the overlay, its files compacted), the
+// from the Home page's storage bar (a deleted file's blocks out of the overlay, its files compacted), the
 // page carrying on when the agent stops, and the connection itself without the agent: perl connected to the agent's
 // port echoing it into itself (a small frame, and 320 KiB of 64 KiB frames past the link's window and vsock's credit, so
 // the guest's buffers, the credit and the window's flow all turn over). The agent's start again at the end: its unit
@@ -276,8 +276,8 @@ test('the guest agent on Debian: it arrives, connects, says HELLO, costs nothing
     if (i > 20) assert.fail(`after the restart tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantAgain)}`);
     await page.waitForTimeout(500);
   }
-  // TRIM, last (the Machines page's visit resizes the screen: the page has a size to say at an echoed HELLO after it),
-  // from the Machines page's storage bar (Free unused disk space; docs/devices.md "Disk space handed back"): a
+  // TRIM, last (the Home page's visit resizes the screen: the page has a size to say at an echoed HELLO after it),
+  // from the Home page's storage bar (Free unused disk space; docs/devices.md "Disk space handed back"): a
   // deleted file's 48 MiB leave the overlay, whose files shrink by them at the compaction in full that follows (a
   // change compacts only past half free), and the message bar says so.
   assert.ok(h.caps & CAP.TRIM, `the agent trims (caps ${h.caps})`);

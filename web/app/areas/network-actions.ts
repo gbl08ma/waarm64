@@ -1,5 +1,5 @@
 // The network (docs/frontend.md "Network", docs/networking/adapters.md): the machine's adapters, each with a connection
-// of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Machines
+// of the browser's attached (web/app/net-live.ts); the toolbar's Network menu, the Network wizard and the Home
 // page's Network tab and Connections act through these (web/app/page.ts's `net*`).
 import { msg, MsgError, t, text } from '../../i18n.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../../tailcat.ts';

@@ -1,4 +1,4 @@
-// The machine on this page as the toolbar and the Machines page show it: which it is, what it has, and a transient
+// The machine on this page as the toolbar and the Home page show it: which it is, what it has, and a transient
 // machine's size (the toolbar's Machine menu), following web/app/run/page-machine.svelte.ts's `PageMachine`.
 import type { FromWorker } from '../protocol.ts';
 import type { Replies } from '../run/replies.ts';
@@ -44,7 +44,7 @@ class Current {
   id = $derived(this.#source?.id());
   /** What the toolbar calls it. */
   title = $derived(this.#source?.title() ?? '');
-  /** A transient machine with a disk of its own: shown on the Machines page as "this page's machine". */
+  /** A transient machine with a disk of its own: shown on the Home page as "this page's machine". */
   transient = $derived(this.#source?.transient());
   /** Its boot disk keeps its changes in this browser: Suspend, the disk's actions. */
   hasOverlay = $derived(this.#source?.hasOverlay() ?? false);
@@ -58,7 +58,7 @@ class Current {
   hasNetwork = $state(false);
   /** It has a relative mouse (the lock's `raw` mode). */
   hasMouse = $state(false);
-  /** Its guest's agent trims the guest's filesystems (the Machines page's Free unused disk space: web/app/areas/trim-actions.ts). */
+  /** Its guest's agent trims the guest's filesystems (the Home page's Free unused disk space: web/app/areas/trim-actions.ts). */
   canTrim = $state(false);
   /** Its last run's worker, for the disk surface window's live map (web/app/areas/surface.svelte.ts; the run writes it). */
   inspect = $state.raw<RunInspect>();

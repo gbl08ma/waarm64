@@ -3,7 +3,7 @@
 // orphans), and the grow mark the guest follows at its next start (`growsOf`, `growFailed`, `clearGrowMark`: the run's
 // agent, web/app/areas/grow-actions.ts); a definition's grown overlay (`grownSize`, `withGrownOverlay`). Records go
 // through web/app/store.ts, an overlay's size into its meta file first (web/overlay.ts `writeOwnSize`: the device worker
-// reads it there). Nothing here asks the user: the Machines page confirms first. DOM-free but for Web Locks (Node's
+// reads it there). Nothing here asks the user: the Home page confirms first. DOM-free but for Web Locks (Node's
 // tests have them).
 import { t } from '../i18n.ts';
 import { MsgError } from '../msg.ts';

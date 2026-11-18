@@ -1,7 +1,7 @@
 {
   "Snapshots.rename.prompt": {
     "message": "Enter a new name for the snapshot:",
-    "note": "Text of the prompt that renames a kept snapshot (The Machines page, a machine's Snapshots tab, its Rename button), above the field with its current name."
+    "note": "Text of the prompt that renames a kept snapshot (The Home page, a machine's Snapshots tab, its Rename button), above the field with its current name."
   },
   "Snapshots.rename.title": {
     "message": "Rename {{name}}",
@@ -13,11 +13,11 @@
   },
   "Snapshots.renaming": {
     "message": "Renaming the snapshot",
-    "note": "Shown at the top of the Machines page (followed by “…”) while a snapshot's new name is saved (The Machines page, a machine's Snapshots tab)."
+    "note": "Shown at the top of the Home page (followed by “…”) while a snapshot's new name is saved (The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.delete.confirm": {
     "message": "Delete the snapshot {{name}}? This will free {{size, bytes}} of storage in this browser.",
-    "note": "Text of the confirmation before a kept snapshot is deleted (The Machines page, a machine's Snapshots tab, its Delete button); {{name}} is the snapshot's name, {{size}} its file's size."
+    "note": "Text of the confirmation before a kept snapshot is deleted (The Home page, a machine's Snapshots tab, its Delete button); {{name}} is the snapshot's name, {{size}} its file's size."
   },
   "Snapshots.delete.ok": {
     "message": "Delete",
@@ -25,15 +25,15 @@
   },
   "Snapshots.deleting": {
     "message": "Deleting snapshots",
-    "note": "Shown at the top of the Machines page (followed by “…”) while one or more kept snapshots are deleted (The Machines page, a machine's Snapshots tab)."
+    "note": "Shown at the top of the Home page (followed by “…”) while one or more kept snapshots are deleted (The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.deleteOrphaned.confirm_one": {
     "message": "Delete {{count}} orphaned snapshot? It was taken of this machine with other settings or disks. This will free {{size, bytes}} of storage in this browser.",
-    "note": "Text of the confirmation of Delete orphaned snapshots (The Machines page, a machine's Snapshots tab), when one snapshot is orphaned (taken of the machine as it was before its settings or disks changed); {{count}} is how many, {{size}} their files' total size."
+    "note": "Text of the confirmation of Delete orphaned snapshots (The Home page, a machine's Snapshots tab), when one snapshot is orphaned (taken of the machine as it was before its settings or disks changed); {{count}} is how many, {{size}} their files' total size."
   },
   "Snapshots.deleteOrphaned.confirm_other": {
     "message": "Delete {{count}} orphaned snapshots? They were taken of this machine with other settings or disks. This will free {{size, bytes}} of storage in this browser.",
-    "note": "Text of the confirmation of Delete orphaned snapshots (The Machines page, a machine's Snapshots tab), when several are orphaned (taken of the machine as it was before its settings or disks changed); {{count}} is how many, {{size}} their files' total size."
+    "note": "Text of the confirmation of Delete orphaned snapshots (The Home page, a machine's Snapshots tab), when several are orphaned (taken of the machine as it was before its settings or disks changed); {{count}} is how many, {{size}} their files' total size."
   },
   "Snapshots.deleteOrphaned.ok": {
     "message": "Delete",
@@ -41,15 +41,15 @@
   },
   "Snapshots.making": {
     "message": "Creating the machine",
-    "note": "Shown at the top of the Machines page (followed by “…”) while Create a machine like it creates the machine of an orphaned snapshot (The Machines page, a machine's Snapshots tab)."
+    "note": "Shown at the top of the Home page (followed by “…”) while Create a machine like it creates the machine of an orphaned snapshot (The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.importing": {
     "message": "Importing the snapshot",
-    "note": "Shown at the top of the Machines page (followed by “…”) while a snapshot file chosen with Import a file… is copied into the browser (The Machines page, a machine's Snapshots tab)."
+    "note": "Shown at the top of the Home page (followed by “…”) while a snapshot file chosen with Import a file… is copied into the browser (The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.toFile.ask": {
     "message": "Include the whole disk in the file? One of this machine's disks is written in place, without an overlay. Without the whole disk, the file can be restored only until that disk changes.",
-    "note": "Text of the question asked by Save a snapshot to a file (The Machines page, a machine's Snapshots tab) when one of the machine's disks is written in place (it has no overlay): the file can carry the whole disk or only the machine."
+    "note": "Text of the question asked by Save a snapshot to a file (The Home page, a machine's Snapshots tab) when one of the machine's disks is written in place (it has no overlay): the file can carry the whole disk or only the machine."
   },
   "Snapshots.toFile.ask.title": {
     "message": "Save to a file",
@@ -65,19 +65,19 @@
   },
   "Snapshots.none": {
     "message": "No snapshots are stored in this browser. While the machine runs, the toolbar's Snapshot button takes one.",
-    "note": "Note in place of the list of snapshots (The Machines page, a machine's Snapshots tab) when the machine has none kept; “Snapshot” is the toolbar's button."
+    "note": "Note in place of the list of snapshots (The Home page, a machine's Snapshots tab) when the machine has none kept; “Snapshot” is the toolbar's button."
   },
   "Snapshots.meta": {
     "message": "{{when}} · {{size, bytes}}",
-    "note": "Second line of a kept snapshot in the list (The Machines page, a machine's Snapshots tab), under its name; {{when}} is when it was taken (date and time), {{size}} its file's size."
+    "note": "Second line of a kept snapshot in the list (The Home page, a machine's Snapshots tab), under its name; {{when}} is when it was taken (date and time), {{size}} its file's size."
   },
   "Snapshots.orphaned": {
     "message": "Orphaned: {{why}}",
-    "note": "Warning line (orange) of a kept snapshot whose machine has changed since it was taken (The Machines page, a machine's Snapshots tab); {{why}} lists what differs (settings or disks, then and now), separated by semicolons."
+    "note": "Warning line (orange) of a kept snapshot whose machine has changed since it was taken (The Home page, a machine's Snapshots tab); {{why}} lists what differs (settings or disks, then and now), separated by semicolons."
   },
   "Snapshots.like": {
     "message": "Create a machine like it",
-    "note": "Button on an orphaned snapshot (The Machines page, a machine's Snapshots tab): makes a new machine with the settings and disks the snapshot was taken with, and moves the snapshot to it."
+    "note": "Button on an orphaned snapshot (The Home page, a machine's Snapshots tab): makes a new machine with the settings and disks the snapshot was taken with, and moves the snapshot to it."
   },
   "Snapshots.like.title": {
     "message": "Create a new machine with the settings and disks this snapshot was taken with, and move the snapshot to it.",
@@ -93,15 +93,15 @@
   },
   "Snapshots.restore": {
     "message": "Restore",
-    "note": "Button on each kept snapshot that isn't orphaned (The Machines page, a machine's Snapshots tab): restores the machine as it was when the snapshot was taken."
+    "note": "Button on each kept snapshot that isn't orphaned (The Home page, a machine's Snapshots tab): restores the machine as it was when the snapshot was taken."
   },
   "Snapshots.rename": {
     "message": "Rename",
-    "note": "Accessible name and tooltip of a kept snapshot's rename button (a pencil icon; The Machines page, a machine's Snapshots tab)."
+    "note": "Accessible name and tooltip of a kept snapshot's rename button (a pencil icon; The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.download": {
     "message": "Download",
-    "note": "Accessible name of a kept snapshot's download button (a download icon; The Machines page, a machine's Snapshots tab)."
+    "note": "Accessible name of a kept snapshot's download button (a download icon; The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.download.title": {
     "message": "Download the snapshot as a file.",
@@ -109,15 +109,15 @@
   },
   "Snapshots.delete": {
     "message": "Delete",
-    "note": "Accessible name and tooltip of a kept snapshot's delete button (a trash icon; The Machines page, a machine's Snapshots tab)."
+    "note": "Accessible name and tooltip of a kept snapshot's delete button (a trash icon; The Home page, a machine's Snapshots tab)."
   },
   "Snapshots.deleteOrphaned": {
     "message": "Delete orphaned snapshots",
-    "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab), shown when some are orphaned (their machine has changed since): deletes them all, after a confirmation."
+    "note": "Button under the list of snapshots (The Home page, a machine's Snapshots tab), shown when some are orphaned (their machine has changed since): deletes them all, after a confirmation."
   },
   "Snapshots.restoreFile": {
     "message": "Restore from a file…",
-    "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab), when the machine is open on this page: picks a snapshot file and restores it at once."
+    "note": "Button under the list of snapshots (The Home page, a machine's Snapshots tab), when the machine is open on this page: picks a snapshot file and restores it at once."
   },
   "Snapshots.restoreFile.title": {
     "message": "Restore this machine from a snapshot file (.waarm64snap) immediately, without storing the file in this browser.",
@@ -125,7 +125,7 @@
   },
   "Snapshots.import": {
     "message": "Import a file…",
-    "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab): picks a snapshot file and keeps it with the machine, to restore later."
+    "note": "Button under the list of snapshots (The Home page, a machine's Snapshots tab): picks a snapshot file and keeps it with the machine, to restore later."
   },
   "Snapshots.import.title": {
     "message": "Store a snapshot file (.waarm64snap) with this machine in this browser, to restore later.",
@@ -137,7 +137,7 @@
   },
   "Snapshots.toFile": {
     "message": "Save a snapshot to a file",
-    "note": "Button under the list of snapshots (The Machines page, a machine's Snapshots tab), while the machine runs on this page: saves its snapshot as a file to download."
+    "note": "Button under the list of snapshots (The Home page, a machine's Snapshots tab), while the machine runs on this page: saves its snapshot as a file to download."
   },
   "snapshots.writtenInPlace": {
     "message": "The disk {{disk}} has been written in place since this snapshot was taken, and the snapshot doesn't include the whole disk. It can only be restored onto that disk as it was then.",
@@ -145,7 +145,7 @@
   },
   "machine-like.storedDiskGone": {
     "message": "Couldn't create the machine",
-    "note": "Error of Create a machine like it (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:machine-like.storedDiskGone.cause); a disk the snapshot was taken with was stored in this browser and has been deleted."
+    "note": "Error of Create a machine like it (Home page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:machine-like.storedDiskGone.cause); a disk the snapshot was taken with was stored in this browser and has been deleted."
   },
   "machine-like.storedDiskGone.cause": {
     "message": "One of the snapshot's disks was stored in this browser and has since been deleted.",
@@ -153,27 +153,27 @@
   },
   "machine-like.storedDiskGrown.cause": {
     "message": "{{disk}} is stored in this browser and has grown since this snapshot was taken, and a disk can't be made smaller again.",
-    "note": "Error details: the cause under the headline snapshots:machine-like.storedDiskGone (Create a machine like it, Machines page, Snapshots tab), on the line under it: a disk the snapshot was taken with is stored in the browser and was resized (Resize…) to a larger size since. {{disk}}: the disk's name."
+    "note": "Error details: the cause under the headline snapshots:machine-like.storedDiskGone (Create a machine like it, Home page, Snapshots tab), on the line under it: a disk the snapshot was taken with is stored in the browser and was resized (Resize…) to a larger size since. {{disk}}: the disk's name."
   },
   "machine-like.urlDisk": {
     "message": "disk",
-    "note": "Name given to a disk that Create a machine like it adds again from its URL when the URL ends without a file name; shown in the Machines page's disk lists."
+    "note": "Name given to a disk that Create a machine like it adds again from its URL when the URL ends without a file name; shown in the Home page's disk lists."
   },
   "machine-like.blankDisk": {
     "message": "Blank disk",
-    "note": "Name given to a blank disk that Create a machine like it makes again (the snapshot's machine had one); shown in the Machines page's disk lists."
+    "note": "Name given to a blank disk that Create a machine like it makes again (the snapshot's machine had one); shown in the Home page's disk lists."
   },
   "machine-like.ramdisk": {
     "message": "Ramdisk",
-    "note": "Name given to a ramdisk that Create a machine like it makes again (the snapshot's machine had one); shown in the Machines page's disk lists."
+    "note": "Name given to a ramdisk that Create a machine like it makes again (the snapshot's machine had one); shown in the Home page's disk lists."
   },
   "machine-like.like": {
     "message": "Like {{name}}",
-    "note": "Name of the machine Create a machine like it creates (Machines page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already."
+    "note": "Name of the machine Create a machine like it creates (Home page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already."
   },
   "snapshots.notKept": {
     "message": "Couldn't import {{file}}",
-    "note": "Error of Import a file… (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it: the file has no description of its machine to keep it by (snapshots:snapshots.notKept.cause), or the browser's storage is full (disks:overlay.storageFull.numbers); {{file}} is the file's name."
+    "note": "Error of Import a file… (Home page, Snapshots tab), shown under the page's header: the headline; why is the cause under it: the file has no description of its machine to keep it by (snapshots:snapshots.notKept.cause), or the browser's storage is full (disks:overlay.storageFull.numbers); {{file}} is the file's name."
   },
   "snapshots.notKept.cause": {
     "message": "It's a snapshot of a machine that isn't stored in this browser, such as a test machine or one from an older version of this web app. It can only be loaded on that machine.",
@@ -268,8 +268,8 @@
     "note": "A detail placed in the parentheses of “This snapshot is damaged (…).” (the error of a snapshot that can't be read, shown when it's restored or loaded): a compressed part unpacks to another size than it says."
   },
   "snapshot-file.notSnapshot": {
-    "message": "This file isn't a snapshot. Use Open disk… to start a machine from a disk image, or Import changes… on the Machines page to load saved changes.",
-    "note": "Error when a file opened as a snapshot (Load snapshot…, Restore from a file…, Import a file…) isn't one; it names the toolbar's Open disk… and the Machines page's Import changes… for the other kinds of file."
+    "message": "This file isn't a snapshot. Use Open disk… to start a machine from a disk image, or Import changes… on the Home page to load saved changes.",
+    "note": "Error when a file opened as a snapshot (Load snapshot…, Restore from a file…, Import a file…) isn't one; it names the toolbar's Open disk… and the Home page's Import changes… for the other kinds of file."
   },
   "snapshot-file.newerFormat": {
     "message": "This snapshot was made by a newer version of this web app. Its format is {{format}}, and this version reads formats up to {{reads}}. Reload this web app to get the latest version, or open the snapshot in the version that made it.",
@@ -440,7 +440,7 @@
     "note": "Notice in the message bar (under the toolbar) once a snapshot was saved to a file: {{name}} is the file's name, {{size}} its size, {{seconds}} how long the machine was paused."
   },
   "snapshot-actions.kept": {
-    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page.",
+    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Home page.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
   },
   "snapshot-actions.runsOn.noFile": {
@@ -456,8 +456,8 @@
     "note": "What differs, in the parentheses of “… was taken of … with other settings or disks (…).”, when the snapshot doesn't describe its machine (another version of the page made it)."
   },
   "snapshot-restore.restore.otherShape": {
-    "message": "{{name}} was taken of {{machine}} with other settings or disks ({{why}}).\nTo use it, create a machine like it on the Machines page, in this machine's Snapshots tab.",
-    "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Machines page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons)."
+    "message": "{{name}} was taken of {{machine}} with other settings or disks ({{why}}).\nTo use it, create a machine like it on the Home page, in this machine's Snapshots tab.",
+    "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Home page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons)."
   },
   "snapshot-restore.restore.cant": {
     "message": "Couldn't restore the snapshot",
@@ -473,19 +473,19 @@
   },
   "snapshot-restore.restore.confirm": {
     "message": "Restore {{name}}? The machine will continue from where the snapshot was taken.",
-    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running and the snapshot has no date: {{name}} is the snapshot's name."
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine isn't running and the snapshot has no date: {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm.taken": {
     "message": "Restore {{name}}, taken {{when}}? The machine will continue from where the snapshot was taken.",
-    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine isn't running: {{name}} is the snapshot's name, {{when}} when it was taken."
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine isn't running: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
   "snapshot-restore.restore.confirm.running": {
     "message": "Restore {{name}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
-    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs and the snapshot has no date: {{name}} is the snapshot's name."
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine runs and the snapshot has no date: {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm.takenRunning": {
     "message": "Restore {{name}}, taken {{when}}? This will power off the machine immediately, like pulling the plug, and it will continue from where the snapshot was taken.",
-    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Machines page's Restore, a snapshot file opened), when the machine runs: {{name}} is the snapshot's name, {{when}} when it was taken."
+    "note": "First line of the question asked before a snapshot is restored onto the machine kept in this browser (the Home page's Restore, a snapshot file opened), when the machine runs: {{name}} is the snapshot's name, {{when}} when it was taken."
   },
   "snapshot-restore.restore.kept": {
     "message": "These disks are as the snapshot left them and will be kept: {{disks}}.",
@@ -616,7 +616,7 @@
     "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because the machine's settings or disks changed since: the headline; why and what to do are the cause under it (snapshots:worker-header.otherShape.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
   },
   "worker-header.otherShape.cause": {
-    "message": "It was taken of a machine with other settings or disks than {{machine}} has now. To use it, create a machine like it on the Machines page (Snapshots tab).",
+    "message": "It was taken of a machine with other settings or disks than {{machine}} has now. To use it, create a machine like it on the Home page (Snapshots tab).",
     "note": "Error details: the cause under the headline snapshots:worker-header.otherShape, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
   },
   "worker-header.otherMachine": {

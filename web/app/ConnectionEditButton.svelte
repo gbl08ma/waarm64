@@ -1,5 +1,5 @@
 <!--
-  A connection's Edit… button, its tooltip saying what can be changed for its kind: on each of the Machines page's
+  A connection's Edit… button, its tooltip saying what can be changed for its kind: on each of the Home page's
   Connections (ConnectionsPane.svelte) and on each connection to choose in the Network wizard (NetPickStep.svelte).
   `onclick` opens the wizard's editor on it; other attributes (`id`, `data-*`) go on the button.
 -->

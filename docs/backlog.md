@@ -310,7 +310,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Remote disks' loose ends** ([remote-disks.md](remote-disks.md), bench/remote-disk/REPORT.md; a remote first boot
   takes a local file's time with a boot trace), by promise:
   - **A boot trace without the bench:** `tools/disk-trace.ts` takes a `bench/remote-disk/boot.ts` run's trace. A page
-    switch that records this boot's reads and offers the manifest with them (or the Machines page doing it for a URL
+    switch that records this boot's reads and offers the manifest with them (or the Home page doing it for a URL
     disk) would let whoever hosts an image make one.
   - **Plain image URLs have no prefetch:** only a chunked image's manifest carries the list; a sidecar
     (`<image>.prefetch.json`) would give a whole-file host the same 96 → 65 s.
@@ -1791,7 +1791,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Machines with the same MAC share an address on one helper** (its network knows a guest by its MAC, and the
     switch's table flips between their links): new machines have MACs of their own since 2026-11-03, but machines made
     before all have `52:54:00:12:34:56`, a copy keeps its machine's MACs, and an imported definition without MACs gets
-    the default. A way to give a machine new MACs (the Machines page's Network tab), or new ones on a copy, would cover
+    the default. A way to give a machine new MACs (the Home page's Network tab), or new ones on a copy, would cover
     them (guest-visible: the guest's leases follow the MAC).
   - Firefox's and Safari's handling of `ws://127.0.0.1` from an https page is unchecked (never a blocker).
   - (Low priority, the user's idea, 2026-11-03) One `local` connection on several machines at once over one WebSocket,
@@ -1889,7 +1889,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   each console's vcsu once at its start (the kernel keeps the characters from then on), not measured.
 - **The clean power-off, the rest of it** (devices.md "Power off and restart from the guest"): `shutdown now`, the
   path for a guest without logind or busctl, isn't run on a guest (Debian has both; tested with a fake tool); the
-  Machines screen's clean stops (clean-stop.ts) run on Debian only through tests that cut them short (`answerAsks`
+  Home page's clean stops (clean-stop.ts) run on Debian only through tests that cut them short (`answerAsks`
   clicks Power off now); their wait dialog queues behind a question already open (an alert fired just before), so
   Power off now shows only once that one is answered (review/betteragent-loop13, low). No Debian test lets the
   shutdown run to its end, which is how the agent's connection ending mid-shutdown went unseen (it re-asked and put

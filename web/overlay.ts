@@ -120,7 +120,7 @@ export function blockList(d: Pick<WritableDisk, 'written'>): Uint32Array {
 }
 
 /**
- * The numbers of this origin's storage, as `navigator.storage.estimate()` gives them (the Machines page's storage line
+ * The numbers of this origin's storage, as `navigator.storage.estimate()` gives them (the Home page's storage line
  * has them too): what it holds and what the browser gives it; undefined where the browser says nothing. Off the record,
  * and under a quota a test lowers, the browser refuses writes before `quota`: these are what it says, not the limit met.
  */

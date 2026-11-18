@@ -1,5 +1,5 @@
 // The page around the machine (docs/frontend.md "Views", "Full screen", docs/machines.md §7): the views, full screen
-// with the keyboard lock, where the keys go, the Machines page in the machine's place, leaving the page while the
+// with the keyboard lock, where the keys go, the Home page in the machine's place, leaving the page while the
 // machine runs, a file dropped on the page, and the local helper's pairing link.
 import { flushSync } from 'svelte';
 import { devText } from '../../msg.ts';
@@ -40,7 +40,7 @@ export type WindowDeps = {
   machine: PageMachine;
   screen: ScreenView;
   terminal: SerialTerminal;
-  /** What the Machines page's closing reads again (a stored machine's record, while nothing runs or switches). */
+  /** What the Home page's closing reads again (a stored machine's record, while nothing runs or switches). */
   reloadStored(): Promise<unknown>;
   /** A file dropped: a disk image, a snapshot or a changes file; a directory: a folder. */
   dropped(file: File, handle?: FileSystemFileHandle): Promise<void>;
@@ -137,7 +137,7 @@ export class PageWindow {
   }
 
   // Leaving the page while the machine runs stops it like pulling the plug: the browser asks first (Preferences, on
-  // the Machines page, turns it off). The browser words the question itself. Not under automation (the tests navigate
+  // the Home page, turns it off). The browser words the question itself. Not under automation (the tests navigate
   // away from running machines) unless `?leavewarning=1`.
   beforeUnload(e: BeforeUnloadEvent) {
     if (!['running', 'booting', 'rebooting'].includes(power.state) || !leaveWarning()) return;
@@ -147,14 +147,13 @@ export class PageWindow {
     e.returnValue = '';
   }
 
-  // The Machines page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind
-  // it. `#machines` in the address opens it (a reload keeps it open).
+  // The Home page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind
+  // it. `#home` in the address opens it (a reload keeps it open; main.ts takes the older `#machines` too).
   openMachines(tab?: MachinesTab, id?: string) {
     if (tab) machinesNav.tab = tab;
     if (id) machinesNav.choose(id);
     machinesNav.open = true;
-    if (location.hash !== '#machines')
-      history.replaceState(null, '', `${location.pathname}${location.search}#machines`);
+    if (location.hash !== '#home') history.replaceState(null, '', `${location.pathname}${location.search}#home`);
   }
   closeMachines() {
     machinesNav.open = false;

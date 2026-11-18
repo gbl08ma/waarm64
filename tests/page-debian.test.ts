@@ -128,7 +128,7 @@ const terminal = (page: Page) => page.evaluate(() => document.querySelector('.xt
 const shows = (page: Page, re: RegExp, ms = 60_000) =>
   page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 })
     .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal(page)}`); });
-const message = (page: Page) => page.locator('#message-text').textContent();
+const message = (page: Page) => page.evaluate(() => document.getElementById('message-text')?.textContent ?? '');
 const stateOf = (page: Page) => page.evaluate(() => document.body.dataset.state!);
 
 /** Types on the serial terminal (xterm.js sends \r for Enter). */

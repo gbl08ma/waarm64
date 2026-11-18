@@ -170,7 +170,7 @@ async function load(file: string) {
   await changed('load', before, 10_000);
   return round({ wallMs, phases: JSON.parse(await data('load')) });
 }
-/** A start from kept snapshot `id` (the Machines page's Snapshots tab, Restore), until it runs; the phases. */
+/** A start from kept snapshot `id` (the Home page's Snapshots tab, Restore), until it runs; the phases. */
 async function keptStart(id: string) {
   const before = await data('load');
   const t0 = performance.now();

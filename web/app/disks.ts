@@ -2,7 +2,7 @@
 // job (`diskRef`), the overlays as named variants of a base (new, rename, switch, delete, refreshed from their meta
 // after a machine stops), changes loaded into a new overlay, a file imported into the browser as a stored disk, an
 // overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before
-// them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Machines page confirms first.
+// them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Home page confirms first.
 import { fromWire, MsgError } from '../msg.ts';
 import {
   locksInUse,

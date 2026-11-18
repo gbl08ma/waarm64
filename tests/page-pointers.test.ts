@@ -330,7 +330,7 @@ test('leaving a running machine asks first, unless Preferences says not to', { s
   await page.reload({ timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(300);
   assert.deepEqual(asked, ['beforeunload'], 'asked, and stayed');
-  // Preferences, on the Machines page: turned off, it doesn't ask.
+  // Preferences, on the Home page: turned off, it doesn't ask.
   await page.click('#machines-open');
   await page.click(`[data-machine=preferences]`);
   const box = page.locator('[data-field=leave-warning]');

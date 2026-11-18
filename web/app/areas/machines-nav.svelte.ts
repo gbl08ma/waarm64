@@ -1,6 +1,6 @@
-// Where the page is (docs/machines.md §7): the machine, or the Machines page in its place (`#machines` in the address),
+// Where the page is (docs/machines.md §7): the machine, or the Home page in its place (`#machines` in the address),
 // with its chosen pane and the machine tab shown. web/app/areas/page-window.ts opens and closes it (`page.openMachines`); the
-// Machines page's list chooses a pane.
+// Home page's list chooses a pane.
 import { PAGE, PANES } from '../machines-panes.ts';
 import { current } from './current.svelte.ts';
 import { records } from './records.svelte.ts';
@@ -8,7 +8,7 @@ import { records } from './records.svelte.ts';
 export type MachinesTab = 'settings' | 'disks' | 'network' | 'usb' | 'folders' | 'snapshots';
 
 class MachinesNav {
-  /** The Machines page shows instead of the machine. */
+  /** The Home page shows instead of the machine. */
   open = $state(false);
   /** A machine's tab shown. */
   tab = $state<MachinesTab>('settings');

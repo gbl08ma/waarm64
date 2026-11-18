@@ -1,4 +1,4 @@
-// The Machines page (web/app/MachinesPage.svelte, docs/machines.md §7) and the URL check (web/app/urlcheck.ts) in
+// The Home page (web/app/MachinesPage.svelte, docs/machines.md §7) and the URL check (web/app/urlcheck.ts) in
 // Chromium, without a guest: a machine made, set and given disks from several sources through the modal's controls,
 // kept across a reload, opened on the page; a URL refused with the reason when its server lacks CORS or ranges.
 import assert from 'node:assert/strict';
@@ -214,7 +214,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-attachment]').nth(2).getByRole('button', { name: t('disks:Disks.detach.button') }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 2);
 
-  // Kept across a reload (the Machines page stays open: `#machines`), and opened on the page: the toolbar names it.
+  // Kept across a reload (the Home page stays open: `#home`), and opened on the page: the toolbar names it.
   await page.reload();
   await modal(page).waitFor();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).click();
@@ -225,7 +225,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await context.close();
 });
 
-test('a machine edited on the Machines page while it is off on this page starts as it is now', async () => {
+test('a machine edited on the Home page while it is off on this page starts as it is now', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -236,7 +236,7 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await modal(page).locator('[data-action=new-machine]').click();
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-action=open]').click();
-  // On the page with no disks: it waits, and the Machines page offers Start (not a disabled "on this page").
+  // On the page with no disks: it waits, and the Home page offers Start (not a disabled "on this page").
   await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:power-actions.noDisks').source, { timeout: 10_000 });
   await page.click('#machines-open');
   await m.locator('[data-tab=disks]').click();
@@ -246,8 +246,9 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await m.locator('[data-action=start]').click();
   // It starts with the disk added since it was opened (the firmware loads and boots; a stale record would wait again).
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  // The floating bar's words (the Machines page, closing, may still be fading out with its own banner).
-  assert.doesNotMatch(await page.locator('#message #message-text').textContent() ?? '', words('disks:power-actions.noDisks'));
+  // The floating bar's words (the Home page, closing, may still be fading out with its own banner).
+  // (A floating bar leaving keeps its words for its 250 ms: the words gone, not at once.)
+  await page.waitForFunction((src) => !new RegExp(src).test(document.querySelector('#message #message-text')?.textContent ?? ''), words('disks:power-actions.noDisks').source, { timeout: 5_000 });
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -533,7 +534,7 @@ test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached 
   await context.close();
 });
 
-test('a disk\'s read-only box on a running machine: powered off after asking, then saved; Visualize beside RAM while it runs; no gap over the Machines page', async () => {
+test('a disk\'s read-only box on a running machine: powered off after asking, then saved; Visualize beside RAM while it runs; no gap over the Home page', async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -555,9 +556,10 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await page.click('#machines-open');
   // Its Settings tab: Visualize beside RAM opens the RAM's map over the page, once it has RAM (booting or running).
   await page.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  // No message: no floating bar over the Machines page (its messages show in the page's own banner), and no banner.
+  // No message: no floating bar over the Home page (its messages show in the page's own banner), and no banner.
   await page.locator('#message').waitFor({ state: 'detached', timeout: 5_000 });
-  assert.equal(await page.locator('.machines .banner').count(), 0, 'no gap over the Machines page');
+  // (A banner that was there folds away in 250 ms.)
+  await page.locator('.machines .banner').waitFor({ state: 'detached', timeout: 5_000 }); // no gap over the Home page
   await m.locator('[data-tab=settings]').click();
   await m.locator('[data-action=ram-open]').click();
   await page.locator('#ram-window').waitFor({ timeout: 10_000 });

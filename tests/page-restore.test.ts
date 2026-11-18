@@ -1,7 +1,7 @@
 // A kept snapshot restored on the page (web/app/areas/snapshot-restore.ts, docs/machines.md §5.2) in Chromium without a
 // guest: the machine worker is a stand-in that records the start message and says the machine is off, so what is
 // checked is what the page sends it. The page review's findings (RESIZE loop 5b): the restore plans and commits on the
-// machine's records as they are then (the Machines page's Restore after its records were read again, an edit made in
+// machine's records as they are then (the Home page's Restore after its records were read again, an edit made in
 // another tab meanwhile), and the start opens the fork the commit attached; a ramdisk grown in another tab is another
 // shape for a restore from this page.
 import assert from 'node:assert/strict';

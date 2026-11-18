@@ -15,7 +15,7 @@ export const NO_OVERLAY_YET = 'overlays/none';
 
 /**
  * A stored machine's boot disk: its first writable attachment that takes an overlay (a changes file dropped on the page,
- * and Suspend's "has a disk", go by it; the Machines page has every disk's).
+ * and Suspend's "has a disk", go by it; the Home page has every disk's).
  */
 export function bootAttachment(m: PageMachine) {
   const s = m.stored;

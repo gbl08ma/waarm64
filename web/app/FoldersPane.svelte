@@ -1,5 +1,5 @@
 <!--
-  The body of Shared folders on the Machines page (docs/shares.md §2.2, §2.3): the browser's folders, with rename, Read-only, Delete
+  The body of Shared folders on the Home page (docs/shares.md §2.2, §2.3): the browser's folders, with rename, Read-only, Delete
   (naming the machines that lose it), and for a folder in the browser its top level with sizes, Add files…, copies to
   and from a folder on the computer, Empty. While a machine writes it (its lock is exclusive) those are off.
 -->

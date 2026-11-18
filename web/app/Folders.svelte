@@ -1,6 +1,6 @@
 <!--
-  A machine's attached folders on the Machines page (docs/shares.md §4), which change at once, running or not. The
-  switch and the mount in the guest are the Machines page's (they are settings, saved as a draft).
+  A machine's attached folders on the Home page (docs/shares.md §4), which change at once, running or not. The
+  switch and the mount in the guest are the Home page's (they are settings, saved as a draft).
 -->
 <script lang="ts">
   import type { Act } from './actions.svelte.ts';

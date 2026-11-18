@@ -277,7 +277,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       await statusIs(page, words('network:network-view.servingOnly'), 60_000);
       await page.click('#net-served-show');
       assert.equal(await page.locator('#net-served-addr').inputValue(), served, 'the same address after a reload');
-      // New address, from the connection's Edit (the Machines page's Connections): the kept one is forgotten, and
+      // New address, from the connection's Edit (the Home page's Connections): the kept one is forgotten, and
       // Save serves at another.
       await page.click('#machines-open');
       await page.click('[data-machine="connections"]');

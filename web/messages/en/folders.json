@@ -1,43 +1,43 @@
 {
   "shares-mount.absolute": {
     "message": "The mount point must be an absolute path, starting with /.",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path doesn't start with /."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path doesn't start with /."
   },
   "shares-mount.root": {
     "message": "The mount point can't be the guest's root.",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path is /."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path is /."
   },
   "shares-mount.control": {
     "message": "The mount point can't contain control characters.",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path has a control character."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path has a control character."
   },
   "shares-mount.tooLong": {
     "message": "The mount point is too long.",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path, or its systemd unit's name, is over 255 bytes."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path, or its systemd unit's name, is over 255 bytes."
   },
   "shares-mount.characters": {
     "message": "The mount point can't contain \"%\" or end in a space or \"\\\", because systemd reads those differently.",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path has a character systemd would read otherwise."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path has a character systemd would read otherwise."
   },
   "shares-mount.plainly": {
     "message": "The mount point can't have \".\" or \"..\" as a part, contain \"//\", or end in \"/\".",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path isn't written plainly."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path isn't written plainly."
   },
   "shares-mount.guestOwn": {
     "message": "{{path}} is one of the guest's own directories; mounting there would hide what it holds.",
-    "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path is one of the guest's own directories. {{path}} is the path written."
+    "note": "Warning under the Mount point field (Home page, Shared folders tab), and the error when such settings are saved: the path is one of the guest's own directories. {{path}} is the path written."
   },
   "folders.defaultName": {
     "message": "Shared folder",
-    "note": "A new folder's name when none is given (Folder wizard: the Name field's placeholder; Shared folders on the Machines page), made unique with a number when taken."
+    "note": "A new folder's name when none is given (Folder wizard: the Name field's placeholder; Shared folders on the Home page), made unique with a number when taken."
   },
   "folders.folderGone": {
     "message": "The folder was deleted.",
-    "note": "Error (Machines page, Shared folders) when a folder is renamed or changed after another tab deleted it."
+    "note": "Error (Home page, Shared folders) when a folder is renamed or changed after another tab deleted it."
   },
   "folders.machineGone": {
     "message": "The machine was deleted.",
-    "note": "Error (Machines page, Folders tab, the toolbar's Folders menu) when a folder is attached to, detached from or moved in a machine another tab deleted."
+    "note": "Error (Home page, Folders tab, the toolbar's Folders menu) when a folder is attached to, detached from or moved in a machine another tab deleted."
   },
   "folders.tooMany": {
     "message": "{{name}} already has {{max}} folders, the most a machine can have.",
@@ -45,99 +45,99 @@
   },
   "folders-page.inUse": {
     "message": "A machine is using this folder. Power it off or detach the folder first.",
-    "note": "Error on the Machines page (Shared folders) when files are added, copied in or out, or the folder emptied while a machine has the folder."
+    "note": "Error on the Home page (Shared folders) when files are added, copied in or out, or the folder emptied while a machine has the folder."
   },
   "folders-page.inUseElsewhere": {
     "message": "A machine in another tab is using {{name}}. Power that machine off first.",
-    "note": "Error on the Machines page (Shared folders) when a folder a machine in another tab has is deleted. {{name}} is the folder's name."
+    "note": "Error on the Home page (Shared folders) when a folder a machine in another tab has is deleted. {{name}} is the folder's name."
   },
   "folders-live.detachFirst": {
     "message": "The machine is using the folder. Detach it before changing Read-only.",
-    "note": "Error on the Machines page's Folders tab when Read-only is changed on a folder the machine running in this tab has."
+    "note": "Error on the Home page's Folders tab when Read-only is changed on a folder the machine running in this tab has."
   },
   "Folders.kind.host": {
     "message": "on your computer",
-    "note": "Under an attached folder's name (Machines page, Folders tab): it is a folder on the user's computer."
+    "note": "Under an attached folder's name (Home page, Folders tab): it is a folder on the user's computer."
   },
   "Folders.kind.opfs": {
     "message": "in this browser",
-    "note": "Under an attached folder's name (Machines page, Folders tab): it is a folder kept by this browser."
+    "note": "Under an attached folder's name (Home page, Folders tab): it is a folder kept by this browser."
   },
   "Folders.kind.readOnly": {
     "message": "{{kind}}, read-only",
-    "note": "Under an attached folder's name (Machines page, Folders tab) when the folder itself is read-only. {{kind}} is where it is (Folders.kind.host or Folders.kind.opfs)."
+    "note": "Under an attached folder's name (Home page, Folders tab) when the folder itself is read-only. {{kind}} is where it is (Folders.kind.host or Folders.kind.opfs)."
   },
   "Folders.gone": {
     "message": "A deleted folder",
-    "note": "Name shown for an attached folder whose record another tab deleted (Machines page, Folders tab)."
+    "note": "Name shown for an attached folder whose record another tab deleted (Home page, Folders tab)."
   },
   "Folders.held": {
     "message": "held by another machine",
-    "note": "Under an attached folder's name (Machines page, Folders tab), after ' · ': a machine in another tab has it."
+    "note": "Under an attached folder's name (Home page, Folders tab), after ' · ': a machine in another tab has it."
   },
   "Folders.noPermission": {
     "message": "No permission in this browser",
-    "note": "Warning under an attached host folder's name (Machines page, Folders tab) while the machine runs here and the browser needs a click to grant it (Allow… beside)."
+    "note": "Warning under an attached host folder's name (Home page, Folders tab) while the machine runs here and the browser needs a click to grant it (Allow… beside)."
   },
   "Folders.inUseBy": {
     "message": "In use by {{holder}}",
-    "note": "Warning under an attached folder's name (Machines page, Folders tab) while another machine, in another tab, has it. {{holder}} is that machine's name."
+    "note": "Warning under an attached folder's name (Home page, Folders tab) while another machine, in another tab, has it. {{holder}} is that machine's name."
   },
   "Folders.inUse": {
     "message": "In use by a machine in another tab",
-    "note": "Warning under an attached folder's name (Machines page, Folders tab) while another machine, whose tab didn't say its name, has it."
+    "note": "Warning under an attached folder's name (Home page, Folders tab) while another machine, whose tab didn't say its name, has it."
   },
   "Folders.busy.saving": {
     "message": "Saving",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder's Read-only is saved."
+    "note": "What the Home page is doing (shown with … at its top) while a folder's Read-only is saved."
   },
   "Folders.readOnly.title": {
     "message": "This machine can only read the folder.",
-    "note": "Tooltip of an attached folder's Read-only checkbox (Machines page, Folders tab): for this machine's attachment."
+    "note": "Tooltip of an attached folder's Read-only checkbox (Home page, Folders tab): for this machine's attachment."
   },
   "Folders.readOnly": {
     "message": "Read-only",
-    "note": "Checkbox on an attached folder's line (Machines page, Folders tab): this machine only reads it."
+    "note": "Checkbox on an attached folder's line (Home page, Folders tab): this machine only reads it."
   },
   "Folders.busy.moving": {
     "message": "Moving",
-    "note": "What the Machines page is doing (shown with … at its top) while an attached folder moves in the list."
+    "note": "What the Home page is doing (shown with … at its top) while an attached folder moves in the list."
   },
   "Folders.busy.asking": {
     "message": "Asking",
-    "note": "What the Machines page is doing (shown with … at its top) while the browser asks for a folder's permission."
+    "note": "What the Home page is doing (shown with … at its top) while the browser asks for a folder's permission."
   },
   "Folders.allow": {
     "message": "Allow…",
-    "note": "Button on an attached host folder the browser needs a click for (Machines page, Folders tab): asks for its permission."
+    "note": "Button on an attached host folder the browser needs a click for (Home page, Folders tab): asks for its permission."
   },
   "Folders.busy.taking": {
     "message": "Taking the folder",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder another machine has is taken for this one."
+    "note": "What the Home page is doing (shown with … at its top) while a folder another machine has is taken for this one."
   },
   "Folders.useHere": {
     "message": "Use it here",
-    "note": "Button on an attached folder another machine has (Machines page, Folders tab): asks, then takes it for this machine."
+    "note": "Button on an attached folder another machine has (Home page, Folders tab): asks, then takes it for this machine."
   },
   "Folders.busy.detaching": {
     "message": "Detaching",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder is detached."
+    "note": "What the Home page is doing (shown with … at its top) while a folder is detached."
   },
   "Folders.detach": {
     "message": "Detach",
-    "note": "Button on each attached folder (Machines page, Folders tab): detaches it from the machine."
+    "note": "Button on each attached folder (Home page, Folders tab): detaches it from the machine."
   },
   "Folders.none": {
     "message": "No folders attached.",
-    "note": "The Machines page's Folders tab's list when the machine has no folder attached."
+    "note": "The Home page's Folders tab's list when the machine has no folder attached."
   },
   "Folders.attach": {
     "message": "Attach a folder…",
-    "note": "Button under the attached folders (Machines page, Folders tab): opens the Folder wizard."
+    "note": "Button under the attached folders (Home page, Folders tab): opens the Folder wizard."
   },
   "Folders.note": {
     "message": "Folders are attached and detached immediately, whether the machine is running or not. The guest finds each folder under the mount point, by its name.",
-    "note": "Note at the bottom of the Machines page's Folders tab."
+    "note": "Note at the bottom of the Home page's Folders tab."
   },
   "FoldersMenu.state.permission": {
     "message": "needs your permission",
@@ -296,7 +296,7 @@
     "note": "Title of the second kind in the Folder wizard: a folder this browser keeps."
   },
   "FolderWizard.kind.opfs.text": {
-    "message": "Kept in this browser with its disks, and fast for any kind of writing. Add and copy out its files from its card under Shared folders, on the Machines page.",
+    "message": "Kept in this browser with its disks, and fast for any kind of writing. Add and copy out its files from its card under Shared folders, on the Home page.",
     "note": "Explanation under A new folder in the browser in the Folder wizard's kind step."
   },
   "FolderWizard.readOnly": {
@@ -341,23 +341,23 @@
   },
   "FolderWizard.create": {
     "message": "Create",
-    "note": "Button of the Folder wizard, opened from Shared folders on the Machines page (no machine): makes the new folder."
+    "note": "Button of the Folder wizard, opened from Shared folders on the Home page (no machine): makes the new folder."
   },
   "FoldersPane.busy.adding": {
     "message": "Adding files",
-    "note": "What the Machines page is doing (shown with … at its top) while files are added to a folder in the browser (Shared folders)."
+    "note": "What the Home page is doing (shown with … at its top) while files are added to a folder in the browser (Shared folders)."
   },
   "FoldersPane.busy.copyingOut": {
     "message": "Copying out",
-    "note": "What the Machines page is doing while a folder in the browser is copied into a folder on the computer (shown with … at its top, and in the copy's progress line)."
+    "note": "What the Home page is doing while a folder in the browser is copied into a folder on the computer (shown with … at its top, and in the copy's progress line)."
   },
   "FoldersPane.busy.copyingIn": {
     "message": "Copying in",
-    "note": "What the Machines page is doing while a folder on the computer is copied into a folder in the browser (shown with … at its top, and in the copy's progress line)."
+    "note": "What the Home page is doing while a folder on the computer is copied into a folder in the browser (shown with … at its top, and in the copy's progress line)."
   },
   "FoldersPane.empty.question": {
     "message": "Empty {{name}}? This will delete its files from this browser.",
-    "note": "Question (confirm dialog) when Empty is clicked under a folder in the browser (Machines page, Shared folders). {{name}} is the folder's name."
+    "note": "Question (confirm dialog) when Empty is clicked under a folder in the browser (Home page, Shared folders). {{name}} is the folder's name."
   },
   "FoldersPane.empty.title": {
     "message": "Empty the folder",
@@ -369,11 +369,11 @@
   },
   "FoldersPane.busy.emptying": {
     "message": "Emptying",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder in the browser is emptied."
+    "note": "What the Home page is doing (shown with … at its top) while a folder in the browser is emptied."
   },
   "FoldersPane.delete.opfs.lose_one": {
     "message": "Delete {{name}}? This will delete its {{size, bytes}} of files from this browser. {{machines}} will lose the folder.",
-    "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to one machine (Machines page, Shared folders). {{name}} is the folder's name, {{size}} its files' size, {{machines}} the machine's name."
+    "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to one machine (Home page, Shared folders). {{name}} is the folder's name, {{size}} its files' size, {{machines}} the machine's name."
   },
   "FoldersPane.delete.opfs.lose_other": {
     "message": "Delete {{name}}? This will delete its {{size, bytes}} of files from this browser. {{machines}} will lose the folder.",
@@ -381,11 +381,11 @@
   },
   "FoldersPane.delete.opfs": {
     "message": "Delete {{name}}? This will delete its {{size, bytes}} of files from this browser.",
-    "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to no machine (Machines page, Shared folders). {{name}} is the folder's name, {{size}} its files' size."
+    "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to no machine (Home page, Shared folders). {{name}} is the folder's name, {{size}} its files' size."
   },
   "FoldersPane.delete.host.lose_one": {
     "message": "Delete {{name}}? The folder on your computer will stay as it is. {{machines}} will lose it.",
-    "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to one machine (Machines page, Shared folders). {{name}} is the folder's name, {{machines}} the machine's name."
+    "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to one machine (Home page, Shared folders). {{name}} is the folder's name, {{machines}} the machine's name."
   },
   "FoldersPane.delete.host.lose_other": {
     "message": "Delete {{name}}? The folder on your computer will stay as it is. {{machines}} will lose it.",
@@ -393,11 +393,11 @@
   },
   "FoldersPane.delete.host": {
     "message": "Delete {{name}}? The folder on your computer will stay as it is.",
-    "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to no machine (Machines page, Shared folders). {{name}} is the folder's name."
+    "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to no machine (Home page, Shared folders). {{name}} is the folder's name."
   },
   "FoldersPane.delete.title": {
     "message": "Delete the folder",
-    "note": "Title of the confirm dialog that asks before a folder is deleted (Machines page, Shared folders)."
+    "note": "Title of the confirm dialog that asks before a folder is deleted (Home page, Shared folders)."
   },
   "FoldersPane.delete.ok": {
     "message": "Delete",
@@ -405,99 +405,99 @@
   },
   "FoldersPane.busy.deleting": {
     "message": "Deleting",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder is deleted."
+    "note": "What the Home page is doing (shown with … at its top) while a folder is deleted."
   },
   "FoldersPane.name": {
     "message": "Name",
-    "note": "Screen-reader name of a folder's name field, which renames it (Machines page, Shared folders, at the top of each folder's card)."
+    "note": "Screen-reader name of a folder's name field, which renames it (Home page, Shared folders, at the top of each folder's card)."
   },
   "FoldersPane.busy.renaming": {
     "message": "Renaming",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder is renamed."
+    "note": "What the Home page is doing (shown with … at its top) while a folder is renamed."
   },
   "FoldersPane.kind.host": {
     "message": "on your computer",
-    "note": "Under a folder's name on its card (Machines page, Shared folders): it is a folder on the user's computer."
+    "note": "Under a folder's name on its card (Home page, Shared folders): it is a folder on the user's computer."
   },
   "FoldersPane.kind.opfs": {
     "message": "in this browser",
-    "note": "Under a folder's name on its card (Machines page, Shared folders): it is a folder kept by this browser."
+    "note": "Under a folder's name on its card (Home page, Shared folders): it is a folder kept by this browser."
   },
   "FoldersPane.attachedTo": {
     "message": "attached to {{machines}}",
-    "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · '. {{machines}} is the names of the machines it is attached to, joined with commas."
+    "note": "Under a folder's name on its card (Home page, Shared folders), after ' · '. {{machines}} is the names of the machines it is attached to, joined with commas."
   },
   "FoldersPane.attachedToNone": {
     "message": "attached to no machine",
-    "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · ': no machine has it attached."
+    "note": "Under a folder's name on its card (Home page, Shared folders), after ' · ': no machine has it attached."
   },
   "FoldersPane.heldElsewhere": {
     "message": "a machine in another tab has it",
-    "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · ': a running machine in another tab has it."
+    "note": "Under a folder's name on its card (Home page, Shared folders), after ' · ': a running machine in another tab has it."
   },
   "FoldersPane.heldHere": {
     "message": "the machine in this tab has it",
-    "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · ': the machine running in this tab has it."
+    "note": "Under a folder's name on its card (Home page, Shared folders), after ' · ': the machine running in this tab has it."
   },
   "FoldersPane.busy.saving": {
     "message": "Saving",
-    "note": "What the Machines page is doing (shown with … at its top) while a folder's Read-only is saved (Shared folders)."
+    "note": "What the Home page is doing (shown with … at its top) while a folder's Read-only is saved (Shared folders)."
   },
   "FoldersPane.readOnly.title": {
     "message": "No machine can write to the folder.",
-    "note": "Tooltip of a folder's Read-only checkbox on its card (Machines page, Shared folders): for every machine."
+    "note": "Tooltip of a folder's Read-only checkbox on its card (Home page, Shared folders): for every machine."
   },
   "FoldersPane.readOnly": {
     "message": "Read-only",
-    "note": "Checkbox on a folder's card (Machines page, Shared folders): no machine writes it."
+    "note": "Checkbox on a folder's card (Home page, Shared folders): no machine writes it."
   },
   "FoldersPane.files": {
     "message": "Files",
-    "note": "Button on a folder in the browser's card (Machines page, Shared folders): shows or hides its files."
+    "note": "Button on a folder in the browser's card (Home page, Shared folders): shows or hides its files."
   },
   "FoldersPane.delete": {
     "message": "Delete",
-    "note": "Button on each folder's card (Machines page, Shared folders): deletes the folder (asked first)."
+    "note": "Button on each folder's card (Home page, Shared folders): deletes the folder (asked first)."
   },
   "FoldersPane.files.label": {
     "message": "Its files",
-    "note": "Screen-reader name of the region that lists a folder in the browser's files (Machines page, Shared folders); files dropped on it are added."
+    "note": "Screen-reader name of the region that lists a folder in the browser's files (Home page, Shared folders); files dropped on it are added."
   },
   "FoldersPane.files.empty": {
     "message": "Empty",
-    "note": "The list of a folder in the browser's files (Machines page, Shared folders) when it has none."
+    "note": "The list of a folder in the browser's files (Home page, Shared folders) when it has none."
   },
   "FoldersPane.busyNote": {
     "message": "A machine is using this folder. Its files can be changed here once the machine releases it.",
-    "note": "Note under a folder in the browser's files (Machines page, Shared folders) while a machine has it (the buttons are off)."
+    "note": "Note under a folder in the browser's files (Home page, Shared folders) while a machine has it (the buttons are off)."
   },
   "FoldersPane.add": {
     "message": "Add files…",
-    "note": "Button under a folder in the browser's files (Machines page, Shared folders): opens the browser's file picker."
+    "note": "Button under a folder in the browser's files (Home page, Shared folders): opens the browser's file picker."
   },
   "FoldersPane.copyOut": {
     "message": "Copy into a folder on your computer…",
-    "note": "Button under a folder in the browser's files (Machines page, Shared folders): copies them into a folder the user picks."
+    "note": "Button under a folder in the browser's files (Home page, Shared folders): copies them into a folder the user picks."
   },
   "FoldersPane.copyIn": {
     "message": "Copy from a folder on your computer…",
-    "note": "Button under a folder in the browser's files (Machines page, Shared folders): copies a folder the user picks into it."
+    "note": "Button under a folder in the browser's files (Home page, Shared folders): copies a folder the user picks into it."
   },
   "FoldersPane.empty": {
     "message": "Empty",
-    "note": "Button under a folder in the browser's files (Machines page, Shared folders): deletes all its files (asked first)."
+    "note": "Button under a folder in the browser's files (Home page, Shared folders): deletes all its files (asked first)."
   },
   "FoldersPane.copying": {
     "message": "{{what}}: {{done}} of {{total}} files, {{bytes, bytes}}",
-    "note": "Progress line under a folder's files while a copy runs (Machines page, Shared folders); a Cancel button follows. {{what}} is Copying out or Copying in; {{done}} the files copied; {{total}} how many there are (… until counted); {{bytes}} the bytes copied."
+    "note": "Progress line under a folder's files while a copy runs (Home page, Shared folders); a Cancel button follows. {{what}} is Copying out or Copying in; {{done}} the files copied; {{total}} how many there are (… until counted); {{bytes}} the bytes copied."
   },
   "FoldersPane.copying.cancel": {
     "message": "Cancel",
-    "note": "Button after a copy's progress line (Machines page, Shared folders): stops the copy."
+    "note": "Button after a copy's progress line (Home page, Shared folders): stops the copy."
   },
   "FoldersPane.none": {
     "message": "No folders yet. Create one here or from a machine's Shared folders tab; a folder dropped here becomes one too.",
-    "note": "Shared folders on the Machines page when the browser keeps no folder."
+    "note": "Shared folders on the Home page when the browser keeps no folder."
   },
   "folder-actions.drop.confirm": {
     "message": "Attach {{folder}} to {{machine}}? The folder will be kept in this browser, for this or any other machine.",

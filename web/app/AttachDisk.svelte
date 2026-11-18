@@ -1,5 +1,5 @@
 <!--
-  Attach a disk to a machine (docs/machines.md §4): a dialog over the Disks pane of the Machines page, the other way round from
+  Attach a disk to a machine (docs/machines.md §4): a dialog over the Disks pane of the Home page, the other way round from
   Add a disk… › A disk already in this browser. The machines in this browser, each attaching the disk last, with its
   overlays; one that has it already, has as many disks as a machine can, or runs in another tab says so instead.
 -->

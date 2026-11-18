@@ -398,7 +398,7 @@ again afterwards. Tests: `serve_test.rs` (the switch written, FAILED without it)
 
 **Disk space handed back** (TRIM; `web/app/areas/trim-actions.ts`, `agent/src/trim.rs`; the user's choice,
 2026-11-13): a guest deletes files and its disks' overlays keep their blocks until it trims (blk below: a `discard`
-mount, or `fstrim.timer` once a week). The page has the agent trim them at three times: the Machines page's storage
+mount, or `fstrim.timer` once a week). The page has the agent trim them at three times: the Home page's storage
 bar's [Free unused disk space](ui:machines:StorageBar.storage.trim) (shown while this tab's machine runs with an agent
 that says `CAP.TRIM`; its notice says what the disks' changes took before the trim and after the compaction: measured
 first, since the trim's discards may compact an overlay already, past half free), when a disk's write found the
@@ -610,8 +610,8 @@ the guest), no tool, no answer in time (each said in the message bar), or no age
 (or restart), which asks first, and acts only if the run it asked about is still the machine's (the guest's own reboot
 may have started another meanwhile). A request given up on isn't withdrawn: logind can't take one back, so the guest
 may still shut down after the page's question. The page never
-forces on its own. **The Machines screen's stops** (`web/app/run/clean-stop.ts`; the user's design, 2026-11-14): a
-change that keeps the machine's disk (a disk's export, after its trim; the Machines page's Power off before an edit;
+forces on its own. **The Home page's stops** (`web/app/run/clean-stop.ts`; the user's design, 2026-11-14): a
+change that keeps the machine's disk (a disk's export, after its trim; the Home page's Power off before an edit;
 Save and restart of its settings; another machine opened) asks the guest to shut down first where its agent can (its
 question says so), with a dialog meanwhile ([Shutting down](ui:machine:power-actions.shuttingDown.title)) whose one
 button, [Power off now](ui:machine:power-actions.shuttingDown.now), cuts the power (not focused; Esc does nothing: the
@@ -622,7 +622,7 @@ powers off: it leaves the sign (above), and only a sign cleared with an agent th
 so the wait goes on (taking an end as one once asked again, got no agent, and put the question below up over a guest
 that was shutting down). Refused or unanswered, the user is asked whether to power off at once: the
 guest powering off while that question is open takes it down and the change goes on as after a clean stop; Cancel
-keeps the machine running and the change isn't made (`PowerActions.powerOff` and `stopCleanly` say so to their callers: the Machines
+keeps the machine running and the change isn't made (`PowerActions.powerOff` and `stopCleanly` say so to their callers: the Home
 page's edit, the export, the settings, the switch stop there). No agent that can: the hard stop, which the change's
 question said. Stops that drop the running guest's state (a disk's reset, a snapshot's restore, changes
 imported, another disk booted) stay hard. Tests: the commands (`agent/src/power.rs`, `serve_test.rs`: busctl's method, refused, shutdown
@@ -880,7 +880,7 @@ features were taken); 12 bytes of config (`num_pages`, `actual`, `free_page_hint
   reports 3.2) and gives up for the session on a refused one (map cleared, data cut off); a guest's write, zeroing or
   discard that fails makes every open store give up (`releaseStores`) and is tried once more, and a kept snapshot's, a
   suspended machine's, a restore's fork's or a snapshot file import's write does the same across workers (`makeRoom`:
-  every image's cache, as Clear; docs/machines.md "Storage"). The Machines
+  every image's cache, as Clear; docs/machines.md "Storage"). The Home
   page's storage footer shows and clears it (a machine reading one is asked over a BroadcastChannel to give its store
   up); `?diskcache=0` turns it off (benchmarks). A remote desktop boot's second
   boot: 109 → 63 s, no requests (bench/remote-disk/REPORT.md "R3").
@@ -1425,7 +1425,7 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   it to Venus's renderer as `blob-ctx` with its size (its backing's pages, or its texels at 4 bytes, whichever is more),
   which makes it a dma-buf resource of the context; the driver's images on memory imported from it are written with
   the resource's bytes (web/venus-import.ts). A detach drops it there.
-- On the page: a machine's Vulkan setting (the Machines page, beside 3D: `MachineRecord.vulkan`, in its shape) or
+- On the page: a machine's Vulkan setting (the Home page, beside 3D: `MachineRecord.vulkan`, in its shape) or
   `?gpu=vulkan` (with 3D on) gives it Venus (web/app/worker.ts); the module is fetched only then, and is in `npm run
   dist`'s copy (vk/README.md "On the page").
 - Linux's driver says, for the gpu test kernel (`tests/venus.test.ts`): `Host memory window: 0x50000000 +0x10000000`,

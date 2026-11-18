@@ -1,5 +1,5 @@
 <!--
-  One pane on the right of the Machines page (docs/frontend.md "The Machines page"): a machine, the browser's Disks,
+  One pane on the right of the Home page (docs/frontend.md "The Home page"): a machine, the browser's Disks,
   Shared folders and Connections, Preferences, About. The frame every pane shares, so they can't drift apart: the head
   (the title, its small line, the pane's buttons on the right), the tabs under it when it has some, and the body.
   The title sits at the same place whether or not the head has buttons (its line is a button's height), and the body

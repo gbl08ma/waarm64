@@ -1,5 +1,5 @@
 <!--
-  The storage bar's details (docs/machines.md "Storage"): a dialog over the Machines page, opened from the icon after
+  The storage bar's details (docs/machines.md "Storage"): a dialog over the Home page, opened from the icon after
   the storage line. What this web app uses of what the browser allows, or, when the browser's count is short of the
   files the page lists (`behind`), the three numbers apart; then what uses the space.
 -->

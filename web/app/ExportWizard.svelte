@@ -1,5 +1,5 @@
 <!--
-  Export (docs/machines.md §4): a wizard over the Machines page, opened by a disk's Export on a machine's Disks tab or
+  Export (docs/machines.md §4): a wizard over the Home page, opened by a disk's Export on a machine's Disks tab or
   on the page's machine (PagePane.svelte). Its steps are ExportSteps.svelte's; the last choice saves and closes it.
 -->
 <script lang="ts">

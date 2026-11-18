@@ -531,7 +531,7 @@ test('the page restarts over and over while the guest writes to its disk, also d
   const running = () => page.waitForFunction(() => ['running', 'failed', 'crashed'].includes(document.body.dataset.state!), null, { timeout: 60_000, polling: 20 });
   for (let i = 0; i < 6; i++) {
     await running();
-    assert.equal(await state(), 'running', await page.locator('#message-text').textContent() ?? '');
+    assert.equal(await state(), 'running', await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '');
     // The root's first 2 MiB written over with themselves (same bytes: the mounted filesystem doesn't mind), synced, in a loop.
     await page.locator('.xterm').click();
     await page.keyboard.type('(while :; do dd if=/dev/vda of=/dev/vda bs=64k count=32 2>/dev/null; sync; done) & echo wr""iting\n');
@@ -548,7 +548,7 @@ test('the page restarts over and over while the guest writes to its disk, also d
   }
   await running();
   const states = await page.evaluate(() => (window as unknown as { states: string[] }).states);
-  assert.ok(!states.includes('failed') && !states.includes('crashed'), `${states.join(' ')}: ${await page.locator('#message-text').textContent()}`);
+  assert.ok(!states.includes('failed') && !states.includes('crashed'), `${states.join(' ')}: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
   await page.close();
 });
 
@@ -584,7 +584,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   // xterm.js not installed: the module graph fails to load.
   page = await open((p) => p.route('**/xterm.mjs', (r) => r.fulfill({ status: 404 })));
   await page.waitForFunction(() => document.getElementById('state')?.dataset.state === 'failed', null, { timeout: 10_000, polling: 50 });
-  assert.match(await page.locator('#message-text').textContent() ?? '', /scripts didn't load[^]*npm start/);
+  assert.match(await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '') ?? '', /scripts didn't load[^]*npm start/);
   await page.close();
   // The core, then an image: 404s from the machine worker's fetches; Retry once they're back.
   for (const [pattern, want, why] of [
@@ -703,7 +703,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.locator('.xterm').click();
   await page.keyboard.type('echo "[$(cat /mark)]"\n');
   await shows(page, /\[waarm64-mark\]/);
-  // Reset (the Machines page, this page's machine's Disks tab): a confirmation (with what the overlay holds), a stop, the
+  // Reset (the Home page, this page's machine's Disks tab): a confirmation (with what the overlay holds), a stop, the
   // overlay deleted, a boot from the image.
   await page.locator('#machines-open').click();
   await page.locator('#reset-disk').click();

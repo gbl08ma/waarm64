@@ -3,7 +3,7 @@
 // worker (tests/browser/overlay-writer.ts), as the files a machine leaves. The "visualize" link in the Disks pane opens
 // the disk alone, in a machine's Disks tab its attachment's overlay; held squares where the data is; an overlay grown
 // past the disk (squares without the disk, its end marked, the overlay's changes and zeroings); the overlay picker; a
-// pinned square's blocks, runs and Check contents; the window over the machine once the Machines page is closed; a
+// pinned square's blocks, runs and Check contents; the window over the machine once the Home page is closed; a
 // ramdisk with nothing to show while its machine is off; a file disk without a handle to read, not examined, said why
 // (and its blocks not checked); the window's reading of the files not taken for a machine's by delete, resize and merge
 // (the merge with the window open on an overlay it deletes); the pointed square's words spoken once per square.
@@ -216,7 +216,7 @@ test('the disk surface window: from the Disks pane and a machine\'s Disks tab, a
   await win(page).locator('[data-field=surface-overlay]').selectOption(ids.w);
   await view(page, (x) => x.overlay === ids.w && x.size === 48 * MiB);
 
-  // The Machines page closed: the window stays, over the machine, and the screen's focus isn't taken by a click on it.
+  // The Home page closed: the window stays, over the machine, and the screen's focus isn't taken by a click on it.
   await modal(page).locator('[data-action=back]').click();
   await page.waitForFunction(() => document.body.dataset.page === 'machine');
   assert.ok(await win(page).isVisible());

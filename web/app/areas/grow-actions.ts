@@ -1,4 +1,4 @@
-// A disk grown on the Machines page, grown in the guest too (docs/devices.md "A disk grown", docs/machines.md §4.5):
+// A disk grown on the Home page, grown in the guest too (docs/devices.md "A disk grown", docs/machines.md §4.5):
 // at each HELLO of a run's agent that says `CAP.GROW`, GROW for each of the run's disks whose overlay or stored disk
 // carries a grow mark (web/app/resize.ts `growsOf`, read from the records then: a restore's agent connects again and
 // is asked again for what still stands); each GROWN, whichever connection it comes on, against the marks then (a

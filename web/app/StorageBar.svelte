@@ -1,5 +1,5 @@
 <!--
-  The Machines page's foot: the browser's storage, used and its quota (persisted or not: ask for it), what clears the
+  The Home page's foot: the browser's storage, used and its quota (persisted or not: ask for it), what clears the
   remote disks' cache and the shaders', what has the running guest hand back the space it freed. The icon after the
   line opens what holds the bytes (StorageDetails.svelte); while the browser's count is short of the files listed there
   (`behind`), the line gives the files' sum alone, and the icon is a warning.

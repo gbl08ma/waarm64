@@ -800,7 +800,7 @@ controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes b
 
 Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the definition entries),
 `web/app/usb-problems.ts` (DOM-free: the problems' words and remedies, an attach's error), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
-ports), `UsbTab.svelte` (the Machines page's USB tab: the controller's switch over `Usb.svelte`, the devices), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
+ports), `UsbTab.svelte` (the Home page's USB tab: the controller's switch over `Usb.svelte`, the devices), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
 toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (the Gamepad API's pads and their feed), `UsbProblems.svelte` (a device's problems, with their remedies folded), and `web/app/areas/usb-*.ts`.
 
 ### The controller and the shape
@@ -876,7 +876,7 @@ They work while the machine runs on this page, from the USB tab or the toolbar's
 - **Errors:** an attach refused by the device worker is shown with its `UsbProblem`s in words (`problemText`). Each
   problem is a short plain sentence (`text`); the host OS's remedy (`fix`: numbered steps, the commands to copy in
   their own boxes) and the browser's own message (`said`) sit folded under it in a `<details>` (`UsbProblems.svelte`,
-  in the menu, the Add a device wizard and the Machines page). The message bar, which shows plain text, gets the
+  in the menu, the Add a device wizard and the Home page). The message bar, which shows plain text, gets the
   short sentences only. The words are text, never Markdown:
   - a protected interface class, with where such a device goes instead;
   - an interface a host driver holds, with the remedy for Linux (unbinding `cdc_acm` and the like), macOS and

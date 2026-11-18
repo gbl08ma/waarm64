@@ -98,7 +98,7 @@ test('a kept node comes back after a reload as the same node, until it logs out'
     const named = (JSON.parse(execFileSync(script, ['nodes'], { encoding: 'utf8' })) as { name: string; expiry?: { seconds: number } }[]).find((n) => n.name === 'kept');
     assert.ok(named?.expiry && named.expiry.seconds * 1000 < Date.now(), `the control server expired the node's key: ${JSON.stringify(named)}`);
 
-    // One no machine runs (a connection on the Machines page): a client of its own logs it out.
+    // One no machine runs (a connection on the Home page): a client of its own logs it out.
     await open(page, { authkey: execFileSync(script, ['key', 'lasting'], { encoding: 'utf8' }).trim(), persist, hostname: 'idle' });
     await page.evaluate('window.harness.close()');
     assert.equal(await page.evaluate(`window.harness.logOutNode(${JSON.stringify({ controlURL: persist, hostname: 'idle', persist })})`), true);

@@ -2,7 +2,7 @@
   The Folder wizard (docs/shares.md §4), a dialog opened by web/app/areas/shares.svelte.ts `openWizard`: attach one of the browser's folders to
   a machine (those in use marked with their machine), or make a new one: its kind, each explained, then its settings
   (for a folder on this computer, numbered steps that end at Pick the folder…).
-  Without a `machine` it only makes a folder (Shared folders, on the Machines page). web/app/areas/folder-actions.ts attaches.
+  Without a `machine` it only makes a folder (Shared folders, on the Home page). web/app/areas/folder-actions.ts attaches.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';

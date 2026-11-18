@@ -37,7 +37,7 @@ export class FolderActions {
     await this.#folders.refresh();
     return f;
   }
-  /** A change to `machine`'s folders, then its record read again (the Machines page's tabs show it once this resolves). */
+  /** A change to `machine`'s folders, then its record read again (the Home page's tabs show it once this resolves). */
   async #changed(machine: string, change: Promise<unknown>) {
     await change;
     await this.#m.rereadRecord(machine);

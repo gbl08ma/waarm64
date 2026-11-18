@@ -180,7 +180,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     const before = (await header(page))[READ];
     // Watched from before the click: the guest's power-off replaces the page's message.
     const saved = page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:snapshot-actions.saved', {}, { start: true }).source, { timeout: 60_000, polling: 20 })
-      .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.locator('#message-text').textContent()}`); });
+      .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`); });
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.locator('#save-snapshot').click()]);
     const path = join(dir, 'snd.waarm64snap');
     await download.saveAs(path);
@@ -210,7 +210,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio?.playing && (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
     // Listened to once the restored stream flows (half a second on the new ring): under load its vCPUs start late.
     await p2.waitForFunction((at) => (window as unknown as W).__audio?.header()[at] >= 24000, READ, { timeout: 30_000, polling: 50 })
-      .catch(async (e) => { throw new Error(`${e}: the ring ${await header(p2)}, the page ${await p2.evaluate(() => document.body.dataset.state)} (${await p2.locator('#message-text').textContent()}); the terminal: ${await p2.evaluate(() => document.querySelector('.xterm-rows')?.textContent?.slice(-2500))}; console: ${logs2.slice(-10).join(' | ')}; kernel: ${(await serial(p2)).split('\n').filter((l) => /virtio|head|range|broken|BUG|WARN|error|nobody|disabl|irq [0-9]+:/i.test(l)).slice(-12).join(' / ')}`); });
+      .catch(async (e) => { throw new Error(`${e}: the ring ${await header(p2)}, the page ${await p2.evaluate(() => document.body.dataset.state)} (${await p2.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}); the terminal: ${await p2.evaluate(() => document.querySelector('.xterm-rows')?.textContent?.slice(-2500))}; console: ${logs2.slice(-10).join(' | ')}; kernel: ${(await serial(p2)).split('\n').filter((l) => /virtio|head|range|broken|BUG|WARN|error|nobody|disabl|irq [0-9]+:/i.test(l)).slice(-12).join(' / ')}`); });
     const heard = await peaks(p2);
     assert.ok(Math.abs(heard.hz[0] - 440) < 12 && Math.abs(heard.hz[1] - 660) < 12, `heard ${heard.hz} Hz after the load (the ring ${await header(p2)}; the serial console's end: ${(await serial(p2)).slice(-300)})`);
     await until(p2, /snd test (ok|failed)/, 30_000);

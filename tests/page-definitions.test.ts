@@ -71,7 +71,7 @@ test('a definition exported from one profile and imported into another: the same
   assert.deepEqual(def.disks.map((d: { swap?: boolean }) => !!d.swap), [false, false, false, true], 'the ramdisk as swap');
   assert.equal(readFileSync(defFile, 'utf8').includes('handle'), false, 'no handle in the file');
 
-  // Profile B: imported through the Machines page; the same shape.
+  // Profile B: imported through the Home page; the same shape.
   const b = await profile();
   const pb = await b.newPage();
   const dialogs: string[] = [];

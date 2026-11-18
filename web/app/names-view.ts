@@ -1,6 +1,6 @@
 // Registered names as the page says them (docs/plans/room-names.md "What the user sees"): a title's state in the
 // adapter's menu and details, the dialog's check (as typed, and at Register), the details' line of the registry, a stored machine's names on
-// the Machines page, and where a name points in words (a member's name in the room) and back. Pure: the area
+// the Home page, and where a name points in words (a member's name in the room) and back. Pure: the area
 // (web/app/areas/names.svelte.ts) and the components call these.
 import { msg, type Msg } from '../i18n.ts';
 import type { NameCheck, TitleView } from '../names.ts';
@@ -175,7 +175,7 @@ export function namesLine(n: { serving: boolean; names: number; servers: number 
       });
 }
 
-/** A stored machine's names on the Machines page: each with the date it stops resolving unless renewed. */
+/** A stored machine's names on the Home page: each with the date it stops resolving unless renewed. */
 export function machineNames(views: TitleView[]): Msg[] {
   return views
     .filter((v) => v.state === 'active' || v.state === 'grace' || v.state === 'reserved' || v.state === 'preparing')

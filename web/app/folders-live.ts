@@ -1,7 +1,7 @@
 // The live side of the page's machine's shared folders (docs/shares.md): which of its attached folders the running
 // device has, the folders' locks and grants. At a start every attachment is looked at: granted and free, it is served;
 // otherwise the page says why and what can be done (Allow access…, Use it here), and doing it adds the folder while the
-// machine runs, over the device's port (`FoldersToDevice`). The toolbar's Folders menu, the wizard and the Machines
+// machine runs, over the device's port (`FoldersToDevice`). The toolbar's Folders menu, the wizard and the Home
 // page's tab drive it; web/app/run/runner.ts hands it each start's record. DOM-free but for what `FolderAccess` wraps:
 // tests/folders.test.ts runs it over a memory store.
 import type { FolderSpec, FoldersFromDevice, FoldersToDevice } from '../9p-folders.ts';

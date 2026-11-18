@@ -219,7 +219,7 @@ export function ramSplitError(split: number[], vulkan = false): Msg | undefined 
   const p = splitError(ram, spill, vulkan ? VENUS_RESERVE : 0);
   return p && splitMsg(p);
 }
-/** What web/ram.ts `splitError`'s code says (the Machines page's Memory split, a machine that can't start with its split). */
+/** What web/ram.ts `splitError`'s code says (the Home page's Memory split, a machine that can't start with its split). */
 export function splitMsg(p: SplitProblem): Msg {
   switch (p.code) {
     case 'memory0-min':

@@ -1,4 +1,4 @@
-// What the USB menu and the Machines page's USB tab ask (docs/usb.md "The page"; web/app/page.ts's `usb*`): devices
+// What the USB menu and the Home page's USB tab ask (docs/usb.md "The page"; web/app/page.ts's `usb*`): devices
 // added from the browser's chooser, attached, detached, edited and forgotten, grants given, the menu's offers taken,
 // the game pads and Gadget Zero; and the host's devices and pads as they come and go.
 import { describe, MsgError, t } from '../../i18n.ts';

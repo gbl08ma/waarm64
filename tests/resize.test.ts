@@ -356,7 +356,7 @@ test('finding 1: a restore commits on the machine record as it is when it commit
   const pins = [{ slot: slotOf(w.A, 0), identity: 'x', size: 8 * MiB, blocks: 1, overlay: overlayDir(w.oa.id), generation: 7 }];
   const plan = await planRestore(store, planned, await disksOf(store), { name: 'snap', key: 'k', pins }, { display: '2d', devices: [] });
   assert.equal(plan.forks.length, 1);
-  // Meanwhile (the Machines page, another tab): renamed, its URL disk switched to another overlay.
+  // Meanwhile (the Home page, another tab): renamed, its URL disk switched to another overlay.
   const third = await createOverlay(store, w.url, 'Third');
   const edited = structuredClone((await store.get('machines', w.A.id))!);
   edited.name = 'renamed';

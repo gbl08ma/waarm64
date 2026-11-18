@@ -1,5 +1,5 @@
 // The machine's size: a transient machine's from the toolbar's Machine menu (vCPUs, RAM and graphics, applied by a
-// restart: a power cut, like the other restarts), a stored machine's from its Settings on the Machines page, and the
+// restart: a power cut, like the other restarts), a stored machine's from its Settings on the Home page, and the
 // shape a machine would run with here.
 import { msg, t } from '../../i18n.ts';
 import { ask } from '../ask.svelte.ts';

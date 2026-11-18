@@ -59,7 +59,7 @@ browser is its stored files.
 
 From **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of machines (as **Connections** is) and from the wizard (§4): **A folder on this
 computer** (`showDirectoryPicker({mode: 'readwrite'})`, or `'read'` with Read-only ticked first), **A new folder in
-the browser** (a name), and a folder **dropped** on the page or on the Machines page
+the browser** (a name), and a folder **dropped** on the page or on the Home page
 (`DataTransferItem.getAsFileSystemHandle()`: a directory becomes a host folder; files dropped on a folder in the
 browser go into it). Chromium refuses some directories (the home directory itself, system ones): its error is
 shown as it is.
@@ -153,7 +153,7 @@ after the request it names**. What changes while the machine runs comes over the
 
 ## 4. The page
 
-- **The Machines page:** a **[Shared folders](ui:machines:MachinePane.tab.folders)** tab per machine: **[Shared folders](ui:machines:FoldersTab.shares)** (the switch: in the shape, so asked
+- **The Home page:** a **[Shared folders](ui:machines:MachinePane.tab.folders)** tab per machine: **[Shared folders](ui:machines:FoldersTab.shares)** (the switch: in the shape, so asked
   as Settings' changes are), **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)** and under it **[Mount point](ui:machines:FoldersTab.sharesPath)** (a text field, default
   `/mnt/shared`, checked as typed by `sharesPathError`, §5; on the machine running on this page a change says it takes
   effect at the next start), and the attached folders in order (name, kind,

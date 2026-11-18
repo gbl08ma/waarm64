@@ -58,7 +58,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      its frame at the end, a connection's Edit…).
    - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more
      of a form folded under a small line (Advanced).
-   - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Machines page's error).
+   - `ErrorBanner`: the dismissible error, warning or notice bar, across the page or floating, with a notice's countdown (the message bar, the Home page's error).
    - `StatusDot`: a state's light.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
    - `ValueField`: a value to copy or a secret to show, its Copy and Show icons inside the field (an address, a key, a
@@ -72,7 +72,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
      the window and remembered under a settings key, a size per shape (`sizeKey`: the keyboard's layouts;
      `floating-frame.svelte.ts`); a click on it leaves the focus where it was. `tool`: a tool's slim bar, see-through,
      nothing in it taking the focus.
-   - `Modal` (a dialog's shell), `Pane` (a pane of the Machines page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
+   - `Modal` (a dialog's shell), `Pane` (a pane of the Home page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.
 2. **Styles reach only the component's own markup.** No `:global(...)` into children, and no parent styling a child's

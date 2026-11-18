@@ -6,7 +6,7 @@
   The shell: the session, the steps' navigation, Keep (a new connection is kept in this browser unless it's off:
   ephemeral, gone when the page closes), the error and the submit; each step is a component with its own form
   (NetPickStep, NetKindStep, NetTailnetStep, NetTailcatStep, NetLocalStep, NetRoomPickStep, NetRoomStep;
-  web/app/net-wizard.ts). The toolbar's Network menu and the Machines page's Network tab and Connections open it; the
+  web/app/net-wizard.ts). The toolbar's Network menu and the Home page's Network tab and Connections open it; the
   page (web/app/areas/network-actions.ts) attaches and connects.
 -->
 <script lang="ts">

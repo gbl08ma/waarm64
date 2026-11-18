@@ -212,7 +212,7 @@ test('a disk stored in the browser (2): an overlay merged into it, grown, then w
   assert.deepEqual([grown.part, grown.fs, grown.action], [0, 0, 'clear'], 'the partition and filesystem grown, the mark cleared');
   const notice = t('machine:grow-actions.grown', { disk: grownTo.name, size: grown.size });
   await page.waitForFunction((n) => document.getElementById('message-text')?.textContent === n, notice, { timeout: 5_000 })
-    .catch(async (e) => { throw new Error(`${e}; the message bar says ${await page.locator('#message-text').textContent()}`); });
+    .catch(async (e) => { throw new Error(`${e}; the message bar says ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`); });
   const mark = await inStore(page, async ({ store, a }: any) => (await store.get('disks', (await store.get('machines', a)).attachments[0].disk)).grow ?? null, id);
   assert.equal(mark, null, 'the mark cleared');
   const disk = Number(await ok(page, 'lsblk -bdno SIZE /dev/vda'));

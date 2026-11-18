@@ -7,7 +7,7 @@
 // the switch saying PAUSE and RESUME, nothing offered while paused and nothing sent by the resume; Send the clipboard
 // to the guest, Type the clipboard and Copy the console's text (COPY, the agent's COPIED); Copy the screen (the framebuffer the guest drew, as a PNG on the host's
 // clipboard, with no agent). The agent's HELLO as the sign that the machine is up (`?ready=guest`). The PNG worker
-// (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's switches: the agent's, on by default, and
+// (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Home page's switches: the agent's, on by default, and
 // the clipboard's under it, off for a machine that hasn't it, its note, ticking it asks for the permission, neither
 // orphaning snapshots, saved into the record.
 import assert from 'node:assert/strict';
@@ -354,14 +354,14 @@ test('the PNG worker (web/app/png.ts): a BMP, a JPEG and RGBA pixels as PNGs of 
   await context.close();
 });
 
-test("the Machines page's agent and clipboard switches: the agent on by default, the clipboard off, its note; off without the agent; ticking it asks for the permission; no orphans (not in the shape); saved", { timeout: 120_000 }, async () => {
+test("the Home page's agent and clipboard switches: the agent on by default, the clipboard off, its note; off without the agent; ticking it asks for the permission; no orphans (not in the shape); saved", { timeout: 120_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   const asked: Question[] = [];
   await answerAsks(page, (q) => { asked.push(q); });
-  await page.goto(`${base}/web/app/#machines`);
+  await page.goto(`${base}/web/app/#home`);
   await page.locator('.machines').waitFor();
   await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);

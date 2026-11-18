@@ -57,7 +57,7 @@ async function running(page: Page, ms = BOOT_MS) {
 }
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
 const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:runner.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
-const message = (page: Page) => page.locator('#message-text').textContent();
+const message = (page: Page) => page.evaluate(() => document.getElementById('message-text')?.textContent ?? '');
 /** The message's details (an error's causes, under its headline). */
 const details = (page: Page) => page.evaluate(() => document.getElementById('message-details')?.textContent ?? '');
 const status = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? ''));

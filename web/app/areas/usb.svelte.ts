@@ -1,4 +1,4 @@
-// The page's machine's USB as the toolbar's USB menu (web/app/UsbMenu.svelte) and the Machines page's USB tab show it
+// The page's machine's USB as the toolbar's USB menu (web/app/UsbMenu.svelte) and the Home page's USB tab show it
 // (docs/usb.md "The page"): web/app/areas/usb-view.ts reads it again from the running machine's ports
 // (web/app/usb-live.ts), the host's devices and pads whenever any of them changes. The menu opens itself when called (an offer to answer).
 import { Command } from '../command.ts';

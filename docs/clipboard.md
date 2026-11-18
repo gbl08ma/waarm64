@@ -35,7 +35,7 @@ RESUME, TIME) is in devices.md "The guest's agent".
 
 ## The setting and the toolbar
 
-- **The setting** is per machine, off by default, on the Machines page's Settings tab (`MachineRecord.clipboard`;
+- **The setting** is per machine, off by default, on the Home page's Settings tab (`MachineRecord.clipboard`;
   a transient machine has it only from `?clipboard=1`, which, like `?clipboard=0`, is over a stored machine's too),
   under [Run the guest agent](ui:machines:DeviceSwitches.agent) (on by default, `MachineRecord.agent`, `?agent=`),
   which it needs: off with it. Neither is in the machine's shape (the agent talks over the vsock every firmware
@@ -226,7 +226,7 @@ gives activation in Firefox's BiDi, so Firefox's activation rules were measured 
 |---|---|
 | `agent/` (`cargo test`, in `scripts/ci.sh`'s `agent` step with clippy and the build) | the frames, Wayland's and X11's wire formats, logind's files, the types and echo rules, the Typist on a fake n_tty; `serve_test.rs` (the root loop on a socketpair), `sway_test.rs` (the session child against a headless sway 1.12 with wl-clipboard: ext data-control), `x11_test.rs` (against an Xvfb of its own with xclip); each skipped without its programs |
 | `tests/agent.test.ts`, `tests/vsock.test.ts` (Node, `npm test`) | the link, the clock's TIME, the unit's lines and script, `ClipboardShare` on a faked link and browser (every rule above), the held paste chord; the vsock device's agent connection on hand-built queues |
-| `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, `npm test`) | the button's states and menu, the permission (headless: denied), the Machines page's switches, the PNG worker, Copy the screen on the framebuffer; the test plays the agent's device end (`?agentstub`) |
+| `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, `npm test`) | the button's states and menu, the permission (headless: denied), the Home page's switches, the PNG worker, Copy the screen on the framebuffer; the test plays the agent's device end (`?agentstub`) |
 | `tests/page-agent.test.ts` (Debian, `scripts/ci-debian.sh`) | the agent over fw_cfg, its HELLO and unit, the fw_cfg read's time, idle CPU and RSS, TYPE onto tty1 (fast and slow readers, graphics mode refused), PAUSE, the connection echoed by perl |
 | `tests/page-clipboard.test.ts`, `tests/page-clipboard-x11.test.ts` (`images/debian-sway/build.sh`'s Debian, `scripts/ci-debian.sh --platform`; skipped without the image) | sway 1.10 through `zwlr`, and Xvfb from a tty login: text, images and HTML both ways, the paste chord, echoes, the pause, idle costs, the session's end and a new one; Copy the screen on the default 3D path, and on virtio-gpu 2D's scanout with `WAARM64_DISTROS=debian WAARM64_PAGE_QUERY=gpu=2d` (passes, ~150 s) |
 

@@ -95,7 +95,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
     await page.locator(`#export [data-export=${mode === 'changes' ? 'changes' : 'whole'}]`).click();
     await page.locator(`#export [data-save=${mode === 'raw' ? 'raw' : 'compressed'}]`).click();
   };
-  /** Export › `mode` of the machine's disk (its Disks tab on the Machines page), then back to the machine. */
+  /** Export › `mode` of the machine's disk (its Disks tab on the Home page), then back to the machine. */
   const exportDisk = async (mode: string) => {
     await page.locator('#machines-open').click();
     await page.locator('.machines [data-tab=disks]').click();

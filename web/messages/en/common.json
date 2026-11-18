@@ -25,19 +25,19 @@
   },
   "MoveButtons.up": {
     "message": "Up",
-    "note": "Screen-reader name of the Up arrow button of an item in an ordered list (a machine's disks, shared folders, network adapters on the Machines page): moves it up."
+    "note": "Screen-reader name of the Up arrow button of an item in an ordered list (a machine's disks, shared folders, network adapters on the Home page): moves it up."
   },
   "MoveButtons.down": {
     "message": "Down",
-    "note": "Screen-reader name of the Down arrow button of an item in an ordered list (a machine's disks, shared folders, network adapters on the Machines page): moves it down."
+    "note": "Screen-reader name of the Down arrow button of an item in an ordered list (a machine's disks, shared folders, network adapters on the Home page): moves it down."
   },
   "MoveButtons.up.title": {
     "message": "Move up",
-    "note": "Tooltip of the Up arrow button of an item in an ordered list on the Machines page, where the list doesn't say what moving means there."
+    "note": "Tooltip of the Up arrow button of an item in an ordered list on the Home page, where the list doesn't say what moving means there."
   },
   "MoveButtons.down.title": {
     "message": "Move down",
-    "note": "Tooltip of the Down arrow button of an item in an ordered list on the Machines page, where the list doesn't say what moving means there."
+    "note": "Tooltip of the Down arrow button of an item in an ordered list on the Home page, where the list doesn't say what moving means there."
   },
   "ask.confirmTitle": {
     "message": "Are you sure?",

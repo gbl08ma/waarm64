@@ -1,4 +1,4 @@
-// The machine the Machines page edits (MachinePane.svelte and its tabs): the record as stored, the draft the tabs
+// The machine the Home page edits (MachinePane.svelte and its tabs): the record as stored, the draft the tabs
 // edit, whether it changed, and its Save (docs/machines.md §7). The page reads the records and hands this machine's
 // over (`follow`); the draft follows the record unless the user is editing it.
 import { ask } from './ask.svelte.ts';

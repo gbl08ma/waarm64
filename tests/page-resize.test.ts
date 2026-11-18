@@ -1,4 +1,4 @@
-// Resize… on the Machines page (web/app/ResizeDisk.svelte, docs/machines.md §4.5) in Chromium, without a guest but for
+// Resize… on the Home page (web/app/ResizeDisk.svelte, docs/machines.md §4.5) in Chromium, without a guest but for
 // the last case's (a URL disk that runs the firmware): from the browser's Disks pane (a stored disk's card, an overlay's
 // row in Overlays…, a ramdisk's card) and from a machine's Disks tab (its overlay, one made where it has none yet, its stored disk written
 // in place, its ramdisk; none on a read-only disk); what the overlays and stored disks hold of their sizes, where the page shows them. The size now, the box on by default (none for a ramdisk), the refusals as the size is typed (not larger, past

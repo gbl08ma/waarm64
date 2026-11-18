@@ -457,7 +457,7 @@ Images are the same path as text with another type: lazy offers, streamed chunks
 
 ## 5. The page
 
-- **The machine's setting** (the Machines page, next to the other devices' switches: `MachineRecord.clipboard`,
+- **The machine's setting** (the Home page, next to the other devices' switches: `MachineRecord.clipboard`,
   **off by default**, in the shape when on, §2). A draft of its words, for the catalog ([copy.md](../copy.md)),
   to be settled when it is built:
   - Label: [Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)

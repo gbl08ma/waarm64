@@ -13,8 +13,8 @@
 // misses every entry and leaves no stale bytes behind. Entries are held and stored compressed (CompressionStream's
 // deflate-raw at the write-back, VK4 T17; one that doesn't shrink as it is), and inflated at each lookup, synchronously
 // (fflate's inflateSync: bench/vulkan/REPORT.md "VK4 T49 follow-up"), so the budget counts what is held too; an entry
-// is held as the renderer gave it only until its write-back. The budget is the page's Preferences' (the Machines page:
-// `Settings.shaderMiB`), and the Machines page's storage line shows the store's size and clears it
+// is held as the renderer gave it only until its write-back. The budget is the page's Preferences' (the Home page:
+// `Settings.shaderMiB`), and the Home page's storage line shows the store's size and clears it
 // (`shaderStoreSize`, `clearShaderStore`).
 
 import { inflateSync } from 'fflate';
@@ -263,7 +263,7 @@ async function exists(name: string) {
   return !list || list.some((d) => d.name === name);
 }
 
-/** What the store takes in this browser (the Machines page's storage line): its entries' stored bytes. */
+/** What the store takes in this browser (the Home page's storage line): its entries' stored bytes. */
 export async function shaderStoreSize(name = 'waarm64-shaders'): Promise<{ bytes: number; entries: number }> {
   if (typeof indexedDB === 'undefined' || !(await exists(name))) return { bytes: 0, entries: 0 };
   const backend = idbBackend(name);
@@ -271,7 +271,7 @@ export async function shaderStoreSize(name = 'waarm64-shaders'): Promise<{ bytes
   return { bytes: entries.reduce((n, e) => n + (e.bytes?.length ?? 0), 0), entries: entries.length };
 }
 
-/** Deletes every entry (the Machines page): a machine running with Vulkan keeps what it holds, and stores it again as it changes. */
+/** Deletes every entry (the Home page): a machine running with Vulkan keeps what it holds, and stores it again as it changes. */
 export async function clearShaderStore(name = 'waarm64-shaders') {
   if (typeof indexedDB === 'undefined' || !(await exists(name))) return;
   const backend = idbBackend(name);

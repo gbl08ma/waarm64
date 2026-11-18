@@ -3,7 +3,7 @@
 A machine has up to four network adapters, and each is attached to one of the browser's **connections** (a tailnet,
 tailcat, the local helper or a peer-to-peer room), or to none. This page is the model and the guest side: what a connection is and where its state lives, the
 locks between tabs, the guest's routes over several adapters and the numbers measured. The page's menus and wizard
-are in [frontend.md](../frontend.md) "Network" and "The Machines page", the gateway's DHCP and router advertisements in
+are in [frontend.md](../frontend.md) "Network" and "The Home page", the gateway's DHCP and router advertisements in
 [devices.md](../devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
 [backlog.md](../backlog.md) "Several adapters' loose ends". (Built 2026-10-18/19, from a plan whose section numbers the
 code's comments still cite; machines had first left several adapters for later: [machines.md](../machines.md).)
@@ -30,7 +30,7 @@ code's comments still cite; machines had first left several adapters for later: 
    connection keeps everything, the address of the tailcat server it goes online through included.
 7. **Routing over several adapters:** each adapter's gateway has its own addresses, and only the **primary** offers
    the default route (§4).
-8. **Managed on the Machines page's Network tab and from the toolbar's Network menu.** Attaching starts with
+8. **Managed on the Home page's Network tab and from the toolbar's Network menu.** Attaching starts with
    [New connection…](ui:network:NetPickStep.pick.new), which makes the connection in the same wizard, because a new machine's user has none yet.
 
 ## 2. Connections
@@ -99,10 +99,10 @@ disconnects and says it was taken.
 
 ## 3. The page
 
-The Machines page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
+The Home page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
 **[Connections](ui:machines:ConnectionsPane.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
 browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine (a button per adapter where the toolbar has room). What each shows and
-does: [frontend.md](../frontend.md) "The Machines page" and "Network". The live side is web/app/net-live.ts
+does: [frontend.md](../frontend.md) "The Home page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error; a
 restart hands the new machine's port to the running client, matched by the adapter's id (so a client follows its
 adapter when they move), and Disconnect takes the port back. A connection attached to or detached from a machine

@@ -1,4 +1,4 @@
-// What the Machines page's Shared folders pane asks of the record and the live side.
+// What the Home page's Shared folders pane asks of the record and the live side.
 import { MsgError } from '../msg.ts';
 import { browserAccess, type PageFolders } from './folders-live.ts';
 import { deleteFolder, editFolder, folderLock, machinesWith, type Folder } from './folders.ts';

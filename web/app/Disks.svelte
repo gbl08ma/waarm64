@@ -1,5 +1,5 @@
 <!--
-  A machine's disks on the Machines page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached,
+  A machine's disks on the Home page (docs/machines.md §4): in slot order, read-only or not, a ramdisk as swap, moved, detached,
   a "visualize" link on its line (its surface window through the overlay it uses, SurfaceWindow.svelte);
   per writable disk its overlays (switch, new empty; Overlays… opens the disk's overlays, Overlays.svelte: rename, delete,
   merge into a stored disk, resize, export each), Resize… on a writable disk (ResizeDisk.svelte: its chosen overlay, one

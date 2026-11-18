@@ -177,7 +177,7 @@ export class SnapshotActions {
     if (!r || power.busy || !isLive(power.state)) return;
     const d = new Date();
     const s = m.stored;
-    // A stored machine's is kept at once, named by the time (Snapshot is the toolbar's panic button: renamed later, on the Machines page).
+    // A stored machine's is kept at once, named by the time (Snapshot is the toolbar's panic button: renamed later, on the Home page).
     if (s && !o.toFile) return this.keep(d.toLocaleString());
     const suggestedName = fileName(s ? s.record.name.replace(/[^\w.-]+/g, '-') : m.name, d);
     if (await this.#refused(r, 'snapshot', t('snapshots:snapshot-actions.runsOn.noFile'))) return;
