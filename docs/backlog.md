@@ -1760,6 +1760,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       converging, each item sent and dropped): a run's `get`s wait for room in the queue, but answers already in
       flight (8 a run since N6b, and `have`'s) arrive past it. Counting a run's outstanding `get`s against the room
       before sending would stop the waste; not measured whether the 8 gets made more of it than 4.
+    - **A relay that doesn't answer is retried every few seconds for good** (N6b's long-run proof): relay.degmods.com
+      "didn't answer" ~120 times in 1.8 hours and was connected 142 times by two nodes (their room clients and names
+      clients), the backoff (2, 4, 8, 16 s) starting over after each connection that opened. Every room node does this
+      against a flaky default relay; a backoff that keeps growing while a relay keeps not answering (or dropping it
+      for the session) is rooms.md's (docs/networking/rooms.md "What a room needs from a Nostr relay").
+    - The days-long run (`bench/net/names-long.ts`, the user launches it) will give the rest: resolves over days,
+      relay and DERP drops, renewals made ahead, the agent's hourly publisher.
     - Done (N6b): **two servers that start within a second found each other only 30 s on**, for two reasons. (1) Each
       one's first question came while the other's was open and unsynced, and each refused the other: a server that
       refused a question for that now asks again within 1.5 to 3 s. (2) A server's first question went out before its

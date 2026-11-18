@@ -28,17 +28,30 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   tests): the loop's full scripts are `scripts/ci.sh` and `scripts/ci-net.sh` (names-room's rig, page-room). N6a
   (branch `names-n6a`) changed the member's first lookup, the share and the bound; it ran the Rust checks and the Node names
   tests (room-names, names-room with the tailcat derper, names-agent: green); `scripts/ci.sh` and `scripts/ci-net.sh`
-  (page-room) are to run on it.
+  (page-room) are to run on it. **N6b** (branch `names-n6b`) changed the servers' side (finding each other, rounds,
+  the first sync's rate, a name's memory) and the fake net's faults; it ran the Rust checks (fmt, clippy with and
+  without `test-params`, `cargo test -p waarm64_ts`), tsc, i18n-check and the Node names tests (room-names,
+  names-agent, names-room with the tailcat derper): `scripts/ci.sh` and `scripts/ci-net.sh` are to run on it.
 - **Session kind:** the dev VM from 2026-11-18 (cloud before: docs/cloud.md). The user (2026-11-17): **N6 doesn't
   run in a cloud session**.
 
 ## Next, in order (a dev VM session)
 
-1. **N6b**: N0c's public-relay items in docs/backlog.md ("On the public relays and DERP": two servers missing each
-   other for minutes once, a first sync cut by `RUN_MAX` and resumed a round later, the 8-part window) and the
-   kickoff's days-long run on the public calendars, explorers and default relays with real stamps, between two pages.
-   N0c's `bench/net/names-public.ts` runs room nodes on the public services and keeps their names lines; N6a's
-   `bench/net/room-scale.ts names` is the in-room rig (no public service).
+1. **The days-long run (the user launches it)**, `bench/net/names-long.ts` (bench/net/REPORT.md "NAMES loop 6b"),
+   from the repo root of the branch it runs on, after `net/ts/build.sh`:
+   ```sh
+   systemd-run --user --scope -p MemoryMax=1G -p MemorySwapMax=0 -- nice -n 19 timeout 4d \
+     node --disable-warning=ExperimentalWarning bench/net/names-long.ts run --dir bench/results/local/names-long --days 4 --every 20
+   node bench/net/names-long.ts summary bench/results/local/names-long/log.jsonl --out results/names6b/long.json
+   ```
+   Expected (REPORT "NAMES loop 6b", from the 1.8-hour proof): ~1,000 events a relay a day, a few dozen calendar and
+   explorer requests over the run, ~0.2% of a core and ~150 MB RSS a node. **Decide first**: with the six default
+   relays the script's cap on connections (300 a relay a day) ends the run within hours, on relay.degmods.com's
+   reconnects (~80 an hour while it doesn't answer); either raise `CAPS.relayOpensADay` in the script, or name
+   steadier relays with `--nostr wss://relay.routstr.com,wss://relay.nostrmap.net,wss://relay.primal.net` (a fresh
+   `--dir`; still ~250 connections a relay a day). Killed or ended early: the same `run` command with the same `--dir` goes on (the room, the name, A's node
+   key and the agent's titles are in its `state.json`). Then a "NAMES loop 6b, the long run" REPORT entry from the
+   summary, and the backlog's items from what it shows.
 2. **The end**, as the kickoff says: final review, the full scripts (also `ci-debian.sh`, `ci-machines.sh`),
    `docs/networking/names.md` from the spec, rooms.md's decisions, the deletions (this file, the kickoff,
    `docs/plans/room-names*.md`, `room-names-research/`, `NAMES-REVIEW-3.md`), PLAN.md's row.
@@ -71,7 +84,7 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 | Review 3 | Out-of-context review of the redesign (R1–R3a) → `NAMES-REVIEW-3.md` (7 findings), and its fix loop (2026-11-18, dev VM; 468e9ee1 to c987a221, one commit a finding, each from a failing test, 15 planted bugs caught, one by inspection): a kept name whose claim wasn't seen isn't replaced by another key's back-order (`Kept.whole`, member record version 3); "too big" replies carry the last entry, a contest decides within 10 s (`CONTEST_FOR`) and only when every key shown is settled, never for another owner, 32 repliers a key; a fetched run goes to its own name's contest; a `get`'s answer keeps only the name asked, a peer's share of the verify queue bounded (256 items, 4 MiB); a title is lost only when no server of the pass took it and an explorer knows the better chain's block; an anchor in a block refused mid-job isn't kept; block retries double. Wire changed (Reply's too big, a fetch's empty item), pre-release | done |
 | N0c | Public services and the GPU figure (2026-11-18, dev VM; bench/net/REPORT.md "NAMES loop 0c", `results/names0c/`, `bench/net/names-public.ts`): a first sync through tailcat 303 and the six relays ~0.8 Mbit/s (5 MB 61 s, 20 MB 228 s; 50 MB cut by `RUN_MAX` at 241 s and on next round), a guest's ping beside it unmoved (95 ms); the names client 7 WebSockets, 64 KiB, ~0.04% CPU; a cold first lookup 1.53 s, a second name 0.93, NXDOMAIN 0.92; all six relays forward a `REPLY_MAX` reply (and up to 32 KiB): it stays 4 KiB; both explorers' 404s carry CORS, the page sees them (R2 stands); 100 checks at 3 s each answered; Argon2id 1 MiB 0.38 ms in wasm (`POW_BITS` 16 stays), a GPU ~216x a tab (RTX 5090, from published Chukwa v2 rates), a million names ~63 GPU-hours a term. No product code changed; spec, r3 doc, backlog updated | done |
 | N6a | Scale in the room, no public service (2026-11-18, dev VM; bench/net/REPORT.md "NAMES loop 6a", `results/names6a/`, `bench/net/room-scale.ts names`): 1,000 members and 20 servers of 5,000 names in processes; a server 54–61 MB linear (3.5–3.9x), 1,342 explorer asks each (once a block); three fixes from failing tests: a server one draw in a `share` (500 joins in a minute: 221 → 33 NXDOMAIN), the bound drops the youngest chains first (junk dropped 2,500/server, the room's names 0; before: ~2,490 of the room's, no junk), a first lookup's rounds count from when their asks left (10 names at once in a small room: all NXDOMAIN → all within 10 s); 3 planted bugs caught; forged asks at 300 servers 600 replies/s (filed) | done |
-| N6b | N0c's public-relay items; days on the public services | *dev VM*: "Next" 1 (not in a cloud session: the user) |
+| N6b | N0c's public-relay items and the days-long run's script (2026-11-18, dev VM; bench/net/REPORT.md "NAMES loop 6b", `results/names6b/`; ff4965de to a411c79d): two servers started together find each other within seconds (a server that refused a question for not being synced asks again in 1.5 to 3 s; a server asks once its names client's DERP region is up: the call backs were lost before) — on the public relays and 303, 7.3 to 8.8 s (was 34); a run cut by `RUN_MAX` starts the next round at once; a round that brought names is followed by the next in 30 to 40 s (twenty servers converge in 40 s, was 340); a first sync keeps 8 gets and 16 parts in flight (the gets, not the window, were the bound: 0.72 → 1.44 Mbit/s through the rig's derper behind 95 ms, no derper drops; 16 and 32 dropped; 20 MB on 303 in 114 s, was 228); a name's entries in a sorted Vec (a server of 5,000 names 61.7 → 41.1 MB of heap, 3.99x → 2.66x; what's left is anchors decoded). `bench/net/names-long.ts`: two Node processes on the page's agent and the shipped module, proved for 1.8 h (a claim stamped, anchored, published and resolved). 9 planted bugs, all caught | done; the long run waits for the user ("Next" 1) |
 | End | Final review, full scripts, docs, deletions | *dev VM*: "Next" 2 |
 
 ## Notes for whoever runs loops here
@@ -100,6 +113,22 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   that knows the room's ID and the name→machine mapping sees the key lookup that follows a resolution anyway.
 
 ## Open questions
+
+From N6b (2026-11-18):
+- **The long run's relay traffic is past "a few hundred requests a service"**: a room's own cadence (a server alone
+  asks "who serves?" about every 5 minutes, three events each; the agent's publisher connects hourly; a member's names
+  client reconnects at a lookup after 10 idle minutes) sends each relay ~40 events and ~6 connections an hour, ~1,000
+  events a day (the proof run). The script's caps (2,000 events and 300 connections a relay a day, past which it
+  ends) are a safety valve at that rate, not the kickoff's few hundred; a shorter run (`timeout 1d`, ~1,000 a relay)
+  or fewer relays in the link (`--nostr`) is the user's call. The calendars and explorers stay far under theirs (150
+  each over the run; the proof: 5 or 6 a calendar, 4 at blockstream.info).
+- **A relay that doesn't answer is retried every few seconds for good**: relay.degmods.com "didn't answer" ~120 times
+  in the proof's 1.8 hours, each a close and a new connection 2 to 16 s on (142 connections; the backoff restarts
+  after each connection that opens). A longer backoff for a relay that keeps not answering is rooms.md's, not this
+  track's (docs/backlog.md).
+- **Two partners rarely sync into a new server at once** (a server's question stops at the first round with an
+  answer and keeps what answered): a first sync is mostly one partner's rate. Asking on to the last round, as a
+  member does with one answer, would double a new server's rate where two serve, at a question's cost; not done.
 
 From N6a (2026-11-18):
 - **The bound drops the youngest chains first** (was the longest unasked: junk registered in bulk dropped only the

@@ -26,7 +26,8 @@
 // Usage:
 //   node bench/net/names-long.ts run --dir bench/results/local/names-long [--days 4] [--every 20] [--derp 303]
 //   node bench/net/names-long.ts summary bench/results/local/names-long/log.jsonl [--out results/names6b/long.json]
-// (`--drop <min>`: close A's first relay connection after that many minutes, once: the proof that a drop is survived.)
+// `--nostr wss://a,wss://b` names the relays in the room's link instead of the six defaults (a fresh run only: the
+// link is in state.json). (`--drop <min>`: close A's first relay connection after that many minutes, once: the proof that a drop is survived.)
 import { fork, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -39,6 +40,7 @@ const { values: o, positionals } = parseArgs({
   options: {
     dir: { type: 'string', default: 'bench/results/local/names-long' }, days: { type: 'string', default: '4' },
     every: { type: 'string', default: '20' }, derp: { type: 'string', default: '303' }, drop: { type: 'string' },
+    nostr: { type: 'string' },
     out: { type: 'string' }, wasm: { type: 'string', default: 'target/net/ts.wasm' },
   },
 });
@@ -335,7 +337,7 @@ if (what === 'run') {
   const fresh = (): State => {
     const room = `names-long-${randomBytes(12).toString('hex')}`;
     const letters = Array.from(randomBytes(8), (b) => String.fromCharCode(97 + (b % 26))).join('');
-    return { room, name: `n6b${letters}`, link: `waarm64-room:${encodeURIComponent(room)}?derp=${encodeURIComponent(o.derp!)}`, nodeKey: randomBytes(32).toString('hex'), base: {}, t0: Date.now(), derp: o.derp! };
+    return { room, name: `n6b${letters}`, link: `waarm64-room:${encodeURIComponent(room)}?${o.nostr ? o.nostr.split(',').map((u) => `nostr=${encodeURIComponent(u)}&`).join('') : ''}derp=${encodeURIComponent(o.derp!)}`, nodeKey: randomBytes(32).toString('hex'), base: {}, t0: Date.now(), derp: o.derp! };
   };
   const resumed = existsSync(stateFile);
   const state: State = resumed ? (JSON.parse(readFileSync(stateFile, 'utf8')) as State) : fresh();

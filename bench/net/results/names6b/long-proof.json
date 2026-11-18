@@ -1,0 +1,564 @@
+{
+ "log": "bench/results/local/names6b-proof/log.jsonl",
+ "from": "2026-11-18T07:51:22.066Z",
+ "hours": 1.82,
+ "launches": 3,
+ "ends": [
+  "SIGTERM",
+  "SIGTERM",
+  "SIGTERM"
+ ],
+ "name": "n6baxhemoaz",
+ "derp": "303",
+ "steps": {
+  "claimHours": 0.004,
+  "claimPowMs": 15923,
+  "stampedHours": 0.004,
+  "collectedHours": 1.379,
+  "anchoredBlockTimeHours": 0.22,
+  "publishedHours": 1.381,
+  "firstResolveHours": 1.519,
+  "states": [
+   [
+    0.004,
+    "reserved"
+   ],
+   [
+    1.383,
+    "active"
+   ]
+  ]
+ },
+ "resolves": {
+  "n": 17,
+  "beforeFirst": 13,
+  "after": 4,
+  "ok": 4,
+  "nxdomain": 0,
+  "other": 0,
+  "availability": 100,
+  "rightAddress": 4,
+  "msMedian": 751,
+  "msP90": 6532,
+  "msMax": 6532,
+  "firstMs": 751,
+  "failures": []
+ },
+ "drops": [
+  {
+   "hours": 0.062,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 223
+  },
+  {
+   "hours": 0.254,
+   "role": "a",
+   "host": "relay.primal.net",
+   "code": 4000,
+   "ageS": 914
+  },
+  {
+   "hours": 0.262,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 719
+  },
+  {
+   "hours": 0.534,
+   "role": "a",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 1908
+  },
+  {
+   "hours": 1.162,
+   "role": "b",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 1721
+  },
+  {
+   "hours": 1.162,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 1781
+  },
+  {
+   "hours": 1.162,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 1780
+  },
+  {
+   "hours": 1.167,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 1739
+  },
+  {
+   "hours": 1.167,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 1799
+  },
+  {
+   "hours": 1.167,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 1799
+  },
+  {
+   "hours": 1.169,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 540
+  },
+  {
+   "hours": 1.226,
+   "role": "b",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 144
+  },
+  {
+   "hours": 1.251,
+   "role": "a",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 2100
+  },
+  {
+   "hours": 1.251,
+   "role": "b",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 89
+  },
+  {
+   "hours": 1.261,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 336
+  },
+  {
+   "hours": 1.268,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 360
+  },
+  {
+   "hours": 1.268,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 360
+  },
+  {
+   "hours": 1.269,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 300
+  },
+  {
+   "hours": 1.276,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 53
+  },
+  {
+   "hours": 1.291,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 80
+  },
+  {
+   "hours": 1.291,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 53
+  },
+  {
+   "hours": 1.291,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 83
+  },
+  {
+   "hours": 1.291,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 84
+  },
+  {
+   "hours": 1.368,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 273
+  },
+  {
+   "hours": 1.368,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 57
+  },
+  {
+   "hours": 1.368,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 273
+  },
+  {
+   "hours": 1.368,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 273
+  },
+  {
+   "hours": 1.369,
+   "role": "b",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 60
+  },
+  {
+   "hours": 1.402,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 120
+  },
+  {
+   "hours": 1.402,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 120
+  },
+  {
+   "hours": 1.402,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 121
+  },
+  {
+   "hours": 1.402,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 121
+  },
+  {
+   "hours": 1.407,
+   "role": "b",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 878
+  },
+  {
+   "hours": 1.479,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 1140
+  },
+  {
+   "hours": 1.486,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 300
+  },
+  {
+   "hours": 1.486,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 300
+  },
+  {
+   "hours": 1.486,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 300
+  },
+  {
+   "hours": 1.486,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 300
+  },
+  {
+   "hours": 1.491,
+   "role": "b",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 300
+  },
+  {
+   "hours": 1.519,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 117
+  },
+  {
+   "hours": 1.52,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 120
+  },
+  {
+   "hours": 1.52,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 122
+  },
+  {
+   "hours": 1.605,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 452
+  },
+  {
+   "hours": 1.687,
+   "role": "a",
+   "host": "nostr.rblb.it",
+   "code": 1006,
+   "ageS": 60
+  },
+  {
+   "hours": 1.696,
+   "role": "a",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 95
+  },
+  {
+   "hours": 1.702,
+   "role": "a",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 118
+  },
+  {
+   "hours": 1.703,
+   "role": "b",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 60
+  },
+  {
+   "hours": 1.704,
+   "role": "b",
+   "host": "relay.primal.net",
+   "code": 1006,
+   "ageS": 60
+  },
+  {
+   "hours": 1.719,
+   "role": "b",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 114
+  },
+  {
+   "hours": 1.719,
+   "role": "a",
+   "host": "relay.novospes.com",
+   "code": 1006,
+   "ageS": 178
+  }
+ ],
+ "dropsByHost": {
+  "relay.primal.net": 9,
+  "relay.novospes.com": 35,
+  "relay.routstr.com": 0,
+  "nostr.rblb.it": 11,
+  "relay.degmods.com": 0,
+  "relay.nostrmap.net": 0,
+  "tailcat.dev": 0,
+  "alice.btc.calendar.opentimestamps.org": 0,
+  "bob.btc.calendar.opentimestamps.org": 0,
+  "finney.calendar.eternitywall.com": 0,
+  "tc303a.ipn.dev": 0,
+  "blockstream.info": 0
+ },
+ "requests": {
+  "relay.primal.net": {
+   "http": 0,
+   "opens": 28,
+   "events": 129,
+   "sent": 573,
+   "mbIn": 0.1,
+   "mbOut": 0.15,
+   "cap": {
+    "eventsADay": 2000,
+    "opensADay": 300
+   }
+  },
+  "relay.novospes.com": {
+   "http": 0,
+   "opens": 54,
+   "events": 130,
+   "sent": 594,
+   "mbIn": 0.1,
+   "mbOut": 0.15,
+   "cap": {
+    "eventsADay": 2000,
+    "opensADay": 300
+   }
+  },
+  "relay.routstr.com": {
+   "http": 0,
+   "opens": 19,
+   "events": 130,
+   "sent": 568,
+   "mbIn": 0.1,
+   "mbOut": 0.15,
+   "cap": {
+    "eventsADay": 2000,
+    "opensADay": 300
+   }
+  },
+  "nostr.rblb.it": {
+   "http": 0,
+   "opens": 30,
+   "events": 127,
+   "sent": 574,
+   "mbIn": 0.1,
+   "mbOut": 0.15,
+   "cap": {
+    "eventsADay": 2000,
+    "opensADay": 300
+   }
+  },
+  "relay.degmods.com": {
+   "http": 0,
+   "opens": 142,
+   "events": 129,
+   "sent": 649,
+   "mbIn": 0.09,
+   "mbOut": 0.16,
+   "cap": {
+    "eventsADay": 2000,
+    "opensADay": 300
+   }
+  },
+  "relay.nostrmap.net": {
+   "http": 0,
+   "opens": 20,
+   "events": 125,
+   "sent": 564,
+   "mbIn": 0.09,
+   "mbOut": 0.14,
+   "cap": {
+    "eventsADay": 2000,
+    "opensADay": 300
+   }
+  },
+  "tailcat.dev": {
+   "http": 8,
+   "opens": 0,
+   "events": 0,
+   "sent": 0,
+   "mbIn": 0,
+   "mbOut": 0,
+   "cap": 100
+  },
+  "alice.btc.calendar.opentimestamps.org": {
+   "http": 6,
+   "opens": 0,
+   "events": 0,
+   "sent": 0,
+   "mbIn": 0,
+   "mbOut": 0,
+   "cap": 150
+  },
+  "bob.btc.calendar.opentimestamps.org": {
+   "http": 5,
+   "opens": 0,
+   "events": 0,
+   "sent": 0,
+   "mbIn": 0,
+   "mbOut": 0,
+   "cap": 150
+  },
+  "finney.calendar.eternitywall.com": {
+   "http": 5,
+   "opens": 0,
+   "events": 0,
+   "sent": 0,
+   "mbIn": 0,
+   "mbOut": 0,
+   "cap": 150
+  },
+  "tc303a.ipn.dev": {
+   "http": 0,
+   "opens": 20,
+   "events": 0,
+   "sent": 891,
+   "mbIn": 0.03,
+   "mbOut": 0.02,
+   "cap": {
+    "opensADay": 300,
+    "bytes": 200000000
+   }
+  },
+  "blockstream.info": {
+   "http": 4,
+   "opens": 0,
+   "events": 0,
+   "sent": 0,
+   "mbIn": 0,
+   "mbOut": 0,
+   "cap": 150
+  }
+ },
+ "refused": 0,
+ "childExits": [],
+ "stats": {
+  "a": {
+   "n": 12,
+   "cpuPctMedian": 0.16,
+   "cpuPctMax": 194.64,
+   "rssMBMax": 163.9,
+   "rssMBLast": 135,
+   "wasmMBMax": 2.6
+  },
+  "b": {
+   "n": 11,
+   "cpuPctMedian": 0.17,
+   "cpuPctMax": 165.28,
+   "rssMBMax": 142.1,
+   "rssMBLast": 116.9,
+   "wasmMBMax": 2.5
+  }
+ }
+}

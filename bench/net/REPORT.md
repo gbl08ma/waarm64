@@ -1100,3 +1100,176 @@ node bench/net/room-scale.ts names junk --wait 300 --out results/names6a/junk-af
 cargo test -q --release -p waarm64_ts --lib -- --ignored --nocapture forged_asks_in_a_room_of_hundreds a_guest_asking_many_names_at_once
 ```
 (`members.json` and `junk-before.json` are the same runs on the module before the fixes.)
+
+## NAMES loop 6b (dev VM), 2026-11-18
+
+N0c's public-relay items (docs/backlog.md "On the public relays and DERP") and the kickoff's days-long run, built as a
+script for the user to launch. The dev VM (8 vCPUs, 18 GiB; Node 26.7.0), home connection in Europe, no IPv6. JSON
+under `results/names6b/`. Five commits, each from a failing test:
+
+| Commit | What | Before | After |
+|---|---|---|---|
+| ff4965de | a server that refused a question for not being synced yet asks again within 1.5 to 3 s, not 30 | two servers started together: 30 to 36 s (bus), 34 s (N0c, public) | 1.5 to 6.5 s after the later start at any gap of 0 to 3 s (bus) |
+| ff4965de | a run cut by `RUN_MAX` (not by a breach) starts the next round at once | next round 63 s after the cut (N0c's 50 MB: ~100 s) | at the cut |
+| 56b623cd | a name's entries in a sorted `Vec` of their number, not a `BTreeMap` | a server of 5,000 names: 61.7 MB of heap (3.99x its items) | 41.1 MB (2.66x) |
+| cd6cee66 | a server's first question waits for its names client's home region (DERP connection up) | a new server's first name through the rig's derper behind a 95 ms shaper: 30.8 s | 1.6 s |
+| f9f61b8f | a round whose sync brought names is followed by the next 30 to 40 s on (8 in a row at most) | twenty servers through the fake DERP and relay: 340 s | 40 s |
+| a411c79d | a first sync keeps 8 `get`s and 16 parts in flight (were 4 and 8) | 0.72 Mbit/s over 95 ms; tailcat 303: 20 MB in 228 s (N0c) | 1.44 Mbit/s; 20 MB in 114 s |
+
+### Two servers that start together (`find.json`)
+
+N0c saw two servers started within a second find each other only after 30 s, once ~350 s. Two causes, both fixed:
+each one's question came while the other's own was open and it wasn't synced yet, so each refused the other (the
+answer rule's "not synced yet"); and a server's first question went out as soon as its names client was made, before
+that client's DERP connection was up, so the answers' call backs found no connection to reach (a derper drops them as
+an unknown destination). The second showed in `names-window.ts`'s first runs: a new server behind a 95 ms shaper
+always heard nobody first. `bench/net/names-public.ts find --rounds 5`, two servers of one title each started at once
+in a fresh room on the six default relays and tailcat's 303: **each held the other's name 7.3 to 8.8 s from the
+start** (running 0.9 to 1.6 s; one says "nobody answered, but someone asked meanwhile; asking again in 2.5 s", the
+other answers that). N0c's ~350 s case (three more unanswered questions) wasn't seen in these five nor in the long
+run's proof; its logs had no names lines, so its cause is still unknown.
+
+### The first sync's rate (`window.json`, `window-parallel.json`, `transfer-20.json`)
+
+`bench/net/names-window.ts`: a new server B syncs a registry (30-level anchors, ~3 KB a name) from one or two servers
+holding it, on the tailcat rig's derper (its 32-packet queue a client) and the tests' relay; B's DERP connections
+through a TCP shaper in the bench adding a 95 ms round trip (N0c's tailcat 303) and optionally a downlink rate with a
+64 KB bottleneck buffer; the derper's drops from its `/debug/varz`. The module is the tests' built per variant. Two
+rounds each, alternated; they agreed within 3%.
+
+| In flight | 1 partner | 2 partners | 1 partner, 4 or 10 Mbit/s | derper drops |
+|---|---|---|---|---|
+| 4 gets, 8 parts (before) | 0.70 to 0.72 Mbit/s | 0.70 to 0.73 | 0.69 to 0.70 | 0 |
+| 4 gets, 16 parts | 0.97 | 0.97 to 0.98 | 0.95 to 0.96 | 0 |
+| 4 gets, 32 parts | 0.98 | 0.96 to 0.99 | 0.95 to 0.97 | 0 |
+| **8 gets, 16 parts (now)** | **1.44** | 1.48 | 1.37 (4 Mbit/s) | **0** |
+| 16 gets, 32 parts | 2.91 | 2.85 | 2.80 (4 Mbit/s) | **25 to 33** (1 partner), **16 to 117** (2), unshaped |
+
+- **The window wasn't the bound, the run's `get`s were**: a run kept 4 requests in flight and each `get` asks one
+  name (~3 KB, three parts), so 12 parts a round trip, which the 8-part window cut to 8; a wider window alone gave
+  +38%, more gets doubled it. At 16 and 32 the derper's queue to B dropped parts whenever B's downlink took bursts
+  at once (the shaped runs, whose bottleneck buffer spreads them, didn't drop). So 8 and 16: two partners' 16 each
+  are that queue.
+- "Two partners" rarely meant two at once: a server's question stops at the first round with an answer and keeps
+  what answered, often one server of two (B's names line counts servers that synced *with* it, so the bench couldn't
+  tell). docs/backlog.md.
+- **On tailcat's 303** (`names-public.ts transfer --mb 20`, the tests' module with 8 and 16): 6,471 names, 20 MB,
+  **in 114 s** (N0c: 228 s), 1.70 Mbit/s on the names client's DERP (23.4 MB with framing); B's guest pinging A's on
+  the nodes' own DERP connection: 94 ms before, 90 during (p90 90, max 94, none lost), 91 after.
+
+### Where a server's memory goes (`memory-before.json`, `memory-after.json`)
+
+`net/ts/examples/names-memory.rs`: a counting allocator, natively, over 5,000 titles made by `names-title` (30-level
+anchors, two entries and a zone a name, 15.46 MB of items): the items decoded, the store's records alone, a server
+holding them from its records, and a second server syncing them all from it over a bus.
+
+| | before (BTreeMap) | after (sorted Vec) |
+|---|---|---|
+| items decoded alone | 36.3 MB (2.35x; 330,001 allocations) | the same |
+| the store's records (`Held`, settled) | 55.3 MB | 34.7 MB |
+| a server holding them | **61.7 MB (3.99x)** | **41.1 MB (2.66x)** |
+| a server syncing them all: live after / peak | 68.6 / 68.7 MB | 48.3 / 48.3 MB |
+
+- **The empty slots**: a name's entries sat in a `BTreeMap<[u8; 32], Stamped>`, whose leaf holds 11 entries of 416
+  bytes whatever it holds; a name has two or three, so ~4 KB a name went to empty slots. Now a sorted `Vec` grown
+  one at a time (`tests/names_memory.rs` pins a name of two entries to its entries' bytes; a `Vec` grown as usual,
+  four slots for two, is caught).
+- **What's left** is each anchor decoded: 62 operations in a `Vec<Op>` of 32 bytes each and 31 allocations of their
+  own, ~3.4 KB an entry with its anchor against ~1.2 KB encoded. Keeping anchors encoded until checked would take
+  ~20 MB more off 5,000 names (to ~1.4x); `Anchor` is public and shared with the verifier and the agent, so it is a
+  change of its own (docs/backlog.md).
+- A tab's linear memory is its heap's high-water mark (the allocator never returns it), so a tab keeps the sync's
+  peak; N6a's 54 to 61 MB of linear memory a server matches the "before" column.
+
+### Servers that start together converge in rounds (`twenty_servers_converge`)
+
+A name a server learns is told only to the servers of its recent rounds, and rounds were 5 minutes apart: N6a's
+twenty servers held 3,100 to 3,700 of 5,000 names a minute in, then nothing until the next round. A round whose sync
+brought names (its runs' or `have`s' `get`s, not `put`s) is now followed by the next 30 to 40 s on, 8 in a row at
+most (`quick_rounds_are_a_few_in_a_row`: a partner with a new name every 20 s for 30 minutes makes 15 rounds, not
+~50). Through the fake DERP and relay, twenty servers holding 40 names converge in **40 s (was 340 s)**, with as many
+DERP packets (6,860 against 6,927). **On N6a's rig** (`room-scale.ts names converge --wait 300`, `converge.json`:
+20 servers of 250 names each, 5,000 names, the tests' relay and derper, everything of this loop in): **every server
+held all 5,000 within 296 s** (p50 125 s, p90 175 s; N6a: 4,800 to 5,000 at 6.5 minutes, not all within 8), each
+served 1 s after its start, 41 to 42 MB of linear memory each (N6a: 54 to 61), the explorer asked once a block (1,342
+each). Its logs show 1,933 "items of a get answer dropped: the queue is full" lines over the 20 servers (a peer's
+answers past its share of the verify queue, review 3's bound): transfer spent for nothing while a server verifies
+behind; N6a's logs bucketed lines differently, so whether the 8 gets made more of them isn't known (docs/backlog.md).
+
+### The days-long run (`bench/net/names-long.ts`)
+
+Built, not run here for days: the user launches it (NAMES-HANDOVER.md "Next"). **Two Node processes, not two pages**,
+each running the page's own code: the shipped module (`target/net/ts.wasm`: production's proof of work and headers
+floor), the names agent (`web/names.ts` `NamesAgent`) on `web/names-ops.ts` `localBackend` (the ops the names worker
+runs, in the process's thread: Node has no page Worker), its publisher, and a room node wired as the room's worker
+wires one (titles from `roomTitles`, again on the agent's `NAMES_CHANNEL`; a server's fetches through
+`serviceFetch`). Why not pages: two headless browsers for days cost ~1 GB more, and nothing on the names path uses
+what a page adds (no WebRTC; the agent's IndexedDB store is a file here). A names its node with a real claim, stamps
+it at the three calendars, collects it once anchored, publishes it and serves it, its agent passing hourly as an open
+page does; B resolves the name through its guest's resolver every 20 minutes. Services: the six default relays,
+tailcat's region 303, the calendars and explorers `web/names.ts` compiles in. It logs JSON lines (steps, resolves,
+WebSocket drops, HTTP requests, memory and CPU every 10 minutes, the nodes' names lines and the agent's), counts every
+public request by service against caps in the script (HTTP refused past its cap; relays and DERP end the run), keeps
+its state (room, name, A's node key, the agent's store, counts) so a relaunch goes on, restarts a child that dies, and
+ends cleanly on SIGTERM. `summary` reads a log.
+
+**The proof** (`long-proof.json`, `bench/results/local/names6b-proof/`): three launches on one state directory,
+07:51 to 09:40 UTC (1.8 hours; 40 minutes with B resolving every 5 minutes and a relay connection of A's closed at
+15 minutes, then 60 minutes every 10, then 9 minutes every 3 after the children's start moved to IPC), each ended by
+`timeout`'s SIGTERM with an `end` line, the next going on from `state.json`:
+
+| Step | Hours from the start |
+|---|---|
+| claim made (production proof of work: 15.9 s) and stamped at the three calendars | 0.004 |
+| its calendar transaction's block (the anchor's header time) | 0.22 |
+| collected by the agent (its asks at 5, 15, 35 and 75 minutes, one at each relaunch) | 1.38 |
+| published (the first put) | 1.38 |
+| first resolve by B (its 10-minute turn) | 1.52, in 0.75 s |
+
+- **Resolves**: 13 NXDOMAIN while the claim was held back, then 4 of 4 right (A's address): 0.75 s cold, 6.5 s after
+  both nodes restarted (a SERVFAIL, then the answer), then 2 ms (kept).
+- **Collecting is the slow step**: the block came 13 minutes after the stamp, the agent learned it 70 minutes later.
+  N0b's backlog item (the agent's backoff, 5 minutes doubling to an hour, collects past the dialog's "about 2 hours")
+  is what this shows; the long run will show it on more claims.
+- **Relays**: the closed connection was opened again in 2 s; 49 other closes not ours (relay.novospes.com 35,
+  nostr.rblb.it 11, relay.primal.net 8), each followed by a reconnect. **relay.degmods.com was opened 142 times** in
+  the 1.8 hours: it often "didn't answer" (no EOSE in time), and the client closes and retries 2, 4, 8, 16 s on,
+  over and over (docs/backlog.md).
+- **Cost**: each node 0.16 to 0.17% of a core (median of 10-minute windows; the claim's proof of work and the start
+  are the peaks), 117 to 164 MB RSS, 2.5 MB of module memory.
+
+### Requests to public services
+
+| Service | This loop |
+|---|---|
+| each of the six default relays | `find` 5 rounds (2 nodes each), `transfer` (2 nodes, ~2 minutes); the proof: 125 to 130 events and 19 to 54 connections each over 1.8 hours, **142 to relay.degmods.com** (its retries) |
+| tailcat DERP region 303 | `find`, `transfer` (20 MB once); the proof: 20 connections, 0.05 MB |
+| tailcat.dev (the DERP map) | ~20: each node's and publisher's start |
+| alice / bob / finney calendars | the proof: 6 / 5 / 5 (a stamp each, collects) |
+| blockstream.info / mempool.space | the proof: 4 / 0 (the anchor's block and header for the agent, the server's block check) |
+
+**The long run's expected counts** (four days, B every 20 minutes, from the proof's rates): ~40 events an hour to
+each relay (A's "who serves?" alone in its room, three events every 5 minutes, the hourly publisher's, B's lookups),
+**~1,000 a relay a day**; connections ~6 to 30 an hour a relay, and ~80 an hour to relay.degmods.com while it keeps
+not answering; the calendars and explorers a few dozen over the run (one claim; no renewal is due within a term's
+half, 15 days). The script's caps (2,000 events and 300 connections a relay a day; past one the run ends) are past
+the kickoff's "a few hundred" for events and would end the run within hours on relay.degmods.com's reconnects: the
+launch is the user's call (NAMES-HANDOVER.md "Next", open questions).
+
+### Reproduce
+```sh
+net/ts/build.sh && net/ts/build.sh --test-params
+cargo build -q -p waarm64_ts --features test-params --example names-title
+cargo test -q -p waarm64_ts --lib -- --nocapture servers_that_start_together a_slow_partner a_servers_first_question_waits twenty_servers_converge quick_rounds a_first_sync_over_a_round_trip
+cargo test -q -p waarm64_ts --test names_memory -- --nocapture
+node bench/net/names-public.ts find --rounds 5 --out results/names6b/find.json                 # ~3 minutes, public
+node bench/net/names-public.ts transfer --mb 20 --out results/names6b/transfer-20.json        # ~3 minutes, public
+# The tests' module built with other constants (IN_FLIGHT, SYNC_PARALLEL edited, net/ts/build.sh --test-params, copied
+# to bench/results/local/names6b-window/ts-test-<w8|w16|w32|p4w8|p8w16|p16w32>.wasm), then:
+node bench/net/names-window.ts --windows 8,16,32 --flows 1,2 --mbps 0,10 --mb 4 --rounds 2 --out results/names6b/window.json            # ~25 min
+node bench/net/names-window.ts --windows p4w8,p8w16,p16w32 --flows 1,2 --mbps 0,4 --mb 6 --rounds 2 --out results/names6b/window-parallel.json  # ~30 min
+cargo run -q --release -p waarm64_ts --features test-params --example names-memory -- <titles.json> names-memory  # titles: names-title, 5,000 at "levels": 30
+node bench/net/room-scale.ts names make && node bench/net/room-scale.ts names converge --wait 300 --out results/names6b/converge.json  # ~6 min
+node bench/net/names-long.ts run --dir bench/results/local/names6b-proof --days 1 --every 5 --drop 15  # the proof's first part, under timeout 2400
+node bench/net/names-long.ts summary bench/results/local/names6b-proof/log.jsonl --out results/names6b/long-proof.json
+```
