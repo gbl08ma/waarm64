@@ -28,12 +28,12 @@
     "note": "Shown at the top of the Machines page (followed by “…”) while one or more kept snapshots are deleted (The Machines page, a machine's Snapshots tab)."
   },
   "Snapshots.deleteOrphaned.confirm_one": {
-    "message": "Delete {{count}} orphaned snapshot? It was taken of this machine with other settings or disks. This will free {{size, bytes}} of storage in this browser.",
-    "note": "Text of the confirmation of Delete orphaned snapshots (The Machines page, a machine's Snapshots tab), when one snapshot is orphaned (taken of the machine as it was before its settings or disks changed); {{count}} is how many, {{size}} their files' total size."
+    "message": "Delete {{count}} orphaned snapshot? It can't be restored onto this machine as it is now: it was taken with other settings or disks, or a disk it depends on has changed. This will free {{size, bytes}} of storage in this browser.",
+    "note": "Text of the confirmation of Delete orphaned snapshots (The Machines page, a machine's Snapshots tab), when one snapshot is orphaned (taken of the machine as it was before its settings or disks changed, or one that can never be restored: a disk changed under it, another version's); {{count}} is how many, {{size}} their files' total size."
   },
   "Snapshots.deleteOrphaned.confirm_other": {
-    "message": "Delete {{count}} orphaned snapshots? They were taken of this machine with other settings or disks. This will free {{size, bytes}} of storage in this browser.",
-    "note": "Text of the confirmation of Delete orphaned snapshots (The Machines page, a machine's Snapshots tab), when several are orphaned (taken of the machine as it was before its settings or disks changed); {{count}} is how many, {{size}} their files' total size."
+    "message": "Delete {{count}} orphaned snapshots? They can't be restored onto this machine as it is now: they were taken with other settings or disks, or a disk they depend on has changed. This will free {{size, bytes}} of storage in this browser.",
+    "note": "Text of the confirmation of Delete orphaned snapshots (The Machines page, a machine's Snapshots tab), when several are orphaned (taken of the machine as it was before its settings or disks changed, or ones that can never be restored: a disk changed under them, another version's); {{count}} is how many, {{size}} their files' total size."
   },
   "Snapshots.deleteOrphaned.ok": {
     "message": "Delete",
@@ -142,6 +142,22 @@
   "snapshots.writtenInPlace": {
     "message": "The disk {{disk}} has been written in place since this snapshot was taken, and the snapshot doesn't include the whole disk. It can only be restored onto that disk as it was then.",
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” in a notice when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk of the machine written in place (without an overlay) that has changed since."
+  },
+  "snapshots.baseMoved": {
+    "message": "The disk {{disk}}, stored in this browser, has been changed since this snapshot was taken (written in place, or an overlay merged into it). The snapshot can only be restored onto that disk as it was then.",
+    "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk stored in the browser that the machine read (read-only, or under an overlay) when the snapshot was taken, and that has been written to since."
+  },
+  "snapshots.unrestorable.version": {
+    "message": "it was made by another version of this web app, whose machine state this version can't read",
+    "note": "Machines page, Snapshots tab (after “Orphaned:”), and the tooltip of a disabled snapshot in the toolbar's Load snapshot menu: why a kept snapshot can never be restored. Here: the page was updated since, and its emulator saves machines in another format."
+  },
+  "snapshots.unrestorable.base": {
+    "message": "the disk {{disk}} has been changed since (written in place, or an overlay merged into it)",
+    "note": "Machines page, Snapshots tab (after “Orphaned:”), and the tooltip of a disabled snapshot in the toolbar's Load snapshot menu: why a kept snapshot can never be restored. {{disk}} is the name of a disk stored in the browser that the machine read when the snapshot was taken (read-only, or under an overlay), written to since."
+  },
+  "snapshots.unrestorable.inPlace": {
+    "message": "the disk {{disk}} is written in place and has changed since, and the snapshot doesn't include the whole disk",
+    "note": "Machines page, Snapshots tab (after “Orphaned:”), and the tooltip of a disabled snapshot in the toolbar's Load snapshot menu: why a kept snapshot can never be restored. {{disk}} is the name of a disk of the machine written in place (without an overlay) that the guest wrote to after the snapshot."
   },
   "machine-like.storedDiskGone": {
     "message": "Couldn't create the machine",
@@ -442,6 +458,14 @@
   "snapshot-actions.kept": {
     "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. You can rename the snapshot on the Machines page.",
     "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of the machine in this browser: {{name}} is its name (the time it was taken), {{size}} its size, {{seconds}} how long the machine was paused."
+  },
+  "snapshot-actions.kept.inPlace_one": {
+    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The disk {{disks}} is written in place, so the snapshot can be restored only until the machine writes to that disk again.",
+    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of a machine with one disk written in place (no overlay: the snapshot doesn't hold its blocks, so it restores only while the disk is as it was): {{name}} is the snapshot's name, {{size}} its size, {{seconds}} how long the machine was paused, {{disks}} the disk's name; {{count}} is 1."
+  },
+  "snapshot-actions.kept.inPlace_other": {
+    "message": "Saved the snapshot {{name}} in this browser ({{size, bytes}}). The machine was paused for {{seconds}} s and is running again. The disks {{disks}} are written in place, so the snapshot can be restored only until the machine writes to one of them again.",
+    "note": "Notice in the message bar (under the toolbar) once Snapshot (the toolbar) kept a snapshot of a machine with several disks written in place (no overlay: the snapshot doesn't hold their blocks, so it restores only while they are as they were): {{name}} is the snapshot's name, {{size}} its size, {{seconds}} how long the machine was paused, {{disks}} the disks' names, joined with commas; {{count}} is how many."
   },
   "snapshot-actions.runsOn.noFile": {
     "message": "The machine is still running, and no file was saved.",

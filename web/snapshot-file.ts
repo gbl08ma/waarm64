@@ -21,6 +21,13 @@
 import { msg, MsgError, type Msg, type Params } from './msg.ts';
 import { isZero } from './qcow2-write.ts';
 
+/**
+ * The machine state's format the core reads and writes (core/src/snapshot.rs `VERSION`, its `snapshot_version`), known
+ * to the page without the core: a kept snapshot of another format shows as unrestorable (docs/machines.md §5.1).
+ * tests/snapshot-plan.test.ts pins it to the core's.
+ */
+export const SNAPSHOT_VERSION = 6;
+
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
 export type SnapshotHeader = { format: 1; coreVersion: number; abi: number; created: string; [key: string]: unknown };
 /**

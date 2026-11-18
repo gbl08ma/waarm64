@@ -8,7 +8,7 @@ import type { DiskPlan, SnapshotDisk } from '../../snapshot.ts';
 import { ask } from '../ask.svelte.ts';
 import { shapeDiff } from '../shape-diff.ts';
 import type { Shape } from '../shape.ts';
-import { planRestore } from '../snapshots.ts';
+import { basesIn, planRestore } from '../snapshots.ts';
 import { snapshotPath } from '../store.ts';
 import type { Core } from '../run/core.ts';
 import { diskName, overlayName } from '../run/page-disks.ts';
@@ -123,7 +123,7 @@ export class SnapshotRestore {
         this.#c.machine.store,
         s.record,
         s.disks,
-        { name: name.replace(/\.waarm64snap$/, ''), key, pins },
+        { name: name.replace(/\.waarm64snap$/, ''), key, pins, bases: basesIn(header) },
         now.shape,
       );
       if (!plan.refused) return plan;

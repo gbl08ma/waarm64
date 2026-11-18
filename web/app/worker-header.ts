@@ -24,7 +24,14 @@ export type Session = {
 /** A snapshot's header fields (beside the core's): what the machine is, its shape for a stored one, the terminal's tail. */
 export function header(s: Session, label: string | undefined, serial: string) {
   const about = s.about
-    ? { name: s.about.name, shape: s.about.shape, shapeHash: s.about.shapeHash, urls: s.about.urls, format: 2 }
+    ? {
+        name: s.about.name,
+        shape: s.about.shape,
+        shapeHash: s.about.shapeHash,
+        urls: s.about.urls,
+        ...(s.about.bases ? { bases: s.about.bases } : {}),
+        format: 2,
+      }
     : {};
   return { machine: s.name, label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial, ...about };
 }

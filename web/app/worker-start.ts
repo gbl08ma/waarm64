@@ -82,7 +82,8 @@ export function planOf(m: StartMessage, machine: Machine): Plan {
 
 /**
  * A suspended machine resumes only onto its overlays as it left them: the same ones, at the generations it pinned
- * (docs/machines.md §5.3; a switch, a reset, a merge or a boot since moved them on).
+ * (docs/machines.md §5.3; a switch, a reset, a merge or a boot since moved them on), over the stored disks as they
+ * were (the header's `bases`: one written in place or merged into since is another disk under them).
  */
 async function sameOverlays(header: SnapshotHeader, specs: DeviceSpec[]) {
   for (const d of (header.disks ?? []) as SnapshotDisk[]) {
@@ -95,6 +96,11 @@ async function sameOverlays(header: SnapshotHeader, specs: DeviceSpec[]) {
     )
       throw new MsgError('machine:worker-start.diskChanged');
   }
+  // A stored disk it ran over (read-only, or under an overlay) written in place or merged into since (`bases`).
+  const bases = header.bases as Record<string, number> | undefined;
+  for (const [id, generation] of Object.entries(bases ?? {}))
+    if ((await overlayMeta(`disks/${id}`)).generation !== generation)
+      throw new MsgError('machine:worker-start.diskChanged');
 }
 
 /**

@@ -1,6 +1,7 @@
 <!--
-  The toolbar's Load snapshot menu (docs/frontend.md "Snapshots"): the machine's latest kept snapshots (orphaned ones
-  can't restore: shown, disabled), all of them (its Snapshots tab), or a file.
+  The toolbar's Load snapshot menu (docs/frontend.md "Snapshots"): the machine's latest kept snapshots (orphaned ones,
+  of another shape or unrestorable for good, can't restore: shown, disabled, the reason in the tooltip), all of them
+  (its Snapshots tab), or a file.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';
@@ -12,6 +13,7 @@
   import { current } from './areas/current.svelte.ts';
   import { power } from './areas/power.svelte.ts';
   import { inBar, page } from './page.ts';
+  import { unrestorable } from './snapshots.ts';
 
   const LATEST = 5;
   let open = $state(false);
@@ -38,7 +40,11 @@
       .filter((s) => s.machine === current.id)
       .sort((a, b) => b.created - a.created)
       .slice(0, LATEST)
-      .map((s) => ({ ...s, orphaned: !!now && s.shapeHash !== now.hash })),
+      .map((s) => ({
+        ...s,
+        orphaned: !!now && s.shapeHash !== now.hash,
+        lost: unrestorable(s, (id) => records.disks.get(id)),
+      })),
   );
   /** Closes the menu, then does `f`. */
   const then = (f: () => void) => () => {
@@ -61,10 +67,12 @@
       <Button
         variant="item"
         data-snapshot={s.id}
-        disabled={s.orphaned}
+        disabled={s.orphaned || !!s.lost}
         title={s.orphaned
           ? t('toolbar:LoadSnapshotMenu.load.orphaned.title')
-          : t('toolbar:LoadSnapshotMenu.load.restore.title', { name: s.name })}
+          : s.lost
+            ? t('toolbar:LoadSnapshotMenu.load.unrestorable.title', { why: s.lost })
+            : t('toolbar:LoadSnapshotMenu.load.restore.title', { name: s.name })}
         onclick={then(() => inBar(() => page.restoreKept(s.id)))}
       >
         <span>{s.name}</span><span class="dim">{new Date(s.created).toLocaleString()}</span>

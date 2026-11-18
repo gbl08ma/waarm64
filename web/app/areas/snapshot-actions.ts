@@ -3,6 +3,7 @@
 // web/app/areas/snapshot-restore.ts.
 import { msg, t, type Msg } from '../../i18n.ts';
 import type { SnapshotDisk } from '../../snapshot.ts';
+import { SNAPSHOT_VERSION } from '../../snapshot-file.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import { ask } from '../ask.svelte.ts';
 import { askPersist } from '../storage-report.ts';
@@ -157,7 +158,19 @@ export class SnapshotActions {
     if (!r.live() || !isLive(power.state)) return;
     this.#d.messages.setState(power.state);
     const words = { name, size: done.bytes, seconds: (done.pausedMs / 1000).toFixed(1) };
-    this.#d.messages.notify(msg(SAVED[how], words));
+    // A disk written in place that the snapshot pins without its blocks: it restores only until the guest writes it
+    // again (docs/machines.md §4.4), said where it was taken.
+    const disks = this.#d.machine.stored?.disks;
+    const inPlace = done.pins.flatMap((p) =>
+      how === 'kept' && p.overlay?.startsWith('disks/') && p.blocks === 0
+        ? [disks?.get(p.overlay.slice('disks/'.length))?.name ?? p.overlay]
+        : [],
+    );
+    const count = inPlace.length;
+    const said = count
+      ? msg('snapshots:snapshot-actions.kept.inPlace', { ...words, disks: inPlace, count })
+      : undefined;
+    this.#d.messages.notify(said ?? msg(SAVED[how], words));
   }
   /** Says the save failed, if the machine runs on (`what`: what the page did about it). */
   #failed(r: Run, e: unknown, what: string) {
@@ -286,7 +299,7 @@ export class SnapshotActions {
           blocks,
           ram,
         }));
-        const { shape, shapeHash, urls } = about;
+        const { shape, shapeHash, urls, bases } = about;
         await m.store.put('snapshots', {
           id,
           machine: s.record.id,
@@ -297,6 +310,8 @@ export class SnapshotActions {
           shapeHash,
           urls,
           pins,
+          ...(bases ? { bases } : {}),
+          coreVersion: SNAPSHOT_VERSION, // this page's core wrote it (tests/snapshot-plan.test.ts pins the two)
         });
         return done;
       });

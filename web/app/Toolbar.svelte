@@ -23,6 +23,7 @@
   import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { clipboard } from './areas/clipboard.svelte.ts';
   import { current } from './areas/current.svelte.ts';
+  import { records } from './areas/records.svelte.ts';
   import { isLive, power } from './areas/power.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
   import { inBar, page } from './page.ts';
@@ -44,6 +45,17 @@
     restart: { label: 'toolbar:Toolbar.restart', title: 'toolbar:Toolbar.restart.title' },
   } as const;
   const canSnapshot = $derived(running && !power.busy);
+  /** The machine writes a disk in place: a kept snapshot of it restores only until that disk is written again (said in Snapshot's tooltip). */
+  const inPlace = $derived(
+    !!records.machines.find((m) => m.id === current.id)?.attachments.some((a) => a.inPlace && !a.readOnly),
+  );
+  const snapshotTitle = $derived(
+    !current.id
+      ? t('toolbar:Toolbar.snapshot.title.file')
+      : inPlace
+        ? t('toolbar:Toolbar.snapshot.title.inPlace')
+        : t('toolbar:Toolbar.snapshot.title'),
+  );
   /** Power off's tooltip: a request to the guest where its agent takes one, at once while one is pending. */
   const offTitle = $derived(
     power.soft
@@ -192,7 +204,7 @@
     icon="history-toggle"
     id="save-snapshot"
     disabled={!canSnapshot}
-    title={current.id ? t('toolbar:Toolbar.snapshot.title') : t('toolbar:Toolbar.snapshot.title.file')}
+    title={snapshotTitle}
     onclick={() => inBar(() => page.takeSnapshot())}
   >
     {t('toolbar:Toolbar.snapshot')}

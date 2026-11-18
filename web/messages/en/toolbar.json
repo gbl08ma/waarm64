@@ -87,6 +87,10 @@
     "message": "Take a snapshot of the running machine and keep it in this browser. The machine pauses for a moment, then runs on.",
     "note": "Tooltip of the toolbar's Snapshot button for a machine kept in this browser."
   },
+  "Toolbar.snapshot.title.inPlace": {
+    "message": "Take a snapshot of the running machine and keep it in this browser. The machine pauses for a moment, then runs on. A disk of this machine is written in place, so the snapshot can be restored only until the machine writes to that disk again.",
+    "note": "Tooltip of the toolbar's Snapshot button for a machine kept in this browser that has a disk written in place (no overlay): a kept snapshot doesn't hold that disk's blocks, so it can't be restored once the disk changes."
+  },
   "Toolbar.snapshot.title.file": {
     "message": "Take a snapshot of the running machine and save it to a file. The machine pauses for a moment, then runs on.",
     "note": "Tooltip of the toolbar's Snapshot button for a machine that isn't kept in this browser (the snapshot is saved as a file)."
@@ -102,6 +106,10 @@
   "LoadSnapshotMenu.load.latest": {
     "message": "Latest snapshots",
     "note": "Heading over the list of the machine's latest snapshots in the toolbar's Load snapshot menu."
+  },
+  "LoadSnapshotMenu.load.unrestorable.title": {
+    "message": "This snapshot can't be restored any more: {{why}}.",
+    "note": "Tooltip of a snapshot shown disabled in the toolbar's Load snapshot menu: it can never be restored (a disk it depends on changed, or another version of the page made it). {{why}} is the reason (e.g. snapshots:snapshots.unrestorable.base)."
   },
   "LoadSnapshotMenu.load.orphaned.title": {
     "message": "This snapshot was taken when the machine had other settings or disks. It can't be restored onto the machine as it is now.",

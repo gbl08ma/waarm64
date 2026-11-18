@@ -173,8 +173,16 @@ export type ToWorker =
        * The machine as its snapshots describe it (docs/machines.md §5.1): its name, shape and the shape's hash, and
        * the URLs of its URL disks by slot (a file restored elsewhere can make its machine). A snapshot whose shape hash
        * isn't this one is refused. Transient machines (the tests') have none: their snapshots are checked by devices.
+       * `bases`: the generations of the stored disks it reads (read-only or under an overlay), by disk id
+       * (web/app/snapshots.ts `basesOf`), into the header: a restore is refused once one moved.
        */
-      about?: { name: string; shape: Shape; shapeHash: string; urls: Record<number, string> };
+      about?: {
+        name: string;
+        shape: Shape;
+        shapeHash: string;
+        urls: Record<number, string>;
+        bases?: Record<string, number>;
+      };
       /** What a restore does with each writable disk the snapshot pins (web/snapshot.ts `DiskPlan`); none: replace each. */
       plan?: DiskPlan[];
     }
