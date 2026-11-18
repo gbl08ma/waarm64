@@ -26,8 +26,9 @@ equivalent) works with nothing configured.** At least one demo in the store must
 2. One click on **Alpine (terminal)** downloads a small snapshot (budget: ≤ 30 MB on the wire) and the first pieces of
    a chunked disk, resumes, and shows a `#` prompt already logged in. The budget is ≤ 5 s from the click to the prompt
    on a good connection with a cold cache. Nothing boots: it's a resume.
-3. The machine has a network adapter on the **demo network** (a hosted helper with an allowlist, §3). `apk add python3` works,
-   `pip install` works, `curl https://…` works.
+3. The machine has a network adapter on the **demo network** (a hosted helper with an allowlist, §3). `apk add python3 htop`
+   works, and so does typing a command that isn't installed (§5). The rest of the internet doesn't, and the motd says
+   so: the demo network reaches Alpine's package host and nothing else (§3.2).
 4. **The demo is an ordinary stored machine from the click on** (the user, 2026-11-18): choosing a demo makes a
    machine from its definition, which is listed on the Home page with every setting where it always is. Its remote
    disk's overlay lives in this browser (OPFS), so **changes survive a reload by default**. The visitor deletes the
@@ -65,10 +66,11 @@ way out without installing the local helper.
 
 **A fork, not a mode** (the user, 2026-11-18). waarm64-net stays the small local helper that a user can read and
 trust on their own computer. The public helper is a **fork in a project of its own**, which takes the parts it shares
-(the WebSocket framing and protocol, the gvisor-tap-vsock glue) and adds what only a server needs. Where it lives: a
-new repository (`waarm64-demonet`, say) is **recommended** over a directory in this one. It's Go, released and
+(the WebSocket framing and protocol, the gvisor-tap-vsock glue) and adds what only a server needs. It lives in **a
+new repository** (the user, 2026-11-18; `waarm64-demonet`, say: the user creates it, and this session's GitHub
+access is limited to waarm64's). It's Go, released and
 deployed on its own schedule to a server, with its own README, THIRD_PARTY and tests, like waarm64-net. This repo's
-tests pin a commit of it the way they pin the local helper's. The user's call.
+tests pin a commit of it the way they pin the local helper's.
 
 What it has that the local helper hasn't:
 - **TLS and the origin:** behind a reverse proxy (Caddy) on `wss://`. Origin `https://vm.tny.im` only. No pairing
@@ -91,7 +93,7 @@ What it has that the local helper hasn't:
   This is the "challenge" the user expected. It's about two hundred lines of Go around the library's forwarders, with
   tests against a fake upstream.
 - **The configuration is one file the owner edits** (the user, 2026-11-18: "easy to configure by me"), reloaded on
-  change or `SIGHUP`, and checked at load (a bad file keeps the old one and says why). **TOML recommended** over JSON
+  change or `SIGHUP`, and checked at load (a bad file keeps the old one and says why). **TOML** (the user, 2026-11-18),
   because it allows comments, which a list like this needs ("why is this host here"), with one small Go library
   (BurntSushi/toml, MIT). A sketch:
 
@@ -120,9 +122,26 @@ What it has that the local helper hasn't:
   range or the server's own services. Answers that resolve to private, loopback or link-local addresses are dropped
   whatever the name. UDP goes only to the helper's own DNS and NTP. `helper --check config.toml` prints what each
   rule allows, and resolves each name once, so the owner sees what a change opens before it's live.
-- **What the first list holds:** the demos' package hosts (Alpine's CDN, PyPI and files.pythonhosted.org, Debian's,
-  Arch's mirror, GitHub's release hosts, crates.io's), a time host, and one or two test sites so `curl` has something
-  to show. The owner edits it.
+- **The first list: only what the Alpine demo needs to install packages.** `apk` reads one host, over HTTPS, for
+  both `main` and `community` (and the command-not-found lookup, `apk search -x cmd:<name>`, reads the same index).
+  The guest's clock comes from the page (the guest agent), not NTP, and its certificates are in its own
+  `ca-certificates`, so no OCSP host or time host is needed:
+
+  ```toml
+  # The demo network's allowlist. Anything not named here is refused.
+
+  [[allow]]
+  name = "dl-cdn.alpinelinux.org"
+  ports = [443]
+  note = "Alpine's packages: the Alpine demo's apk (main and community, v3.24). Fastly behind a CNAME."
+  ```
+
+  The guest's `/etc/apk/repositories` names `https://dl-cdn.alpinelinux.org/alpine/v3.24/main` and `…/community`
+  (unkernel enables `community` only on demand to make `apk` faster: our image does the same). The resolver
+  follows the name's CNAME chain to Fastly, and the SNI check is what keeps Fastly's other sites out. Port 80 isn't
+  needed: Alpine's repositories have been HTTPS by default for years, and apk checks every package's signature
+  either way. Later demos add their own rules with their own notes, each the owner's call: PyPI and
+  `files.pythonhosted.org` for `pip`, Debian's `deb.debian.org`, Arch's mirror, and so on.
 - **Logs:** counts per destination and budget refusals, no addresses kept past the budget's day.
 - **Cost:** bandwidth. A demo visitor's `apk add python3` is about 20 MB. One small VPS with a few TB a month covers a
   launch.
@@ -226,6 +245,15 @@ published next to its disk and snapshot:
 - **Storage:** a demo machine's disk blocks go to the OPFS store of a URL disk, as any machine's do, not the
   expiring bucket. The bucket is right for a one-off visit, but a demo is now a machine the visitor keeps until they
   delete it.
+- **Hosting: every demo on vmdisks.tny.im** (the user, 2026-11-18). vmdisks.tny.im is an assets-only Worker
+  (remote-disks.md "Where our images are"; not a Pages project, though the limits are alike): no bill per request,
+  25 MiB a file, **20,000 files a version** (`deploy/disks/deploy.sh` refuses past that), no ranges. So the store,
+  each demo's definition, thumbnail, chunked disk and chunked snapshot go there as pieces of 2 MiB. Pieces are named
+  by their hash and shared across images and versions, so a new version costs only the pieces it changed. **The
+  budget is files, not bytes:** the desktop's 1.95 GB is ~1,000 pieces, Alpine's demo a few hundred with its
+  snapshot. Keep the whole site under ~15,000 files, so a version's old and new pieces fit side by side during a
+  change. A deploy replaces the whole site, so `target/disks/` must hold every demo that stays, and a demo's id
+  leaves the store before its pieces leave the site.
 - **Templates for new machines** (the user's own backlog item): the same definitions, minus `demo.snapshot`, offered
   under **New machine** as starting points ("Alpine", "Debian", "Arch desktop"), so a new machine needs no disk image
   of the user's own.
@@ -271,10 +299,10 @@ published next to its disk and snapshot:
 
 **Settled (the user, 2026-11-18):** the no-Wisp decision reopened; a demo makes a stored machine, with `fromDemo`
 and versions by id; the public helper is a fork of its own, hosted on the user's server, configured from a file.
-Also settled: A, the hosted helper, on the user's server; no Cloudflare Workers for now.
-**Needs the user's OK:** the fork's repository (§3.2); TOML and its library; the
-allowlist's contents; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image and
-its hosting on vmdisks.tny.im; any deploy.
+Also settled: A, the hosted helper, on the user's server; no Cloudflare Workers for now; the fork in a new
+repository; TOML; the first allowlist is what the Alpine demo's `apk` needs (§3.2); the demos are hosted on
+vmdisks.tny.im (§4 "Hosting").
+**Needs the user's OK:** each rule added to the allowlist past the first; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image; any deploy.
 
 ## 7. Open questions
 
