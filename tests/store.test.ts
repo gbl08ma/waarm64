@@ -10,6 +10,7 @@ import { canonical, DEFAULT_MAC, generateName, isMac, MAX_ADAPTERS, MAX_DISKS, n
 import { shapeDiff } from '../web/app/shape-diff.ts';
 import { Store, type SnapshotRecord } from '../web/app/store.ts';
 import { memoryFiles, memoryRecords } from '../web/app/store-backends.ts';
+import { overlayLock } from '../web/overlay.ts';
 import { t, text } from '../web/i18n.ts';
 import { words } from './words.ts';
 
@@ -306,6 +307,39 @@ test("the sweep waits for a writer between its bytes and its record (another tab
   await writer;
   assert.deepEqual(await swept, []);
   assert.deepEqual(files.paths(), ['overlays/c00000000002/data']);
+});
+
+test("a deletion removes an overlay's and a disk's files under their lock: a reader that has them open (the disk surface's job) closes them first", async () => {
+  const files = memoryFiles();
+  const s = new Store(memoryRecords(), files, { channel: false });
+  const d = disk('d00000000003');
+  const o = { id: 'c00000000003', name: 'Changes', disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: 0, modified: 0 }; // i18n-ignore: a name the test gives
+  files.write(`disks/${d.id}/map`, 4096);
+  files.write(`overlays/${o.id}/map`, 4096);
+  await s.put('disks', d);
+  await s.put('overlays', o);
+  // Readers with the files open, as a job holds them (shared, read-only handles: OPFS refuses to remove a file open).
+  const reader = (path: string) => {
+    let release!: () => void;
+    const held = new Promise<void>((granted) => {
+      void navigator.locks.request(overlayLock(path), { mode: 'shared' }, () => {
+        granted();
+        return new Promise<void>((r) => (release = r));
+      });
+    });
+    return held.then(() => release);
+  };
+  const [releaseDisk, releaseOverlay] = [await reader(`disks/${d.id}`), await reader(`overlays/${o.id}`)];
+  const deleting = s.deleteDisk(d.id);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(await s.get('overlays', o.id), undefined, 'the record first');
+  assert.deepEqual(files.paths(), [`disks/${d.id}/map`, `overlays/${o.id}/map`], 'the files wait for their readers');
+  releaseOverlay();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(files.paths(), [`disks/${d.id}/map`], "the overlay's once its reader closed them");
+  releaseDisk();
+  await deleting;
+  assert.deepEqual(files.paths(), []);
 });
 
 test('network adapters on the Home page: added up to the limit, removed; copies and definitions carry the MACs, no connections', async () => {

@@ -219,15 +219,27 @@ test("a job's ask: its worker's answer, or after its time a refusal in words, an
   assert.deepEqual(await slow.range(0, true), { kind: 'none', why: { key: 'disks:surface-source.noAnswer' } });
   assert.ok(made[1].ended);
   assert.deepEqual(made[1].posted, [{ ...job, query: { kind: 'disk-range', disk: 0, range: 0, content: true } }]);
-  // Closed with an ask in flight: it ends at once, its worker too.
+  // Closed with an ask in flight: it ends at once; its worker once it answers (it may have the files open, and a
+  // terminated worker's locks go before its handles do: a deletion under the lock would find them open).
   const closing = jobSource(job, make(), 60_000);
   const pending = closing.surface(1);
+  await new Promise((r) => setTimeout(r)); // the job posted
   closing.close();
   assert.deepEqual(await pending, { kind: 'none' });
+  assert.ok(!made[2].ended, 'left to finish');
+  made[2].w.onmessage?.({ data: { kind: 'none' } } as MessageEvent<InspectAnswer>);
   assert.ok(made[2].ended);
+  // Closed before its job was posted (it waited for a merge, or an image's handle): the worker has nothing open, ended at once.
+  const early = jobSource(job, make(), 60_000);
+  const unposted = early.surface(1);
+  early.close();
+  assert.deepEqual(await unposted, { kind: 'none' });
+  await new Promise((r) => setTimeout(r));
+  assert.deepEqual(made[3].posted, []);
+  assert.ok(made[3].ended);
 });
 
-test("a job's asks: a newer one of a kind ends the one before (its worker terminated), a range's and the map's apart", async () => {
+test("a job's asks: a newer one of a kind ends the one before (its worker once it answers), a range's and the map's apart", async () => {
   const made: { ended: boolean; answer: (a: InspectAnswer) => void }[] = [];
   const make = () => {
     const w: JobWorker = { onmessage: null, onerror: null, postMessage() {}, terminate() { m.ended = true; } };
@@ -238,10 +250,13 @@ test("a job's asks: a newer one of a kind ends the one before (its worker termin
   const s = jobSource({ size: RANGE, baseKind: 'blank' }, make, 60_000);
   const first = s.surface(4);
   const range = s.range(0, true);
+  await new Promise((r) => setTimeout(r)); // their jobs posted
   const second = s.surface(8);
   assert.deepEqual(await first, { kind: 'none' }, 'superseded');
-  assert.deepEqual(made.map((m) => m.ended), [true, false, false], "the first map's worker ended, the range's not");
+  assert.deepEqual(made.map((m) => m.ended), [false, false, false], "the first map's worker left to finish, the range's running");
   const a: InspectAnswer = { kind: 'none', why: { key: 'disks:surface-job.inUse' } };
+  made[0].answer({ kind: 'none' });
+  assert.deepEqual(made.map((m) => m.ended), [true, false, false], "the first map's worker ended once it answered");
   made[2].answer(a);
   assert.deepEqual(await second, a);
   made[1].answer(a);

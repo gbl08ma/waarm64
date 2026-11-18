@@ -7,7 +7,7 @@
 // before their record do it inside `writing`, which the sweep waits out (a Web Lock, shared by
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
-import { hasOpfs } from '../overlay.ts';
+import { hasOpfs, lockOverlay } from '../overlay.ts';
 import { MsgError } from '../msg.ts';
 import type { Connection } from './connections.ts';
 import type { Folder } from './folders.ts';
@@ -118,6 +118,21 @@ export const folderDir = (id: string) => `folders/${id}`;
 export const snapshotPath = (machine: string, id: string) => `machines/${machine}/snapshots/${id}`;
 export const flashPath = (machine: string) => `machines/${machine}/flash`;
 export const suspendPath = (machine: string) => `machines/${machine}/suspend`;
+
+/**
+ * Removes an overlay's or a stored disk's files (`path`) holding their lock (web/overlay.ts `lockOverlay`), as
+ * `removeOverlay` does: whoever has them open holds it until they're closed (a disk surface's job reading them, under a
+ * shared lock, while its window shows the disk), and OPFS refuses to remove a file that is open
+ * (`NoModificationAllowedError`). Fails as `lockOverlay` does when a machine keeps them open.
+ */
+async function removeLocked(files: Files, path: string) {
+  const release = await lockOverlay(path);
+  try {
+    await files.remove(path);
+  } finally {
+    release();
+  }
+}
 
 /** The lock writers share and the sweep takes alone (machines.md §2). */
 const WRITE_LOCK = 'waarm64-store';
@@ -246,11 +261,14 @@ export class Store {
     await this.files.remove(snapshotPath(s.machine, id));
   }
 
-  /** Deletes an overlay: its record, then its files. The caller has its lock (no machine has it open). */
+  /**
+   * Deletes an overlay: its record, then its files, under their lock (`removeLocked`). The caller checked that no
+   * machine has it open.
+   */
   async deleteOverlay(id: string) {
     await this.records.delete('overlays', id);
     this.said({ kind: 'overlays', id, deleted: true });
-    await this.files.remove(overlayDir(id));
+    await removeLocked(this.files, overlayDir(id));
   }
 
   /** Deletes a machine: its snapshots' records and its own, then its files (variable store, suspended copy, snapshots). Its disks and their overlays stay: they belong to the disks. */
@@ -274,7 +292,7 @@ export class Store {
     for (const o of await this.overlaysOf(id)) await this.deleteOverlay(o.id);
     await this.records.delete('disks', id);
     this.said({ kind: 'disks', id, deleted: true });
-    await this.files.remove(diskDir(id));
+    await removeLocked(this.files, diskDir(id));
   }
 
   /** Machine `n`'s bytes no record owns: all of them without the machine's record, else its snapshots without theirs. */
