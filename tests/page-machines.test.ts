@@ -1,15 +1,16 @@
 // Machines as the unit on the page (docs/machines.md), on Debian: a machine kept in this browser
 // (IndexedDB and OPFS, web/app/store.ts) opened by `?m=<id>`, with several disks from several sources.
-// Each test makes its machine's records in a fresh profile, as the modal would, then drives the guest
-// on the serial terminal. Opt-in with WAARM64_DISTROS=debian (scripts/ci-machines.sh); a Debian page
-// boot is ~40 s in the dev VM, ~2.5 min in a cloud session. The stored disk's tests are tests/page-stored.test.ts.
+// Each test puts its machine's records in a fresh profile, as the modal would, starts it from a booted-Debian fixture
+// (tests/debian-fixture.ts) and drives the guest on the serial terminal. Opt-in with WAARM64_DISTROS=debian
+// (scripts/ci-machines.sh); a Debian page boot is ~40 s in the dev VM, ~2.5 min in a cloud session. The stored disk's tests are tests/page-stored.test.ts.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { credentialsQuery } from './debian-unattended.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
+import { putStored, replacesFixture, STORED, STORED_QUERY, storedFixture } from './debian-fixture.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
@@ -75,94 +76,72 @@ async function login(page: Page) {
   await shows(page, /(?:root@\S+|\S+):~# /); // Debian's prompt, Alpine's
 }
 
-/** Makes a machine's records in the page's store (as the modal does); returns its id. */
-async function makeMachine(page: Page, m: { ncpus: number; ramMiB: number; disks: { kind: string; name: string; size: number; url?: string; readOnly?: boolean; swap?: boolean; identity: unknown }[] }) {
-  return page.evaluate(async (m) => {
-    const { Store } = await import('/web/app/store.ts' as string);
-    const { newId } = await import('/web/app/shape.ts' as string);
-    const store = await Store.open();
-    const now = Date.now();
-    const attachments = [];
-    for (const d of m.disks) {
-      const id = newId();
-      await store.put('disks', { id, kind: d.kind, name: d.name, size: d.size, url: d.url, identity: d.kind === 'url' ? d.identity : { kind: d.kind, id, bytes: d.size }, created: now });
-      attachments.push({ id: newId(), disk: id, readOnly: !!d.readOnly, ...(d.swap ? { swap: true } : {}) });
-    }
-    const id = newId();
-    await store.put('machines', { id, name: 'Test machine', ncpus: m.ncpus, ramMiB: m.ramMiB, display: '2d', network: true, attachments, created: now, modified: now });
-    store.close();
-    return { id, serials: attachments.map((a) => `waarm64-${a.id}`) };
-  }, m);
-}
-
 const MiB = 2 ** 20;
 
-test('a machine with five disks: Debian from a URL, a blank disk formatted and kept, a ramdisk empty after a reboot, a read-only one, a ramdisk as swap', { skip, timeout: 30 * 60_000 }, () => withDebianLock(async () => {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  await answerAsks(page);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`); // the page's origin, waiting for a disk
-  const firmware = readFileSync(FIRMWARE);
-  const image = readFileSync(IMAGE);
-  const size = Number(image.readBigUInt64BE(24)); // the qcow2's virtual size
-  const { id, serials } = await makeMachine(page, {
-    ncpus: 2, ramMiB: 1024,
-    disks: [
-      { kind: 'url', name: 'disk.qcow2', size, url: '/target/images/debian/disk.qcow2', identity: { kind: 'url', path: '/target/images/debian/disk.qcow2', bytes: image.length } },
-      { kind: 'blank', name: 'Blank', size: 256 * MiB, identity: null }, // i18n-ignore: a name the test gives
-      { kind: 'ramdisk', name: 'Ramdisk', size: 128 * MiB, identity: null }, // i18n-ignore: a name the test gives
-      { kind: 'url', name: 'QEMU_EFI.fd', size: firmware.length, url: '/target/images/edk2/QEMU_EFI.fd', readOnly: true, identity: { kind: 'url', path: '/target/images/edk2/QEMU_EFI.fd', bytes: firmware.length } },
-      { kind: 'ramdisk', name: 'Swap', size: 64 * MiB, swap: true, identity: null },
-    ],
-  });
-  const [, blank, ram, ro, swap] = serials.map((s) => `/dev/disk/by-id/virtio-${s}`);
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`);
-  assert.equal(await page.locator('#machine').textContent(), 'Test machine');
-  await running(page);
-  await login(page);
+test('a machine with five disks: Debian from a URL, a blank disk formatted and kept, a ramdisk empty after a reboot, a read-only one, a ramdisk as swap', { skip, timeout: 30 * 60_000 }, async () => {
+  // The first boot from a booted-Debian fixture (tests/debian-fixture.ts `storedFixture`); the reboot is a real one.
+  const fixture = await storedFixture(browser, base, STORED.five(), STORED_QUERY);
+  await withDebianLock(async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await answerAsks(page, (q) => !replacesFixture(q));
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`); // the page's origin, waiting for a disk
+    const firmware = readFileSync(FIRMWARE);
+    const r = STORED.five();
+    const size = r.disks[0].size as number; // the qcow2's virtual size
+    await putStored(page, r);
+    const id = r.machine.id;
+    const serials = r.machine.attachments.map((a) => `waarm64-${a.id}`);
+    const [, blank, ram, ro, swap] = serials.map((s) => `/dev/disk/by-id/virtio-${s}`);
+    await page.goto(`${base}/web/app/?${STORED_QUERY}&m=${id}`);
+    assert.equal(await page.locator('#machine').textContent(), 'Test machine');
+    if (fixture) await loadSnapshotFile(page, fixture);
+    await running(page);
+    await login(page);
 
-  // The serials name the disks; their sizes and read-only flags are the attachments'.
-  assert.equal(await ok(page, `for d in ${serials.map((s) => `/dev/disk/by-id/virtio-${s}`).join(' ')}; do echo $(blockdev --getsize64 --getro $d); done`), `${size} 0 ${256 * MiB} 0 ${128 * MiB} 0 ${firmware.length} 1 ${64 * MiB} 0`);
-  // The read-only disk: the file's bytes, and writes refused.
-  assert.equal(await ok(page, `sha256sum < ${ro} | cut -c1-64`), createHash('sha256').update(firmware).digest('hex'));
-  assert.notEqual((await sh(page, `dd if=/dev/zero of=${ro} bs=4096 count=1 oflag=direct`)).status, 0);
-  // The blank disk reads as zeros; formatted, mounted and written, it keeps the file.
-  assert.equal(await ok(page, `cmp -n ${256 * MiB} ${blank} /dev/zero && echo zeros`), 'zeros');
-  await ok(page, `mkfs.ext4 -q ${blank} && mkdir -p /mnt/b && mount ${blank} /mnt/b && echo kept-$((6*7)) > /mnt/b/file && sync`, 180_000);
-  // The swap ramdisk (web/app/guest-swap.ts): on with nothing done in the guest, by its label, trimmed as it frees.
-  const swapOn = `swapon --noheadings --show=LABEL,TYPE,SIZE; readlink -f /dev/disk/by-label/waarm64-swap0 ${swap}; systemctl show -P Options 'dev-disk-by\\x2dlabel-waarm64\\x2dswap0.swap'`;
-  const swapWant = (out: string) => assert.match(out, /^waarm64-swap0 partition 64M (\/dev\/vd\w) \1 sw,nofail,discard$/, out);
-  swapWant(await ok(page, swapOn));
-  // The ramdisk: empty, then written.
-  assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');
-  await ok(page, `mkfs.ext4 -q ${ram} && mkdir -p /mnt/r && mount ${ram} /mnt/r && echo gone > /mnt/r/file && sync && cat /mnt/r/file`);
+    // The serials name the disks; their sizes and read-only flags are the attachments'.
+    assert.equal(await ok(page, `for d in ${serials.map((s) => `/dev/disk/by-id/virtio-${s}`).join(' ')}; do echo $(blockdev --getsize64 --getro $d); done`), `${size} 0 ${256 * MiB} 0 ${128 * MiB} 0 ${firmware.length} 1 ${64 * MiB} 0`);
+    // The read-only disk: the file's bytes, and writes refused.
+    assert.equal(await ok(page, `sha256sum < ${ro} | cut -c1-64`), createHash('sha256').update(firmware).digest('hex'));
+    assert.notEqual((await sh(page, `dd if=/dev/zero of=${ro} bs=4096 count=1 oflag=direct`)).status, 0);
+    // The blank disk reads as zeros; formatted, mounted and written, it keeps the file.
+    assert.equal(await ok(page, `cmp -n ${256 * MiB} ${blank} /dev/zero && echo zeros`), 'zeros');
+    await ok(page, `mkfs.ext4 -q ${blank} && mkdir -p /mnt/b && mount ${blank} /mnt/b && echo kept-$((6*7)) > /mnt/b/file && sync`, 180_000);
+    // The swap ramdisk (web/app/guest-swap.ts): on with nothing done in the guest, by its label, trimmed as it frees.
+    const swapOn = `swapon --noheadings --show=LABEL,TYPE,SIZE; readlink -f /dev/disk/by-label/waarm64-swap0 ${swap}; systemctl show -P Options 'dev-disk-by\\x2dlabel-waarm64\\x2dswap0.swap'`;
+    const swapWant = (out: string) => assert.match(out, /^waarm64-swap0 partition 64M (\/dev\/vd\w) \1 sw,nofail,discard$/, out);
+    swapWant(await ok(page, swapOn));
+    // The ramdisk: empty, then written.
+    assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');
+    await ok(page, `mkfs.ext4 -q ${ram} && mkdir -p /mnt/r && mount ${ram} /mnt/r && echo gone > /mnt/r/file && sync && cat /mnt/r/file`);
 
-  // The guest's reboot is a new machine: the ramdisk starts empty again, the blank disk has its file.
-  await type(page, 'reboot\n');
-  await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 120_000, polling: 100 });
-  await running(page);
-  await login(page);
-  assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');
-  assert.equal(await ok(page, `mount ${blank} /mnt/b && cat /mnt/b/file`), 'kept-42');
-  swapWant(await ok(page, swapOn)); // a new ramdisk, a new swap area
-  await type(page, 'poweroff\n');
-  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 120_000 });
+    // The guest's reboot is a new machine: the ramdisk starts empty again, the blank disk has its file.
+    await type(page, 'reboot\n');
+    await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 120_000, polling: 100 });
+    await running(page);
+    await login(page);
+    assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');
+    assert.equal(await ok(page, `mount ${blank} /mnt/b && cat /mnt/b/file`), 'kept-42');
+    swapWant(await ok(page, swapOn)); // a new ramdisk, a new swap area
+    await type(page, 'poweroff\n');
+    await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 120_000 });
 
-  // In the browser: the machine's flash and one overlay each for the Debian disk and the blank one (the ramdisk has none).
-  const stored = await page.evaluate(async (id) => {
-    const { Store } = await import('/web/app/store.ts' as string);
-    const store = await Store.open();
-    const m = await store.get('machines', id);
-    const out = { overlays: m.attachments.map((a: { overlay?: string }) => !!a.overlay), files: await store.files.list(`machines/${id}`), sizes: [] as number[] };
-    for (const a of m.attachments) if (a.overlay) out.sizes.push(await store.files.size(`overlays/${a.overlay}`));
-    store.close();
-    return out;
-  }, id);
-  assert.deepEqual(stored.overlays, [true, true, false, false, false]);
-  assert.deepEqual(stored.files, ['flash']);
-  assert.ok(stored.sizes.every((n) => n > 0), `overlay sizes ${stored.sizes}`);
-  assert.deepEqual(errors, []);
-  await context.close();
-}, { chain: 112 })); // the slot lock's hint: ~112 s
+    // In the browser: the machine's flash and one overlay each for the Debian disk and the blank one (the ramdisk has none).
+    const stored = await page.evaluate(async (id) => {
+      const { Store } = await import('/web/app/store.ts' as string);
+      const store = await Store.open();
+      const m = await store.get('machines', id);
+      const out = { overlays: m.attachments.map((a: { overlay?: string }) => !!a.overlay), files: await store.files.list(`machines/${id}`), sizes: [] as number[] };
+      for (const a of m.attachments) if (a.overlay) out.sizes.push(await store.files.size(`overlays/${a.overlay}`));
+      store.close();
+      return out;
+    }, id);
+    assert.deepEqual(stored.overlays, [true, true, false, false, false]);
+    assert.deepEqual(stored.files, ['flash']);
+    assert.ok(stored.sizes.every((n) => n > 0), `overlay sizes ${stored.sizes}`);
+    assert.deepEqual(errors, []);
+    await context.close();
+  }, { chain: 70 }); // the slot lock's hint: ~70 s
+});

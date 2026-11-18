@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Machines as the unit on the page, on Debian (docs/testing.md "Debian boots", docs/machines.md):
-# a stored machine with four disks (blank, ramdisk, read-only), a disk stored in the browser (import,
+# a stored machine with five disks (blank, ramdisk, read-only, a swap ramdisk), a disk stored in the browser (import,
 # overlay variants, merge, grown with the guest's agent growing its root, in place), kept snapshots (forks, the ramdisk, Suspend on pins, orphaned
 # ones), a disk's map live, USB (Gadget Zero attached from the menu, the ports emptied around a snapshot) and shared folders (docs/shares.md). Run it, besides scripts/ci.sh, when a change touches stored machines, their disks (stored,
 # blank, ramdisk, overlays, serials), snapshots of them or the Home page (web/app/store.ts,

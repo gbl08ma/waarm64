@@ -222,22 +222,32 @@ export const STORED = {
    * the shape: the test attaches its own (`folders`) to the records the fixture was made without.
    */
   shares: (image = '/target/images/debian/disk.qcow2') => machine(`shares-${image}`, { name: 'Debian', adapters: [], shares: true }, [], image),
+  /** page-machines: one adapter; the Debian disk, a 256 MiB blank disk, a 128 MiB ramdisk, EDK2's file read-only, a 64 MiB swap ramdisk. */
+  five: () => machine('five', { name: 'Test machine', network: true }, [
+    blank(fixedId('five-blank'), 256 << 20),
+    ramdisk(fixedId('five-ram'), 128 << 20),
+    urlDisk(fixedId('five-ro'), '/target/images/edk2/QEMU_EFI.fd'),
+    ramdisk(fixedId('five-swap'), 64 << 20, 'Swap'),
+  ], undefined, { 3: { readOnly: true }, 4: { swap: true } }),
 };
 /** `STORED`'s address (the shape takes `display=simple`), with the tests' credentials. */
 export const STORED_QUERY = `${PAGE_QUERY}view=terminal&display=simple&${credentialsQuery()}`;
 
 /** A ramdisk's record. */
-const ramdisk = (id: string, bytes: number) => ({
-  id, kind: 'ramdisk', size: bytes, identity: { kind: 'ramdisk', id, bytes }, created: 0,
-  name: 'Ramdisk', // i18n-ignore: a name the test gives
-});
+const ramdisk = (id: string, bytes: number, name = 'Ramdisk') => ({ id, kind: 'ramdisk', name, size: bytes, identity: { kind: 'ramdisk', id, bytes }, created: 0 }); // i18n-ignore: a name the test gives
 
-/** Stored machine `label` (2 vCPUs, 1 GiB, 2D): `image` (the tests' Debian) first, then `more`'s disks, each attached writable. */
-function machine(label: string, fields: Record<string, unknown>, more: StoredRecords['disks'] = [], image = '/target/images/debian/disk.qcow2'): StoredRecords {
+/** A blank disk's record. */
+const blank = (id: string, bytes: number) => ({ id, kind: 'blank', name: 'Blank', size: bytes, identity: { kind: 'blank', id, bytes }, created: 0 }); // i18n-ignore: a name the test gives
+
+/**
+ * Stored machine `label` (2 vCPUs, 1 GiB, 2D): `image` (the tests' Debian) first, then `more`'s disks, each attached
+ * writable unless `attach` (by the disk's index) says more.
+ */
+function machine(label: string, fields: Record<string, unknown>, more: StoredRecords['disks'] = [], image = '/target/images/debian/disk.qcow2', attach: Record<number, { readOnly?: boolean; swap?: boolean }> = {}): StoredRecords {
   const disks = [urlDisk(fixedId(`${label}-disk`), image), ...more];
   return {
     disks,
-    machine: { id: fixedId(`${label}-machine`), ncpus: 2, ramMiB: 1024, display: '2d', ...fields, attachments: disks.map((d, i) => ({ id: fixedId(`${label}-attachment-${i}`), disk: d.id, readOnly: false })) },
+    machine: { id: fixedId(`${label}-machine`), ncpus: 2, ramMiB: 1024, display: '2d', ...fields, attachments: disks.map((d, i) => ({ id: fixedId(`${label}-attachment-${i}`), disk: d.id, readOnly: false, ...attach[i] })) },
   };
 }
 

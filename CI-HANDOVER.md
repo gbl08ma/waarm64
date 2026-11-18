@@ -115,17 +115,19 @@ decisions in §11).
   come; hints by hand on page-stored, page-folders, page-machines, page-surface-debian): ci-machines 269 → **224, 218
   s**. Passed the fast lane (112 s), ci.sh (644 s), ci-machines, ci-net (310 s; 294 in its one run before) and
   ci-debian (352 s).
+- **page-machines' first boot from a fixture** (`STORED.five`: the five disks under fixed ids, the blank disk's and
+  Debian's overlays both replaced by the load; 86 MiB, 31 s to make; the reboot stays real): its hold 112 → 69 s in the
+  suite (55 alone). ci-machines **206, 206 s** (~575 slot-seconds against ~634; logs `bench/results/local/ci/machines5/`).
+  The slots are full from the start to ~+175 s, so the first-second order isn't worth a change: only slot-seconds are.
+  Passed ci-machines (twice), the fast lane (107 s) and ci.sh (627 s).
 
 ## Next, in order
 
-1. **ci-machines' rest:** page-machines' first boot from a fixture (5 disks: blank, ramdisk, a read-only file, swap;
-   ~30 s of its 112). The slots' first three still go to whoever asks in the first second (page-folders' guest tests
-   come after two guest-free ones). page-network keeps its boots.
-2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
+1. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
-3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from
+2. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from
    `window-files.jsonl`'s times and peaks.
-4. **The end:** T3 measured, docs/testing.md authoritative, the plan's outcome moved there; GitHub Actions stays the
+3. **The end:** T3 measured, docs/testing.md authoritative, the plan's outcome moved there; GitHub Actions stays the
    plan's §6 until the repo is public.
 
 ## Open questions
