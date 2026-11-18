@@ -49,7 +49,7 @@
   },
   "ask.title": {
     "message": "$t(common:product.name)",
-    "note": "The title of a notice or a text prompt that doesn't give a title of its own: the product's name."
+    "note": "The title of a text prompt or a wait that doesn't give a title of its own: the product's name."
   },
   "ask.ok": {
     "message": "OK",

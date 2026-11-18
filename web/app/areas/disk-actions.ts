@@ -185,8 +185,9 @@ export class DiskActions {
     if (d.power.busy()) return;
     if ('file' in choice && (await d.changesHeader(choice.file))) {
       // a changes file isn't a disk to boot: it goes onto the disk on the page
-      if (!overlayName(m)) return void ask.alert(msg('disks:disk-actions.changes.noDisk', { name: choice.file.name }));
-      return d.loadChanges(choice.file);
+      if (overlayName(m)) return d.loadChanges(choice.file);
+      d.messages.notify(msg('disks:disk-actions.changes.noDisk', { name: choice.file.name }), 'warn');
+      return;
     }
     if (!m.spec.firmware) return; // only a machine that boots through UEFI takes a disk of its own (the test guests' kernels are their own)
     // The page's own machine: a file opened or dropped is a machine of its own, kept in this browser (machines.md §2).

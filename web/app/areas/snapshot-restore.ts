@@ -1,6 +1,6 @@
 // A snapshot back (docs/frontend.md "Snapshots", docs/machines.md §5.2): a kept one restored onto the stored machine,
 // or a file loaded (a stored machine's restore, or a transient machine replaced by the one the file holds).
-import { describe, msg, MsgError, t, text } from '../../i18n.ts';
+import { msg, MsgError, t, text } from '../../i18n.ts';
 import { msgOf } from '../../msg.ts';
 import { opfsDir, overlayBytes } from '../../overlay.ts';
 import { readHeader, SnapshotError, type SnapshotHeader } from '../../snapshot-file.ts';
@@ -115,7 +115,11 @@ export class SnapshotRestore {
     if (!now) return undefined;
     const other = await this.#otherShape(s, header, name);
     if (other) {
-      void ask.alert(other, { title: t('snapshots:snapshot-restore.restore.cant') });
+      this.#c.messages.notify(
+        new MsgError('snapshots:snapshot-restore.restore.cant', undefined, {
+          cause: new MsgError(other.key, other.params),
+        }),
+      );
       return undefined;
     }
     try {
@@ -128,11 +132,14 @@ export class SnapshotRestore {
         now.shape,
       );
       if (!plan.refused) return plan;
-      void ask.alert(
-        describe(new MsgError('snapshots:snapshot-restore.restore.refused', { name }, { cause: plan.refused })),
+      this.#c.messages.notify(
+        new MsgError('snapshots:snapshot-restore.restore.refused', { name }, { cause: plan.refused }),
       );
     } catch (e) {
-      void ask.alert(describe(new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause: e })));
+      this.#c.messages.notify(
+        new MsgError('snapshots:snapshot-restore.restore.failed', { name }, { cause: e }),
+        'error',
+      );
     }
     return undefined;
   }
@@ -203,17 +210,21 @@ export class SnapshotRestore {
     const m = this.#c.machine;
     if (header.machine !== m.name) {
       const other = { other: label, otherId: String(header.machine), machine: m.spec.title, id: m.name };
-      void ask.alert(msg('snapshots:snapshot-restore.load.otherMachine', { name: file.name, ...other }));
+      this.#c.messages.notify(
+        msg('snapshots:snapshot-restore.load.otherMachine', { name: file.name, ...other }),
+        'warn',
+      );
       return false;
     }
     const taken = typeof header.disk === 'string' ? header.disk : null;
     const open = m.chosen ? (diskName(m) ?? null) : null;
     if (taken === open) return true;
     const words = { name: file.name, taken: this.#disk(taken), open: this.#disk(open) };
-    void ask.alert(
+    this.#c.messages.notify(
       taken
         ? msg('snapshots:snapshot-restore.load.otherDisk', words)
         : msg('snapshots:snapshot-restore.load.otherDisk.reload', words),
+      'warn',
     );
     return false;
   }
@@ -232,9 +243,12 @@ export class SnapshotRestore {
       header = await readHeader(file);
     } catch (e) {
       if (!(e instanceof SnapshotError)) throw e;
-      return void ask.alert(msg('snapshots:snapshot-restore.notSnapshot', { name: file.name, why: msgOf(e) }), {
-        title: t('snapshots:snapshot-restore.notSnapshot.title'),
-      });
+      this.#c.messages.notify(
+        new MsgError('snapshots:snapshot-restore.notSnapshot.title', undefined, {
+          cause: new MsgError('snapshots:snapshot-restore.notSnapshot', { name: file.name, why: msgOf(e) }),
+        }),
+      );
+      return;
     }
     if (m.stored) return this.#restore(file, header, `file:${header.created}`, file.name);
     const label = typeof header.label === 'string' ? header.label : String(header.machine);

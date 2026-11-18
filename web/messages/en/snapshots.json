@@ -437,7 +437,7 @@
   },
   "power-actions.busy": {
     "message": "A snapshot is being saved. Try again once it's done.",
-    "note": "Notice (a dialog) when something that stops the machine (a disk's export, Open disk, a snapshot's load) is asked while a snapshot is written."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when something that stops the machine (a disk's export, Open disk, a snapshot's load) is asked while a snapshot is written; nothing is done."
   },
   "snapshot-actions.large.confirm": {
     "message": "Take the snapshot anyway? The machine is using 3D graphics, whose memory adds up to {{size, bytes}} to the snapshot before compression, and the machine will pause while it is read.",
@@ -485,19 +485,19 @@
   },
   "snapshot-restore.restore.otherShape": {
     "message": "<name>{{name}}</name> was taken of <name>{{machine}}</name> with other settings or disks ({{why}}).\nTo use it, create a machine like it on the <ui-home>Home</ui-home> page, in this machine's <ui-history>Snapshots</ui-history> tab.",
-    "note": "Text of the notice when a snapshot is restored onto a machine with other settings or disks (the Home page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons). The <ui-home> and <ui-history> markers show the Home button's and the Snapshots tab's icons before their words."
+    "note": "The line under Couldn't restore the snapshot (snapshot-restore.restore.cant) in the message bar, when a snapshot is restored onto a machine with other settings or disks (the Home page's Restore, a snapshot file opened): {{name}} is the snapshot's name, {{machine}} the machine's, {{why}} what differs (several joined by semicolons). The <ui-home> and <ui-history> markers show the Home button's and the Snapshots tab's icons before their words."
   },
   "snapshot-restore.restore.cant": {
     "message": "Couldn't restore the snapshot",
-    "note": "Title of the notice when a snapshot is of a machine with other settings or disks."
+    "note": "The headline of a warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a snapshot is of a machine with other settings or disks; why (snapshot-restore.restore.otherShape) is the line under it."
   },
   "snapshot-restore.restore.failed": {
     "message": "Couldn't restore <name>{{name}}</name>",
-    "note": "Error headline (a notice, or the message bar (under the toolbar)) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
+    "note": "Error headline in the message bar (under the toolbar, or the Home page's banner) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
   },
   "snapshot-restore.restore.refused": {
     "message": "Couldn't restore <name>{{name}}</name>",
-    "note": "Dialog when a snapshot can't be restored onto the machine's disks as they are: the error headline; under it, the reason (e.g. snapshots:snapshots.writtenInPlace, a disk written in place moved on). {{name}} is the snapshot's name."
+    "note": "The headline of a warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a snapshot can't be restored onto the machine's disks as they are; under it, the reason (e.g. snapshots:snapshots.writtenInPlace, a disk written in place moved on). {{name}} is the snapshot's name."
   },
   "snapshot-restore.restore.confirm": {
     "message": "Restore <name>{{name}}</name>? The machine will continue from where the snapshot was taken.",
@@ -573,23 +573,23 @@
   },
   "snapshot-restore.notSnapshot": {
     "message": "<name>{{name}}</name>\n{{why}}",
-    "note": "Text of the notice when a file opened as a snapshot isn't one this page can load: {{name}} (the file's name) on its own line, then {{why}}, the reason."
+    "note": "The line under Couldn't load the snapshot (snapshot-restore.notSnapshot.title) in the message bar, when a file opened as a snapshot isn't one this page can load: {{name}} (the file's name) on its own line, then {{why}}, the reason."
   },
   "snapshot-restore.notSnapshot.title": {
     "message": "Couldn't load the snapshot",
-    "note": "Title of the notice when a file opened as a snapshot isn't one this page can load."
+    "note": "The headline of a warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a file opened as a snapshot isn't one this page can load; the file and why (snapshot-restore.notSnapshot) are under it."
   },
   "snapshot-restore.load.otherMachine": {
     "message": "<name>{{name}}</name> is a snapshot of <name>{{other}}</name> (?machine={{otherId}}), but the machine open here is <name>{{machine}}</name> (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address.",
-    "note": "Notice when a snapshot file of another test machine is opened: {{name}} is the file's name, {{other}} is its machine's name and {{otherId}} that machine's id (?machine=), {{machine}} the page's machine's name and {{id}} its id."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a snapshot file of another test machine is opened: {{name}} is the file's name, {{other}} is its machine's name and {{otherId}} that machine's id (?machine=), {{machine}} the page's machine's name and {{id}} its id."
   },
   "snapshot-restore.load.otherDisk": {
     "message": "<name>{{name}}</name> was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Open that disk first with <ui>Open disk…</ui>, then load the snapshot.",
-    "note": "Notice when a snapshot file taken on another disk is opened: {{name}} is the file's name, {{taken}} the disk it was taken on and {{open}} the one open now, each a message (“the disk <name>…</name>” or the machine's own disk) that marks its name itself."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a snapshot file taken on another disk is opened: {{name}} is the file's name, {{taken}} the disk it was taken on and {{open}} the one open now, each a message (“the disk <name>…</name>” or the machine's own disk) that marks its name itself."
   },
   "snapshot-restore.load.otherDisk.reload": {
     "message": "<name>{{name}}</name> was taken on {{taken}}, and the disk open now is {{open}}. A snapshot only continues on the disk it was taken on. Reload this web app, which starts with the machine's own disk, then load the snapshot.",
-    "note": "Notice when a snapshot file taken on the machine's own disk is opened while another disk is: {{name}} is the file's name, {{taken}} the disk it was taken on and {{open}} the one open now, each a message (“the disk <name>…</name>” or the machine's own disk) that marks its name itself."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a snapshot file taken on the machine's own disk is opened while another disk is: {{name}} is the file's name, {{taken}} the disk it was taken on and {{open}} the one open now, each a message (“the disk <name>…</name>” or the machine's own disk) that marks its name itself."
   },
   "snapshot-restore.load.confirm": {
     "message": "Load the snapshot <name>{{name}}</name>? {{holds}} {{replaces}} {{lost}}",

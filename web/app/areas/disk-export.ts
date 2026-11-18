@@ -95,7 +95,7 @@ export class DiskExport {
     );
     for (const m of others)
       if (await isRunning(m.id)) {
-        void ask.alert(msg('disks:disk-export.save.runsElsewhere', { name: m.name }));
+        this.#c.messages.notify(msg('disks:disk-export.save.runsElsewhere', { name: m.name }), 'warn');
         return true;
       }
     return false;

@@ -697,7 +697,7 @@
   },
   "disk-actions.changes.noDisk": {
     "message": "<name>{{name}}</name> holds changes to a disk. Open that disk first with <ui>Open disk…</ui>, then import the changes.",
-    "note": "Notice when a changes file (a disk's export of its changes) is opened or dropped on a page with no disk open; {{name}} is the file's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a changes file (a disk's export of its changes) is opened or dropped on a page with no disk open; {{name}} is the file's name."
   },
   "disk-actions.boot.confirm": {
     "message": "Boot from <name>{{name}}</name>? This will forcibly power off the machine and boot it again from this disk, so unsaved work in the guest will be lost. The changes made to the current disk are kept.",
@@ -709,15 +709,15 @@
   },
   "disk-changes.changes.runsElsewhere": {
     "message": "<name>{{name}}</name> is running in another tab. Power it off there first.",
-    "note": "Notice when changes are imported into a disk of a machine that runs in another tab; {{name}} is the machine's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when changes are imported into a disk of a machine that runs in another tab (nothing is imported); {{name}} is the machine's name."
   },
   "disk-changes.changes.notChanges": {
     "message": "<name>{{name}}</name> isn't a changes file. Changes files are qcow2 files made by <ui>Export…</ui> › <ui>Changes only</ui>. To start a machine from a disk image, use <ui>Open disk…</ui>.",
-    "note": "Notice when a file imported as changes isn't a changes file; {{name}} is the file's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a file imported as changes isn't a changes file; {{name}} is the file's name."
   },
   "disk-changes.changes.noHash": {
     "message": "<name>{{name}}</name> wasn't made by this web app's <ui>Export…</ui> › <ui>Changes only</ui>, so its base image (<name>{{backing}}</name>) can't be checked and its changes can't be imported.",
-    "note": "Notice when a qcow2 imported as changes wasn't made by this web app; {{name}} is the file's name, {{backing}} the backing file it names."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a qcow2 imported as changes wasn't made by this web app; {{name}} is the file's name, {{backing}} the backing file it names."
   },
   "disk-changes.changes.intoOverlay": {
     "message": "They will go into a new overlay of <name>{{disk}}</name>, and the machine will switch to it. The current overlay is kept.",
@@ -777,7 +777,7 @@
   },
   "disk-export.save.runsElsewhere": {
     "message": "<name>{{name}}</name> is running from this disk in another tab. Power it off there first.",
-    "note": "Notice when a disk is exported while a machine in another tab runs from it; {{name}} is the machine's name."
+    "note": "Warning in the message bar (under the toolbar, or the Home page's banner), a warning that stays until closed, when a disk is exported while a machine in another tab runs from it (nothing is written); {{name}} is the machine's name."
   },
   "disk-export.save.emptied": {
     "message": "The save dialog emptied <name>{{name}}</name>, the file this machine's disk reads from, so nothing was saved. The machine can't read its disk any more. Next time, save to a different file.",
