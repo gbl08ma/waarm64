@@ -9,7 +9,7 @@ use crate::sway_test::Page;
 use crate::{Agent, Stop, logind, serve};
 use rustix::fd::OwnedFd;
 use rustix::io::{self, read, write};
-use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
+use rustix::net::{AddressFamily, Shutdown, SocketFlags, SocketType, shutdown, socketpair};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -339,16 +339,9 @@ impl Harness {
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        // The page's end closed: the agent's loop ends (the host closed the connection).
-        let (a, b) = socketpair(
-            AddressFamily::UNIX,
-            SocketType::STREAM,
-            SocketFlags::CLOEXEC,
-            None,
-        )
-        .unwrap();
-        drop(b);
-        drop(std::mem::replace(&mut self.page.fd, a));
+        // The page's end shut for writing: the agent reads its end (the host closed the connection). Not closed: a
+        // Unix socket closed with the agent's frames unread in it resets the agent's (a read error, not the end).
+        let _ = shutdown(&self.page.fd, Shutdown::Write);
         if let Some(a) = self.agent.take()
             && !std::thread::panicking()
         {
