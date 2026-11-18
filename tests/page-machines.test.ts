@@ -165,4 +165,4 @@ test('a machine with five disks: Debian from a URL, a blank disk formatted and k
   assert.ok(stored.sizes.every((n) => n > 0), `overlay sizes ${stored.sizes}`);
   assert.deepEqual(errors, []);
   await context.close();
-}));
+}, { chain: 112 })); // the slot lock's hint: ~112 s

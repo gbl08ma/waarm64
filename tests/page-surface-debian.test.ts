@@ -185,4 +185,4 @@ test('the disk surface window, live on Debian: the overlay\'s changes, a guest w
   await page.locator('#surface-window [data-action=close]').click();
   assert.deepEqual(errors, []);
   await context.close();
-}));
+}, { chain: 66 })); // the slot lock's hint: ~66 s

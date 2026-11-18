@@ -172,7 +172,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
   storedRun.rootBefore = await rootSize(page); // step (2) grows it
   await powerOff(page);
   assert.deepEqual(errors, []);
-}));
+}, { chain: 185 })); // the slot lock's hint: this test and the next, ~110 + 75 s
 
 test('a disk stored in the browser (2): an overlay merged into it, grown, then written in place (the guest grows its root), then under an overlay again', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   if (!storedRun?.id) throw new Error('step 1 failed: nothing to merge');
@@ -239,4 +239,4 @@ test('a disk stored in the browser (2): an overlay merged into it, grown, then w
   assert.equal(await ok(page, 'cat /root/one /root/two /root/three'), 'one two three');
   await powerOff(page);
   assert.deepEqual(errors, []);
-}));
+}, { chain: 75 })); // the slot lock's hint: ~75 s

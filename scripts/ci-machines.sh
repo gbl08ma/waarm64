@@ -5,10 +5,9 @@
 # ones), a disk's map live, USB (Gadget Zero attached from the menu, the ports emptied around a snapshot) and shared folders (docs/shares.md). Run it, besides scripts/ci.sh, when a change touches stored machines, their disks (stored,
 # blank, ramdisk, overlays, serials), snapshots of them or the Home page (web/app/store.ts,
 # machines.ts, disks.ts, snapshots.ts, web/overlay.ts, web/stored.ts, web/ramdisk.ts, web/snapshot.ts,
-# the worker's device list); and at the end of a milestone or a track. ~4.5 min: three Debian boots at
-# a time (WAARM64_DEBIAN_SLOTS, tests/debian-lock.ts; nothing else runs beside them here); the tests that don't
-# test a boot start from booted-Debian fixtures (tests/debian-fixture.ts `storedFixture`), so the stored disk's two
-# steps and page-folders' first test, which boot, are the wall time. Needs the Debian image, the firmware, the agent and the wasm core
+# the worker's device list); and at the end of a milestone or a track. ~3.5 min: three Debian boots at
+# a time (WAARM64_DEBIAN_SLOTS, tests/debian-lock.ts, the longest chains first; nothing else runs beside them here);
+# the tests that don't test a boot start from booted-Debian fixtures (tests/debian-fixture.ts `storedFixture`). Needs the Debian image, the firmware, the agent and the wasm core
 # (scripts/ci.sh builds it).
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -363,7 +363,7 @@ test('the guest: the mount, owners, a workload, a folder attached while running,
   assert.deepEqual(errors, []);
   await context.close();
   rmSync(dir, { recursive: true, force: true });
-}));
+}, { chain: 150 })); // the slot lock's hint: this test and the two after it, ~110 + 12 + 26 s
 
 test('snapshots: restored with a file open for writing, and into a folder detached since', { skip: skipGuest, timeout: 20 * 60_000 }, async () => {
   // From a booted-Debian fixture (tests/debian-fixture.ts) of a shares machine without folders: the guest mounts the root at its first look.
@@ -416,7 +416,7 @@ test('snapshots: restored with a file open for writing, and into a folder detach
     assert.deepEqual(errors, []);
     await context.close();
     rmSync(dir, { recursive: true, force: true });
-  });
+  }, { chain: 40 }); // the slot lock's hint: this test and the next, ~12 + 26 s
 });
 
 test('a real workload: make, gcc and git in a share, both backends', { skip: skipGuest || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 15 * 60_000 }, async () => {
@@ -449,5 +449,5 @@ test('a real workload: make, gcc and git in a share, both backends', { skip: ski
     assert.deepEqual(errors, []);
     await context.close();
     rmSync(dir, { recursive: true, force: true });
-  });
+  }, { chain: 26 }); // the slot lock's hint: ~26 s
 });

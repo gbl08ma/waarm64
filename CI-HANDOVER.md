@@ -111,14 +111,16 @@ decisions in §11).
   page-folders' tests 2 and 3 (42 → 12, 51 → 26 s; folders aren't in the shape). ci-machines **309 → 269 s**
   (slot-seconds 844 → 611; logs `bench/results/local/ci/stored/`). Passed ci-machines, the fast lane (111 s), ci.sh
   (646 s) and ci-debian --platform (399 s).
+- **The slots' order** (`withDebianLock(f, { chain })`, a queue beside the slots: the longest chain first, then first
+  come; hints by hand on page-stored, page-folders, page-machines, page-surface-debian): ci-machines 269 → **224, 218
+  s**. Passed the fast lane (112 s), ci.sh (644 s), ci-machines, ci-net (310 s; 294 in its one run before) and
+  ci-debian (352 s).
 
 ## Next, in order
 
-1. **ci-machines' tail:** page-folders' first test (a real boot + reboot, ~110 s) and page-stored's two (186 s in
-   series, real boots: each follows a disk change) set the wall; the slot lock is first-come (500 ms polls), so the
-   longest chains can start last. Options: a priority for the long chains in `tests/debian-lock.ts`, page-machines'
-   first boot from a fixture (5 disks: blank, ramdisk, a read-only file, swap; ~30 s of its 112). page-network keeps
-   its boots.
+1. **ci-machines' rest:** page-machines' first boot from a fixture (5 disks: blank, ramdisk, a read-only file, swap;
+   ~30 s of its 112). The slots' first three still go to whoever asks in the first second (page-folders' guest tests
+   come after two guest-free ones). page-network keeps its boots.
 2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
 3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from

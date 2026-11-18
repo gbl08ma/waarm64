@@ -116,8 +116,13 @@ Layered, cheapest first:
 - **`scripts/ci-machines.sh`** boots Debian on the page for machines as the unit: `page-folders` (shared folders, [shares.md](shares.md) §7), `page-machines` (four disks: blank,
   ramdisk, read-only, serials, a reboot), `page-stored` (a disk stored in the browser in two steps: import, variants,
   merge, grown with the agent growing its root at the in-place boot, in place), `page-snapshots` (kept snapshots, forks, the ramdisk, Suspend on pins, orphaned ones), `page-quota` and `page-incognito` (the storage full: docs/machines.md "Storage"), `page-surface-debian` (a disk's map live, opened as the boot starts: the qcow2 counted per table as the boot reads them, its kept blocks ticked, the overlay's cores, a guest write flashing and counted, the files after the power-off), three at a
-  time (`WAARM64_DEBIAN_SLOTS=3`), ~4.5 min (269 s, 611 slot-seconds, 2026-11-18: 309 s and 844 before the stored
-  fixtures below; the tail is page-folders' first test and page-stored's two, which boot for real).
+  time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min (224 and 218 s, ~610 slot-seconds, 2026-11-18: 309 s and 844 before the
+  stored fixtures below, 269 s with them before the slots' order).
+  **The slots' order:** a free slot goes to the waiter with the longest `chain` first, then the earliest
+  (`withDebianLock(f, { chain })`, a queue file per waiter beside the slots). `chain` is a hint by hand: the
+  slot-seconds the test's file still has from that test on (its tests run one after another), set on the long ones
+  (page-stored's, page-folders' guest tests, page-machines, page-surface-debian); without it a suite's longest file
+  could start last and be its tail (page-folders' first test got a slot at +130 s and ended the run at 269 s).
   Split from `ci-debian.sh` on 2026-10-17: together they took 455 s on two slots (790 s of slot time, the machines
   tests ~415 of it), 361 s on three.
 - **`scripts/ci-net.sh`** (~5 min) runs the network tests on Debian (`net-guest`, `page-network`,
