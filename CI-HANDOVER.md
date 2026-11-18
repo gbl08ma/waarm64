@@ -32,16 +32,18 @@ decisions in §11).
   then the Rust tests, the agent, TestFloat and the builds (37 s); the JS tests start at 55 s (144 before). ci.sh
   **635 s** (peak 7.9 GiB); the JS step (581 s) is the whole tail, the cores saturated through it
   (`bench/results/local/ci/early-par-vmstat.log`), the native group done by ~500 s.
+- **The fast lane with nextest**, the JIT case (`--files core/src/jit/emit/simd.rs`): 161 → **146 s** (peak 3.3 GiB),
+  the core's tests 19 s (143 before); the tail is the JS files (128 s at 4 at a time). One run at
+  `WAARM64_FAST_JOBS=6`: 123 s, peak 4.3 GiB (the lane's budget is 4.5): for the measurement window to settle.
 - **Not run yet:** the topic scripts since they gained the lock line (each `ci_lock exclusive` after `step()`), and the
   lock with two sessions' real runs at once (it was checked with small scripts only).
 
 ## Next, in order
 
-1. **The cheap speedups left:** the fast lane re-measured with nextest (and its first run since the shared group
-   helper); ci-net.sh at 2 Debian slots. ci.sh is now CPU-bound in its JS step: only less work shortens it (the
+1. **The cheap speedup left:** ci-net.sh at 2 Debian slots. ci.sh is now CPU-bound in its JS step: only less work shortens it (the
    measurement window's per-file CPU and memory say where it goes).
 2. **The measurement window** (§9, ~2.5 h, the machine idle): each file's peak memory and time alone, the fast lane's
-   concurrency, the Debian slots.
+   concurrency (4 vs 6: 146 vs 123 s in one run each), the Debian slots.
 3. **The booted-Debian snapshot fixture** for the Debian tests that don't test booting.
 4. **Guests:** which Debian tests need only a Linux guest (purpose-built Buildroot guests, cached by config hash); a
    Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility runs without
