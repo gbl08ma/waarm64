@@ -984,8 +984,8 @@
     "note": "The Network wizard, the local helper's step: the error when the link's field is empty. The link is an example of the helper's, as it is."
   },
   "local-net.notLink": {
-    "message": "“{{link}}” isn't the helper's link. The link looks like ws://127.0.0.1:<port>/<token>.",
-    "note": "The Network wizard, the local helper's step: the error when what was pasted isn't the helper's link. {{link}} is what was pasted (or its #net= part); the link's form is as it is."
+    "message": "“{{link}}” isn't the helper's link. The link looks like <code>ws://127.0.0.1:PORT/TOKEN</code>.",
+    "note": "The Network wizard, the local helper's step: the error when what was pasted isn't the helper's link. {{link}} is what was pasted (or its #net= part); the link's form is as it is, shown as code, with PORT and TOKEN standing for the helper's port and token (words to translate)."
   },
   "local-net.notFrames": {
     "message": "The helper sent a malformed message.",

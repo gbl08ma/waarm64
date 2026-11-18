@@ -239,7 +239,8 @@ export type Described = { headline: string; details: string[]; from?: readonly (
 
 /**
  * What error `e` (an Error, a `MsgError`, a worker's `WireError`, a `Msg`, a string) says to the user: a message
- * renders as its words; an error without one says its own `message`, which is a developer's words.
+ * renders as its words; an error without one says its own `message`, which is a developer's words; a string is words
+ * already rendered (pass a `Msg` rather than its `t(…)` where it has markers to draw).
  */
 export function describe(e: unknown): Described {
   const err = isWire(e) ? fromWire(e) : e;
@@ -251,8 +252,8 @@ export function describe(e: unknown): Described {
     const said = m ? text(m) : cur instanceof Error ? cur.message : String(cur);
     if (said && lines.at(-1) !== said) {
       lines.push(said);
-      // A string is a developer's text too: words the page renders come as a message.
-      from.push(m ?? 'raw');
+      // A string is words already rendered (as `said` takes it); anything else without a message is a developer's.
+      from.push(m ?? (typeof cur === 'string' ? undefined : 'raw'));
     }
     cur = cur instanceof Error ? cur.cause : undefined;
   }
@@ -270,6 +271,13 @@ export function said(s: Said | undefined): Described {
   if (typeof s === 'string') return { headline: s, details: [] };
   if (isDescribed(s)) return s;
   return describe(s);
+}
+
+/** Error `e`'s words with a line said after its headline (what the page did about it), then its causes. */
+export function withNote(e: unknown, note: string): Described {
+  const d = describe(e);
+  const from = d.from ?? [];
+  return { headline: d.headline, details: [note, ...d.details], from: [from[0], undefined, ...from.slice(1)] };
 }
 
 /** An error's words on one line each: its headline, then its details (for a dialog's text, a log). */

@@ -112,7 +112,7 @@
   async function offFirst(m: MachineRecord) {
     if (!running.has(m.id)) return true;
     if (m.id !== current.id) {
-      runner.fail(t('machines:MachinesPage.otherTab'));
+      runner.fail(msg('machines:MachinesPage.otherTab'));
       return false;
     }
     // The guest asked to shut down first where its agent can (the page's powerOff: web/app/run/clean-stop.ts).

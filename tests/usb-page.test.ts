@@ -92,7 +92,7 @@ test("the messages for what the device worker can't do, with each OS's remedy", 
   for (const os of ['linux', 'mac', 'windows', 'chromeos', 'other'] as const) {
     for (const p of [claim, { kind: 'open-failed' as const, message: 'x' }]) assert.doesNotMatch(words(p, d, os), /`/);
   }
-  assert.deepEqual(errorView(new Error('plain')), { text: 'plain' });
+  assert.deepEqual(errorView(new Error('plain')), { text: 'plain', said: { headline: 'plain', details: [], from: ['raw'] } });
 });
 
 /** A fake device worker on the other end of `port`: attaches what it is asked (refusing the vendor 0xdead), detaches. */
@@ -145,7 +145,8 @@ test('the ports: attach, refuse, detach all and attach again, a device unplugged
     const err = await ports.attach(2, bad).catch((e: unknown) => e);
     assert.ok(err instanceof UsbError && msgOf(err)?.key === 'usb:usb-live.notAttached', String(err));
     assert.equal(errorLines(err), [t('usb:usb-live.notAttached', { name: deviceName(bad) }), problemText({ kind: 'claim-failed', interface: 0, message: 'busy' }, bad).text].join('\n'));
-    assert.deepEqual(errorView(err), { text: t('usb:usb-live.notAttached', { name: deviceName(bad) }), words: err.words }, 'the page shows the words, with their remedies');
+    const headline = t('usb:usb-live.notAttached', { name: deviceName(bad) });
+    assert.deepEqual(errorView(err), { text: headline, words: err.words, said: { headline, details: [], from: [msg('usb:usb-live.notAttached', { name: deviceName(bad) })] } }, 'the page shows the words, with their remedies');
     assert.equal(ports.connectors[2], undefined);
     assert.equal(await locksA.take(usbLock(bad)), true);
     locksA.drop(usbLock(bad));
