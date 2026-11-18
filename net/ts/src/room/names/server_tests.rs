@@ -3246,6 +3246,38 @@ fn reply_budgets_bound_a_flood_of_forged_asks() {
     assert!(s.stats.replies_refused > 0);
 }
 
+/// A server is one draw in a `share` ask, however many names it owns: the spread is a share of the room's servers
+/// (NAMES loop 6a: drawn over each of its names' owner keys, a server of 250 names fell in a spread of 6, 1/64, 98% of
+/// the time, so every first lookup in a room of 20 such servers brought ~15 replies, and 500 members joining in a
+/// minute spent the servers' reply budgets: 221 of their 500 lookups were NXDOMAIN).
+#[test]
+fn a_server_with_many_names_is_one_draw_in_a_share() {
+    use super::wire::AskMode;
+    let mut b = Bitcoin::new(ROOM, 53);
+    let titles: Vec<Title> = (0..64u8)
+        .map(|k| {
+            let (key, item) = b.title(1, &format!("many{k}"), t(20), &[t(5)], [k; 32]);
+            Title { key, item }
+        })
+        .collect();
+    let mut s = Server::new(ROOM, cfg(titles), T);
+    let mut now = Instant::now();
+    s.start([7; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    let (_, alpha) = b.title(2, "alpha", t(30), &[t(2)], [0xa1; 32]);
+    assert!(s.load(&record(&alpha, T), T));
+    let mut replies = 0;
+    for n in 0..256u32 {
+        now += Duration::from_secs(4); // past both budgets
+        let mut a = an_ask(3, n, alpha.id, AskMode::Share, 6, [0; 8]);
+        a.key[..4].copy_from_slice(&n.to_le_bytes());
+        replies += ask_one(&mut s, a, now, T).0.is_some() as usize;
+    }
+    // One draw: 256 / 64 = 4 expected; 64 draws: ~161.
+    assert!(replies <= 16, "{replies} of 256 asks at spread 6 replied");
+}
+
 /// A reply's item is bounded: past the server's `reply_max` (4 KiB) it is left out, and the reply says so.
 #[test]
 fn an_item_past_the_reply_bound_is_left_out() {

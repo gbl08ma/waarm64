@@ -1289,11 +1289,15 @@ impl Server {
         }
         match a.mode {
             AskMode::Share => {
-                // The share is ours to keep (the reply proves nothing): the plain draw over our live names' owner keys.
+                // The share is ours to keep (the reply proves nothing): one draw a server, however many names it
+                // owns, over its live name of the lowest id's owner key, so that a spread is a share of the room's
+                // servers (NAMES loop 6a: the best of every name's draw made a server of 250 names reply to nearly
+                // every first lookup).
                 let r = (self.live_titles(unix).iter())
-                    .map(|(_, e)| rank(&share_hash(&a.nonce, &e.entry.owner)))
-                    .min()
-                    .unwrap_or(u128::MAX);
+                    .min_by_key(|(_, e)| e.entry.name)
+                    .map_or(u128::MAX, |(_, e)| {
+                        rank(&share_hash(&a.nonce, &e.entry.owner))
+                    });
                 if in_share(r, a.spread) {
                     self.reply(&a, via, now, unix);
                 }
