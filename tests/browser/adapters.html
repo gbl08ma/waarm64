@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <script type="module">
+  import { fixtureHooks } from './fixture-hooks.ts';
   // tests/net-tailnet.test.ts's two adapters (docs/networking/adapters.md §4, L2): the page's Debian (its card's
   // credential, as web/app/machine.ts gives it) with two cards, each a Network (web/app/network.ts) as the page's
   // machine has them: adapter 1 on a tailnet (`control`, `authkey`, `hostname`) with no exit node, adapter 2 on tailcat
@@ -28,7 +29,7 @@
   let error;
   worker.onmessage = (e) => { if (e.data.serial) output += e.data.serial; else if (e.data.error) error = e.data.error; };
   worker.onerror = (e) => { error = e.message; };
-  worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay'), ports }, [serial.port2, ...ports]);
+  worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay'), restore: q.get('restore') ?? undefined, ports }, [serial.port2, ...ports]);
   if (q.has('split')) {
     // tests/net-tailcat.test.ts's primary per family: both adapters on tailcat through the server (`tailcat`), each
     // with its own IPv6 probe (`probe6a`, `probe6b`, as JSON): the first's unanswered, the second's answered.
@@ -43,6 +44,7 @@
     nets[1].connect({ controlURL: '', hostname: '', tailcat: q.get('tailcat'), tailcatServe: { relay: '' }, probe6: q.has('probe6') ? JSON.parse(q.get('probe6')) : undefined });
   }
   window.harness = {
+    ...fixtureHooks(worker),
     send: (s) => serial.port1.postMessage(s),
     output: () => output,
     error: () => error,

@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <script type="module">
+  import { fixtureHooks } from './fixture-hooks.ts';
   // The networking tests' page (tests/net-tailnet.test.ts, tests/net-tailcat.test.ts): starts
   // the Tailscale backend (web/tailscale.ts), or with `tailcat=<address>` the tailcat one
   // (web/tailcat.ts), and a Debian machine (tailnet-worker.ts) whose virtio-net is the Ethernet
@@ -22,8 +23,9 @@
   let error;
   worker.onmessage = (e) => { if (e.data.serial) output += e.data.serial; else if (e.data.error) error = e.data.error; };
   worker.onerror = (e) => { error = e.message; };
-  worker.postMessage({ ip: ts.ip, serial: serial.port2, overlay: q.get('overlay'), disk: q.get('disk') ?? undefined }, [ts.ip, serial.port2]);
+  worker.postMessage({ ip: ts.ip, serial: serial.port2, overlay: q.get('overlay'), restore: q.get('restore') ?? undefined, disk: q.get('disk') ?? undefined }, [ts.ip, serial.port2]);
   window.harness = {
+    ...fixtureHooks(worker),
     send: (s) => serial.port1.postMessage(s),
     output: () => output,
     error: () => error,

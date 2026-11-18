@@ -85,14 +85,19 @@ decisions in §11).
     machine-id, DHCP identity); page-incognito counts the boot's own disk reads; net-guest's test 2 takes its leases
     at boot; a `?disk=` URL machine's restore check (page-clipboard*).
 
+- **Booted-Debian fixtures, the harness half** (docs/testing.md "Booted-Debian fixtures"; `tests/debian-fixture.ts`,
+  `tests/browser/fixture.html`, the worker's `save`/`restore`): 5 shapes (`ip`, `ip-tools`, `port`, `ports2`, `echo3`)
+  for net-guest 2–4, net-local, net-tailnet, net-tailcat. ci-net **373 s** (551 before; 545 slot-seconds against ~950;
+  logs `bench/results/local/ci/fixture/`), a run that makes them ~400 s. Fixtures 155–166 MiB, ~28 s each to make. A
+  maker's disk without an overlay was read-only: the restore was refused as another machine (`vm.otherHardware`).
+  net-guest alone 91 s from ~184 s of holds. Passed ci-net twice and the fast lane.
+
 ## Next, in order
 
-1. **The booted-Debian snapshot fixture, ci-net first** (the user's priority): ~760 of its ~950 slot-seconds can come
-   from a fixture (net-guest 2–4, net-local, net-tailcat, net-tailnet, page-network, page-room). A helper made once per
-   key (the Debian image's `.inputs` key, the core's `snapshot_version`, the shape, and what the page passes at boot:
-   credentials, SMBIOS, the DT, EDK2, the agent binary, or the B tests stop checking them) under a lock beside
-   `tests/debian-lock.ts`, so parallel files make it once: `target/ci/debian-booted-<shape>.waarm64snap`. Measure a
-   script before and after. Then the default transient family (ci-debian), then the stored shape (ci-machines).
+1. **The booted-Debian fixture, the rest:** the default transient family on the page's own machine (page-room's two
+   boots are ci-net's tail now: 141 s; page-network overlaps its boot with UI checks, less to gain), through the page's
+   Load snapshot (bench/snapshot-start.ts `loadSnapshotFile`); then ci-debian's B tests, then the stored shape
+   (ci-machines). The harness half is done (below).
 2. **Guests:** a Buildroot guest with an SMP userspace workload for the exact-step runs; Alpine moved to compatibility
    runs without fixed steps; page-ram and start onto a small guest (above).
 3. **The Actions shards** (plan §6, plan-only while the repo is private, and it stays private for now): from

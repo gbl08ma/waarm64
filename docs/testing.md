@@ -117,10 +117,11 @@ Layered, cheapest first:
   time (`WAARM64_DEBIAN_SLOTS=3`), ~3.5 min.
   Split from `ci-debian.sh` on 2026-10-17: together they took 455 s on two slots (790 s of slot time, the machines
   tests ~415 of it), 361 s on three.
-- **`scripts/ci-net.sh`** (~9 min) runs the network tests on Debian (`net-guest`, `page-network`,
+- **`scripts/ci-net.sh`** (~6.5 min) runs the network tests on Debian (`net-guest`, `page-network`,
   `net-tailnet` (with two adapters: the tailnet beside tailcat), `net-tailcat`, `net-local`, `page-room`) and the local helper's own Go tests,
   two Debian boots at a time (`WAARM64_DEBIAN_SLOTS=2`: 551 s, peak 7.1 GiB, against 795 s and 4.1 GiB on one, 2026-11-18),
-  then the tailnet client without a guest, one test at a time.
+  then the tailnet client without a guest, one test at a time. The tests that don't test the boot start from booted-Debian
+  fixtures (below): 373 s, 545 slot-seconds against ~950 (2026-11-18; a run that makes them all ~30 s more a shape).
 - **`scripts/ci-audio.sh`** (~1 min) runs the realtime sound tests on the page (`audio-browser`: the snd guest's
   tone heard, the microphone, snapshots while it plays). They time the sound against the clock, so they run alone:
   beside `npm test`'s other files a starved guest failed their timing now and then (backlog).
@@ -1007,6 +1008,33 @@ longest take ~100 s): a test that hangs fails by name and the file goes on, wher
 run's whole timeout without a word of where (`tests/browser.test.ts`, 2026-11-18, once in six runs, an idle event loop
 waiting on Chromium; not reproduced alone). Its timings reporter writes only at the end, so ci.sh writes
 `target/ci/timings.json.new` and keeps the last good file when a step is cancelled.
+
+## Booted-Debian fixtures
+
+A test that needs Debian but doesn't test its boot starts from a **fixture**: a snapshot of the network harness's
+Debian (`tests/browser/tailnet-worker.ts`) at its login prompt, made once per machine shape and key and kept in
+`target/ci/debian-booted-<shape>-<key>.waarm64snap` (~165 MiB). `tests/debian-fixture.ts` `debianFixture(browser, base,
+shape)` returns its path, making it first (a boot in a Debian slot, ~28 s) when it's missing or its key moved; the
+harness pages start from it with `restore=` (~1 s; the guest gets a newline to show its prompt again), and
+`tests/serial-console.ts` `loginRoot` then sets the guest's clock from the host's (it stood still since the save).
+Parallel test files wait for one maker (a lock directory beside the file). `WAARM64_DEBIAN_FIXTURES=0` boots instead.
+
+- **The shapes** (`SHAPES`) are what the worker builds the machine from: `ip` (one card on an IP port, no card
+  credential: tailnet.html), `ip-tools` (the same on debian-tools' disk), `port` (the card's credential, one IP port:
+  netguest.html `port=1`), `ports2` (two IP ports: netguest.html `ports=2`, adapters.html), `echo3` (three echo
+  cards). A restore must describe the machine that saved it, to the disk's virtio features: the maker's disk has an
+  overlay as every restore's does (without one a disk is read-only, and the core refuses the state as another machine's).
+- **The key** is what the boot made of the machine: the image's `.inputs` key (or the file's size and time), EDK2's
+  hash, the core's snapshot format and ABI, and the sources that say what the machine is and is given at boot
+  (`fdt.rs`, `smbios.rs`, `fw_cfg.rs`, `virtio.rs`, `boot.rs`, `snapshot.rs`, the worker, the credentials). The JIT,
+  the CPU and `web/devices.ts` are left out (they move often, and a restore of a fixture made by another core is the
+  snapshot path working); a change to what the guest sets up at boot that none of these files show (a device's
+  feature negotiation in `web/devices.ts`, say) needs a run with `WAARM64_DEBIAN_FIXTURES=0` or the files deleted.
+- **What keeps a real boot:** the tests whose subject is the boot (net-guest's first test: the card's units don't hold
+  the boot up), and the page's own machine (page-network, page-room), which a harness fixture doesn't fit.
+- **Restored and booted guests are the same guest:** two restores of one fixture have the same machine-id and DHCP
+  identity, and a lease that comes after the restore meets networkd's retry schedule as it stood at the save (net-guest's
+  late lease: taken in 4 s; the default route's move: IPv6 at once, IPv4 at the next renewal, 8 s).
 
 ## Out-of-context reviews
 

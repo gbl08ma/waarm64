@@ -32,9 +32,16 @@ export async function run(page: Page, cmd: string, ms = 60_000, context?: () => 
   return out.slice(out.lastIndexOf('__BEGIN42__\n') + 12, out.lastIndexOf('__END42__'));
 }
 
-/** Logs root in on the serial console (Debian's `login.noauth`): waits for the prompt, then for a shell. */
+/**
+ * Logs root in on the serial console (Debian's `login.noauth`): waits for the prompt, then for a shell. A guest
+ * restored from a booted-Debian fixture (tests/debian-fixture.ts) then takes the host's time: its clock stood still
+ * since the fixture was made.
+ */
 export async function loginRoot(page: Page, loginMs = 240_000, context?: () => Promise<string>) {
   await shows(page, /\S+ login: /, loginMs, 0, context);
   await page.evaluate(() => (window as never as { harness: { send(s: string): void } }).harness.send('root\n'));
   await shows(page, /root@\S+:~# /, 60_000, 0, context);
+  if (await page.evaluate(() => (window as never as { harness: { restored?(): boolean } }).harness.restored?.() ?? false)) {
+    await run(page, `date -u -s @${(Date.now() / 1000).toFixed(3)} > /dev/null`, 30_000, context);
+  }
 }

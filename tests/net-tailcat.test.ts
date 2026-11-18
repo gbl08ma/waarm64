@@ -31,6 +31,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { debianFixture } from './debian-fixture.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { probeResolver, type ProbeResolver } from './net/resolver.ts';
 import { clientKey, RIG_RELAY, tailcat, tailcatRun } from './net/tailcat-cli.ts';
@@ -93,6 +94,7 @@ const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}
 test('the guest gets both leases from the tailcat client and reaches the exit node\'s network over IPv4 and IPv6, and lets tailcat clients in', { skip, timeout: 900_000 }, async () => {
   const v4 = lan('IPv4');
   assert.ok(v4, 'this machine has a LAN IPv4 address for the exit node to dial');
+  const restore = await debianFixture(browser, base, 'ip');
   await withDebianLock(async () => {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the relay's self-signed certificate
     const page = await ctx.newPage();
@@ -100,7 +102,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, serve: '', overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port, everyMs: 5000 } : {}) })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ ...(restore ? { restore } : {}), tailcat: addr, serve: '', overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port, everyMs: 5000 } : {}) })}`);
       await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().netmap', null, { timeout: 60_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
       const ts = await harness<{ netmap: { addresses: string[]; serving?: string }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
@@ -238,6 +240,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
 // machine over IPv6 through it. Needs a non-link-local IPv6 address here, as the IPv6 default's case above.
 test("a primary per family: IPv4's default through the first adapter, IPv6's through the second whose probe answers", { skip: skip || (!lan('IPv6') && 'SKIPPED: this machine has no non-link-local IPv6 address'), timeout: 900_000 }, async () => {
   await resolver!.on();
+  const restore = await debianFixture(browser, base, 'ports2');
   await withDebianLock(async () => {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await ctx.newPage();
@@ -248,7 +251,7 @@ test("a primary per family: IPv4's default through the first adapter, IPv6's thr
       await page.goto(`${base}/tests/browser/core.html`);
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
       const probe = (p: number) => JSON.stringify({ to: [resolver!.to], port: p, everyMs: 5000 });
-      await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ split: '', tailcat: addr, overlay: OVERLAY, probe6a: probe(9), probe6b: probe(resolver!.port) })}`);
+      await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ ...(restore ? { restore } : {}), split: '', tailcat: addr, overlay: OVERLAY, probe6a: probe(9), probe6b: probe(resolver!.port) })}`);
       await page.waitForFunction('window.harness?.primary6() === 1', null, { timeout: 120_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}${await context()}`); });
       assert.equal(await harness<number>(page, 'primary()'), 0, "IPv4's primary is the first that reaches the internet");
@@ -293,6 +296,7 @@ test('tailcat ssh logs in to the served guest\'s sshd; tailcat ping gets a pong;
   writeFileSync(`${tmp}/ssh`, `#!/bin/sh\nexec /usr/bin/ssh -i ${tmp}/id -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=60 "$@"\n`);
   chmodSync(`${tmp}/ssh`, 0o755);
   const cli = { internet, env: { PATH: `${tmp}:${process.env.PATH}` }, timeoutMs: 120_000 };
+  const restore = await debianFixture(browser, base, 'ip-tools');
   await withDebianLock(async () => {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the relay's self-signed certificate
     const page = await ctx.newPage();
@@ -301,7 +305,7 @@ test('tailcat ssh logs in to the served guest\'s sshd; tailcat ping gets a pong;
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ serve: '', relay, allow: mine, overlay, disk: `${base}/target/images/debian-tools/disk.qcow2` })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ ...(restore ? { restore } : {}), serve: '', relay, allow: mine, overlay, disk: `${base}/target/images/debian-tools/disk.qcow2` })}`);
       await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().netmap?.serving', null, { timeout: 60_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
       const served = (await harness<{ netmap: { serving: string } }>(page, 'tailscale()')).netmap.serving;

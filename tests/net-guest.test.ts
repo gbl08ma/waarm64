@@ -14,6 +14,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { debianFixture } from './debian-fixture.ts';
 import { loginRoot, run } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -94,13 +95,14 @@ test('the page\'s Debian with a card takes the gateway\'s lease by itself and pi
 // Several adapters (docs/networking/adapters.md §4, L1): each card has its own gateway (MAC and address) and its own
 // echo lease, and the guest reaches each gateway through its own interface.
 test('three adapters, each on its own gateway and lease', { skip, timeout: 600_000 }, async () => {
+  const restore = await debianFixture(browser, base, 'echo3');
   await withDebianLock(async () => {
     const page = await (await browser.newContext()).newPage();
     const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await removeOverlay();
-      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&adapters=3`);
+      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&adapters=3${restore && `&restore=${restore}`}`);
       await loginRoot(page);
       const addrs = () => run(page, "ip -4 -o addr show scope global | awk '{print $2, $4}' | sort").then((s) => [...s.matchAll(/^(e\S+) (198\.18\.0\.\d+)\/\d+$/gm)].map((x) => `${x[1]} ${x[2]}`));
       let got = await addrs();
@@ -134,13 +136,14 @@ test('three adapters, each on its own gateway and lease', { skip, timeout: 600_0
 // Route Information option). Made the other the primary, IPv6 moves at once and IPv4 at the next renewal (every 10 s:
 // `SEVERAL_ADAPTERS`; the times are printed, and IPv4's bounded at 45 s, for a loaded machine).
 test('two adapters: the default route through the primary only, the other for its network; it moves when the primary does', { skip, timeout: 600_000 }, async () => {
+  const restore = await debianFixture(browser, base, 'ports2');
   await withDebianLock(async () => {
     const page = await (await browser.newContext()).newPage();
     const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await removeOverlay();
-      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&ports=2`);
+      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&ports=2${restore && `&restore=${restore}`}`);
       await page.evaluate(() => (window as never as { harness: { primary(k: number): void } }).harness.primary(0));
       await loginRoot(page);
       const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {
@@ -182,13 +185,14 @@ test('two adapters: the default route through the primary only, the other for it
 // gateway has no lease until then. How long the guest takes to notice one that arrives late is
 // networkd's DHCP retry schedule; the test reports it and bounds it.
 test('a lease that arrives after the boot is taken by the guest without a restart', { skip, timeout: 600_000 }, async () => {
+  const restore = await debianFixture(browser, base, 'port');
   await withDebianLock(async () => {
     const page = await (await browser.newContext()).newPage();
     const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await removeOverlay();
-      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&port=1`);
+      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&port=1${restore && `&restore=${restore}`}`);
       await loginRoot(page);
       // (An empty output leaves the shell's echo of the markers in what `run` returns: look for an address.)
       const addr = () => run(page, "ip -4 -o addr show scope global | awk '{print $4}'").then((s) => /\d+\.\d+\.\d+\.\d+\/\d+/.exec(s)?.[0] ?? '');

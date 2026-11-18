@@ -17,6 +17,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { debianFixture } from './debian-fixture.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { probeResolver } from './net/resolver.ts';
 import { tailcat } from './net/tailcat-cli.ts';
@@ -63,6 +64,7 @@ const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}
 const clientState = async (page: Page) => `; the client: ${JSON.stringify(await harness<object>(page, 'tailscale()'))}`;
 
 test('the guest gets a DHCP lease from the tailnet, reaches a peer by address and by name, and is reached', { skip, timeout: 900_000 }, async () => {
+  const restore = await debianFixture(browser, base, 'ip');
   await withDebianLock(async () => {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // headscale's test CA
     const page = await ctx.newPage();
@@ -70,7 +72,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
     try {
       await page.goto(`${base}/tests/browser/core.html`); // any page of the origin: a fresh overlay
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WAARM64_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ ...(restore ? { restore } : {}), control: env.WAARM64_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY })}`);
 
       // The client comes up first: the guest's address is what it reports.
       await page.waitForFunction(() => (window as never as { harness: { tailscale(): { state: string } } }).harness.tailscale().state === 'Running', null, { timeout: 120_000, polling: 250 }) // i18n-ignore
@@ -263,6 +265,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
   const lan6 = Object.values(networkInterfaces()).flat().find((a) => a && a.family === 'IPv6' && !a.internal && !a.address.startsWith('fe80'))?.address;
   const resolver = lan6 ? await probeResolver(lan6) : undefined;
   try {
+    const restore = await debianFixture(browser, base, 'ports2');
     await withDebianLock(async () => {
       const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // headscale's test CA, the relay's self-signed certificate
       const page = await ctx.newPage();
@@ -274,7 +277,7 @@ test('two adapters: a tailnet without an exit node beside tailcat through a serv
       try {
         await page.goto(`${base}/tests/browser/core.html`);
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ control: env.WAARM64_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port } : {}) })}`);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ ...(restore ? { restore } : {}), control: env.WAARM64_TS_CONTROL, authkey: authKey, hostname: 'guest2', tailcat: addr, overlay: OVERLAY, probe6: JSON.stringify(resolver ? { to: [resolver.to], port: resolver.port } : {}) })}`);
         await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
           .catch(async (e) => { throw new Error(`${e}${await context()}`); });
         const [tn, tc] = await views();

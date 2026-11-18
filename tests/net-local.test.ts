@@ -21,6 +21,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { buildHelper, helperSkip } from './waarm64-net.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { debianFixture } from './debian-fixture.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { startNostrRelay } from './net/nostr-relay.ts';
 import { RIG_RELAY } from './net/tailcat-cli.ts';
@@ -116,6 +117,7 @@ const closeCode = (page: Page, url: string) => page.evaluate((u) => new Promise<
 test('Debian on the page through the local helper: its lease, DNS, TCP to this machine both ways, apt, IPv6 as far as the host has it, refusals', { skip, timeout: 900_000 }, async () => {
   const reach6 = await hostReaches6();
   console.log(`# this machine reaches the internet over IPv6: ${reach6}`);
+  const restore = await debianFixture(browser, base, 'port');
   await withDebianLock(async () => {
     const page = await (await browser.newContext()).newPage();
     const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
@@ -132,7 +134,7 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
       await other.context().close();
 
       const t0 = Date.now();
-      await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay: OVERLAY, port: '1' })}`);
+      await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ ...(restore ? { restore } : {}), overlay: OVERLAY, port: '1' })}`);
       await page.evaluate('window.harness.lease()'); // the page's gateway's lease, as a tailnet's would be
       await loginRoot(page, undefined, context);
       console.log(`# login prompt after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
@@ -228,6 +230,7 @@ test('a room on a second adapter beside the local helper: the member by name, th
   const id = `beside-${randomBytes(4).toString('hex')}`;
   const link = `waarm64-room:${encodeURIComponent(id)}?nostr=${encodeURIComponent(nostr.url)}&derp=${encodeURIComponent(RIG_RELAY)}`;
   try {
+    const restore = await debianFixture(browser, base, 'ports2');
     await withDebianLock(async () => {
       const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the rig's derper's self-signed certificate
       const memberCtx = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -255,7 +258,7 @@ test('a room on a second adapter beside the local helper: the member by name, th
 
         await page.goto(`${base}/tests/browser/core.html`);
         await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay);
-        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ local: ws, room: link, overlay })}`);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ ...(restore ? { restore } : {}), local: ws, room: link, overlay })}`);
         await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
           .catch(async (e) => { throw new Error(`${e}${await context()}`); });
         const [lv, rv] = await views();
