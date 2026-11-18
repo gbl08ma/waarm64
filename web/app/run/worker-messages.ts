@@ -84,7 +84,7 @@ function stateChanged(x: Runner, r: Run, m: StateMessage) {
     r.usbStarted = true;
     void x.d.usb.attachAtStart(r);
   }
-  if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended' || m.state === 'failed') x.ended(r);
+  if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended' || m.state === 'failed') x.ended(r, m);
 }
 
 function state(x: Runner, r: Run, m: StateMessage) {

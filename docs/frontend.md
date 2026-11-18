@@ -728,8 +728,8 @@ Page → worker:
   device's activity wrapper on for ~3 s (devices.md "blk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
-  the overlay) is closed once it's there. The page then terminates the worker (after 4 s without
-  an answer, anyway: `CLOSE_MS`, the devices' 2.5 s to close, and 1.5 s more). The page stops a run this way too when it can't go on from the page's side (an uncaught error
+  the overlay) is closed once it's there. The page then terminates the worker and the GPU worker (after 4 s without
+  an answer, anyway: `CLOSE_MS`, the devices' 2.5 s to close, and 1.5 s more: `Run.close`, once per run). The page stops a run this way too when it can't go on from the page's side (an uncaught error
   in the machine worker or the GPU worker, a lost WebGL context: `Runner.crash`), and says `crashed`: nothing runs on
   unseen with the machine's lock and disks; a restart meanwhile waits for that stop.
 
@@ -781,6 +781,29 @@ Worker → page:
 - `stopped`.
 
 The machine runs without `idleLimitMs`: an idle guest may sleep as long as it likes.
+
+**A machine that stops by itself lets go of its workers.** At the states `off` (the guest's own power-off),
+`suspended`, `failed` and `crashed` (but a panic's: the guest runs on, and may reset), the page sends the worker
+`stop` and terminates it and the GPU worker as a stop does (`Runner.ended`, `Run.close`), though the run stays the
+page's until the next start: before, the worker lived on with the guest's RAM (1.3 GiB after Buildroot's power-off or
+Suspend, of 1.36 GiB that `measureUserAgentSpecificMemory` counted) and its framebuffer's animation frames and status
+timer (2–8% of a core in its threads, and the compositor's frames). The canvas keeps the last frame the worker drew.
+The page also follows the host's game pads only while the machine runs with its USB controller (docs/usb.md "The
+game pad"): Chromium polls the pads, ~0.5% of a core in a thread of the browser, from the first gamepad listener or
+`getGamepads()` until the last listener is removed. Measured 2026-11-18 (Buildroot, 2 vCPUs, headless Chromium,
+20 s, all the tab's processes from `/proc`; `bench/results/local/qa-idle/idle.ts`, not committed):
+
+| A tab whose machine is… | before | after |
+| --- | --- | --- |
+| suspended | 3.9% of a core (8% with the screen shown), the worker's 1.3 GiB kept | ~1% (Chromium's own thread pools), 52 MiB |
+| powered off by its guest | 7.6%, 1.3 GiB kept | 0.55%, 52 MiB |
+| powered off from the toolbar | 0.95% (the pads' polling) | 0.1%, 51 MiB |
+
+The page's own loops in a stopped tab are a tick a second for the status bar's clock (only if it's shown) and the
+names' read every minute; its main thread is under 0.2% busy. In an off-the-record window OPFS lives in memory, so
+the overlays and a suspended copy (and kept snapshots) take the browser's memory for as long as the window is open:
+that much stays after a power-off by design. tests/page-run.test.ts ("QA: a machine its guest powered off…") checks
+the workers' end after Suspend and the guest's power-off, the pads' listeners and reads, and a start right after.
 
 ## Loading and boot progress
 
