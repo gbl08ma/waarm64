@@ -1,8 +1,9 @@
-# CI in tiers (a plan; not scheduled)
+# CI in tiers (the CI track's plan)
 
 **Status:** written 2026-11-18 from the logs of that day's CI runs on the dev VM (static analysis only: the machine
-was busy, so nothing here was re-measured; what needs a run is in "Measurements needed"). Two quick wins are on the
-`ci-plan` branch (see "Quick wins"); the rest needs the user's decisions ("Decisions"), then a track.
+was busy, so nothing here was re-measured; what needs a run is in "Measurements needed"). Two quick wins are merged (see "Quick wins": ci.sh 971 s
+on the branch's first run in a cold worktree, the JS step 736 → 456 s; the native group is now the tail). The user's
+decisions are in "Decisions"; the work runs as the CI track (CI-KICKOFF.md, CI-HANDOVER.md).
 
 **The problem.** Every change waits ~15.5 min for `scripts/ci.sh`, and most changes add a topic script (1 to 14 min
 each), all run alone on the shared dev VM. Batching CI to the end of a loop has problems of its own (a failure can't
@@ -460,15 +461,26 @@ copy, in place of the per-script "it must pass too when…" sentences), and §5'
 is, with each script's measured time updated (ci.sh ~15.5 min, ~12 after this branch; ci-net ~14; ci-debian ~6,
 `--platform` ~11; ci-machines ~5.5; ci-graphics ~4.5). "Where each thing runs" gains a row for `tests/areas.ts`.
 
-## 11. Decisions for the user
+## 11. The user's decisions (2026-11-18)
 
-1. **The tiers as the rule:** "done" means its push tier (T2) passed, with T1 after each change. The CLAUDE.md drafts
-   in §10.
-2. **jit-diff's per-test seeds:** this branch changes the words drawn, once (§8). Keep it, or keep the old single
-   stream and split without reseeding? The parts would then draw different words from the whole run.
-3. **A booted-Debian snapshot fixture** for the Debian tests that don't test booting (§2.3, item 10).
-4. **GitHub Actions:** whether to set it up, as advisory checks. Whether the repository is public (that decides the
-   arm64 runners and the runners' size), and whether to host more prebuilt images. The oracles line's wording (§10).
-5. **A dependency:** cargo-nextest for the Rust tests at once, or a small runner of our own (`cargo test --no-run`
-   and the binaries in parallel). Optionally sccache for worktree cold starts.
-6. **The measurement window** of §9 (~2.5 h, the machine otherwise idle).
+1. **The tiers are the rule**, and §10's drafts for CLAUDE.md are accepted. They are applied with the loop that builds
+   what they describe (`scripts/ci-fast.sh`, the CI lock), so CLAUDE.md never names a tool that isn't there; the
+   oracles line, true now, is applied at once.
+2. **jit-diff's per-test seeds are kept** (they are what lets a part, or one test alone, draw the same words as the
+   whole run; they don't speed anything up by themselves).
+3. **More tests may depend on the snapshot path**: a booted-Debian snapshot fixture for the Debian tests that don't
+   test booting.
+4. **GitHub Actions stays a plan** (§6) while the repository is private: no workflow runs on the private repo's
+   allowance. It goes public later. **No CI image comes from static.gbl08ma.com**: images a workflow needs are built
+   in it, or passed between its jobs as artifacts (the smaller ones), or kept across runs in the Actions cache.
+5. **Popular, industry-standard Rust tools and dependencies are fine** (cargo-nextest; sccache if worth it).
+6. **Faster guests for more tests** (the user, 2026-11-18): Buildroot guests built for a purpose where a test needs a
+   Linux guest rather than Debian, their build cost kept down by caching each image by its config's hash. For the
+   fixed-step role Alpine had: Alpine is to be used as its developers intend (taking new packages as they come, no
+   fixed steps: a compatibility check), and a **Buildroot guest with a real SMP userspace workload** (stress-ng, xz,
+   zstd, sqlite, openssl and the like, from Buildroot's checksummed sources, an init that runs them on every vCPU and
+   ends with a checksum) takes the fixed-step place, so the exact-step runs exercise user mode, threads and syscalls
+   under load, not mostly the kernel's boot. Alternatives weighed: Alpine from a bundle of our own `.apk`s (a real
+   distribution's userspace with fixed steps, but a bundle to maintain), Debian through snapshot.debian.org (flaky,
+   slow to boot), Nix (a large toolchain).
+7. **The measurement window** (§9) runs when the machine is otherwise idle.

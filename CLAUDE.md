@@ -124,8 +124,8 @@ needs no CI run.
   commit (and guest-visible changes need the user's OK).
 - Plant a bug for every new JIT rule and check the tests fail; restore the source **and rebuild
   the wasm** afterwards.
-- Oracles: `qemu-aarch64` in the dev VM; real hardware is the `oracle` VM. Don't depend on
-  GitHub-hosted runners.
+- Oracles: `qemu-aarch64` in the dev VM; real hardware is the `oracle` VM. Never depend on GitHub-hosted runners as an
+  oracle or as the gate: a workflow there would be an extra check beside the dev VM's (none while the repo is private).
 
 **Performance** ([docs/benchmarking.md](docs/benchmarking.md))
 - Don't claim a speedup or regression without numbers from `bench/run.ts` in Chromium: medians and
