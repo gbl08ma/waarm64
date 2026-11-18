@@ -20,11 +20,11 @@ test('a key\'s address and name in a room are the module\'s', () => {
 });
 
 test('a room whose ID is a DNS label is under its name, unless the ID looks derived (room.rs `room_label`)', () => {
-  assert.equal(roomDomain('Gabriel-LAN'), 'gabriel-lan.p2p.internal', 'lower case');
+  assert.equal(roomDomain('gabriel-lan'), 'gabriel-lan.p2p.internal');
   for (const ok of ['global', 'a', '7', 'lan-2', 'abcdefg1', 'abcdefg', 'abcdefghi', 'a'.repeat(63)]) assert.equal(roomLabel(ok), ok, ok);
   const tag = base32(roomPrefix('test room').subarray(1));
   const priv = `lan-${base32(new Uint8Array(16).fill(7))}`;
-  for (const no of ['test room', 'café', 'a.b', 'a_b', '-lan', 'lan-', 'xn--caf-dma', 'ab--cd', '', 'a'.repeat(64), tag, tag.toUpperCase(), 'abcdefgh', '22222222', priv, priv.toUpperCase()]) {
+  for (const no of ['Gabriel-LAN', 'Global', 'test room', 'café', 'a.b', 'a_b', '-lan', 'lan-', 'xn--caf-dma', 'ab--cd', '', 'a'.repeat(64), tag, tag.toUpperCase(), 'abcdefgh', '22222222', priv, priv.toUpperCase()]) {
     assert.equal(roomLabel(no), undefined, no);
     assert.equal(roomDomain(no), `${base32(roomPrefix(no).subarray(1))}.p2p.internal`, no);
   }

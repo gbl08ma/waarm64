@@ -121,7 +121,8 @@ test('the shipped module runs on production\'s parameters; only the page tests\'
 test('a member\'s name the page shows: under the room\'s name when its ID is a label that doesn\'t look derived, else under its tag', { skip: existsSync(WASM) ? false : 'net/ts/build.sh' }, async () => { // i18n-ignore
   const tagShaped = base32(roomPrefix('test room').subarray(1));
   for (const [id, domain] of [
-    ['Gabriel-LAN', 'gabriel-lan.p2p.internal'],
+    ['gabriel-lan', 'gabriel-lan.p2p.internal'],
+    ['Gabriel-LAN', undefined],
     ['global', 'global.p2p.internal'],
     ['test room', undefined],
     [tagShaped, undefined],

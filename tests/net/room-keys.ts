@@ -44,11 +44,11 @@ export function addressOf(prefix: Uint8Array, pub: Uint8Array, whole = false): s
 }
 
 /**
- * The label a room's ID is under `p2p.internal` beside its tag (room.rs `room_label`): the ID in lower case when it is a
+ * The label a room's ID is under `p2p.internal` beside its tag (room.rs `room_label`): the ID itself when it is in lower case and a
  * DNS label, unless it is 8 characters of base32's (shaped like a tag) or a private room's (a hyphen and 26 of them last).
  */
 export function roomLabel(id: string): string | undefined {
-  const l = id.replace(/[A-Z]/g, (c) => c.toLowerCase());
+  const l = id;
   const label = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(l) && l.slice(2, 4) !== '--';
   return label && !/^[a-z2-7]{8}$/.test(l) && !/-[a-z2-7]{26}$/.test(l) ? l : undefined;
 }

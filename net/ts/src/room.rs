@@ -292,13 +292,14 @@ pub fn unbase32(s: &str) -> Option<Vec<u8>> {
     (bits < 5 && acc & ((1 << bits) - 1) == 0).then_some(out)
 }
 
-/// The label a room's ID is under `p2p.internal` beside its tag (rooms.md "The resolver"): the ID in lower case when
-/// that is a DNS label (`[a-z0-9]` and inner `-`, 63 at most, no `--` third and fourth: the registered names' rule,
+/// The label a room's ID is under `p2p.internal` beside its tag (rooms.md "The resolver"): the ID itself when it is
+/// in lower case and a DNS label (IDs that differ only in case are two rooms, so one with a capital gets none: the
+/// user's call, 2026-11-18) (`[a-z0-9]` and inner `-`, 63 at most, no `--` third and fourth: the registered names' rule,
 /// [`names::id`]), unless it looks derived: 8 characters of base32's alphabet (any room's tag is one: a room named
 /// so would answer under that room's domain), or a private room's form (a hyphen and 26 of them at its end: that ID is
 /// the room's secret, and its name alone would be the public room's of that name). None: the tag's domain alone.
 pub fn room_label(id: &str) -> Option<String> {
-    let l = id.to_ascii_lowercase();
+    let l = id.to_string();
     let b = l.as_bytes();
     let b32 = |s: &[u8]| s.iter().all(|c| B32.contains(c));
     let tag_shaped = b.len() == 8 && b32(b);

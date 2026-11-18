@@ -778,8 +778,8 @@ fn configs_in(id: &str, seeds: &[u8]) -> Vec<Config> {
 
 #[test]
 fn a_room_whose_id_is_a_dns_label_gets_a_domain_by_its_name_unless_it_looks_derived() {
-    // Lower-cased; the tag's domain too, the name's first.
-    let r = Room::derive("Gabriel-LAN");
+    // The ID as it is; the tag's domain too, the name's first.
+    let r = Room::derive("gabriel-lan");
     assert_eq!(r.label.as_deref(), Some("gabriel-lan"));
     assert_eq!(r.domain(), "gabriel-lan.p2p.internal");
     assert_eq!(
@@ -793,11 +793,7 @@ fn a_room_whose_id_is_a_dns_label_gets_a_domain_by_its_name_unless_it_looks_deri
         r.name(&public(1)),
         format!("{}.gabriel-lan.p2p.internal", base32(&public(1)))
     );
-    assert_ne!(
-        r.prefix,
-        Room::derive("gabriel-lan").prefix,
-        "still two rooms"
-    );
+    assert_ne!(r.prefix, Room::derive("Gabriel-LAN").prefix, "two rooms");
     let long = "a".repeat(63);
     for ok in [
         "global",
@@ -809,16 +805,15 @@ fn a_room_whose_id_is_a_dns_label_gets_a_domain_by_its_name_unless_it_looks_deri
         "abcdefghi", // 9
         &long,
     ] {
-        assert_eq!(
-            Room::derive(ok).label.as_deref(),
-            Some(&ok.to_lowercase()[..]),
-            "{ok}"
-        );
+        assert_eq!(Room::derive(ok).label.as_deref(), Some(ok), "{ok}");
     }
     let tag_shaped = Room::derive("test room").tag;
     let private = format!("lan-{}", base32(&[7; 16]));
     let too_long = "a".repeat(64);
     for no in [
+        // A capital: another room of the same name in lower case has that domain.
+        "Gabriel-LAN",
+        "Global",
         // Not a label: the tag's domain alone.
         "test room",
         "café",
@@ -848,7 +843,7 @@ fn a_room_whose_id_is_a_dns_label_gets_a_domain_by_its_name_unless_it_looks_deri
 
 #[test]
 fn a_key_name_resolves_under_the_rooms_name_and_its_tag() {
-    let mut n = Net::new(configs_in("Gabriel-LAN", &[1, 2]));
+    let mut n = Net::new(configs_in("gabriel-lan", &[1, 2]));
     let tag = n.nodes[0].c.room.tag.clone();
     let key = base32(&public(2));
     let self_event = n.nodes[1]
@@ -865,7 +860,7 @@ fn a_key_name_resolves_under_the_rooms_name_and_its_tag() {
     assert_eq!(self_event["tag"], tag.as_str());
     for name in [
         format!("{key}.gabriel-lan.p2p.internal"),
-        format!("{key}.Gabriel-LAN.p2p.internal").to_uppercase(),
+        format!("{key}.gabriel-lan.p2p.internal").to_uppercase(),
         format!("{key}.{tag}.p2p.internal"),
     ] {
         assert_eq!(

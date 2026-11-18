@@ -706,7 +706,7 @@ fn in_room(id: &str, mut c: Config) -> Config {
 
 #[test]
 fn a_registered_name_resolves_under_the_rooms_name_and_its_tag() {
-    const LAN: &str = "Names-LAN";
+    const LAN: &str = "names-lan";
     let mut b = Bitcoin::new(LAN, 10);
     let alpha = title_to(&mut b, 1, "alpha", public(2), public(1));
     let mut n = Net::new(vec![

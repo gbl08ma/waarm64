@@ -239,8 +239,9 @@ The user's, or taken with them, 2026-10-18 to 2026-11-12; they bind.
   delegate), not RFC 9476's `.alt` ("Findings"). The lease: the room address as a /128, IPv4
   `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter that isn't the guest's primary (`prefix6`,
   web/room-worker.ts).
-- **The room's name as a domain** (`room_label`, `Room::domains` in room.rs): when the room's ID, in lower case
-  (ASCII's letters only), is a DNS label (`[a-z0-9]` and inner `-`, 63 characters at most, no `--` third and fourth, so
+- **The room's name as a domain** (`room_label`, `Room::domains` in room.rs): when the room's ID is all in lower case
+  and a DNS label (one with a capital has none: `Gabriel-LAN` and `gabriel-lan` are two rooms, and only the second is
+  `gabriel-lan.p2p.internal`; the user's call, 2026-11-18) (`[a-z0-9]` and inner `-`, 63 characters at most, no `--` third and fourth, so
   no punycode `xn--`: the registered names' rule) and doesn't look derived, the resolver answers every name above
   under `<id>.p2p.internal` too, exactly as under the tag's (`<key>.gabriel-lan.p2p.internal`,
   `test123.gabriel-lan.p2p.internal`, `git.test123.gabriel-lan.p2p.internal`; any case, as DNS asks). **Looks

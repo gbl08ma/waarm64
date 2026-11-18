@@ -92,9 +92,9 @@ resolver gets the query with no change to the lease, and a guest whose resolver 
 domain reaches it as plain `<name>` (DHCPv6 option 24 carries it; the RA has no DNSSL: N3 checks Debian and Arch, and
 what they ask the search domain unprompted). A key name is 52 characters, so the two never collide. A name's zone may
 add one label under it (`git.<name>.<tag>.p2p.internal`; a DNS label, `[a-z0-9]` and inner `-`, up to 63 characters). **Under
-the room's name too** (the user, 2026-11-18): in a room whose ID is a DNS label and doesn't look derived (not 8
+the room's name too** (the user, 2026-11-18): in a room whose ID is in lower case, a DNS label, and doesn't look derived (not 8
 characters of base32's, a tag's shape, nor a private room's ID; docs/networking/rooms.md "The room's name as a domain"
-has the rule), every name is answered under `<room ID in lower case>.p2p.internal` as under the tag's
+has the rule), every name is answered under `<room ID>.p2p.internal` as under the tag's
 (`test123.gabriel-lan.p2p.internal`, `git.test123.gabriel-lan.p2p.internal`); the lease gives both domains, the room
 name's first, and the page shows that one. It changed the resolver's match and the lease's domains, nothing else here:
 a name's id, its records and the registry don't hold a suffix.
