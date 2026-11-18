@@ -2653,8 +2653,16 @@ fn a_title_that_doesnt_hold_isnt_taken_as_this_nodes_own() {
     let (key2, mut broken) = b.title(2, "shop", t(20), &[t(5)], attacker);
     broken.entries[1].entry.sig[5] ^= 1;
     // Entries of the title's name, but another key's (the title key isn't the owner).
-    let (_, theirs) = b.title(3, "mail", t(20), &[t(5)], attacker);
+    let (_, mut theirs) = b.title(3, "mail", t(20), &[t(5)], attacker);
+    theirs.zone = None;
     let key3 = b.key(4, "mail").to_bytes().into();
+    // No entries, the title key's own zone.
+    let blog = b.key(7, "blog");
+    let zone_of_its_own = Item {
+        id: b.names.name_id("blog"),
+        entries: Vec::new(),
+        zone: Some(Zone::seal(&b.names, &blog, "blog", 1, &[(None, attacker)], false).unwrap()),
+    };
     // The title's entries and another key's zone.
     let (key4, mut zoned) = b.title(5, "news", t(20), &[t(5)], [5; 32]);
     zoned.zone = Some(Zone::seal(&b.names, &other, "news", 9, &[(None, attacker)], false).unwrap());
@@ -2668,6 +2676,10 @@ fn a_title_that_doesnt_hold_isnt_taken_as_this_nodes_own() {
             item: broken,
         },
         Title {
+            key: blog.to_bytes().into(),
+            item: zone_of_its_own,
+        },
+        Title {
             key: key3,
             item: theirs,
         },
@@ -2677,7 +2689,7 @@ fn a_title_that_doesnt_hold_isnt_taken_as_this_nodes_own() {
         },
     ];
     let s = Server::new(ROOM, cfg(titles), unix);
-    for name in ["bank", "shop", "mail", "news"] {
+    for name in ["bank", "shop", "mail", "news", "blog"] {
         assert_eq!(s.resolve(name, name, unix), Answer::Wait, "{name}");
         assert_eq!(
             s.resolve(&format!("www.{name}"), name, unix),
@@ -2685,7 +2697,7 @@ fn a_title_that_doesnt_hold_isnt_taken_as_this_nodes_own() {
             "{name}"
         );
     }
-    for name in ["bank", "shop", "mail", "news"] {
+    for name in ["bank", "shop", "mail", "news", "blog"] {
         assert!(
             s.reg.get(&b.names.name_id(name)).is_none(),
             "{name}: nothing held"
