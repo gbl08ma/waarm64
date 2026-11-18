@@ -607,7 +607,10 @@ copies by nonce **and round** (the three rounds share a nonce).
   listed ones from a work list 4 at a time, and lasts 4 minutes at most (`RUN_MAX`, under a round's 5; review 2: a
   partner answering each request just before its 15 s could stretch a run to hours while the new server answered
   nobody): a run that ends by its time ends the round as any other does, and the next round goes on from what came. A peer's `sync`s may make the server fingerprint 16 times its registry a
-  sync round; a `have` names 32 ids at most, and what `have`s make it ask a peer waits 64 at once. Both settle a range before they
+  sync round; a `have` names 32 ids at most, and what `have`s make it ask a peer waits 64 at once. A `get`'s answer
+  is taken only for the name asked (its id, or an 8-byte prefix's two at most), and what a peer's answers bring waits to
+  be verified 256 items and 4 MiB at most (4,096 and 32 MiB from everyone): past it its `have`s ask nothing and its
+  run's `get`s wait for room (review 3, finding 4: items for any name, unbounded, outran verification). Both settle a range before they
   summarize it, so time has done the same to both. A changed name (a `put`, a sync) is told in `have` to the servers
   of this round and those that synced with this one in the last 10 minutes, but the one it came from. A server
   answers "who serves?" only once its first sync round is over and what it brought is verified (not what was `put`
@@ -944,7 +947,7 @@ names.
 | Explorers all down | | claims and renewals are made and stamped; collecting and finishing their anchors waits; blocks stay unchecked, their anchors counting on their headers' work; existing names resolve |
 | Flood "who serves?" | lookups' limits | servers' answers come from a budget of their own; a forged asker key gets one handshake from each server asked, and an asker's place, which the next newcomer takes when all 32 are held; a key named again and again (a victim's) 4 answers a minute from each server |
 | Fill an asker's accept window | a handshake (a DERP connection) per place, a registration per place that serves | a place held a second without a `serve` goes to the next newcomer; with every place served, the place of the last by hash (never the best two's). A member's `fetch` lets in the servers it named only |
-| Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once |
+| Make a server work (`put`, `sync`, `have`) | a session (any asker's) for `put`, one registration for the rest | `put`s 4 at a time, a junk one costing one check, a valid one put again its anchors' checks only (past 16,384 distinct valid entries, whole checks again: docs/backlog.md); `sync` 16 registries' fingerprints a round; `have` 64 gets at once, each answer the name asked only, 256 items and 4 MiB a peer waiting to be verified |
 | Watch a relay | | sees which IP addresses hold a room's names tag (its servers) and which ask under it: **new**, below. One that knows the room's ID also reads which name ids are looked up first (R3) |
 
 ## What changes that needed the user's OK (given 2026-11-15, all of it)

@@ -110,6 +110,12 @@ const SYNC_PARALLEL: usize = 4;
 /// this many at once.
 const HAVE_MAX: usize = 32;
 const HAVE_GETS: usize = 64;
+/// Items taken from one peer's `get` answers waiting to be verified at most, and from every peer, by count and bytes
+/// (review 3, finding 4): past them its `have`s ask nothing and its run's `get`s wait.
+pub const JOBS_PER_PEER: usize = 256;
+pub const JOBS_MAX: usize = 4096;
+pub const JOB_BYTES_PER_PEER: usize = 4 << 20;
+pub const JOB_BYTES_MAX: usize = 32 << 20;
 /// `put`s waiting to be verified: a peer's, and everyone's.
 const PUTS_PER_PEER: usize = 4;
 const PUTS_MAX: usize = 64;
@@ -493,8 +499,8 @@ impl Ask {
 /// A request of ours waiting for its answer.
 enum Req {
     Sync(Range),
-    /// A `get`, part of a sync run with that peer or not.
-    Get(bool),
+    /// A `get`, part of a sync run with that peer or not, and the id (or 8-byte prefix) it asks for.
+    Get(bool, Vec<u8>),
     Put,
 }
 
@@ -524,12 +530,15 @@ struct Job {
     zone_checked: bool,
     /// An entry of it failed a check only a forgery fails: nothing of it is kept.
     forged: bool,
+    /// The item's size, as it came.
+    bytes: usize,
 }
 
 impl Job {
     fn new(from: Option<([u8; 32], Option<u32>)>, item: Item) -> Job {
         Job {
             from,
+            bytes: item.encode().len(),
             item,
             next: 0,
             checked: Vec::new(),
@@ -941,6 +950,16 @@ impl Server {
             .collect();
         for k in long {
             self.end_run(k, "a run past its time");
+        }
+        // Runs whose `get`s waited for room in the queue.
+        let waiting: Vec<[u8; 32]> = (self.runs.iter())
+            .filter(|(_, r)| r.outstanding == 0 && !r.gets.is_empty())
+            .map(|(k, _)| *k)
+            .collect();
+        for k in waiting {
+            if self.job_room(&k) > 0 {
+                self.run_step(k, now);
+            }
         }
         if self.round_over && self.jobs.is_empty() {
             self.round_over = false;
@@ -1585,13 +1604,16 @@ impl Server {
                 }
                 for id in ids {
                     let waiting = (self.reqs.iter())
-                        .filter(|((p, _), (r, _))| *p == from && matches!(r, Req::Get(false)))
+                        .filter(|((p, _), (r, _))| *p == from && matches!(r, Req::Get(false, _)))
                         .count();
-                    if self.dropped.contains_key(&id) || waiting >= HAVE_GETS {
+                    if self.dropped.contains_key(&id)
+                        || waiting >= HAVE_GETS
+                        || self.job_room(&from) == 0
+                    {
                         continue;
                     }
                     let get = self.get_for(&id[..]);
-                    self.request(from, &get, Req::Get(false), now);
+                    self.request(from, &get, Req::Get(false, id.to_vec()), now);
                 }
             }
             Msg::Put(item) => {
@@ -1619,24 +1641,63 @@ impl Server {
         }
     }
 
+    /// How many more items from `peer`'s `get` answers the queue takes.
+    fn job_room(&self, peer: &[u8; 32]) -> usize {
+        let theirs = self.jobs.iter().filter(|j| j.peer() == Some(*peer)).count();
+        JOBS_PER_PEER
+            .saturating_sub(theirs)
+            .min(JOBS_MAX.saturating_sub(self.jobs.len()))
+    }
+
+    /// Whether an item of `bytes` from `peer` fits the queue's bytes.
+    fn job_bytes_room(&self, peer: &[u8; 32], bytes: usize) -> bool {
+        let all: usize = self.jobs.iter().map(|j| j.bytes).sum();
+        let theirs: usize = (self.jobs.iter())
+            .filter(|j| j.peer() == Some(*peer))
+            .map(|j| j.bytes)
+            .sum();
+        theirs + bytes <= JOB_BYTES_PER_PEER && all + bytes <= JOB_BYTES_MAX
+    }
+
+    /// Tests' view: items waiting to be verified (sync's and `have`'s, not puts).
+    #[cfg(test)]
+    pub fn jobs_len(&self) -> usize {
+        self.jobs.len()
+    }
+
     fn on_answer(&mut self, from: [u8; 32], r: Req, m: Msg, now: Instant) {
         match (r, m) {
             (Req::Sync(range), Msg::SyncAnswer(a)) => {
                 self.on_sync_answer(from, range, a);
                 self.run_done(from, now);
             }
-            (Req::Get(in_run), Msg::Items(items)) => {
-                for item in items {
-                    if !item.entries.is_empty() || item.zone.is_some() {
-                        self.jobs.push_back(Job::new(Some((from, None)), item));
+            (Req::Get(in_run, asked), Msg::Items(items)) => {
+                // Only the name asked for (an 8-byte prefix may match two), and within the peer's share of the queue.
+                let mut dropped = 0;
+                for item in (items.into_iter())
+                    .filter(|i| {
+                        i.id.starts_with(&asked) && (!i.entries.is_empty() || i.zone.is_some())
+                    })
+                    .take(2)
+                {
+                    let job = Job::new(Some((from, None)), item);
+                    if self.job_room(&from) == 0 || !self.job_bytes_room(&from, job.bytes) {
+                        dropped += 1;
+                        continue;
                     }
+                    self.jobs.push_back(job);
+                }
+                if dropped > 0 {
+                    self.log(format!(
+                        "{dropped} items of a get answer dropped: the queue is full"
+                    ));
                 }
                 if in_run {
                     self.run_done(from, now);
                 }
             }
             (Req::Put, m @ (Msg::Taken | Msg::Better(_))) => self.put_answers.push((from, m)),
-            (Req::Sync(_) | Req::Get(true), _) => self.run_done(from, now),
+            (Req::Sync(_) | Req::Get(true, _), _) => self.run_done(from, now),
             (_, _) => {}
         }
     }
@@ -1754,14 +1815,29 @@ impl Server {
     /// A request of run `partner`'s finished (or it starts): the next ones go out; with none
     /// left, the partner is told what it lacks, and the round is over.
     fn run_done(&mut self, partner: [u8; 32], now: Instant) {
+        if let Some(run) = self.runs.get_mut(&partner) {
+            run.outstanding = run.outstanding.saturating_sub(1);
+        }
+        self.run_step(partner, now);
+    }
+
+    /// A run's next requests: its `get`s only while the partner's share of the queue has room (a run waiting on it
+    /// goes on at a tick once verification made room).
+    fn run_step(&mut self, partner: [u8; 32], now: Instant) {
+        let waiting = (self.reqs.iter())
+            .filter(|((p, _), (r, _))| *p == partner && matches!(r, Req::Get(..)))
+            .count();
+        let mut room = self.job_room(&partner).saturating_sub(waiting);
         let Some(run) = self.runs.get_mut(&partner) else {
             return;
         };
-        run.outstanding = run.outstanding.saturating_sub(1);
         let mut send = Vec::new();
         let mut gets = Vec::new();
         while run.outstanding < SYNC_PARALLEL {
-            if let Some(i) = run.gets.pop_front() {
+            if room > 0
+                && let Some(i) = run.gets.pop_front()
+            {
+                room -= 1;
                 run.got += 1;
                 gets.push(i);
             } else if let Some(r) = run.stack.pop() {
@@ -1777,7 +1853,7 @@ impl Server {
         }
         for i in gets {
             let get = self.get_for(&i);
-            self.request(partner, &get, Req::Get(true), now);
+            self.request(partner, &get, Req::Get(true, i.to_vec()), now);
         }
         for range in send {
             // Settled first, so both sides compare what time has made of the same entries.
@@ -1817,7 +1893,7 @@ impl Server {
 
     fn failed(&mut self, k: [u8; 32], id: u32) {
         if let Some((r, _)) = self.reqs.remove(&(k, id))
-            && matches!(r, Req::Sync(_) | Req::Get(true))
+            && matches!(r, Req::Sync(_) | Req::Get(true, _))
         {
             if let Some(run) = self.runs.get_mut(&k) {
                 // A partner that doesn't answer: the round with it ends.

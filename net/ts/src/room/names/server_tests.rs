@@ -1532,6 +1532,107 @@ fn only_a_server_that_proved_a_live_name_is_answered_sync_have_and_get_all() {
     assert!(answered > 100);
 }
 
+/// A message in, with no tick (nothing verified meanwhile): the messages the server sends back, with their transfer ids.
+fn feed(
+    s: &mut Server,
+    from: [u8; 32],
+    xid: u32,
+    reply: u32,
+    m: &Msg,
+    now: Instant,
+) -> Vec<(u32, Msg)> {
+    let mut x = Transfers::default();
+    for d in datagrams(xid, &m.encode(reply)) {
+        s.input(Input::Datagram { from, data: d }, now, T);
+    }
+    let mut got = Vec::new();
+    loop {
+        while let Some(c) = s.poll() {
+            if let Cmd::Send { to, data } = c
+                && to == from
+                && let Some((id, p)) = x.input([0; 32], &data, now)
+            {
+                got.push((id, Msg::decode(&p).unwrap().0));
+            }
+        }
+        // Our acknowledgements back, so the rest comes.
+        let acks = std::mem::take(&mut x.out);
+        if acks.is_empty() {
+            return got;
+        }
+        for (_, d) in acks {
+            s.input(Input::Datagram { from, data: d }, now, T);
+        }
+    }
+}
+
+/// Review 3's finding 4: a peer that proved one live name answers the `get`s its `have`s make the server send. Items
+/// for names it didn't ask about were all taken to be verified, and nothing bounded the queue: a peer could grow it
+/// faster than 24 units a turn verify it, holding memory and the CPU, and a new server's first sync never ended. Now
+/// an answer keeps only the name asked for, and a peer's share of the queue is bounded.
+#[test]
+fn a_peers_get_answers_keep_only_what_was_asked_in_a_bounded_queue() {
+    use super::server::JOBS_PER_PEER;
+    let mut b = Bitcoin::new(ROOM, 53);
+    let (key, item) = b.title(1, "mine", t(20), &[t(5)], [9; 32]);
+    let mut s = Server::new(ROOM, cfg(vec![Title { key, item }]), T);
+    let now = Instant::now();
+    s.start([0x10; 32], now);
+    s.synced = true;
+    while s.poll().is_some() {}
+    let peer = [0x44; 32];
+    let (pkey, pitem) = b.title(2, "theirs", t(20), &[t(5)], [8; 32]);
+    let sk = k256::schnorr::SigningKey::from_bytes(&pkey).unwrap();
+    let proof = super::wire::Proof {
+        entry: pitem.entries.last().unwrap().clone(),
+        sig: super::entry::sign(&sk, &super::server::peer_hash(&b.names, &[0x10; 32], &peer)),
+    };
+    let sync = Msg::Sync {
+        range: Range::ALL,
+        fp: Default::default(),
+        proof: Some(Box::new(proof)),
+    };
+    assert!(matches!(
+        &exchange(&mut s, peer, 1, &sync, now, T)[..],
+        [Msg::SyncAnswer(_)]
+    ));
+    let n = JOBS_PER_PEER + 64;
+    let junk: Vec<Item> = (0..n)
+        .map(|k| {
+            b.title(3 + (k % 200) as u8, &format!("junk{k}"), t(3), &[], [7; 32])
+                .1
+        })
+        .collect();
+    let mut xid = 10;
+    // 32 names asked for, each answered with 40 items of other names besides its own.
+    let haves: Vec<[u8; 32]> = junk[..32].iter().map(|i| i.id).collect();
+    for (rid, m) in feed(&mut s, peer, xid, 0, &Msg::Have(haves), now) {
+        let Msg::Get { id, .. } = m else { panic!() };
+        let mut items: Vec<Item> = junk[32..72].to_vec();
+        items.extend(junk.iter().find(|i| i.id[..] == id[..]).cloned());
+        xid += 1;
+        feed(&mut s, peer, xid, rid, &Msg::Items(items), now);
+    }
+    assert_eq!(s.jobs_len(), 32, "only the names asked for");
+    // Asked and answered, again and again, faster than anything is verified: its share of the queue is bounded.
+    for c in junk[32..].chunks(32) {
+        xid += 1;
+        let haves = c.iter().map(|i| i.id).collect();
+        for (rid, m) in feed(&mut s, peer, xid, 0, &Msg::Have(haves), now) {
+            let Msg::Get { id, .. } = m else { panic!() };
+            let items = junk
+                .iter()
+                .filter(|i| i.id[..] == id[..])
+                .cloned()
+                .collect();
+            xid += 1;
+            feed(&mut s, peer, xid, rid, &Msg::Items(items), now);
+        }
+    }
+    eprintln!("{n} names haved and answered: {} jobs", s.jobs_len());
+    assert!(s.jobs_len() <= JOBS_PER_PEER, "{} jobs", s.jobs_len());
+}
+
 #[test]
 fn a_put_of_one_junk_entry_many_times_costs_one_check() {
     let mut b = Bitcoin::new(ROOM, 45);
