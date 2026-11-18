@@ -114,8 +114,9 @@ pub const QUICK_ROUND: Duration = Duration::from_secs(30);
 pub const QUICK_ROUNDS: u32 = 8;
 /// A range this small (on the answering side) is listed.
 pub const LIST_MAX: u32 = 64;
-/// Sync requests in flight to one partner.
-const SYNC_PARALLEL: usize = 4;
+/// Sync requests in flight to one partner: a first sync's rate is these over the round trip (NAMES loop 6b: 4 moved
+/// 0.72 Mbit/s over 95 ms, 8 with a window of 16 parts 1.44).
+const SYNC_PARALLEL: usize = 8;
 /// A `have` names at most this many ids (a run tells 32 at a time), and what `have`s make us ask a peer waits at most
 /// this many at once.
 const HAVE_MAX: usize = 32;

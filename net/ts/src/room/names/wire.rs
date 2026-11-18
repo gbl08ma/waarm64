@@ -32,8 +32,10 @@ pub const DATAGRAM: usize = 1200;
 /// A part's head: kind, transfer, part, parts.
 const PART_HEAD: usize = 1 + 4 + 2 + 2;
 pub const PART_DATA: usize = DATAGRAM - PART_HEAD;
-/// The most parts of a peer's that are unacknowledged at once.
-pub const IN_FLIGHT: usize = 8;
+/// The most parts of a peer's that are unacknowledged at once: a run's 8 `get`s in flight of two-part items (NAMES
+/// loop 6b), and two partners' 16 each are a derper's 32-packet queue to the server they sync into (32 dropped parts
+/// there with one partner).
+pub const IN_FLIGHT: usize = 16;
 /// The longest message: 1 MiB (an item of a name held for years, or a listing).
 pub const MAX_MESSAGE: usize = 1 << 20;
 /// The most entries an item may carry.

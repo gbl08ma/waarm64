@@ -49,6 +49,9 @@ struct Bus {
     fetched: Vec<(usize, String)>,
     t0: Instant,
     now: Instant,
+    /// Datagrams take this long one way (zero: at once), and those on their way: (when, to, from, data).
+    delay: Duration,
+    flying: Vec<(Instant, usize, [u8; 32], Vec<u8>)>,
 }
 
 impl Bus {
@@ -71,6 +74,8 @@ impl Bus {
             fetched: Vec::new(),
             t0: now,
             now,
+            delay: Duration::ZERO,
+            flying: Vec::new(),
         };
         for i in 0..n {
             let k = b.keys[i];
@@ -133,7 +138,11 @@ impl Bus {
         match c {
             Cmd::Send { to, data } => {
                 if let Some(j) = self.keys.iter().position(|k| *k == to) {
-                    self.s[j].input(Input::Datagram { from, data }, now, unix);
+                    if self.delay.is_zero() {
+                        self.s[j].input(Input::Datagram { from, data }, now, unix);
+                    } else {
+                        self.flying.push((now + self.delay, j, from, data));
+                    }
                 }
             }
             Cmd::Publish { nonce, spread } => {
@@ -175,11 +184,19 @@ impl Bus {
         let end = self.now + d;
         loop {
             self.run();
-            let next = self.s.iter().filter_map(Server::deadline).min();
+            let next = (self.s.iter().filter_map(Server::deadline))
+                .chain(self.flying.iter().map(|f| f.0))
+                .min();
             match next {
                 Some(t) if t <= end => {
                     self.now = t.max(self.now);
                     let (now, unix) = (self.now, self.unix());
+                    let (due, wait): (Vec<_>, Vec<_>) =
+                        self.flying.drain(..).partition(|f| f.0 <= now);
+                    self.flying = wait;
+                    for (_, j, from, data) in due {
+                        self.s[j].input(Input::Datagram { from, data }, now, unix);
+                    }
                     for s in &mut self.s {
                         if s.deadline().is_some_and(|t| t <= now) {
                             s.tick(now, unix);
@@ -279,13 +296,14 @@ fn items_messages_and_transfers_round_trip() {
     let r = Range::ALL.child(0xa).child(0x5);
     assert_eq!(r.bounds().0[0], 0xa5);
     assert!(r.contains(&[0xa5; 32]) && !r.contains(&[0xa6; 32]));
-    // A long message in parts, at most 8 in flight, a third of the datagrams lost, resent.
+    // A long message in parts, at most `IN_FLIGHT` (16) in flight, a third of the datagrams lost, resent.
     let (mut a, mut z) = (Transfers::default(), Transfers::default());
     let (ka, kz) = ([1; 32], [2; 32]);
     let msg: Vec<u8> = (0..20_000u32).map(|i| i as u8).collect();
     let mut now = Instant::now();
     a.send(kz, &msg, now);
-    assert_eq!(a.out.len(), 8, "8 in flight");
+    assert_eq!(a.out.len(), super::wire::IN_FLIGHT, "16 in flight");
+    assert_eq!(super::wire::IN_FLIGHT, 16);
     let mut got = None;
     let mut n = 0u64;
     for _ in 0..200 {
@@ -1132,6 +1150,58 @@ fn servers_that_start_together_find_each_other_within_seconds() {
             "started {ms} ms apart: each held the other's name {took:?} after the second start"
         );
     }
+}
+
+/// A first sync over a public region's round trip (95 ms) is bound by what is in flight: a run's `get`s (one name
+/// each) and the transfer window under them (NAMES loop 6b: through the rig's derper behind a 95 ms shaper, 4 `get`s
+/// and 8 parts moved 0.72 Mbit/s, 8 and 16 1.44, 16 and 32 2.9 with the derper's queue dropping). Items of two parts.
+#[test]
+fn a_first_sync_over_a_round_trip_keeps_eight_gets_in_flight() {
+    let mut b = Bitcoin::new(ROOM, 54);
+    let mut points: Vec<(Option<&str>, [u8; 32])> = vec![(None, [7; 32])];
+    let labels = ["git", "www", "mail", "files", "chat", "wiki"];
+    for (k, l) in labels.iter().enumerate() {
+        points.push((Some(l), [k as u8 + 1; 32]));
+    }
+    let (ka, ia) = b.title(1, "alpha", t(20), &[t(4)], [1; 32]);
+    let (kb, ib) = b.title(2, "bravo", t(20), &[t(4)], [2; 32]);
+    let mut a = Server::new(ROOM, cfg(vec![Title { key: ka, item: ia }]), T);
+    let n = 400;
+    let mut bytes = 0;
+    for k in 0..n {
+        let name = format!("wide{k}");
+        let key = b.key(9, &name);
+        let claim = b.at(Kind::Claim, &key, &name, [0; 32], t(20));
+        let renew = b.at(Kind::Renew, &key, &name, claim.id(), t(4));
+        let zone = Zone::seal(&b.names, &key, &name, 1, &points, true).unwrap();
+        let item = b.item(&name, &[claim, renew], Some(zone));
+        bytes += item.encode().len();
+        assert!(a.load(&record(&item, T), T));
+    }
+    assert!(bytes / n > super::wire::PART_DATA, "items of two parts");
+    let nb = Server::new(ROOM, cfg(vec![Title { key: kb, item: ib }]), T);
+    let mut bus = Bus::staggered(vec![a, nb], &[Duration::ZERO, Duration::from_secs(5)]);
+    bus.delay = Duration::from_millis(47);
+    let (mut first, mut all) = (None, None);
+    for step in 1..=600u64 {
+        bus.advance(Duration::from_millis(500));
+        let held = bus.reg(1).len();
+        if held > 2 && first.is_none() {
+            first = Some(step);
+        }
+        if held == n + 2 {
+            all = Some(step);
+            break;
+        }
+    }
+    let (first, all) = (first.expect("a first name"), all.expect("every name"));
+    let took = Duration::from_millis(500 * (all - first));
+    eprintln!(
+        "{n} names of ~{} bytes over a 94 ms round trip: {took:?}",
+        bytes / n
+    );
+    // 4 gets a round trip (as before N6b): ~9.5 s; 8: ~4.7 s.
+    assert!(took <= Duration::from_secs(7), "{took:?}");
 }
 
 /// Quick rounds (a round that brought names is followed by the next within a minute) are a few in a row at most: a
