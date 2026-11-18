@@ -1,6 +1,6 @@
 # The first demo: a machine that works with one click
 
-**Status:** proposed 2026-11-18, not started (no kickoff yet). It brings together three items that were already
+**Status:** proposed 2026-11-18; its kickoff is drafted, for the user to confirm ([DEMO-KICKOFF.md](../../DEMO-KICKOFF.md)). It brings together three items that were already
 proposed: the preloaded image and snapshot (PLAN.md "Proposed"), a catalog of hosted images (machines.md §10), and the
 public demo that resumes instead of booting (backlog.md "Remote disks"). It adds a fourth, a network that works out of
 the box, which means **reopening a decision** (§3). How we compare with the other in-browser machines is
@@ -408,6 +408,7 @@ and versions by id; the public helper is a fork of its own, hosted on the user's
 Also settled: A, the hosted helper, on the user's server; no Cloudflare Workers for now; the fork in a new
 repository; TOML; the first allowlist is what the Alpine demo's `apk` needs (§3.2); the demos are hosted on
 vmdisks.tny.im (§4 "Hosting").
+Also: the fork's dependencies (BurntSushi/toml, golang.org/x/net/proxy, wireguard-go) are OK'd.
 **Needs the user's OK:** each rule added to the allowlist past the first; the decisions' text in plans/networking.md §1 and plans/networking-local.md §1; the definition format's new version; a new guest image; any deploy.
 
 ## 7. Open questions
