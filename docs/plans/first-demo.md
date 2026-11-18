@@ -1,6 +1,6 @@
 # The first demo: a machine that works with one click
 
-**Status:** proposed 2026-11-18; its kickoff is drafted, for the user to confirm ([DEMO-KICKOFF.md](../../DEMO-KICKOFF.md)). It brings together three items that were already
+**Status:** the DEMO track's plan, open since 2026-11-18 ([DEMO-KICKOFF.md](../../DEMO-KICKOFF.md), confirmed). It brings together three items that were already
 proposed: the preloaded image and snapshot (PLAN.md "Proposed"), a catalog of hosted images (machines.md §10), and the
 public demo that resumes instead of booting (backlog.md "Remote disks"). It adds a fourth, a network that works out of
 the box, which means **reopening a decision** (§3). How we compare with the other in-browser machines is

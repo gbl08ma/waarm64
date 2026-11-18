@@ -1,7 +1,6 @@
-# DEMO: the first demo — kickoff (draft, for the user to confirm)
+# DEMO: the first demo — kickoff
 
-**Status: a draft written 2026-11-18 at the user's ask.** Not confirmed yet: once the user OKs it (or edits it),
-PLAN.md's row opens and the loops start. The plan and its reasoning are
+**Status: confirmed by the user, 2026-11-18;** the track is open (PLAN.md). The plan and its reasoning are
 [docs/plans/first-demo.md](docs/plans/first-demo.md); how we compare with the others is
 [docs/comparison.md](docs/comparison.md).
 
