@@ -87,6 +87,26 @@ async function locked<T>(lock: string, f: () => Promise<T>, ms = 15 * 60_000): P
 }
 
 /**
+ * The fixture file `file` (`debian-booted-<family>-<key>.waarm64snap` in target/ci/), made by `make(path)` if it's
+ * missing, in a Debian slot; the family's files of other keys are removed after.
+ */
+async function fixture(family: string, key: string, make: (path: string) => Promise<void>): Promise<string> {
+  const file = `debian-booted-${family}-${key}.waarm64snap`;
+  const path = join(DIR, file);
+  mkdirSync(DIR, { recursive: true });
+  await locked(join(DIR, `debian-booted-${family}.lock`), async () => {
+    if (existsSync(path)) return;
+    const t0 = Date.now();
+    await withDebianLock(() => make(`${path}.new`));
+    renameSync(`${path}.new`, path);
+    // The family's files of other keys go (its `.new` is renamed first: it shares the prefix).
+    for (const old of readdirSync(DIR)) if (old.startsWith(`debian-booted-${family}-`) && old !== file) rmSync(join(DIR, old), { force: true });
+    console.log(`# made the booted-Debian fixture ${file} (${(statSync(path).size / 2 ** 20).toFixed(0)} MiB) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  });
+  return path;
+}
+
+/**
  * The fixture of `name`'s shape, made first if it's missing or its key moved: its path on the test server
  * (`restore=` for the harness pages), or '' with WAARM64_DEBIAN_FIXTURES=0 (the test boots). `base` is the server
  * (tools/serve.ts) serving the repository.
@@ -94,31 +114,50 @@ async function locked<T>(lock: string, f: () => Promise<T>, ms = 15 * 60_000): P
 export async function debianFixture(browser: Browser, base: string, name: keyof typeof SHAPES): Promise<string> {
   if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
   const shape: Shape = SHAPES[name];
-  const file = `debian-booted-${name}-${fixtureKey(shape)}.waarm64snap`;
-  const path = join(DIR, file);
-  mkdirSync(DIR, { recursive: true });
-  await locked(join(DIR, `debian-booted-${name}.lock`), async () => {
-    if (existsSync(path)) return;
-    const t0 = Date.now();
-    await withDebianLock(async () => {
-      const ctx = await browser.newContext({ acceptDownloads: true });
-      try {
-        const page = await ctx.newPage();
-        await page.goto(`${base}/tests/browser/fixture.html?${new URLSearchParams({ shape: JSON.stringify(shape) })}`);
-        await shows(page, /\S+ login: /, 240_000);
-        const download = page.waitForEvent('download', { timeout: 120_000 });
-        await page.evaluate(() => (window as never as { harness: { save(): void } }).harness.save());
-        const d = await download;
-        await d.saveAs(`${path}.new`);
-        await d.delete();
-      } finally {
-        await ctx.close();
-      }
-    });
-    renameSync(`${path}.new`, path);
-    // The shape's files of other keys go (its `.new` is renamed first: it shares the prefix).
-    for (const old of readdirSync(DIR)) if (old.startsWith(`debian-booted-${name}-`) && old !== file) rmSync(join(DIR, old), { force: true });
-    console.log(`# made the booted-Debian fixture ${file} (${(statSync(path).size / 2 ** 20).toFixed(0)} MiB) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  const path = await fixture(name, fixtureKey(shape), async (to) => {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(`${base}/tests/browser/fixture.html?${new URLSearchParams({ shape: JSON.stringify(shape) })}`);
+      await shows(page, /\S+ login: /, 240_000);
+      const download = page.waitForEvent('download', { timeout: 120_000 });
+      await page.evaluate(() => (window as never as { harness: { save(): void } }).harness.save());
+      const d = await download;
+      await d.saveAs(to);
+      await d.delete();
+    } finally {
+      await ctx.close();
+    }
   });
-  return `/target/ci/${file}`;
+  return `/target/ci/${path.slice(DIR.length + 1)}`;
+}
+
+/** What makes the page's own machine, besides `fixtureKey`'s sources: the worker's devices and its start. */
+const PAGE_SOURCES = ['web/app/worker-devices.ts', 'web/app/worker-start.ts', 'web/app/worker-header.ts', 'web/app/machine.ts'];
+
+/**
+ * The page's own transient machine of `query` (web/app/?<query>, the tests' `PAGE_QUERY` and `unattendedQuery()`
+ * in it) at its serial login prompt, saved with the page's Snapshot: its local path, for Load snapshot
+ * (bench/snapshot-start.ts `loadSnapshotFile`), or '' with WAARM64_DEBIAN_FIXTURES=0. A page loads it only into a
+ * machine of the same query (the machine's name, its disk and its devices: web/app/worker-header.ts).
+ */
+export async function pageFixture(browser: Browser, base: string, query: string): Promise<string> {
+  if (process.env.WAARM64_DEBIAN_FIXTURES === '0') return '';
+  const key = sha(JSON.stringify([fixtureKey({}), query, PAGE_SOURCES.map((f) => sha(readFileSync(join(ROOT, f))))])).slice(0, 16);
+  return fixture(`page-${sha(query).slice(0, 8)}`, key, async (to) => {
+    const ctx = await browser.newContext({ acceptDownloads: true });
+    try {
+      const page = await ctx.newPage();
+      await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // a download
+      await page.goto(`${base}/web/app/?${query}`);
+      await page.waitForFunction(() => /\S+ login: /.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 300_000, polling: 250 });
+      const download = page.waitForEvent('download', { timeout: 120_000 });
+      await page.locator('#save-snapshot').click();
+      const d = await download;
+      await d.saveAs(to);
+      await d.delete();
+    } finally {
+      await ctx.close();
+    }
+  });
 }

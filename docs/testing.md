@@ -1030,8 +1030,14 @@ Parallel test files wait for one maker (a lock directory beside the file). `WAAR
   the CPU and `web/devices.ts` are left out (they move often, and a restore of a fixture made by another core is the
   snapshot path working); a change to what the guest sets up at boot that none of these files show (a device's
   feature negotiation in `web/devices.ts`, say) needs a run with `WAARM64_DEBIAN_FIXTURES=0` or the files deleted.
+- **The page's own machine** (`pageFixture(browser, base, query)`): the page's transient machine of a query
+  (`web/app/?<query>`) at its serial login prompt, saved with the page's Snapshot (a download, 79 MiB for
+  `ncpus=2&view=both`, ~30 s to make), its key `fixtureKey`'s, the query and the page worker's device and start
+  sources; a test loads it with Load snapshot (bench/snapshot-start.ts `loadSnapshotFile`) into a page of the same
+  query (the machine's name, its disk and its devices must match: web/app/worker-header.ts). page-room's two guests
+  load one file (its slot held 110 s from ~141 s): their same identity doesn't matter, each page serves its own lease.
 - **What keeps a real boot:** the tests whose subject is the boot (net-guest's first test: the card's units don't hold
-  the boot up), and the page's own machine (page-network, page-room), which a harness fixture doesn't fit.
+  the boot up), and page-network (its reloads start the machine again, and its first boot runs beside its form checks).
 - **Restored and booted guests are the same guest:** two restores of one fixture have the same machine-id and DHCP
   identity, and a lease that comes after the restore meets networkd's retry schedule as it stood at the save (net-guest's
   late lease: taken in 4 s; the default route's move: IPv6 at once, IPv4 at the next renewal, 8 s).

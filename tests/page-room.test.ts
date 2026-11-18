@@ -12,7 +12,7 @@
 // a name by its full name, by the short one through the search domain, a label under it, a zone change, reserved
 // names; and what Debian asks the room's resolver on its own. Every page runs the page tests' module
 // (target/net/ts-test.wasm, net/ts/build.sh --test-params, served in ts.wasm's place), which takes the pretend Bitcoin's
-// titles. Two Debian boots at once, ~4 min alone in the dev VM. Opt-in like the other network tests (scripts/ci-net.sh):
+// titles. Both guests from one booted-Debian fixture of the page's machine (tests/debian-fixture.ts `pageFixture`), ~2.5 min alone in the dev VM. Opt-in like the other network tests (scripts/ci-net.sh):
 // WAARM64_NET_TESTS=1, WAARM64_DISTROS=debian and WAARM64_TAILCAT=1 (Go for derper).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -22,6 +22,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { pageFixture } from './debian-fixture.ts';
+import { loadSnapshotFile } from '../bench/snapshot-start.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
 import { startNostrRelay, type NostrRelay } from './net/nostr-relay.ts';
@@ -46,6 +48,7 @@ const script = `${ROOT}tests/net/tailcat.sh`;
 const TEST_WASM = `${ROOT}target/net/ts-test.wasm`;
 const TITLE_TOOL = `${ROOT}target/debug/examples/names-title`;
 const BOOT_MS = 300_000;
+const QUERY = `${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`;
 
 let browser: Browser;
 let nostr: NostrRelay;
@@ -178,7 +181,8 @@ async function timed(page: Page, cmd: string, ms = 60_000): Promise<{ ms: number
 const asked: Question[] = [];
 let cancelling = false;
 
-async function machine(contexts: BrowserContext[]): Promise<Page> {
+/** A page of the test's machine, started from `restore` (a booted-Debian fixture: tests/debian-fixture.ts) if given. */
+async function machine(contexts: BrowserContext[], restore: string): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, ignoreHTTPSErrors: true }); // the rig's derper has a self-signed certificate
   contexts.push(ctx);
   await testModule(ctx);
@@ -188,171 +192,177 @@ async function machine(contexts: BrowserContext[]): Promise<Page> {
     asked.push(q);
     return cancelling ? false : true;
   });
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
+  await page.goto(`${base}/web/app/?${QUERY}`);
+  if (restore) await loadSnapshotFile(page, restore);
   return page;
 }
 
-test('two Debian guests in one Chromium: one creates a private room in the wizard, the other joins by its link, and they ping each other by name', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  const contexts: BrowserContext[] = [];
-  try {
-    const a = await machine(contexts);
-    const b = await machine(contexts);
-    await Promise.all([running(a), running(b)]);
+test('two Debian guests in one Chromium: one creates a private room in the wizard, the other joins by its link, and they ping each other by name', { skip, timeout: 25 * 60_000 }, async () => {
+  // Both guests from one fixture: the same machine-id and DHCP identity, which the room's leases (one page's server each) don't mind.
+  const restore = await pageFixture(browser, base, QUERY);
+  await withDebianLock(async () => {
+    const contexts: BrowserContext[] = [];
+    try {
+      const [a, b] = await Promise.all([machine(contexts, restore), machine(contexts, restore)]);
+      await Promise.all([running(a), running(b)]);
 
-    // Create: a name is needed; the relays under Advanced; private by default.
-    await roomWizard(a);
-    await a.click('#net-room-create');
-    assert.equal(await a.isChecked('#net-room-private'), true, 'private by default');
-    assert.equal(await a.isChecked('#net-room-direct'), true, 'direct connections by default');
-    assert.equal(await visible(a, '#net-room-incoming'), false, 'incoming connections are under Advanced');
-    assert.equal(await a.isChecked('#net-room-incoming'), true, 'members may connect by default');
-    // The note on who can learn this computer's IP address follows the switch.
-    assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.direct'));
-    await a.uncheck('#net-room-direct');
-    assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.relayed'));
-    await a.check('#net-room-direct');
-    assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.direct'));
-    await a.click('#net-connect');
-    assert.match(await text(a, '#net-error'), words('network:NetRoomStep.room.noName'));
-    await a.fill('#net-room-id', 'test lan');
-    await a.locator('#net-room-advanced summary').click();
-    await a.fill('#net-room-nostr', nostr.url);
-    await a.fill('#net-room-derp', 'derp.invalid:443:1');
-    await a.click('#net-connect');
-    assert.match(await text(a, '#net-error'), words('network:room.badDerp', { relay: 'derp.invalid:443:1' }));
-    await a.fill('#net-room-derp', RIG_RELAY);
-    await a.click('#net-connect');
-    await menuSays(a, words('network:network-view.room.connections', { count: 0 }), 60_000);
-    const [ra] = await rooms(a);
-    assert.deepEqual([ra.room.incoming, ra.room.relayOnly], [true, false], 'the switches as they were left');
-    assert.equal(ra.name, 'test lan', 'named by the room, without its private suffix');
-    assert.match(ra.room.link, /^waarm64-room:test%20lan-[a-z2-7]{26}\?nostr=ws%3A%2F%2F127\.0\.0\.1%3A\d+&derp=127\.0\.0\.1%3A8444$/);
-    const nameA = await a.locator('#net-room-name').inputValue();
-    assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
-    assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
-    assert.equal(await a.locator('#net-room-link-value').getAttribute('type'), 'password', 'the link is hidden');
-    // Details…: the name, the link and who may connect, in a dialog of their own.
-    await a.click('#net-details-open');
-    assert.equal(await a.locator('#net-details-room-name').inputValue(), nameA);
-    assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:NetDetails.address.v6'), 'a room has IPv6 alone');
-    assert.equal(await a.locator('#net-details-room-link').inputValue(), ra.room.link);
-    assert.match(await text(a, '#net-details-room-note'), words('network:NetDetails.room.note'));
-    await a.click('#net-details-close');
-    assert.equal(await a.evaluate(() => (document.getElementById('net-details') as HTMLDialogElement).open), false, 'Close closes it');
+      // Create: a name is needed; the relays under Advanced; private by default.
+      await roomWizard(a);
+      await a.click('#net-room-create');
+      assert.equal(await a.isChecked('#net-room-private'), true, 'private by default');
+      assert.equal(await a.isChecked('#net-room-direct'), true, 'direct connections by default');
+      assert.equal(await visible(a, '#net-room-incoming'), false, 'incoming connections are under Advanced');
+      assert.equal(await a.isChecked('#net-room-incoming'), true, 'members may connect by default');
+      // The note on who can learn this computer's IP address follows the switch.
+      assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.direct'));
+      await a.uncheck('#net-room-direct');
+      assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.relayed'));
+      await a.check('#net-room-direct');
+      assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.direct'));
+      await a.click('#net-connect');
+      assert.match(await text(a, '#net-error'), words('network:NetRoomStep.room.noName'));
+      await a.fill('#net-room-id', 'test lan');
+      await a.locator('#net-room-advanced summary').click();
+      await a.fill('#net-room-nostr', nostr.url);
+      await a.fill('#net-room-derp', 'derp.invalid:443:1');
+      await a.click('#net-connect');
+      assert.match(await text(a, '#net-error'), words('network:room.badDerp', { relay: 'derp.invalid:443:1' }));
+      await a.fill('#net-room-derp', RIG_RELAY);
+      await a.click('#net-connect');
+      await menuSays(a, words('network:network-view.room.connections', { count: 0 }), 60_000);
+      const [ra] = await rooms(a);
+      assert.deepEqual([ra.room.incoming, ra.room.relayOnly], [true, false], 'the switches as they were left');
+      assert.equal(ra.name, 'test lan', 'named by the room, without its private suffix');
+      assert.match(ra.room.link, /^waarm64-room:test%20lan-[a-z2-7]{26}\?nostr=ws%3A%2F%2F127\.0\.0\.1%3A\d+&derp=127\.0\.0\.1%3A8444$/);
+      const nameA = await a.locator('#net-room-name').inputValue();
+      assert.match(nameA, /^[a-z2-7]{52}\.[a-z2-7]{8}\.p2p\.internal$/, 'its name to give out');
+      assert.equal(await visible(a, '#net-room-link-copy'), true, 'the link to copy');
+      assert.equal(await a.locator('#net-room-link-value').getAttribute('type'), 'password', 'the link is hidden');
+      // Details…: the name, the link and who may connect, in a dialog of their own.
+      await a.click('#net-details-open');
+      assert.equal(await a.locator('#net-details-room-name').inputValue(), nameA);
+      assert.equal(await a.locator('label:has(#net-details-address) .name').textContent(), t('network:NetDetails.address.v6'), 'a room has IPv6 alone');
+      assert.equal(await a.locator('#net-details-room-link').inputValue(), ra.room.link);
+      assert.match(await text(a, '#net-details-room-note'), words('network:NetDetails.room.note'));
+      await a.click('#net-details-close');
+      assert.equal(await a.evaluate(() => (document.getElementById('net-details') as HTMLDialogElement).open), false, 'Close closes it');
 
-    // Join: a damaged link is refused; the link the first one keeps joins the same room.
-    await roomWizard(b);
-    await b.click('#net-room-join');
-    await b.fill('#net-room-link', 'waarm64-room:a%zz');
-    await b.click('#net-connect');
-    assert.match(await text(b, '#net-error'), words('network:room.badLink'));
-    await b.fill('#net-room-link', ra.room.link);
-    await b.uncheck('#net-keep'); // ephemeral: its key lives in the connection's record, which New name changes
-    // With a pasted key (as net/ts/examples/room-key-mine.rs mines one): what isn't one is refused; the name is the key's.
-    await b.locator('#net-room-advanced summary').click();
-    await b.selectOption('#net-room-key', '#paste');
-    assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.key.paste.note'));
-    await b.fill('#net-room-key-paste', 'not a key');
-    await b.click('#net-connect');
-    assert.match(await text(b, '#net-error'), words('network:NetRoomStep.room.key.bad'));
-    const pasted = keyPair();
-    const parsed = parseRoomLink(ra.room.link);
-    assert.ok('room' in parsed);
-    await b.fill('#net-room-key-paste', ` ${pasted.key.toUpperCase()} `);
-    await b.click('#net-connect');
-    await menuSays(b, words('network:network-view.room.connections', { count: 0 }), 60_000);
-    const nameB = await b.locator('#net-room-name').inputValue();
-    assert.equal(nameB, nameOf(parsed.room.id, pasted.pub), 'the pasted key\'s name');
-    assert.equal(nameB.split('.')[1], nameA.split('.')[1], 'one room, one tag');
-    assert.notEqual(nameB, nameA);
+      // Join: a damaged link is refused; the link the first one keeps joins the same room.
+      await roomWizard(b);
+      await b.click('#net-room-join');
+      await b.fill('#net-room-link', 'waarm64-room:a%zz');
+      await b.click('#net-connect');
+      assert.match(await text(b, '#net-error'), words('network:room.badLink'));
+      await b.fill('#net-room-link', ra.room.link);
+      await b.uncheck('#net-keep'); // ephemeral: its key lives in the connection's record, which New name changes
+      // With a pasted key (as net/ts/examples/room-key-mine.rs mines one): what isn't one is refused; the name is the key's.
+      await b.locator('#net-room-advanced summary').click();
+      await b.selectOption('#net-room-key', '#paste');
+      assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.key.paste.note'));
+      await b.fill('#net-room-key-paste', 'not a key');
+      await b.click('#net-connect');
+      assert.match(await text(b, '#net-error'), words('network:NetRoomStep.room.key.bad'));
+      const pasted = keyPair();
+      const parsed = parseRoomLink(ra.room.link);
+      assert.ok('room' in parsed);
+      await b.fill('#net-room-key-paste', ` ${pasted.key.toUpperCase()} `);
+      await b.click('#net-connect');
+      await menuSays(b, words('network:network-view.room.connections', { count: 0 }), 60_000);
+      const nameB = await b.locator('#net-room-name').inputValue();
+      assert.equal(nameB, nameOf(parsed.room.id, pasted.pub), 'the pasted key\'s name');
+      assert.equal(nameB.split('.')[1], nameA.split('.')[1], 'one room, one tag');
+      assert.notEqual(nameB, nameA);
 
-    // The guests: each has its room address and the room's resolver, from the page's network configuration.
-    for (const p of [a, b]) {
-      await shows(p, /login: /);
-      await onSerial(p, 'root\n');
-      await shows(p, /root@\S+:~# /);
-    }
-    const addr6 = async (p: Page) => {
-      for (let k = 0; k < 60; k++) {
-        const s = await run(p, "ip -6 -o addr show scope global | awk '{print $4}'");
-        if (/^fd/.test(s)) return s.split(/\s+/)[0];
-        await p.waitForTimeout(1000);
+      // The guests: each has its room address and the room's resolver, from the page's network configuration.
+      for (const p of [a, b]) {
+        await shows(p, /login: /);
+        await onSerial(p, 'root\n');
+        await shows(p, /root@\S+:~# /);
+        // A restored guest's clock stood still since the save.
+        if (restore) await run(p, `date -u -s @${(Date.now() / 1000).toFixed(3)} > /dev/null`);
       }
-      throw new Error(`no room address: ${await run(p, 'ip -br addr; networkctl status 2>&1 | tail -5')}`);
-    };
-    const [a6, b6] = await Promise.all([addr6(a), addr6(b)]);
-    // The /48: three groups (as text, a group's leading zeros are dropped, so a fixed length of characters isn't it).
-    const p48 = (x: string) => x.split(':').slice(0, 3).join(':');
-    assert.equal(p48(a6), p48(b6), `one room, one /48: ${a6}, ${b6}`);
-    // The room's resolver itself, asked directly (a raw AAAA query over bash's /dev/udp), apart from the guest's resolver.
-    const dns6 = `${a6.split(':').slice(0, 3).join(':')}::53`;
-    const q = ['\\x12\\x34\\x01\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00', ...nameA.split('.').map((l) => `\\x${l.length.toString(16).padStart(2, '0')}${l}`), '\\x00\\x00\\x1c\\x00\\x01'].join('');
-    const raw = await run(b, `exec 3<>/dev/udp/${dns6}/53; printf '${q}' >&3; timeout 3 cat <&3 >/tmp/r; exec 3>&-; od -An -tx1 /tmp/r | tr -s ' '`, 60_000);
-    assert.match(raw, /^12 34 85 80 00 01 00 01 /, `the room's resolver answers the AAAA itself (its id, NOERROR, one answer): ${raw}`);
-    const resolved = await run(b, `getent ahosts ${nameA} | head -1`, 60_000);
-    assert.match(resolved, new RegExp(`^${a6.split('/')[0]}\\s`), `the room's resolver answers the name with its address: ${resolved}; ${await run(b, `resolvectl query ${nameA}; resolvectl query -t AAAA ${nameA.split('.').slice(1).join('.')}; ip -6 route; ping -6 -c 1 -W 3 ${a6.split('/')[0].replace(/:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+$/, '::53')}`, 60_000)}`);
-    // By name, through the relay first and then directly (the menu counts the direct one): the first ping waits for the
-    // lookup and its call back.
-    const ping = await run(b, `ping -6 -c 4 -W 10 ${nameA} | tail -2`, 120_000);
-    assert.match(ping, / 0% packet loss/, `B pings A by name: ${ping}`);
-    await menuSays(a, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
-    await menuSays(b, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
-    const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
-    assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
+      const addr6 = async (p: Page) => {
+        for (let k = 0; k < 60; k++) {
+          const s = await run(p, "ip -6 -o addr show scope global | awk '{print $4}'");
+          if (/^fd/.test(s)) return s.split(/\s+/)[0];
+          await p.waitForTimeout(1000);
+        }
+        throw new Error(`no room address: ${await run(p, 'ip -br addr; networkctl status 2>&1 | tail -5')}`);
+      };
+      const [a6, b6] = await Promise.all([addr6(a), addr6(b)]);
+      // The /48: three groups (as text, a group's leading zeros are dropped, so a fixed length of characters isn't it).
+      const p48 = (x: string) => x.split(':').slice(0, 3).join(':');
+      assert.equal(p48(a6), p48(b6), `one room, one /48: ${a6}, ${b6}`);
+      // The room's resolver itself, asked directly (a raw AAAA query over bash's /dev/udp), apart from the guest's resolver.
+      const dns6 = `${a6.split(':').slice(0, 3).join(':')}::53`;
+      const q = ['\\x12\\x34\\x01\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00', ...nameA.split('.').map((l) => `\\x${l.length.toString(16).padStart(2, '0')}${l}`), '\\x00\\x00\\x1c\\x00\\x01'].join('');
+      const raw = await run(b, `exec 3<>/dev/udp/${dns6}/53; printf '${q}' >&3; timeout 3 cat <&3 >/tmp/r; exec 3>&-; od -An -tx1 /tmp/r | tr -s ' '`, 60_000);
+      assert.match(raw, /^12 34 85 80 00 01 00 01 /, `the room's resolver answers the AAAA itself (its id, NOERROR, one answer): ${raw}`);
+      const resolved = await run(b, `getent ahosts ${nameA} | head -1`, 60_000);
+      assert.match(resolved, new RegExp(`^${a6.split('/')[0]}\\s`), `the room's resolver answers the name with its address: ${resolved}; ${await run(b, `resolvectl query ${nameA}; resolvectl query -t AAAA ${nameA.split('.').slice(1).join('.')}; ip -6 route; ping -6 -c 1 -W 3 ${a6.split('/')[0].replace(/:[^:]+:[^:]+:[^:]+:[^:]+:[^:]+$/, '::53')}`, 60_000)}`);
+      // By name, through the relay first and then directly (the menu counts the direct one): the first ping waits for the
+      // lookup and its call back.
+      const ping = await run(b, `ping -6 -c 4 -W 10 ${nameA} | tail -2`, 120_000);
+      assert.match(ping, / 0% packet loss/, `B pings A by name: ${ping}`);
+      await menuSays(a, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
+      await menuSays(b, words('network:network-view.room.connectionsDirect', { count: 1, direct: 1 }), 30_000);
+      const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
+      assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
 
-    await registeredNames({ a, b, nameA, nameB, a6, b6, roomId: parsed.room.id, contexts });
-    await namingThisMachine({ a, b, nameA, a6 });
-    assert.equal(await a.locator('#net-room-link-copy').getAttribute('aria-label'), t('common:ValueField.copy'));
-    // Where the clipboard refuses, the link is shown in its field and selected (not the machine's name).
-    await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
-    if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
-    await a.click('#net-room-link-copy');
-    await a.waitForFunction(() => document.activeElement?.id === 'net-room-link-value', null, { timeout: 5_000 });
-    assert.equal(await a.evaluate(() => getSelection()?.toString() || (document.activeElement as HTMLInputElement).value.slice((document.activeElement as HTMLInputElement).selectionStart!, (document.activeElement as HTMLInputElement).selectionEnd!)), ra.room.link);
+      await registeredNames({ a, b, nameA, nameB, a6, b6, roomId: parsed.room.id, contexts });
+      await namingThisMachine({ a, b, nameA, a6 });
+      assert.equal(await a.locator('#net-room-link-copy').getAttribute('aria-label'), t('common:ValueField.copy'));
+      // Where the clipboard refuses, the link is shown in its field and selected (not the machine's name).
+      await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
+      if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
+      await a.click('#net-room-link-copy');
+      await a.waitForFunction(() => document.activeElement?.id === 'net-room-link-value', null, { timeout: 5_000 });
+      assert.equal(await a.evaluate(() => getSelection()?.toString() || (document.activeElement as HTMLInputElement).value.slice((document.activeElement as HTMLInputElement).selectionStart!, (document.activeElement as HTMLInputElement).selectionEnd!)), ra.room.link);
 
-    // New name, then Save in the same Edit: the new key stays (Save once wrote back the record the wizard opened with).
-    await b.click('#machines-open');
-    await b.click('[data-machine="connections"]');
-    await b.click('li[data-connection] [data-action="edit-connection"]');
-    await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
-    // Copy key copies the connection's key; where the clipboard refuses, it's shown in its field, selected.
-    await b.evaluate(() => {
-      const w = window as unknown as { copied: string[] };
-      w.copied = [];
-      navigator.clipboard.writeText = (s: string) => { w.copied.push(s); return Promise.resolve(); };
-    });
-    await b.waitForFunction(() => !(document.getElementById('net-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
-    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'hidden');
-    await b.click('#net-room-key-copy');
-    assert.deepEqual(await b.evaluate(() => (window as unknown as { copied: string[] }).copied), [pasted.key]);
-    assert.equal(await b.locator('#net-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
-    await b.click('#net-room-key-show');
-    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'Show');
-    await b.click('#net-room-key-show');
-    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'Hide');
-    await b.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
-    await b.click('#net-room-key-copy');
-    await b.waitForFunction(() => document.activeElement?.id === 'net-room-key-value', null, { timeout: 5_000 });
-    assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
-    assert.equal(await b.locator('#net-room-key-value').inputValue(), pasted.key);
-    await b.click('#net-room-new-name');
-    await b.waitForFunction(() => (document.getElementById('net-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
-    // Ephemeral: the new key is in the record already, so it's the one to copy (a stored one's comes at its next start).
-    await b.waitForFunction((old) => { const v = (document.getElementById('net-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
-    assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.exportKey.note'));
-    await b.click('#net-connect');
-    await b.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 30_000 })
-      .catch(async (e) => { throw new Error(`${e}; the wizard says ${await text(b, '#net-error')}; step ${await b.evaluate(() => [...document.querySelectorAll('#net-wizard section:not([hidden])')].map((x) => x.id))}`); });
-    await b.click('[data-action="back"]');
-    await b.locator('#network summary').click();
-    await b.waitForFunction((old) => { const v = (document.getElementById('net-room-name') as HTMLInputElement | null)?.value; return !!v && v !== old; }, nameB, { timeout: 30_000 })
-      .catch(async (e) => { throw new Error(`${e}; the name stayed ${await b.locator('#net-room-name').inputValue()}`); });
+      // New name, then Save in the same Edit: the new key stays (Save once wrote back the record the wizard opened with).
+      await b.click('#machines-open');
+      await b.click('[data-machine="connections"]');
+      await b.click('li[data-connection] [data-action="edit-connection"]');
+      await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
+      // Copy key copies the connection's key; where the clipboard refuses, it's shown in its field, selected.
+      await b.evaluate(() => {
+        const w = window as unknown as { copied: string[] };
+        w.copied = [];
+        navigator.clipboard.writeText = (s: string) => { w.copied.push(s); return Promise.resolve(); };
+      });
+      await b.waitForFunction(() => !(document.getElementById('net-room-key-copy') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'hidden');
+      await b.click('#net-room-key-copy');
+      assert.deepEqual(await b.evaluate(() => (window as unknown as { copied: string[] }).copied), [pasted.key]);
+      assert.equal(await b.locator('#net-room-key-copy').getAttribute('aria-label'), t('common:ValueField.copied'), 'the icon says it copied');
+      await b.click('#net-room-key-show');
+      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'Show');
+      await b.click('#net-room-key-show');
+      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'password', 'Hide');
+      await b.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
+      await b.click('#net-room-key-copy');
+      await b.waitForFunction(() => document.activeElement?.id === 'net-room-key-value', null, { timeout: 5_000 });
+      assert.equal(await b.locator('#net-room-key-value').getAttribute('type'), 'text', 'shown where the clipboard refused');
+      assert.equal(await b.locator('#net-room-key-value').inputValue(), pasted.key);
+      await b.click('#net-room-new-name');
+      await b.waitForFunction(() => (document.getElementById('net-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+      // Ephemeral: the new key is in the record already, so it's the one to copy (a stored one's comes at its next start).
+      await b.waitForFunction((old) => { const v = (document.getElementById('net-room-key-value') as HTMLInputElement).value; return /^[0-9a-f]{64}$/.test(v) && v !== old; }, pasted.key, { timeout: 10_000 });
+      assert.match(await text(b, '#net-room-advanced'), words('network:NetRoomStep.room.exportKey.note'));
+      await b.click('#net-connect');
+      await b.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 30_000 })
+        .catch(async (e) => { throw new Error(`${e}; the wizard says ${await text(b, '#net-error')}; step ${await b.evaluate(() => [...document.querySelectorAll('#net-wizard section:not([hidden])')].map((x) => x.id))}`); });
+      await b.click('[data-action="back"]');
+      await b.locator('#network summary').click();
+      await b.waitForFunction((old) => { const v = (document.getElementById('net-room-name') as HTMLInputElement | null)?.value; return !!v && v !== old; }, nameB, { timeout: 30_000 })
+        .catch(async (e) => { throw new Error(`${e}; the name stayed ${await b.locator('#net-room-name').inputValue()}`); });
 
-    await namesKeptWithTheConnection(a, b);
-  } finally {
-    for (const c of contexts) await c.close();
-  }
-}));
+      await namesKeptWithTheConnection(a, b);
+    } finally {
+      for (const c of contexts) await c.close();
+    }
+  });
+});
 
 /** A guest-less member serving `titles` (one item each) in the room: tests/browser/room.html. */
 async function namesServer(contexts: BrowserContext[], roomId: string, titles: { key: string; item: string }[]): Promise<Page> {
