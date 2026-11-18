@@ -48,7 +48,7 @@ export type DiskDeps = Core & {
 
 export class DiskActions {
   readonly #d: DiskDeps;
-  /** A disk that isn't the one its changes were made over: a stored machine's disks are on the Machines page (a new empty overlay); a transient machine's is reset. */
+  /** A disk that isn't the one its changes were made over: a stored machine's disks are on the Home page (a new empty overlay); a transient machine's is reset. */
   readonly resetAction: Action;
 
   constructor(d: DiskDeps) {
@@ -95,7 +95,7 @@ export class DiskActions {
   }
 
   /**
-   * Open disk… (the first-run message's, the Machines page's From a disk image…): the browser's file picker where it
+   * Open disk… (the first-run message's, the Home page's From a disk image…): the browser's file picker where it
    * has one, so the machine keeps the file's handle (a reload's resume asks only to allow it, not to pick the file
    * again), as a drop and the Add disk wizard do; else the plain input.
    */

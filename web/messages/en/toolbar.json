@@ -117,7 +117,7 @@
   },
   "LoadSnapshotMenu.load.all": {
     "message": "All snapshots…",
-    "note": "Item of the toolbar's Load snapshot menu: opens the machine's Snapshots tab on the Machines page."
+    "note": "Item of the toolbar's Load snapshot menu: opens the machine's Snapshots tab on the Home page."
   },
   "LoadSnapshotMenu.load.file": {
     "message": "From a file…",
@@ -289,7 +289,7 @@
   },
   "MouseMenu.mouse.raw.title.noMouse": {
     "message": "This machine has no relative mouse, so the lock moves the pointer. Turn on Mouse in the machine's settings to use Raw.",
-    "note": "Tooltip of the Raw choice in the toolbar's Mouse lock menu, disabled because the machine has no relative mouse (the Mouse setting on the Machines page)."
+    "note": "Tooltip of the Raw choice in the toolbar's Mouse lock menu, disabled because the machine has no relative mouse (the Mouse setting on the Home page)."
   },
   "MouseMenu.mouse.raw": {
     "message": "Raw: unbounded, for games",
@@ -301,7 +301,7 @@
   },
   "MouseMenu.mouse.hint.noMouse": {
     "message": "Press Esc to release the mouse. In Raw, the guest's own mouse settings set the speed. Raw needs Mouse turned on in the machine's settings.",
-    "note": "Fine print at the foot of the toolbar's Mouse lock menu, for a machine without a relative mouse (the Mouse setting on the Machines page)."
+    "note": "Fine print at the foot of the toolbar's Mouse lock menu, for a machine without a relative mouse (the Mouse setting on the Home page)."
   },
   "Toolbar.fullscreen": {
     "message": "Full screen",

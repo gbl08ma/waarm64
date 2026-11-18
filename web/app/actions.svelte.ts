@@ -1,7 +1,7 @@
 // The components' actions (docs/frontend-code.md §5.6): one runner for what a click starts that can fail. While it runs,
 // `busy` says what it does; when it fails, `error` is the error as the page shows it (usb-problems.ts `errorView`: its
 // words a line each, or a USB attach's headline and its problems' words, which ErrorWords.svelte renders). A component
-// makes its own (`new Actions()`), or takes the one of the page it is in (the Machines page's, passed down as `act`).
+// makes its own (`new Actions()`), or takes the one of the page it is in (the Home page's, passed down as `act`).
 // A control with no place of its own for an error (the toolbar, its menus, the file pickers, a pane its action closes)
 // runs `page`'s action through web/app/page.ts `inBar`: the action says how it went in the message bar, and so does
 // its error.
@@ -22,7 +22,7 @@ export class Actions {
   readonly #show: ((e: unknown) => void) | undefined;
 
   /**
-   * `after` runs once each action ends, failed or not (the Machines page reads its records again); `show`, where
+   * `after` runs once each action ends, failed or not (the Home page reads its records again); `show`, where
    * given, shows an action's error instead of `error` (the message bar's runner).
    */
   constructor(o: { after?: () => unknown; show?: (e: unknown) => void } = {}) {

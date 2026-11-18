@@ -1,4 +1,4 @@
-// A stop for a change that keeps the machine's disk (a disk's export, the Machines page's edits, its settings' Save and
+// A stop for a change that keeps the machine's disk (a disk's export, the Home page's edits, its settings' Save and
 // restart, another machine opened): where the run's agent can, the guest is asked to shut down first
 // (web/app/run/soft-power.ts), with a dialog meanwhile whose one button powers off at once (`dialog`), so the disk the
 // change works on is the guest's clean one, not a power cut's. The dialog goes when the guest's power-off ends the run,

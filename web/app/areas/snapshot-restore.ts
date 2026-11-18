@@ -140,7 +140,7 @@ export class SnapshotRestore {
    * Restores a snapshot onto the stored machine (docs/machines.md §5.2): refused when its shape isn't the machine's
    * (it says what differs); else each writable disk keeps its overlay where it is as the snapshot pinned it, and forks
    * (or, if the user says, is replaced) where it moved on. `key` identifies the snapshot for reusing an earlier fork.
-   * The machine's records are read again first while it's off (the Machines page, or another tab, may have changed
+   * The machine's records are read again first while it's off (the Home page, or another tab, may have changed
    * them since the page read them) and once it has stopped: the shape is checked and the plan made again on those, and
    * the start runs on the record the restore wrote.
    */

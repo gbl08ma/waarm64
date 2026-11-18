@@ -816,7 +816,7 @@ WebGL2 nor WebGPU has.
 
 ## Vulkan through Venus
 
-A second 3D path beside virgl, per machine (the Machines page's Vulkan switch, `?gpu=vulkan`): the guest's Mesa
+A second 3D path beside virgl, per machine (the Home page's Vulkan switch, `?gpu=vulkan`): the guest's Mesa
 **Venus** driver (Debian's and Arch's, unmodified) serializes Vulkan, and a renderer of ours in wasm translates it onto
 the browser's **WebGPU**, on the real GPU. Its frames reach the screen through the virgl renderer. Built in VK0 to VK3
 (2026-10-25 to 10-29; bench/vulkan/REPORT.md has each phase and loop, "VK3: the summary" the state at VK3's end); the

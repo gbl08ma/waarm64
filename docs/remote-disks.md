@@ -1,6 +1,6 @@
 # Disk images on a server
 
-The page boots a disk from a URL (`?disk=<url>`, or a URL disk on the Machines page: [frontend.md](frontend.md) "Your
+The page boots a disk from a URL (`?disk=<url>`, or a URL disk on the Home page: [frontend.md](frontend.md) "Your
 own disk"). How the reader works (the block cache, the OPFS store, parallel reads, the prefetch, the chunked format)
 is [devices.md](devices.md) "blk" ("Over HTTP", "A chunked image"). This page covers what a server must give, how an
 image is published, where ours are hosted and why there, and what a remote boot costs. Measurements:
@@ -52,7 +52,7 @@ else. Nothing tells a page it is off the record, so the cache isn't made smaller
 gets it back: a guest's disk write that is refused empties the open stores (`releaseStores`) and is tried once more,
 and a kept snapshot, a Suspend, a Restore's fork, a snapshot file's import, a stored disk's import or merge and Import
 changes… do the same through `makeRoom` (every
-image's cache, as the Machines page's Clear: a running machine's device worker gives its store up over the
+image's cache, as the Home page's Clear: a running machine's device worker gives its store up over the
 BroadcastChannel). What they freed is fetched again from the server. Still refused, the error says the storage is
 full with `estimate()`'s numbers (docs/machines.md "Storage"). tests/page-incognito.test.ts reads a URL disk's whole
 image into the cache off the record, then keeps a snapshot, restores it (a fork) and suspends.

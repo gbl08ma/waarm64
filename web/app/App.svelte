@@ -1,6 +1,6 @@
 <!--
   The page (docs/frontend.md): the toolbar, the message bar, the machine (its screen and serial terminal) or the
-  Machines page in its place, a disk's surface window over either, the status line, and the page's questions. The machine's run draws on the canvas and the
+  Home page in its place, a disk's surface window over either, the status line, and the page's questions. The machine's run draws on the canvas and the
   terminal here (given to its areas: `view`), and writes what the rest shows into the areas' state (web/app/areas/). The body's
   `data-*` (the tests' and the page's styles' hooks) follow that state here.
 -->
@@ -124,9 +124,9 @@
     />{/if}
 </main>
 {#if machinesNav.open}<MachinesPage {store} {net} {folders} />{/if}
-<!-- A disk's surface floats over the machine and the Machines page alike, and stays as the user goes between them. -->
+<!-- A disk's surface floats over the machine and the Home page alike, and stays as the user goes between them. -->
 {#if surfaceWindow.open}{#key surfaceWindow.open}<SurfaceWindow open={surfaceWindow.open} />{/key}{/if}
-<!-- The RAM map, the same way: over the machine and the Machines page. -->
+<!-- The RAM map, the same way: over the machine and the Home page. -->
 {#if ramWindow.open}<RamWindow />{/if}
 <StatusBar {net} />
 <NetWizard {net} />
@@ -230,7 +230,7 @@
   :global(body[data-view='screen']) #screen {
     box-shadow: none;
   }
-  /* The Machines page takes the machine's place; the machine runs on behind it. */
+  /* The Home page takes the machine's place; the machine runs on behind it. */
   :global(body[data-page='machines']) main {
     display: none;
   }

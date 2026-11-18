@@ -64,7 +64,7 @@ test('finding 3: an uncaught error in the machine worker says crashed and ends t
   await ctx.close();
 });
 
-/** Makes stored machine `name` with a blank disk in the page's store (as the Machines page would); returns its id. */
+/** Makes stored machine `name` with a blank disk in the page's store (as the Home page would); returns its id. */
 const makeMachine = (page: Page, name: string) => page.evaluate(async (name) => {
   const { Store } = await import('/web/app/store.ts' as string);
   const { newId } = await import('/web/app/shape.ts' as string);
@@ -78,7 +78,7 @@ const makeMachine = (page: Page, name: string) => page.evaluate(async (name) => 
   return id as string;
 }, name);
 
-test("finding 4: a machine opened from the Machines page whose last tab was killed doesn't start: the memory signal's choices first", { timeout: 60_000 }, async () => {
+test("finding 4: a machine opened from the Home page whose last tab was killed doesn't start: the memory signal's choices first", { timeout: 60_000 }, async () => {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await answerAsks(page);
@@ -228,7 +228,7 @@ test("finding 9: \"Start with N MiB of RAM\" after a crash wins over the address
   await page.close();
 });
 
-test('finding 10: closing the Machines page after the guest itself stopped reads the edited record again', { timeout: 60_000 }, async () => {
+test('finding 10: closing the Home page after the guest itself stopped reads the edited record again', { timeout: 60_000 }, async () => {
   const page = await browser.newPage();
   await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
   const r = await page.evaluate(async () => {

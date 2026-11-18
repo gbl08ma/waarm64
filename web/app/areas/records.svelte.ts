@@ -1,6 +1,6 @@
 // The browser's records as the page shows them (docs/machines.md): its machines, disks, overlays and snapshots, read
 // from the store (web/app/store.ts) when it opens and again whenever they change, in another tab (`onChange`) or in
-// this one (`onWrite`; `reread` resolves once a read that follows the call is done). The Machines page,
+// this one (`onWrite`; `reread` resolves once a read that follows the call is done). The Home page,
 // its tabs and the toolbar's snapshot list read them here.
 import type { DiskRecord, MachineRecord } from '../shape.ts';
 import type { OverlayRecord, SnapshotRecord, Store } from '../store.ts';

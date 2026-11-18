@@ -1,4 +1,4 @@
-// While a stored machine runs on this page, its Web Lock is held (machines.ts `machineLock`): the Machines page, in any
+// While a stored machine runs on this page, its Web Lock is held (machines.ts `machineLock`): the Home page, in any
 // tab, sees it running. It's taken before the machine's disks are opened, and only if it's free: false when another
 // tab holds it (the machine runs there), said at once instead of after the overlay's wait (`OVERLAY_WAIT_MS`).
 import { machineLock } from '../machines.ts';

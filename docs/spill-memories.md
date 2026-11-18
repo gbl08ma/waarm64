@@ -13,7 +13,7 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
   is ours, per access. Swap would run the guest kernel's fault, swap-cache, block and reclaim paths, and TLB
   shootdowns, for every page that moves: ~10k+ instructions each way natively, all JIT-compiled here. It only pays
   for pages that stay cold almost forever. A synchronous swap device served by the core would cut the I/O latency,
-  not that guest code. A ramdisk as swap, for users who want the kernel's LRU to decide, is a box on the Machines page ([machines.md](machines.md) §4.3 "As swap").
+  not that guest code. A ramdisk as swap, for users who want the kernel's LRU to decide, is a box on the Home page ([machines.md](machines.md) §4.3 "As swap").
 - **A second memory for all of RAM** measured +12–40% (M0.5's layout B, `bench/spike/memory/REPORT.md`), which is
   why only the pages past memory 0 go there.
 - **Marking node 1 slower doesn't help by itself.** Memory tiers come from ACPI's HMAT (or dax/kmem, CXL), and the DT

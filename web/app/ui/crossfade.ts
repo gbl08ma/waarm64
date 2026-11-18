@@ -1,4 +1,4 @@
-// One shared crossfade, so bars that mount and unmount in different parents (the floating message bar and the Machines
+// One shared crossfade, so bars that mount and unmount in different parents (the floating message bar and the Home
 // page's banner) move into each other. `sendKeyed`/`receiveKeyed` take the key from the node's `data-crossfade`, or none
 // for no transition (a bar with nothing to show, e.g. the floating bar while hidden, would otherwise be measured at 0×0
 // and pull the other into its corner). The key is an attribute, kept current by the template, rather than the

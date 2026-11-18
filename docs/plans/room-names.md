@@ -886,10 +886,10 @@ room adapter, **[Register a domain…](ui:network:NetNames.name)** opens one dia
 
 No key is shown or asked for. Changing where a name points (a member's name in the room, or a key, pasted), adding a
 label under it (15 at most: past four points a zone is sealed wide, 16 slots) and letting it go are in the adapter's
-details. The Machines page shows a stored machine's names (its
+details. The Home page shows a stored machine's names (its
 Network tab, each room adapter's) with the date each stops resolving unless renewed, and the page says, on load, after
 the agent's first pass, when one is inside its last week (kept until less than 7 days on). All words are in
-`web/messages/en/network.json` (the Machines page's line in `machines.json`).
+`web/messages/en/network.json` (the Home page's line in `machines.json`).
 
 **An ephemeral connection can't hold a name** (N5's choice): one whose key lives in the page's memory is gone when the
 page closes, while a title lives in IndexedDB for weeks and is renewed at every load, pointing at a key nobody holds.
@@ -1004,7 +1004,7 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
   a room with no server, one whose first server appears while a guest keeps asking.
 - **N4** The agent: secrets, titles, the worker, stamping, collecting, renewing, publishing without a machine, forks
   between two browsers, a lost name, export and import.
-- **N5** The page: the dialog, the adapter's states, the details, the Machines page's dates, the catalog.
+- **N5** The page: the dialog, the adapter's states, the details, the Home page's dates, the catalog.
 - **N6** Scale and abuse: 1,000 members, 20 servers and 5,000 names (a server's load, a cold lookup, a join storm of
   500, junk in bulk against the bound, also when its registrant asks for it); days on the public services with real stamps; the final review.
 

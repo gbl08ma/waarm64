@@ -1,5 +1,5 @@
 <!--
-  A machine's pane on the Machines page (docs/machines.md §7): its head (open it here or start it, duplicate, export its
+  A machine's pane on the Home page (docs/machines.md §7): its head (open it here or start it, duplicate, export its
   definition, delete) and its tabs, Settings, Disks, Network, USB, Shared folders and Snapshots, each a component of
   its own. The tabs that edit the record share one draft and its Save (machine-edit.svelte.ts).
 -->

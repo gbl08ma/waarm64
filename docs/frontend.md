@@ -25,8 +25,8 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/protocol.ts` | the messages between the two (types only) |
 | the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts` (`shape-diff.ts`: what differs between two shapes, in words), `web/app/store.ts` (`store-backends.ts`: the records and files in memory, IndexedDB and OPFS) | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
-| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Machines page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
+| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts`, `web/app/storage-report.ts` | what the Home page does: machines and attachments; the storage's report and persistence; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
+| `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ResizeDisk.svelte`, `ExportButton.svelte` (`ExportWizard`, `ExportSteps`), `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Home page (below, "The Home page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk and Export wizards, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
 | `web/app/actions.svelte.ts`, `ErrorWords.svelte`, `file-pickers.ts`, `FilePickers.svelte` | the components' action runner (busy, the error as the page shows it) and its error's view; the page's hidden file inputs and what opens them (below, "The page's code") |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
@@ -148,12 +148,12 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   `failed` page that says so). A writable attachment without an overlay gets an empty one ("Changes") at the
   start; each start's disks go to the worker resolved (`StartDisk`: a URL, a `File` from the remembered handle, a
   blank or ramdisk size, a stored disk's directory). **Every start reads the record again** (`reloadStored`: the
-  Machines page edits it while the machine is off, and this tab hears no notice of its own writes), with the size and
-  display it now has; closing the Machines page does too, for the toolbar. After it stops the page reads each overlay's (and in-place
+  Home page edits it while the machine is off, and this tab hears no notice of its own writes), with the size and
+  display it now has; closing the Home page does too, for the toolbar. After it stops the page reads each overlay's (and in-place
   disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
   the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
 - **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
-  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:disk-kind.stored)
+  the Home page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:disk-kind.stored)
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
   boot, the guest's reboot too; its memory counts in the page's memory check). A snapshot and a suspended copy hold
@@ -185,7 +185,7 @@ start by `App.svelte` (`{#key screen.generation}`, at `screen.size`: a canvas ha
 shows is its areas' state** ([frontend-code.md](frontend-code.md) §3), each a `$state` object or class in
 `web/app/areas/`: `power` (the state, its words, `busy` while a switch or a save runs; `isLive`, `isStopped`), `messageBar`,
 `bootCard`, `current` (the page's machine: its id, title, what it has, a transient machine's size), `screen` (the
-view), `machinesNav` (the Machines page open, its tab, the chosen pane, `selected` derived from the records), `keys`,
+view), `machinesNav` (the Home page open, its tab, the chosen pane, `selected` derived from the records), `keys`,
 `mouse`, `status`, `sound` (following `PageAudio`), `clipboard` (following the run's `ClipboardShare`), `usb`,
 `shares` (shared folders), `network` and `records` (the browser's machines, disks, overlays and snapshots, read again
 on the store's `onChange`, another tab's writes, and `onWrite`, this tab's own). The areas' modules write them instead
@@ -206,7 +206,7 @@ the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-change
 button opens one with `file-pickers.ts` `openPicker('disk' | 'snapshot' | 'changes')`). **Actions** a click starts that can fail
 run through one runner (`actions.svelte.ts` `Actions`: `run(what, f)` says what runs in `busy` and keeps the error in
 `error`, as usb-ports.ts `errorView` words it; `ErrorWords.svelte` shows it, a USB attach's problems with their
-remedies): a dialog or a menu makes its own, the Machines page's panes and tabs share the page's (`act`, shown in its
+remedies): a dialog or a menu makes its own, the Home page's panes and tabs share the page's (`act`, shown in its
 bar and its error banner). **Sizes are in binary units**
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
@@ -220,7 +220,7 @@ own layout, on the tokens; a tab or a pane can be a component of its own and sti
 a child with its own wrapper, or passes a CSS custom property (`--card-bg`: Modal sets it, so a dialog's rows take the
 page's background); `class` on a primitive is for a test's hook. Stylelint holds values to the tokens
 ([frontend-code.md](frontend-code.md) §7).
-Every pane on the right of the Machines page (a machine, Disks, Shared folders, Connections, Preferences, About) is a
+Every pane on the right of the Home page (a machine, Disks, Shared folders, Connections, Preferences, About) is a
 `ui/Pane.svelte`: its head (title, small line, the `actions` snippet's buttons), its tabs (`tabs`, `tab`, `ontab`) and
 its body (`.tab`), so a new pane looks like the others by using it. The title is at one place whether the head has buttons
 or not (its line is a button's height, `--control-h`), a long small line wraps under the title and leaves the buttons beside it,
@@ -254,7 +254,7 @@ from the working directory).
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
 overlays, kept snapshots, three connections, a folder), then captures each state that needs no guest as
 `bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
-machine can have shown through its areas' state), the message bar (warn, error, info), the Machines page's panes and a machine's tabs
+machine can have shown through its areas' state), the message bar (warn, error, info), the Home page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
 page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
 page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
@@ -264,7 +264,7 @@ what differs besides the change is the dev server's port (in Add a disk's URL) a
 ## The toolbar
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
-separators; the main gates also have their names. Left to right: **[Machines](ui:toolbar:Toolbar.machines)** (the Machines page), the machine's name,
+separators; the main gates also have their names. Left to right: **[Home](ui:toolbar:Toolbar.machines)** (a house: the Home page), the machine's name,
 **Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs;
 where the guest's agent can, both ask the guest first and show [Shutting down…](ui:toolbar:Toolbar.soft.off) meanwhile:
 devices.md "Power off and restart from the guest"), **[Suspend](ui:toolbar:Toolbar.suspend)**,
@@ -344,7 +344,7 @@ the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new 
 
 ### The status bar
 
-The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesNav.preferences)** (the Machines page),
+The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesNav.preferences)** (the Home page),
 kept per browser as `waarm64.settings` `statusBar` (absent: the defaults; `[]`: no bar). The model is DOM-free
 (tests/statusbar.test.ts): `web/app/statusbar-kinds.ts` the kinds (`KINDS`: name, group, icon, default look),
 `statusbar.ts` the elements (the defaults: power state, a divider, the guest's OS, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s;
@@ -408,11 +408,11 @@ request after it still works. Tests answer them by clicking (`tests/page-ask.ts`
 **The message bar** (at the top, under the toolbar) says what stops a machine (below, "Errors") and what happened. It
 floats over the machine rather than taking a row of the page: the screen keeps its size while it shows (a bar that
 pushed the screen down made a guest that follows its display's size resize twice, and one that doesn't scaled and
-blurred). Over the Machines page it is not shown: the Machines page's own error banner, under its "Machines" header,
+blurred). Over the Home page it is not shown: the Home page's own error banner, under its top bar,
 shows the message instead, so there is never both a floating banner and the page's banner at once. The message bar
-floats again when the machines section closes. Between the two places it moves (a 250 ms crossfade,
+floats again when the Home page closes. Between the two places it moves (a 250 ms crossfade,
 `web/app/ui/crossfade.ts`: `ErrorBanner`'s `crossfade` key, kept as `data-crossfade` because a transition's parameter
-from a prop is a derived Svelte won't compute once its component is going); the closing Machines page, kept in the DOM
+from a prop is a derived Svelte won't compute once its component is going); the closing Home page, kept in the DOM
 for that time, leaves the flow (fixed where it was) and fades, so the machine's page isn't pushed aside beside it. Its
 words take the room its actions leave, which sit at the bar's far end. It has a close button, beside its words (which wrap with its actions)
 at the top right. A notice that leaves the machine as it was (`notify`) is `info` when something was
@@ -423,7 +423,7 @@ save that failed, the guest that refused a soft power-off) stays until it's clos
 from running (it failed, it waits for a disk) stays until it's closed or solved: a notice over it gives way to it
 again, with its actions, when it closes.
 
-## The Machines page
+## The Home page
 
 The page's side of [machines.md](machines.md). `MachinesPage.svelte` composes it: it reads the records, runs the
 panes' actions and holds the machine being edited (`machine-edit.svelte.ts` `MachineEdit`: the record, the draft the tabs
@@ -431,10 +431,14 @@ edit, `dirty`, the switches' orphan warnings, Save and Revert, one for every tab
 (`MachinesNav.svelte`; the other panes' ids in `machines-panes.ts`) and the chosen pane: a machine's
 (`MachinePane.svelte`: its head and a component per tab, `SettingsTab`, `Disks`, `NetworkTab`, `UsbTab`, `FoldersTab`,
 `Snapshots`), the transient machine's (`PagePane.svelte`), `DisksPane`, `FoldersPane`, `ConnectionsPane`,
-`PreferencesPane`, About; `StorageBar.svelte` at the bottom. It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
-address opens it, so a reload keeps it): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. The machines on the left
-(new, **from a disk image…** (what Open disk… and a drop do), import a definition), each said running (its Web Lock
-is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
+`PreferencesPane`, About; `StorageBar.svelte` at the bottom. The toolbar's **[Home](ui:toolbar:Toolbar.machines)** opens it (the page was
+called Machines until 2026-11-18: the code's names, `MachinesPage`, `machinesNav`, `openMachines`, `#machines-open`, kept
+theirs). It takes the machine's place on the page (the machine runs on behind it; `#home` in the
+address opens it, so a reload keeps it, and the older `#machines` still does): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. The left
+column's **[Machines](ui:machines:MachinesNav.heading)** heads the list of machines, each said running (its Web Lock
+is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off (while there are none, a line
+says so in its place, with no rule under it); then the commands that make one (new, **from a disk image…** (what Open
+disk… and a drop do), import a definition), and the chosen one on the right:
 Open in this tab (for the page's own machine, **[Start](ui:machines:MachinePane.start)** while it's off, "[Running in this tab](ui:machines:MachinePane.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
 - **[Settings](ui:machines:MachinePane.tab.settings):** name, vCPUs and RAM on sliders (`ui/Slider.svelte`: notches at the suggested values, the value beside; `machine.ts` `CPU_SLIDER`, `RAM_SLIDER`: 1 to 8 vCPUs; 256 MiB to 16 GiB in 64 MiB steps, a notch every 512 MiB that a pointer snaps to within 128 MiB, the arrow keys stepping past it; its 3 GiB is 3071 MiB, memory 0 whole, rather than 3072 and a 1 MiB NUMA node; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
@@ -531,8 +535,8 @@ doesn't) and in a machine's Disks tab (`Disks.svelte`: "… · vda · visualize"
 defragmenter draws one, in a window floating over the page (`SurfaceWindow.svelte`, a `ui/FloatingWindow.svelte`, the
 on-screen keyboard's frame too: moved by its title bar, resized by its corner, its place remembered under
 `windows.surface`). One is open at a time
-(`areas/surface.svelte.ts` `surfaceWindow`); `App.svelte` mounts it after the Machines page, so it stays over the
-machine and the Machines page as the user goes between them, and a click on it leaves the keyboard's focus where it
+(`areas/surface.svelte.ts` `surfaceWindow`); `App.svelte` mounts it after the Home page, so it stays over the
+machine and the Home page as the user goes between them, and a click on it leaves the keyboard's focus where it
 was (on the screen).
 
 - **Its title bar**: the disk's name and the overlay laid over it: [The disk alone](ui:disks:SurfaceWindow.alone) or
@@ -618,13 +622,13 @@ was (on the screen).
 ### RAM's map
 
 While a machine runs in this tab, the status bar's RAM element is a link (`StatusBar.svelte`; a press leaves the
-keyboard's focus on the screen), and its Settings tab on the Machines page has
+keyboard's focus on the screen), and its Settings tab on the Home page has
 [Visualize](ui:machines:SettingsTab.ram.visualize) beside the RAM slider (`SettingsTab.svelte`); either opens the
 running machine's RAM as a block map in a floating window
 (`RamWindow.svelte`, the disk surface window's pieces: `ui/FloatingWindow.svelte`, its place remembered under
 `windows.ram`, `ui/BlockGrid.svelte`, `SurfaceLegend.svelte`, `surface-poll.svelte.ts`). It is open independently of a
 disk's window; `areas/ram.svelte.ts` says whether it is, and `App.svelte` mounts it beside the disk's, so it stays
-over the machine and the Machines page.
+over the machine and the Home page.
 
 - **What it shows**: all of RAM (memory 0's, then each spill memory's, one after another), a square 4 MiB times the
   smallest power of two for which it fits the window's room, as for a disk. A square's **rim** is how many of its 4 KiB
@@ -821,7 +825,7 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   machine's id>`, or `waarm64.alive.transient-<machine>`) with its RAM, vCPUs, JIT budget and what it costs by the
   emulator's own accounting (the estimate and its peak), renewed every 10 s and cleared at every clean stop. A mark
   that no tab has renewed for 30 s means the tab was closed for it, most likely out of memory: the next start of that
-  machine (state `idle`; the page's first start, or the machine opened from the Machines page or by a disk file:
+  machine (state `idle`; the page's first start, or the machine opened from the Home page or by a disk file:
   `PowerActions.startOpened`, which also makes the memory check above) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
   or less), **Start with N MiB of RAM** (half or less; a stored machine's snapshots of the old size are orphaned, so
   it asks first) and **[Start as it is](ui:machine:memory-signal.crashed.asIs)**. The choice is saved in the stored machine's record, or for a transient
@@ -983,7 +987,7 @@ and offers Reset disk.
 the panic button), named by the date and time; the Snapshots tab renames it. Keeping: the worker writes the file to
 OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its record (its pins, the
 shape) inside `Store.writing`. The toolbar's **Load snapshot** lists the five latest (orphaned ones disabled). The
-Machines page's Snapshots tab lists them all, newest first: **[Restore](ui:snapshots:Snapshots.restore)** (on the page's machine), **[Rename](ui:snapshots:Snapshots.rename)**,
+Home page's Snapshots tab lists them all, newest first: **[Restore](ui:snapshots:Snapshots.restore)** (on the page's machine), **[Rename](ui:snapshots:Snapshots.rename)**,
 **[Download](ui:snapshots:Snapshots.download)** (the file as kept), **[Delete](ui:snapshots:Snapshots.delete)**; [Import a file…](ui:snapshots:Snapshots.import) copies a file into them (one of another shape is kept,
 orphaned), [Restore from a file…](ui:snapshots:Snapshots.restoreFile) restores one at once, and [Save a snapshot to a file](ui:snapshots:Snapshots.toFile) writes one out (asking
 first, when a disk is written in place, whether the whole disk goes in, §4.4).
@@ -1139,7 +1143,7 @@ settings, applied by a restart) turns it off; the query is over the menu: `?gpu=
 One function says what a machine runs with (web/app/run/config.ts `effectiveDisplay`: `none`, `2d` or `3d`, and Vulkan
 only beside 3D), for the start, its snapshots' shape (`PageMachine.display()`, a call: the GPU worker's `failed` turns
 3D off for the next start) and the Snapshots lists' (`shapeNow`).
-A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `waarm64-shaders` (the origin's, for every machine, deflated, under the Preferences' [Vulkan shader cache size](ui:machines:PreferencesPane.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
+A machine's Vulkan setting (the Home page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `waarm64-shaders` (the origin's, for every machine, deflated, under the Preferences' [Vulkan shader cache size](ui:machines:PreferencesPane.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
 them ([graphics.md](graphics.md) "Video"): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);
@@ -1328,7 +1332,7 @@ page writes the context's output latency into the ring's header, and the guest g
   screen has `touch-action: none`, so the page doesn't pan or zoom under them.
 - **Leaving the page** while the machine runs (booting, running, rebooting) stops it like pulling the plug, so the
   page asks the browser to ask first (`beforeunload`; the browser words the question itself, the page's text isn't
-  shown). **[Preferences](ui:machines:MachinesNav.preferences)** on the Machines page turns it off (`waarm64.settings` `leaveWarning`, on unless set). Under
+  shown). **[Preferences](ui:machines:MachinesNav.preferences)** on the Home page turns it off (`waarm64.settings` `leaveWarning`, on unless set). Under
   automation (`navigator.webdriver`) it doesn't ask unless `?leavewarning=1`: the tests leave running machines.
 - Keys are mapped by `KeyboardEvent.code`: a key's position on a PC keyboard (the US one's keys, ISO's
   `IntlBackslash`, ABNT2's `IntlRo`, JIS's `IntlYen` and its conversion keys), whatever the host's layout prints on it.
@@ -1342,7 +1346,7 @@ page writes the context's output latency into the ring's header, and the guest g
 ### The on-screen keyboard
 
 [Show the on-screen keyboard](ui:toolbar:KeysMenu.keys.osk) (the Keys menu) puts a PC keyboard over the machine, of 104
-keys, and ISO's, ABNT2's or JIS's extra keys when the machine's layout has them ("Layouts" below) (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
+keys, and ISO's, ABNT2's or JIS's extra keys when the machine's layout has them ("Layouts" below) (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Home page): every key reaches the
 guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its window is a
 `tool` `ui/FloatingWindow.svelte`, the frame the disk's surface has ("A disk's surface"): a slim bar that moves it,
 the ↔ grip in the bar resizing it by its width, its height following in its layout (`aspect`, `osk-shape.svelte.ts`:
@@ -1494,7 +1498,7 @@ runs a POSIX sh script given as a credential of its own (`waarm64.<what>.sh`, `I
 `systemd.unit-dropin.*` that has the unit it serves want it (the generator reads no `[Install]`), all as SMBIOS type 11
 strings (systemd 256+; the keyboard's paragraph above says how they get there). Nothing is installed: a boot without
 the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)**
-gives a `.mount` and an `.automount` the same way ([shares.md](shares.md) §5). A ramdisk's **swap** box on the Machines page gives an `fstab.extra`
+gives a `.mount` and an `.automount` the same way ([shares.md](shares.md) §5). A ramdisk's **swap** box on the Home page gives an `fstab.extra`
 credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap"). Every firmware machine's strings also hold a drop-in that keeps systemd's vsock ssh hint off the login prompt
 ([devices.md](devices.md) "vsock"). The fw_cfg files a start gives a firmware machine (these strings, the
 credentials, clipboard sharing's agent) are one pure function of its start message, `web/app/firmware-files.ts`
@@ -1595,7 +1599,7 @@ keep the overlay, and the page would lose track of it). The disk overlay persist
 belongs to the browser profile, so Playwright's temporary profiles start empty and tests don't see
 each other's disks.
 
-**Reset disk** (M8 decision 4; a transient machine's, on the Machines page's Disks tab: a stored machine has New empty
+**Reset disk** (M8 decision 4; a transient machine's, on the Home page's Disks tab: a stored machine has New empty
 instead, which keeps the old overlay) asks for a confirmation that
 says what goes (the overlay's size, from `overlayBytes`), stops the machine (its device worker
 releases the overlay's sync access handles), deletes the overlay (`removeOverlay` in
@@ -1632,7 +1636,7 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 ## Your own disk
 
 A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): **[Open disk…](ui:machine:power-actions.openDisk)** (the
-message's button while no disk is open, and the Machines page's From a disk image…: the browser's file picker, whose handle the machine keeps, or a file input where there is none), a file dropped on the page, or `?disk=<url>` (served with HTTP
+message's button while no disk is open, and the Home page's From a disk image…: the browser's file picker, whose handle the machine keeps, or a file input where there is none), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own, or a chunked image's `manifest.json`, which any static host can serve:
 `node tools/chunk-image.ts <image> <dir> [MiB] [--name <name>]`, docs/devices.md "A chunked image"; `node tools/disk-trace.ts` adds a
 boot's reads, which the page then fetches ahead; the manifest's `name` is what the page calls the machine and the disk,
@@ -1652,7 +1656,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   session: backlog). **Reset disk** resets the chosen disk's overlay.
 - The disk is identified by name, size and modification time, not by content (a hash of a
   multi-GB file would block the boot): two different files with all three equal share an overlay.
-- Saving the disk (loop 5): a disk's [Export…](ui:machines:PagePane.export) on the Machines page's Disks tab opens the Export wizard:
+- Saving the disk (loop 5): a disk's [Export…](ui:machines:PagePane.export) on the Home page's Disks tab opens the Export wizard:
   [Changes only](ui:disks:ExportSteps.changes), a qcow2 holding the blocks the machine wrote with the image as its
   backing file, or [Whole disk](ui:disks:ExportSteps.whole); then the format,
   [Compressed qcow2](ui:disks:ExportSteps.compressed), [Uncompressed qcow2](ui:disks:ExportSteps.qcow2) (the whole
@@ -1781,7 +1785,7 @@ the most recently used free one chosen and those in use marked with their machin
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
-the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Machines
+the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Home
 page's **[Connections](ui:machines:ConnectionsPane.connections.heading)**: rename, Edit, New address, Log out for any node kept here, Delete, which logs a kept node out and names the machines that lose it). The live
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
@@ -1910,7 +1914,7 @@ and the guest's default way out (below).
   one share that connection's, as choosing it would; a stored one made with an ephemeral one's key keeps a copy in
   `waarm64-room`, and the key's lock, named by the key, holds either way), or another stored room connection's (the
   same key in another room: docs/networking/adapters.md §2.1). The connection's default name is the room's (a private
-  one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:connection-kind.room).
+  one's without its suffix); the Home page says [a peer-to-peer room](ui:machines:connection-kind.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New
   name](ui:network:NetRoomStep.room.newName) gives the connection a new key after asking, so its old name stops working,
   [The connection's key](ui:network:NetRoomStep.room.exportKey) is a hidden field to copy (shown, selected, where

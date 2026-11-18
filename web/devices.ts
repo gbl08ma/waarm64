@@ -73,7 +73,7 @@ export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zer
 
 /**
  * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
- * numbers where the browser gives them (as the Machines page's storage line has them).
+ * numbers where the browser gives them (as the Home page's storage line has them).
  */
 export async function storageFull(): Promise<Msg> {
   const n = await storageNumbers();

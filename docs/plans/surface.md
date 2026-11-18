@@ -2,7 +2,7 @@
 
 The user's brief (2026-11-15): a built-in view of a disk's "surface", in the manner of a defragmenter's map: a grid of
 squares, each a section of the disk, coloured by what it holds, with one of the disk's overlays literally laid over
-it. Reached from a small [visualize] link at the end of a disk's line, in the Machines page's Disks pane and in a
+it. Reached from a small [visualize] link at the end of a disk's line, in the Home page's Disks pane and in a
 machine's Disks tab. Live for the disks of the machine that runs on this page, in a floating window like the on-screen
 keyboard's, so the user sees the guest's reads and writes. A novelty: it must cost the disk's hot path **nothing**
 while its window is closed. Its grid and its route to the workers are made to be reused (a RAM view may follow).
@@ -142,7 +142,7 @@ paths (`{ stored?, overlay?, size, … }`) instead of a device.
 - `web/app/surface-look.ts` (counts → looks), `web/app/surface-source.ts` (`SurfaceSource`: `surface(cells)`,
   `range(range, content)`, `live`; one over the machine's worker, one over the job worker; `sourceFor` picks by what
   runs on this page), `web/app/areas/surface.svelte.ts` (which disk's window is open: one at a time, mounted by
-  `App.svelte`, so it stays while the user goes from the Machines page to the machine).
+  `App.svelte`, so it stays while the user goes from the Home page to the machine).
 - The link: `Button variant="link"` after the line in `DiskInfo.svelte`'s users and `Disks.svelte`'s rows:
   "… · vda · visualize".
 - Words in the catalog (`web/messages/en/`, a `surface` namespace or `disks`, as docs/i18n.md says); colours as new
@@ -164,7 +164,7 @@ paths (`{ stored?, overlay?, size, … }`) instead of a device.
 
 ## 5. Validation
 
-`scripts/ci.sh`, and `scripts/ci-debian.sh` and `scripts/ci-machines.sh` (the page, the Machines page, disks). A
+`scripts/ci.sh`, and `scripts/ci-debian.sh` and `scripts/ci-machines.sh` (the page, the Home page, disks). A
 cloud session runs what it can of them (docs/cloud.md); the full runs with every image are the dev VM's. The hot
 path's claim is by construction (the wrapper is absent when the window is closed); `bench/io` in the dev VM can
 confirm it, window closed against the commit before.

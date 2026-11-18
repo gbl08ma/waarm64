@@ -2,7 +2,7 @@
 // (web/app/network.ts), the connection each one has attached (a record of the browser's, web/app/connections.ts) and
 // its client (what it starts with: web/app/net-connect.ts), and the connections' locks (one running machine has a
 // connection at a time, in any tab: web/app/net-claims.ts) and kept nodes (web/app/net-nodes.ts). It picks the guest's default way out (`primaryOf`, and IPv6's: `primary6Of`) whenever an adapter's state changes. The
-// toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/areas/network-actions.ts
+// toolbar's Network menu, the Network wizard and the Home page's Network tab and Connections drive it; web/app/areas/network-actions.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { msg, MsgError } from '../i18n.ts';
 import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
@@ -164,7 +164,7 @@ export class PageNetwork {
   }
 
   /**
-   * The machine's record changed (another tab's Machines page attached or detached a connection, or this one's saved
+   * The machine's record changed (another tab's Home page attached or detached a connection, or this one's saved
    * it): the attachments it has now take effect, at once if the machine runs. Matched by adapter: its shape can't
    * change while it runs, and off, the adapters are simply the record's.
    */

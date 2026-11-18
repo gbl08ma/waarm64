@@ -2,7 +2,7 @@
 // - a stored machine opened in a second tab while it runs in another: the page takes the machine's Web Lock before it
 //   opens the disks, and when another tab holds it says so at once, without waiting out the overlay's lock
 //   (`OVERLAY_WAIT_MS`). The "other tab" is another page of the profile holding the lock, as a running machine's does;
-// - Open disk… (the first-run message's, the Machines page's From a disk image…) through the browser's file picker,
+// - Open disk… (the first-run message's, the Home page's From a disk image…) through the browser's file picker,
 //   so the machine's file disk keeps its handle. Headless Chromium's picker can't be answered (Playwright aborts it),
 //   so the page's `showOpenFilePicker` gives a file in OPFS, as a picked file's handle.
 import assert from 'node:assert/strict';
@@ -117,7 +117,7 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     await openDisk.click();
     await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'first', null, { timeout: 10_000 });
 
-    // The Machines page's From a disk image…: the same.
+    // The Home page's From a disk image…: the same.
     await page.evaluate(() => { (window as unknown as { pick: string[] }).pick.push('second.raw'); });
     await page.locator('#machines-open').click();
     await page.locator('.machines button', { hasText: t('machines:MachinesNav.fromImage') }).click();

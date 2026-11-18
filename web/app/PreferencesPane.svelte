@@ -1,5 +1,5 @@
 <!--
-  The Machines page's Preferences (docs/machines.md §7): this browser's, for every machine. Leaving the page warns, the
+  The Home page's Preferences (docs/machines.md §7): this browser's, for every machine. Leaving the page warns, the
   guest drops its caches before a snapshot, the guest's clock catches up after a pause, the on-screen keyboard's modifiers, the shaders' cache budget, and the status
   bar's elements (StatusEditor.svelte).
 -->

@@ -1,7 +1,7 @@
 <!--
   The toolbar's USB menu (docs/usb.md "The page"): the running machine's remembered devices with
   attach toggles, the host's game pads (the game pad of ours: docs/usb.md "The game pad"), the offers (a device that just appeared, one that left and may come back as another, a permission to
-  give), Add a device…, and the Machines page's USB tab. With `?usbzero=1`, Gadget Zero (the controller's test device).
+  give), Add a device…, and the Home page's USB tab. With `?usbzero=1`, Gadget Zero (the controller's test device).
   It opens by itself when there is something to do (web/app/areas/usb.svelte.ts `openMenu`: an offer).
 -->
 <script lang="ts">

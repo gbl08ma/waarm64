@@ -1,6 +1,6 @@
 // The disk surface visualizer's window (docs/frontend.md "A disk's surface"): which disk's map is open, one at a time,
 // and the overlay it starts on; App.svelte mounts web/app/SurfaceWindow.svelte while one is, so it stays as the user
-// goes between the Machines page and the machine. `runningHere` is the machine that runs on this page, for a live map
+// goes between the Home page and the machine. `runningHere` is the machine that runs on this page, for a live map
 // (its run says how to reach it: web/app/run/runner.ts writes `current.inspect`).
 import { current } from './current.svelte.ts';
 import { power } from './power.svelte.ts';

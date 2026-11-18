@@ -1,6 +1,6 @@
 // What the page was built from, in its <meta name="waarm64-build"> (vite.config.ts writes it into every load of the page,
 // the dev server's and the build's), for its console: main.ts logs it at load. And the same, structured, for the
-// Machines page's About pane (tools/third-party.ts `aboutData`).
+// Home page's About pane (tools/third-party.ts `aboutData`).
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 

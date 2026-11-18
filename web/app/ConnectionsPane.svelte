@@ -1,5 +1,5 @@
 <!--
-  The Machines page's Connections (docs/networking/adapters.md §3.1): the browser's network connections, each with its
+  The Home page's Connections (docs/networking/adapters.md §3.1): the browser's network connections, each with its
   kind, who has it now and the machines that use it; rename, edit (the Network wizard), a tailcat server's new address,
   log out, delete. Logic is web/app/net-live.ts's, through `page`.
 -->

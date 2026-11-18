@@ -18,7 +18,7 @@ body {
   font-size: var(--text-base);
   line-height: var(--line-height);
 }
-/* The page is a column: the toolbar, the message bar, the machine or the Machines page, the status bar. */
+/* The page is a column: the toolbar, the message bar, the machine or the Home page, the status bar. */
 body {
   display: flex;
   flex-direction: column;

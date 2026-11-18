@@ -1290,14 +1290,14 @@ largest entry (0.86 MB) in ~3 ms. So the budget counts what is held too. LZ4 (th
 more and inflated no faster; zstd through fzstd decoded 3× slower and has no encoder without a wasm build
 (bench/vulkan/REPORT.md "VK4 T49 follow-up"). The budget is the page's Preferences'
 ("[Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget)", 8 to 64 MiB, 32 by default, `waarm64.settings`
-`shaderMiB`), taken at a machine's start; the Machines page's storage line shows the store and clears it
+`shaderMiB`), taken at a machine's start; the Home page's storage line shows the store and clears it
 (`shaderStoreSize`, `clearShaderStore`; a machine running with Vulkan keeps what it holds and stores it again as it
 changes). Entries carry the
 renderer's build ID (`venus_build_id`), and those of another build are dropped at the load. So a program's second run
 on a machine (or on another machine of the page) translates nothing its first did. What remains is the browser's own
 pipeline compile, which Chromium caches itself (bench/vulkan/REPORT.md "VK3 L3"). `?gpu=vkcache=off` keeps nothing, for
 cold runs and A/B. tests/venus-cache.test.ts checks the store (its entries held deflated and round-tripping too), tests/page-modal.test.ts the
-Machines page's line and budget; tests/venus-driver.test.ts a second run of the driver's
+Home page's line and budget; tests/venus-driver.test.ts a second run of the driver's
 program on a new renderer (no lookup missed, nothing new stored, the same pixels).
 
 ## Checking frames
@@ -1513,7 +1513,7 @@ description, destroyed at the end in order), `tests/virgl-video.test.ts` the cal
 
 ## On the page
 
-A machine has Vulkan when its Machines page setting is on (`MachineRecord.vulkan`, beside 3D: docs/machines.md)
+A machine has Vulkan when its Home page setting is on (`MachineRecord.vulkan`, beside 3D: docs/machines.md)
 or the page's `?gpu=vulkan` asks; only then does the GPU worker fetch the module. `npm run dist` puts it in the
 static copy as a hashed asset with its licences beside it (`VENUS-LICENSES.txt`, made by vk/build.sh from
 `vk/LICENSES.head`, the sources' licence files and `vk/LLVM-exception.txt`), and `npm start` serves that copy. Both

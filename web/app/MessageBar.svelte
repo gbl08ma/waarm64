@@ -1,8 +1,8 @@
 <!--
   The message bar (web/app/areas/message-bar.svelte.ts, written by web/app/run/messages.ts; docs/frontend.md "Dialogs and
-  the message bar"): at the top, floating over the machine so its screen keeps its size. Over the Machines page it is
+  the message bar"): at the top, floating over the machine so its screen keeps its size. Over the Home page it is
   not shown: that page's own error banner (MachinesPage.svelte, under its header) shows the message instead, so there is
-  never both a floating banner and the page's banner at once. The banner floats again when the machines section closes.
+  never both a floating banner and the page's banner at once. The banner floats again when the Home page closes.
 -->
 <script lang="ts">
   import Button from './ui/Button.svelte';

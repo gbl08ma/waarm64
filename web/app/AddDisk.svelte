@@ -1,5 +1,5 @@
 <!--
-  Add a disk (docs/machines.md §4.2): a wizard over the Machines page. First the kind of source, each explained;
+  Add a disk (docs/machines.md §4.2): a wizard over the Home page. First the kind of source, each explained;
   then its details (the URL and the server's check, the file, the size) and whether the machine may write to it.
 -->
 <script lang="ts">

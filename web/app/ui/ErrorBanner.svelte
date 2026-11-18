@@ -1,12 +1,12 @@
 <!--
   A bar that says something went wrong (`tone` `error`), needs a look (`warn`) or was done (`info`): the message bar, the
-  Machines page's error. Across the page, or `floating` over what's under it (a card the size of its words, which the
+  Home page's error. Across the page, or `floating` over what's under it (a card the size of its words, which the
   caller places). With a `countdown` (an `info` notice's), a ring around its close button runs down its time, paused
   while the pointer is on the bar, then calls its `end`. Its words (`children`) take the room, centered on its buttons
   while they're a line or two and from the top when taller; its buttons (`actions`) and its close button (with
   `ondismiss`, named `dismissLabel`) stay at the top, one height. `bodyId`, `actionsId` and `dismissId` name its parts (the tests' handles); `class` and other
   attributes (`id`, `role`, `hidden`, `data-*`) go on the bar. Two bars with the same `crossfade` key, one leaving
-  as the other comes, move into each other (crossfade.ts): the message bar between floating and the Machines page.
+  as the other comes, move into each other (crossfade.ts): the message bar between floating and the Home page.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

@@ -127,7 +127,7 @@ export const SWITCHES = {
 export const MACHINE_PARAMS = ['ncpus', 'ram', 'split', 'jitmb', ...Object.values(SWITCHES)];
 
 /**
- * The address a machine resolves over: the page's own machine, the whole address; another one (the Machines page's
+ * The address a machine resolves over: the page's own machine, the whole address; another one (the Home page's
  * choice), without the size's and the switches' keys, as `switchMachine` drops them before it runs here.
  */
 export function addressFor(q: URLSearchParams, own: boolean) {

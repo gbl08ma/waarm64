@@ -1,7 +1,7 @@
 // The disk space the guest's filesystems no longer use, handed back (docs/devices.md "Disk space handed back"): the
 // guest's agent trims them (TRIM, web/app/agent-link.ts `trim`: a `sync`, then FITRIM on each filesystem on a disk), so
 // that their disks discard what was freed, and the overlays are then compacted in full (the device worker's `compact`:
-// a change compacts only once half an overlay is free). Asked by the Machines page's storage bar (`asked`, which says
+// a change compacts only once half an overlay is free). Asked by the Home page's storage bar (`asked`, which says
 // how the disks' changes shrank), when a disk's write found the browser's storage full (`full`, once per notice), and
 // before a disk's export stops the running machine (`beforeExport`: the file gets only what the guest still uses). A
 // guest without the agent, or one whose agent can't (no `CAP.TRIM`), is left as it is. The user's choice, 2026-11-13.

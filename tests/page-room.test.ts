@@ -594,7 +594,7 @@ async function namingThisMachine(o: { a: Page; b: Page; nameA: string; a6: strin
 
 /** After the name: the wizard's key carries the names; Delete says so; B's connection, not kept, can't hold one. */
 async function namesKeptWithTheConnection(a: Page, b: Page) {
-  // The Machines page: the wizard's key carries the names; Delete says so.
+  // The Home page: the wizard's key carries the names; Delete says so.
   await a.click('#machines-open');
   await a.click('[data-machine="connections"]');
   await a.click('li[data-connection] [data-action="edit-connection"] >> nth=0');

@@ -1,4 +1,4 @@
-// The page's frames in Chromium, without a guest: every pane of the Machines page (web/app/ui/Pane.svelte) puts its title
+// The page's frames in Chromium, without a guest: every pane of the Home page (web/app/ui/Pane.svelte) puts its title
 // at the same place, and its body at the same place under a head of one line, whether or not the head has buttons; the
 // message's text (#message) is centered on its buttons while it is one line.
 import assert from 'node:assert/strict';
@@ -17,7 +17,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-test("the Machines page's panes: the title and the body at one place, with buttons in the head or none", async () => {
+test("the Home page's panes: the title and the body at one place, with buttons in the head or none", async () => {
   // Wide enough that every pane's head is one line.
   const page = await browser.newPage({ viewport: { width: 2400, height: 900 } });
   const errors: string[] = [];

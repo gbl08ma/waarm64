@@ -1,4 +1,4 @@
-// The Machines page's About pane (web/app/About.svelte, docs/frontend.md "About") in Chromium, without a guest: after
+// The Home page's About pane (web/app/About.svelte, docs/frontend.md "About") in Chromium, without a guest: after
 // Preferences; the repository, the commit the page was built from and its date; the third-party projects in their
 // groups, each linking its license texts; every link to another site opened apart, with no referrer, opener or
 // endorsement; the license files beside the page served.

@@ -2,7 +2,7 @@
   "$comment": [
     "The third-party code, dependencies and references of waarm64: the authoritative list (docs/third-party.md says how to keep it).",
     "Each section is a table: `columns` name the cells of `md` (Markdown). An entry with `about` (a group of the About pane) is shown on the",
-    "Machines page and needs `url`, `version`, `license` (SPDX) and `licenseTexts` (pinned links), or `parts` with those; tools/third-party.ts checks it."
+    "Home page and needs `url`, `version`, `license` (SPDX) and `licenseTexts` (pinned links), or `parts` with those; tools/third-party.ts checks it."
   ],
   "sections": [
     {

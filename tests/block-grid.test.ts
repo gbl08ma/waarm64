@@ -289,7 +289,7 @@ test('hover and pick find the cell, the last row\'s too; the keyboard moves and 
   // From the last pick (the last cell), right and down stay on it; the cursor is reported as hovered.
   assert.equal(await page.locator(GRID).evaluate((g: HTMLElement) => Number(g.dataset.cursor)), 249);
   assert.equal(await hovers(), 249);
-  await page.keyboard.press('Home');
+  await page.keyboard.press('Home'); // i18n-ignore: the key
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');

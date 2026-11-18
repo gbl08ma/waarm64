@@ -1,5 +1,5 @@
 // Registered names as the page says them (web/app/names-view.ts, docs/plans/room-names.md "What the user sees"): a
-// title's state at each step, the dialog's check (as typed, by the page alone; the room's servers at Register) and when Register is offered, the Machines page's line, a
+// title's state at each step, the dialog's check (as typed, by the page alone; the room's servers at Register) and when Register is offered, the Home page's line, a
 // member's name in the room read back as its key; and the wording cases, which pin the words the kickoff's decisions
 // bind (the dialog's two notices: decisions 6 and 13).
 import assert from 'node:assert/strict';
@@ -116,7 +116,7 @@ test('the dialog: an answer to a name typed over, or a dialog closed, is dropped
   assert.deepEqual(asked.registered, [], 'closed: nothing registered');
 });
 
-test('the Machines page\'s line: the live names with their dates; the details\' line by role', () => {
+test('the Home page\'s line: the live names with their dates; the details\' line by role', () => {
   const until = 1_800_000_000;
   const lines = machineNames([v({ keptUntil: until }), v({ name: 'new', state: 'reserved' }), v({ name: 'gone', state: 'lapsed', keptUntil: 1 }), v({ name: 'lost', state: 'lost' })]).map(text);
   assert.deepEqual(lines, [t('network:names-view.machine.until', { name: 'mybox', when: new Date(until * 1000) }), t('network:names-view.machine.new', { name: 'new' })]);

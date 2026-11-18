@@ -1,7 +1,7 @@
-// What the Machines page does to machines (docs/machines.md §1, §4, §7): make, copy, delete, edit, and attach,
+// What the Home page does to machines (docs/machines.md §1, §4, §7): make, copy, delete, edit, and attach,
 // detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `waarm64-machine:<id>`
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
-// user; the Machines page confirms first.
+// user; the Home page confirms first.
 import { t } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
 import { SWAP_MIN_PAGES } from '../ramdisk.ts';

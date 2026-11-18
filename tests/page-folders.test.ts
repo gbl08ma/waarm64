@@ -1,5 +1,5 @@
 // Shared folders on the page (docs/shares.md). Without a guest, on stored machines whose only disk is blank (the firmware
-// runs and finds nothing to boot, which is all a folder's lock needs): the Machines page's tab and pane, the wizard, the
+// runs and finds nothing to boot, which is all a folder's lock needs): the Home page's tab and pane, the wizard, the
 // lock's Use it here between two tabs, Delete. On Debian (opt-in with WAARM64_DISTROS=debian, scripts/ci-machines.sh): the
 // guest's side, through the mount the page sets up: read and write under the mount point, whose files the page sees;
 // owners per attach; a workload (a tree of files, rm -r, a rename across folders; a C project built and a git repository
@@ -128,12 +128,12 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   assert.ok(made, 'kept');
   assert.deepEqual(await withStore(b, `(async ({ store }, id) => (await store.get('machines', id)).folders)`, bravo), [{ id: data, readOnly: false }, { id: made.id, readOnly: false }], 'saved at once');
 
-  // The Machines page: the machine's tab, then the browser's folders.
+  // The Home page: the machine's tab, then the browser's folders.
   await b.click('#machines-open');
   await b.locator('.machines .pick', { hasText: 'Bravo' }).click();
   await b.click('[data-tab="folders"]');
   await b.waitForSelector(`.folders-list [data-folder="${made.id}"]`);
-  // A Svelte component's styles stop at its own markup: the settings and the pane's frame have the Machines page's.
+  // A Svelte component's styles stop at its own markup: the settings and the pane's frame have the Home page's.
   assert.equal(await b.locator('.folders-switch').evaluate((e) => getComputedStyle(e).rowGap), '12px', "the settings' layout");
   await b.fill('[data-field="shares-path"]', '/etc');
   await b.waitForSelector('[data-shares-path-error]');

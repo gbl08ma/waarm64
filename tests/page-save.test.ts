@@ -43,7 +43,7 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
-  // The disk's actions are on the Machines page: this page's machine, its Disks tab.
+  // The disk's actions are on the Home page: this page's machine, its Disks tab.
   await page.locator('#machines-open').click();
 
   /** Export… through its wizard: the changes or the whole disk, then `format` (compressed, qcow2 or raw). */

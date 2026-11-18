@@ -841,11 +841,11 @@
   },
   "StatusOptions.index.net": {
     "message": "Numbered from 1, as the machine's Network tab lists them. Hidden on a machine that doesn't have it.",
-    "note": "Note beside the Adapter number field of a one-adapter element in the Preferences' status bar editor (the Network tab is the Machines page's)."
+    "note": "Note beside the Adapter number field of a one-adapter element in the Preferences' status bar editor (the Network tab is the Home page's)."
   },
   "StatusOptions.index.disk": {
     "message": "Numbered from 1, as the machine's Disks tab lists them. Hidden on a machine that doesn't have it.",
-    "note": "Note beside the Disk number field of a one-disk element in the Preferences' status bar editor (the Disks tab is the Machines page's)."
+    "note": "Note beside the Disk number field of a one-disk element in the Preferences' status bar editor (the Disks tab is the Home page's)."
   },
   "StatusEditor.bar": {
     "message": "The status bar's elements",

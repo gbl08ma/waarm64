@@ -703,7 +703,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.locator('.xterm').click();
   await page.keyboard.type('echo "[$(cat /mark)]"\n');
   await shows(page, /\[waarm64-mark\]/);
-  // Reset (the Machines page, this page's machine's Disks tab): a confirmation (with what the overlay holds), a stop, the
+  // Reset (the Home page, this page's machine's Disks tab): a confirmation (with what the overlay holds), a stop, the
   // overlay deleted, a boot from the image.
   await page.locator('#machines-open').click();
   await page.locator('#reset-disk').click();

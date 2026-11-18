@@ -1,6 +1,6 @@
 <!--
   A checkbox and its words, with the fine print under them when there is some (`note`: words, or markup as a snippet):
-  the Machines page's settings, Preferences, the disks', adapters' and USB devices' rows, the dialogs. One element
+  the Home page's settings, Preferences, the disks', adapters' and USB devices' rows, the dialogs. One element
   either way (`.check`, or `.check-field` around it and the note), for the parent's layout to place. `compact`: the
   13 px of a list's row, on one line. `onchange` gets the new state (`checked` is bindable too); `ref` binds the box.
 -->

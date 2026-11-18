@@ -308,7 +308,7 @@ test("the sweep waits for a writer between its bytes and its record (another tab
   assert.deepEqual(files.paths(), ['overlays/c00000000002/data']);
 });
 
-test('network adapters on the Machines page: added up to the limit, removed; copies and definitions carry the MACs, no connections', async () => {
+test('network adapters on the Home page: added up to the limit, removed; copies and definitions carry the MACs, no connections', async () => {
   const { createMachine, duplicateMachine, movedAdapter, withAdapter, withoutAdapter } = await import('../web/app/machines.ts');
   const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
   const { adaptersOf } = await import('../web/app/shape.ts');

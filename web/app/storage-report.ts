@@ -1,10 +1,10 @@
-// What the browser's storage holds for the Machines page (docs/machines.md §2 "Storage"), and its persistence.
+// What the browser's storage holds for the Home page (docs/machines.md §2 "Storage"), and its persistence.
 import { cacheBytes } from '../diskcache.ts';
 import { shaderStoreSize } from '../venus-cache.ts';
 import { msg, type Msg } from '../msg.ts';
 import { machineDir, type Store } from './store.ts';
 
-/** What the browser's storage holds for the Machines page (§2 "Storage"): the estimate, persistence, and each big item's bytes. */
+/** What the browser's storage holds for the Home page (§2 "Storage"): the estimate, persistence, and each big item's bytes. */
 export async function storageReport(store: Store) {
   const est = await navigator.storage.estimate();
   const persisted = await navigator.storage.persisted();

@@ -17,7 +17,7 @@ export type PowerDeps = {
   runner: Runner;
   messages: Messages;
   terminal: SerialTerminal;
-  /** The Machines page (its Disks tab) and Open disk…. */
+  /** The Home page (its Disks tab) and Open disk…. */
   later: { openMachines(tab?: 'disks', id?: string): void; openDisk(): Promise<void> };
   /** The memory signal's checks (web/app/run/memory-signal.ts): a crash before, too little memory (true: said, not started). */
   signal: { crashedBefore(): boolean; fits(): boolean };
@@ -55,7 +55,7 @@ export class PowerActions {
   }
 
   /**
-   * A stored machine's record and disks as the store has them now (the Machines page edits them while the machine is
+   * A stored machine's record and disks as the store has them now (the Home page edits them while the machine is
    * off), and what follows from them: its size, its display, the toolbar's name. False, with the page saying why, when
    * the machine can't be opened any more (deleted, or a disk gone).
    */
@@ -124,7 +124,7 @@ export class PowerActions {
   }
 
   /**
-   * Stops the machine like pulling the plug, or (`cleanly`, the Machines page's) asking the guest first. True: it is
+   * Stops the machine like pulling the plug, or (`cleanly`, the Home page's) asking the guest first. True: it is
    * off now; false: it runs on (another stop or start was under way, or the user kept it running).
    */
   async powerOff(o: { cleanly?: boolean } = {}): Promise<boolean> {

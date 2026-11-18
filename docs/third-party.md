@@ -5,7 +5,7 @@ ported or copied, ideas reimplemented, the dependencies (runtime and development
 firmware distributed, and the reference projects with their verified licenses. It is the authoritative list: there is
 no `THIRD_PARTY.md` (it was replaced, 2026-11-03; `node tools/third-party.ts --markdown` prints the file in that
 page's layout, and a job that writes it from the JSON may come later). The rows marked `about` are what the page credits
-on the Machines page's **[About](ui:machines:MachinesPage.about)** pane ([frontend.md](frontend.md) "About").
+on the Home page's **[About](ui:machines:MachinesPage.about)** pane ([frontend.md](frontend.md) "About").
 
 ## The file
 

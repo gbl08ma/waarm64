@@ -24,7 +24,7 @@ const stamp = (): Plugin => ({
 });
 
 /**
- * `virtual:waarm64-about`: what the Machines page's About pane shows (tools/third-party.ts `aboutData`): the build's
+ * `virtual:waarm64-about`: what the Home page's About pane shows (tools/third-party.ts `aboutData`): the build's
  * commit, and the third-party projects THIRD_PARTY.json marks for it, nothing else of that file.
  */
 const about = (): Plugin => {

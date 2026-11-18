@@ -1,95 +1,95 @@
 {
   "disk-kind.url": {
     "message": "from a URL",
-    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane) (\"from a URL, 2.0 GiB\"), and in Add a disk… › A disk already in this browser. A disk read from a web server."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Home page's Disks tab and Disks pane) (\"from a URL, 2.0 GiB\"), and in Add a disk… › A disk already in this browser. A disk read from a web server."
   },
   "disk-kind.file": {
     "message": "a file on your computer",
-    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is read where it is, a file on the user's computer."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Home page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is read where it is, a file on the user's computer."
   },
   "disk-kind.stored": {
     "message": "stored in this browser",
-    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is copied into this browser's storage."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Home page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is copied into this browser's storage."
   },
   "disk-kind.blank": {
     "message": "blank",
-    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. An empty disk (its base image all zeros) whose overlay is kept in this browser as the guest writes it."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Home page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. An empty disk (its base image all zeros) whose overlay is kept in this browser as the guest writes it."
   },
   "disk-kind.ramdisk": {
     "message": "ramdisk",
-    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk held in memory, empty at every boot."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Home page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk held in memory, empty at every boot."
   },
   "DiskInfo.meta": {
     "message": "{{kind}}, {{size}}",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{size}} its size."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{size}} its size."
   },
   "DiskInfo.meta.held": {
     "message": "{{kind}}, {{held}} of {{size}} used",
-    "note": "A disk stored in this browser in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{held}} what its store holds in the browser, {{size}} its size."
+    "note": "A disk stored in this browser in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{held}} what its store holds in the browser, {{size}} its size."
   },
   "DiskInfo.overlays_one": {
     "message": "{{count}} overlay",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, its overlay empty, in its small line. {{count}} is 1."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, its overlay empty, in its small line. {{count}} is 1."
   },
   "DiskInfo.overlays_other": {
     "message": "{{count}} overlays",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, they empty (or none), in its small line. {{count}} is how many."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, they empty (or none), in its small line. {{count}} is how many."
   },
   "DiskInfo.overlaysSized_one": {
     "message": "{{count}} overlay ({{size}})",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlay, holding something, in its small line. {{count}} is 1, {{size}} what it holds."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlay, holding something, in its small line. {{count}} is 1, {{size}} what it holds."
   },
   "DiskInfo.overlaysSized_other": {
     "message": "{{count}} overlays ({{size}})",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlays, holding something, in its small line. {{count}} is how many, {{size}} what they hold together."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlays, holding something, in its small line. {{count}} is how many, {{size}} what they hold together."
   },
   "DiskInfo.on": {
     "message": "attached to {{machines}}",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line: the machines that have it. {{machines}} is their names, joined with commas."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line: the machines that have it. {{machines}} is their names, joined with commas."
   },
   "DiskInfo.onNone": {
     "message": "not attached to a machine",
-    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line when no machine has it."
+    "note": "A disk in a list of disks (DiskInfo: the Home page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line when no machine has it."
   },
   "Disks.newOverlay.text": {
     "message": "With an empty overlay, the disk's contents will reflect its image. Enter a name for the new overlay:",
-    "note": "Machines page, Disks: the question of the text prompt that New empty opens, above the field for the new overlay's name."
+    "note": "Home page, Disks: the question of the text prompt that New empty opens, above the field for the new overlay's name."
   },
   "Disks.newOverlay.name": {
     "message": "Fresh start",
-    "note": "Machines page, Disks: the name the New empty prompt suggests for the new, empty overlay (the user can change it before Create)."
+    "note": "Home page, Disks: the name the New empty prompt suggests for the new, empty overlay (the user can change it before Create)."
   },
   "Disks.newOverlay.title": {
     "message": "New empty overlay",
-    "note": "Machines page, Disks: the title of the text prompt that New empty opens (naming a new, empty overlay of the disk)."
+    "note": "Home page, Disks: the title of the text prompt that New empty opens (naming a new, empty overlay of the disk)."
   },
   "Disks.newOverlay.ok": {
     "message": "Create",
-    "note": "Machines page, Disks: the confirm button of the New empty prompt: makes the overlay and switches the disk to it."
+    "note": "Home page, Disks: the confirm button of the New empty prompt: makes the overlay and switches the disk to it."
   },
   "Disks.busy.newOverlay": {
     "message": "Creating the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while a new, empty overlay is made and the disk switched to it."
+    "note": "Home page: the busy line (shown with a trailing …) while a new, empty overlay is made and the disk switched to it."
   },
   "Disks.failed.newOverlay": {
     "message": "Couldn't create the overlay",
-    "note": "Machines page: the error headline when New empty fails to make the overlay or switch the disk to it; why is the detail under it."
+    "note": "Home page: the error headline when New empty fails to make the overlay or switch the disk to it; why is the detail under it."
   },
   "switch-asked.orphans_one": {
     "message": "The guest sees {{name}} as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this switch.",
-    "note": "Machines page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans a kept snapshot. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
+    "note": "Home page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans a kept snapshot. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: the snapshot as disks:ResizeDisk.snapshot says it; {{count}}: 1."
   },
   "switch-asked.orphans_other": {
     "message": "The guest sees {{name}} as a disk of {{size, bytes}}, not {{now, bytes}} as now, and a disk's size is part of the machine: these {{count}} snapshots can't be restored after this switch: {{list}}.",
-    "note": "Machines page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans kept snapshots. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+    "note": "Home page, a machine's Disks tab: the question asked before the disk switches (its Changes in list) to an overlay of another size than the one chosen now (one of them was resized), when that orphans kept snapshots. {{name}}: the overlay switched to; {{size}}: the disk's size through it; {{now}}: its size now; {{list}}: each as disks:ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
   },
   "switch-asked.title": {
     "message": "Switch to another size?",
-    "note": "Machines page, a machine's Disks tab: the title of the question disks:switch-asked.orphans."
+    "note": "Home page, a machine's Disks tab: the title of the question disks:switch-asked.orphans."
   },
   "switch-asked.ok": {
     "message": "Switch",
-    "note": "Machines page, a machine's Disks tab: the confirm button of the question disks:switch-asked.orphans: switches the disk to the overlay chosen."
+    "note": "Home page, a machine's Disks tab: the confirm button of the question disks:switch-asked.orphans: switches the disk to the overlay chosen."
   },
   "disk-changes.changes.orphans_one": {
     "message": "Its disk is larger ({{size, bytes}}) than the one the machine sees now ({{now, bytes}}), and a disk's size is part of the machine: the snapshot {{list}} can't be restored after this.",
@@ -101,163 +101,163 @@
   },
   "Disks.busy.switch": {
     "message": "Switching the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while the disk switches to the overlay chosen in its Changes in list."
+    "note": "Home page: the busy line (shown with a trailing …) while the disk switches to the overlay chosen in its Changes in list."
   },
   "Disks.failed.switch": {
     "message": "Couldn't switch the overlay",
-    "note": "Machines page: the error headline when the disk can't switch to the overlay chosen in its Changes in list; why is the detail under it."
+    "note": "Home page: the error headline when the disk can't switch to the overlay chosen in its Changes in list; why is the detail under it."
   },
   "Disks.busy.change": {
     "message": "Changing the disk's settings",
-    "note": "Machines page: the busy line (shown with a trailing …) while a disk's read-only, swap or write in place box is saved."
+    "note": "Home page: the busy line (shown with a trailing …) while a disk's read-only, swap or write in place box is saved."
   },
   "Disks.detach.keptRamdisk": {
     "message": "The empty ramdisk continues to exist, taking no space.",
-    "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a ramdisk."
+    "note": "Home page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a ramdisk."
   },
   "Disks.detach.kept": {
     "message": "The disk remains stored in this browser, taking space.",
-    "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk without overlays."
+    "note": "Home page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk without overlays."
   },
   "Disks.detach.keptOverlays_one": {
     "message": "The disk and its {{count}} overlay ({{size}}) remain stored in this browser, taking space.",
-    "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk with one overlay. {{count}} is 1, {{size}} what the overlay holds."
+    "note": "Home page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk with one overlay. {{count}} is 1, {{size}} what the overlay holds."
   },
   "Disks.detach.keptOverlays_other": {
     "message": "The disk and its {{count}} overlays ({{size}}) remain stored in this browser, taking space.",
-    "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk with several overlays. {{count}} is how many, {{size}} what they hold together."
+    "note": "Home page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk with several overlays. {{count}} is how many, {{size}} what they hold together."
   },
   "Disks.detach.theDisk": {
     "message": "the disk",
-    "note": "Machines page, Disks: names the disk in the detach confirmation (Disks.detach.confirm) when its record is missing."
+    "note": "Home page, Disks: names the disk in the detach confirmation (Disks.detach.confirm) when its record is missing."
   },
   "Disks.detach.confirm": {
     "message": "Detach {{disk}} from {{machine}}? {{kept}} To delete it or to attach it again, to this or another machine, use Add a disk… › A disk already in this browser.",
-    "note": "Machines page, Disks: the confirmation that a disk's Detach asks. {{disk}} is the disk's name (or Disks.detach.theDisk), {{machine}} the machine's, {{kept}} one of Disks.detach.kept, Disks.detach.keptOverlays, Disks.detach.keptRamdisk."
+    "note": "Home page, Disks: the confirmation that a disk's Detach asks. {{disk}} is the disk's name (or Disks.detach.theDisk), {{machine}} the machine's, {{kept}} one of Disks.detach.kept, Disks.detach.keptOverlays, Disks.detach.keptRamdisk."
   },
   "Disks.detach.title": {
     "message": "Detach a disk",
-    "note": "Machines page, Disks: the title of the confirmation that a disk's Detach asks."
+    "note": "Home page, Disks: the title of the confirmation that a disk's Detach asks."
   },
   "Disks.detach.ok": {
     "message": "Detach",
-    "note": "Machines page, Disks: the confirm button of the question before a disk is taken off the machine."
+    "note": "Home page, Disks: the confirm button of the question before a disk is taken off the machine."
   },
   "Disks.busy.detach": {
     "message": "Detaching the disk",
-    "note": "Machines page: the busy line (shown with a trailing …) while a disk is taken off the machine."
+    "note": "Home page: the busy line (shown with a trailing …) while a disk is taken off the machine."
   },
   "Disks.missing": {
     "message": "Missing disk",
-    "note": "Machines page, Disks: shown in place of a disk's name when the machine attaches a disk whose record is gone."
+    "note": "Home page, Disks: shown in place of a disk's name when the machine attaches a disk whose record is gone."
   },
   "disk-lines.meta": {
     "message": "{{kind}}, {{size}} · vd{{letter}}",
-    "note": "Machines page, Disks: the small line beside a disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…). The size is what the guest sees: a grown overlay's own size when it's larger than the disk's."
+    "note": "Home page, Disks: the small line beside a disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…). The size is what the guest sees: a grown overlay's own size when it's larger than the disk's."
   },
   "disk-lines.meta.held": {
     "message": "{{kind}}, {{held}} of {{size}} used · vd{{letter}}",
-    "note": "Machines page, Disks: the small line beside the name of a disk stored in this browser and written in place. {{kind}} is what it is (Disks.kind.*), {{held}} what its store holds in the browser, {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…)."
+    "note": "Home page, Disks: the small line beside the name of a disk stored in this browser and written in place. {{kind}} is what it is (Disks.kind.*), {{held}} what its store holds in the browser, {{size}} its size, {{letter}} its device's letter in the guest (vda, vdb…)."
   },
   "Disks.meta.missing": {
     "message": "· vd{{letter}}",
-    "note": "Machines page, Disks: the small line beside a missing disk (Disks.missing). {{letter}} is its device's letter in the guest (vda, vdb…)."
+    "note": "Home page, Disks: the small line beside a missing disk (Disks.missing). {{letter}} is its device's letter in the guest (vda, vdb…)."
   },
   "Disks.readOnly": {
     "message": "read-only",
-    "note": "Machines page, Disks: the checkbox on a disk's line: the guest can read it but not write it (off and disabled for a blank disk or a ramdisk)."
+    "note": "Home page, Disks: the checkbox on a disk's line: the guest can read it but not write it (off and disabled for a blank disk or a ramdisk)."
   },
   "Disks.swap.title": {
     "message": "Automatically configure the guest to use this ramdisk as swap. The guest must be running systemd version 254 or above. The memory usage of this ramdisk on your computer will fluctuate as the guest uses the swap space.",
-    "note": "Machines page, Disks: the tooltip of a ramdisk's swap checkbox."
+    "note": "Home page, Disks: the tooltip of a ramdisk's swap checkbox."
   },
   "Disks.swap": {
     "message": "swap",
-    "note": "Machines page, Disks: the checkbox on a ramdisk's line that makes it the guest's swap."
+    "note": "Home page, Disks: the checkbox on a ramdisk's line that makes it the guest's swap."
   },
   "Disks.inPlace.title": {
     "message": "The guest's writes go into the stored disk itself. Overlays are not used and snapshots can't fork it.",
-    "note": "Machines page, Disks: the tooltip of a stored disk's write in place checkbox."
+    "note": "Home page, Disks: the tooltip of a stored disk's write in place checkbox."
   },
   "Disks.inPlace": {
     "message": "write in place",
-    "note": "Machines page, Disks: the checkbox on a writable stored disk's line: the guest writes the disk itself, with no overlay."
+    "note": "Home page, Disks: the checkbox on a writable stored disk's line: the guest writes the disk itself, with no overlay."
   },
   "Disks.busy.move": {
     "message": "Moving the disk",
-    "note": "Machines page: the busy line (shown with a trailing …) while a disk moves to an earlier or later slot."
+    "note": "Home page: the busy line (shown with a trailing …) while a disk moves to an earlier or later slot."
   },
   "Disks.moveUp.title": {
     "message": "Move the disk up one place. The guest sees the disks in this order (vda, vdb, …).",
-    "note": "Machines page, Disks: the tooltip of the up arrow on a disk's line (the disk takes an earlier slot: vda before vdb)."
+    "note": "Home page, Disks: the tooltip of the up arrow on a disk's line (the disk takes an earlier slot: vda before vdb)."
   },
   "Disks.moveDown.title": {
     "message": "Move the disk down one place. The guest sees the disks in this order (vda, vdb, …).",
-    "note": "Machines page, Disks: the tooltip of the down arrow on a disk's line (the disk takes a later slot)."
+    "note": "Home page, Disks: the tooltip of the down arrow on a disk's line (the disk takes a later slot)."
   },
   "Disks.detach.button.title": {
     "message": "Take the disk off this machine. It remains stored in this browser.",
-    "note": "Machines page, Disks: the tooltip of the Detach button on a disk's line."
+    "note": "Home page, Disks: the tooltip of the Detach button on a disk's line."
   },
   "Disks.detach.button": {
     "message": "Detach",
-    "note": "Machines page, Disks: the button on a disk's line that takes it off the machine (after a confirmation)."
+    "note": "Home page, Disks: the button on a disk's line that takes it off the machine (after a confirmation)."
   },
   "Disks.overlays.label": {
     "message": "Changes in",
-    "note": "Machines page, Disks: the label before the list of a writable disk's overlays (the variants of its changes), where the user picks the one the machine uses."
+    "note": "Home page, Disks: the label before the list of a writable disk's overlays (the variants of its changes), where the user picks the one the machine uses."
   },
   "Disks.overlays.none": {
     "message": "(a new overlay, at the next boot)",
-    "note": "Machines page, Disks: the item of a disk's Changes in list when the machine has no overlay chosen yet: its next start makes one."
+    "note": "Home page, Disks: the item of a disk's Changes in list when the machine has no overlay chosen yet: its next start makes one."
   },
   "disk-lines.option": {
     "message": "{{name}} ({{held}} of {{size}})",
-    "note": "Machines page, Disks: an overlay in a disk's Changes in list. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
+    "note": "Home page, Disks: an overlay in a disk's Changes in list. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
   },
   "disk-lines.forked": {
     "message": "{{name}} ({{held}} of {{size}}, forked)",
-    "note": "Machines page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
+    "note": "Home page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{held}} what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own)."
   },
   "Disks.newEmpty.title": {
     "message": "A new, empty overlay: the disk contents will be reset to those of the disk image. The current overlay is kept.",
-    "note": "Machines page, Disks: the tooltip of New empty."
+    "note": "Home page, Disks: the tooltip of New empty."
   },
   "Disks.newEmpty": {
     "message": "New empty",
-    "note": "Machines page, Disks: the button under a writable disk that makes a new, empty overlay (asking its name) and switches the disk to it."
+    "note": "Home page, Disks: the button under a writable disk that makes a new, empty overlay (asking its name) and switches the disk to it."
   },
   "Disks.overlaysButton.title": {
     "message": "Show all of this disk's overlays, to rename, delete or export them.",
-    "note": "Machines page, Disks: the tooltip of Overlays… on a disk."
+    "note": "Home page, Disks: the tooltip of Overlays… on a disk."
   },
   "Disks.overlaysButton": {
     "message": "Overlays…",
-    "note": "Machines page, Disks: the button on a disk with overlays that opens its Overlays dialog (every overlay of the disk, with Rename, Delete, Merge into the disk and Export)."
+    "note": "Home page, Disks: the button on a disk with overlays that opens its Overlays dialog (every overlay of the disk, with Rename, Delete, Merge into the disk and Export)."
   },
   "Disks.importChanges.title": {
     "message": "A changes file of this disk (created via Export › Changes only (qcow2)) becomes a new overlay, and the disk switches to it.",
-    "note": "Machines page, Disks: the tooltip of Import changes…."
+    "note": "Home page, Disks: the tooltip of Import changes…."
   },
   "Disks.importChanges": {
     "message": "Import changes…",
-    "note": "Machines page, Disks: the button under a writable disk (not a blank one) that picks a changes file and loads it into a new overlay."
+    "note": "Home page, Disks: the button under a writable disk (not a blank one) that picks a changes file and loads it into a new overlay."
   },
   "Disks.none": {
     "message": "No disks yet.",
-    "note": "Machines page, Disks: the list's only line when the machine has no disk."
+    "note": "Home page, Disks: the list's only line when the machine has no disk."
   },
   "Disks.add": {
     "message": "Add a disk…",
-    "note": "Machines page, Disks: the button under the list that opens the Add a disk wizard."
+    "note": "Home page, Disks: the button under the list that opens the Add a disk wizard."
   },
   "Disks.full": {
     "message": "A machine can't have more than {{max}} disks.",
-    "note": "Machines page, Disks: the note in place of Add a disk… when the machine has as many disks as it can. {{max}} is that number."
+    "note": "Home page, Disks: the note in place of Add a disk… when the machine has as many disks as it can. {{max}} is that number."
   },
   "AddDisk.source.known": {
     "message": "A disk already in this browser",
-    "note": "Add a disk wizard (Machines page): the name of the choice of a disk the browser keeps already (shown only when there is one), on the first step's button."
+    "note": "Add a disk wizard (Home page): the name of the choice of a disk the browser keeps already (shown only when there is one), on the first step's button."
   },
   "AddDisk.source.known.text": {
     "message": "A detached disk or one already associated with another machine. To delete a disk and free the space it takes, use Disks under the list of machines.",
@@ -329,7 +329,7 @@
   },
   "AddDisk.busy": {
     "message": "Adding the disk",
-    "note": "Machines page: the busy line (shown with a trailing …) while the Add a disk wizard attaches or makes the disk."
+    "note": "Home page: the busy line (shown with a trailing …) while the Add a disk wizard attaches or makes the disk."
   },
   "add-disk.attachedAlready": {
     "message": "{{name}} is already attached to this machine.",
@@ -433,31 +433,31 @@
   },
   "disks.pickAgain": {
     "message": "This web app can't read {{name}} until you select the file again.",
-    "note": "Detail of an error (message bar or Machines page) when a disk that is a file on the user's computer has no handle kept: it can't be read until the user selects it again. {{name}} is the disk's name."
+    "note": "Detail of an error (message bar or Home page) when a disk that is a file on the user's computer has no handle kept: it can't be read until the user selects it again. {{name}} is the disk's name."
   },
   "disks.overlayGone": {
     "message": "The overlay no longer exists. It may have been deleted in another tab.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.rename or .merge, when the overlay was deleted meanwhile (another tab)."
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.rename or .merge, when the overlay was deleted meanwhile (another tab)."
   },
   "disks.notThisDisk": {
     "message": "The overlay no longer exists or belongs to another disk.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.switch or .newOverlay, when the overlay chosen in a disk's Changes in list is gone or belongs to another disk."
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.switch or .newOverlay, when the overlay chosen in a disk's Changes in list is gone or belongs to another disk."
   },
   "disks.overlayRunning": {
     "message": "A machine using this overlay is running, in this tab or another. Power it off first.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.delete, when an overlay can't be deleted: a machine (in this tab or another) has it open."
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.delete, when an overlay can't be deleted: a machine (in this tab or another) has it open."
   },
   "disks.onlyStored": {
     "message": "Only an overlay of a disk stored in this browser can be merged into it.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when Merge into the disk is asked of a disk that isn't stored in this browser."
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when Merge into the disk is asked of a disk that isn't stored in this browser."
   },
   "disks.overlayNamedRunning": {
     "message": "A machine using the overlay {{name}} is running. Power it off first.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the overlay, or another overlay of the disk the merge deletes, open. {{name}} is that overlay's name."
   },
   "disks.diskRunning": {
     "message": "A machine using this disk is running. Power it off first.",
-    "note": "Detail of an error on the Machines page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the stored disk itself open."
+    "note": "Detail of an error on the Home page (Disks), under Disks.failed.merge, when a merge is refused: a machine has the stored disk itself open."
   },
   "export-worker.noChanges": {
     "message": "This disk has no overlay, so it has no changes to save.",
@@ -565,11 +565,11 @@
   },
   "stored.writeFailed": {
     "message": "The disk can't be written to this browser's storage.",
-    "note": "Error when a stored disk's blocks can't be written: under the fields of Add a disk › A file, copied into this browser, or on the Machines page when Merge into the disk fails; why (the storage is full, with its numbers: disks:overlay.storageFull.numbers) is the line under it."
+    "note": "Error when a stored disk's blocks can't be written: under the fields of Add a disk › A file, copied into this browser, or on the Home page when Merge into the disk fails; why (the storage is full, with its numbers: disks:overlay.storageFull.numbers) is the line under it."
   },
   "stored.stateWriteFailed": {
     "message": "The disk's state can't be written to this browser's storage.",
-    "note": "Error on the Machines page (or when a machine opens a stored disk) when a stored disk's state file can't be written while an overlay is merged into it."
+    "note": "Error on the Home page (or when a machine opens a stored disk) when a stored disk's state file can't be written while an overlay is merged into it."
   },
   "chunked.notManifest": {
     "message": "This JSON file isn't a chunked image's manifest (its format is {{format}}).",
@@ -580,7 +580,7 @@
     "note": "Error when a chunked image's manifest is missing fields or they don't agree: in Add a disk › From a URL's check, or as a detail when the disks can't be opened."
   },
   "overlay.storageFull": {
-    "message": "This browser's storage is full. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage.",
+    "message": "This browser's storage is full. Free up space on the Home page, whose bottom bar shows what takes this browser's storage.",
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.)."
   },
   "overlay.mapUnreadable": {
@@ -588,7 +588,7 @@
     "note": "Error (the cause under a machine's failed start, an export's, a merge's or a stored disk's opening) when the file that says where a disk's written blocks are (its overlay's, or a disk stored in this browser's) reads back shorter than it is: the disk isn't opened, rather than read as if nothing had been written to it."
   },
   "overlay.storageFull.numbers": {
-    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). Free up space on the Machines page, whose bottom bar shows what takes this browser's storage.",
+    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). Free up space on the Home page, whose bottom bar shows what takes this browser's storage.",
     "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). {{used}} is what this web app's storage holds, {{quota}} what the browser says it gives it (in a private window the browser refuses writes well before it)."
   },
   "problems.needsUser_one": {
@@ -617,7 +617,7 @@
   },
   "page-disks.overlayName": {
     "message": "Changes",
-    "note": "The name a disk's first overlay gets (its changes, made at the machine's first start; the Machines page's Disks tab shows it and can rename it)."
+    "note": "The name a disk's first overlay gets (its changes, made at the machine's first start; the Home page's Disks tab shows it and can rename it)."
   },
   "problems.allowAndStart": {
     "message": "Allow and start",
@@ -633,7 +633,7 @@
   },
   "disk-actions.disks": {
     "message": "Disks…",
-    "note": "Button in the message bar (under the toolbar) that opens the machine's Disks tab on the Machines page: when the machine has no disks yet, or when its disk's changes were made over another image."
+    "note": "Button in the message bar (under the toolbar) that opens the machine's Disks tab on the Home page: when the machine has no disks yet, or when its disk's changes were made over another image."
   },
   "disk-actions.resetDisk": {
     "message": "Reset disk…",
@@ -812,20 +812,20 @@
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a ramdisk can't grow (the tab has no more memory)."
   },
   "devices.storageFull": {
-    "message": "This browser's storage is full. The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
+    "message": "This browser's storage is full. The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Home page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute)."
   },
   "devices.storageFull.numbers": {
-    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
+    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Home page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute); {{used}} is what this web app's storage holds, {{quota}} what the browser gives it."
   },
   "ExportButton.title": {
     "message": "Save the disk, or just the changes made to it, to a file",
-    "note": "Machine's Disks tab (Machines page): the tooltip of a disk's Export button, which opens the Export wizard."
+    "note": "Machine's Disks tab (Home page): the tooltip of a disk's Export button, which opens the Export wizard."
   },
   "ExportButton.label": {
     "message": "Export…",
-    "note": "Machine's Disks tab (Machines page): the label of a disk's button that opens the Export wizard (changes only, or the whole disk; then the file's format)."
+    "note": "Machine's Disks tab (Home page): the label of a disk's button that opens the Export wizard (changes only, or the whole disk; then the file's format)."
   },
   "ExportButton.hint": {
     "message": "Exporting will forcibly power off a machine using the disk. After the file is written, the machine will be started again.",
@@ -905,135 +905,135 @@
   },
   "Overlays.title": {
     "message": "Overlays of {{disk}}",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the dialog's title. {{disk}} is the disk's name."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the dialog's title. {{disk}} is the disk's name."
   },
   "Overlays.note": {
     "message": "Each overlay holds changes made on top of the disk's base image. A machine writes to the overlay chosen for this disk on its Disks tab.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the note under the title."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the note under the title."
   },
   "Overlays.meta": {
     "message": "{{held}} of {{size}} used, created {{when}}",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under an overlay's name, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the small line under an overlay's name, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
   },
   "Overlays.meta.forked": {
     "message": "{{held}} of {{size}} used, created {{when}} when a snapshot was restored",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under the name of an overlay that a snapshot's restore forked off another, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the small line under the name of an overlay that a snapshot's restore forked off another, before who uses it. {{held}} is what it holds, {{size}} the size its guest sees through it (the disk's, or a grown overlay's own), {{when}} when it was made (date and time)."
   },
   "Overlays.usedBy": {
     "message": "used by {{machines}}",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): after an overlay's size and date: the machines whose attachment of the disk writes to it. {{machines}} is their names, joined with commas."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): after an overlay's size and date: the machines whose attachment of the disk writes to it. {{machines}} is their names, joined with commas."
   },
   "Overlays.usedByNone": {
     "message": "used by no machine",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): after an overlay's size and date when no machine writes to it."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): after an overlay's size and date when no machine writes to it."
   },
   "Overlays.none": {
     "message": "This disk has no overlays.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): in place of the list when the disk has none."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): in place of the list when the disk has none."
   },
   "Overlays.close": {
     "message": "Close",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button that closes the dialog."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the button that closes the dialog."
   },
   "Overlays.rename.text": {
     "message": "Enter a new name for the overlay:",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the question of the text prompt that an overlay's Rename opens, above the field holding its current name."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the question of the text prompt that an overlay's Rename opens, above the field holding its current name."
   },
   "Overlays.rename.title": {
     "message": "Rename the overlay {{name}}",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the title of the prompt that an overlay's Rename opens. {{name}} is the overlay's current name."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the title of the prompt that an overlay's Rename opens. {{name}} is the overlay's current name."
   },
   "Overlays.rename.ok": {
     "message": "Rename",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the rename prompt of an overlay."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirm button of the rename prompt of an overlay."
   },
   "Overlays.busy.rename": {
     "message": "Renaming the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while an overlay is renamed."
+    "note": "Home page: the busy line (shown with a trailing …) while an overlay is renamed."
   },
   "Overlays.failed.rename": {
     "message": "Couldn't rename the overlay",
-    "note": "Machines page: the error headline when an overlay's Rename fails; why is the detail under it."
+    "note": "Home page: the error headline when an overlay's Rename fails; why is the detail under it."
   },
   "Overlays.delete.confirm": {
     "message": "Delete the overlay {{name}}? This will delete the {{size}} of changes made on top of the base image.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation (OK/Cancel, the OK in red) that an overlay's Delete asks. {{name}} is the overlay's name, {{size}} what it holds (e.g. \"12.0 MiB\")."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirmation (OK/Cancel, the OK in red) that an overlay's Delete asks. {{name}} is the overlay's name, {{size}} what it holds (e.g. \"12.0 MiB\")."
   },
   "Overlays.delete.ok": {
     "message": "Delete",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is deleted."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is deleted."
   },
   "Overlays.busy.delete": {
     "message": "Deleting the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while an overlay is deleted."
+    "note": "Home page: the busy line (shown with a trailing …) while an overlay is deleted."
   },
   "Overlays.failed.delete": {
     "message": "Couldn't delete the overlay",
-    "note": "Machines page: the error headline when an overlay's Delete fails; why is the detail under it."
+    "note": "Home page: the error headline when an overlay's Delete fails; why is the detail under it."
   },
   "Overlays.merge.other": {
     "message": "{{name}} ({{size}})",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): one overlay in the list of those a merge deletes (Overlays.merge.others). {{name}} is the overlay's name, {{size}} what it holds."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): one overlay in the list of those a merge deletes (Overlays.merge.others). {{name}} is the overlay's name, {{size}} what it holds."
   },
   "Overlays.merge.others": {
     "message": "\nThis will delete the other overlays associated with this disk: {{list}}.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when the disk has other overlays: a merge deletes them. Starts on a new line. {{list}} is the overlays (each Overlays.merge.other), joined with commas."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when the disk has other overlays: a merge deletes them. Starts on a new line. {{list}} is the overlays (each Overlays.merge.other), joined with commas."
   },
   "Overlays.merge.snapshots_one": {
     "message": "\n{{count}} snapshot will no longer be restorable as it references this disk or one of its overlays.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when one snapshot pins the disk or the overlays involved. Starts on a new line. {{count}} is 1."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when one snapshot pins the disk or the overlays involved. Starts on a new line. {{count}} is 1."
   },
   "Overlays.merge.snapshots_other": {
     "message": "\n{{count}} snapshots will no longer be restorable as they reference this disk or one of its overlays.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when several snapshots pin the disk or the overlays involved. Starts on a new line. {{count}} is how many."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when several snapshots pin the disk or the overlays involved. Starts on a new line. {{count}} is how many."
   },
   "Overlays.merge.confirm": {
     "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk.{{others}}{{snapshots}}",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
   },
   "Overlays.merge.ok": {
     "message": "Merge",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is merged into its stored disk."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is merged into its stored disk."
   },
   "Overlays.busy.merge": {
     "message": "Merging the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while an overlay's changes are written into its disk's base image, stored in this browser."
+    "note": "Home page: the busy line (shown with a trailing …) while an overlay's changes are written into its disk's base image, stored in this browser."
   },
   "Overlays.failed.merge": {
     "message": "Couldn't merge the overlay",
-    "note": "Machines page: the error headline when Merge into the disk fails; why is the detail under it."
+    "note": "Home page: the error headline when Merge into the disk fails; why is the detail under it."
   },
   "Overlays.renameButton.title": {
     "message": "Rename this overlay.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Rename, on each overlay."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the tooltip of Rename, on each overlay."
   },
   "Overlays.renameButton": {
     "message": "Rename",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay that renames it (a prompt asks the name)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the button on each overlay that renames it (a prompt asks the name)."
   },
   "Overlays.deleteButton.title": {
     "message": "Delete this overlay. This loses all changes from the base image that are contained within.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Delete, on each overlay."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the tooltip of Delete, on each overlay."
   },
   "Overlays.deleteButton": {
     "message": "Delete",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay that deletes it (after a confirmation)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the button on each overlay that deletes it (after a confirmation)."
   },
   "Overlays.mergeButton.title": {
     "message": "Write this overlay's changes into the disk's base image, stored in this browser. Merging deletes the disk's other overlays.",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Merge into the disk."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the tooltip of Merge into the disk."
   },
   "Overlays.mergeButton": {
     "message": "Merge into the disk",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay of a stored disk that writes its changes into the disk (after a confirmation)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the button on each overlay of a stored disk that writes its changes into the disk (after a confirmation)."
   },
   "Overlays.exportButton": {
     "message": "Export…",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): an overlay's button that shows the Export wizard's steps in the dialog (changes only, or the whole disk; then the format)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): an overlay's button that shows the Export wizard's steps in the dialog (changes only, or the whole disk; then the format)."
   },
   "Overlays.exportButton.title": {
     "message": "Save this overlay's changes, or the whole disk with them, to a file",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of an overlay's Export… button."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the tooltip of an overlay's Export… button."
   },
   "Overlays.exportHint": {
     "message": "Exporting will forcibly power off a machine using the disk. After the file is written, the machine will be started again.",
@@ -1045,135 +1045,135 @@
   },
   "AttachDisk.title": {
     "message": "Attach {{disk}} to a machine",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the dialog's title. {{disk}} is the disk's name."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the dialog's title. {{disk}} is the disk's name."
   },
   "AttachDisk.note": {
     "message": "The disk will be attached after the machine's other disks, with its overlays. If the machine is running in this tab, you will be asked to power it off first.",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the note under the title."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the note under the title."
   },
   "AttachDisk.meta": {
     "message": "{{n}} of {{max}} disks",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the small line under a machine's name. {{n}} is how many disks it has, {{max}} the most a machine can have (16)."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the small line under a machine's name. {{n}} is how many disks it has, {{max}} the most a machine can have (16)."
   },
   "AttachDisk.running": {
     "message": "running",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): after a machine's disks in its line when it runs (in this tab or another)."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): after a machine's disks in its line when it runs (in this tab or another)."
   },
   "AttachDisk.has": {
     "message": "The disk is already attached to this machine.",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the line under a machine that has the disk already, whose Attach is off."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the line under a machine that has the disk already, whose Attach is off."
   },
   "AttachDisk.full": {
     "message": "This machine already has {{max}} disks, the most a machine can have. Detach one of them to attach this disk.",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the line under a machine that has as many disks as it can, whose Attach is off. {{max}} is that number (16)."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the line under a machine that has as many disks as it can, whose Attach is off. {{max}} is that number (16)."
   },
   "AttachDisk.otherTab": {
     "message": "This machine is running in another tab. Power it off there to attach this disk.",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the line under a machine that runs in another tab, whose Attach is off."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the line under a machine that runs in another tab, whose Attach is off."
   },
   "AttachDisk.attach": {
     "message": "Attach",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the button on a machine that attaches the disk to it, last (asking first to power off the machine running in this tab)."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the button on a machine that attaches the disk to it, last (asking first to power off the machine running in this tab)."
   },
   "AttachDisk.none": {
     "message": "No machines are stored in this browser.",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): in place of the list when there are no machines."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): in place of the list when there are no machines."
   },
   "AttachDisk.cancel": {
     "message": "Cancel",
-    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the button that closes the dialog without attaching."
+    "note": "Attach to a machine dialog (the Home page's Disks pane, a disk's Attach to a machine…): the button that closes the dialog without attaching."
   },
   "AttachDisk.busy": {
     "message": "Attaching the disk",
-    "note": "Machines page: the busy line (shown with a trailing …) while the Attach to a machine dialog attaches a disk."
+    "note": "Home page: the busy line (shown with a trailing …) while the Attach to a machine dialog attaches a disk."
   },
   "DisksPane.overlaysButton.title": {
     "message": "Show all of this disk's overlays, to rename, delete or export them.",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Overlays… on a disk."
+    "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Overlays… on a disk."
   },
   "DisksPane.overlaysButton": {
     "message": "Overlays…",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the button on a disk with overlays that opens its Overlays dialog."
+    "note": "Home page, Disks pane (Disks under the list of machines): the button on a disk with overlays that opens its Overlays dialog."
   },
   "DisksPane.attach.title": {
     "message": "Choose a machine to attach this disk to, with its overlays.",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Attach to a machine… on a disk."
+    "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Attach to a machine… on a disk."
   },
   "DisksPane.attach": {
     "message": "Attach to a machine…",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the button on a disk that opens the Attach to a machine dialog (the list of machines)."
+    "note": "Home page, Disks pane (Disks under the list of machines): the button on a disk that opens the Attach to a machine dialog (the list of machines)."
   },
   "DisksPane.deleteButton.title": {
     "message": "Delete the disk and its overlays, freeing the space they take in this browser.",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Delete on a disk no machine has."
+    "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Delete on a disk no machine has."
   },
   "DisksPane.deleteAttached.title": {
     "message": "A disk attached to a machine can't be deleted. Detach it from {{machines}} first.",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Delete, turned off, on a disk some machines have. {{machines}} is their names, joined with commas."
+    "note": "Home page, Disks pane (Disks under the list of machines): the tooltip of Delete, turned off, on a disk some machines have. {{machines}} is their names, joined with commas."
   },
   "DisksPane.deleteButton": {
     "message": "Delete",
-    "note": "Machines page, Disks pane (Disks under the list of machines): the button on a disk that deletes it with its overlays (after a confirmation); off while a machine has the disk."
+    "note": "Home page, Disks pane (Disks under the list of machines): the button on a disk that deletes it with its overlays (after a confirmation); off while a machine has the disk."
   },
   "DisksPane.none": {
     "message": "No disks are stored in this browser.",
-    "note": "Machines page, Disks pane (Disks under the list of machines): in place of the list when there are no disks."
+    "note": "Home page, Disks pane (Disks under the list of machines): in place of the list when there are no disks."
   },
   "DisksPane.busy.deleting": {
     "message": "Deleting the disk",
-    "note": "Machines page: the busy line (shown with a trailing …) while a disk and its overlays are deleted."
+    "note": "Home page: the busy line (shown with a trailing …) while a disk and its overlays are deleted."
   },
   "DisksPane.delete.stored": {
     "message": "the disk ({{size}}) stored in this browser",
-    "note": "Machines page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{size}} is the disk's size."
+    "note": "Home page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{size}} is the disk's size."
   },
   "DisksPane.delete.storedHeld": {
     "message": "the disk ({{held}} of {{size}} used) stored in this browser",
-    "note": "Machines page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{held}} is what its store holds in the browser, {{size}} the disk's size."
+    "note": "Home page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{held}} is what its store holds in the browser, {{size}} the disk's size."
   },
   "DisksPane.delete.remote": {
     "message": "what this browser keeps of the disk",
-    "note": "Machines page, Disks pane: what deleting a file's or a URL's disk deletes, in the confirmation (DisksPane.delete.confirm)."
+    "note": "Home page, Disks pane: what deleting a file's or a URL's disk deletes, in the confirmation (DisksPane.delete.confirm)."
   },
   "DisksPane.delete.disk": {
     "message": "the disk",
-    "note": "Machines page, Disks pane: what deleting a blank disk or a ramdisk deletes, in the confirmation (DisksPane.delete.confirm)."
+    "note": "Home page, Disks pane: what deleting a blank disk or a ramdisk deletes, in the confirmation (DisksPane.delete.confirm)."
   },
   "DisksPane.delete.remains.file": {
     "message": "\nThe file itself remains on your computer.",
-    "note": "Machines page, Disks pane: the last line of a file's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the file itself alone."
+    "note": "Home page, Disks pane: the last line of a file's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the file itself alone."
   },
   "DisksPane.delete.remains.url": {
     "message": "\nThe image itself remains on its web server.",
-    "note": "Machines page, Disks pane: the last line of a URL's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the image on the server alone."
+    "note": "Home page, Disks pane: the last line of a URL's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the image on the server alone."
   },
   "DisksPane.delete.confirm_zero": {
     "message": "Delete {{name}}? This will delete {{what}}.{{remains}}",
-    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when it has no overlay (a ramdisk, or a disk no machine has used). {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{remains}} DisksPane.delete.remains.* or nothing."
+    "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when it has no overlay (a ramdisk, or a disk no machine has used). {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{remains}} DisksPane.delete.remains.* or nothing."
   },
   "DisksPane.delete.confirm_one": {
     "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay.{{remains}}",
-    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlay empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+    "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlay empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.confirm_other": {
     "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays.{{remains}}",
-    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlays (none or several) empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+    "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlays (none or several) empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.confirmSized_one": {
     "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay, with the {{size}} of changes made on top of the base image.{{remains}}",
-    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlay holds something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{size}} what the overlay holds, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+    "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlay holds something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{size}} what the overlay holds, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.confirmSized_other": {
     "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays, with the {{size}} of changes made on top of the base image.{{remains}}",
-    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlays hold something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{size}} what they hold together, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+    "note": "Home page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlays hold something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{size}} what they hold together, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
   },
   "DisksPane.delete.title": {
     "message": "Delete a disk",
-    "note": "Machines page, Disks pane: the title of the confirmation a disk's Delete asks."
+    "note": "Home page, Disks pane: the title of the confirmation a disk's Delete asks."
   },
   "DisksPane.delete.ok": {
     "message": "Delete",
-    "note": "Machines page, Disks pane: the confirm button of the question before a disk is deleted."
+    "note": "Home page, Disks pane: the confirm button of the question before a disk is deleted."
   },
   "disk-export.save.confirm.soft": {
     "message": "Shut the machine down to save its disk? Its unused space is freed first, then the guest is asked to shut down; you will be able to power it off forcibly, if needed. The machine will be started again afterwards.",
@@ -1185,15 +1185,15 @@
   },
   "DisksPane.resize": {
     "message": "Resize…",
-    "note": "Machines page, Disks pane: the button on a stored disk's or a ramdisk's card that opens the Resize dialog (grows the disk)."
+    "note": "Home page, Disks pane: the button on a stored disk's or a ramdisk's card that opens the Resize dialog (grows the disk)."
   },
   "DisksPane.resize.title": {
     "message": "Make this disk larger, for every machine that uses it.",
-    "note": "Machines page, Disks pane: the tooltip of Resize… on a stored disk or a ramdisk."
+    "note": "Home page, Disks pane: the tooltip of Resize… on a stored disk or a ramdisk."
   },
   "Overlays.resizeButton": {
     "message": "Resize…",
-    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay that opens the Resize dialog (grows the overlay)."
+    "note": "Overlays dialog (a disk's Overlays…, on the Home page's Disks pane or a machine's Disks tab): the button on each overlay that opens the Resize dialog (grows the overlay)."
   },
   "Overlays.resizeButton.title": {
     "message": "Make this overlay's disk larger, for the machines that use this overlay. The disk's other overlays keep their size.",
@@ -1201,27 +1201,27 @@
   },
   "Disks.resize": {
     "message": "Resize…",
-    "note": "Machines page, a machine's Disks tab: the button on a writable disk that opens the Resize dialog for what the machine writes to (its chosen overlay, the stored disk written in place, or the ramdisk)."
+    "note": "Home page, a machine's Disks tab: the button on a writable disk that opens the Resize dialog for what the machine writes to (its chosen overlay, the stored disk written in place, or the ramdisk)."
   },
   "Disks.resize.title": {
     "message": "Make this disk larger: its chosen overlay, or the disk itself when it is written in place or is a ramdisk.",
-    "note": "Machines page, a machine's Disks tab: the tooltip of Resize… on a writable disk."
+    "note": "Home page, a machine's Disks tab: the tooltip of Resize… on a writable disk."
   },
   "ResizeDisk.title": {
     "message": "Resize {{name}}",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the dialog's title. {{name}}: the disk's or the overlay's name."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the dialog's title. {{name}}: the disk's or the overlay's name."
   },
   "ResizeDisk.note": {
     "message": "A disk can only grow. The machines that use it must be off, and see the new size at their next start.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the explanation at its top."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the explanation at its top."
   },
   "ResizeDisk.now": {
     "message": "Its size now: {{size, bytes}}.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it). {{size}}: in KiB, MiB or GiB."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it). {{size}}: in KiB, MiB or GiB."
   },
   "ResizeDisk.nowHeld": {
     "message": "Its size now: {{size, bytes}}, of which {{held, bytes}} used.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it) and what the overlay or the stored disk holds in the browser. {{size}}, {{held}}: in KiB, MiB or GiB."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line with the disk's size now (as the guest sees it) and what the overlay or the stored disk holds in the browser. {{size}}, {{held}}: in KiB, MiB or GiB."
   },
   "ResizeDisk.newOverlay": {
     "message": "This disk has no overlay yet: a new empty one, {{name}}, is made at the new size and used by {{machine}}.",
@@ -1229,71 +1229,71 @@
   },
   "ResizeDisk.size": {
     "message": "New size",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the label of the new size's field (a number, and its unit beside it)."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the label of the new size's field (a number, and its unit beside it)."
   },
   "ResizeDisk.unit": {
     "message": "Unit",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the screen-reader name of the unit's list beside the new size's field."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the screen-reader name of the unit's list beside the new size's field."
   },
   "ResizeDisk.unit.mib": {
     "message": "MiB",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's mebibytes."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's mebibytes."
   },
   "ResizeDisk.unit.gib": {
     "message": "GiB",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's gibibytes."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the unit list's gibibytes."
   },
   "ResizeDisk.newSize": {
     "message": "It will be {{size, bytes}} (sizes are rounded up to a whole MiB).",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line under the size field with the size the disk grows to. {{size}}: in KiB, MiB or GiB."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line under the size field with the size the disk grows to. {{size}}: in KiB, MiB or GiB."
   },
   "ResizeDisk.machines": {
     "message": "It grows for {{machines}}.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line naming the machines whose disk grows. {{machines}}: their names, comma-separated."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line naming the machines whose disk grows. {{machines}}: their names, comma-separated."
   },
   "ResizeDisk.machinesNone": {
     "message": "No machine uses it now.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line in place of ResizeDisk.machines when no machine's disk grows."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the line in place of ResizeDisk.machines when no machine's disk grows."
   },
   "ResizeDisk.snapshots_one": {
     "message": "A disk's size is part of the machine: the snapshot {{list}} can't be restored after this.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans a kept snapshot. {{list}}: the snapshot as ResizeDisk.snapshot says it; {{count}}: 1."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans a kept snapshot. {{list}}: the snapshot as ResizeDisk.snapshot says it; {{count}}: 1."
   },
   "ResizeDisk.snapshots_other": {
     "message": "A disk's size is part of the machine: these {{count}} snapshots can't be restored after this: {{list}}.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans kept snapshots. {{list}}: each as ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a warning when the resize orphans kept snapshots. {{list}}: each as ResizeDisk.snapshot says it, comma-separated; {{count}}: how many."
   },
   "ResizeDisk.snapshot": {
     "message": "{{name}} ({{machine}})",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a snapshot in ResizeDisk.snapshots' list. {{name}}: the snapshot's name; {{machine}}: its machine's."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): a snapshot in ResizeDisk.snapshots' list. {{name}}: the snapshot's name; {{machine}}: its machine's."
   },
   "ResizeDisk.powerOff": {
     "message": "Power off {{name}}",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button under the running machine's refusal when that machine is the one on this page; it asks first, as the page's other edits do. {{name}}: the machine."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button under the running machine's refusal when that machine is the one on this page; it asks first, as the page's other edits do. {{name}}: the machine."
   },
   "ResizeDisk.grow": {
     "message": "Grow the partition and filesystem at the next start",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the box (on by default; not shown for a ramdisk) that has the guest grow its last partition and filesystem into the new space."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the box (on by default; not shown for a ramdisk) that has the guest grow its last partition and filesystem into the new space."
   },
   "ResizeDisk.grow.note": {
     "message": "Needs the guest agent. The partition that ends last grows, and its filesystem if it is mounted (ext4, btrfs or xfs). Without it, the new space is left free.",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the fine print under ResizeDisk.grow."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the fine print under ResizeDisk.grow."
   },
   "ResizeDisk.cancel": {
     "message": "Cancel",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button that closes the dialog without resizing."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the button that closes the dialog without resizing."
   },
   "ResizeDisk.ok": {
     "message": "Resize",
-    "note": "Resize dialog (Machines page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the main button: grows the disk to the new size."
+    "note": "Resize dialog (Home page: Resize… on a stored disk's or a ramdisk's card in the Disks pane, on an overlay's row in Overlays…, or on a writable disk in a machine's Disks tab): the main button: grows the disk to the new size."
   },
   "ResizeDisk.busy": {
     "message": "Resizing the disk…",
-    "note": "Machines page: what runs while the Resize dialog grows a disk or an overlay."
+    "note": "Home page: what runs while the Resize dialog grows a disk or an overlay."
   },
   "ResizeDisk.busy.powerOff": {
     "message": "Powering off the machine…",
-    "note": "Machines page: what runs while the Resize dialog powers off the machine on this page (its Power off button)."
+    "note": "Home page: what runs while the Resize dialog powers off the machine on this page (its Power off button)."
   },
   "surface-job.inUse": {
     "message": "A machine in another tab has this disk open: its map can be seen there, while it runs.",
@@ -1309,426 +1309,426 @@
   },
   "surface-look.legend.empty": {
     "message": "No data",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds no data (it reads as zeros)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds no data (it reads as zeros)."
   },
   "surface-look.legend.some": {
     "message": "Some data",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds some data (the faintest of four shades: any data at all)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds some data (the faintest of four shades: any data at all)."
   },
   "surface-look.legend.full": {
     "message": "Full",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds data in every block (the strongest shade)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose part of the disk holds data in every block (the strongest shade)."
   },
   "surface-look.legend.ram": {
     "message": "Some data in memory",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A ramdisk's square that holds some data in memory (the faintest of four shades)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A ramdisk's square that holds some data in memory (the faintest of four shades)."
   },
   "surface-look.legend.opaque": {
     "message": "Not examined",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose contents aren't examined: of a disk whose image is a file or a URL that isn't read to tell what it holds, or of a qcow2 image under the parts of its tables (which say where its data is) not read yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square whose contents aren't examined: of a disk whose image is a file or a URL that isn't read to tell what it holds, or of a qcow2 image under the parts of its tables (which say where its data is) not read yet."
   },
   "surface-look.legend.absent": {
     "message": "Past the disk's end",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. An outlined square past the end of the disk: the overlay laid over it is larger (grown), and only the overlay has this part."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. An outlined square past the end of the disk: the overlay laid over it is larger (grown), and only the overlay has this part."
   },
   "surface-look.legend.changed": {
     "message": "Changed by the overlay",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square with an inner square: the overlay laid over the disk changed blocks there (in four shades of how many)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square with an inner square: the overlay laid over the disk changed blocks there (in four shades of how many)."
   },
   "surface-look.legend.zeroed": {
     "message": "Zeroed by the overlay",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square with a hollow inner square: the overlay only zeroed or discarded blocks there, hiding the disk's data."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square with a hollow inner square: the overlay only zeroed or discarded blocks there, hiding the disk's data."
   },
   "surface-look.legend.read": {
     "message": "Read",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. Live only: a square that flashes when the running guest reads from that part of the disk."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. Live only: a square that flashes when the running guest reads from that part of the disk."
   },
   "surface-look.legend.written": {
     "message": "Written",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. Live only: a square that flashes when the running guest writes to that part of the disk."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. Live only: a square that flashes when the running guest writes to that part of the disk."
   },
   "surface-look.at": {
     "message": "From {{from}} to {{to}}.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Where the square is: {{from}} and {{to}} are offsets into the disk, as sizes (4 MiB, 1 GiB)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Where the square is: {{from}} and {{to}} are offsets into the disk, as sizes (4 MiB, 1 GiB)."
   },
   "surface-look.disk.past": {
     "message": "This is past the end of the disk.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The square is past the end of the disk (only the larger overlay laid over it has this part)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The square is past the end of the disk (only the larger overlay laid over it has this part)."
   },
   "surface-look.disk.opaque": {
     "message": "The contents of the disk's image aren't examined.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk's image is a file or a URL, which isn't read to tell what it holds."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk's image is a file or a URL, which isn't read to tell what it holds."
   },
   "surface-look.disk.empty": {
     "message": "The disk holds no data here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk holds nothing in this square: it reads as zeros."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk holds nothing in this square: it reads as zeros."
   },
   "surface-look.ram.empty": {
     "message": "The ramdisk holds nothing in memory here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running) holds nothing in memory in this square: it reads as zeros."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running) holds nothing in memory in this square: it reads as zeros."
   },
   "surface-look.disk.held_one": {
     "message": "The disk holds data in {{held}} of its {{count}} block of 4 KiB here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. {{held}} blocks with data of the {{count}} blocks of 4 KiB the disk has in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. {{held}} blocks with data of the {{count}} blocks of 4 KiB the disk has in this square."
   },
   "surface-look.disk.held_other": {
     "message": "The disk holds data in {{held}} of its {{count}} blocks of 4 KiB here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. {{held}} blocks with data of the {{count}} blocks of 4 KiB the disk has in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. {{held}} blocks with data of the {{count}} blocks of 4 KiB the disk has in this square."
   },
   "surface-look.ram.held_one": {
     "message": "The ramdisk holds {{held}} of its {{count}} block of 4 KiB in memory here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running): {{held}} of the {{count}} blocks of 4 KiB in this square are in memory."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running): {{held}} of the {{count}} blocks of 4 KiB in this square are in memory."
   },
   "surface-look.ram.held_other": {
     "message": "The ramdisk holds {{held}} of its {{count}} blocks of 4 KiB in memory here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running): {{held}} of the {{count}} blocks of 4 KiB in this square are in memory."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A ramdisk (its machine running): {{held}} of the {{count}} blocks of 4 KiB in this square are in memory."
   },
   "surface-look.overlay.changed_one": {
     "message": "The overlay changed {{count}} block.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk holds {{count}} block of its own (changed) in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk holds {{count}} block of its own (changed) in this square."
   },
   "surface-look.overlay.changed_other": {
     "message": "The overlay changed {{count}} blocks.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk holds {{count}} blocks of its own (changed) in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk holds {{count}} blocks of its own (changed) in this square."
   },
   "surface-look.overlay.zeroed_one": {
     "message": "The overlay zeroed {{count}} block.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk zeroed or discarded {{count}} block in this square (it reads as zeros, whatever the disk holds)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk zeroed or discarded {{count}} block in this square (it reads as zeros, whatever the disk holds)."
   },
   "surface-look.overlay.zeroed_other": {
     "message": "The overlay zeroed {{count}} blocks.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk zeroed or discarded {{count}} blocks in this square (they read as zeros, whatever the disk holds)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk zeroed or discarded {{count}} blocks in this square (they read as zeros, whatever the disk holds)."
   },
   "surface-look.overlay.both_one": {
     "message": "The overlay changed {{count}} block and zeroed {{zero}}.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk changed {{count}} block and zeroed or discarded {{zero}} in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk changed {{count}} block and zeroed or discarded {{zero}} in this square."
   },
   "surface-look.overlay.both_other": {
     "message": "The overlay changed {{count}} blocks and zeroed {{zero}}.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk changed {{count}} blocks and zeroed or discarded {{zero}} in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk changed {{count}} blocks and zeroed or discarded {{zero}} in this square."
   },
   "surface-look.overlay.none": {
     "message": "The overlay changed nothing here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk has no changes in this square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The overlay laid over the disk has no changes in this square."
   },
   "surface-look.read": {
     "message": "The guest just read from here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest read from this square since the map was last updated (twice a second)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest read from this square since the map was last updated (twice a second)."
   },
   "surface-look.written": {
     "message": "The guest just wrote here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest wrote to this square since the map was last updated (twice a second)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest wrote to this square since the map was last updated (twice a second)."
   },
   "surface-look.readWritten": {
     "message": "The guest just read from and wrote here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest read from and wrote to this square since the map was last updated (twice a second)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. Live only: the running guest read from and wrote to this square since the map was last updated (twice a second)."
   },
   "surface-look.range": {
     "message": "From {{from}} to {{to}}.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. Its first sentence: where the range is, {{from}} and {{to}} offsets into the disk, as sizes."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. Its first sentence: where the range is, {{from}} and {{to}} offsets into the disk, as sizes."
   },
   "surface-look.range.opaque": {
     "message": "The contents of the disk's image aren't examined.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The disk's image is a file or a URL, which isn't read to tell what it holds."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The disk's image is a file or a URL, which isn't read to tell what it holds."
   },
   "surface-look.range.diskEmpty": {
     "message": "The disk holds no data here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The disk holds nothing in this range."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The disk holds nothing in this range."
   },
   "surface-look.range.diskRuns_one": {
     "message": "The disk holds {{blocks}} blocks of data here, stored in this browser in one piece.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A disk stored in this browser: {{blocks}} blocks with data in the range, which its storage keeps in {{count}} piece of consecutive blocks (how fragmented it is there)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A disk stored in this browser: {{blocks}} blocks with data in the range, which its storage keeps in {{count}} piece of consecutive blocks (how fragmented it is there)."
   },
   "surface-look.range.diskRuns_other": {
     "message": "The disk holds {{blocks}} blocks of data here, stored in this browser in {{count}} pieces.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A disk stored in this browser: {{blocks}} blocks with data in the range, which its storage keeps in {{count}} pieces of consecutive blocks (how fragmented it is there)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A disk stored in this browser: {{blocks}} blocks with data in the range, which its storage keeps in {{count}} pieces of consecutive blocks (how fragmented it is there)."
   },
   "surface-look.range.disk_one": {
     "message": "The disk holds {{count}} block of data here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A ramdisk, or a qcow2 image whose clusters are known: {{count}} block in memory or with data in this range."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A ramdisk, or a qcow2 image whose clusters are known: {{count}} block in memory or with data in this range."
   },
   "surface-look.range.disk_other": {
     "message": "The disk holds {{count}} blocks of data here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A ramdisk, or a qcow2 image whose clusters are known: {{count}} blocks in memory or with data in this range."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A ramdisk, or a qcow2 image whose clusters are known: {{count}} blocks in memory or with data in this range."
   },
   "surface-look.range.overlayRuns_one": {
     "message": "The overlay changed {{blocks}} blocks here, stored in one piece.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. {{blocks}} blocks of the overlay laid over the disk in the range, which this browser's storage keeps in {{count}} piece of consecutive blocks (how fragmented it is there)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. {{blocks}} blocks of the overlay laid over the disk in the range, which this browser's storage keeps in {{count}} piece of consecutive blocks (how fragmented it is there)."
   },
   "surface-look.range.overlayRuns_other": {
     "message": "The overlay changed {{blocks}} blocks here, stored in {{count}} pieces.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. {{blocks}} blocks of the overlay laid over the disk in the range, which this browser's storage keeps in {{count}} pieces of consecutive blocks (how fragmented it is there)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. {{blocks}} blocks of the overlay laid over the disk in the range, which this browser's storage keeps in {{count}} pieces of consecutive blocks (how fragmented it is there)."
   },
   "surface-look.range.overlayNone": {
     "message": "The overlay changed nothing here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk has no changes in this range."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk has no changes in this range."
   },
   "surface-look.range.zeroed_one": {
     "message": "The overlay zeroed {{count}} block here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk zeroed or discarded {{count}} block in this range."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk zeroed or discarded {{count}} block in this range."
   },
   "surface-look.range.zeroed_other": {
     "message": "The overlay zeroed {{count}} blocks here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk zeroed or discarded {{count}} blocks in this range."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. The overlay laid over the disk zeroed or discarded {{count}} blocks in this range."
   },
   "surface-look.range.uncheckable": {
     "message": "The image's blocks aren't read here, so their contents can't be checked.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block. In place of Check contents (SurfaceDetails.check), or of its result, when the range's blocks with data are only the disk image's and the window doesn't read that image (a raw image, a URL's, a file it has no permission to read, a remote qcow2 whose blocks aren't kept in this browser)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block. In place of Check contents (SurfaceDetails.check), or of its result, when the range's blocks with data are only the disk image's and the window doesn't read that image (a raw image, a URL's, a file it has no permission to read, a remote qcow2 whose blocks aren't kept in this browser)."
   },
   "surface-look.range.content_one": {
     "message": "{{zeros}} of the {{count}} block of data read holds only zeros.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After Check contents: of the {{count}} block with data in the range that was read, how many ({{zeros}}) hold only zero bytes (written, but as good as empty)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After Check contents: of the {{count}} block with data in the range that was read, how many ({{zeros}}) hold only zero bytes (written, but as good as empty)."
   },
   "surface-look.range.content_other": {
     "message": "{{zeros}} of the {{count}} blocks of data read hold only zeros.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After Check contents: of the {{count}} blocks with data in the range that were read, how many ({{zeros}}) hold only zero bytes (written, but as good as empty)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After Check contents: of the {{count}} blocks with data in the range that were read, how many ({{zeros}}) hold only zero bytes (written, but as good as empty)."
   },
   "surface-source.diskGone": {
     "message": "This disk is no longer stored in this browser.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The disk was deleted (in this tab or another) while its window was open."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The disk was deleted (in this tab or another) while its window was open."
   },
   "surface-source.overlayGone": {
     "message": "This overlay is no longer stored in this browser.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The overlay chosen in the window's title bar was deleted or merged while the window was open."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The overlay chosen in the window's title bar was deleted or merged while the window was open."
   },
   "surface-source.ramdisk": {
     "message": "A ramdisk holds data only while its machine runs. Its map can be seen here while the machine runs in this tab.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. A ramdisk whose machine isn't running in this tab: it holds nothing (its memory is gone when its machine stops)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. A ramdisk whose machine isn't running in this tab: it holds nothing (its memory is gone when its machine stops)."
   },
   "surface-source.inPlaceHere": {
     "message": "The machine running in this tab writes this disk in place, so its overlays can't be read while it runs. The disk alone is shown live.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. One of the disk's overlays is chosen in the window's title bar while the machine on this page writes the stored disk itself (in place): the disk's files are the machine's until it stops. \"The disk alone\" is the picker's first choice (SurfaceWindow.alone), which shows the disk as the machine writes it."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. One of the disk's overlays is chosen in the window's title bar while the machine on this page writes the stored disk itself (in place): the disk's files are the machine's until it stops. \"The disk alone\" is the picker's first choice (SurfaceWindow.alone), which shows the disk as the machine writes it."
   },
   "surface-source.noAnswer": {
     "message": "Reading the disk's map took too long.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The running machine, or the reading of the disk's files, didn't answer in time; a live map is asked for again."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab), in place of the map: why it can't be shown. The running machine, or the reading of the disk's files, didn't answer in time; a live map is asked for again."
   },
   "SurfaceWindow.pinned": {
     "message": "Pinned square",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, in a small window of its own beside the map after a click on a square. The window's title."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, in a small window of its own beside the map after a click on a square. The window's title."
   },
   "SurfaceDetails.prev": {
     "message": "Previous 4 MiB",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the left arrow button that shows the range before."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the left arrow button that shows the range before."
   },
   "SurfaceDetails.next": {
     "message": "Next 4 MiB",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the right arrow button that shows the range after."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: the tooltip and spoken name of the right arrow button that shows the range after."
   },
   "SurfaceDetails.step": {
     "message": "{{at}} of {{count}}",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: between the arrow buttons, which of the square's {{count}} ranges is shown ({{at}}, from 1)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. A square that covers several ranges of 4 MiB: between the arrow buttons, which of the square's {{count}} ranges is shown ({{at}}, from 1)."
   },
   "SurfaceDetails.blocks": {
     "message": "Blocks of 4 KiB in this range",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The spoken name of the small map of the range's 1,024 blocks of 4 KiB (32 by 32)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The spoken name of the small map of the range's 1,024 blocks of 4 KiB (32 by 32)."
   },
   "SurfaceDetails.check": {
     "message": "Check contents",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. Button under the range's words: reads the blocks with data in the range and counts those that hold only zeros."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. Button under the range's words: reads the blocks with data in the range and counts those that hold only zeros."
   },
   "SurfaceDetails.checking": {
     "message": "Checking contents",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The Check contents button's words while it reads (busy text)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The Check contents button's words while it reads (busy text)."
   },
   "SurfaceDetails.check.title": {
     "message": "Read the blocks of data in this range, up to 4 MiB, and count those that hold only zeros.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The tooltip of the Check contents button."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details, beside the map after a click on a square. The tooltip of the Check contents button."
   },
   "SurfaceWindow.alone": {
     "message": "The disk alone",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The first choice of the list in the window's title bar: the disk without any of its overlays laid over it."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The first choice of the list in the window's title bar: the disk without any of its overlays laid over it."
   },
   "SurfaceWindow.overlay": {
     "message": "{{name}} ({{held}} of {{size}})",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). A choice of the list in the window's title bar: one of the disk's overlays laid over it. {{name}} is its name, {{held}} what it holds, {{size}} the size the guest sees through it (the disk's, or a grown overlay's own)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). A choice of the list in the window's title bar: one of the disk's overlays laid over it. {{name}} is its name, {{held}} what it holds, {{size}} the size the guest sees through it (the disk's, or a grown overlay's own)."
   },
   "SurfaceWindow.overlays": {
     "message": "Overlay",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The spoken name of the list in the window's title bar (the disk alone, or one of its overlays laid over it)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The spoken name of the list in the window's title bar (the disk alone, or one of its overlays laid over it)."
   },
   "SurfaceWindow.overlays.title": {
     "message": "Lay one of the disk's overlays over it, or see the disk alone.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the list in the window's title bar."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The tooltip of the list in the window's title bar."
   },
   "SurfaceWindow.scale": {
     "message": "1 square = {{size}}",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Over the map: how much of the disk each square of the map is. {{size}} is a size (4 MiB, 16 MiB, 1 GiB): a larger window has smaller squares."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). Over the map: how much of the disk each square of the map is. {{size}} is a size (4 MiB, 16 MiB, 1 GiB): a larger window has smaller squares."
   },
   "SurfaceWindow.live": {
     "message": "Live",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Over the map, beside a green light: the map follows the running guest's reads and writes."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). Over the map, beside a green light: the map follows the running guest's reads and writes."
   },
   "SurfaceWindow.live.title": {
     "message": "The map follows the machine's reads and writes as it runs.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the Live sign over the map."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The tooltip of the Live sign over the map."
   },
   "SurfaceWindow.stored": {
     "message": "Not live",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Over the map, beside a grey light, before the Refresh button: the map is the disk as stored in this browser, read once."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). Over the map, beside a grey light, before the Refresh button: the map is the disk as stored in this browser, read once."
   },
   "SurfaceWindow.stored.title": {
     "message": "The map shows the disk as stored in this browser. It is live while a machine runs with it in this tab.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the Not live sign over the map."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The tooltip of the Not live sign over the map."
   },
   "SurfaceWindow.refresh": {
     "message": "Refresh",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). Button over the map, when it isn't live: reads the map again from this browser's storage."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). Button over the map, when it isn't live: reads the map again from this browser's storage."
   },
   "SurfaceWindow.refresh.title": {
     "message": "Read the map again from this browser's storage.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The tooltip of the Refresh button over the map."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The tooltip of the Refresh button over the map."
   },
   "SurfaceWindow.map": {
     "message": "Map of {{name}}",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The spoken name of the map (a grid of squares; the arrow keys move between them, Enter pins one). {{name}} is the disk's name."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The spoken name of the map (a grid of squares; the arrow keys move between them, Enter pins one). {{name}} is the disk's name."
   },
   "SurfaceWindow.reading": {
     "message": "Reading the map…",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). In place of the map while it is read the first time; and the line under the map while another overlay's map (or the disk alone's) is read, the one shown before dimmed meanwhile."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). In place of the map while it is read the first time; and the line under the map while another overlay's map (or the disk alone's) is read, the one shown before dimmed meanwhile."
   },
   "SurfaceWindow.untitled": {
     "message": "Disk",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The window's title when its disk is no longer in this browser (its name is gone with it)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The window's title when its disk is no longer in this browser (its name is gone with it)."
   },
   "surface-look.hint": {
     "message": "Point at a square to see what it holds. Click it to see its blocks.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square."
   },
   "surface-look.empty": {
     "message": "The disk holds no data yet. Every block reads as zeros.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, when nothing at all is held (a new blank disk, an empty overlay over it)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, when nothing at all is held (a new blank disk, an empty overlay over it)."
   },
   "surface-look.ramEmpty": {
     "message": "The ramdisk holds nothing in memory yet.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a ramdisk (its machine running) that holds nothing."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a ramdisk (its machine running) that holds nothing."
   },
   "VisualizeLine.line": {
     "message": "{{line}} · <link>visualize</link>",
-    "note": "Machines page, the Disks pane and a machine's Disks tab: the small line beside or under a disk's name, ended by a link that opens the disk's map (its surface window; from a machine's Disks tab, through the overlay that machine uses). {{line}} is the line itself (its kind, size, overlays or device name); the marked words are the link."
+    "note": "Home page, the Disks pane and a machine's Disks tab: the small line beside or under a disk's name, ended by a link that opens the disk's map (its surface window; from a machine's Disks tab, through the overlay that machine uses). {{line}} is the line itself (its kind, size, overlays or device name); the marked words are the link."
   },
   "VisualizeLine.title": {
     "message": "See the disk's map: what it holds, and where.",
-    "note": "Machines page, the Disks pane and a machine's Disks tab: the tooltip of the \"visualize\" link at the end of a disk's line, which opens the disk's map in a window over the page."
+    "note": "Home page, the Disks pane and a machine's Disks tab: the tooltip of the \"visualize\" link at the end of a disk's line, which opens the disk's map in a window over the page."
   },
   "surface-look.range.past": {
     "message": "This is past the end of the disk.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square); one of the sentences under its block map. The range is past the end of the disk (only the larger overlay laid over it has this part)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square); one of the sentences under its block map. The range is past the end of the disk (only the larger overlay laid over it has this part)."
   },
   "surface-look.why.raw": {
     "message": "The disk's image is raw: nothing in it says which of its blocks hold data, and its contents aren't read to tell.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a raw file, which records nothing about what it holds."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a raw file, which records nothing about what it holds."
   },
   "surface-look.why.tables": {
     "message": "The image's tables haven't all been read yet. The map shows what it holds once the guest has read them; they're never downloaded just for the map.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is a qcow2 on a web server of which nothing is examined yet (its squares are drawn flat, hatched): its first sentence, why: this browser hasn't read or kept any of the image's tables (which say where its data is) yet; reading them for the map would download them, which it never does."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is a qcow2 on a web server of which nothing is examined yet (its squares are drawn flat, hatched): its first sentence, why: this browser hasn't read or kept any of the image's tables (which say where its data is) yet; reading them for the map would download them, which it never does."
   },
   "surface-look.why.large": {
     "message": "The image's tables are too large to read for the map.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a qcow2 whose tables (which say where its data is) are larger than the map reads (32 MiB), or couldn't be read, and none of them has been read yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a qcow2 whose tables (which say where its data is) are larger than the map reads (32 MiB), or couldn't be read, and none of them has been read yet."
   },
   "surface-look.why.permission": {
     "message": "This browser may read the image's file only once you allow it again (when its machine starts): until then its contents aren't examined.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a file on this computer that this browser has no read permission for now (it's asked for when the machine starts; the map never asks)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a file on this computer that this browser has no read permission for now (it's asked for when the machine starts; the map never asks)."
   },
   "surface-look.why.remote": {
     "message": "The disk's image is on a web server: what it holds is shown only while its machine runs in this tab.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a URL, examined only from what the running machine already has (nothing is downloaded for the map)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, why: the image is a URL, examined only from what the running machine already has (nothing is downloaded for the map)."
   },
   "surface-look.why.unknown": {
     "message": "The disk's image is a file or a URL, whose contents aren't examined.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, when no reason of its own is known."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its first sentence, when no reason of its own is known."
   },
   "surface-look.keptAll": {
     "message": "This browser keeps {{size}} of it.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is on a web server: a sentence after the others: {{size}} is how much of the image this browser keeps (in memory or in its storage), so it needn't download that again (of a qcow2, of its blocks with data); those squares have a green bar along their bottom edge."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is on a web server: a sentence after the others: {{size}} is how much of the image this browser keeps (in memory or in its storage), so it needn't download that again (of a qcow2, of its blocks with data); those squares have a green bar along their bottom edge."
   },
   "surface-look.keptNone": {
     "message": "This browser keeps none of it yet.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is on a web server: a sentence after the others, when this browser keeps nothing of it yet (in memory or in its storage)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image is on a web server: a sentence after the others, when this browser keeps nothing of it yet (in memory or in its storage)."
   },
   "surface-look.overOpaque": {
     "message": "The overlay's changes are shown over it.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its last sentence, with an overlay laid over the disk: its changes are drawn as inner squares."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a disk whose image (a file or a URL) isn't examined (its squares are drawn flat, hatched): its last sentence, with an overlay laid over the disk: its changes are drawn as inner squares."
   },
   "surface-look.legend.keptSome": {
     "message": "Partly kept in this browser",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server of which this browser keeps part of what it holds there (in memory or in its storage), so it needn't download that again: a short green bar along the square's bottom edge, half its width, over the square's own look (the image's contents not examined, or a qcow2's blocks with data in shades)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server of which this browser keeps part of what it holds there (in memory or in its storage), so it needn't download that again: a short green bar along the square's bottom edge, half its width, over the square's own look (the image's contents not examined, or a qcow2's blocks with data in shades)."
   },
   "surface-look.legend.kept": {
     "message": "Kept in this browser",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server of which this browser keeps all it holds there (in memory or in its storage): a green bar along the whole of the square's bottom edge, over the square's own look."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the legend under the map, beside a square drawn as the map draws it. A square of an image on a web server of which this browser keeps all it holds there (in memory or in its storage): a green bar along the whole of the square's bottom edge, over the square's own look."
   },
   "surface-look.disk.kept": {
     "message": "Not examined: this browser keeps {{kept}} of its {{of}} blocks.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk's image is on a web server and isn't examined, but this browser keeps {{kept}} of the {{of}} blocks of this square (in memory or in its storage)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. The disk's image is on a web server and isn't examined, but this browser keeps {{kept}} of the {{of}} blocks of this square (in memory or in its storage)."
   },
   "surface-look.range.kept": {
     "message": "This browser keeps {{blocks}} of them.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the one that says the image isn't examined: of the range's blocks, the {{blocks}} this browser keeps (in memory or in its storage) of an image on a web server; they have a green bar along their bottom edge."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the one that says the image isn't examined: of the range's blocks, the {{blocks}} this browser keeps (in memory or in its storage) of an image on a web server; they have a green bar along their bottom edge."
   },
   "surface-look.why.tablesSome": {
     "message": "Some of the image's tables haven't been read yet, so the squares they cover aren't examined. They fill in as the guest reads them; the tables are never downloaded just for the map.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a qcow2 image on a web server of which part is examined: its first sentence, why some squares are drawn flat, hatched: the image's tables (which say where its data is) for them haven't been read or kept by this browser yet. The map shows them once the guest has read them; reading them for the map would download them, which it never does."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a qcow2 image on a web server of which part is examined: its first sentence, why some squares are drawn flat, hatched: the image's tables (which say where its data is) for them haven't been read or kept by this browser yet. The map shows them once the guest has read them; reading them for the map would download them, which it never does."
   },
   "surface-look.why.largeSome": {
     "message": "The image's tables are too large to read whole for the map, so the squares under those the guest hasn't read yet aren't examined.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a qcow2 image in a file of which part is examined: its first sentence, why some squares are drawn flat, hatched: the image's tables (which say where its data is) are larger than the map reads (32 MiB), so only those the guest has read so far are used."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab). The line under the map while the pointer is on no square, for a qcow2 image in a file of which part is examined: its first sentence, why some squares are drawn flat, hatched: the image's tables (which say where its data is) are larger than the map reads (32 MiB), so only those the guest has read so far are used."
   },
   "surface-look.disk.unknownAll": {
     "message": "The disk's blocks here aren't examined yet, because the image's table for them hasn't been read.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose table (which says where its data is) for this square this browser hasn't read yet: what the square holds isn't known."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose table (which says where its data is) for this square this browser hasn't read yet: what the square holds isn't known."
   },
   "surface-look.disk.heldKnown_one": {
     "message": "The disk holds data in {{held}} of the {{count}} block of 4 KiB examined here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: {{held}} blocks with data of the {{count}} blocks of 4 KiB examined (another sentence says how many aren't)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: {{held}} blocks with data of the {{count}} blocks of 4 KiB examined (another sentence says how many aren't)."
   },
   "surface-look.disk.heldKnown_other": {
     "message": "The disk holds data in {{held}} of the {{count}} blocks of 4 KiB examined here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: {{held}} blocks with data of the {{count}} blocks of 4 KiB examined (another sentence says how many aren't)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: {{held}} blocks with data of the {{count}} blocks of 4 KiB examined (another sentence says how many aren't)."
   },
   "surface-look.disk.emptyKnown_one": {
     "message": "The disk holds no data in the {{count}} block of 4 KiB examined here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: none of the {{count}} blocks of 4 KiB examined has data (another sentence says how many aren't examined)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: none of the {{count}} blocks of 4 KiB examined has data (another sentence says how many aren't examined)."
   },
   "surface-look.disk.emptyKnown_other": {
     "message": "The disk holds no data in the {{count}} blocks of 4 KiB examined here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: none of the {{count}} blocks of 4 KiB examined has data (another sentence says how many aren't examined)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. A qcow2 image whose tables for part of this square haven't been read yet: none of the {{count}} blocks of 4 KiB examined has data (another sentence says how many aren't examined)."
   },
   "surface-look.disk.unknown_one": {
     "message": "{{count}} more block isn't examined yet, because the image's table for it hasn't been read.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks examined: {{count}} blocks of the square under a qcow2 image's table (which says where its data is) this browser hasn't read yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks examined: {{count}} blocks of the square under a qcow2 image's table (which says where its data is) this browser hasn't read yet."
   },
   "surface-look.disk.unknown_other": {
     "message": "{{count}} more blocks aren't examined yet, because the image's table for them hasn't been read.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks examined: {{count}} blocks of the square under a qcow2 image's table (which says where its data is) this browser hasn't read yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks examined: {{count}} blocks of the square under a qcow2 image's table (which says where its data is) this browser hasn't read yet."
   },
   "surface-look.disk.keptData": {
     "message": "This browser keeps {{kept}} of those.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks with data, for a qcow2 image on a web server: of those blocks with data, the {{kept}} whose bytes this browser keeps (in memory or in its storage), so it needn't download them again."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks with data, for a qcow2 image on a web server: of those blocks with data, the {{kept}} whose bytes this browser keeps (in memory or in its storage), so it needn't download them again."
   },
   "surface-look.disk.keptNone": {
     "message": "This browser keeps none of those yet.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks with data, for a qcow2 image on a web server: this browser keeps none of those blocks' bytes (in memory or in its storage) yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the line under the map while the pointer (or the keyboard's cursor) is on a square, which tells that square's numbers; one of its sentences. After the sentence on the blocks with data, for a qcow2 image on a web server: this browser keeps none of those blocks' bytes (in memory or in its storage) yet."
   },
   "surface-look.range.unknownAll": {
     "message": "The image's table for this range hasn't been read yet, so its blocks aren't examined.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A qcow2 image whose table (which says where its data is) for this range this browser hasn't read yet: what its blocks hold isn't known."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A qcow2 image whose table (which says where its data is) for this range this browser hasn't read yet: what its blocks hold isn't known."
   },
   "surface-look.range.unknown_one": {
     "message": "{{count}} more block isn't examined yet, because the image's table for it hasn't been read.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the sentence on the blocks with data: {{count}} blocks of the range under a qcow2 image's table this browser hasn't read yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the sentence on the blocks with data: {{count}} blocks of the range under a qcow2 image's table this browser hasn't read yet."
   },
   "surface-look.range.unknown_other": {
     "message": "{{count}} more blocks aren't examined yet, because the image's table for them hasn't been read.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the sentence on the blocks with data: {{count}} blocks of the range under a qcow2 image's table this browser hasn't read yet."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. After the sentence on the blocks with data: {{count}} blocks of the range under a qcow2 image's table this browser hasn't read yet."
   },
   "surface-look.range.diskEmptyKnown": {
     "message": "The disk holds no data in the blocks examined here.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A qcow2 image of which part of the range is under a table not read yet: none of the blocks examined has data (another sentence says how many aren't examined)."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. A qcow2 image of which part of the range is under a table not read yet: none of the blocks examined has data (another sentence says how many aren't examined)."
   },
   "surface-look.range.keptData": {
     "message": "This browser keeps {{count}} of the blocks with data.",
-    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Machines page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. For a qcow2 image on a web server, after the sentence on the blocks with data: of those, the {{count}} whose bytes this browser keeps (in memory or in its storage), so it needn't download them again; they have a green bar along their bottom edge."
+    "note": "The disk surface window (a disk's map, opened by \"visualize\" on a disk's line in the Home page's Disks pane or a machine's Disks tab): the pinned square's details (beside the map, after a click on a square): one 4 MiB range of the disk, block by block; one of the sentences under its block map. For a qcow2 image on a web server, after the sentence on the blocks with data: of those, the {{count}} whose bytes this browser keeps (in memory or in its storage), so it needn't download them again; they have a green bar along their bottom edge."
   }
 }

@@ -1,5 +1,5 @@
 // The RAM map's window (docs/frontend.md "RAM's map"): whether it's open; App.svelte mounts web/app/RamWindow.svelte
-// while it is, so it stays as the user goes between the machine and the Machines page. `ramHost` is the machine that
+// while it is, so it stays as the user goes between the machine and the Home page. `ramHost` is the machine that
 // runs on this page, to ask about its RAM (its run says how to reach it: web/app/run/runner.ts writes
 // `current.inspect`), from its boot to its stop.
 import { current } from './current.svelte.ts';

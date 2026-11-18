@@ -2,7 +2,7 @@
 // change and comparing it with a baseline: headless Chromium (a temporary profile, as the tests launch it) on the dev
 // server, the browser's records seeded through the page's own modules (a machine with disks, an overlay, snapshots, an
 // adapter on a connection, a USB device, a folder), then the toolbar and each of its menus, the message bar, the
-// Machines page's panes and a machine's tabs (also 720 px wide), and every dialog and wizard step, one PNG per state.
+// Home page's panes and a machine's tabs (also 720 px wide), and every dialog and wizard step, one PNG per state.
 //   node tools/screens.ts [--label before] [--only <substring>]
 // writes bench/results/local/screens/<label>/<state>.png (label `now` by default) and lists the states it couldn't
 // reach (they need a guest or hardware) in `missed.txt` there.
@@ -158,7 +158,7 @@ async function seed(page: Page): Promise<Seed> {
 }
 
 const machinesPage = (page: Page) => page.locator('.machines');
-/** Chooses `id` in the Machines page's list and waits for its pane. */
+/** Chooses `id` in the Home page's list and waits for its pane. */
 async function choose(page: Page, id: string) {
   await page.click(`nav [data-machine="${id}"]`);
   await page.locator(`section.machine[data-selected="${id}"]`).waitFor();
@@ -232,7 +232,7 @@ let seeded: Seed;
   await page.close();
 }
 
-// The Machines page: its panes, a machine's tabs, its dialogs and the wizards, wide; the panes and tabs narrow too.
+// The Home page: its panes, a machine's tabs, its dialogs and the wizards, wide; the panes and tabs narrow too.
 for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
   const page = await open(viewport, '#home');
   await machinesPage(page).waitFor();
@@ -302,7 +302,7 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
   });
   if (suffix) { await page.close(); continue; }
 
-  // Dialogs over the Machines page.
+  // Dialogs over the Home page.
   await state('dialog-add-disk', async () => {
     await tab(page, machine, 'disks');
     await page.click('[data-action=add-disk-open]');
@@ -458,7 +458,7 @@ for (const [viewport, suffix] of [[WIDE, ''], [NARROW, '-narrow']] as const) {
   await page.close();
 }
 
-// The page's own (transient) machine on the Machines page: `?machine=` with a disk, its Disks and Snapshots tabs.
+// The page's own (transient) machine on the Home page: `?machine=` with a disk, its Disks and Snapshots tabs.
 await state('machines-transient', async () => {
   const page = await open(WIDE, '#home');
   await setUi(page, `a.current.transient = { label: 'This page’s machine', disk: 'disk.qcow2' }; a.current.hasOverlay = true; a.machinesNav.choose('page');`); // i18n-ignore: a test's label
