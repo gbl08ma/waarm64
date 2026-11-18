@@ -201,8 +201,11 @@ async function noMerge(stored: string | undefined, signal: AbortSignal) {
 
 /**
  * The disk's files, read by a job worker per ask (`make`: the worker; tests give their own). One job of each kind (the
- * map, a range) is in flight: a newer ask of that kind ends the one before (its worker terminated, its answer `none`),
- * as `close` ends them all. A merge into the disk that runs is waited for first, outside the job's time.
+ * map, a range) is waited for: a newer ask of that kind ends the one before (its answer `none`), as `close` ends them
+ * all. A worker that was given its job is left to finish it and ended once it answers (or after its time): it may have
+ * the files open, and a terminated worker's locks go before its handles are closed, so a deletion or a resize that took
+ * the lock next would find them open (`NoModificationAllowedError`). A merge into the disk that runs is waited for
+ * first, outside the job's time.
  */
 export function jobSource(job: OfflineJob, make: () => JobWorker = jobWorker, ms = JOB_MS): SurfaceSource {
   const running = new Map<InspectQuery['kind'], () => void>();
@@ -213,13 +216,18 @@ export function jobSource(job: OfflineJob, make: () => JobWorker = jobWorker, ms
       let timer: ReturnType<typeof setTimeout> | undefined;
       const abort = new AbortController();
       let done = false;
+      let posted = false;
+      /** The worker ended: it answered (its files closed), it was never given the job, or it ran out of time. */
+      const finish = () => {
+        clearTimeout(timer);
+        w?.terminate();
+      };
       const end = (a: InspectAnswer) => {
         if (done) return;
         done = true;
-        clearTimeout(timer);
         abort.abort();
         if (running.get(query.kind) === stop) running.delete(query.kind);
-        w?.terminate();
+        if (!posted) finish();
         resolve(a);
       };
       const stop = () => end({ kind: 'none' });
@@ -227,11 +235,25 @@ export function jobSource(job: OfflineJob, make: () => JobWorker = jobWorker, ms
       const start = () => {
         if (done) return;
         const worker = (w = make());
-        timer = setTimeout(() => end(noAnswer()), ms);
-        worker.onmessage = (e) => end(e.data);
-        worker.onerror = () => end({ kind: 'none', why: msg('disks:surface-job.unreadable') });
-        // An image file's handle checked first (it may have gone meanwhile: the ask ended, the worker with it).
-        void jobOf(job).then((prepared) => done || worker.postMessage({ ...prepared, query } satisfies SurfaceJob));
+        // Past its time (hung: the one case it is ended with the files perhaps open).
+        timer = setTimeout(() => {
+          end(noAnswer());
+          finish();
+        }, ms);
+        worker.onmessage = (e) => {
+          end(e.data);
+          finish();
+        };
+        worker.onerror = () => {
+          end({ kind: 'none', why: msg('disks:surface-job.unreadable') });
+          finish();
+        };
+        // An image file's handle checked first (the ask may have ended meanwhile: the worker, given nothing, with it).
+        void jobOf(job).then((prepared) => {
+          if (done) return finish();
+          posted = true;
+          worker.postMessage({ ...prepared, query } satisfies SurfaceJob);
+        });
       };
       if (job.stored) void noMerge(job.stored, abort.signal).then(start);
       else start();

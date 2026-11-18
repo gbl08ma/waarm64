@@ -607,7 +607,11 @@ was (on the screen).
   written in place answers as a blank disk under an overlay that is its store, shown as the disk (`asInPlace`).
   Otherwise **from the files**: a job worker per ask (`surface-worker.ts`, `surface-job.ts`), read-only under the
   shared lock (a stored disk viewed alone while a machine here writes an overlay over it is read this way too), one
-  of each kind (the map, a range) in flight: a newer ask ends the one before, its worker terminated. The job holds
+  of each kind (the map, a range) waited for: a newer ask ends the one before (its answer `none`), and a worker that was
+  given its job is left to finish it and ended once it answers (or past its 30 s): a terminated worker's Web Locks go
+  before its handles are closed, so a Delete or a Resize… that took the lock next found the files open
+  (`NoModificationAllowedError`, under load). Deletions (web/app/store.ts `deleteOverlay`, `deleteDisk`) remove the
+  files under their lock, so they wait for a job that has them open. The job holds
   the files' locks under `waarm64-surface-reader` (web/overlay.ts `SURFACE_READER_LOCK`), and the page's checks of
   whether something has a disk's files open (web/overlay.ts `locksInUse`: `disks.ts` `inUse`, the resize's) leave out
   the locks of a client that holds it, so a Delete, a Resize… or a Merge into the disk is never refused for the
@@ -2141,7 +2145,9 @@ at once, then the first restart started another. Not reproduced otherwise withou
 to its disk, restarts during the next machine's loading or booting, disk reads delayed 0.15–5 s by
 a proxy so `close` timed out), nor in 400 terminations of a worker holding the overlay followed by
 an immediate open: Chromium releases a terminated worker's handles before a new worker can open
-them, and aborts a nested worker's sync XHR when its parent is terminated. Tests:
+them, and aborts a nested worker's sync XHR when its parent is terminated. A `removeEntry` right after the
+termination is another matter: it fails while the handles are still open (a moment after `terminate()` returns,
+under load later; the disk surface's jobs met it: "A disk's surface"). Tests:
 `tests/browser.test.ts` "the overlay's hand-over" (a second opener waits for the first's `close`,
 20 holders terminated and the overlay opened at once, one held past the wait is in use; without
 the lock the second opener fails at once) and "the page restarts over and over" (six restarts
