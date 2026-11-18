@@ -166,7 +166,9 @@ ID, from a key new each session. Two things follow from the shape that are worth
    lookup's name id"; this reads it as "a lookup of a name the member doesn't keep".
 3. **Public relays before N6.** The kickoff keeps public services to N0 and N6. Whether the default relays forward a
    4 KB ephemeral event, and how fast, decides `REPLY_MAX`: about a hundred events to the six defaults, from R3 or
-   from N0c before it. Without it R3 builds with 4 KiB and N6 finds out.
+   from N0c before it. Without it R3 builds with 4 KiB and N6 finds out. *Measured (N0c, 2026-11-18): all six
+   forward a reply of `REPLY_MAX` (5.6 KB of base64) in 0.12 to 0.6 s, and up to 32 KiB of item; five refuse 64 KiB
+   ("event too large"). `REPLY_MAX` stays 4 KiB.*
 4. **Optional, not in the plan above**: a publisher could check that the room has its last entry by an ordinary `ask`
    for its own name, and put again through a fresh draw when it hasn't. That announces the id from the owner's
    address (as any member's lookup would look), which answer 3 didn't cover. Left out unless wanted.

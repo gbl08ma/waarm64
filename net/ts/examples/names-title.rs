@@ -8,13 +8,19 @@
 //! "zones": [{"seq": 1, "points": [{"label": null, "key": "<node key, 64 hex digits>"}, {"label": "git", "key": …}]}]}]}`.
 //! Prints, for each title, its owner key (64 hex digits) and an item (hex, room/names/wire.rs) for each zone: the same
 //! chain with each zone in turn (a zone change), as the module's config takes titles (`room.names.titles`).
+//!
+//! `@<file>` in place of the JSON reads the spec from that file (bench/net/names-public.ts: thousands of titles, past
+//! an argument's limit). `"levels": n` in the spec gives each anchor a calendar's depth of `n` levels (a 32-byte sibling
+//! a level, as real anchors' ~1.2 KB have: bench/net/REPORT.md "NAMES loop 0b"), where the default is two.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use k256::schnorr::SigningKey;
 use serde::Deserialize;
 use waarm64_ts::room::names::{
-    entry::Kind,
-    testkit::{Bitcoin, DAY},
+    anchor::{Anchor, Op, apply},
+    entry::{Kind, Stamped},
+    testkit::{Bitcoin, DAY, EASY, LATE, header},
     zone::Zone,
 };
 
@@ -23,6 +29,8 @@ use waarm64_ts::room::names::{
 struct Spec {
     room: String,
     titles: Vec<TitleSpec>,
+    #[serde(default)]
+    levels: usize,
 }
 
 #[derive(Deserialize)]
@@ -61,8 +69,46 @@ fn key32(s: &str) -> [u8; 32] {
     k
 }
 
+/// An entry anchored at `time`, its anchor `levels` deep (`Bitcoin::at`'s with a calendar's depth).
+fn at(
+    b: &mut Bitcoin,
+    levels: usize,
+    kind: Kind,
+    key: &SigningKey,
+    name: &str,
+    prev: [u8; 32],
+    time: u32,
+) -> Stamped {
+    if levels == 0 {
+        return b.at(kind, key, name, prev, time);
+    }
+    let mut s = b.entry(kind, key, name, prev);
+    let mut ops = vec![Op::Append(b.rng.bytes::<16>().to_vec()), Op::Sha256];
+    for k in 0..levels {
+        let sib = b.rng.bytes::<32>().to_vec();
+        ops.push(if k % 2 == 0 {
+            Op::Prepend(sib)
+        } else {
+            Op::Append(sib)
+        });
+        ops.push(Op::Sha256);
+    }
+    let root: [u8; 32] = apply(&ops, &s.id()).unwrap().try_into().unwrap();
+    let h = header(&mut b.rng, time, root, EASY);
+    let a = Anchor {
+        ops,
+        height: 900_000,
+    };
+    assert_eq!(s.offer_anchor(a, h, &b.params, LATE), Ok(true));
+    s
+}
+
 fn main() {
     let arg = std::env::args().nth(1).expect("a spec, as JSON");
+    let arg = match arg.strip_prefix('@') {
+        Some(path) => std::fs::read_to_string(path).expect("the spec's file"),
+        None => arg,
+    };
     let spec: Spec = serde_json::from_str(&arg).expect("the spec");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -73,7 +119,9 @@ fn main() {
     let mut out = Vec::new();
     for t in &spec.titles {
         let key = b.key(t.secret, &t.name);
-        let mut run = vec![b.at(
+        let mut run = vec![at(
+            &mut b,
+            spec.levels,
             Kind::Claim,
             &key,
             &t.name,
@@ -82,7 +130,15 @@ fn main() {
         )];
         for d in &t.renew_days_ago {
             let prev = run.last().unwrap().id();
-            run.push(b.at(Kind::Renew, &key, &t.name, prev, now - d * DAY));
+            run.push(at(
+                &mut b,
+                spec.levels,
+                Kind::Renew,
+                &key,
+                &t.name,
+                prev,
+                now - d * DAY,
+            ));
         }
         let items: Vec<String> = t
             .zones

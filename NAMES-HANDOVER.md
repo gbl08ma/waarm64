@@ -14,7 +14,7 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
   (R1: an anchor is its proof and its block's one header against one compiled floor, no `ref`; R2: servers finish
   renewals at the calendars and check each block at an explorer, the agent makes the next renewal ahead; R3/R3a: a
   first lookup asks the room through the relays, dissent covers the owner key, last entry and zone; "who serves?" is
-  the plain draw again). N0's cloud items are measured (N0a, N0b). The spec, `docs/plans/room-names.md`, says what is
+  the plain draw again). N0 is measured whole: its cloud items (N0a, N0b) and the dev VM's (N0c). The spec, `docs/plans/room-names.md`, says what is
   built; `room-names-redesign.md` and `room-names-r3.md` are the redesign's reasoning.
 - **What has been checked, and what hasn't.** The mid-track full scripts are green on `main` after the merge
   (2026-11-18, the dev VM): `scripts/ci.sh` (880 s; `tests/room-browser.test.ts`'s case that timed out in the cloud
@@ -31,14 +31,12 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Next, in order (a dev VM session)
 
-1. **N0c**: N0's items 5 and 6 on the public relays and DERP (5, 20, 50 MB between two names clients; what a second
-   room client costs; a cold first lookup, now R3's `ask`/`reply`), the GPU figure for Argon2id, and what R2 and R3
-   left to measure on public services: whether the six default relays forward a 4 KiB ephemeral event (`REPLY_MAX`),
-   whether the explorers' 404s carry CORS headers (R2's block refusal relies on seeing them), and the explorers'
-   tolerance of a first sync's block checks. All within "a few hundred small requests" a service.
-2. **N6**: scale and abuse as the kickoff says, plus R2's and R3's items in docs/backlog.md ("What servers ask
-   outside the room", R3's loose ends: forged-reply floods with hundreds of servers, reply budgets in small rooms).
-3. **The end**, as the kickoff says: final review, the full scripts (also `ci-debian.sh`, `ci-machines.sh`),
+1. **N6**: scale and abuse as the kickoff says, plus R2's and R3's items in docs/backlog.md ("What servers ask
+   outside the room", R3's loose ends: forged-reply floods with hundreds of servers, reply budgets in small rooms)
+   and N0c's ("On the public relays and DERP": two servers missing each other for minutes once, a first sync cut by
+   `RUN_MAX` and resumed a round later, ~4x a registry's bytes in memory, the 8-part window). N0c's
+   `bench/net/names-public.ts` runs room nodes on the public services and keeps their names lines.
+2. **The end**, as the kickoff says: final review, the full scripts (also `ci-debian.sh`, `ci-machines.sh`),
    `docs/networking/names.md` from the spec, rooms.md's decisions, the deletions (this file, the kickoff,
    `docs/plans/room-names*.md`, `room-names-research/`, `NAMES-REVIEW-3.md`), PLAN.md's row.
 
@@ -68,9 +66,9 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 | R3a | Dissent covers the zone (2026-11-17, cloud): a `dissent`'s `shown` is now 8 bytes of a tagged SHA-256 over the owner key, the owning chain's last entry's id and the zone (`wire::shown`), where it was 8 bytes of the owner key; a server replies when what it holds hashes otherwise, so the honest holder of a newer zone or a renewal answers liars who show the owner's own records stale (its last entry with an old zone or none, or an entry a renewal behind in its grace). The ask stays 164 bytes; what an observer learns is which version of public records the asker was shown (room-names.md "What a relay sees"). Not covered on purpose: the anchor and header (another calendar's anchor moves the entry's time by hours), `since`, the replier's key. **Found, not closed (backlog)**: the owner's last entry before its release, shown by a sample of liars: holders of the release don't dissent and a reply can't carry a release, so the member keeps the released owner (even over a next owner, whose contest the old run wins) until its 5-minute refresh. Test failing first: `the_owners_own_records_shown_stale_dont_silence_the_dissent` (128 liars, one honest holder, six first lookups a kind; NXDOMAIN or the old zone on R3's code), and the server's mode test grown. 4 planted bugs, all caught: the zone out of the hash, the entry out of it, a server hashing without its zone, a member hashing without the zone (every holder dissenting). room-names-r3.md "As built", room-names.md, backlog | done (2026-11-17) |
 | Domains | The page's words (2026-11-18, dev VM; the user's call): a name is a **domain**, a label a **subdomain** (a term people can look up, held by the connection's key, not a machine); Register a domain… and its dialog (the whole domain `<name>.<tag>.p2p.internal` under the field, the room's suffix while empty), Point all at this connection, the serving notice says this web app serves while the connection is connected (a machine running or not). Keys and components unchanged; copy.md's words table has the row; the spec keeps "name" and says so | done |
 | Review 3 | Out-of-context review of the redesign (R1–R3a) → `NAMES-REVIEW-3.md` (7 findings), and its fix loop (2026-11-18, dev VM; 468e9ee1 to c987a221, one commit a finding, each from a failing test, 15 planted bugs caught, one by inspection): a kept name whose claim wasn't seen isn't replaced by another key's back-order (`Kept.whole`, member record version 3); "too big" replies carry the last entry, a contest decides within 10 s (`CONTEST_FOR`) and only when every key shown is settled, never for another owner, 32 repliers a key; a fetched run goes to its own name's contest; a `get`'s answer keeps only the name asked, a peer's share of the verify queue bounded (256 items, 4 MiB); a title is lost only when no server of the pass took it and an explorer knows the better chain's block; an anchor in a block refused mid-job isn't kept; block retries double. Wire changed (Reply's too big, a fetch's empty item), pre-release | done |
-| N0c | N0's items 5 and 6 (public DERP transfer, cold lookup) and the GPU figure, plus R2's and R3's public-service checks | *dev VM*: "Next" 1 |
-| N6 | Scale and abuse; days on the public services | *dev VM*: "Next" 2 (not in a cloud session: the user) |
-| End | Final review, full scripts, docs, deletions | *dev VM*: "Next" 3 |
+| N0c | Public services and the GPU figure (2026-11-18, dev VM; bench/net/REPORT.md "NAMES loop 0c", `results/names0c/`, `bench/net/names-public.ts`): a first sync through tailcat 303 and the six relays ~0.8 Mbit/s (5 MB 61 s, 20 MB 228 s; 50 MB cut by `RUN_MAX` at 241 s and on next round), a guest's ping beside it unmoved (95 ms); the names client 7 WebSockets, 64 KiB, ~0.04% CPU; a cold first lookup 1.53 s, a second name 0.93, NXDOMAIN 0.92; all six relays forward a `REPLY_MAX` reply (and up to 32 KiB): it stays 4 KiB; both explorers' 404s carry CORS, the page sees them (R2 stands); 100 checks at 3 s each answered; Argon2id 1 MiB 0.38 ms in wasm (`POW_BITS` 16 stays), a GPU ~216x a tab (RTX 5090, from published Chukwa v2 rates), a million names ~63 GPU-hours a term. No product code changed; spec, r3 doc, backlog updated | done |
+| N6 | Scale and abuse; days on the public services | *dev VM*: "Next" 1 (not in a cloud session: the user) |
+| End | Final review, full scripts, docs, deletions | *dev VM*: "Next" 2 |
 
 ## Notes for whoever runs loops here
 
@@ -99,6 +97,11 @@ The brief: [NAMES-KICKOFF.md](NAMES-KICKOFF.md) (binding; it wins over the spec)
 
 ## Open questions
 
+From N0c (2026-11-18):
+- **A measured GPU figure needs the user's OK to install a tool on the Mac host** (hashcat, or a WebGPU Argon2
+  kernel in Chrome for Testing): nothing that runs Argon2 on a GPU is installed; N0c's figure is published Chukwa v2
+  rates (Argon2id 1 MiB, t = 4) scaled to t = 1 and by bandwidth, which agree with N0a's bandwidth bound.
+
 From review 3's fix loop (2026-11-18), each fixed as conservatively as the decisions allow; the user's call:
 - **A contest crowded by forged repliers** (finding 2): copies of a key's real entry from made-up servers, claiming
   `since` 0, crowd out its real holder; the contest now ends within 10 s with no answer, never another owner's. So
@@ -126,5 +129,5 @@ Things for the user's attention when the track ends, all in docs/backlog.md:
 - **Raising the compiled floor** in a later release must stay under every block back to the oldest live anchor (R1).
 - **The calendars' history** (N0a): sampled, not read whole (~16,000 requests a year); N0b's real stamps fit the
   corrected model (a stamp made within ~10 minutes of a calendar's block misses that transaction).
-- **Argon2id's GPU lead** ~280x at checkable sizes (the spec once said ~10x): a million names is tens of GPU-hours a
-  term; N0c measures it.
+- **Argon2id's GPU lead** ~110x (RTX 3090) to ~220x (RTX 5090) over a tab at 1 MiB (the spec once said ~10x): a
+  million names ~63 RTX 5090-hours a term (N0c, from published mining rates of Argon2id at 1 MiB).

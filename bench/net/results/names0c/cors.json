@@ -1,0 +1,33 @@
+{
+ "date": "2026-11-18T05:22:18.912Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "cors": [
+  {
+   "url": "https://blockstream.info/api/block/e744e64237efe0117cc7038fa8ce09367658663a6b2f669b308eb77ca0923602/header",
+   "isolated": true,
+   "status": 404,
+   "body": "Block not found"
+  },
+  {
+   "url": "https://blockstream.info/api/block/0000000000000000000000000000000000000000000000000000000000000000/header",
+   "isolated": true,
+   "status": 404,
+   "body": "Block not found"
+  },
+  {
+   "url": "https://mempool.space/api/block/dcb5d280d7b628c470b9a1e9c22e39970357115c009758369d05ca30b811cb16/header",
+   "isolated": true,
+   "status": 404,
+   "body": "Block not found"
+  },
+  {
+   "url": "https://mempool.space/api/block/0000000000000000000000000000000000000000000000000000000000000000/header",
+   "isolated": true,
+   "status": 404,
+   "body": "Block not found"
+  }
+ ],
+ "chromium": "155.0.8059.84"
+}

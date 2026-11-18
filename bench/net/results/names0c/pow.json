@@ -1,0 +1,26 @@
+{
+ "date": "2026-11-18",
+ "what": "Argon2id (argon2 0.5.3, as net/ts entry.rs Pow::hash: t=1, p=1, 32-byte output, 143-byte input, 32-byte salt), µs a hash, median of 5 runs of 200 (50 at 4 MiB); a scratch crate under bench/results/local/argon2-time (not committed), release, LTO, one codegen unit, opt-level 3",
+ "devVM": {
+  "host": "Lima VM dev on the M4 Mac mini, openSUSE Tumbleweed aarch64, 8 vCPUs",
+  "native": { "8": 15.7, "64": 27.2, "256": 62.9, "1024": 235.2, "4096": 949.7 },
+  "nodeWasm": { "node": "v26.7.0", "8": 10.1, "64": 29.9, "256": 99.8, "1024": 376.5, "4096": 1504.1 }
+ },
+ "macHost": {
+  "host": "M4 Mac mini, macOS, the wasm build under Homebrew's Node",
+  "nodeWasm": { "node": "v26.10.0", "8": 9.7, "64": 28.1, "256": 93.8, "1024": 357.5, "4096": 1451.1 }
+ },
+ "gpuPublished": {
+  "note": "Argon2id mining figures (Chukwa: t=3, m=512 KiB, p=1; Chukwa v2: t=4, m=1024 KiB, p=1: xmrig src/crypto/argon2/Hash.h), from minerstat's hardware pages, 2026-11-18. Scaled to t=1 at 1 MiB by passes (x4 from Chukwa v2) and to other cards by memory bandwidth; both Chukwa figures of a card give the same blocks a second, so the card is bandwidth-bound",
+  "sources": ["https://minerstat.com/hardware/nvidia-rtx-2070", "https://minerstat.com/hardware/nvidia-rtx-3090", "https://xmrig.com/docs/algorithms", "https://raw.githubusercontent.com/xmrig/xmrig/master/src/crypto/argon2/Hash.h"],
+  "rtx2070": { "chukwa": 90660, "chukwaV2": 31620, "bandwidthGBs": 448, "perSecondAt1MiBt1": 126480 },
+  "rtx3090": { "chukwa": 209200, "chukwaV2": 75030, "bandwidthGBs": 936, "perSecondAt1MiBt1": 300120 },
+  "rtx5090Scaled": { "bandwidthGBs": 1792, "perSecondAt1MiBt1": 574600 }
+ },
+ "derived": {
+  "tabPerSecond": { "devVM": 2656, "macHost": 2797 },
+  "meanDrawSeconds16Bits": { "devVM": 24.7, "macHost": 23.4 },
+  "gpuLeadOverDevVMTab": { "rtx3090": 113, "rtx5090": 216 },
+  "millionNamesTwoEntriesGpuHoursATerm": { "rtx3090": 121, "rtx5090": 63 }
+ }
+}

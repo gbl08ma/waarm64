@@ -1683,12 +1683,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       answers (times the round's share, at most 64). Junk registrations that answer questions raise it, so honest
       servers ask a renewal's calendar less often (at worst 1/64 a slot each) and a renewal is finished later; the
       owner's own visit still collects it. A room of many young or junk servers isn't measured: N6.
-    - The pace of block checks (one every 3 s a server, the newest first) and the asks' rates are the design's, not
-      measured against the public explorers and calendars: N6 measures what they tolerate from a page, and what a
-      server's first sync of thousands of blocks costs in time.
-    - A block is checked by its hash, so an explorer's 404 for an unknown block must carry its CORS header for a page
-      to see it as a denial: without it a forged block is never refused (it stays counted on its header's work, as
-      before R2), never a real one wrongly. Whether blockstream.info's and mempool.space's 404s do is unchecked (N6).
+    - The pace of block checks (one every 3 s a server, the newest first): 100 checks at that pace to each explorer
+      all answered, no limit seen (N0c, bench/net/REPORT.md "NAMES loop 0c"; both explorers' 404s for an unknown block
+      carry their CORS header, and a cross-origin-isolated page sees them). Not measured: a big room's first sync,
+      whose distinct blocks are bounded by the window, not the names (37 days are ~5,300 blocks; the calendars' own
+      transactions land in ~2,000 to 3,000 of them: alice's every ~3 blocks, bob's ~4), so that many checks, 1.7 to
+      2.5 hours at one explorer for one new server.
+      The calendars' asks' rates are the design's: N6.
     - A server finishes the one pending anchor it keeps an entry (the lower of two): if that calendar never finishes
       (it lost the commitment), the servers ask it, ever more rarely, until the renewal goes stale; the owner's agent,
       at its visit, tries all three of its calendars.
@@ -1697,6 +1698,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
       path, as before R2). The visit after a registration makes the first one.
     - The 20-server and 60-day tests (server_tests.rs) take ~1.5 minutes of `cargo test` each, even with the curve,
       Argon2 and the hashes optimized in test builds (the root Cargo.toml's `profile.dev.package`).
+  - On the public relays and DERP (N0c, bench/net/REPORT.md "NAMES loop 0c"):
+    - **A first sync is the window over the RTT**: 8 parts of 1,191 bytes in flight, so ~0.8 Mbit/s (~100 KB/s of
+      items) at a 95 ms RTT, whatever the relay; 20 MB took 3.8 minutes, 5,000 names (72 to 93 MB) would take 12 to
+      16. A guest's ping on the node's own DERP connection beside it moved by under 2 ms. A wider window (16 or 32,
+      against a derper's 32-packet queue a client, shared by every peer the server syncs with) would cut it; not
+      tried: it wants a test of two or three syncs at once into one server through a real derper.
+    - **A first sync past one run's 4 minutes** (`RUN_MAX`: ~24 MB at that rate, about 1,300 to 1,700 names held six
+      months) is cut, the server says it's synced and answers questions with what it has, and the next round's run
+      (~100 s later, at the round's 5 minutes) goes on: 50 MB was 5,922 of 16,176 names at the cut, 9,434 at 450 s.
+      By design (review 2: a slow partner mustn't keep a new server silent), but the gap is a quarter of the time; a
+      next round at once after a run cut by its time (not by a breach) would close it.
+    - **A server's memory is ~4x its registry's bytes** in the module (20 MB synced: 82 MB of linear memory; 50 MB
+      of titles: 328 MB, 600 MB RSS): at 5,000 names held six months (72 to 93 MB) ~300 to 370 MB in a tab. Where
+      it goes (items kept decoded beside their bytes, the store's records, transfer buffers) isn't measured: N6.
+    - **Two servers that start within a second don't find each other for 30 s**: each one's first question comes
+      while the other's own is open and it isn't synced yet (the answer rule's "not synced yet", by the logs' times),
+      and both back off 30 s. Once
+      in three runs the next three questions (at ~30, ~90 and ~210 s) went unanswered too, and the sync started at
+      ~350 s; the logs then didn't keep the names lines, so why is unknown: N6 looks for it with them.
   - Review 1's fixes (N4a, N4b; the review's file is gone, its findings fixed: git history has it), what they leave:
     - The accept window's eviction (room-names.md "The names client") is tested on `AcceptWindow` itself
       (server_tests.rs), not through room.rs's fake DERP with junk handshakes beside a real server's call back.

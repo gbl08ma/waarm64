@@ -360,8 +360,8 @@ impl NameAsk {
 }
 
 /// The most bytes of an item a reply carries: past it the item is left out and [`Reply::item`] says so, and the asker
-/// fetches it through a session (room-names-r3.md: set from what the default relays forward; 4 KiB to start, the
-/// user's choice, 2026-11-17, until a dev VM session measures them).
+/// fetches it through a session (room-names-r3.md: the user's choice, 2026-11-17; all six default relays forward it,
+/// and items up to 32 KiB, five refusing 64: bench/net/REPORT.md "NAMES loop 0c").
 pub const REPLY_MAX: usize = 4096;
 /// A reply's head: the nonce, the replier's names key and region, `since`, the item's kind.
 pub const REPLY_HEAD: usize = 16 + 32 + 2 + 4 + 1;

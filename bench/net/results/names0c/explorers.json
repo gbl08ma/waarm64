@@ -1,0 +1,93 @@
+{
+ "date": "2026-11-18T05:14:44.447Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "notFound": [
+  {
+   "url": "https://blockstream.info/api/block/0000000000000000000000000000000000000000000000000000000000000000/header",
+   "status": 404,
+   "ms": 562,
+   "acao": "*",
+   "body": "Block not found"
+  },
+  {
+   "url": "https://blockstream.info/api/block/f0f2a62f82a2f1429049d171baef0bd0f29f34a5221cc4caaa9a21a161f2cef3/header",
+   "status": 404,
+   "ms": 524,
+   "acao": "*",
+   "body": "Block not found"
+  },
+  {
+   "url": "https://blockstream.info/api/block/f0f2a62f82a2f1429049d171baef0bd0f29f34a5221cc4caaa9a21a161f2cef/header",
+   "status": 400,
+   "ms": 173,
+   "acao": "*",
+   "body": "Invalid hex string"
+  },
+  {
+   "url": "https://blockstream.info/api/block-height/99999999",
+   "status": 404,
+   "ms": 171,
+   "acao": "*",
+   "body": "Block not found"
+  },
+  {
+   "url": "https://mempool.space/api/block/0000000000000000000000000000000000000000000000000000000000000000/header",
+   "status": 404,
+   "ms": 161,
+   "acao": "*",
+   "body": "Block not found"
+  },
+  {
+   "url": "https://mempool.space/api/block/f0f2a62f82a2f1429049d171baef0bd0f29f34a5221cc4caaa9a21a161f2cef3/header",
+   "status": 404,
+   "ms": 47,
+   "acao": "*",
+   "body": "Block not found"
+  },
+  {
+   "url": "https://mempool.space/api/block/f0f2a62f82a2f1429049d171baef0bd0f29f34a5221cc4caaa9a21a161f2cef/header",
+   "status": 400,
+   "ms": 46,
+   "acao": "*",
+   "body": "Invalid hex hash"
+  },
+  {
+   "url": "https://mempool.space/api/block-height/99999999",
+   "status": 404,
+   "ms": 46,
+   "acao": "*",
+   "body": "Block not found"
+  }
+ ],
+ "tip": 976382,
+ "checks": [
+  {
+   "explorer": "https://blockstream.info/api",
+   "asked": 100,
+   "every": 3000,
+   "statuses": {
+    "200": 100
+   },
+   "medianMs": 173,
+   "p90Ms": 219,
+   "maxMs": 292
+  },
+  {
+   "explorer": "https://mempool.space/api",
+   "asked": 100,
+   "every": 3000,
+   "statuses": {
+    "200": 100
+   },
+   "medianMs": 50,
+   "p90Ms": 52,
+   "maxMs": 87
+  }
+ ],
+ "requests": {
+  "https://blockstream.info/api": 110,
+  "https://mempool.space/api": 109
+ }
+}

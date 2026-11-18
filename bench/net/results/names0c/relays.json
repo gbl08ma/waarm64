@@ -1,0 +1,511 @@
+{
+ "date": "2026-11-18T05:14:12.977Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "replySealedMax": 4215,
+ "relays": [
+  {
+   "url": "wss://relay.primal.net",
+   "eose": "EOSE 301 ms",
+   "sizes": [
+    {
+     "raw": 1000,
+     "content": 1336,
+     "message": 1764,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 115,
+     "open": true
+    },
+    {
+     "raw": 2000,
+     "content": 2668,
+     "message": 3096,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 148,
+     "open": true
+    },
+    {
+     "raw": 4215,
+     "content": 5620,
+     "message": 6048,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 120,
+     "open": true
+    },
+    {
+     "raw": 8192,
+     "content": 10924,
+     "message": 11352,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 157,
+     "open": true
+    },
+    {
+     "raw": 16384,
+     "content": 21848,
+     "message": 22276,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 130,
+     "open": true
+    },
+    {
+     "raw": 32768,
+     "content": 43692,
+     "message": 44120,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 260,
+     "open": true
+    },
+    {
+     "raw": 65536,
+     "content": 87384,
+     "message": 87812,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 527,
+     "open": true
+    },
+    {
+     "raw": 131072,
+     "content": 174764,
+     "message": 175192,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 915,
+     "open": true
+    }
+   ]
+  },
+  {
+   "url": "wss://relay.novospes.com",
+   "eose": "EOSE 184 ms",
+   "sizes": [
+    {
+     "raw": 1000,
+     "content": 1336,
+     "message": 1764,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 176,
+     "open": true
+    },
+    {
+     "raw": 2000,
+     "content": 2668,
+     "message": 3096,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 116,
+     "open": true
+    },
+    {
+     "raw": 4215,
+     "content": 5620,
+     "message": 6048,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 236,
+     "open": true
+    },
+    {
+     "raw": 8192,
+     "content": 10924,
+     "message": 11352,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 237,
+     "open": true
+    },
+    {
+     "raw": 16384,
+     "content": 21848,
+     "message": 22276,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 239,
+     "open": true
+    },
+    {
+     "raw": 32768,
+     "content": 43692,
+     "message": 44120,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 237,
+     "open": true
+    },
+    {
+     "raw": 65536,
+     "content": 87384,
+     "message": 87812,
+     "ok": false,
+     "said": "invalid: event too large: 87802",
+     "forwarded": false,
+     "open": true
+    },
+    {
+     "raw": 131072,
+     "content": 174764,
+     "message": 175192,
+     "ok": "no OK",
+     "forwarded": false,
+     "open": false
+    }
+   ]
+  },
+  {
+   "url": "wss://relay.routstr.com",
+   "eose": "EOSE 62 ms",
+   "sizes": [
+    {
+     "raw": 1000,
+     "content": 1336,
+     "message": 1764,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 2301,
+     "open": true
+    },
+    {
+     "raw": 2000,
+     "content": 2668,
+     "message": 3096,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 590,
+     "open": true
+    },
+    {
+     "raw": 4215,
+     "content": 5620,
+     "message": 6048,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 589,
+     "open": true
+    },
+    {
+     "raw": 8192,
+     "content": 10924,
+     "message": 11352,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 591,
+     "open": true
+    },
+    {
+     "raw": 16384,
+     "content": 21848,
+     "message": 22276,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 589,
+     "open": true
+    },
+    {
+     "raw": 32768,
+     "content": 43692,
+     "message": 44120,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 241,
+     "open": true
+    },
+    {
+     "raw": 65536,
+     "content": 87384,
+     "message": 87812,
+     "ok": false,
+     "said": "invalid: event too large: 87802",
+     "forwarded": false,
+     "open": true
+    },
+    {
+     "raw": 131072,
+     "content": 174764,
+     "message": 175192,
+     "ok": "no OK",
+     "forwarded": false,
+     "open": false
+    }
+   ]
+  },
+  {
+   "url": "wss://nostr.rblb.it",
+   "eose": "EOSE 59 ms",
+   "sizes": [
+    {
+     "raw": 1000,
+     "content": 1336,
+     "message": 1764,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 240,
+     "open": true
+    },
+    {
+     "raw": 2000,
+     "content": 2668,
+     "message": 3096,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 233,
+     "open": true
+    },
+    {
+     "raw": 4215,
+     "content": 5620,
+     "message": 6048,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 352,
+     "open": true
+    },
+    {
+     "raw": 8192,
+     "content": 10924,
+     "message": 11352,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 354,
+     "open": true
+    },
+    {
+     "raw": 16384,
+     "content": 21848,
+     "message": 22276,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 354,
+     "open": true
+    },
+    {
+     "raw": 32768,
+     "content": 43692,
+     "message": 44120,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 385,
+     "open": true
+    },
+    {
+     "raw": 65536,
+     "content": 87384,
+     "message": 87812,
+     "ok": false,
+     "said": "invalid: event too large: 87802",
+     "forwarded": false,
+     "open": true
+    },
+    {
+     "raw": 131072,
+     "content": 174764,
+     "message": 175192,
+     "ok": "no OK",
+     "forwarded": false,
+     "open": false
+    }
+   ]
+  },
+  {
+   "url": "wss://relay.degmods.com",
+   "eose": "EOSE 1877 ms",
+   "sizes": [
+    {
+     "raw": 1000,
+     "content": 1336,
+     "message": 1764,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 72,
+     "open": true
+    },
+    {
+     "raw": 2000,
+     "content": 2668,
+     "message": 3096,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 159,
+     "open": true
+    },
+    {
+     "raw": 4215,
+     "content": 5620,
+     "message": 6048,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 160,
+     "open": true
+    },
+    {
+     "raw": 8192,
+     "content": 10924,
+     "message": 11352,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 163,
+     "open": true
+    },
+    {
+     "raw": 16384,
+     "content": 21848,
+     "message": 22276,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 220,
+     "open": true
+    },
+    {
+     "raw": 32768,
+     "content": 43692,
+     "message": 44120,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 283,
+     "open": true
+    },
+    {
+     "raw": 65536,
+     "content": 87384,
+     "message": 87812,
+     "ok": false,
+     "said": "invalid: event too large: 87802",
+     "forwarded": false,
+     "open": true
+    },
+    {
+     "raw": 131072,
+     "content": 174764,
+     "message": 175192,
+     "ok": "no OK",
+     "forwarded": false,
+     "open": false
+    }
+   ]
+  },
+  {
+   "url": "wss://relay.nostrmap.net",
+   "eose": "EOSE 78 ms",
+   "sizes": [
+    {
+     "raw": 1000,
+     "content": 1336,
+     "message": 1764,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 475,
+     "open": true
+    },
+    {
+     "raw": 2000,
+     "content": 2668,
+     "message": 3096,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 467,
+     "open": true
+    },
+    {
+     "raw": 4215,
+     "content": 5620,
+     "message": 6048,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 471,
+     "open": true
+    },
+    {
+     "raw": 8192,
+     "content": 10924,
+     "message": 11352,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 470,
+     "open": true
+    },
+    {
+     "raw": 16384,
+     "content": 21848,
+     "message": 22276,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 469,
+     "open": true
+    },
+    {
+     "raw": 32768,
+     "content": 43692,
+     "message": 44120,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 470,
+     "open": true
+    },
+    {
+     "raw": 65536,
+     "content": 87384,
+     "message": 87812,
+     "ok": true,
+     "said": "",
+     "forwarded": true,
+     "ms": 486,
+     "open": true
+    },
+    {
+     "raw": 131072,
+     "content": 174764,
+     "message": 175192,
+     "ok": "no OK",
+     "forwarded": false,
+     "open": false
+    }
+   ]
+  }
+ ]
+}

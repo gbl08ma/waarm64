@@ -1,0 +1,237 @@
+{
+ "date": "2026-11-18T05:48:14.712Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "derp": "303",
+ "lookup": [
+  {
+   "runningMs": 850,
+   "cold": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1528.392457,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "kept": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1.0877799999998388,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "warm": {
+    "t": "answer",
+    "name": "bravo",
+    "ms": 903.1130080000003,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "missing": {
+    "t": "answer",
+    "name": "zz0nope",
+    "ms": 636.5810659999997,
+    "rcode": 3,
+    "answers": 0,
+    "tries": 1
+   },
+   "logs": [
+    "names: a member's names client, nodekey:fd6a7c8ef1e5f7a652000e50f95b54b3ad1c8b3b2d3b98943645158dcf95342c"
+   ]
+  },
+  {
+   "runningMs": 852,
+   "cold": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1519.727258,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "kept": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1.1742819999999483,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "warm": {
+    "t": "answer",
+    "name": "bravo",
+    "ms": 933.711206,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "missing": {
+    "t": "answer",
+    "name": "zz1nope",
+    "ms": 896.6873370000003,
+    "rcode": 3,
+    "answers": 0,
+    "tries": 1
+   },
+   "logs": [
+    "names: a member's names client, nodekey:48226638abff4bb8247026db803d6dbaa08d35adf68cba1db1bcfc5bcfed3e4e"
+   ]
+  },
+  {
+   "runningMs": 875,
+   "cold": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1559.823233,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "kept": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 0.8851330000002235,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "warm": {
+    "t": "answer",
+    "name": "bravo",
+    "ms": 936.8317689999999,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "missing": {
+    "t": "answer",
+    "name": "zz2nope",
+    "ms": 947.9533160000001,
+    "rcode": 3,
+    "answers": 0,
+    "tries": 1
+   },
+   "logs": [
+    "names: a member's names client, nodekey:6cf7c3f63fc1e8799b2ee0c0cf1f0a50a2a8d0752002b83e6c0d9bfc67854269"
+   ]
+  },
+  {
+   "runningMs": 958,
+   "cold": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1523.0019290000002,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "kept": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1.1366969999999128,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "warm": {
+    "t": "answer",
+    "name": "bravo",
+    "ms": 933.978991,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "missing": {
+    "t": "answer",
+    "name": "zz3nope",
+    "ms": 934.7181270000001,
+    "rcode": 3,
+    "answers": 0,
+    "tries": 1
+   },
+   "logs": [
+    "names: a member's names client, nodekey:a2a30582d5b070ac80ce635a46882a365235a47cee697226347e91e04e470221"
+   ]
+  },
+  {
+   "runningMs": 797,
+   "cold": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1594.935605,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "kept": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1.1724420000000464,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "warm": {
+    "t": "answer",
+    "name": "bravo",
+    "ms": 953.760385,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "missing": {
+    "t": "answer",
+    "name": "zz4nope",
+    "ms": 1005.552569,
+    "rcode": 3,
+    "answers": 0,
+    "tries": 1
+   },
+   "logs": [
+    "names: a member's names client, nodekey:5ef9652f4fc1e26079a86e8b821d7422a85a1f8ea3b2b461ffb19b4ed72bfd41"
+   ]
+  },
+  {
+   "runningMs": 904,
+   "cold": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1588.3756029999997,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "kept": {
+    "t": "answer",
+    "name": "alpha",
+    "ms": 1.1420479999997042,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "warm": {
+    "t": "answer",
+    "name": "bravo",
+    "ms": 935.472734,
+    "rcode": 0,
+    "answers": 1,
+    "tries": 1
+   },
+   "missing": {
+    "t": "answer",
+    "name": "zz5nope",
+    "ms": 886.5893950000004,
+    "rcode": 3,
+    "answers": 0,
+    "tries": 1
+   },
+   "logs": [
+    "names: a member's names client, nodekey:29e1bc0205f69ef60ee42b4e548fa3e2907ca5a33efbc2b054aeb3140815a76b"
+   ]
+  }
+ ]
+}

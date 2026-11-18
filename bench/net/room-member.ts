@@ -2,7 +2,7 @@
 // Rust client (target/net/ts.wasm, room.rs) in a module instance of its own, as a page's worker has, relay only (Node
 // has no WebRTC), its guest played as tests/browser/room.html plays it: UDP to its port 7 is echoed back, and `ping`
 // sends to another member's port 7 until an echo comes back.
-import { TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
+import { TsClient, TsModule, type NamesTitle, type TsEvent } from '../../web/ts-client.ts';
 
 export type MemberOptions = {
   link: string;
@@ -11,6 +11,12 @@ export type MemberOptions = {
   incoming?: boolean;
   /** The node's private key (64 hex digits): a fresh one without. */
   key?: string;
+  /** Room names (bench/net/names-public.ts): the node's titles, which make it a server. */
+  names?: { titles: NamesTitle[]; maxNames?: number; maxBytes?: number };
+  /** Every packet to the guest, before the echo's handling. */
+  packet?(p: Uint8Array): void;
+  /** Every event. */
+  event?(e: TsEvent): void;
 };
 
 export type Member = {
@@ -30,6 +36,8 @@ export type Member = {
   logs: string[];
   /** The module instance's linear memory, bytes. */
   memory(): number;
+  /** The client (to send the guest's own packets). */
+  client: TsClient;
   close(): void;
 };
 
@@ -42,7 +50,7 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
   const waiting = new Map<number, () => void>();
   let self: { key: string; address6: number[] } | undefined;
   const m: Member = {
-    address6: [], key: '', peers: new Set(), logs: [],
+    address6: [], key: '', peers: new Set(), logs: [], client: undefined as unknown as TsClient,
     memory: () => mod.x.memory.buffer.byteLength,
     close: () => client.close(),
     async ping(to, ms = 10_000) {
@@ -75,10 +83,11 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
     },
   };
   const client = new TsClient(mod, {
-    room: { link: o.link, relayOnly: true, incoming: o.incoming ?? true, unixTime: o.unixTime },
+    room: { link: o.link, relayOnly: true, incoming: o.incoming ?? true, unixTime: o.unixTime, ...(o.names ? { names: o.names } : {}) },
     ...(o.key ? { key: o.key } : {}),
   }, {
     packet(p) {
+      o.packet?.(p);
       if (p[0] >> 4 !== 6 || p[6] !== 17 || p.length < 52) return;
       const dport = (p[42] << 8) | p[43];
       if (dport === 7) { // echo: swap addresses and ports
@@ -89,6 +98,7 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
       } else waiting.get(new DataView(p.buffer, p.byteOffset).getUint32(48))?.();
     },
     event(e: TsEvent) {
+      o.event?.(e);
       const ev = e as TsEvent & { key?: string; address6?: number[]; state?: string; code?: string };
       if (ev.type === 'self') self = { key: ev.key!, address6: ev.address6! };
       else if (ev.type === 'state' && ev.state === 'Running') m.runningMs ??= performance.now() - t0;
@@ -101,6 +111,7 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
     },
   });
   if (!self) throw new Error('no self event');
+  m.client = client;
   m.address6 = self.address6;
   m.key = self.key;
   return m;

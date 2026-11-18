@@ -840,3 +840,150 @@ node bench/net/ots-stamps.ts collect                   # nothing left to ask: ev
 node bench/net/ots-stamps.ts anchors                   # -> results/names0/anchors.json (pages and block lists cached under bench/results/local/names0b/)
 node bench/net/ots-history.ts model --lead 600 --out bench/net/results/names0/history-lead.json   # needs N0a's cache
 ```
+
+## NAMES loop 0c (dev VM), 2026-11-18
+
+N0's items 5 and 6 (docs/plans/room-names.md "Measure first"), the GPU figure for Argon2id, and what R2 and R3 left to
+measure on public services. The dev VM (Lima on the M4 Mac mini, home connection in Europe, no IPv6; Node 26.7.0,
+Chromium 155.0.8059.84 headless), nothing else running. `bench/net/names-public.ts`; JSON under `results/names0c/`.
+Room nodes are Node processes of their own on the tests' module (`target/net/ts-test.wasm`: easy headers and cheap
+proof of work, so titles are made in seconds by `net/ts/examples/names-title.rs`, whose anchors are given a calendar's
+30 levels to weigh what real ones do), relay only, the link's relays the six defaults and its DERP tailcat's region 303
+(Frankfurt). Both ends on this machine, so every packet crosses the region twice each way (RTT ~95 ms).
+
+### Through public DERP (item 5)
+
+Server A holds titles of about the size given (3,091 bytes a name: two entries and a zone), server B one title of its
+own; B's sync with A through their names clients (8 parts of 1,191 bytes in flight), B's guest pinging A's once a
+second on the nodes' own DERP connections. Times from B's start; "sync" from its first name to its last.
+
+| Items | Names | Sync starts | Sync | On B's names DERP | Mbit/s | Ping ms before / during (max) / after | Linear memory, A / B |
+|---|---|---|---|---|---|---|---|
+| 5.0 MB | 1,618 | 34 s | 61 s | 5.9 MB | 0.80 | 95 / 94 (98) / 95, none lost | 35 / 22 MB |
+| 20.0 MB | 6,471 | 34 s | 228 s | 23.7 MB | 0.84 | 96 / 95 (100) / 96, none lost | 136 / 82 MB |
+| 20.0 MB, first try | 6,471 | **349 s** | out of time at 470 s: 3,527 names | 12.0 MB | 0.81 | 99 / 98 (108) / 98 | |
+| 50.0 MB | 16,176 | 2 s | **cut at 241 s** (5,922 names), on at 343 s; 9,434 at 450 s (the run's end) | 33.7 MB | 0.78 | 94 / 94 (107) / 94, none lost | 328 / 118 MB |
+
+- **The window over the RTT**: 8 × 1,191 bytes a 95 ms RTT is 0.80 Mbit/s, what every run moved, steadily (the
+  names came in at ~25 a second, verification keeping up: the last name lands within a second of the last byte).
+  The wire carries 19% more than the items (parts' heads, acknowledgements, DERP's and the tunnel's framing). A
+  first sync at 1,000 names held six months (14 to 19 MB) is 2.5 to 3.5 minutes; at 5,000 (72 to 93 MB) 12 to 16 of
+  transfer.
+- **The guest's ping doesn't notice**: the names client has its own DERP connection, and the window is small.
+- **A run is cut at 4 minutes** (`RUN_MAX`): 50 MB went on in the next round, ~100 s later; meanwhile B called itself
+  synced and answered questions with a third of the registry. By design (review 2); docs/backlog.md.
+- **Finding the other server**: when two servers start within a second, each one's first question comes while the
+  other's own is open (not synced yet: refused) and both wait 30 s (the 5 and 20 MB runs). Once (the first 20 MB
+  try) the questions at ~30, ~90 and ~210 s went unanswered too; that run's logs didn't keep the names lines:
+  docs/backlog.md, for N6.
+- **Memory**: ~4x the registry's bytes in the module's linear memory (B: 82 MB for 20 MB synced; A, with its titles
+  given as JSON too: 328 MB and 600 MB RSS for 50 MB). docs/backlog.md.
+- tailcat's region 303 carried four transfers (20 MB twice), ~75 MB in all.
+
+**What the names client costs** (`client`, 60 s idle each; a server, whose names client is up from the start, against a
+member that asks no name, then the member after its first name):
+
+| | CPU, a core | Module memory | RSS | WebSockets | Bytes a minute in / out |
+|---|---|---|---|---|---|
+| member, no names client | 0.15% | 1.44 MB | 137.9 MB | 7 (six relays, DERP) | 0.2 / 1.0 KB |
+| member with its names client | 0.19% | 1.51 MB | 139.1 MB | 14 | 0.4 / 2.0 KB |
+| server (serving, one title) | 0.36% | 1.51 MB | 146.6 MB | 13 to 14 | 10.2 / 10.6 KB |
+
+So the second client is its own seven connections (each relay again and a DERP region), 64 KiB of the module's
+memory, ~1 MB of RSS and next to no CPU; a server's idle traffic (questions, its relays' keep-alives) ~10 KB a minute
+each way.
+
+### A cold first lookup (item 6)
+
+`lookup`: two servers (A with `alpha` and `bravo`, B with `charlie`, synced), then six fresh members one after
+another, each asking through its guest's resolver as a guest does (AAAA, again after SERVFAIL):
+
+| | min | median | max |
+|---|---|---|---|
+| member `Running` | 0.80 s | 0.88 | 0.96 |
+| first name (`alpha`: the names client up, an `ask`, replies through the relays) | 1.52 | 1.53 | 1.60 |
+| the same again (kept) | 1 ms | 1 | 1 |
+| a second name (`bravo`: the client up, the room's spread known) | 0.90 | 0.93 | 0.95 |
+| a name nobody holds, to NXDOMAIN | 0.64 | 0.92 | 1.01 |
+
+Every answer in one query (none needed the guest's retry). R3's estimate was ~2 s and ~1 s.
+
+### The default relays and a reply's size (`relays`)
+
+One subscriber and one publisher a relay, an ephemeral event of the room's kind (26354, an `x` tag, base64 content as
+`publish_reply` makes it) at each size, once. All six forward every size up to 32 KiB of raw content, including a
+reply of `REPLY_MAX` (4,215 sealed bytes, 5,620 of base64, a 6,048-byte message), in 0.12 s (primal.net), 0.16
+(degmods.com), 0.24 (novospes.com), 0.35 (rblb.it), 0.47 (nostrmap.net), 0.59 (routstr.com). At 64 KiB five answer
+`OK false` "invalid: event too large: 87802" (primal.net carries it, and 128 KiB); at 128 KiB they close the
+connection. **`REPLY_MAX` stays 4 KiB**: it could be up to ~32 KiB on these six, but larger replies cost every
+member that asks, and a reply past 4 KiB is rare (a name's whole item is ~3 KB a month).
+
+### The explorers (`explorers`, `cors`)
+
+- **A block that doesn't exist** (`block/<hash>/header`, an all-zero hash and a random one; `block-height/99999999`):
+  404 "Block not found" with `Access-Control-Allow-Origin: *` at both; a malformed hash 400, with it too. From a
+  cross-origin-isolated page in Chromium (the dev server's COOP/COEP) `fetch` resolves with status 404 at both, so R2's
+  refusal (both explorers' 404) works from the page as built.
+- **A first sync's checks at the module's pace**: 100 headers of real blocks of the last 37 days (`block/<hash>/header`)
+  from each explorer, one every 3 s (`check_every_ms`), both at once: **all 200 answered 200**, no rate-limit header
+  or `Retry-After`; blockstream.info median 173 ms (p90 219, max 292), mempool.space 50 (52, 87). A big room's first
+  sync brings up to the window's distinct blocks (~2,000 to 3,000 in 37 days: the calendars' transactions), more than
+  this loop's bound tried: docs/backlog.md.
+
+### Proof of work: the dev VM's tab and a GPU's (`pow.json`)
+
+Argon2id as `Pow::hash` runs it (argon2 0.5.3, t = 1, p = 1; a scratch crate under `bench/results/local/`, release with
+LTO), µs a hash, median of 5 × 200:
+
+| Memory | dev VM native | dev VM wasm (Node) | Mac host wasm (Node 26.10) | N0a's cloud host, Chromium wasm |
+|---|---|---|---|---|
+| 8 KiB | 15.7 | 10.1 | 9.7 | 19.1 |
+| 64 KiB | 27.2 | 29.9 | 28.1 | 46.1 |
+| 256 KiB | 62.9 | 99.8 | 93.8 | 159 |
+| **1 MiB** | **235** | **377** | **358** | 488 |
+| 4 MiB | 950 | 1,504 | 1,451 | 2,050 |
+
+So a tab draws 16 bits in a mean of 25 s here (half within 17 s, 90% within 57 s, 99% within 2 minutes); `POW_BITS`
+stays 16 (N0a: the bits move by one if a tab is twice as fast; it is 1.3x). Node's wasm stood for Chromium's (N0a:
+within 10%).
+
+**A GPU at 1 MiB, from published figures** (not measured: no GPU tool is installed on the Mac host, and installing one
+needs the user's OK). Chukwa v2, a mining function, is Argon2id at 1 MiB, t = 4, p = 1 (xmrig's
+[`Hash.h`](https://raw.githubusercontent.com/xmrig/xmrig/master/src/crypto/argon2/Hash.h),
+[algorithms](https://xmrig.com/docs/algorithms)); minerstat lists it on the
+[RTX 2070](https://minerstat.com/hardware/nvidia-rtx-2070) at 31.62 kH/s and the
+[RTX 3090](https://minerstat.com/hardware/nvidia-rtx-3090) at 75.03 kH/s, and Chukwa (512 KiB, t = 3) at 90.66 and
+209.2. A card's two figures give the same blocks a second (the 3090: ~330 and ~315 GB/s of 1 KiB blocks; Argon2
+reads two blocks and writes one for each, so about all of its 936 GB/s), so it is bandwidth-bound: at t = 1 four times Chukwa v2's rate,
+and other cards by bandwidth. hashcat's own Argon2 figures (mode 34000, e.g. ~1,700 H/s on an RTX 4090 in its
+[wiki's example](https://hashcat.net/wiki/doku.php?id=hashcat)) are at 64 MiB, t = 3, out of range here.
+
+| | Argon2id 1 MiB, t = 1, a second | Lead over the dev VM's tab (2,656/s) | A million names, two entries each a term (2^17 tries a name) |
+|---|---|---|---|
+| RTX 2070 (448 GB/s) | ~126,000 | ~48x | ~290 GPU-hours |
+| RTX 3090 (936 GB/s) | ~300,000 | ~113x | ~121 |
+| RTX 5090 (1,792 GB/s, scaled) | ~575,000 | ~216x | **~63** |
+
+N0a's bandwidth bound (~570,000/s on the RTX 5090, "≥ ~64 hours") is what the published rates give; its doubt from
+scrypt's rate doesn't hold for Argon2 at 1 MiB. Against BLAKE2s's ~9 GPU-hours, as N0a chose.
+
+### Requests to public services
+
+| Service | Requests |
+|---|---|
+| each of the six default relays | 2 connections and 8 events (`relays`), and the rooms' own traffic: ~13 nodes over ~45 minutes |
+| tailcat DERP region 303 | the rooms' nodes and names clients; ~75 MB in four transfers |
+| blockstream.info | ~112: 100 headers, 5 block lists, 7 not-found and tip checks (curl, Node, Chromium) |
+| mempool.space | ~111: the same |
+| the Mac host | the timing wasm copied to /tmp, run, removed; `bench/gpu/mac-leftovers.sh`: none |
+
+### Reproduce
+```sh
+cargo build -q -p waarm64_ts --features test-params --example names-title && net/ts/build.sh --test-params
+node bench/net/names-public.ts relays --out results/names0c/relays.json               # ~1 minute
+node bench/net/names-public.ts explorers --n 100 --out results/names0c/explorers.json  # ~6 minutes
+node bench/net/names-public.ts cors --out results/names0c/cors.json                   # Chromium
+node bench/net/names-public.ts transfer --mb 5 --out results/names0c/transfer-5.json  # also --mb 20, 50 (TRANSFER_MS=455000 under a 545 s bound)
+node bench/net/names-public.ts client --idle 60 --out results/names0c/client.json
+node bench/net/names-public.ts lookup --rounds 6 --out results/names0c/lookup.json
+```

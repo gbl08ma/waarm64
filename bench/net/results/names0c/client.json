@@ -1,0 +1,80 @@
+{
+ "date": "2026-11-18T05:19:20.495Z",
+ "host": "linux arm64",
+ "cpus": 8,
+ "node": "v26.7.0",
+ "derp": "303",
+ "client": {
+  "idleS": 60,
+  "server": {
+   "cpuPct": 0.35513,
+   "memory": 1507328,
+   "rss": 146599936,
+   "socks": [
+    "wss://relay.primal.net",
+    "wss://relay.novospes.com",
+    "wss://relay.routstr.com",
+    "wss://nostr.rblb.it",
+    "wss://relay.nostrmap.net",
+    "wss://tc303a.ipn.dev/derp",
+    "wss://relay.primal.net",
+    "wss://relay.novospes.com",
+    "wss://relay.routstr.com",
+    "wss://nostr.rblb.it",
+    "wss://relay.nostrmap.net",
+    "wss://tc303a.ipn.dev/derp",
+    "wss://relay.degmods.com"
+   ],
+   "inBytes": 10207,
+   "outBytes": 10584
+  },
+  "member": {
+   "cpuPct": 0.15162833333333334,
+   "memory": 1441792,
+   "rss": 137867264,
+   "socks": [
+    "wss://relay.primal.net",
+    "wss://relay.novospes.com",
+    "wss://relay.routstr.com",
+    "wss://nostr.rblb.it",
+    "wss://relay.nostrmap.net",
+    "wss://tc303a.ipn.dev/derp",
+    "wss://relay.degmods.com"
+   ],
+   "inBytes": 181,
+   "outBytes": 1010
+  },
+  "memberAsk": {
+   "t": "answer",
+   "name": "srv",
+   "ms": 1582.4156840000069,
+   "rcode": 0,
+   "answers": 1,
+   "tries": 1
+  },
+  "memberWithNamesClient": {
+   "cpuPct": 0.192655,
+   "memory": 1507328,
+   "rss": 139091968,
+   "socks": [
+    "wss://relay.primal.net",
+    "wss://relay.novospes.com",
+    "wss://relay.routstr.com",
+    "wss://nostr.rblb.it",
+    "wss://relay.nostrmap.net",
+    "wss://tc303a.ipn.dev/derp",
+    "wss://relay.degmods.com",
+    "wss://relay.primal.net",
+    "wss://relay.novospes.com",
+    "wss://relay.routstr.com",
+    "wss://nostr.rblb.it",
+    "wss://relay.degmods.com",
+    "wss://relay.nostrmap.net",
+    "wss://tc303a.ipn.dev/derp"
+   ],
+   "inBytes": 362,
+   "outBytes": 2020
+  },
+  "serverKey": "nodekey:1b9a873ca38de0a7caa1fed8d644897c5146b5a7c6c15fc0ded4cf5086b56912"
+ }
+}

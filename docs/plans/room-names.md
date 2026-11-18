@@ -160,17 +160,19 @@ A claim's `prev` is zeros and a renewal's or release's isn't: anything else is i
   ("What it does not give"), a back-order, a squat. Stamping is free and one stamp covers any number of claims, so
   without it a member could claim every word there is each term for a minute of signatures. It is not what keeps junk
   out of a registry (the servers' bound is). So the function is judged by what a million names cost an attacker a
-  term on a GPU, which favours a memory-hard one. **Chosen (N0, provisional until the dev VM re-times it): Argon2id,
+  term on a GPU, which favours a memory-hard one. **Chosen (N0; confirmed by N0c in the dev VM): Argon2id,
   1 MiB, one pass, one lane, 32-byte output**, over the 111 bytes before the signature, salted with the name id (version
   0x13; Node's `crypto.argon2Sync` gives the same, which the tests pin). A GPU's lead over a tab (bench/net/REPORT.md, NAMES
-  loop 0) is ~3,900x at BLAKE2s (hashcat's published RTX 5090 figure against a tab's measured rate) and at most
-  ~280x at Argon2id of 1 MiB (*estimate* from the card's memory bandwidth: no Argon2 figure at these sizes is
-  published, and scrypt's suggests the card does worse than that bound), not the ~10x the first draft assumed: a
+  loops 0 and 0c) is ~3,900x at BLAKE2s (hashcat's published RTX 5090 figure against a tab's measured rate) and
+  **~110x (RTX 3090) to ~220x (RTX 5090) at Argon2id of 1 MiB**, against the dev VM's tab (0.38 ms a try): from
+  published mining rates of Argon2id at 1 MiB (Chukwa v2: t = 4, the same memory; a card's two Chukwa figures give
+  the same blocks a second, so it is bandwidth-bound and the RTX 5090's is scaled by bandwidth), not measured here
+  (no GPU tool is installed). Not the ~10x the first draft assumed: a
   memory-hard function narrows the gap only past what fits on the card's chips, and memory a server can afford to
   check stays small. 1 MiB is the knee: 256 KiB leaves the card most of its lead, 4 MiB keeps the same ratio at four
-  times the check (2 minutes of a core for 60,000 entries). A million names (two entries each a term) cost an attacker at least
-  ~64 RTX 5090-hours a term (*estimate*, from the card's bound; ~9 at BLAKE2s, for the same minute in a tab), and a server checks 60,000 entries in ~30 s of one core in wasm (BLAKE2s:
-  20 ms).
+  times the check (1.5 minutes of a core for 60,000 entries). A million names (two entries each a term) cost an attacker
+  **~63 RTX 5090-hours a term (~120 on an RTX 3090)**; ~9 at BLAKE2s, for the same minute in a tab; and a server checks
+  60,000 entries' proof of work in ~23 s of one core in wasm (BLAKE2s: 20 ms).
   **Not a verifiable delay function** (weighed 2026-11-16): one is sequential an instance, but a dictionary is a
   million instances side by side, so it evens the field a core, as a memory-hard function does; and it costs
   milliseconds to check in wasm (60,000 entries: minutes of a server's first sync),
@@ -253,7 +255,7 @@ once.
 | `drift` | 2 hours | how far a block's time may run ahead: a header's time may be this far past now, and a chain covers from this far before its first entry's time |
 | floor | `0x17216730` | the easiest target a header may claim, one number compiled in: 1/16 of the difficulty of block 976,177 ("Bitcoin as the clock") |
 | renew when | the last entry is older than `TERM / 2` | two entries a month a name; the page says "every 2 weeks", and a name is lost only past 3 |
-| `POW_BITS`, function | 16, Argon2id (1 MiB, t = 1, p = 1) | target: under a minute of one core in a tab, in the background. N0 (cloud, provisional): 0.49 ms a try in Chromium's wasm, so a mean of 32 s; hashcash is a draw: half within 22 s, 90% within 74 s, 99% within 2.5 minutes. Checking one costs one evaluation |
+| `POW_BITS`, function | 16, Argon2id (1 MiB, t = 1, p = 1) | target: under a minute of one core in a tab, in the background. N0c (dev VM, M4): 0.38 ms a try in wasm (0.36 on the Mac host; N0a's cloud host 0.49), so a mean of 25 s; hashcash is a draw: half within 17 s, 90% within 57 s, 99% within 2 minutes. Checking one costs one evaluation |
 
 ## Bitcoin as the clock
 
@@ -439,8 +441,8 @@ copies by nonce **and round** (the three rounds share a nonce).
   ask's nonce, the replier's names key and region, `since` (the first entry's time of the owning chain's run as the
   server holds it; unchecked, it only orders a contest), and an item: none (it holds no owner for the id), the owning
   chain's last entry with its anchor and header and the zone, or "too big" (past `REPLY_MAX`, 4 KiB of item: the user's
-  value until a dev VM session measures what the default relays forward; the replies are 1.3 to 4.1 KB on the wire,
-  *estimate*), which carries that last entry alone, without the zone, so it holds something checkable (review 3,
+  value, which all six default relays forward (N0c: up to 32 KiB; five refuse 64); the replies are 1.3 to 4.1 KB on
+  the wire, 6 KB at most), which carries that last entry alone, without the zone, so it holds something checkable (review 3,
   finding 2: a bare "too big" from a made-up server, free to forge, forced a contest that fetched every one).
   1. **`share`**, at the spread that last brought one to eight replies in this room (6 the first time; past eight, 3
      bits narrower next time, up to 15), then 3 bits wider at 0.4 s, then everyone at 1 s, while nothing counts.
@@ -724,11 +726,16 @@ the six after it). So **1.17 to 1.52 KB an entry (1.45 typical)**, and with two 
 about 0.4 KB for its zone plus **2.3 to 3.0 KB a month it has been held** (2.9 typical; the estimate was 1.1 to 3.0,
 whose low end assumed anchors shared).
 
-| Names, held six months on average | A server keeps | A new server's first sync through DERP (0.6 to 3 Mbit/s measured on public relays) |
+| Names, held six months on average | A server keeps | A new server's first sync through public DERP (N0c: ~0.8 Mbit/s, the 8-part window over a 95 ms RTT) |
 |---|---|---|
-| 1,000 | 14 to 19 MB | under a minute to 4 minutes |
-| 5,000 | 72 to 93 MB | 3 to 21 minutes |
+| 1,000 | 14 to 19 MB (~4x that in the module's memory) | 2.5 to 3.5 minutes |
+| 5,000 | 72 to 93 MB | 12 to 16 minutes of transfer, in runs of 4 minutes a round (5): ~16 to 21 |
 | 20,000 | 290 to 370 MB | too much for a tab |
+
+N0c measured it (bench/net/REPORT.md "NAMES loop 0c"): 5 MB of items synced in 61 s and 20 MB in 228 s between two
+servers through tailcat's Frankfurt region and the six default relays, a guest's ping on the node's own DERP
+connection beside it unmoved (95 ms median before, during and after); 50 MB went past a run's 4 minutes and on in the
+next round (docs/backlog.md).
 
 Anchors a calendar put in one transaction share their path's tail, and those in one block their header, but an item
 is one name's and carries neither across names. A store that kept a registry's anchors by calendar transaction
@@ -988,7 +995,8 @@ names.
 
 Done in the cloud session of 2026-11-16 (N0a, bench/net/REPORT.md "NAMES loop 0"): items 1 to 3, and item 4's
 batch of stamps, collected on 2026-11-17 (N0b, "NAMES loop 0b": items 1's check and 4). What it found is in "How long an anchor takes", "Records" and the parameters'
-table; times are a shared x86_64 host's, good for the choices, re-timed in the dev VM. The year of transactions in
+table; times are a shared x86_64 host's, good for the choices, re-timed in the dev VM (N0c: Argon2id 0.38 ms a try in
+wasm, 23% faster; `POW_BITS` stays 16). Items 5 and 6 and the GPU figure: N0c, 2026-11-18. The year of transactions in
 item 1 couldn't be read whole within a few hundred requests (a calendar's transactions are one request each:
 "How long an anchor takes"), so it is a complete record of the calendars' last days and samples through the year.
 
@@ -1009,10 +1017,19 @@ item 1 couldn't be read whole within a few hundred requests (a calendar's transa
 4. **Anchor sizes**, raw and with shared tails and headers, over a few hundred real stamps (item 1's batch): replaces
    the size table. (N0b: 240 anchors, 905 to 1,256 bytes; "Size, and where it stops".)
 5. **Through public DERP**: 5, 20 and 50 MB between two names clients, 8 in flight, a guest's ping running beside it;
-   and what a second room client in the worker costs (memory, a DERP connection, idle CPU).
+   and what a second room client in the worker costs (memory, a DERP connection, idle CPU). (N0c, 2026-11-18, the
+   dev VM: ~0.8 Mbit/s, the window over the RTT, the ping unmoved; "Size, and where it stops". The names client
+   costs seven WebSockets (the six relays and its DERP region), 64 KiB of the module's memory and ~1 MB RSS, and
+   ~0.04% of a core idle; a server's idle traffic ~10 KB a minute each way.)
 6. **A cold first lookup** on the public relays: since R3, an ask and its replies through them (~1 s in a room asked
    before, ~2 s the first time: room-names-r3.md, *estimate*); and whether the default relays forward a 4 KiB
-   ephemeral event, which sets `REPLY_MAX`.
+   ephemeral event, which sets `REPLY_MAX`. (N0c: a fresh member's first name 1.52 to 1.59 s, a second name 0.90 to
+   0.95, one that doesn't exist 0.64 to 1.0 to NXDOMAIN, a kept one 1 ms; all six relays forward a reply of
+   `REPLY_MAX` and up to 32 KiB, so it stays 4 KiB.)
+
+Also measured by N0c: both explorers' 404s for an unknown block carry their CORS header and a cross-origin-isolated
+page sees the 404 (R2's block refusal stands as built), and 100 block checks at the module's pace (one every 3 s) at
+each were all answered (blockstream.info ~170 ms, mempool.space ~50).
 
 ## The loops
 
